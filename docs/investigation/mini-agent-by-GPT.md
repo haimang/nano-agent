@@ -218,7 +218,7 @@ context/mini-agent/
 - **压缩策略**：
   - 保留 system prompt。
   - 保留全部 user 消息。
-  - 把每两个 user 消息之间的 assistant/tool 轨迹摘要成一条新的 user 消息。
+  - 把每两个 user 消息之间的 assistant/tool 轨迹摘要成一条新的 user 消息；也就是说，旧的 assistant/tool 输出会被重新伪装成“新的 user 输入”。
 - **分层压缩逻辑**：
   - system / user / assistant / tool 的处理并不精细；旧工具调用、工具 schema、skill 原文都会被摘要化。
 - **压缩后恢复**：
@@ -232,7 +232,7 @@ context/mini-agent/
 - **恢复能力**：压缩后会丢失细粒度执行轨迹；若 skill 内容或工具输出很关键，恢复只能靠摘要质量。
 - **不足**：
   - 没有最近 N / 固定元数据 / 文件状态重建等多策略压缩。
-  - 会把执行摘要重新塞成 user message，语义不够干净。
+  - 会把执行摘要重新塞成 user message，角色语义被污染，assistant/tool 产物会被模型当成新的用户指令背景。
   - CLI 实际只注册了 `record_note`，未注册 `recall_notes`，导致“跨会话记忆”能力在真实 CLI 中不完整。
 
 **评分**：⭐⭐⭐ (3/5)
@@ -285,18 +285,20 @@ context/mini-agent/
 | `bash_kill` | `tools/bash_tool.py` | 终止后台进程 | SIGTERM 后必要时 SIGKILL |
 | `record_note` | `tools/note_tool.py` | 写入 `.agent_memory.json` | 带时间戳与 category |
 | `get_skill` | `tools/skill_tool.py` | 按需加载完整 skill 内容 | Progressive Disclosure Level 2 |
-| `MCPTool(*)` | `tools/mcp_loader.py` | 代理远端 MCP tool | 支持 stdio / sse / http / streamable_http |
+| `MCPTool(*)` | `tools/mcp_loader.py` | 代理远端 MCP tool | 支持 stdio / sse / http / streamable_http，但本地 tool 与 MCP tool 名称冲突时缺少显式冲突处理 |
 
 ### 6.4 Verdict 评价
 
 - **完整性**：文件、bash、skills、MCP 都具备，足以支撑“最小可用”开发代理。
 - **扩展性**：新增工具非常容易，`Tool` 抽象简单直接。
-- **健壮性**：MCP 超时、后台 shell 生命周期做得不错；但主工具链缺少审批、路径沙盒、并行调度。
+- **健壮性**：MCP 超时、后台 shell 基本可用；但主工具链缺少审批、路径沙盒、并行调度，后台 shell 清理也不是完全闭环。
 - **不足**：
   - `edit_file` 语义不稳定。
   - 文件工具接受绝对路径，工作区不是安全边界。
   - CLI 漏掉 `recall_notes`，与文档/示例不一致。
   - 工具调用严格串行。
+  - 模型触发的工具副作用在执行前没有独立的 approval / policy checkpoint。
+  - MCP tool 与本地 tool 名称可能碰撞，存在覆盖/歧义风险。
 
 **评分**：⭐⭐⭐ (3/5)
 
@@ -493,7 +495,7 @@ context/mini-agent/
   - 更接近“工具开关”：`enable_file_tools` / `enable_bash` / `enable_note` / `enable_skills` / `enable_mcp`。
 - **不同行为差异**：
   - 交互与非交互主要差在是否进入 REPL，并非安全策略差异。
-- **Guardian / Policy / Approval 中间件**：没有。
+- **Guardian / Policy / Approval 中间件**：没有；模型一旦产出 tool call，执行前也没有额外的策略闸门。
 - **拦截后的恢复路径**：没有审批拒绝-再恢复的设计。
 
 ### 11.2 CLI Permission 代码文件清单
@@ -579,7 +581,8 @@ context/mini-agent/
 - 值得注意的审查结论：
   1. **文件工具不限制绝对路径**，工作区只是默认解析基准，不是沙盒。
   2. **`bash` 可执行任意 shell 命令**，无审批、无黑白名单。
-  3. **运行日志默认写入 `~/.mini-agent/log` 且记录原始消息/工具参数/结果**，未做脱敏。
+  3. **模型触发的副作用型 tool call 在执行前没有 approval / policy checkpoint**。
+  4. **运行日志默认写入 `~/.mini-agent/log` 且记录原始消息、thinking、工具参数与结果**，未做脱敏。
 
 ### 14.4 开发者体验
 
@@ -629,7 +632,7 @@ context/mini-agent/
   - MCP 和后台 bash 已经把“最小可用 Agent CLI”搭起来了。
 - **明显短板**：
   - 没有 Hooks、Sub-Agent、To-Do、权限治理、Prompt Cache 这些现代 Agent CLI 的关键基础设施。
-  - 安全边界非常弱：绝对路径文件访问、任意 shell、无审批、无 sandbox。
+  - 安全边界非常弱：绝对路径文件访问、任意 shell、无审批、无 sandbox，而且模型触发的副作用调用没有执行前闸门。
   - 文档宣称的“跨会话记忆”在 CLI 实际装配中并不完整。
 - **适用场景**：
   - 最适合教学演示、内部 PoC、个人可信环境下的小型仓库任务。
