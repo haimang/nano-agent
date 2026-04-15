@@ -1,0 +1,36 @@
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE / Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+
+# Node / TypeScript
+node_modules/
+dist/
+build/
+*.log
+
+# Rust
+target/
+Cargo.lock
+
+# General
+*.tmp
+*.bak
+
+
+# 上下文文件
+context/
