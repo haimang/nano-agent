@@ -254,6 +254,38 @@
 
 > 也就是说：**DDL / registry 不是骨架的前置条件，而是骨架验证之后的收敛结果。**
 
+### 5.5 10-package 的执行时序补充
+
+上面的 implementation 顺序是产品层视角；落实到当前 10 份 package/action-plan，还需要一份更细的执行时序，避免所有包“同时开工、最后才发现 glue 接不上”。
+
+推荐时序如下：
+
+1. **可最早并行的 Phase 1**
+   - `session-do-runtime P1`
+   - `hooks P1`
+   - `eval-observability P1`
+   - `storage-topology P1`
+   - 原因：它们主要依赖已收口的 `nacp-core / nacp-session`，可以先冻结 vocabulary、package skeleton 与最小 contract。
+
+2. **优先推进 storage / eval / hooks 的 Phase 2**
+   - `storage-topology P2`：先把 key/ref builders 与 scoped-io reality 钉死
+   - `eval-observability P2`：先把 sink / codec / timeline 做成稳定 evidence seam
+   - `hooks P2-P3`：先把 registry / dispatcher / runtime 合同做稳
+   - 原因：这些包先稳定，后面的 session-do glue 才不会被迫自己发明底层 contract。
+
+3. **随后推进 session-do-runtime 的 Phase 2-5**
+   - `session-do-runtime P2` 先收口 WS/HTTP 双入口与 ingress reality
+   - `session-do-runtime P3-P5` 再承接 actor lifecycle、checkpoint、archive/flush seam
+   - 前提：kernel、workspace、llm-wrapper、hooks、eval、storage 至少已有 Phase 1 type truth
+
+4. **最后由 session-do-runtime Phase 6 负责跨包收口**
+   - 目标不是单包自证，而是验证最小 compose flow：
+     `session-do-runtime -> agent-runtime-kernel -> llm-wrapper / capability-runtime / workspace-context-artifacts / hooks / eval-observability / storage-topology`
+
+这个补充的核心原则是：
+
+> **先冻结独立包的 type/contract，再做 glue；先有 evidence seam，再做 storage 收敛；先有 runtime 子系统，再让 session-do 做最终组装。**
+
 ---
 
 ## 6. 我们需要什么“基础设施”和“观察窗口”

@@ -217,7 +217,7 @@ packages/session-do-runtime/
 | P5-01 | Phase 5 | checkpoint / restore seam | `add` | `src/checkpoint.ts` | kernel/websocket/workspace 片段被统一保存 | high |
 | P5-02 | Phase 5 | alarm / shutdown | `add` | `src/alarm.ts`、`src/shutdown.ts` | heartbeat/ack health 与 graceful shutdown 成立 | medium |
 | P5-03 | Phase 5 | trace / archive hooks | `add` | `src/traces.ts` | observability 与 archive flush seam 收口 | medium |
-| P6-01 | Phase 6 | integration tests | `add` | `test/integration/*.test.ts` | 跑通 start-turn-resume 与 ws/http fallback | high |
+| P6-01 | Phase 6 | integration tests | `add` | `test/integration/*.test.ts` | 跑通跨包组装下的 start-turn-resume 与 ws/http fallback | high |
 | P6-02 | Phase 6 | docs / exports | `update` | `README.md`、`src/index.ts` | 说明 deploy/runtime 边界与接入方式 | low |
 
 ---
@@ -228,7 +228,7 @@ packages/session-do-runtime/
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P1-01 | package / wrangler 骨架 | 建立 deploy-oriented runtime package，并补齐 Worker/DO 所需基础配置 | `package.json`、`tsconfig.json`、`wrangler.jsonc`、`README.md`、`CHANGELOG.md` | 能作为独立 runtime repo 演进 | 基础命令校验 | 包与部署骨架约定稳定 |
+| P1-01 | package / wrangler 骨架 | 建立 deploy-oriented runtime package，并补齐 Worker/DO 所需基础配置与最小 DO binding 示例 | `package.json`、`tsconfig.json`、`wrangler.jsonc`、`README.md`、`CHANGELOG.md` | 能作为独立 runtime repo 演进 | 基础命令校验 | 包与部署骨架约定稳定 |
 | P1-02 | composition contract | 定义 runtime env、binding 入口、subsystem handles、composition factory | `src/env.ts`、`src/composition.ts` | 所有子系统接线有统一 seam | 类型测试 / compile-only | 不再在 DO class 里散落 new / import 逻辑 |
 | P1-03 | ingress contract note | 明确 `session.start.initial_input` 的最小 e2e 作用，以及 follow-up turn 的 future seam | `src/turn-ingress.ts` | runtime 不再假装后续 prompt wire truth 已冻结 | 单测 + 文档断言 | ingress 假设被写明且可 review |
 
@@ -238,7 +238,7 @@ packages/session-do-runtime/
 |------|--------|----------|------------------|----------|----------|----------|
 | P2-01 | Worker routes | 定义 WS upgrade、HTTP fallback、internal DO fetch routing | `src/worker.ts`、`src/routes.ts` | Worker 只做 routing，不卷入业务 | route 单测 | WS/HTTP 入口职责清楚 |
 | P2-02 | WebSocket controller | 统一 upgrade、attach、`normalizeClientFrame()`、message dispatch | `src/ws-controller.ts` | WS path 与 session profile reality 对齐 | controller 单测 | 不绕开 `nacp-session` ingress |
-| P2-03 | HTTP fallback controller | 提供最小输入、状态/结果读取、cancel/end 等 HTTPS fallback 接口 | `src/http-controller.ts` | degraded-network 下仍可与 session 交互 | integration smoke | HTTP path 复用同一 session model |
+| P2-03 | HTTP fallback controller | 提供最小输入、状态/结果读取、cancel/end 等 HTTPS fallback 接口，并定义 stateless session identification 规则 | `src/http-controller.ts` | degraded-network 下仍可与 session 交互 | integration smoke | HTTP path 复用同一 session model |
 
 ### 4.3 Phase 3 — Session Actor Lifecycle / WebSocket Attach / Health Gates
 
@@ -261,14 +261,14 @@ packages/session-do-runtime/
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
 | P5-01 | checkpoint / restore seam | 拼接 kernel fragment、`SessionWebSocketHelper`、workspace snapshot、usage/trace state | `src/checkpoint.ts` | 会话级 checkpoint shape 成立 | checkpoint 单测 | restore 后可继续运行 |
-| P5-02 | alarm / shutdown | 实现 heartbeat/ack 检查、flush/archive trigger seam、graceful shutdown | `src/alarm.ts`、`src/shutdown.ts` | timeout / end / fatal error 路径被收口 | integration test | 结束路径不丢状态 |
+| P5-02 | alarm / shutdown | 实现 heartbeat/ack 检查、flush/archive trigger seam、graceful shutdown，并只负责提交 evidence/触发请求 | `src/alarm.ts`、`src/shutdown.ts` | timeout / end / fatal error 路径被收口 | integration test | 结束路径不丢状态 |
 | P5-03 | trace / archive hooks | 接 eval-observability trace sink 与 future archive flush seam | `src/traces.ts` | runtime 对 observability/storage 有稳定接缝 | fixture test | 不提前绑死 archive 物理策略 |
 
 ### 4.6 Phase 6 — Integration Fixtures / 文档 / 收口
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P6-01 | integration tests | 跑通 start-turn-resume、ws/http fallback、ack/heartbeat timeout、graceful shutdown | `test/integration/*.test.ts` | session skeleton 可回归 | 集成测试 | 核心 actor 路径全部成立 |
+| P6-01 | integration tests | 跑通 start-turn-resume、ws/http fallback、ack/heartbeat timeout、graceful shutdown，以及 kernel/llm-wrapper/capability/workspace 的最小跨包组装链路 | `test/integration/*.test.ts` | session skeleton 可回归 | 集成测试 | 核心 actor 路径全部成立 |
 | P6-02 | docs / exports | 完成 runtime README、exports、deploy/use 边界说明 | `README.md`、`src/index.ts` | 下游知道如何组装与部署 | 文档校验 | 支持/不支持边界清楚 |
 
 ---
@@ -293,6 +293,7 @@ packages/session-do-runtime/
   1. runtime assembly seam 与 deploy-oriented package 结构被明确。
   2. Session DO 内只保留编排逻辑，不直接吞入下游包的实现细节。
   3. `session.start.initial_input` 作为最小入口被记录清楚，future prompt family 作为开放 seam 明确列出。
+  4. `wrangler.jsonc` 至少给出最小 DO binding / class export skeleton（如 `NanoSessionDO` 的 durable object binding 与迁移占位），避免 deploy-oriented package 只停留在口头层面。
 - **具体测试安排**：
   - **单测**：composition/env/ingress type tests
   - **集成测试**：无
@@ -302,6 +303,7 @@ packages/session-do-runtime/
   - 包骨架与 wrangler skeleton 明确
   - composition contract 可供后续 phases 复用
   - ingress 未冻结项被明文写出而非隐式假定
+  - DO binding / export skeleton 至少有一份可审阅的最小配置示例
 - **本 Phase 风险提醒**：
   - 若此处偷渡新 Session message family，会重新污染 `nacp-session` 边界
 
@@ -320,19 +322,22 @@ packages/session-do-runtime/
 - **具体功能预期**：
   1. Worker fetch 只做 routing，不做 turn logic。
   2. WebSocket path 严格消费 `normalizeClientFrame()` 与 Session-owned phase/role gate。
-  3. HTTP fallback path 可承接 degraded-network 下的输入、读取、cancel/end 等最小操作。
-  4. WS/HTTP 共享同一 session model 与 output body，而不是两套 runtime。
+  3. HTTP fallback path 可承接 degraded-network 下的输入、读取、cancel/end 等最小操作；每个 HTTP 请求都必须通过显式 session identification（path parameter / request header / authority context）定位到正确 DO，而不是假设存在 WebSocket 式 attach state。
+  4. HTTP fallback 只承担最小写入口与 durable 结果/状态读取；实时 event push 仍坚持 WebSocket-first。
+  5. WS/HTTP 共享同一 session model 与 output body，而不是两套 runtime。
 - **具体测试安排**：
   - **单测**：routes、ws/http controller
   - **集成测试**：ws/http fallback smoke
-  - **回归测试**：非法 WS frame / forged authority / bad HTTP route
+  - **回归测试**：非法 WS frame / forged authority / bad HTTP route / 缺失或错误 session identifier
   - **手动验证**：对照 `packages/nacp-session/src/ingress.ts`
 - **收口标准**：
   - WS 与 HTTP 双入口职责稳定
   - 不绕开 `nacp-session` reality
   - HTTP fallback 不复制一套新对象模型
+  - stateless HTTP 请求的 session 定位规则被显式写清
 - **本 Phase 风险提醒**：
   - 若 HTTP fallback 直接返回另一套 body，会破坏前面所有 action-plan 的一致性
+  - 若 HTTP session identification 语义含糊，degraded-network 路径会先于功能实现失真
 
 ### 5.3 Phase 3 — Session Actor Lifecycle / WebSocket Attach / Health Gates
 
@@ -406,7 +411,7 @@ packages/session-do-runtime/
   - `packages/session-do-runtime/src/traces.ts`
 - **具体功能预期**：
   1. checkpoint seam 组合 kernel fragment、websocket replay/seqs、workspace snapshot、usage/traces。
-  2. alarm 负责 heartbeat/ack 健康与 future archive flush seam。
+  2. alarm 负责 heartbeat/ack 健康与 future archive flush seam；它只触发 flush/archive request 并提交 evidence，不在本包里写死最终 archive 物理编排。
   3. `session.end` / timeout / fatal error 均走统一 graceful shutdown。
 - **具体测试安排**：
   - **单测**：checkpoint、alarm、shutdown
@@ -417,12 +422,13 @@ packages/session-do-runtime/
   - restore 后 session 可继续工作
   - alarm / shutdown 不丢状态
   - archive/flush seam 没有被提前写死成最终 storage strategy
+  - flush 触发责任与 archive 物理策略边界能被 review 直接看懂
 - **本 Phase 风险提醒**：
   - 若 checkpoint 过宽，会把 storage-topology 直接写死；过窄则无法恢复
 
 ### 5.6 Phase 6 — Integration Fixtures / 文档 / 收口
 
-- **Phase 目标**：证明会话 actor skeleton 成立。
+- **Phase 目标**：证明会话 actor skeleton 与最小跨包组装链路成立。
 - **本 Phase 对应编号**：
   - `P6-01`
   - `P6-02`
@@ -436,15 +442,17 @@ packages/session-do-runtime/
 - **具体功能预期**：
   1. start → turn → checkpoint → resume 路径能稳定回归。
   2. WS-first 与 HTTP fallback 双路径能共用同一 session model。
-  3. README 明确说明该包是 runtime assembly layer，不是子系统实现全集。
+  3. 至少存在一条最小跨包集成链路：`session-do-runtime -> agent-runtime-kernel -> llm-wrapper/capability-runtime/workspace-context-artifacts`。
+  4. README 明确说明该包是 runtime assembly layer，不是子系统实现全集。
 - **具体测试安排**：
   - **单测**：补齐未覆盖模块
-  - **集成测试**：start-turn-resume、ws/http fallback、heartbeat/ack timeout、graceful shutdown
+  - **集成测试**：start-turn-resume、ws/http fallback、heartbeat/ack timeout、graceful shutdown、最小跨包 compose flow
   - **回归测试**：phase / output / checkpoint shape 快照
   - **手动验证**：模拟网络降级与 resume
 - **收口标准**：
   - session skeleton 可独立 build/typecheck/test
   - 双入口与恢复语义成立
+  - 至少一条跨包 compose flow 可回归，不再只停留在单包自证
   - 文档解释清楚支持/不支持边界
 - **本 Phase 风险提醒**：
   - 若只测 happy path，会掩盖 health 与 resume 的真实复杂度
@@ -469,7 +477,7 @@ packages/session-do-runtime/
 - **为什么必须确认**：HTTP fallback 需要明确是“只负责读取 durable 产物”，还是也要承担提交新输入 / cancel / end 的写入口，这会直接影响 controller 设计。
 - **当前建议 / 倾向**：`HTTP fallback 同时支持最小写入口（start/input/cancel/end）与 durable 读取，但实时 event push 仍坚持 WebSocket-first`
 - **Q**：`v1 的 HTTP fallback 是否接受“写入口最小可用 + 读取 durable 结果/状态 + 实时流仍由 WebSocket 承担”的分层策略？`
-- **A**：
+- **A**：同意。
 
 #### Q3
 
@@ -477,7 +485,7 @@ packages/session-do-runtime/
 - **为什么必须确认**：Session DO 在 turn end / session end / alarm 时是否需要触发 archive/flush seam，会决定 checkpoint 内容与 observability 联动责任。
 - **当前建议 / 倾向**：`Session DO Runtime 只负责触发 flush/archive seam 与提交 evidence，不在本包里写死最终 R2 archive 策略`
 - **Q**：`v1 是否同意让 session-do-runtime 只承担 archive/flush 触发责任，而把最终 archive 物理策略留给 storage-topology + observability 证据收敛？`
-- **A**：
+- **A**：同意。
 
 ### 6.2 问题整理建议
 

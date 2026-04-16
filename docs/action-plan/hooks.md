@@ -243,7 +243,7 @@ packages/hooks/
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P4-01 | session mapping | 将 redacted hook event 统一映射为 `hook.broadcast` | `src/session-mapping.ts` | client-visible 事件不发明新 kind | adapter 单测 | 严格对齐 `nacp-session` |
+| P4-01 | session mapping | 将 redacted hook event 统一映射为 `hook.broadcast`，并写清 `SessionStart.source` 与 session actor lifecycle 的对应关系 | `src/session-mapping.ts` | client-visible 事件不发明新 kind | adapter 单测 | 严格对齐 `nacp-session` |
 | P4-02 | audit builder | 生成 `audit.record` 细节与最小 evidence shape | `src/audit.ts` | hook 审计可被 replay/observability 消费 | 单测 | 不泄露未处理敏感字段 |
 | P4-03 | snapshot / restore codec | 为 session hooks 提供 serialize/restore contract | `src/snapshot.ts` | DO hibernation 后 hook 行为可恢复 | snapshot 单测 | registry snapshot 稳定兼容 |
 
@@ -362,7 +362,7 @@ packages/hooks/
   - `packages/hooks/src/audit.ts`
   - `packages/hooks/src/snapshot.ts`
 - **具体功能预期**：
-  1. client-visible hook 事件统一映射到现有 `hook.broadcast`，不新增 `hook.started`/`hook.finished` kind。
+  1. client-visible hook 事件统一映射到现有 `hook.broadcast`，不新增 `hook.started`/`hook.finished` kind；其中 `SessionStart.source` 需要显式对齐 `session-do-runtime` actor lifecycle：首次启动记为 `startup`，恢复/重连后的 session-level re-entry 记为 `resume`，避免 hooks 层重新发明一套 resume 语义。
   2. 审计证据通过 `audit.record` 进入 durable trace 路径。
   3. session hooks 能被 serialize/restore，供 Session DO 在 hibernation/reconnect 后恢复。
 - **具体测试安排**：
@@ -372,6 +372,7 @@ packages/hooks/
   - **手动验证**：对照 `packages/nacp-session/src/adapters/hook.ts` 与 `redaction.ts`
 - **收口标准**：
   - Session adapter 不发明新 kind
+  - `SessionStart.source` 与 session actor lifecycle 的映射关系被写清
   - audit event 结构可被 eval/observability 消费
   - snapshot/restore 不丢 session-level hooks
 - **本 Phase 风险提醒**：

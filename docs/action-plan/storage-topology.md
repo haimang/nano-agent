@@ -57,7 +57,8 @@
   - `packages/storage-topology/` 独立包骨架
   - `StorageClass / StorageKeyBuilder / RefBuilder / PlacementHypothesis / CheckpointCandidate / PromotionPlan / DemotionPlan` 类型与接口
   - 对齐 `NacpRefSchema` 与 `tenant*` scoped-io reality 的 key/ref builders
-  - provisional placement hypotheses、checkpoint/archive candidate contract、evidence calibration seam
+  - provisional placement hypotheses、checkpoint/archive candidate contract、`mime_type` 门禁与 evidence calibration seam
+  - 可审阅的 revisit rationale / pending-context 输出，保证后续轮次能回顾为什么暂时这么放
   - 可供 `session-do-runtime` / `workspace-context-artifacts` / `eval-observability` 直接消费的 constants 与 helper
 
 ---
@@ -156,8 +157,8 @@ packages/storage-topology/
 - **[S4]** 集中的 storage key builders：DO / KV / R2 key schema constants 与 factory
 - **[S5]** `NacpRef` builders：至少覆盖 `r2` / `kv` / `do-storage` 三类实际 v1 target
 - **[S6]** 与 `tenantR2* / tenantKv* / tenantDoStorage*` reality 对齐的 adapter helpers
-- **[S7]** provisional placement hypotheses：session state / replay / audit / transcript / workspace / config / artifacts / registry snapshot 等候选归属
-- **[S8]** checkpoint candidate contract：候选字段集与 fragment 边界，而不是最终 frozen shape
+- **[S7]** provisional placement hypotheses：session state / replay / audit / transcript / workspace / config / artifacts / registry snapshot 等候选归属，并把 `mime_type` 作为 workspace/artifact placement 的决策输入之一
+- **[S8]** checkpoint candidate contract：候选字段集与 fragment 边界，而不是最终 frozen shape；workspace inline candidate 必须经过 `mime_type` 门禁
 - **[S9]** archive / promotion / demotion plan contracts：触发条件、candidate key、responsible runtime seam
 - **[S10]** evidence calibration seam：消费 `StoragePlacementLog` / usage evidence / size distribution / read-write frequency
 - **[S11]** README、公开导出、schema/doc 生成脚本与 fixture tests
@@ -196,8 +197,8 @@ packages/storage-topology/
 | P2-01 | Phase 2 | key builders | `add` | `src/keys.ts` | 统一所有 storage key schema | high |
 | P2-02 | Phase 2 | ref builders | `add` | `src/refs.ts` | 统一 `NacpRef` 构造与 validation-friendly shape | high |
 | P2-03 | Phase 2 | scoped-io alignment adapters | `add` | `src/adapters/scoped-io.ts` | 与 `tenant*` helpers reality 对齐 | medium |
-| P3-01 | Phase 3 | placement hypotheses | `add` | `src/placement.ts` | 把 provisional placement 写成显式 contract | high |
-| P3-02 | Phase 3 | checkpoint candidate | `add` | `src/checkpoint-candidate.ts` | 候选 checkpoint fragment 不再散落 | high |
+| P3-01 | Phase 3 | placement hypotheses | `add` | `src/placement.ts` | 把 provisional placement、mime_type 门禁与 revisit rationale 写成显式 contract | high |
+| P3-02 | Phase 3 | checkpoint candidate | `add` | `src/checkpoint-candidate.ts` | 候选 checkpoint fragment 不再散落，并为 inline 候选保留 mime_type 门禁 | high |
 | P3-03 | Phase 3 | archive/promotion/demotion plans | `add` | `src/archive-plan.ts`、`src/promotion-plan.ts`、`src/demotion-plan.ts` | 触发条件与责任归属收口 | medium |
 | P4-01 | Phase 4 | calibration rules | `add` | `src/calibration.ts` | evidence 能触发 placement 再评估 | high |
 | P4-02 | Phase 4 | runtime integration seams | `add` | `src/placement.ts`、`src/evidence.ts` | session/workspace/eval 能共用 topology contract | medium |
@@ -229,8 +230,8 @@ packages/storage-topology/
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P3-01 | placement hypotheses | 把 session state / replay / audit / transcript / workspace / config / artifacts 等 placement 写成 provisional contract | `src/placement.ts` | placement 不再只是表格描述 | placement 单测 | 每项均带 provisional / revisit 信息 |
-| P3-02 | checkpoint candidate | 定义候选 checkpoint fragment 与“不确定字段”标记 | `src/checkpoint-candidate.ts` | Session runtime 可依赖同一 candidate contract | checkpoint 单测 | 不提前冻结 workspace inline shape |
+| P3-01 | placement hypotheses | 把 session state / replay / audit / transcript / workspace / config / artifacts 等 placement 写成 provisional contract，并把 mime_type 门禁与 revisit rationale 纳入条目 | `src/placement.ts` | placement 不再只是表格描述 | placement 单测 | 每项均带 provisional / revisit 信息，workspace/artifact placement 不脱离 mime_type 语义 |
+| P3-02 | checkpoint candidate | 定义候选 checkpoint fragment 与“不确定字段”标记，并要求 inline candidate 经过 mime_type 门禁 | `src/checkpoint-candidate.ts` | Session runtime 可依赖同一 candidate contract | checkpoint 单测 | 不提前冻结 workspace inline shape，也不绕过 mime_type 门禁 |
 | P3-03 | archive/promotion/demotion plans | 定义 candidate archive key、promotion path、demotion trigger 与 responsible runtime seam | `src/archive-plan.ts`、`src/promotion-plan.ts`、`src/demotion-plan.ts` | archive 行为不再隐式 | 单测 | 触发条件与执行责任清楚 |
 
 ### 4.4 Phase 4 — Evidence Calibration / Policy Seams
@@ -323,17 +324,21 @@ packages/storage-topology/
   - `packages/storage-topology/src/promotion-plan.ts`
   - `packages/storage-topology/src/demotion-plan.ts`
 - **具体功能预期**：
-  1. placement 对每个 data item 都明确写出 provisional / revisit 条件。
-  2. checkpoint candidate 只定义候选字段集与 fragment 边界，不提前冻结 inline workspace 策略。
-  3. archive/promotion/demotion 只定义 candidate contract 与 runtime responsibility，不直接决定物理编排。
+  1. placement 对每个 data item 都明确写出 provisional / revisit 条件；对 workspace file / artifact 这类对象，`mime_type` 必须成为 placement 决策输入之一。
+  2. checkpoint candidate 只定义候选字段集与 fragment 边界，不提前冻结 inline workspace 策略；任何 inline candidate 都必须先通过最小 `mime_type` 门禁，再交给 evidence/threshold 继续校准。
+  3. v1 至少保留一套最小 `mime_type -> storage candidate` 映射（如 `image/* -> object-storage candidate`、`text/*` / `application/json -> do-inline candidate`），但仍明确标记为 provisional hypothesis，而非最终定案。
+  4. archive/promotion/demotion 只定义 candidate contract 与 runtime responsibility，不直接决定物理编排。
+  5. 每个 provisional plan 都要附带可审阅的 revisit rationale / pending questions 上下文，保证后续轮次能直接看懂“为什么暂时这样放、缺什么证据才能冻结”。
 - **具体测试安排**：
   - **单测**：placement、checkpoint candidate、archive/promotion/demotion plans
   - **集成测试**：checkpoint-archive contract fixture
-  - **回归测试**：provisional marker 与 revisit policy 快照
+  - **回归测试**：provisional marker、mime_type gate 与 revisit policy 快照
   - **手动验证**：对照 `plan-after-nacp-reviewed-by-GPT-to-opus.md` 对过早冻结的批评
 - **收口标准**：
   - 所有 placement 都带 evidence-backed revisit 条件
   - checkpoint candidate 不替 workspace/runtime 提前拍板
+  - workspace/artifact 的 provisional placement 都经过 mime_type 门禁
+  - 每个 provisional plan 都保留足够的 revisit rationale 上下文
   - archive responsibility 与 physical strategy 明确切开
 - **本 Phase 风险提醒**：
   - 若 placement 写成最终定案，会再次违背整个 post-NACP 规划原则
@@ -353,6 +358,7 @@ packages/storage-topology/
   1. `StoragePlacementLog`、size/read-write frequency、resume hit ratio 等证据可触发 topology re-evaluation。
   2. calibration rules 可输出“维持现状 / 调整阈值 / 改变建议归属”的 recommendation。
   3. session/workspace/eval/runtime 都可通过同一 seam 提交 evidence 与读取 candidate policy。
+  4. calibration 输出需要连同 placement 的 revisit rationale 一起返回，确保代码与生成文档里都留有足够上下文，而不是只给一个“改/不改”的裸建议。
 - **具体测试安排**：
   - **单测**：calibration rules
   - **集成测试**：placement-evidence-revisit scenario
@@ -361,6 +367,7 @@ packages/storage-topology/
 - **收口标准**：
   - topology 具备 evidence-backed 调整能力
   - 重评条件不再停留在 prose
+  - calibration recommendation 能带出必要的 revisit context
   - 不把 observability 反向绑定成 topology 内部实现
 - **本 Phase 风险提醒**：
   - calibration 若过强，会反向成为“隐式自动迁移器”；v1 只应给建议与契约，不自动搬运数据

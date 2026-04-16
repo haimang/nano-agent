@@ -164,7 +164,7 @@ packages/agent-runtime-kernel/
 | `caller-managed health` | `in-scope` | 已由 `nacp-session` 收口；kernel 只消费 signal，不接管 WebSocket/HTTP 会话健康管理 | 不重评，除非 Session profile 改版 |
 | capability progress stream | `in-scope` | kernel 必须知道如何接收并外送 progress | 当 capability runtime 冻结 long-running worker 时 |
 | compact policy engine | `out-of-scope` | kernel 只接受 compact-required signal，不实现完整 token policy | observability / workspace evidence 出来后 |
-| session prompt ingress contract | `defer / depends-on-decision` | 这是 `session-do-runtime` 的入口问题，不是 kernel 包本体 | `session-do-runtime` action-plan 前 |
+| session prompt ingress contract | `defer / depends-on-decision` | 这是 `session-do-runtime` 的入口问题，不是 kernel 包本体；但 kernel 必须用 source-agnostic `PendingWait` / input-arrived signal 保持对未来 wire truth 的中立 | `session-do-runtime` action-plan 前 |
 | background capability lane | `out-of-scope` | 会破坏单活跃 turn 假设，v1 不做 | 出现明确业务需求时 |
 
 ---
@@ -200,7 +200,7 @@ packages/agent-runtime-kernel/
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
 | P1-01 | package 骨架 | 按 `nacp-core` / `nacp-session` 现有 package 约定建立独立 repo 骨架、scripts 与导出面 | `package.json`、`tsconfig.json`、`README.md`、`CHANGELOG.md` | package 可 `build/typecheck/test` | 基础命令校验 | 目录结构与脚本约定收口 |
-| P1-02 | 核心状态类型 | 定义 `SessionState`、`TurnState`、`KernelSnapshotMeta`、`PendingWait` 等类型 | `src/types.ts`、`src/state.ts` | 跨 turn / 单 turn 状态槽位固定 | 类型测试 / compile-only | 状态字段与生命周期归属明确 |
+| P1-02 | 核心状态类型 | 定义 `SessionState`、`TurnState`、`KernelSnapshotMeta`、source-agnostic `PendingWait` / input-arrived signal 等类型 | `src/types.ts`、`src/state.ts` | 跨 turn / 单 turn 状态槽位固定 | 类型测试 / compile-only | 状态字段与生命周期归属明确 |
 | P1-03 | step / interrupt 类型 | 定义 `KernelStep`、`StepDecision`、`KernelPhase`、`InterruptReason` | `src/step.ts`、`src/interrupt.ts` | 推进与中断不再靠字符串散落 | 单测 + 类型断言 | 所有核心 union 类型冻结 |
 | P1-04 | delegate contracts | 定义 `LlmDelegate`、`CapabilityDelegate`、`HookDelegate`、`CompactDelegate` | `src/delegates.ts` | kernel 与具体实现解耦 | 假对象编译测试 | 所有依赖方均可按 contract mock |
 
@@ -234,7 +234,7 @@ packages/agent-runtime-kernel/
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
 | P5-01 | 单元测试 | 覆盖 state/reducer/scheduler/interrupt/event/checkpoint | `test/*.test.ts` | 核心逻辑可回归 | `vitest run` | 高风险模块覆盖充足 |
-| P5-02 | scenario tests | 用 fake delegates 跑 basic/tool/compact/interrupt 场景 | `test/scenarios/*.test.ts` | 验证 kernel 真能驱动 turn | scenario tests | 典型 turn 全部跑通 |
+| P5-02 | scenario tests | 用 fake delegates 跑 basic/tool/compact/interrupt/idle-input-arrival 场景 | `test/scenarios/*.test.ts` | 验证 kernel 真能驱动 turn | scenario tests | 典型 turn 与等待输入恢复路径全部跑通 |
 | P5-03 | 文档与导出面 | 更新 README、公开导出、下游集成说明 | `README.md`、`src/index.ts` | session-do-runtime 等可直接接入 | 文档检查 | 包边界与用法清晰 |
 
 ---
@@ -261,7 +261,7 @@ packages/agent-runtime-kernel/
   - `packages/agent-runtime-kernel/src/index.ts`
 - **具体功能预期**：
   1. 状态模型直接吸收 `context/codex` 的 `SessionState` / `TurnState` 分层经验，但不复制其 provider realtime 复杂度。
-  2. 中断与等待语义直接吸收 `context/codex/codex-rs/core/src/state/turn.rs` 的 pending input / approval 思路。
+  2. 中断与等待语义直接吸收 `context/codex/codex-rs/core/src/state/turn.rs` 的 pending input / approval 思路，并保持对 follow-up input wire truth 的 source-agnostic 建模。
   3. delegate contract 只暴露 typed input / output / progress / error，不暴露 transport 细节。
 - **具体测试安排**：
   - **单测**：类型守卫、默认值、union exhaustiveness
@@ -384,6 +384,7 @@ packages/agent-runtime-kernel/
   - `packages/agent-runtime-kernel/test/scenarios/tool-turn.test.ts`
   - `packages/agent-runtime-kernel/test/scenarios/compact-turn.test.ts`
   - `packages/agent-runtime-kernel/test/scenarios/interrupt-turn.test.ts`
+  - `packages/agent-runtime-kernel/test/scenarios/idle-input-arrival.test.ts`
 - **本 Phase 修改文件**：
   - `packages/agent-runtime-kernel/README.md`
   - `packages/agent-runtime-kernel/src/index.ts`
@@ -391,13 +392,14 @@ packages/agent-runtime-kernel/
   1. fake llm delegate 能输出 delta / tool call / finish。
   2. fake capability delegate 能输出 progress / result / cancel。
   3. fake hook / compact delegate 能改变 turn 路径。
+  4. kernel 在 idle / waiting 状态下能通过 input-arrived signal 正确恢复推进，而不绑定某一种 follow-up input message shape。
 - **具体测试安排**：
   - **单测**：核心逻辑覆盖
   - **集成测试**：scenario tests
-  - **回归测试**：已修 bug 的 replay / interrupt / mapping case
+  - **回归测试**：已修 bug 的 replay / interrupt / mapping case，以及 input arrives while turn is idle 的路径
   - **手动验证**：README 中提供最小 `runner.advance()` 示例
 - **收口标准**：
-  - 场景测试能覆盖普通 turn、tool turn、compact turn、interrupt turn
+  - 场景测试能覆盖普通 turn、tool turn、compact turn、interrupt turn、idle-input-arrival turn
   - 公开导出面足够给 `session-do-runtime` 与 future packages 直接使用
   - README 清楚说明 kernel 做什么 / 不做什么
 - **本 Phase 风险提醒**：
@@ -488,6 +490,7 @@ packages/agent-runtime-kernel/
   - 手动构造一次 `compact-required -> compact response -> continue turn`
 - **回归测试**：
   - cancel / timeout / waiting / restore / illegal phase transition
+  - waiting -> input-arrived -> resume scheduling
 - **文档校验**：
   - README 的 API 示例与实际导出面一致
 

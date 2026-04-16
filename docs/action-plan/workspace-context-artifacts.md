@@ -152,8 +152,8 @@ packages/workspace-context-artifacts/
 - **[S8]** prepared artifact contract：至少支持 extracted-text / summary / preview 这类最小种类
 - **[S9]** capability result -> artifact promotion seam
 - **[S10]** `ContextAssembler`：system、session、workspace、artifact summary、recent transcript 等层级
-- **[S11]** `CompactBoundaryManager`：strip / request / response / reinjection 边界
-- **[S12]** session-visible preview / redaction helper
+- **[S11]** `CompactBoundaryManager`：strip / request / response / reinjection 边界，以及 compact 后 messages post-structure
+- **[S12]** session-visible preview / redaction helper（复用 `@nano-agent/nacp-session` 的 `redactPayload()` 底层现实）
 - **[S13]** `WorkspaceSnapshotBuilder`：只导出 workspace/context fragment
 - **[S14]** fake workspace / fake artifact / compact fixture / snapshot fixture 测试基座
 - **[S15]** README、公开导出与 package scripts
@@ -168,6 +168,7 @@ packages/workspace-context-artifacts/
 - **[O6]** transcript / analytics / registry 的最终 DDL
 - **[O7]** 多用户协作 workspace
 - **[O8]** client-visible完整 UI/SDK 对 artifact 的下载/预览体验
+- **[O9]** tenant-scoped 之外 `_platform/` 全局 mount 在 v1 的实际开放
 
 ### 2.3 边界判定表
 
@@ -180,6 +181,7 @@ packages/workspace-context-artifacts/
 | prepared artifact 丰富种类 | `defer / depends-on-decision` | v1 先做 extracted-text / summary / preview 即可 | 多模态路径稳定后 |
 | compact 真正摘要生成 | `out-of-scope` | 这是 compact capability / llm path 的职责，不是本包 | compact execution 开始时 |
 | transcript 全量 durable schema | `out-of-scope` | 本包只定义 context/snapshot fragment，不定义最终数据库表 | storage/eval 设计启动时 |
+| `_platform/` 全局 mount 开放 | `defer / depends-on-decision` | 只保留保留前缀与例外处理槽位，v1 仍以 tenant-scoped mounts 为默认真相 | storage-topology 下一轮决策时 |
 
 ---
 
@@ -219,7 +221,7 @@ packages/workspace-context-artifacts/
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P2-01 | mount router | 借鉴 `MountableFs.routePath()` 的最长前缀匹配实现 mount routing | `src/mounts.ts`、`src/namespace.ts` | 路径解析唯一出口 | router 单测 | readonly/shared/artifact 路径规则清楚 |
+| P2-01 | mount router | 借鉴 `MountableFs.routePath()` 的最长前缀匹配实现 mount routing，并为 `_platform/` 前缀保留显式例外处理槽位 | `src/mounts.ts`、`src/namespace.ts` | 路径解析唯一出口 | router 单测 | readonly/shared/artifact 路径规则清楚，默认仍以 tenant-scoped mounts 为主 |
 | P2-02 | memory backend | 提供 session-local writable backend | `src/backends/memory.ts` | fake workspace 可运行 | backend 单测 | 常见读写/list/stat 语义成立 |
 | P2-03 | reference backend seam | 为 durable/KV/R2/other refs 提供统一 backend contract | `src/backends/reference.ts` | 不绑定物理落点也能表达 mount | interface 单测 | storage topology 可后接 |
 
@@ -236,8 +238,8 @@ packages/workspace-context-artifacts/
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
 | P4-01 | context assembler | 按固定层级顺序组装 system/session/workspace/artifact summary/recent transcript | `src/context-assembler.ts`、`src/context-layers.ts` | 上下文不再是隐式 message array 拼接 | assembler 单测 | layer order 与 token budgeting 明确 |
-| P4-02 | compact boundary | 对齐 `context.compact.request/response` 的 history_ref/summary_ref contract | `src/compact-boundary.ts` | compact 成为正式阶段 | compact 单测 | strip / reinject 责任清楚 |
-| P4-03 | redaction helper | 为 session-visible preview/export 提供 redaction 与 audience scope helper | `src/redaction.ts` | client 看见的是引用/预览而非内部全量对象 | redaction 单测 | preview / redaction 行为稳定 |
+| P4-02 | compact boundary | 对齐 `context.compact.request/response` 的 history_ref/summary_ref contract，并显式描述 compact 后 messages post-structure | `src/compact-boundary.ts` | compact 成为正式阶段 | compact 单测 | strip / reinject 责任清楚，post-compact 结构可解释 |
+| P4-03 | redaction helper | 为 session-visible preview/export 提供 redaction 与 audience scope helper，并明确复用 `@nano-agent/nacp-session` 的底层 redaction reality | `src/redaction.ts` | client 看见的是引用/预览而非内部全量对象 | redaction 单测 | preview / redaction 行为稳定 |
 
 ### 4.5 Phase 5 — Snapshot Builder / Fixtures / 文档 / 收口
 
@@ -358,8 +360,8 @@ packages/workspace-context-artifacts/
   - `packages/workspace-context-artifacts/src/context-layers.ts`
 - **具体功能预期**：
   1. assembler 以固定层级顺序装配 context，而不是隐式拼接 message arrays。
-  2. compact boundary 明确对齐 `context.compact.request.history_ref` 与 `context.compact.response.summary_ref`。
-  3. redaction helper 明确 client-visible preview 与 internal object 的边界，并保证后续 WebSocket-first 与 HTTP fallback 两条会话返回路径可以复用同一 preview/redaction 结果。
+  2. compact boundary 明确对齐 `context.compact.request.history_ref` 与 `context.compact.response.summary_ref`，并把 compact 后 `session:messages` 的 post-structure 显式建模为 `CompactBoundaryRecord[] + recentMessages[]` 的组合，其中 boundary record 持有 `summary_ref: NacpRef` 指向外部 archive/summary。
+  3. redaction helper 明确 client-visible preview 与 internal object 的边界，并消费 `@nano-agent/nacp-session` 的 `redactPayload()` 作为底层 redaction reality，在其上增加 workspace-specific 的 preview / audience scope 逻辑；后续 WebSocket-first 与 HTTP fallback 两条会话返回路径应复用同一 preview/redaction 结果。
 - **具体测试安排**：
   - **单测**：layer ordering、budget trimming、compact strip/reinject、preview redaction
   - **集成测试**：artifact summary + compact reinjection flow
