@@ -28,12 +28,12 @@
 
 ### 0.2 前置共识
 
-- **可用的存储层**（来自 README §3）：
+- **可用的存储层**（来自 README §3 的当前技术栈承诺）：
   - **DO storage** (`state.storage`)：per-DO 强一致，~1ms 读写，50GB/DO 上限，key-value API
   - **KV** (`env.KV_*`)：最终一致（~60s TTL），全球边缘读优化，读多写少
   - **R2** (`env.R2_*`)：对象存储，强一致（per-object），无大小上限（5GB/object），~100-500ms
-  - **D1** (`env.D1_*`)：SQLite-at-edge，结构化查询，但在 nano-agent v1 中**不是必需前提**
-- **多租户 namespace**（来自 NACP §5.4 + §5.8）：所有 R2/KV key 必须以 `tenants/{team_uuid}/` 开头
+  - **D1**：Cloudflare 平台提供的 SQLite-at-edge，**但 README 当前技术栈表未将 D1 列为已承诺层**——v1 不引入 D1，仅作为未来可能的扩展层（当 eval-observability 验证表明需要结构化查询时才评估）
+- **多租户 namespace**（来自 NACP §5.4 + §5.8）：所有 R2/KV key 必须以 `tenants/{team_uuid}/` 开头。**显式例外**：`_platform/` 前缀用于 platform-global 数据（如 feature flags），不属于任何特定租户——这是多租户 namespace 规则的唯一例外，必须在 `scoped-io.ts` 和 `storage-keys.ts` 中显式标记
 - **Session = DO 实例**（来自 session-do-runtime design）：一个 session 的 hot state 全在一个 DO 的 `state.storage` 里
 - **"DDL 不是第一步"**（来自 plan-after-nacp §7.3）：D1/DDL 只在"验证表明需要结构化查询"后才引入
 
@@ -130,41 +130,58 @@ Storage Topology 是**数据架构的"交通规则"**——它不自己持有数
 
 ### 4.1 mini-agent
 
-- **存储模型**：pure ephemeral——`Agent.messages` 在内存，`.agent_memory.json` 在本地 FS，log 在 `~/.mini-agent/log/`
-- **借鉴**：`.agent_memory.json` 是 nano-agent "session notes" 的 hot state 原型
-- **不照抄**：完全无持久化 = 反例
+- **存储模型**（从代码事实）：
+  - **Hot**：`Agent.messages: list[Message]`（`agent.py:76`，纯内存）+ `self.api_total_tokens: int`（`agent.py:82`）
+  - **Warm/config**：三层 config 解析（`config.py:191-206`）：dev `./mini_agent/config/` → user `~/.mini-agent/config/` → package dir，加载 `config.yaml` 含 `api_key / api_base / model / provider / retry / max_steps / workspace_dir / system_prompt_path`（`config.py:66-164`）。MCP config 有 fallback 到 `mcp-example.json`（`mcp_loader.py:299-327`）
+  - **Cold/persistent**：`SessionNoteTool` 写 `<workspace>/.agent_memory.json`（`note_tool.py:31`），格式 = JSON array of `{timestamp(ISO), category, content}`（`note_tool.py:105-110`），lazy init（`note_tool.py:69-89`）
+  - **Log**：`~/.mini-agent/log/agent_run_{YYYYMMDD_HHMMSS}.log` plain-text（`logger.py:30-39`）
+- **值得借鉴**：
+  - **三层 config 的 priority 搜索**（dev → user → package）直接对应 nano-agent 的 "platform policy → team config → session override" 三层 KV 读取
+  - **`.agent_memory.json` 的 lazy init**（不写就不创建文件）→ DO storage 可以 "不 checkpoint 就不写"
+- **不照抄的**：纯内存 messages 无法恢复；plain-text log 不可程序化查询
 
 ### 4.2 codex
 
-- **存储模型**：
-  - Hot: `Session.state` (Mutex 内存) + `TurnContext` (per-turn 临时)
-  - Cold: `~/.codex/sessions/rollout-*.jsonl` (JSONL 归档)
-  - Shared: `~/.codex/config.toml` + 各种 policy 文件
-  - Thread store 介于 hot/cold 之间（resume/fork/archive）
-- **借鉴**：
-  - **rollout = JSONL 归档**的模式 → 对应 nano-agent 的 "DO audit → R2 archive"
-  - **thread-store 的 resume/fork/archive 三态** → 对应 nano-agent 的 "hot(DO) / archived(R2) / shared(KV)"
-- **不照抄**：本地 FS 路径（我们用 R2）
+- **存储模型**（从代码事实）：
+  - **Hot**：`CodexThread` 包裹 `Codex` 实例（`codex_thread.rs:51-71`），持有 `rollout_path`、`out_of_band_elicitation_count`。内部 `Session` 含 `Mutex<SessionState>`。`ThreadConfigSnapshot`（`codex_thread.rs:37-49`）是 per-turn 的临时快照（model / provider / approval / sandbox / reasoning_effort / personality）。
+  - **Warm/config**：`~/.codex/config.toml` 多层加载（`config_loader/mod.rs:89-112`）：CLI overrides → project/repo → directory tree → user → system `/etc/codex/config.toml` → managed cloud。字段含 model / provider / approval_policy / sandbox_mode / permissions / mcp_servers / memories / skills / plugins（`config_toml.rs:66-395`）。Project instructions 从 `AGENTS.md` 加载，截断到 32 KiB（`config/mod.rs:123`）。
+  - **Cold/persistent**：rollout JSONL 在 `~/.codex/sessions/YYYY/MM/DD/`（`recorder.rs:776-797`），filename = `timestamp_uuid.jsonl`。每行一个 `RolloutItem` enum（5 variants）。`RolloutRecorder`（`recorder.rs:74-81`）通过 async channel `tx: Sender<RolloutCmd>` 驱动写入。Output 截断到 10KB（`recorder.rs:189-212`）。
+  - **Index/state DB**：可选 SQLite（`config_toml.rs:229-231` 的 `sqlite_home` 字段），用于 `StoredThread` 元数据索引（22 个字段，`thread-store/types.rs:135-178`），支持 backfill scan（`metadata.rs:136-355`，batch=200）。
+- **值得借鉴（直接复用模式）**：
+  - **`StoredThread` 的 22 字段**（`types.rs:135-178`）：`thread_id / forked_from_id / preview / name / model / model_provider / cwd / source / agent_nickname / git_info / approval_mode / sandbox_policy / token_usage / first_user_message`——nano-agent 的 DO checkpoint 字段集直接参考此表
+  - **Config 多层加载**（`config_loader/mod.rs:89-112`）：CLI → project → user → system → managed。对应 nano-agent 的 KV 层级模型
+  - **Rollout 的 date-partitioned 目录结构**（`sessions/YYYY/MM/DD/`）→ R2 archive 的 key prefix
+  - **`ThreadEventPersistenceMode` 的 Limited vs Extended 两档**（`thread-store/types.rs:20-26`）→ nano-agent 可以有 `compact` vs `full` 两种审计深度
+- **不照抄的**：SQLite state DB（v1 不引入 D1）；FS-based rollout path（我们用 R2）
 
 ### 4.3 claude-code
 
-- **存储模型**：
-  - Hot: `AppState` (React store 内存) + DO-equivalent 无（单进程）
-  - Cold: `~/.claude/history.jsonl` + per-session transcript
-  - Shared: `~/.claude/settings.json` (4 层合并) + `CLAUDE.md`
-  - Cache: prompt cache per-block + `promptCacheBreakDetection`
-- **借鉴**：
-  - **4 层 settings 合并** → nano-agent 的 KV shared config 可以有 platform / project / session 层级
-  - **`sessionStorage.ts` 的 `recordTranscript()` + `flushSessionStorage()`** → DO checkpoint + R2 archive
-- **不照抄**：本地 FS + React store
+- **存储模型**（从代码事实）：
+  - **Hot**：`AppState`（`AppStateStore.ts:89-452`）= `DeepImmutable` store + mutable `tasks / agentNameRegistry / fileHistory / mcp / sessionHooks / speculation / denialTracking / teamContext`。Store 接口（`store.ts:4-8`）= `getState() / setState(updater) / subscribe(listener)`。
+  - **Warm/config**：4 层 settings cascade（`settings.ts:58-199`）：managed `/etc/claude-code/managed-settings.json` + drop-ins → user `~/.claude/settings.json` → project → local。`parseSettingsFile()` 缓存 + clone-on-return 防 mutation。CLAUDE.md 层级：managed → user → project（`claudemd.ts:1-26`）含 `@include` 递归。
+  - **Cold/persistent**：`~/.claude/history.jsonl`（`history.ts:115`）全局共享，每行 = `LogEntry { sessionId, timestamp, project, display, pastedContents }`（`history.ts:102-143`）。大 paste inline < 1024 bytes，否则 hash reference（`history.ts:25-31`）。`readLinesReverse()` 反向读取（`history.ts:145-179`）。Session transcript 通过 `recordTranscript()` → `getTranscriptPath()` 按 session 写 JSONL。`flushSessionStorage()` 锁定后批量追加。Tombstone rewrite limit = 50MB（`sessionStorage.ts:123`）。
+  - **Session memory**：`SessionMemory` 服务，threshold = 10k tokens 初始化，每 5k tokens 或 3 tool calls 更新（`sessionMemoryUtils.ts:32-36`）。Compact config 从 GrowthBook 远端读取（`sessionMemoryCompact.ts:57-130`）。
+  - **Cost tracking**：`cost-tracker.ts:71-174` 持久化 `lastCost / lastAPIDuration / lastToolDuration / lastLinesAdded/Removed` 到 project config。Per-model usage：`input/output/cache tokens + cost USD + web search requests`。`restoreCostStateForSession()` 在 resume 时水合。
+  - **Cache paths**：project-scoped（`cachePaths.ts:25-37`）= `${XDG_CACHE_HOME}/claude-cli/<sanitized_cwd>/`；非字母数字字符替换为 `-`；路径 >200 字符做 DJB2 hash（`cachePaths.ts:4-19`）。
+- **值得借鉴（直接复用模式）**：
+  - **Session memory 的 token 阈值 + update 频率策略**（`sessionMemoryUtils.ts:32-76`）→ nano-agent 的长时记忆抽取策略
+  - **Cost tracking 的 per-model usage 结构**（`cost-tracker.ts:160-174`）→ DO checkpoint 应含等价字段
+  - **History JSONL 的 "大 paste hash reference" 模式**（`history.ts:25-31`）→ DO storage 里大对象应只存 `NacpRef`，原文放 R2
+  - **Settings 4 层 cascade + parseSettingsFile 缓存**（`settings.ts:58-199`）→ KV config 的读取层级与缓存策略
+  - **Cache path sanitization**（DJB2 hash for > 200 chars）→ R2 key 的长路径处理
+- **不照抄的**：React `DeepImmutable` store；XDG 本地缓存路径；GrowthBook 远端 config
 
 ### 4.4 横向对比速查表
 
 | 维度 | mini-agent | codex | claude-code | **nano-agent 倾向** |
 |------|-----------|-------|-------------|---------------------|
-| Hot state | memory only | Mutex memory | React store | **DO `state.storage`** |
-| Cold/archive | none | JSONL files | sessionStorage | **R2 JSONL** |
-| Shared config | none | config.toml | settings.json 4 层 | **KV** |
+| Hot state | `Agent.messages` 内存 | `Mutex<SessionState>` + `ThreadConfigSnapshot` | `AppState` 400+ 字段 store | **DO `state.storage` checkpoint** |
+| Cold/archive | `.agent_memory.json` 只 | rollout JSONL `~/.codex/sessions/YYYY/MM/DD/` | `~/.claude/history.jsonl` + transcript | **R2 JSONL，key = `tenants/{t}/sessions/{s}/archive/`** |
+| Shared config | 3 层 yaml（`config.py:191`） | 多层 toml（`config_loader/mod.rs:89`） | 4 层 json（`settings.ts:58`） | **KV 多层 cascade** |
+| 大对象 | 无 | rollout output 10KB 截断 | paste hash ref（`history.ts:25`） | **DO inline < 1MB；大对象 → R2 `NacpRef`** |
+| Resume | 无 | `LoadThreadHistoryParams`（`types.rs:67`） | `restoreCostStateForSession`（`cost-tracker.ts:87`） | **DO checkpoint / restore** |
+| Session memory | `.agent_memory.json` | 无 | `SessionMemory` 10k token 阈值 | **待 workspace-context 设计** |
+| Index/query | 无 | SQLite state DB（`config_toml.rs:229`） | 无 | **v1 不引入 D1** |
 | Resume 能力 | none | rollout replay | none | **DO checkpoint + restore** |
 | 多租户 | none | none | none | **`tenants/{team_uuid}/` namespace in all layers** |
 
@@ -217,9 +234,9 @@ Storage Topology 是**数据架构的"交通规则"**——它不自己持有数
 
 ## 7. In-Scope 功能详细列表
 
-### 7.1 三层数据分布表
+### 7.1 三层数据分布表（Provisional Placement Hypotheses）
 
-> 这是本文档最核心的产出——每一条已知数据条目的 placement 决策。
+> ⚠️ **这是候选分层假设，不是最终基线。** 遵循 `plan-after-nacp.md` "由验证反推 storage" 的原则，以下 placement 决策在 eval-observability 的 `StoragePlacementLog` 采集到真实读写频率 / 大小分布证据之前，均为**暂定假设**。具体阈值（如 1MB workspace file 分界线）需要等 workspace runtime 和 eval harness 落地后校准。
 
 | 数据条目 | 层 | Key Schema | 读频率 | 写频率 | 大小预估 | 理由 |
 |---------|-----|-----------|--------|--------|---------|------|
@@ -231,8 +248,8 @@ Storage Topology 是**数据架构的"交通规则"**——它不自己持有数
 | Hook config (session-level) | DO storage | `hooks:session_config` | 每 hook emit | session start | < 10KB | session-scoped |
 | Audit trail (current session) | DO storage | `audit:{date}` | debug/replay | 每 event | 10KB-1MB/day | 定期 archive 到 R2 |
 | System prompt snapshot | DO storage | `context:system_prompt` | 每 LLM call | session start | < 50KB | hot, 不常变 |
-| Workspace file (small, <1MB) | DO storage | `workspace:file:{path}` | 按需 | 按需 | < 1MB | hot for active files |
-| Workspace file (large, >1MB) | R2 | `tenants/{t}/sessions/{s}/workspace/{path}` | 按需 | 按需 | > 1MB | 大文件天然走 R2 |
+| Workspace file (small, <1MB†) | DO storage | `workspace:file:{path}` | 按需 | 按需 | < 1MB | hot for active files；**†1MB 阈值待 eval 校准** |
+| Workspace file (large, >1MB†) | R2 | `tenants/{t}/sessions/{s}/workspace/{path}` | 按需 | 按需 | > 1MB | 大文件天然走 R2；具体 materialization 由 workspace namespace (mount-based) 决定 |
 | Compact archive (old turns) | R2 | `tenants/{t}/sessions/{s}/archive/{turn_range}.jsonl` | replay 时 | compact 时 | 10KB-10MB | cold, 低频 |
 | Session transcript (export) | R2 | `tenants/{t}/sessions/{s}/transcript.jsonl` | export 时 | session end 时 | 10KB-10MB | cold, 一次写 |
 | Audit archive (old) | R2 | `tenants/{t}/audit/{date}/{session_uuid}.jsonl` | debug/compliance | 定期 | varies | cold, 归档 |
@@ -243,7 +260,9 @@ Storage Topology 是**数据架构的"交通规则"**——它不自己持有数
 | Hook config (platform-policy) | KV | `tenants/{t}/config/hooks_policy` | session start | 管理面写 | < 10KB | warm |
 | Feature flags | KV | `_platform/config/feature_flags` | 每 request | 管理面写 | < 1KB | warm, 全局共享 |
 
-### 7.2 Checkpoint 格式
+### 7.2 Checkpoint 格式（候选字段集）
+
+> ⚠️ **以下是候选字段集，不是冻结结构。** runtime kernel action-plan、workspace runtime 和 observability harness 均未落地，因此具体字段（尤其是 `workspace_files` 的 inline 策略和 `messages` 的 compact 后结构）需要在实装阶段根据实际情况确认。
 
 Session DO 的 `state.storage` 的 checkpoint 结构：
 
@@ -254,11 +273,15 @@ interface SessionCheckpoint {
   team_uuid: string;
   phase: SessionPhase;
   turn_count: number;
+  // compact 前：CanonicalMessage[]（完整历史）
+  // compact 后：被 CompactBoundaryManager 替换为
+  //   [...recentMessages, CompactBoundaryRecord]
+  //   其中旧 turn 的完整内容通过 NacpRef 指向 R2 archive
   messages: CanonicalMessage[];
   system_prompt_snapshot: string;
   tool_inflight: Record<string, ToolInflightState>;
   hooks_session_config: HookConfig;
-  workspace_files: Record<string, string>; // small files inline
+  workspace_files: Record<string, string>; // small files inline（阈值待校准）
   workspace_refs: NacpRef[];               // large files as R2 refs
   audit_buffer: string[];                  // pending audit events
   nacp_session_replay: Record<string, { events: unknown[]; baseSeq: number }>;
@@ -338,17 +361,37 @@ export const R2_KEYS = {
 
 ### 8.3 来自 codex
 
-| 文件 | 借鉴点 |
-|------|--------|
-| `context/codex/codex-rs/rollout/src/recorder.rs` | JSONL 归档格式 → R2 archive format 的参考 |
-| `context/codex/codex-rs/thread-store/src/types.rs` | resume/fork/archive 三态 → DO/R2 的提升/下降心智 |
+| 文件:行 | 借鉴点 | 怎么用 |
+|---------|--------|--------|
+| `codex-rs/thread-store/src/types.rs:135-178` | `StoredThread` 的 22 字段（thread_id / model / cwd / git_info / token_usage / approval_mode / sandbox_policy / first_user_message...） | DO checkpoint 字段集的直接参考 |
+| `codex-rs/thread-store/src/types.rs:20-26` | `ThreadEventPersistenceMode: Limited \| Extended` | nano-agent 的审计深度两档：`compact` vs `full` |
+| `codex-rs/rollout/src/recorder.rs:776-797` | 归档目录 `sessions/YYYY/MM/DD/` + filename `timestamp_uuid.jsonl` | R2 archive key 的 date-partitioned 结构 |
+| `codex-rs/rollout/src/recorder.rs:189-212` | Output 截断到 10,000 bytes | audit event 的 truncation 策略 |
+| `codex-rs/core/src/config_loader/mod.rs:89-112` | Config 多层加载：CLI → project → directory tree → user → system → managed | KV config cascade 的层级模型 |
+| `codex-rs/config/src/config_toml.rs:66-395` | config.toml 的字段全集（model / provider / approval / sandbox / mcp / skills / plugins / memories） | KV 需要存的 config 字段清单 |
+| `codex-rs/instructions/src/user_instructions.rs:12-34` | `UserInstructions { directory, text }`，AGENTS.md 截断到 32 KiB | KV 里的 project instructions 大小上限参考 |
+| `codex-rs/config/src/config_toml.rs:229-235` | `sqlite_home` / `log_dir` 可配置路径 | v2 如果引入 D1，config 里应有 `d1_database_id` |
 
 ### 8.4 来自 claude-code
 
-| 文件 | 借鉴点 |
-|------|--------|
-| `context/claude-code/services/compact/autoCompact.ts` | compact 触发阈值 → demotion trigger 的参考 |
-| `context/claude-code/utils/sessionStorage.ts` | `flushSessionStorage()` → session end 时的归档模式 |
+| 文件:行 | 借鉴点 | 怎么用 |
+|---------|--------|--------|
+| `claude-code/utils/settings/settings.ts:58-199` | 4 层 cascade（managed → user → project → local）+ `parseSettingsFile()` 缓存 + clone-on-return | KV config 读取策略：`_platform/ → tenants/{t}/config/ → session-local`，cache 后 clone 防 mutation |
+| `claude-code/utils/claudemd.ts:1-26` | CLAUDE.md 层级：managed → user → project + `@include` 递归 + 循环检测 | KV 里的 instructions 多层叠加策略 |
+| `claude-code/history.ts:25-31,102-143` | 大 paste inline < 1024 bytes，否则 hash reference；`readLinesReverse()` 反向读取 | DO inline < 1MB，大对象存 R2 只留 `NacpRef`；history 从尾部读取最新 |
+| `claude-code/services/compact/autoCompact.ts:72-239` | `effectiveContextWindow - 13000` 阈值 + circuit breaker（3 次失败后停止） | compact demotion 的触发条件 |
+| `claude-code/services/compact/sessionMemoryCompact.ts:57-130` | GrowthBook 远端读取 compact 配置（minTokens: 10k, maxTokens: 40k） | KV 里存的 compact policy 字段参考 |
+| `claude-code/cost-tracker.ts:71-174` | Per-session per-model usage tracking + `restoreCostStateForSession()` resume | DO checkpoint 应含 usage 字段；resume 时水合 |
+| `claude-code/utils/cachePaths.ts:4-19` | 路径 >200 字符做 DJB2 hash | R2 key 的长路径 hash 策略 |
+| `claude-code/utils/sessionStorage.ts:123` | Tombstone rewrite 50MB 上限 | DO storage 的归档阈值参考（超过某值就 demote 到 R2） |
+
+### 8.5 来自 mini-agent
+
+| 文件:行 | 借鉴点 | 怎么用 |
+|---------|--------|--------|
+| `mini_agent/config.py:191-206` | 3 层 config priority：dev → user → package | KV config 最小层级模型 |
+| `mini_agent/tools/note_tool.py:31,69-89` | `.agent_memory.json` lazy init（不写不创建）| DO storage 的 "不 checkpoint 就不写" 策略 |
+| `mini_agent/tools/mcp_loader.py:299-327` | MCP config fallback 到 example 文件 | KV config 的 "fallback to default" 策略 |
 
 ---
 
@@ -392,3 +435,4 @@ v1 不引入 D1——DO storage 的 KV API + R2 的对象 API 足以覆盖 agent
 | 版本 | 日期 | 修改者 | 主要变更 |
 |------|------|--------|----------|
 | v0.1 | 2026-04-16 | Opus 4.6 | 初稿 |
+| v0.2 | 2026-04-16 | Opus 4.6 | 基于 GPT + Kimi review 修订：数据分布表降级为 provisional hypotheses(#3)、修 D1 为"未列入当前技术栈"(#9)、声明 `_platform/` 为 tenant namespace 显式例外(#10)、types.ts→types.rs(#13)、加 compact 后 messages 结构说明(#14)、checkpoint 标记为候选字段集 |

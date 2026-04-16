@@ -65,6 +65,9 @@ nano-agent 在 Worker 环境下更需要 observability，因为：
 | 术语 | 定义 | 备注 |
 |------|------|------|
 | **Trace Event** | 一条结构化的运行时事件，由 Session DO / Hook / LLM / Tool 产出 | 格式 = NACP Core envelope (audit.record) 或 Session stream event |
+| **Live Session Stream** | 实时 WebSocket 推送的 `session.stream.event`，生命周期与连接绑定 | 包含高频 progress（如 `llm.delta`、`tool.call.progress`）；**不一定全部持久化**——参照 claude-code `sessionStorage.ts:134-145,180-195` 将 progress 排除在 transcript 之外 |
+| **Durable Audit Trace** | 落盘到 DO storage JSONL 的 `audit.record` 事件 | internal 运行时证据，按 team_uuid 分区，用于 failure replay + storage placement evidence |
+| **Durable Transcript** | session 结束时导出的完整对话记录 | 包含 user / assistant / tool result；不包含高频 progress；归档到 R2 |
 | **Trace Sink** | 事件的持久化目的地 | v1 = DO storage JSONL；未来可 fan-out 到 R2 / Analytics Engine |
 | **Session Timeline** | 一个 session 内所有 trace event 按时间排序的序列 | 包括 NACP-Core internal + NACP-Session client-visible 两层 |
 | **Session Inspector** | 实时观察一个正在运行的 session 的 stream event flow | 通过 WebSocket 的 `session.stream.event` 订阅实现 |
@@ -139,21 +142,54 @@ Eval & Observability 是**验证层**——它不参与 agent 的主循环，但
 
 ### 4.1 mini-agent
 
-- **做了什么**：plain-text log (`~/.mini-agent/log/agent_run_<ts>.log`)；`/log` slash 命令查看
-- **亮点**：人类可读性好
-- **局限**：不可程序化 replay、不可结构化查询、不可 audit
+- **做了什么**：`AgentLogger`（`logger.py:11-40`）写 `~/.mini-agent/log/agent_run_{YYYYMMDD_HHMMSS}.log`。三种 entry type（REQUEST / RESPONSE / TOOL_RESULT），每条带 `[{index}] {TYPE}\nTimestamp: {ISO}\n---\n{JSON}`。Log request 只记录 tool **names**（不含 schema）。Tool result 含 arguments dict + success/error 字段。
+- **值得借鉴**：**entry 结构（type + index + timestamp + JSON body）** 是最简的 trace event 模板。nano-agent 的 trace event schema 可以从这个 shape 起步。
+- **不照抄的**：plain-text format（不可 parse）；`log_dir.mkdir(parents=True, exist_ok=True)` 的简单创建（我们用 DO storage，不需要 mkdir）。
 
-### 4.2 codex
+### 4.2 codex（最成熟的 observability 实现）
 
-- **做了什么**：OTEL crate (`codex-rs/otel/`)；rollout JSONL (`rollout/src/recorder.rs`)；`response-debug-context` 包；session 可从 rollout replay
-- **亮点**：rollout JSONL 是"每条 event 一行"的追加格式，既可 audit 又可 replay；`response-debug-context` 让 LLM response 的细节可以被独立复盘
-- **借鉴**：JSONL 追加 + per-event 一行 = nano-agent 的 DO storage trace 格式
+- **做了什么**：
+  - **OpenTelemetry 集成**（`codex-rs/otel/`）：18 个 metric names（`names.rs:1-38`）覆盖 `codex.tool.call`、`codex.api_request`、`codex.turn.e2e_duration_ms`、`codex.turn.ttft.duration_ms`（首 token 时延）、`codex.startup_prewarm.duration_ms` 等。`MetricsClient`（`client.rs:82-90`）管理 u64 counter / f64 histogram / duration histogram 三类 instrument。
+  - **SessionTelemetry**（`session_telemetry.rs:76-91`）：`SessionTelemetryMetadata` 含 `conversation_id`、`auth_mode`、`auth_env`（API key 环境变量存在性检测）、`account_id`、`originator`、`session_source`、`model`、`app_version`、`terminal_type`。
+  - **W3C Trace Context**（`trace_context.rs`）：`context_from_w3c_trace_context()` / `current_span_trace_id()` / `set_parent_from_w3c_trace_context()` 实现分布式追踪上下文传播。
+  - **RolloutRecorder**（`recorder.rs:74-81`）：JSONL 审计，每行一个 `RolloutItem` enum（`SessionMeta / ResponseItem / CompactedItem / TurnContext / EventMsg`）。Output 截断到 10,000 bytes（`recorder.rs:189-212`）。
+  - **response-debug-context**（`response-debug-context/src/lib.rs:11-17`）：从 HTTP error 提取 `ResponseDebugContext { request_id, cf_ray, auth_error, auth_error_code }`。Headers `x-request-id`、`cf-ray`、`x-error-json`（base64 decode）。**消息体不泄露到 telemetry**。
+- **直接借鉴（可复用模式）**：
+  - **18 个 metric name 的层级命名**（`agent.turn.*`、`agent.tool.*`、`agent.api.*`）——nano-agent 沿用同一套前缀。
+  - **`SessionTelemetryMetadata` 的 auth_env 字段**——追踪"API key 是否在 env 里"而不是追踪 key 本身。
+  - **Rollout JSONL 的 per-event 追加 + 10KB 截断**——直接用于 DO storage audit trail。
+  - **`ResponseDebugContext` 的 header 提取 pattern**——nano-agent 的 LLM executor 错误诊断应抄这个。
+- **不照抄的**：OTEL SDK 本身（Worker 里没有完整 OTEL runtime）；SQLite state DB（v1 不引入 D1）。
 
-### 4.3 claude-code
+### 4.3 claude-code（最精细的 telemetry 实现）
 
-- **做了什么**：`tengu_*` telemetry 事件族（api_success / api_opus_fallback / prompt_cache_break）；`promptCacheBreakDetection` 的 hash + root-cause 模式；`sessionStorage.ts` 的 transcript 持久化
-- **亮点**：`promptCacheBreakDetection` 是"主动检测异常 + 归因"的典范——不只是记录，还解释"为什么 cache 命中率掉了"
-- **借鉴**：trace event 应该不仅记录"发生了什么"，还记录"为什么"（附带 `reason` / `context` 字段）
+- **做了什么**：
+  - **Analytics queue + deferred sink**（`analytics/index.ts:80-84`）：事件在 sink 初始化前排队，不丢失。`logEvent(name, metadata)` 是同步 API。Datadog + 1st-party 双通道。
+  - **PII 保护**（`analytics/index.ts:22-33`）：`_PROTO_*` 前缀标记 PII 字段，`stripProtoFields()` 在发 Datadog 前移除。`AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS` 类型守卫强制验证字符串。
+  - **核心事件族**（`services/api/logging.ts`）：
+    - `tengu_api_query`（`logging.ts:196-233`）：model / temperature / betas / permissionMode / querySource / queryChainId / queryDepth / thinkingType / effortValue / fastMode
+    - `tengu_api_error`（`logging.ts:304-365`）：error / status / errorType / durationMs / attempt / requestId / clientRequestId + **gateway detection**（litellm/helicone/portkey/cloudflare-ai-gateway/kong/braintrust/databricks via header fingerprints）
+    - `tengu_api_success`（`logging.ts:398-500`）：usage (input/output/cache_creation/cache_read tokens) / durationMs / ttftMs / costUSD / stopReason / textContentLength / thinkingContentLength / toolUseContentLengths per-tool
+  - **promptCacheBreakDetection**（`promptCacheBreakDetection.ts`）：维护 `PreviousState` 含 systemHash（DJB2）/ cacheControlHash / toolsHash / perToolHashes / systemCharCount + `pendingChanges` diff（systemPromptChanged / toolSchemasChanged / changedToolSchemas[] / addedBetas / removedBetas）。Cache TTL 阈值：5min / 1hour。`cacheDeletionsPending` flag 让 microcompact 的 cache_edits delete 不被误报为 cache break。最多追踪 10 个并发 query source 防止内存膨胀。
+  - **DiagnosticTrackingService**（`diagnosticTracking.ts:30-49`）：追踪 IDE LSP diagnostics（Error/Warning/Info/Hint），维护 `beforeFileEdited` 基线 + `lastProcessedTimestamps` map。
+- **直接借鉴（可复用模式）**：
+  - **`PreviousState` hash + `pendingChanges` diff 的 cache break 归因**——nano-agent 不只记录"cache miss"，还记录"为什么 miss"（哪个字段变了）。这是 observability 从"记录"升级到"归因"的关键模式。
+  - **`_PROTO_*` PII prefix + type guard**——trace event 的敏感字段标记方法。对应 NACP 的 `redaction_hint`。
+  - **Event queue + deferred sink pattern**——Session DO 可能在 startup 时就 emit events，但 trace sink 可能还没 ready。queue 先攒、sink 后 flush。
+  - **`tengu_api_success` 的 per-tool content length tracking**——知道"哪个 tool 返回了多大的 result"对 storage topology 决策有直接价值。
+  - **Gateway fingerprint detection**（`logging.ts:65-105`）——对接多 provider 时自动识别中间网关。
+- **不照抄的**：Datadog 通道（Worker 里用 R2 + Logpush）；React component-level diagnostic tracking（我们没有 IDE 集成）。
+
+### 4.4 横向对比速查表
+
+| 维度 | mini-agent | codex | claude-code | **nano-agent 倾向** |
+|------|-----------|-------|-------------|---------------------|
+| Trace 格式 | plain-text log | OTEL spans + JSONL rollout | `tengu_*` event queue + JSONL transcript | **NACP `audit.record` JSONL → DO storage** |
+| Metric 体系 | 无 | 18 metrics（`names.rs`） | 40+ `tengu_*` events | **从 codex 18 metrics 起步** |
+| Cache 归因 | 无 | 无 | `promptCacheBreakDetection` hash+diff | **直接借鉴 DJB2 hash + pendingChanges 模式** |
+| PII 保护 | 无 | sanitize HTTP body | `_PROTO_*` prefix + type guard | **`redaction_hint` in NACP** |
+| 分布式追踪 | 无 | W3C Trace Context | requestId + clientRequestId chain | **NACP trace_id + parent_message_uuid** |
+| Replay 能力 | 无 | rollout JSONL replay | 无 | **DO storage audit → R2 archive → replay** |
 
 ---
 
@@ -162,7 +198,7 @@ Eval & Observability 是**验证层**——它不参与 agent 的主循环，但
 ### 5.1 In-Scope
 
 - **[S1]** `TraceSink` 接口 + DO storage JSONL 实现：append-only, per-session, tenant-partitioned
-- **[S2]** Trace event schema：基于 `audit.record` body 扩展，含 `event_kind` / `timestamp` / `duration_ms?` / `context?` / `error?`
+- **[S2]** Trace event schema：基于 `audit.record` body 扩展，含 base fields（`event_kind` / `timestamp` / `duration_ms?` / `context?` / `error?`）+ evidence extension slots（`usage_tokens?` / `ttft_ms?` / `attempt?` / `provider?` / `gateway?` / `cache_state?`）——参见下方 §7.1 F3 的分层定义
 - **[S3]** Session Timeline builder：从 DO storage 读取一个 session 的全部 trace events，按 timestamp 排序
 - **[S4]** Session Inspector：通过 `session.stream.event` 的 WebSocket 订阅，实时观察正在运行的 session
 - **[S5]** Scenario Runner：脚本化 e2e 测试框架，输入 `ScenarioSpec` 输出 `ScenarioResult`
@@ -178,6 +214,27 @@ Eval & Observability 是**验证层**——它不参与 agent 的主循环，但
 - **[O4]** Billing / cost pipeline
 - **[O5]** Client-side UI 框架
 - **[O6]** D1 / structured query for trace events（v1 只做 append + scan）
+
+---
+
+## 5.3 Trace 三分法：Live Stream / Durable Audit / Durable Transcript
+
+> 这一区分是 GPT review 指出的关键缺失——如果不拆开，timeline builder 可能把高频 progress 当成 durable record，storage placement inspector 会统计错"真正需要落盘的证据"。
+
+claude-code 的 `sessionStorage.ts:134-145,180-195` 已经给了明确信号：**progress 不是 transcript message**；高频 tool progress 是 UI-only ephemeral state。
+
+nano-agent 应对 trace 事件做以下三分法：
+
+| 分类 | 内容 | 持久化目标 | 生命周期 |
+|------|------|-----------|---------|
+| **Live Session Stream** | 所有 `session.stream.event`（含 `llm.delta` / `tool.call.progress` / `system.notify` 等 9 kinds） | **不一定持久化**——只推给当前 WebSocket 连接的 client | 连接级，断线即消失（可被 replay buffer 短暂保留以支持 resume） |
+| **Durable Audit Trace** | `audit.record` NACP 消息——internal 运行时证据（LLM 调用详情、hook outcome、compact 决策、error 诊断、storage placement 记录等） | DO storage JSONL → 定期 archive 到 R2 | session 级 + archive 级 |
+| **Durable Transcript** | user / assistant / tool result 的完整对话记录——**不含高频 progress** | session end 时导出到 R2 `tenants/{t}/sessions/{s}/transcript.jsonl` | 归档级 |
+
+关键规则：
+- **不是每个 `session.stream.event` 都必须 durable**——`llm.delta` 和 `tool.call.progress` 是高频 ephemeral 事件，如果全部落盘会产生 10x 写入放大
+- **某些 `session.stream.event` 可以被采样/摘要/映射为 audit trace event**——例如 `turn.begin` / `turn.end` 在 live stream 和 audit 两层都出现，但 audit 层携带 evidence extension fields（usage_tokens / ttft_ms / duration_ms）
+- **Transcript 是 audit trace 的子集**——只保留面向用户的对话结构（user prompt + assistant response + tool result summary），不保留 internal hook/compact/error 详情
 
 ---
 
@@ -205,7 +262,7 @@ Eval & Observability 是**验证层**——它不参与 agent 的主循环，但
 |------|--------|------|---------------|
 | F1 | TraceSink interface | `emit(event: TraceEvent): Promise<void>` 的抽象接口 | ✅ 可替换的 trace 持久化口子 |
 | F2 | DoStorageTraceSink | 把 trace event 追加到 `tenants/{team_uuid}/trace/{session_uuid}/{date}.jsonl` | ✅ 每条 event 一行 JSON |
-| F3 | TraceEvent schema | `{event_kind, timestamp, session_uuid, turn_uuid?, step_index?, duration_ms?, context?, error?}` | ✅ 可被 timeline builder 消费 |
+| F3 | TraceEvent schema | **Base fields**: `{event_kind, timestamp, session_uuid, turn_uuid?, step_index?, duration_ms?, context?, error?}` + **LLM evidence extension**: `{usage_tokens?, ttft_ms?, attempt?, provider?, gateway?, cache_state?, cache_break_reason?}` + **Tool evidence extension**: `{tool_name?, result_size_bytes?}` + **Storage evidence extension**: `{storage_layer?, key?, op?}` | ✅ 可被 timeline builder + storage placement inspector 消费；base 必填，extensions 按 event_kind 可选 |
 | F4 | SessionTimeline | 读取一个 session 的全部 trace events 并按 timestamp 排序 | ✅ 返回 `TraceEvent[]` |
 | F5 | SessionInspector | 通过 WebSocket `session.stream.event` 实时观察 | ✅ 可看到 kind / seq / content |
 | F6 | ScenarioSpec schema | `{name, steps: [{action, expect}]}` 的脚本化测试定义 | ✅ 可驱动一次 session e2e |
@@ -234,17 +291,33 @@ Eval & Observability 是**验证层**——它不参与 agent 的主循环，但
 
 ### 8.3 来自 codex
 
-| 文件 | 借鉴点 |
-|------|--------|
-| `context/codex/codex-rs/rollout/src/recorder.rs` | JSONL append-only 格式 |
-| `context/codex/codex-rs/otel/` | OpenTelemetry integration pattern |
+| 文件:行 | 借鉴点 | 怎么用 |
+|---------|--------|--------|
+| `codex-rs/otel/src/names.rs:1-38` | 18 个层级化 metric names（`codex.tool.call` / `codex.turn.e2e_duration_ms` / `codex.turn.ttft.duration_ms`） | nano-agent 的 metric 命名直接沿用 `agent.turn.*` / `agent.tool.*` / `agent.api.*` 前缀 |
+| `codex-rs/otel/src/events/session_telemetry.rs:76-91` | `SessionTelemetryMetadata` 含 `auth_env` 字段追踪 API key 环境变量的**存在性**而非值 | nano-agent 的 session init event 抄这个 pattern |
+| `codex-rs/otel/src/events/session_telemetry.rs:141-184` | `counter()` / `histogram()` / `record_duration()` / `start_timer()` 四种 emit 方法 | TraceSink 的 API surface 参考 |
+| `codex-rs/otel/src/events/session_telemetry.rs:313-449` | `codex.conversation_starts` 事件（20+ 字段）+ `codex.api_request` 事件（15+ 字段含 cf_ray / request_id） | trace event 的字段丰度参考——nano-agent 的 session.start 和 llm.call 事件应有类似覆盖面 |
+| `codex-rs/otel/src/trace_context.rs` | W3C Trace Context propagation（`context_from_w3c_trace_context` / `set_parent_from_w3c_trace_context`） | nano-agent 的 NACP `trace_id` + `parent_message_uuid` 已实现等价功能；若需对接 OTEL 可从这里抄 |
+| `codex-rs/response-debug-context/src/lib.rs:11-17` | `ResponseDebugContext { request_id, cf_ray, auth_error, auth_error_code }` + header 提取 + **消息体不泄露** | LLM executor 的错误诊断抽取器直接照搬 |
+| `codex-rs/rollout/src/recorder.rs:74-81,189-212` | JSONL 追加 + `RolloutItem` enum + output 10KB 截断 | DO storage audit trail 的格式与截断策略 |
 
 ### 8.4 来自 claude-code
 
-| 文件 | 借鉴点 |
-|------|--------|
-| `context/claude-code/services/api/promptCacheBreakDetection.ts` | "检测异常 + 归因" 模式 |
-| `context/claude-code/services/api/logging.ts` | `tengu_*` 事件族 |
+| 文件:行 | 借鉴点 | 怎么用 |
+|---------|--------|--------|
+| `claude-code/services/api/promptCacheBreakDetection.ts` 全文 | `PreviousState` 的 DJB2 hash 对比（systemHash / toolsHash / perToolHashes / cacheControlHash）+ `pendingChanges` diff（systemPromptChanged / addedBetas / removedBetas / changedToolSchemas[]）+ `cacheDeletionsPending` flag + 5min/1hour TTL 阈值 + 最多 10 并发 source 追踪 | **直接照搬**为 nano-agent 的 prompt cache 归因系统——这是三家里唯一做了"归因"而不只是"记录"的实现 |
+| `claude-code/services/api/logging.ts:196-500` | `tengu_api_query` / `tengu_api_error` / `tengu_api_success` 三个核心事件的完整字段集（model / usage / duration / attempt / ttft / costUSD / gateway detection / queryChainId / queryDepth） | nano-agent 的 LLM trace event 字段集直接参考（不需要全抄，但 usage + ttft + costUSD + attempt + gateway 是必需的） |
+| `claude-code/services/api/logging.ts:65-105` | Gateway fingerprint detection（header 指纹识别 litellm / helicone / portkey / cloudflare-ai-gateway / kong / braintrust / databricks） | 当 nano-agent 接入多 provider 时，自动识别中间网关的 pattern |
+| `claude-code/services/analytics/index.ts:19-84` | `_PROTO_*` PII prefix + `AnalyticsMetadata_I_VERIFIED_THIS_IS_NOT_CODE_OR_FILEPATHS` type guard + event queue before sink attach | PII 保护 pattern + deferred sink pattern |
+| `claude-code/services/diagnosticTracking.ts:30-49` | `DiagnosticTrackingService` 追踪 IDE LSP 变化的 before/after 基线 | 文件变更 trace 的 baseline diff pattern |
+| `claude-code/cost-tracker.ts:160-174` | Per-model usage tracking（input/output/cache tokens, cost USD, web search requests） | nano-agent 的 session 级 usage 统计字段 |
+
+### 8.5 来自 mini-agent
+
+| 文件:行 | 借鉴点 | 怎么用 |
+|---------|--------|--------|
+| `mini_agent/logger.py:11-40` | `AgentLogger` 的 entry format：`[{index}] {TYPE}\nTimestamp: {ISO ms}\n---\n{JSON}` | trace event 的最简人类可读格式参考 |
+| `mini_agent/logger.py:43-157` | `log_request(messages, tools)` 只记录 tool **names**（不含 schema）；`log_tool_result` 含 success + error + arguments | trace event 的 "该记什么 / 不该记什么" 决策参考——schema 不需要进 trace，只需 name |
 
 ---
 
@@ -278,3 +351,4 @@ Eval & Observability 是 nano-agent 的**验证基础设施**。v1 预期 ~400-6
 | 版本 | 日期 | 修改者 | 主要变更 |
 |------|------|--------|----------|
 | v0.1 | 2026-04-16 | Opus 4.6 | 初稿 |
+| v0.2 | 2026-04-16 | Opus 4.6 | 基于 GPT + Kimi review 修订：加 Live/Durable Audit/Durable Transcript 三分法(#4)、修 otel 路径为 `events/session_telemetry.rs`(#11)、修 RequestDebugContext→ResponseDebugContext(#12)、扩展 TraceEvent schema 加 evidence extension slots |

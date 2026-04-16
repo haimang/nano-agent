@@ -35,6 +35,7 @@ README 与 fake bash 分析已经把方向说清楚了：
 - Tool / command 的真正执行面应是 **typed、声明式、可治理、可回放** 的 capability runtime。
 - `NACP-Core` 负责 internal contracts；`NACP-Session` 负责 progress / result 对客户端的 stream。
 - v1 必须支持 **TypeScript-first** 的能力执行路径；是否未来出 WASM，不影响当前接口设计。
+- fake bash 不应从零再造一套 shell runtime；第一版应明确建立在 `just-bash` 的 **browser entry + `Bash` + `defineCommand` / `customCommands`** 机制之上，把解析与命令外形复用下来，再路由到 capability plan。
 
 ### 0.3 显式排除的讨论范围
 
@@ -67,7 +68,7 @@ README 与 fake bash 分析已经把方向说清楚了：
 | **Approval Gate** | capability 运行前的显式许可检查点 | 可以来自 policy、hooks、user approval |
 | **Capability Progress** | 执行过程中的增量状态 | 后续映射为 `session.stream.event` |
 | **Virtual Git Subset** | 对 git 工作流先验的最小兼容层 | 不是完整 git runtime |
-| **Fake Bash Adapter** | 将命令文本映射到 capability plan 的适配层 | 不是完整 shell 内核 |
+| **Fake Bash Adapter** | 将命令文本映射到 capability plan 的适配层 | 第一版基于 just-bash browser entry / customCommands，而不是自写独立 shell |
 
 ### 1.3 参考调查报告
 
@@ -351,7 +352,9 @@ README 与 fake bash 分析已经把方向说清楚了：
 - **输入**：bash-shaped command / structured command
 - **输出**：capability plan
 - **主要调用者**：LLM 产生的 tool call、用户命令输入
-- **核心逻辑**：只做解析/映射/参数校验，不直接执行
+- **核心逻辑**：
+  - 复用 `just-bash` browser entry 提供的 `Bash`、`defineCommand`、`customCommands` 与受限命令表做“外形兼容”
+  - 每个命令实现都只负责把参数整理成 capability plan，不直接持有宿主真相
 - **边界情况**：不支持的命令必须显式拒绝，不做模糊 fallback
 - **一句话收口目标**：✅ **命令表面与能力真相完全分离。**
 
@@ -378,7 +381,7 @@ README 与 fake bash 分析已经把方向说清楚了：
 - **输入**：target-specific execution output
 - **输出**：normalized progress / result / error / cancel
 - **主要调用者**：session stream adapter、audit sink
-- **核心逻辑**：统一字段、统一错误分类、统一 progress shape
+- **核心逻辑**：统一字段、统一错误分类、统一 progress shape；并明确区分 **transport-level progress stream** 与最终 `tool.call.response`
 - **边界情况**：结果过大、需要 artifact persistence、长时任务断线恢复
 - **一句话收口目标**：✅ **任何 capability 的输出都能走同一条 session/event 路。**
 
@@ -387,9 +390,33 @@ README 与 fake bash 分析已经把方向说清楚了：
 - **输入**：第一版命令/能力需求
 - **输出**：`pwd` / `ls` / `cat` / `write` / `rg` / `curl` / `ts-exec`
 - **主要调用者**：fake bash adapter、LLM tools
-- **核心逻辑**：优先支撑真实开发/调试/验证场景
+- **核心逻辑**：
+  - 优先支撑真实开发/调试/验证场景
+  - `rg` 在 Worker / isolate 内不是 native ripgrep：第一版应明确走 **纯 TS 命名空间扫描** 或 **service-binding search worker**，而不是承诺真实 `rg` 二进制
 - **边界情况**：写能力与网络能力的 approval 默认值要比读能力更严格
 - **一句话收口目标**：✅ **最小能力面足以驱动第一轮端到端 session 验证。**
+
+### 7.2a `tool.call.*` / progress contract 对齐矩阵
+
+> `Capability Runtime` 不只是“执行工具”，它还是 `NACP-Core` tool-call contract 的主要承接层。
+
+| contract | capability runtime 责任 | 说明 |
+|----------|-------------------------|------|
+| `tool.call.request` | 由 registry 校验后的 capability plan 生成 | `tool_name` / `tool_input` 是对外 wire shape，不是内部执行真相 |
+| `NacpProgressResponse.progress` | 作为 transport-level 增量流被消费 | progress 不是独立 Core message type，而是 `ReadableStream<NacpEnvelope>` |
+| `tool.call.response` | 把 target output 归一成 ok/error 结果 | 再映射到 `tool.call.result` session event |
+| `tool.call.cancel` | 将 kernel 的 cancel / timeout / interrupt 转成 target cancel | 本地 target 用 `AbortSignal`，远端 target 继续走 Core cancel |
+| `system.error` | 对 transport / target 异常做统一 error normalization | 避免 capability target 泄漏宿主异常形状 |
+
+### 7.2b 推荐的 execution route
+
+| capability family | v1 推荐 target | 原因 |
+|-------------------|----------------|------|
+| `pwd` / `ls` / `cat` / `write` | `local-ts` | 直接跑在虚拟 workspace namespace 上最简单 |
+| `rg` | `local-ts` for small mounted workspace; `service-binding` for larger/remote search | isolate 没有原生 ripgrep，必须主动声明降级路径 |
+| `curl` | `local-ts` 受控 fetch 或 `service-binding` 网络 worker | 必须保留 CF/策略层治理 |
+| `ts-exec` | `local-ts` 受限执行器 | 这是 Worker-native 的核心能力之一 |
+| browser / external specialized ops | `service-binding` | 避免把浏览器或重能力直接塞进 session isolate |
 
 ### 7.3 非功能性要求
 
@@ -401,6 +428,15 @@ README 与 fake bash 分析已经把方向说清楚了：
 ---
 
 ## 8. 可借鉴的代码位置清单
+
+### 8.0 来自已冻结的 NACP 包
+
+| 文件:行 | 内容 | 借鉴点 | 备注 |
+|---------|------|--------|------|
+| `packages/nacp-core/src/messages/tool.ts:4-36` | `tool.call.*` schema | tool wire shape 的 source of truth | 本文 7.2a 直接对齐 |
+| `packages/nacp-core/src/transport/service-binding.ts:1-77` | `ServiceBindingTransport` | validate + tenant boundary + admissibility + progress stream | capability 远端执行优先复用 |
+| `packages/nacp-core/src/transport/types.ts:28-31` | `NacpProgressResponse` | progress 是 transport-level stream，不是独立 message type | 本文 F5 / 7.2a 直接引用 |
+| `packages/nacp-session/src/stream-event.ts:10-25` | `tool.call.progress` / `tool.call.result` | capability 结果的 client-visible 外形 | session 映射应对齐 |
 
 ### 8.1 来自 mini-agent
 
@@ -417,10 +453,12 @@ README 与 fake bash 分析已经把方向说清楚了：
 | `context/codex/codex-rs/tools/src/tool_registry_plan.rs:67-260` | registry plan / handler kind / approval-aware assembly | 先 registry、后装配 | 强烈借鉴 |
 | `context/codex/codex-rs/exec-server/src/sandboxed_file_system.rs:28-240` | sandbox context 路由文件系统能力 | execution target 与 sandbox/policy 分层 | 借鉴 execution target 思想 |
 
-### 8.3 来自 claude-code
+### 8.3 来自 just-bash 与 claude-code
 
 | 文件:行 | 内容 | 借鉴点 | 备注 |
 |---------|------|--------|------|
+| `context/just-bash/src/browser.ts:1-62` | browser-compatible entry exports | 证明 just-bash 有浏览器入口可复用 | 直接支持本设计的 vendor 策略 |
+| `context/just-bash/src/custom-commands.ts:29-67` | `defineCommand` / lazy custom command | fake bash 命令注册应以命令映射能力 plan 为主 | 强烈借鉴 |
 | `context/claude-code/tools.ts:253-389` | tool pool 组装与 deny filtering | tool pool 中心化 + pre-filter deny rules | 强烈借鉴 |
 | `context/claude-code/services/tools/toolExecution.ts:126-245` | permission/hook/telemetry 与 tool execution 串联 | capability execution 不只是纯函数调用 | 借鉴 side-effect seam |
 | `context/claude-code/utils/toolResultStorage.ts:26-199` | 大工具结果持久化 | tool results 需要 artifact/persistence seam | 强烈借鉴 |
@@ -472,3 +510,4 @@ Capability Runtime 在 nano-agent 中会以一个**中央 registry + 多 target 
 | 版本 | 日期 | 修改者 | 主要变更 |
 |------|------|--------|----------|
 | v0.1 | `2026-04-16` | `GPT-5.4` | 初稿 |
+| v0.2 | `2026-04-16` | `GPT-5.4` | 根据 Kimi / Opus 审核补充 just-bash vendor 对齐、tool.call.* 映射与 `rg` 执行路径 |

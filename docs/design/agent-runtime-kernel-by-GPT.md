@@ -32,6 +32,7 @@
 - `Hooks` 是治理与扩展层；`LLM Wrapper` 是模型执行边界；两者都应被 Runtime Kernel 调度，而不是反向定义 Runtime Kernel。
 - v1 的 nano-agent 仍以 **单 agent、单线程、单活跃 turn** 为核心正确性模型。
 - ack / heartbeat 已在 `nacp-session` 收口为 **caller-managed health enforcement**，因此 session DO lifecycle 必须有显式 tick/health 检查点。
+- runtime kernel 负责构建 checkpoint payload，但**何时 flush / restore 由 session DO lifecycle 决定**；其 checkpoint 片段至少要兼容 `SessionWebSocketHelper.checkpoint()/restore()` 已冻结的 replay / stream state。
 
 ### 0.3 显式排除的讨论范围
 
@@ -64,7 +65,7 @@
 | **Reducer** | 对 runtime state 做唯一合法状态转移的中心逻辑 | 不允许各模块私改状态 |
 | **Runtime Tick** | session DO 主动执行的一次 health / schedule / flush 检查点 | 用于 caller-managed health enforcement |
 | **Delegate** | 由 kernel 调用、但不由 kernel 实现的外部单元 | 如 LLM executor、tool executor、hook dispatcher |
-| **Checkpoint** | 为 hibernation / resume 写出的最小恢复快照 | 不是全量数据库导出 |
+| **Checkpoint** | 为 hibernation / resume 写出的最小恢复快照 | 至少包含已冻结的 session websocket replay / stream state 片段 |
 | **Interrupt** | 中断当前 turn 的信号 | 包括 cancel、timeout、permission wait、compact required |
 
 ### 1.3 参考调查报告
@@ -359,6 +360,12 @@
   1. SessionState 持有跨 turn 持续状态
   2. TurnState 持有 pending input / pending approval / in-flight step 等短期状态
   3. turn 结束后，TurnState 只归档必要摘要，其余清空
+- **建议最小字段槽位**：
+
+| 状态层 | 第一版应冻结的字段族 | 说明 |
+|--------|----------------------|------|
+| `SessionState` | `historyRefs` / `contextLayers` / `permissionSnapshot` / `usageSummary` / `checkpointMeta` / `sessionReplayState` | 跨 turn 真相，且要能和 session websocket checkpoint 拼起来 |
+| `TurnState` | `pendingInput` / `pendingApprovals` / `activeStep` / `inFlightLlm` / `inFlightCapability` / `waitingHook` / `interruptReason` | 单 turn 热状态，不允许无界膨胀进 SessionState |
 - **边界情况**：
   - resume 后需要重建 TurnState 的最小合法形式
   - compact 后 SessionState 的 history 不是简单追加，而是边界替换
@@ -418,9 +425,45 @@
 - **主要调用者**：session DO runtime
 - **核心逻辑**：
   - 定义什么能持久化、什么只能丢弃
+  - kernel 只产出 runtime fragment；真正的 flush / restore 时机由 session DO lifecycle 在 hibernation、alarm tick、显式 flush 时决定
+  - `checkpoint payload` 必须把 kernel fragment 与 `SessionWebSocketHelper.checkpoint()/restore()` 已冻结的 replay / seq state 组合起来，而不是另起一套 session checkpoint 形状
 - **边界情况**：
   - in-flight tool call 不应被伪装成“完全可恢复”
 - **一句话收口目标**：✅ **checkpoint 与 restore 的语义边界不再含糊。**
+
+### 7.2a `NACP-Core` Message Type -> Kernel 行为对齐矩阵
+
+> 这张表的目的不是要求 kernel 直接解析所有原始 envelope；而是冻结 **这些 Core message 在 runtime 语义上分别意味着什么**，避免 hooks / capability / compact / skill 将来各说各话。
+
+| `NACP-Core` message type | 主责任者 | kernel 触发/消费点 | 主要状态变化 |
+|--------------------------|----------|--------------------|--------------|
+| `tool.call.request` | kernel -> capability runtime | `StepScheduler` 决定进入 `run-tool` 时产生 | `TurnState.inFlightCapability` 建立，请求进入可取消态 |
+| `tool.call.response` | capability runtime -> kernel | capability delegate 完成时消费 | 清除 `inFlightCapability`，把结果写回 turn output / artifact promotion seam |
+| `tool.call.cancel` | kernel / session DO | `InterruptController` 判定 cancel / timeout / health failure 时产生 | 当前 capability 进入取消中，turn 转入 interrupt or cleanup 分支 |
+| `hook.emit` | kernel -> hooks runtime | `pre-tool` / `post-tool` / `pre-compact` / `stop` 等触发点产生 | 若是 blocking hook，`TurnState.waitingHook` 建立 |
+| `hook.outcome` | hooks runtime -> kernel | hook delegate 返回时消费 | 继续 / block / stop / rewrite input |
+| `context.compact.request` | kernel -> compact runtime | scheduler 判定 `compact-required` 时产生 | turn 进入 compact phase，等待 summary 输出 |
+| `context.compact.response` | compact runtime -> kernel | compact delegate 返回时消费 | SessionState 的 compact boundary / summary refs 被替换，turn 继续 |
+| `system.error` | 任意 delegate -> kernel | 任意 delegate 失败或 transport 报错时消费 | 统一归一到 `InterruptReason` / `system.notify` / audit |
+| `audit.record` | kernel / delegates | 与关键状态转移并行产生 | 不直接推进状态，但必须与 runtime event timeline 对齐 |
+| `skill.invoke.request` | kernel -> skill runtime（预留） | 后续 skill runtime 接入时由 scheduler 产生 | 与 capability 类似，但保持 skill 独立命名空间 |
+| `skill.invoke.response` | skill runtime -> kernel（预留） | skill delegate 完成时消费 | 清理 waiting skill 状态并恢复 scheduler |
+
+### 7.2b `RuntimeEvent` -> `session.stream.event` kind 对齐矩阵
+
+> `packages/nacp-session/src/stream-event.ts` 已冻结客户端侧 event catalog；kernel 需要先把内部 runtime 事件命名收敛到这个集合。
+
+| RuntimeEvent | `session.stream.event.kind` | 说明 |
+|--------------|-----------------------------|------|
+| `turn.started` | `turn.begin` | 新 turn 真正进入 active 状态时发出 |
+| `llm.delta` | `llm.delta` | 文本 / thinking / tool_use delta 都走这一类 |
+| `tool.progress` | `tool.call.progress` | capability progress 通过统一 session stream 外送 |
+| `tool.result` | `tool.call.result` | capability 成功/失败结果统一映射 |
+| `hook.broadcast` | `hook.broadcast` | 客户端需要看到 hook 影响时使用 |
+| `phase.changed` / `partial-output` | `session.update` | 用于 phase 与局部输出更新 |
+| `compact.started` / `compact.completed` / `compact.failed` | `compact.notify` | compact 生命周期专用 |
+| `interrupt.notice` / `error.notice` | `system.notify` | 不把内部错误原样裸露给 client |
+| `turn.finished` | `turn.end` | turn 结束与 usage 收口 |
 
 ### 7.3 非功能性要求
 
@@ -432,6 +475,17 @@
 ---
 
 ## 8. 可借鉴的代码位置清单
+
+### 8.0 来自已冻结的 NACP 包
+
+| 文件:行 | 内容 | 借鉴点 | 备注 |
+|---------|------|--------|------|
+| `packages/nacp-core/src/messages/tool.ts:4-36` | `tool.call.*` message schema | tool/capability 的 message 真相 | 本文 7.2a 直接对齐 |
+| `packages/nacp-core/src/messages/hook.ts:4-30` | `hook.emit` / `hook.outcome` | hook 触发与返回 contract | 本文 7.2a 直接对齐 |
+| `packages/nacp-core/src/messages/context.ts:5-30` | `context.compact.*` schema | compact 边界 message 真相 | 本文 7.2a 直接对齐 |
+| `packages/nacp-core/src/messages/system.ts:5-28` | `system.error` / `audit.record` | 错误与审计 message 真相 | audit 不直接驱动状态 |
+| `packages/nacp-session/src/stream-event.ts:10-95` | `session.stream.event` kind catalog | runtime event 的 client-visible 外形 | 本文 7.2b 直接对齐 |
+| `packages/nacp-session/src/websocket.ts:174-239` | `SessionWebSocketHelper.checkpoint()/restore()` | websocket replay / seq checkpoint 片段 | 本文 F6 必须兼容 |
 
 ### 8.1 来自 mini-agent
 
@@ -504,3 +558,4 @@ Agent Runtime Kernel 在 nano-agent 中将以一个**小而硬的 runtime core**
 | 版本 | 日期 | 修改者 | 主要变更 |
 |------|------|--------|----------|
 | v0.1 | `2026-04-16` | `GPT-5.4` | 初稿 |
+| v0.2 | `2026-04-16` | `GPT-5.4` | 根据 Kimi / Opus 审核补充 NACP 对齐矩阵、状态槽位与 checkpoint 事实边界 |

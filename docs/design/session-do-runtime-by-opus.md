@@ -180,38 +180,47 @@ Session DO Runtime 是 nano-agent 的**核心 actor**——所有其他功能簇
 
 ### 4.1 mini-agent 的做法
 
-- **实现概要**：单进程 Python，`Agent` class 持有 `messages: list[Message]`，`run()` 是一个 while loop。没有持久化、没有 actor、没有恢复。
-- **值得借鉴**：`Agent.run()` 的极简结构——"call LLM → check tool calls → execute tools → append → repeat"。这是 kernel 的最小形态。
-- **不打算照抄的**：完全无持久化、无 cancel、无 checkpoint。
+- **实现概要**：单进程 Python，`Agent.__init__`（`agent.py:48-84`）持有：`self.llm: LLMClient`、`self.tools: dict[str, Tool]`、`self.messages: list[Message]`、`self.max_steps=50`、`self.token_limit=80000`、`self.cancel_event: Optional[asyncio.Event]`、`self.api_total_tokens: int`。`run()`（`agent.py:321-340`）是一个 async while loop，接受 `cancel_event` 做协作式取消。
+- **值得借鉴**：
+  - **`cancel_event` + `_check_cancelled()` + `_cleanup_incomplete_messages()`**（`agent.py:90-121`）：每个 step 之间检查取消标志，取消时只删"最后一条 assistant + 悬空 tool result"。这个"只删未完成的"模式直接适用于 Session DO 的 abort 路径。
+  - **`_summarize_messages()` 的 user-boundary 切分**（`agent.py:180-259`）：保留所有 user message，只压中间的 agent/tool 序列。这是 compact trigger 的最简模型。
+- **不照抄的**：完全无持久化——进程退出会话即丢。log 只有 plain-text（`logger.py:11-40`），不可程序化 replay。
 
 ### 4.2 codex 的做法
 
-- **实现概要**：Rust workspace，`Codex` / `Session` / `TurnContext` 三层状态；rollout JSONL 持久化；sub-agent 通过 `codex_delegate.rs` fork 独立 `Codex` 实例。
-- **值得借鉴**：
-  - **Session / TurnContext 分离**：Session 是长期状态（跨 turn），TurnContext 是短期状态（单 turn 内）。这个分层对 nano-agent 的 DO storage 结构有直接启发。
-  - **rollout JSONL 的流式追加**：每个 event 一行 JSON，既可 replay 又可 audit。
-  - **`forward_events()` 把子 agent 事件转发到主 session**：对 nano-agent 来说，这等价于"tool worker 的 progress 如何通过 service binding 的 ReadableStream 回到 Session DO"。
-- **不打算照抄的**：Rust 进程内的 `Mutex<SessionState>` 模型（我们用 DO storage）；sub-agent 的 `ForkStrategy`（v1 不做 sub-agent）。
+- **实现概要**：Rust workspace。核心状态分三层：
+  - **`CodexThread`**（`codex_thread.rs:51-71`）：持有 `Codex` 实例 + `rollout_path: Option<PathBuf>` + `out_of_band_elicitation_count`，对外暴露 `submit(op)` / `next_event()` / `agent_status()`
+  - **`StoredThread`**（`thread-store/types.rs:135-178`）：持久化元数据含 `thread_id`、`forked_from_id`、`preview`、`model`、`cwd`、`approval_mode`、`sandbox_policy`、`token_usage`、`first_user_message`、`git_info`、`history: Option<StoredThreadHistory>`
+  - **`ThreadConfigSnapshot`**（`codex_thread.rs:37-49`）：per-turn 快照含 `model`、`model_provider_id`、`approval_policy`、`sandbox_policy`、`reasoning_effort`、`personality`、`session_source`
+- **值得借鉴（直接复用模式）**：
+  - **Session / TurnContext 分层**：`StoredThread` = 跨 turn 持久态（→ DO storage），`ThreadConfigSnapshot` = per-turn 临时态（→ DO 内存）。这个分层直接映射到 nano-agent 的 `state.storage.put("session:*")` vs isolate-local 变量。
+  - **RolloutRecorder 的 JSONL 格式**（`recorder.rs:74-81`）：每行一个 `RolloutItem` enum（`SessionMeta` / `ResponseItem` / `CompactedItem` / `TurnContext` / `EventMsg`）。rollout 文件名 `rollout-{ts}-{uuid}.jsonl`（`metadata.rs:32-33`）。这是 nano-agent 审计日志的直接模板。
+  - **Thread resume 参数**（`thread-store/types.rs:47-72`）：`ResumeThreadRecorderParams { thread_id, include_archived, event_persistence_mode }` + `LoadThreadHistoryParams { thread_id, include_archived }`。nano-agent 的 `session.resume` body 应包含类似字段。
+  - **Auto-compact trigger**（`codex.rs:6404-6724`）：`model_info.auto_compact_token_limit()` 阈值，在 post-sampling 和 pre-turn 两处检查。`CompactionPhase::MidTurn`（`BeforeLastUserMessage` injection）vs `PreTurn`（`DoNotInject`）。
+  - **Rollout item sanitization**（`recorder.rs:189-212`）：command output 截断到 10,000 bytes。nano-agent 的 audit event 也需要类似的 truncation。
+- **不照抄的**：`Mutex<SessionState>` 内存锁（我们用 DO storage 的单实例保证）；`ForkStrategy`（v1 无 sub-agent）；SQLite state DB backfill（`metadata.rs:136-355`，v1 不引入 D1）。
 
 ### 4.3 claude-code 的做法
 
-- **实现概要**：TypeScript，`AppState` Zustand-style store，`query.ts` 的 agent loop，`forkedAgent.ts` 的 `CacheSafeParams` 保护子 agent 不撞碎父 cache。
-- **值得借鉴**：
-  - **`CacheSafeParams` 的 freeze-on-fork 心智**：session 分裂时冻结 system prompt + tool schema 保证 cache key 稳定。nano-agent 的 DO checkpoint 应该有类似的"system context snapshot"。
-  - **`runToolsConcurrently()` 按 `isConcurrencySafe` 划分批次**：这是 kernel 的 step 调度逻辑的参考。
-  - **`flushSessionStorage()` 在进程退出时清盘**：类似 DO `webSocketClose` / `alarm` 时的 checkpoint。
-- **不打算照抄的**：React-based TUI / AppStateProvider（我们用 WebSocket + DO storage）；`tools.ts` 里 40+ 工具的 UI 渲染耦合。
+- **实现概要**：TypeScript。`AppState`（`AppStateStore.ts:89-452`）是 `DeepImmutable` 包裹的中央 store，含 `settings`、`mainLoopModel`、`tasks: Record<string, TaskState>`（mutable）、`agentNameRegistry: Map`、`fileHistory`、`mcp`（clients/tools/commands/resources）、`sessionHooks`、`speculation`、`denialTracking`、`teamContext`。Store 接口（`store.ts:4-8`）只有 `getState()` / `setState(updater)` / `subscribe(listener)`。
+- **值得借鉴（直接复用模式）**：
+  - **AutoCompactTrackingState**（`autoCompact.ts:51-60`）：`compacted: boolean`、`turnCounter`、`turnId`、`consecutiveFailures`。Circuit breaker 在 `MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES=3` 次后停止自动 compact。`getAutoCompactThreshold()`（`autoCompact.ts:72-91`）= `effectiveContextWindow - AUTOCOMPACT_BUFFER_TOKENS(13_000)`。这整套 compact 状态机直接适用于 nano-agent 的 Session DO。
+  - **Transcript recording**（`sessionStorage.ts`）：entry types 含 `user / assistant / attachment / system / progress`（progress 排除在 parentUuid chain 外以避免 fork 孤儿）。`flushSessionStorage()` 锁定后批量追加。这对应 DO `webSocketClose` 时的 checkpoint 逻辑。
+  - **Cost tracking per-session per-model**（`cost-tracker.ts:71-174`）：`lastCost`、`lastAPIDuration`、`lastToolDuration`、per-model `input/output/cache tokens + cost in USD`。`restoreCostStateForSession()` 在 resume 时重新水合。nano-agent 的 DO checkpoint 应包含类似的 usage tracking。
+  - **Settings 4 层 cascade**（`settings.ts:58-199`）：managed → user → project → local，parseSettingsFile() 缓存 + clone-on-return 防 mutation。这对应 nano-agent 的 KV shared config 多层合并。
+- **不照抄的**：React `DeepImmutable` store（我们用 DO storage KV API）；`AppStateStore` 的 400+ 行字段定义（我们的 checkpoint 更薄）；工具侧 40+ 工具的 UI 渲染耦合。
 
 ### 4.4 横向对比速查表
 
 | 维度 | mini-agent | codex | claude-code | **nano-agent 倾向** |
 |------|-----------|-------|-------------|---------------------|
-| 会话 actor 模型 | 无（单进程） | `Codex` / `Session` 类 | `AppState` store | **Durable Object instance** |
-| 持久化 | 无 | JSONL rollout | sessionStorage | **DO state.storage checkpoint** |
-| 恢复能力 | 无 | rollout replay | 无 | **DO hibernation + checkpoint/restore** |
-| WebSocket | 无 | 无 | 无 | **一等公民** |
-| Turn loop 宿主 | `Agent.run()` while | `codex.rs:343+` while | `query.ts` agent loop | **Session DO 内嵌 kernel** |
-| 子系统组装 | 构造函数注入 tools | Rust trait + config | React context + lazy import | **DO constructor 注入 composition** |
+| 会话 actor 模型 | `Agent` class（`agent.py:48`） | `CodexThread`（`codex_thread.rs:51`） | `AppState` store（`AppStateStore.ts:89`） | **Durable Object instance** |
+| 持久化 | 无 | JSONL rollout（`recorder.rs:74`） | sessionStorage（`sessionStorage.ts`） | **DO state.storage checkpoint** |
+| 恢复 | 无 | `LoadThreadHistoryParams`（`types.rs:67`） | `restoreCostStateForSession()`（`cost-tracker.ts:87`） | **DO hibernation + checkpoint/restore** |
+| Compact trigger | `token_limit=80000` 单阈值 | `auto_compact_token_limit()`（`codex.rs:6404`） | `effectiveWindow - 13000` + circuit breaker（`autoCompact.ts:72`） | **codex 模型 + claude-code circuit breaker** |
+| Turn loop | `run()` while step < max（`agent.py:343`） | `while step < max_steps`（`codex.rs:343`） | `query.ts` agent loop | **Session DO 内嵌 kernel** |
+| Cancel | `cancel_event: asyncio.Event` | API abort signal | `AbortController` | **DO 侧 cancel event → kernel abort** |
+| 子系统组装 | 构造函数注入 tools | Rust trait + config + `ThreadConfigSnapshot` | React context + lazy import | **DO constructor 注入 composition** |
 
 ---
 
@@ -222,9 +231,10 @@ Session DO Runtime 是 nano-agent 的**核心 actor**——所有其他功能簇
 - **[S1]** Worker entry point：fetch handler，routing WebSocket upgrade → DO
 - **[S2]** Session DO class 定义：`export class NanoSessionDO implements DurableObject`
 - **[S3]** WebSocket accept + attach（消费 `@nano-agent/nacp-session` 的 `SessionWebSocketHelper`）
-- **[S4]** Session state machine（`unattached → attached → turn_running → ended`）使用 `@nano-agent/nacp-session` 的 phase gate
-- **[S5]** Agent turn loop 的宿主编排：接收用户输入 → 调 kernel → 调 LLM → 调 tools → push stream events → 循环或结束
-- **[S6]** DO storage checkpoint/restore：`webSocketClose` 时 checkpoint，`webSocketMessage` (resume) 时 restore
+- **[S4]** Session state machine（`unattached → attached → turn_running → ended`）使用 `@nano-agent/nacp-session` 的 `assertSessionPhaseAllowed()`（**不走 Core 的 `isMessageAllowedInPhase`**——Session WebSocket profile 的 phase 由 Session 包自己维护）
+- **[S5]** Agent turn loop 的宿主编排：Session DO **驱动 kernel 的 step loop 并向其注入 delegates**（不是 `kernel.runTurn()` 单函数黑盒——kernel 是 step-driven、可中断、可 checkpoint 的 core，Session DO 在每一步之间做 health check / event dispatch / checkpoint 决策）。**v1 invariant：同一时刻最多一个 active turn（single-active-turn）。**
+- **[S5b]** Turn ingress contract（**尚未冻结，需要在 action-plan 前决定**）：当前 NACP-Session 的 7 个消息类型中，"正常用户 turn 输入"没有明确的协议入口。v1 倾向方案：`session.start.body.initial_input` 承载首条输入；后续 turn 输入通过新增的 `session.prompt` 消息类型承载（或复用 `session.start` 的 `initial_input` 语义）。**此项必须在进入 action-plan 前由业主确认。**
+- **[S6]** DO storage checkpoint/restore：checkpoint 触发点**不限于 `webSocketClose`**——turn 结束、compact 完成、tool inflight 状态变更、session end 都可能触发。具体 checkpoint seam 由 kernel + workspace snapshot 共同定义。`webSocketClose` 只是触发点之一。
 - **[S7]** Alarm handler：v1 仅用于 heartbeat liveness check（`checkHeartbeatHealth()`）
 - **[S8]** Ingress authority stamping：消费 `normalizeClientFrame()` 注入 tenant context
 - **[S9]** Hook emit integration：在 turn loop 的 PreToolUse / PostToolUse / UserPromptSubmit / Stop / PreCompact / PostCompact 点调用 HookDispatcher
@@ -316,23 +326,37 @@ Session DO Runtime 是 nano-agent 的**核心 actor**——所有其他功能簇
 |------|--------|
 | `packages/nacp-core/src/transport/service-binding.ts` | `ServiceBindingTransport` — DO 调用外部 skill/tool worker |
 | `packages/nacp-core/src/tenancy/boundary.ts` | `verifyTenantBoundary()` — DO 的每条消息入口校验 |
-| `packages/nacp-core/src/admissibility.ts` | `checkAdmissibility()` with `session_phase` — DO 的 phase-aware admissibility |
+| `packages/nacp-core/src/admissibility.ts` | `checkAdmissibility()` — 仅用于 Core 内部消息的 deadline / capability scope 检查。**注意：Session/WebSocket phase legality 不走 Core admissibility，走 `@nano-agent/nacp-session` 的 `assertSessionPhaseAllowed()`** |
 
 ### 8.3 来自 codex
 
-| 文件 | 借鉴点 |
-|------|--------|
-| `context/codex/codex-rs/core/src/codex.rs:343-514` | Turn loop 结构：while step < max_steps |
-| `context/codex/codex-rs/core/src/codex.rs:840` | Session state 分离 |
-| `context/codex/codex-rs/rollout/src/recorder.rs:65` | JSONL 流式追加作为 audit trail |
+| 文件:行 | 借鉴点 | 怎么用 |
+|---------|--------|--------|
+| `codex-rs/core/src/codex.rs:343-514` | Turn loop `while step < max_steps` + cancel check + tool exec + event emit | kernel 的主循环骨架 |
+| `codex-rs/core/src/codex.rs:6404-6724` | Auto-compact 双检查点（post-sampling + pre-turn）+ `CompactionPhase` enum | Session DO 的 compact trigger 逻辑 |
+| `codex-rs/core/src/codex_thread.rs:37-71` | `ThreadConfigSnapshot`（per-turn 临时态）vs `CodexThread`（跨 turn 持久态）的分层 | DO storage 的 checkpoint 分层 |
+| `codex-rs/thread-store/src/types.rs:47-72` | `ResumeThreadRecorderParams` / `LoadThreadHistoryParams` 的 resume 参数 | `session.resume` body 设计 |
+| `codex-rs/thread-store/src/types.rs:135-178` | `StoredThread` 的 22 个字段（含 git_info, token_usage, first_user_message） | DO checkpoint 的字段清单 |
+| `codex-rs/rollout/src/recorder.rs:74-81,189-212` | `RolloutRecorder` JSONL + output 10KB 截断 | 审计日志格式 + trace event truncation |
+| `codex-rs/rollout/src/metadata.rs:16-62` | `SessionMetaLine` 含 model_provider, git info, memory_mode | checkpoint 的 metadata 字段 |
 
 ### 8.4 来自 claude-code
 
-| 文件 | 借鉴点 |
-|------|--------|
-| `context/claude-code/query.ts` | agent loop + normalizeMessagesForAPI + runTools |
-| `context/claude-code/utils/forkedAgent.ts` | `CacheSafeParams` freeze-on-fork 心智 |
-| `context/claude-code/state/AppStateStore.ts` | 中央 store pattern |
+| 文件:行 | 借鉴点 | 怎么用 |
+|---------|--------|--------|
+| `claude-code/state/AppStateStore.ts:89-452` | `AppState` 的字段集（mainLoopModel, tasks, mcp, sessionHooks, speculation, denialTracking） | Session DO 需要 checkpoint 哪些字段的参考 |
+| `claude-code/services/compact/autoCompact.ts:51-239` | `AutoCompactTrackingState`（circuit breaker, consecutiveFailures=3）+ `getAutoCompactThreshold()`（`effectiveWindow - 13000`） | **借鉴 circuit breaker 模式和阈值建模方式**——具体阈值需要等 nano-agent 的 LLM wrapper / workspace runtime / Session DO 全部落地后，根据实际 token 分布重新校准 |
+| `claude-code/cost-tracker.ts:71-174` | Per-session per-model usage tracking（input/output/cache tokens + cost USD）+ `restoreCostStateForSession()` | checkpoint 应含 usage tracking |
+| `claude-code/utils/sessionStorage.ts` | `flushSessionStorage()` 锁定后批量追加 + entry types | DO checkpoint 时的 flush 逻辑 |
+| `claude-code/utils/settings/settings.ts:58-199` | 4 层 settings cascade（managed→user→project→local）+ parseSettingsFile 缓存+clone-on-return | KV shared config 的层级模型 |
+
+### 8.5 来自 mini-agent
+
+| 文件:行 | 借鉴点 | 怎么用 |
+|---------|--------|--------|
+| `mini_agent/agent.py:90-121` | `_check_cancelled()` + `_cleanup_incomplete_messages()`（只删未完成的 assistant + tool） | Session DO 的 abort 路径 |
+| `mini_agent/agent.py:180-259` | `_summarize_messages()` 的 user-boundary 切分策略 | compact 的最简模型 |
+| `mini_agent/agent.py:48-84` | `Agent.__init__` 的 5 个核心字段（llm, tools, messages, max_steps, token_limit） | Session DO 的最小状态集 |
 
 ---
 
@@ -396,8 +420,43 @@ NanoSessionDO.alarm()
   → state.storage.setAlarm(next interval)
 ```
 
-### B. 版本历史
+### B. 跨文档断点待决事项（Cross-Doc Open Items）
+
+> 以下断点由 GPT 和 Kimi 的 cross-review 识别，需在 Stage C 联审中冻结。
+
+**B.1 RuntimeEventEmitter → session.stream.event 映射表**
+
+GPT 的 `agent-runtime-kernel` 定义了 `RuntimeEventEmitter` 产出 runtime events；NACP-Session 已实现 9 种 `SessionStreamEventBody` kinds。以下是候选 1:1 映射（需联审确认）：
+
+| Kernel Runtime Event | Session Stream Event Kind | 说明 |
+|----------------------|---------------------------|------|
+| turn.started | `turn.begin` | kernel 开始一个 turn |
+| turn.completed | `turn.end` | kernel 完成一个 turn |
+| llm.delta | `llm.delta` | LLM 流式 token |
+| tool.progress | `tool.call.progress` | tool 执行中间状态 |
+| tool.completed | `tool.call.result` | tool 执行完成 |
+| hook.broadcast | `hook.broadcast` | hook outcome 通知 |
+| compact.boundary | `compact.notify` | compact 边界变更 |
+| system.error | `system.notify` | 系统级通知（severity=error） |
+| session.update | `session.update` | session 元数据变更 |
+
+**B.2 ArtifactRef 与 NacpRefSchema 的关系**
+
+GPT 的 `workspace-context-artifacts` 定义了 `ArtifactRef`；NACP-Core 已实现 `NacpRefSchema`（`{kind, binding, team_uuid, key, role}`）。候选决策：
+
+- `ArtifactRef` 的**核心结构 = NacpRefSchema 实例**（`role: "attachment" | "output"`）
+- `ArtifactRef` 可在 `NacpRef` 基础上增加业务字段（`prepared`, `preview_url`, `content_type`, `size_bytes`），放在 `NacpRef.extra` 或一个 typed wrapper 中
+- `storage-topology` 的 `workspace_refs: NacpRef[]` 因此可以直接存储 artifact refs
+
+**B.3 Compact 触发权归属**
+
+- **Kernel** 的 `StepScheduler` 预留 `compact-required` 的 `InterruptReason`，但 kernel 本身不直接调用 compact worker
+- **Session DO** 负责在 turn 边界检查 token 阈值（借鉴 claude-code `autoCompact` 策略），当阈值触发时，通过 NACP-Core `context.compact.request` 调用 compact worker，然后将结果重新注入 kernel
+- 这样 kernel 保持"纯逻辑"，Session DO 保持"宿主编排 + 资源管理"
+
+### C. 版本历史
 
 | 版本 | 日期 | 修改者 | 主要变更 |
 |------|------|--------|----------|
 | v0.1 | 2026-04-16 | Opus 4.6 | 初稿 |
+| v0.2 | 2026-04-16 | Opus 4.6 | 基于 GPT + Kimi review 修订：修正 Session/Core phase 边界(#1)、补 turn ingress contract(#2)、kernel 改为 step-driven(#5)、加 single-active-turn invariant(#6)、扩 checkpoint 触发点(#7)、compact 公式改为"借鉴"(#8)、types.ts→types.rs(#13)、加跨文档断点附录(#16/#17/#18) |

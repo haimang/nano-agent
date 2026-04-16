@@ -35,6 +35,7 @@ nano-agent 的宿主世界里没有真实本地文件系统，也不应该把“
 - llm-wrapper 已明确：大附件默认不走 inline binary，而走 **artifact staging / prepared artifact**。
 - `NACP-Session` 负责客户端事件流，不负责 workspace/object 本身的存储。
 - storage topology 还未最终冻结，因此本设计先定义 **语义层与对象边界**，不直接落数据库或物理 schema。
+- `ArtifactRef` 不应另起一套 wire 体系；它应是对 `NACP-Core` `NacpRef` 的语义化包装，用于表达 artifact-specific metadata 与使用约束。
 
 ### 0.3 显式排除的讨论范围
 
@@ -61,8 +62,8 @@ nano-agent 的宿主世界里没有真实本地文件系统，也不应该把“
 | 术语 | 定义 | 备注 |
 |------|------|------|
 | **Workspace** | 一个 session 看到的统一虚拟命名空间 | 不是宿主真实目录 |
-| **Mount** | 将某种 backend 映射到 workspace 某个路径前缀 | 如 `/workspace`、`/memories`、`/artifacts` |
-| **ArtifactRef** | 对大对象/附件/导出物的稳定引用 | 可以指向 R2、KV 导出的摘要、DO local object |
+| **Mount** | 将某种 backend 映射到 workspace 某个路径前缀 | 第一版应显式对齐 just-bash `MountableFs` 的 mount router 心智 |
+| **ArtifactRef** | 基于 `NacpRef` 的 artifact 语义包装 | 在 `NacpRef` 之上补 artifact kind / preview / prepared-state 等 metadata |
 | **Prepared Artifact** | 已完成预处理、适合被 LLM 或 tool 消费的 artifact | 如 OCR 文本、缩略图、摘要 |
 | **Context Layer** | 会进入模型或 runtime 的上下文层级 | 如 system、session、workspace、artifact summary、recent transcript |
 | **Compact Boundary** | context 被压缩/替换的明确边界 | 不能只是“随手删旧消息” |
@@ -338,7 +339,9 @@ nano-agent 的宿主世界里没有真实本地文件系统，也不应该把“
 - **输入**：mount config、session context、workspace operations
 - **输出**：统一的路径解析 / 读写 / list / stat 语义
 - **主要调用者**：capability runtime、kernel、hooks
-- **核心逻辑**：所有路径访问先经 mount router，再落 storage adapter
+- **核心逻辑**：
+  - 所有路径访问先经 mount router，再落 storage adapter
+  - 第一版实现应直接借鉴 just-bash `MountableFs` 的“最长前缀匹配 + mount point 不可互相嵌套冲突”模型，而不是重新发明另一套 namespace 规则
 - **边界情况**：readonly mounts、shared mounts、artifact pseudo-paths
 - **一句话收口目标**：✅ **workspace 路径不再依赖宿主目录真相。**
 
@@ -347,7 +350,9 @@ nano-agent 的宿主世界里没有真实本地文件系统，也不应该把“
 - **输入**：tool result、uploaded file、generated image、compact archive
 - **输出**：stable ref + metadata + preview/redaction info
 - **主要调用者**：llm-wrapper、session stream adapter、tool result promotion
-- **核心逻辑**：大对象与衍生物统一通过 ref 流通
+- **核心逻辑**：
+  - 大对象与衍生物统一通过 ref 流通
+  - `ArtifactRef` 的底层 wire 真相仍是 `NacpRef`；artifact 层只新增语义 metadata，而不另造一套跨服务 ref schema
 - **边界情况**：artifact 已准备/未准备、preview size、audience scope
 - **一句话收口目标**：✅ **大对象可以在系统内被一等公民式引用。**
 
@@ -374,7 +379,9 @@ nano-agent 的宿主世界里没有真实本地文件系统，也不应该把“
 - **输入**：compact trigger、当前上下文层
 - **输出**：compact input、boundary record、post-compact reinjection set
 - **主要调用者**：kernel、llm-wrapper、observability
-- **核心逻辑**：compact 前 strip / compact 后 rehydrate
+- **核心逻辑**：
+  - compact 前 strip / compact 后 rehydrate
+  - 对外 contract 应显式对齐 `context.compact.request` / `context.compact.response`：前者携带 `history_ref` 与 `target_token_budget`，后者以 `summary_ref` 与 token 统计回填
 - **边界情况**：附件剥离、tool results 转 ref、skill/memory 重注入
 - **一句话收口目标**：✅ **compact 成为可回放、可观测、可验证的正式阶段。**
 
@@ -383,9 +390,29 @@ nano-agent 的宿主世界里没有真实本地文件系统，也不应该把“
 - **输入**：workspace namespace、artifact refs、context summary、runtime metadata
 - **输出**：checkpoint/export bundle
 - **主要调用者**：session DO runtime、eval harness
-- **核心逻辑**：定义最小可恢复面
+- **核心逻辑**：
+  - 定义最小可恢复面
+  - snapshot builder 只产出 workspace/context fragment；真正何时写入 DO storage / KV / R2 由 session DO lifecycle 与后续 storage topology 决定
 - **边界情况**：in-flight writes、ephemeral progress、不该持久化的临时对象
 - **一句话收口目标**：✅ **workspace/context 的恢复边界被显式声明。**
+
+### 7.2a `NacpRef` / compact contract 对齐矩阵
+
+| 已冻结 contract | Workspace / Context / Artifacts 应如何对齐 | 说明 |
+|-----------------|--------------------------------------------|------|
+| `NacpRef` | 作为 `ArtifactRef` 的底层 wire truth | artifact 层只补语义 metadata，不另起 ref schema |
+| `context.compact.request.history_ref` | 指向待压缩历史/上下文对象的 `NacpRef` | compact 输入不应直接塞原始巨型 message array |
+| `context.compact.response.summary_ref` | 作为 compact 后 reinjection 的新 summary truth | `ContextAssembler` 应以它替换旧历史边界 |
+| `audit.record.ref` | 指向 snapshot / artifact / compact 结果等对象 | 让 observability 能回溯对象来源 |
+
+### 7.2b `WorkspaceSnapshot` -> session checkpoint 的责任边界
+
+| 层级 | 责任 |
+|------|------|
+| Workspace runtime | 生成 mount state / artifact refs / compact boundary / context summary 等 checkpoint fragment |
+| Agent runtime kernel | 决定何时请求 snapshot，以及哪些 turn-local 状态不能进入 snapshot |
+| Session DO runtime | 结合 websocket replay checkpoint、health state 与 workspace fragment，在 hibernation / alarm / explicit flush 时真正持久化 |
+| Storage topology | 之后再决定 fragment 分别落 DO storage / KV / R2 的物理位置 |
 
 ### 7.3 非功能性要求
 
@@ -398,6 +425,14 @@ nano-agent 的宿主世界里没有真实本地文件系统，也不应该把“
 
 ## 8. 可借鉴的代码位置清单
 
+### 8.0 来自已冻结的 NACP 包
+
+| 文件:行 | 内容 | 借鉴点 | 备注 |
+|---------|------|--------|------|
+| `packages/nacp-core/src/envelope.ts:185-209` | `NacpRefSchema` | ArtifactRef 的底层 wire truth | 本文 F2 / 7.2a 直接对齐 |
+| `packages/nacp-core/src/messages/context.ts:5-30` | `context.compact.*` schema | compact request/response 的 source of truth | 本文 F5 / 7.2a 直接对齐 |
+| `packages/nacp-core/src/messages/system.ts:10-14` | `audit.record.ref` | artifact / snapshot / compact 结果的审计引用入口 | observability 关联依赖它 |
+
 ### 8.1 来自 mini-agent
 
 | 文件:行 | 内容 | 借鉴点 | 备注 |
@@ -405,10 +440,12 @@ nano-agent 的宿主世界里没有真实本地文件系统，也不应该把“
 | `context/mini-agent/mini_agent/tools/file_tools.py:63-150` | read file + token truncation | 读文件结果要 token-aware | 借鉴读取体验，不借宿主真相 |
 | `context/mini-agent/mini_agent/tools/file_tools.py:155-260` | write/edit 直接路径操作 | 简单输入输出 shape | 反向提醒不要直接绑本地路径 |
 
-### 8.2 来自 codex
+### 8.2 来自 just-bash 与 codex
 
 | 文件:行 | 内容 | 借鉴点 | 备注 |
 |---------|------|--------|------|
+| `context/just-bash/src/browser.ts:44-48` | `MountableFs` browser export | 证明 mount router 能在浏览器/Worker 侧复用 | 支撑 F1 的实现方向 |
+| `context/just-bash/src/fs/mountable-fs/mountable-fs.ts:181-220` | `routePath()` 最长前缀匹配 | namespace route 规则可直接借鉴 | 强烈借鉴 |
 | `context/codex/codex-rs/exec-server/src/sandboxed_file_system.rs:28-240` | sandbox-aware FS routing | 文件访问要带 sandbox/context，而不是裸路径 | 强烈借鉴 |
 | `context/codex/codex-rs/core/src/state/session.rs:19-155` | session history / token/rate state | history/context 要单独建模 | 借鉴 |
 
@@ -469,3 +506,4 @@ Workspace / Context / Artifacts 在 nano-agent 中会以一个**mount-based name
 | 版本 | 日期 | 修改者 | 主要变更 |
 |------|------|--------|----------|
 | v0.1 | `2026-04-16` | `GPT-5.4` | 初稿 |
+| v0.2 | `2026-04-16` | `GPT-5.4` | 根据 Kimi / Opus 审核补充 `NacpRef` 对齐、MountableFs 心智与 compact/snapshot 责任边界 |
