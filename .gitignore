@@ -37,3 +37,6 @@ Cargo.lock
 
 # 上下文文件
 context/
+
+# Packages 在自己内部进行管理，不在主库内进行跟踪
+packages/
