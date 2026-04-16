@@ -222,7 +222,18 @@ LLM 天然会期待 shell、文件、搜索、curl、git。
 
 ---
 
-## 6. 结语和评价
+## 6. Todo Notes
+
+These are intentionally small, high-signal notes that should guide the first upgrades after the MVP skeleton is proven.
+
+| Area | Todo note | Why it matters | Reference |
+|---|---|---|---|
+| **NACP-Session** | **Add a formal follow-up input family right after MVP** so multi-turn conversations become protocol-native instead of being blocked behind the current first-turn-only `session.start.initial_input` entry. | MVP can validate the session skeleton with the existing minimal ingress, but the first meaningful protocol expansion after that should be multi-turn input truth in `@nano-agent/nacp-session`. | `docs/investigation/action-plan-qna-clarification-batch-1.md` — Batch-1 / Q5 |
+| **NACP-Session** | Keep the follow-up input family as a **protocol-layer extension**, not a `session-do-runtime` private message shape. | This preserves a single source of truth for client ↔ session DO semantics and avoids runtime/protocol drift. | `docs/investigation/action-plan-qna-clarification-batch-1.md` — Batch-1 / Q5 |
+
+---
+
+## 7. 结语和评价
 
 nano-agent 的价值，不在于“比已有本地 Agent CLI 更像一个终端”，而在于：
 
