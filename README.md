@@ -96,7 +96,7 @@ nano-agent 不是从真空里长出来的。
 |------|---------|------|
 | `/` (根) | nano-agent 主仓 | 设计、计划、审查、workspace 配置 |
 | `packages/nacp-core/` | 独立 repo | NACP-Core 协议内部信封层 |
-| `packages/nacp-session/` | 独立 repo（未创建） | NACP-Session 客户端交互协议 |
+| `packages/nacp-session/` | 独立 repo | NACP-Session 客户端 WebSocket 交互协议 |
 | `context/` | 参考代码（不进仓） | 三方 agent CLI / smcp / safe / just-bash 的只读副本 |
 
 ---
