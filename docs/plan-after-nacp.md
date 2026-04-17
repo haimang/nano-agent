@@ -1,477 +1,538 @@
-# Plan After NACP
+# Plan After NACP — Progress Review, Closure Verdict, and Next-Phase Proposal
 
-> 文档对象: `nano-agent / post-NACP skeleton planning`
-> 日期: `2026-04-16`
+> 文档对象: `nano-agent / post-NACP skeleton phase review`
+> 刷新日期: `2026-04-17`
 > 作者: `GPT-5.4`
-> 前置已完成项:
-> - `packages/nacp-core/` 已收口
-> - `packages/nacp-session/` 已收口
-> - `docs/design/hooks-by-GPT.md`
-> - `docs/design/llm-wrapper-by-GPT.md`
-> - `docs/eval/vpa-fake-bash-by-GPT.md`
-> - `README.md`
+> 文档性质: `phase review / closure memo / next-phase proposal`
+> 证据来源:
+> - `docs/action-plan/*.md`
+> - `packages/*`
+> - `test/*.test.mjs`
+> - `test/e2e/*.test.mjs`
+> - `docs/progress-report/mvp-wave-2nd-round-fixings.md`
+> - `docs/code-review/e2e-test-01.md`
 
 ---
 
-## 0. 这份文档要解决什么问题
+## 0. 为什么要重写这份文档
 
-`nacp-core` 和 `nacp-session` 收口之后，nano-agent 已经有了**协议地基**，但还没有一个可运行的 **agent 本体骨架**。
+`docs/plan-after-nacp.md` 最初是一份 **post-NACP 阶段的总规划文档**。它的任务不是回顾已经做完什么，而是规定：
 
-现在最容易犯的错误有两个：
+1. 先补 design docs
+2. 再补 action-plan
+3. 再做 cross-doc alignment
+4. 再搭测试 / observability / replay 底座
+5. 最后再进入 skeleton implementation
 
-1. 直接开始写 worker / DO / tool / LLM 代码，让实现顺序反过来主导架构；
-2. 过早开始设计 DDL / KV / R2 细节，把还没被运行时验证过的访问模式先固化成数据结构。
+现在仓库状态已经明显越过“只是在规划”的阶段：
 
-这份文档的目标，就是把 post-NACP 阶段的工作顺序钉死：
+- 8 个 post-NACP skeleton packages 已经落地到 `packages/`
+- 对应 action-plan 已经齐备
+- 根目录已有 **15 个 root contract tests**
+- `test/e2e/` 已有 **14 个跨包 E2E**
+- 我们已经完成多轮 code review、fixing、re-review、E2E bug-log closure
 
-> **先补齐骨架所需的设计与 action-plan，再做一次全文档联审，再搭基础设施与观察窗口，最后按推荐顺序开始写代码；而 DDL / KV / R2 的最终协同方案，要由这些验证结果反推。**
+因此这份文档如果继续保持“下一步应该做什么”的口吻，就会和当前仓库 reality 脱节。  
+本次刷新要把它改成三件事：
 
----
-
-## 1. 我们现在已经有什么，还缺什么
-
-### 1.1 已经冻结的东西
-
-当前已经明确的地基有：
-
-1. **项目定位**
-   - nano-agent 是 Cloudflare-native、WebSocket-first、DO-centered、Worker/V8 isolate 宿主的 agent runtime。
-2. **协议分层**
-   - `NACP-Core` = internal envelope / internal runtime contract
-   - `NACP-Session` = client ↔ session DO WebSocket profile
-3. **Hooks 设计**
-   - 已明确 Hook event / Hook runtime / Hook outcome / NACP-Core / NACP-Session 的映射方式
-4. **LLM Wrapper 设计**
-   - 已明确 canonical message、provider/model registry、attachment planner、stream normalization、session stream mapping
-5. **Fake Bash 价值判断**
-   - 已明确 fake bash 是 **LLM compatibility surface**，不是系统内核
-
-### 1.2 还没冻结、但骨架必须先补齐的东西
-
-如果要进入 nano-agent 本体开发，还缺 6 类关键设计：
-
-| 缺口 | 为什么必须先设计 | 它解决什么 |
-|---|---|---|
-| **Agent Runtime Kernel** | 没有主循环骨架，就无法决定 hooks / llm / tools / compact 谁在什么时候发生 | turn loop、state transitions、step scheduler、abort/cancel、event emission |
-| **Capability Runtime / Fake Bash Runtime** | fake bash 不能只停在价值判断，必须落到 capability contract | tool registry、command registry、approval/policy、TS execution、network/browser 映射 |
-| **Workspace / Artifact / Context Runtime** | Worker 里没有真实 FS，必须先定义工作区与物料如何存在 | virtual FS、mount、workspace snapshot、artifact ref、context layering、compact input/output |
-| **Session DO Runtime / Worker Assembly** | 协议包已经有了，但 agent 还没有 session actor 本体 | WebSocket ingress、session lifecycle、DO storage checkpoint、runtime composition |
-| **Observability / Eval Harness** | 没有观察窗口与验证 harness，后面根本无法判断 DDL / KV / R2 应该怎么分层 | trace、timeline、session inspector、scenario runner、replay/eval |
-| **Storage Topology / Registry Domain** | 不是为了先做数据库，而是为了把“什么属于 DO / KV / R2”说清楚 | hot state、shared config、large artifact、registry snapshot、storage contracts |
+1. **回顾 original plan 到底承诺了什么**
+2. **判断这些承诺今天完成了多少、质量如何**
+3. **给出是否收口、是否进入下一阶段、以及下一阶段该做什么**
 
 ---
 
-## 2. 接下来应该先规划哪些内容
+## 1. 原始承诺回顾：post-NACP 阶段本来要完成什么
 
-### 2.1 第一组：必须补齐的设计文档
+原文的核心承诺，可以压缩成 5 个阶段：
 
-在开始写 nano-agent 本体代码之前，我建议先新增以下设计文档：
+| 阶段 | 原始目标 | 交付物 |
+|------|----------|--------|
+| **Stage A** | 补齐骨架设计 | 6 份 design docs |
+| **Stage B** | 补齐 action-plan | 8 份 post-NACP action-plan |
+| **Stage C** | cross-doc go-through | 一轮跨文档对齐与边界核查 |
+| **Stage D** | 搭基础设施与观察窗口 | contract tests、scenario runner、trace/timeline/inspector/replay 底座 |
+| **Stage E** | 按推荐顺序实现 skeleton | 8 个 skeleton packages 与首轮跨包验证 |
 
-1. **`docs/design/agent-runtime-kernel-by-GPT.md`**
-   - 定义 nano-agent 主循环
-   - 定义 turn / step / event / cancel / compact / tool / llm 的顺序
-   - 定义 hooks 与 llm-wrapper 在 runtime 内各自所处的位置
+这份原始规划还有两个关键约束：
 
-2. **`docs/design/capability-runtime-by-GPT.md`**
-   - 定义 fake bash 如何映射为 typed capability runtime
-   - 定义 command registry、tool registry、policy / approval、network / browser / ts execution
-   - 定义哪些命令是最小集，哪些明确不支持
+1. **不要在 runtime reality 还没形成前，提前冻结 DDL / KV / R2 方案**
+2. **不要只写单包；必须把跨包 glue、observability、replay、resume 一起验证**
 
-3. **`docs/design/workspace-context-artifacts-by-GPT.md`**
-   - 定义 virtual FS、mount、workspace layout、artifact refs、context layering、compact seams
-   - 明确 DO / KV / R2 在“文件、摘要、快照、附件”上的边界
+也就是说，这一阶段真正要解决的不是“多写几个 package”，而是：
 
-4. **`docs/design/session-do-runtime-by-GPT.md`**
-   - 定义真正的 session actor / session DO runtime
-   - 说明怎样把 `nacp-session`、agent runtime kernel、hooks、llm-wrapper、capability runtime 装配成一个 Worker/DO 本体
+> **把 nano-agent 从“协议包已完成”推进到“最小 skeleton 已设计、已实现、已验证，但尚未进入真实 Worker-native assembly closure”的状态。**
 
-5. **`docs/design/eval-observability-by-GPT.md`**
-   - 定义“如何观察一个 session 在跑什么”
-   - 定义 scenario runner、trace sink、stream inspector、timeline、failure replay
-   - 这是后续做 DDL / KV / R2 分层的证据来源
+---
 
-6. **`docs/design/storage-topology-by-GPT.md`**
-   - 定义 hot / warm / cold state
-   - 定义 DO storage、KV、R2 各自负责什么
-   - 这不是数据库 schema 设计，而是 storage semantics 设计
+## 2. 当前仓库 reality 快照
 
-### 2.2 第二组：要基于设计文档生成的 action-plan
+今天这份仓库，已经具备如下 reality：
 
-在上述设计文档完成之后，再创建对应 action-plan：
+### 2.1 包结构 reality
 
-1. `docs/action-plan/agent-runtime-kernel.md`
-2. `docs/action-plan/capability-runtime.md`
-3. `docs/action-plan/workspace-context-artifacts.md`
-4. `docs/action-plan/session-do-runtime.md`
-5. `docs/action-plan/llm-wrapper.md`
-6. `docs/action-plan/hooks.md`
-7. `docs/action-plan/eval-observability.md`
-8. `docs/action-plan/storage-topology.md`
+当前 `packages/` 下已经存在 10 个核心包：
+
+1. `nacp-core`
+2. `nacp-session`
+3. `agent-runtime-kernel`
+4. `capability-runtime`
+5. `workspace-context-artifacts`
+6. `session-do-runtime`
+7. `llm-wrapper`
+8. `hooks`
+9. `eval-observability`
+10. `storage-topology`
 
 其中：
 
-- `hooks` 和 `llm-wrapper` **不需要重新做设计重写**，但需要落成正式 action-plan
-- `storage-topology` 的 action-plan **不应直接跳到 DDL**，而应先做 runtime contract、adapters、observability-backed evidence collection
+- `nacp-core`、`nacp-session` 是 post-NACP 之前就已收口的协议地基
+- 后 8 个包就是这份文档原本要求补齐并实现的 skeleton 层
+
+### 2.2 文档 reality
+
+当前仓库已经具备：
+
+- 对应 8 个 skeleton 包的 design / action-plan
+- 多轮 code review 文档
+- 1 份跨包 second-round fix report
+- 1 份 E2E bug-log closure 文档
+
+这说明项目已经不再停留在“有没有设计”的阶段，而进入了：
+
+> **design → action-plan → implementation → review → re-review → E2E closure**
+
+这条完整链路。
+
+### 2.3 测试 reality
+
+当前根目录测试面已经形成两层：
+
+1. **Root contract tests**：`test/*.test.mjs`
+   - 当前 **15 / 15 passing**
+2. **Cross-package E2E tests**：`test/e2e/*.test.mjs`
+   - 当前 **14 / 14 passing**
+
+另外，本轮复核还重新执行了 8 个 skeleton packages 的 package tests，当前全部通过：
+
+- `agent-runtime-kernel`
+- `capability-runtime`
+- `workspace-context-artifacts`
+- `session-do-runtime`
+- `llm-wrapper`
+- `hooks`
+- `eval-observability`
+- `storage-topology`
+
+这意味着当前阶段已经不是“写了一堆骨架文件”，而是：
+
+> **有包内测试、根 contract tests、跨包 E2E 三层证据同时成立的 MVP skeleton。**
 
 ---
 
-## 3. 推荐的总体工作顺序
+## 3. 按原计划回看：我们完成了多少
 
-### 3.1 不是“边想边写”，而是 5 个阶段
+下面用 original plan 的 5 个阶段回看当前完成度。
 
-我建议 post-NACP 阶段按下面 5 个大阶段推进。
+| 阶段 | 原始承诺 | 当前状态 | 完成度判断 | 质量评价 |
+|------|----------|----------|------------|----------|
+| **Stage A** | 补齐 6 份 skeleton design docs | 已完成 | **100%** | 质量高。后续 action-plan 和实现都确实围绕这些 design 展开。 |
+| **Stage B** | 补齐 8 份 post-NACP action-plan | 已完成 | **100%** | 质量高。action-plan 后续被真实执行，而不是只停在文档层。 |
+| **Stage C** | 做一次 cross-doc go-through | 已大体完成，但分散在多轮 review / re-review / fixing / E2E closure 中，没有单一 consolidated alignment memo | **80%–85%** | 质量中高。事实上的 cross-doc alignment 已发生，但文档形态比较分散。 |
+| **Stage D** | 建立基础设施与观察窗口 | 已形成 contract tests、E2E、trace/timeline/replay/inspector 等验证底座，但很多“基础设施”仍以 in-process fixture / harness 形态存在，而非真实 deployable worker | **75%–80%** | 质量中高。验证能力足够强，但 Worker-native infrastructure 仍未完全实体化。 |
+| **Stage E** | 按推荐顺序执行 skeleton implementation | 8 个 skeleton packages 已实现并经多轮 review / fixing / E2E 验证，但 assembly 侧仍有 deferred glue | **80%–85%** | 质量高于一般 skeleton，但还不是 deploy-ready runtime closure。 |
 
-| 阶段 | 名称 | 目标 | 结果 |
-|---|---|---|---|
-| **Stage A** | 补齐骨架设计 | 把 runtime、capability、workspace、session DO、observability、storage topology 全补齐 | 一组 design docs |
-| **Stage B** | 补齐 action-plan | 为所有骨架单元建立执行蓝图 | 一组 action-plan docs |
-| **Stage C** | 重新 go through 全部文档 | 做一次跨文档联审，确认边界、协议、命名、事件、职责都对齐 | 一份 cross-doc alignment 记录 |
-| **Stage D** | 搭基础设施与观察窗口 | 建立验证 harness、trace、timeline、session inspector、fake provider/tool workers | 可观察、可复现、可回放的测试底座 |
-| **Stage E** | 按推荐顺序执行 action-plan | 真正开始写代码 | 一条条 package / worker implementation |
+### 3.1 综合完成度判断
 
-### 3.2 为什么一定要先做 Stage C / D
+如果把这份文档原本约定的工作定义为：
 
-因为 nano-agent 不是一个“写点库然后调调就行”的项目。
+> **“post-NACP skeleton planning + skeleton implementation + first cross-package proof”**
 
-它天然涉及：
+那么当前总体完成度可以判断为：
 
-- `NACP-Core`
-- `NACP-Session`
-- Hooks
-- LLM Wrapper
-- fake bash / capability runtime
-- virtual FS / artifact runtime
-- DO / KV / R2 分层
+> **约 85% 左右，且核心路径已经越过‘只有设计、没有证明’的阶段。**
 
-这些如果不先做 cross-doc go-through，很容易出现：
+如果把它定义为：
 
-1. 命名冲突
-2. phase / lifecycle 断点
-3. session stream shape 不一致
-4. storage contract 说法不一致
-5. action-plan 之间互相打架
+> **“Cloudflare Worker-native runtime 已完成收口”**
 
-而如果不先做 observability / eval harness，后面就会进入：
-
-> “感觉上应该放 KV / 感觉上应该放 R2 / 感觉上 DO storage 够了”
-
-这种无证据决策。
+那么答案是否定的。  
+这个阶段还没有走到那一步。
 
 ---
 
-## 4. 我建议的 planning 顺序
+## 4. 从 action-plan 回顾：8 个 skeleton 包完成得怎样
 
-### 4.1 设计文档的推荐编写顺序
+下面按 post-NACP 的 8 个 skeleton 包逐一判断其完成状态与质量。
 
-我建议按下面顺序补设计：
+| 包 | 原始角色 | 当前状态 | 证据 | 质量判断 |
+|----|----------|----------|------|----------|
+| `agent-runtime-kernel` | 主循环、step scheduler、event emission、cancel/wait seam | **MVP skeleton 已成立** | package tests 通过；root contract 覆盖 session stream shape；E2E-01/06/11 触达其主路径 | 核心 turn-loop 骨架成立，但仍更偏“runtime kernel correctness”而非完整 orchestration 平台 |
+| `capability-runtime` | fake bash compatibility surface、typed capability execution、service-binding seam | **MVP skeleton 已成立，仍有治理类 follow-up** | package tests 通过；root contract 覆盖 tool-call schema；E2E-01/07 覆盖实际执行与 workspace fileops | execution seam 和 progress/cancel 已真实化；但 command inventory / just-bash diff truth / allowlist 仍未完全 productized |
+| `workspace-context-artifacts` | workspace namespace、artifact refs、compact/context layering、snapshot seam | **MVP skeleton 已成立** | package tests 通过；root contract 覆盖 artifact/prepared ref；E2E-03/04/08/13 触达 compact / attachment / promotion / consistency | 是当前最稳定的数据平面骨架之一 |
+| `session-do-runtime` | session actor、WebSocket/HTTP ingress、checkpoint/restore、assembly glue | **主体已成立，但仍有关键 deferred glue** | package tests 通过；root contract 覆盖 orchestrator/checkpoint；E2E-05/11/12/14 验证 resume / replay / hooks resume | checkpoint / restore 主体成立；但 ingress 仍未完全切到 `nacp-session` helper，controller 仍偏 stub-level |
+| `llm-wrapper` | canonical request/response、provider/model registry、stream normalization、prepared artifact seam | **foundation 已成立** | package tests 通过；root contract 覆盖 session mapping；E2E-01/08/11 触达 request/build/context assembly/live stream | foundation 强，但离真实 provider worker / gateway closure 还有一段距离 |
+| `hooks` | registry、dispatcher、guard、audit + session mapping | **MVP skeleton 已成立** | package tests 通过；root contract 覆盖 core/session/audit shape；E2E-02/14 覆盖 blocking 与 cross-resume persistence | 协议对齐与 runtime outcome contract 已明显成熟 |
+| `eval-observability` | trace taxonomy、sink、timeline、inspector、replay、scenario/evidence helpers | **MVP skeleton 已成立** | package tests 通过；root contract 覆盖 audit/session protocol；E2E-09/10/11 覆盖 trace → durable → replay / placement evidence | 已从“字段骨架”升级为真正能服务 E2E 判定的 observability layer |
+| `storage-topology` | placement hypotheses、mime gate、evidence-backed storage semantics | **MVP skeleton 已成立** | package tests 通过；root contract 覆盖 ref compatibility / calibration；E2E-10/13 触达 placement recommendation 与 artifact consistency | semantics 层已经能工作，但真实 Cloudflare storage adapters 还没有完全落地 |
 
-1. **Agent Runtime Kernel**
-2. **Workspace / Context / Artifacts**
-3. **Capability Runtime / Fake Bash Runtime**
-4. **Session DO Runtime**
-5. **Eval / Observability**
-6. **Storage Topology**
+### 4.1 这一轮真正做成了什么
 
-### 4.2 这个顺序的原因
+从 action-plan 角度看，我们现在已经不是“有 8 个包”而已，而是已经形成了：
 
-1. **先定主循环**
-   - 不先定 runtime kernel，hooks 和 llm-wrapper 只能停在“功能簇”层，没法真正装配
-2. **再定 workspace / artifact**
-   - fake bash、tools、llm attachment、compact 都要依赖 workspace / artifact model
-3. **然后定 capability runtime**
-   - 因为 fake bash 本质上是 capability routing surface，不是 shell 本体
-4. **再定 session DO runtime**
-   - 到这一步，才知道 session actor 里到底要装什么
-5. **再定 observability / eval**
-   - 这一步不是晚，而是要基于前面的 runtime structure 来设计观察点
-6. **最后再定 storage topology**
-   - 因为只有知道“谁在什么时候读写什么”，才能真正决定 DO / KV / R2 边界
+1. **主循环骨架**：`agent-runtime-kernel`
+2. **能力执行骨架**：`capability-runtime`
+3. **工作区 / artifact 数据平面**：`workspace-context-artifacts`
+4. **session actor skeleton**：`session-do-runtime`
+5. **模型抽象层**：`llm-wrapper`
+6. **治理 / hook runtime**：`hooks`
+7. **trace / replay / timeline 观察层**：`eval-observability`
+8. **storage semantics 层**：`storage-topology`
 
----
-
-## 5. 我建议的 implementation 顺序
-
-设计和 action-plan 完成后，我建议按下面顺序真正开始写代码。
-
-### 5.1 第一批：先做能跑通最小 session turn 的骨架
-
-1. **Session DO Runtime Skeleton**
-   - Worker 入口
-   - Session DO lifecycle
-   - WebSocket attach/resume
-   - session state checkpoint
-   - 将 `nacp-session` 真正接进来
-
-2. **Agent Runtime Kernel**
-   - 最小 turn loop
-   - step scheduler
-   - cancel / abort / compact seam
-   - event emission seam
-
-### 5.2 第二批：给骨架装上“能干活”的最小能力
-
-3. **Workspace / Context / Artifact Runtime**
-   - virtual workspace
-   - artifact ref
-   - mount / snapshot
-   - compact input/output seam
-
-4. **Capability Runtime / Fake Bash Minimal Set**
-   - 最小命令集：`pwd` / `ls` / `cat` / `write` / `rg` / `curl` / `ts-exec`
-   - network / browser / git subset 先保留最小能力面
-
-5. **LLM Wrapper Foundation**
-   - provider registry
-   - model registry
-   - canonical request builder
-   - stream normalization → `session.stream.event`
-
-### 5.3 第三批：把平台性能力接回来
-
-6. **Hooks Runtime**
-   - registry
-   - dispatcher
-   - audit sink
-   - session stream adapter
-
-7. **Observability / Eval Harness**
-   - session inspector
-   - NACP trace viewer
-   - scenario runner
-   - replay-based validation
-
-### 5.4 第四批：在验证之后再落存储与注册
-
-8. **Storage Topology Implementation**
-   - 先落 adapters 和 contract
-   - 后定 KV / R2 / DO storage 的最终职责
-
-9. **Registry / DDL Planning & Implementation**
-   - model registry
-   - skill registry
-   - capability registry
-   - audit/export metadata
-
-> 也就是说：**DDL / registry 不是骨架的前置条件，而是骨架验证之后的收敛结果。**
-
-### 5.5 10-package 的执行时序补充
-
-上面的 implementation 顺序是产品层视角；落实到当前 10 份 package/action-plan，还需要一份更细的执行时序，避免所有包“同时开工、最后才发现 glue 接不上”。
-
-推荐时序如下：
-
-1. **可最早并行的 Phase 1**
-   - `session-do-runtime P1`
-   - `hooks P1`
-   - `eval-observability P1`
-   - `storage-topology P1`
-   - 原因：它们主要依赖已收口的 `nacp-core / nacp-session`，可以先冻结 vocabulary、package skeleton 与最小 contract。
-
-2. **优先推进 storage / eval / hooks 的 Phase 2**
-   - `storage-topology P2`：先把 key/ref builders 与 scoped-io reality 钉死
-   - `eval-observability P2`：先把 sink / codec / timeline 做成稳定 evidence seam
-   - `hooks P2-P3`：先把 registry / dispatcher / runtime 合同做稳
-   - 原因：这些包先稳定，后面的 session-do glue 才不会被迫自己发明底层 contract。
-
-3. **随后推进 session-do-runtime 的 Phase 2-5**
-   - `session-do-runtime P2` 先收口 WS/HTTP 双入口与 ingress reality
-   - `session-do-runtime P3-P5` 再承接 actor lifecycle、checkpoint、archive/flush seam
-   - 前提：kernel、workspace、llm-wrapper、hooks、eval、storage 至少已有 Phase 1 type truth
-
-4. **最后由 session-do-runtime Phase 6 负责跨包收口**
-   - 目标不是单包自证，而是验证最小 compose flow：
-     `session-do-runtime -> agent-runtime-kernel -> llm-wrapper / capability-runtime / workspace-context-artifacts / hooks / eval-observability / storage-topology`
-
-这个补充的核心原则是：
-
-> **先冻结独立包的 type/contract，再做 glue；先有 evidence seam，再做 storage 收敛；先有 runtime 子系统，再让 session-do 做最终组装。**
+这正是原文所定义的 **最小 skeleton 图**。
 
 ---
 
-## 6. 我们需要什么“基础设施”和“观察窗口”
+## 5. `test/` 目录的测试项评价：完成度与质量如何
 
-这是接下来最容易被低估、但最该优先规划的一层。
+这次评估不能只看“测试是否全绿”，更重要的是看：
 
-### 6.1 最小基础设施
+1. 测到了什么层次
+2. 是否真的覆盖到了 original plan 最在意的 seam
+3. 还缺什么
+
+### 5.1 Root contract tests：它们测得很对
+
+当前 `test/*.test.mjs` 的 15 个 contract tests，主要价值不是功能回归，而是 **跨包协议 truth 锁定**。
+
+| 测试簇 | 代表文件 | 覆盖价值 | 质量判断 |
+|--------|----------|----------|----------|
+| capability ↔ nacp-core | `capability-toolcall-contract.test.mjs` | 锁 tool request/cancel/response body compatibility | 强 |
+| hooks ↔ nacp-core/nacp-session | `hooks-protocol-contract.test.mjs` | 锁 `hook.outcome` / `hook.broadcast` / audit body 真相 | 强 |
+| kernel ↔ nacp-session | `kernel-session-stream-contract.test.mjs` | 锁 runtime event 到 session stream body 的 shape | 强 |
+| llm-wrapper ↔ nacp-session | `llm-wrapper-protocol-contract.test.mjs` | 锁 LLM stream normalization 到 session reality | 强 |
+| eval-observability ↔ nacp-core/nacp-session | `observability-protocol-contract.test.mjs` | 锁 audit body 与 inspector 对 session event reality 的消费 | 强 |
+| session-do-runtime ↔ public orchestrator/checkpoint | `session-do-runtime-contract.test.mjs` | 锁 orchestrator/checkpoint 的 public seam | 强 |
+| storage-topology ↔ refs/evidence | `storage-topology-contract.test.mjs` | 锁 ref compatibility、calibration、mime policy | 强 |
+| workspace ↔ llm-wrapper / compact | `workspace-context-artifacts-contract.test.mjs` | 锁 artifact refs、prepared refs、compact boundary compatibility | 强 |
+
+这些 tests 的质量很高，因为它们测的不是“一个函数返回 42”，而是：
+
+> **跨包之间是否在同一个协议宇宙里说话。**
+
+这正好对应了 original plan 对 Stage C / D 的要求。
+
+### 5.2 Cross-package E2E：它们已经能证明 skeleton 在跑
+
+`test/e2e/*.test.mjs` 的 14 个 E2E，已经形成了比较完整的业务簇覆盖：
+
+| E2E 簇 | 代表测试 | 主要覆盖的包 | 价值判断 |
+|--------|----------|--------------|----------|
+| 最小完整 turn | `e2e-01-full-turn` | kernel / llm-wrapper / capability-runtime / nacp-session | 证明最小主链路可跑 |
+| blocking hooks | `e2e-02-blocking-hook` | hooks / kernel / nacp-session | 证明治理逻辑能短路主流程 |
+| compact / context boundary | `e2e-03-compact-boundary` | workspace / storage / kernel | 证明 compact seam 不是静态设想 |
+| large result promotion | `e2e-04-large-result-promotion` | capability / workspace / storage | 证明 artifact-first path 能工作 |
+| resume / restore | `e2e-05-session-resume`, `e2e-12-dirty-resume` | session-do / workspace / kernel | 证明 checkpoint/replay 主路径成立 |
+| cancel / reconnect | `e2e-06-cancel-midturn`, `e2e-11-ws-replay-http-fallback` | kernel / session-do / eval | 证明中断与 replay 不只是文档语义 |
+| workspace fileops | `e2e-07-workspace-fileops` | capability / workspace | 证明 capability runtime 与 workspace seam 已真正接线 |
+| attachments / content consistency | `e2e-08-attachment-context`, `e2e-13-content-replacement-consistency` | llm-wrapper / workspace / storage | 证明 prepared artifact 与 content replacement contract 成立 |
+| observability pipeline | `e2e-09-observability-pipeline` | eval / kernel / storage | 证明 trace → durable → replay 的路径成立 |
+| storage calibration | `e2e-10-storage-calibration` | storage-topology / eval / workspace | 证明 placement recommendation 已有 evidence-backed 基线 |
+| hooks cross-resume | `e2e-14-hooks-resume` | hooks / session-do / kernel | 证明 runtime-registered hooks 不是单 turn 幻觉 |
+
+### 5.3 测试体系的真实优点
+
+当前 `test/` 体系最大的优点有三个：
+
+1. **不是单包自证**
+   - root contract + E2E 都在逼不同 package 对齐同一 reality
+2. **不是只测 happy path**
+   - 有 resume、cancel、blocking、compact、promotion、replay、fallback
+3. **已经能反哺架构判断**
+   - 最近的 `e2e-test-01` bug-log closure 就说明，测试不只是验收，还能反推 package seam 是否真实
+
+### 5.4 测试体系仍然缺什么
+
+虽然当前测试质量已经不错，但仍有四个明显缺口：
+
+1. **还偏 in-process**
+   - 很多路径验证的是 package composition，而不是 deployable Worker / DO / service-binding reality
+2. **Cloudflare-native reality 还不够强**
+   - 还没有真实覆盖 KV、R2、DO hibernation、service binding network hop
+3. **fake bash 治理面还不够完整**
+   - 还没有把 `just-bash` 差异、supported/deferred/oom-risk inventory 收成长期 contract
+4. **browser / external worker seams 还弱**
+   - `curl`、browser rendering、真实 provider worker 这类外部能力 עדיין更像 seam 预留，而不是已验证 reality
+
+### 5.5 测试质量结论
+
+对这一阶段来说，`test/` 的完成质量可以判断为：
+
+> **高于一般 skeleton 项目。**
+
+它已经足以支撑：
+
+- package seam correctness
+- cross-package protocol compatibility
+- first-wave E2E confidence
+
+但它还不足以直接宣称：
+
+> **Worker-native deployment reality 已经被充分证明。**
+
+---
+
+## 6. 哪些工作已经可以算“完成”，哪些还不能
+
+### 6.1 可以明确记为已完成的部分
+
+以下内容已经可以明确视为当前阶段完成：
+
+1. **post-NACP skeleton 的 design 层**
+2. **对应 skeleton 的 action-plan 层**
+3. **8 个 skeleton packages 的首轮实现层**
+4. **root contract tests 与 first-wave E2E 验证层**
+5. **多轮 review / fixing / re-review / E2E bug-log closure**
+
+也就是说，这个阶段最核心的目标：
+
+> **把 nano-agent 从“协议地基已完成”推进到“最小 skeleton 已被实现并被跨包验证”**
+
+已经成立。
+
+### 6.2 仍然不能算已完成的部分
+
+以下部分还不能被误读为“已经完成”：
+
+1. **真实 Worker-native assembly closure**
+   - `session-do-runtime` ingress 仍未完全切到 `@nano-agent/nacp-session` helper 主路径
+   - `WsController` / `HttpController` 仍是偏 stub-level glue
+2. **capability surface 的长期治理闭环**
+   - supported / deferred / oom-risk inventory
+   - `just-bash` diff truth
+3. **真实 Cloudflare storage reality**
+   - DO / KV / R2 的 runtime adapters 还没有形成充分的 deployment-grade integration proof
+4. **registry / DDL 决策**
+   - 按 original plan，本来就不该在这一阶段完成
+
+### 6.3 当前阶段的最准确定位
+
+所以这阶段最准确的定位不是：
+
+> “nano-agent 已经完成”
+
+而是：
+
+> **“nano-agent 的 post-NACP skeleton phase 已基本完成；MVP skeleton 已建立、已测通、已复核，但 deployment/assembly/native-infra closure 仍在下一阶段。”**
+
+---
+
+## 7. 我们是否可以收口这个阶段
+
+### 7.1 如果按原文 scope 判断
+
+如果按这份文档原本约定的 scope 来看：
+
+- 补 design
+- 补 action-plan
+- 做 cross-doc alignment
+- 建测试 / 观察窗口
+- 推到 skeleton implementation
+
+那么我的判断是：
+
+> **可以收口。**
+
+原因很明确：
+
+1. Stage A / B 已 100% 完成
+2. Stage C / D 已不是“没有做”，而是已经以 review + contract + E2E 的方式实质完成
+3. Stage E 已经完成到 “8 个 skeleton packages + 多轮验证 + bug-log closure” 的程度
+
+### 7.2 但必须带着正确的标签收口
+
+这个阶段只能按下面这个标签收口：
+
+> **skeleton-complete, not deployment-complete**
+
+也就是：
+
+1. 可以结束这轮“post-NACP skeleton planning / implementation”阶段
+2. 可以进入下一阶段
+3. 但不能把这种收口误读为“Cloudflare Worker-native runtime 已 fully closed”
+
+---
+
+## 8. 下一阶段应该做什么：初步分析
+
+我认为下一阶段不该再叫“继续补骨架”，而应该明确切换为：
+
+> **Worker-native Runtime Closure Phase**
+
+这一阶段的目标，不是再新增更多 package，而是把当前已经形成的 skeleton 拉到 **真实 assembly / external seam / Cloudflare-native reality** 上。
+
+### 8.1 为什么现在该切换到这个阶段
+
+因为当前剩余问题已经明显不再是“某个包有没有类型/结构”，而是：
+
+1. **session edge 还不够真实**
+2. **external workers / service bindings 还不够真实**
+3. **Cloudflare-native storage / hibernation reality 还不够真实**
+4. **fake bash 的治理面和 inventory 还不够稳定**
+
+这些问题都不应该再通过“多写一个抽象 package”来解决，而要通过：
+
+> **assembly closure + runtime reality + deployment-shaped tests**
+
+来解决。
+
+### 8.2 我建议的下一阶段 5 个工作流
+
+#### Workstream 1 — Session Edge Closure
+
+目标：把 `session-do-runtime` 从“可验证 skeleton”推进到“真实 session actor edge”。
+
+应优先做的事：
+
+1. 让 WebSocket ingress 真正走 `@nano-agent/nacp-session` helper 主路径
+2. 收口 `WsController` / `HttpController`，不再保持 stub-level glue
+3. 明确 attach / resume / replay / ack / fallback 的 edge contract
+4. 增加强化测试：
+   - reconnect after partial stream
+   - ack gap replay
+   - invalid client frame rejection
+   - HTTP fallback after WS detach
+
+为什么它最优先：
+
+- 当前剩余最大的不确定性集中在这里
+- 它是所有 Cloudflare-native assembly 的入口
+
+#### Workstream 2 — External Seam Realization
+
+目标：把当前的 in-process seam，推进到更接近真实 Worker/service-binding reality。
+
+应推进的内容：
 
 1. **Fake Provider Worker**
-   - 模拟 Chat Completions 兼容 provider
-   - 提供稳定流式输出、错误、超时、tool call 测试路径
-
+   - 用 service binding / worker boundary 跑流式输出、错误、超时、tool-call 路径
 2. **Fake Capability Worker**
-   - 模拟 fake bash / tool worker
-   - 提供 progress / result / cancel / timeout 路径
+   - 用真实 transport seam 跑 progress / cancel / timeout
+3. **Hook Worker Boundary**
+   - 把 hooks runtime 的 service-binding reality 再推进一层
 
-3. **Session Scenario Runner**
-   - 用脚本化方式跑：
-     - session.start
-     - llm delta
-     - tool call
-     - hook emit
-     - disconnect / reconnect / resume
-     - compact / restore
+为什么重要：
 
-4. **Artifact Staging Sandbox**
-   - 专门验证：
-     - 小文本 inline
-     - 图片 / 大文件走 R2
-     - artifact ref 如何进入 LLM wrapper
+- 现在大部分 correctness 已经被证明
+- 接下来最大的风险是“跨边界以后 shape 还是不是那个 shape”
 
-### 6.2 最小观察窗口
+#### Workstream 3 — Cloudflare-native Storage Reality
 
-1. **Session Stream Inspector**
-   - 看 `session.stream.event` 实际长什么样
-   - 验证 event kinds、seq、replay、redaction
+目标：把 `storage-topology` 与 `workspace-context-artifacts` 从 semantics 层推进到更真实的 placement reality。
 
-2. **NACP Trace Timeline**
-   - 同时看 core envelope 与 session stream
-   - 排查 internal message 与 client-visible stream 的断点
+建议做的事：
 
-3. **Tool / Capability Timeline**
-   - 看 fake bash / capability runtime 的 progress / result / cancel
+1. 做更真实的 DO / KV / R2 adapters 或 integration fixtures
+2. 让 observability placement log 真正服务 storage decision
+3. 验证：
+   - workspace snapshot 何时落 R2
+   - replay checkpoint 何时留 DO
+   - shared manifests 何时进入 KV
 
-4. **Storage Placement Inspector**
-   - 每条关键数据落到哪里：
-     - DO storage
-     - KV
-     - R2
-   - 这是后续决定 DDL / storage topology 的核心观察面
+为什么现在不该直接做 DDL：
 
-5. **Failure Replay Window**
-   - 能重放：
-     - LLM timeout
-     - tool timeout
-     - session reconnect
-     - compact after long turn
+- original plan 的判断仍然成立：structured store 必须是 evidence-driven decision
+- 现在更应该补足的是 placement proof，不是 schema 先行
 
----
+#### Workstream 4 — Capability Surface Governance
 
-## 7. 用什么验证，把 DDL / KV / R2 的协同机制反推出来
+目标：把 `capability-runtime` 从“能跑”推进到“可维护、可治理、可对外声明”。
 
-### 7.1 不要先拍脑袋定存储
+建议优先补的内容：
 
-接下来不应直接问：
+1. `supported / deferred / oom-risk` 三类 command inventory
+2. 与 `context/just-bash` 的 diff truth
+3. `fake bash` 最小命令集与明确不支持项的长期测试
+4. 对 `curl` / `git` / `ts-exec` / browser seam 的 product-level 边界说明
 
-- “skill registry 放哪？”
-- “model registry 用 KV 还是 SQLite？”
-- “workspace snapshot 要不要进 R2？”
+为什么这一块重要：
 
-正确顺序应该是先跑出 4 组验证。
+- 当前 capability execution correctness 已经比以前强很多
+- 但长期维护会卡在“现在到底支持哪些命令、哪些只是 seam”
 
-### 7.2 四组必须先跑出来的验证
+#### Workstream 5 — Registry / DDL Decision Phase
 
-1. **Session / Runtime 验证**
-   - 长会话是否需要频繁 checkpoint
-   - 哪些状态必须热存于 DO storage
+目标：不是立刻实现，而是把“需不需要 DDL、哪里需要 registry、什么该放 KV”变成下一阶段末尾的决策输出。
 
-2. **Workspace / Artifact 验证**
-   - 哪些工作区数据适合只留内存
-   - 哪些需要 snapshot
-   - 哪些天然属于 R2 对象
+建议做法：
 
-3. **Capability / Fake Bash 验证**
-   - 命令输出是否需要 durable replay
-   - 工具执行记录是否需要被索引
+1. 先从 observability / placement evidence 总结访问模式
+2. 再判断：
+   - model registry 是否只要 KV snapshot
+   - skill registry 是否需要 structured query
+   - capability registry 是否只需静态 manifest + snapshot
+3. 最后再决定是否引入 structured store
 
-4. **LLM / Hooks / Compact 验证**
-   - 哪些 metadata 需要共享配置
-   - 哪些策略数据适合 KV
-   - 哪些运行态 trace 不该进入 registry，而应进入审计或导出
+这里要特别强调：
 
-### 7.3 由验证反推的 storage 方向
+> **这仍然不应该是下一阶段的起点，而应该是下一阶段的收束点。**
 
-在我看来，理论上大概率会收敛到下面这种分层：
+### 8.3 我建议的下一阶段执行顺序
 
-| 层 | 倾向放什么 | 为什么 |
-|---|---|---|
-| **DO storage** | session hot state、replay checkpoint、turn-local state、last-seen seq、in-flight runtime metadata | 强一致、跟 actor 绑定、适合热状态 |
-| **KV** | shared manifests、policy snapshots、provider/model config、skill/capability registry snapshot、feature flags | 读多写少、跨 session 共享 |
-| **R2** | artifacts、大文件、workspace snapshot、images、exports、compact archives、trace export bundle | 大对象、低频、可引用 |
-| **DDL / structured store** | 只有在 query / indexing / analytics 明确需要时才引入 | 不应在骨架阶段先行 |
+我建议按下面顺序推进下一阶段：
 
-> 换句话说：**DDL 不是第一步，而是“验证表明我们真的需要结构化查询”之后才该出现。**
+1. **Session Edge Closure**
+2. **External Seam Realization**
+3. **Cloudflare-native Storage Reality**
+4. **Capability Surface Governance**
+5. **Registry / DDL Decision**
+
+这个顺序的原因是：
+
+1. 先把 session edge 做真实，后面所有 worker-native 验证才有意义
+2. 再把 provider / capability / hook worker 的跨边界 reality 做真实
+3. 再让 storage decisions 依据真实 runtime evidence 收敛
+4. 最后再讨论 registry / DDL，避免过早固化
 
 ---
 
-## 8. 一次完整的“go through 所有文档”应该怎么做
+## 9. 最终 verdict
 
-在所有设计文档与 action-plan 写完之后，我建议做一次明确的 cross-doc review。
+### 9.1 对当前阶段的判断
 
-### 8.1 必查矩阵
+我的最终判断是：
 
-| 检查项 | 需要对齐的文档 |
-|---|---|
-| Runtime phases / session lifecycle | `nacp-core` / `nacp-session` / `session-do-runtime` / `agent-runtime-kernel` |
-| Event catalog / session stream kinds | `hooks` / `llm-wrapper` / `nacp-session` / `eval-observability` |
-| Tool progress / cancel / timeout path | `capability-runtime` / `nacp-core` / `session-do-runtime` |
-| Workspace / artifact refs | `workspace-context-artifacts` / `llm-wrapper` / `capability-runtime` |
-| Storage placement | `storage-topology` / `workspace-context-artifacts` / `eval-observability` |
-| Approval / policy / hook interaction | `hooks` / `capability-runtime` / `agent-runtime-kernel` |
+> **`docs/plan-after-nacp.md` 原本约定的 post-NACP skeleton phase，今天已经可以收口。**
 
-### 8.2 cross-doc review 的目标
+更准确地说：
 
-不是“再读一遍文档”，而是检查：
+- **完成度**：约 **85%**
+- **阶段性质**：`skeleton-complete`
+- **收口状态**：`yes`
+- **能否进入下一阶段**：`yes`
 
-1. 名词是不是一致
-2. phase / event / message type 是否一致
-3. 哪些是 runtime responsibility，哪些是 caller-managed responsibility
-4. 哪些要在 helper 层 enforce，哪些由 session DO lifecycle 调用
-5. 哪些数据应该可回放，哪些只需即时流出
+### 9.2 为什么可以收口
 
----
+因为 original plan 最关键的目标已经被满足：
 
-## 9. 最终建议：从今天开始，最该先做什么
+1. design docs 已补齐
+2. action-plan 已补齐
+3. 8 个 skeleton packages 已真实实现
+4. package tests / root contract / cross-package E2E 已形成三层验证
+5. 多轮 review、fixing、re-review、bug-log closure 已把“纸面骨架”推进为“可证明骨架”
 
-如果现在要立刻开始下一轮规划，我建议按下面顺序开工：
+### 9.3 但必须带着什么边界进入下一阶段
 
-1. **先写 `docs/design/agent-runtime-kernel-by-GPT.md`**
-2. **再写 `docs/design/workspace-context-artifacts-by-GPT.md`**
-3. **再写 `docs/design/capability-runtime-by-GPT.md`**
-4. **接着写 `docs/design/session-do-runtime-by-GPT.md`**
-5. **然后写 `docs/design/eval-observability-by-GPT.md`**
-6. **最后写 `docs/design/storage-topology-by-GPT.md`**
+进入下一阶段时必须明确：
 
-接着再按这个顺序制作 action-plan：
+1. 当前收口的是 **post-NACP skeleton phase**
+2. 不是 **Cloudflare-native deployment closure**
+3. 剩余风险已经从“包内 correctness”转移到：
+   - session edge reality
+   - service-binding / external worker reality
+   - Cloudflare storage reality
+   - capability governance reality
 
-1. `agent-runtime-kernel`
-2. `session-do-runtime`
-3. `workspace-context-artifacts`
-4. `capability-runtime`
-5. `llm-wrapper`
-6. `hooks`
-7. `eval-observability`
-8. `storage-topology`
+### 9.4 一句话结论
 
-### 9.1 为什么这就是“基本骨架”
+> **这一阶段可以收口；我们不该继续停留在“补骨架”的心智里，而应该转入“Worker-native runtime closure”阶段，把 session edge、external seams、storage reality 与 capability governance 做成真正的运行时现实。**
 
-因为这 8 组工作合起来，正好覆盖了：
-
-- **协议层**：已经有 `nacp-core` / `nacp-session`
-- **主循环层**：`agent-runtime-kernel`
-- **会话宿主层**：`session-do-runtime`
-- **能力执行层**：`capability-runtime`
-- **工作区层**：`workspace-context-artifacts`
-- **模型层**：`llm-wrapper`
-- **治理扩展层**：`hooks`
-- **验证观测层**：`eval-observability`
-- **存储收敛层**：`storage-topology`
-
-这就是最小可运行 nano-agent skeleton 的完整图。
-
----
-
-## 10. 一句话 verdict
-
-我的最终建议是：
-
-> **不要立刻写 nano-agent 本体代码；先把 runtime kernel、workspace/artifact、capability runtime、session DO runtime、observability、storage topology 这几块设计和 action-plan 补齐，再做一次 cross-doc 联审，搭好观察窗口，然后按推荐顺序实现。**
-
-这样做的价值是：
-
-1. 让 `nacp-core` / `nacp-session` 真正成为上游地基，而不是孤立协议包
-2. 让 hooks / llm-wrapper 从“设计文档”变成可装配骨架
-3. 让后续的 DDL / KV / R2 不是拍脑袋，而是被 runtime 验证倒逼出来的结果
-
-如果要一句话概括 post-NACP 阶段的工作方法，那就是：
-
-> **design the skeleton first, verify the seams second, build the infrastructure third, implement last.**

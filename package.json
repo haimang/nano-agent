@@ -3,5 +3,8 @@
   "name": "nano-agent",
   "version": "0.0.0",
   "description": "Cloudflare-native agent runtime",
-  "packageManager": "pnpm@9.15.0"
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "test:cross": "node --test test/**/*.test.mjs"
+  }
 }
