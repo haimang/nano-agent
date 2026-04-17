@@ -1,0 +1,35 @@
+{
+  "name": "@nano-agent/llm-wrapper",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "LLM Wrapper — canonical model, provider registry, stream normalization",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
+  },
+  "peerDependencies": {
+    "zod": ">=3.22.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0",
+    "zod": "^3.24.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nano-agent/nano-agent.git",
+    "directory": "packages/llm-wrapper"
+  },
+  "license": "UNLICENSED"
+}

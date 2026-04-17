@@ -5,7 +5,7 @@
 > 类型: `new`
 > 作者: `GPT-5.4`
 > 时间: `2026-04-16`
-> 文件位置: `packages/eval-observability/`（独立 repo，位于 `packages/` 下）
+> 文件位置: `packages/eval-observability/`（主仓 monorepo 内的 workspace package）
 > 关联设计 / 调研文档:
 > - `docs/design/eval-observability-by-opus.md`
 > - `docs/design/session-do-runtime-by-opus.md`
@@ -481,7 +481,7 @@ packages/eval-observability/
 
 - **技术前提**：Cloudflare Workers / Durable Objects / TypeScript / append-only JSONL / 无本地 terminal
 - **运行时前提**：client-visible live stream 走 `session.stream.event`，internal durable trace 走 `audit.record`；session delivery 是 WebSocket-first，但 observability 读取链路必须承认 HTTP fallback
-- **组织协作前提**：`packages/*` 为独立 repo；`@nano-agent/eval-observability` 作为库供 session-do-runtime、hooks、llm-wrapper、capability-runtime 复用；最终 deployable Worker / DO 组装层在后续运行时包中完成
+- **组织协作前提**：`packages/*` 现由主仓 monorepo 统一跟踪；`@nano-agent/eval-observability` 作为库供 session-do-runtime、hooks、llm-wrapper、capability-runtime 复用；最终 deployable Worker / DO 组装层在后续运行时包中完成
 - **上线 / 合并前提**：不得把全部 live stream 强行 durable 化；不得引入 production APM/OTEL exporter 重依赖；不得把 archive 编排与查询平台误写进本包
 
 ### 7.3 文档同步要求

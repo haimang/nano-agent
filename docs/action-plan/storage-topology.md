@@ -5,7 +5,7 @@
 > 类型: `new`
 > 作者: `GPT-5.4`
 > 时间: `2026-04-16`
-> 文件位置: `packages/storage-topology/`（独立 repo，位于 `packages/` 下）
+> 文件位置: `packages/storage-topology/`（主仓 monorepo 内的 workspace package）
 > 关联设计 / 调研文档:
 > - `docs/design/storage-topology-by-opus.md`
 > - `docs/design/session-do-runtime-by-opus.md`
@@ -457,7 +457,7 @@ packages/storage-topology/
 
 - **技术前提**：Cloudflare Workers / Durable Objects / KV / R2 / TypeScript；当前 code reality 以 tenant-scoped keys 与 `NacpRef` 为准
 - **运行时前提**：storage-topology 是 semantics/policy layer，不是最终 deploy/storage runtime；真正的 archive/restore 执行由 session/workspace runtime 触发
-- **组织协作前提**：`packages/*` 为独立 repo；`@nano-agent/storage-topology` 作为库供 session-do-runtime、workspace-context-artifacts、eval-observability 复用
+- **组织协作前提**：`packages/*` 现由主仓 monorepo 统一跟踪；`@nano-agent/storage-topology` 作为库供 session-do-runtime、workspace-context-artifacts、eval-observability 复用
 - **上线 / 合并前提**：不得把 provisional placement 写成无条件定案；不得抢跑 D1 / archive 物理编排；不得违反 `NacpRefSchema` 与 tenant-scoped I/O 现有约束
 
 ### 7.3 文档同步要求

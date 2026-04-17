@@ -5,7 +5,7 @@
 > 类型: `new`
 > 作者: `GPT-5.4`
 > 时间: `2026-04-16`
-> 文件位置: `packages/workspace-context-artifacts/`（独立 repo，位于 `packages/` 下）
+> 文件位置: `packages/workspace-context-artifacts/`（主仓 monorepo 内的 workspace package）
 > 关联设计 / 调研文档:
 > - `docs/design/workspace-context-artifacts-by-GPT.md`
 > - `docs/design/capability-runtime-by-GPT.md`
@@ -469,7 +469,7 @@ packages/workspace-context-artifacts/
 
 - **技术前提**：Cloudflare Workers / Durable Objects / memory-first workspace / no host filesystem truth
 - **运行时前提**：artifact-first large object path、prepared artifact 进入模型、compact boundary 明确、snapshot 由 session runtime 决定何时 flush；session runtime 后续会同时支持 WebSocket-first 与 HTTP fallback，两条路径都应复用本包的对象模型与 preview/redaction 结果
-- **组织协作前提**：`packages/*` 为独立 repo；workspace package 需要同时服务 capability runtime、llm-wrapper、kernel；最终 deployable Worker / DO 组装层在后续运行时包中完成
+- **组织协作前提**：`packages/*` 现由主仓 monorepo 统一跟踪；workspace package 需要同时服务 capability runtime、llm-wrapper、kernel；最终 deployable Worker / DO 组装层在后续运行时包中完成
 - **上线 / 合并前提**：不得把最终 storage topology 偷偷写死到语义层；不得引入宿主路径直通假设；不得把 `context/just-bash` 直接作为 runtime dependency 打进产物
 
 ### 7.3 文档同步要求

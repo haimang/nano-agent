@@ -1,0 +1,161 @@
+/**
+ * Minimal Command Registration
+ *
+ * Registers the v1 command set into a CapabilityRegistry.
+ * Each command is declared with appropriate kind, target, and policy.
+ */
+
+import type { CapabilityRegistry } from "../registry.js";
+import type { CapabilityDeclaration } from "../types.js";
+
+export interface RegisterMinimalCommandsOptions {
+  readonly policyOverrides?: Partial<Record<string, CapabilityDeclaration["policy"]>>;
+}
+
+/** The v1 minimal command declarations. */
+const MINIMAL_COMMANDS: readonly CapabilityDeclaration[] = [
+  {
+    name: "pwd",
+    kind: "filesystem",
+    description: "Print current working directory",
+    inputSchema: {},
+    executionTarget: "local-ts",
+    policy: "allow",
+  },
+  {
+    name: "ls",
+    kind: "filesystem",
+    description: "List directory contents",
+    inputSchema: { type: "object", properties: { path: { type: "string" } } },
+    executionTarget: "local-ts",
+    policy: "allow",
+  },
+  {
+    name: "cat",
+    kind: "filesystem",
+    description: "Read file contents",
+    inputSchema: { type: "object", properties: { path: { type: "string" } } },
+    executionTarget: "local-ts",
+    policy: "allow",
+  },
+  {
+    name: "write",
+    kind: "filesystem",
+    description: "Write content to a file",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: { type: "string" },
+        content: { type: "string" },
+      },
+    },
+    executionTarget: "local-ts",
+    policy: "ask",
+  },
+  {
+    name: "mkdir",
+    kind: "filesystem",
+    description: "Create a directory",
+    inputSchema: { type: "object", properties: { path: { type: "string" } } },
+    executionTarget: "local-ts",
+    policy: "ask",
+  },
+  {
+    name: "rm",
+    kind: "filesystem",
+    description: "Remove a file or directory",
+    inputSchema: { type: "object", properties: { path: { type: "string" } } },
+    executionTarget: "local-ts",
+    policy: "ask",
+  },
+  {
+    name: "mv",
+    kind: "filesystem",
+    description: "Move or rename a file",
+    inputSchema: {
+      type: "object",
+      properties: {
+        source: { type: "string" },
+        destination: { type: "string" },
+      },
+    },
+    executionTarget: "local-ts",
+    policy: "ask",
+  },
+  {
+    name: "cp",
+    kind: "filesystem",
+    description: "Copy a file",
+    inputSchema: {
+      type: "object",
+      properties: {
+        source: { type: "string" },
+        destination: { type: "string" },
+      },
+    },
+    executionTarget: "local-ts",
+    policy: "ask",
+  },
+  {
+    name: "rg",
+    kind: "search",
+    description: "Search file contents using pattern matching",
+    inputSchema: {
+      type: "object",
+      properties: {
+        pattern: { type: "string" },
+        path: { type: "string" },
+      },
+    },
+    executionTarget: "local-ts",
+    policy: "allow",
+  },
+  {
+    name: "curl",
+    kind: "network",
+    description: "Fetch a URL",
+    inputSchema: { type: "object", properties: { url: { type: "string" } } },
+    executionTarget: "local-ts",
+    policy: "ask",
+  },
+  {
+    name: "ts-exec",
+    kind: "exec",
+    description: "Execute TypeScript code in a controlled sandbox",
+    inputSchema: { type: "object", properties: { code: { type: "string" } } },
+    executionTarget: "local-ts",
+    policy: "ask",
+  },
+  {
+    name: "git",
+    kind: "vcs",
+    description: "Run a limited subset of git subcommands (status, diff, log)",
+    inputSchema: {
+      type: "object",
+      properties: {
+        subcommand: { type: "string" },
+        args: { type: "array", items: { type: "string" } },
+      },
+    },
+    executionTarget: "local-ts",
+    policy: "allow",
+  },
+];
+
+/**
+ * Register the minimal v1 command set into the provided registry.
+ *
+ * Callers may override the default policy of individual commands without
+ * mutating the canonical declaration list.
+ */
+export function registerMinimalCommands(
+  registry: CapabilityRegistry,
+  options?: RegisterMinimalCommandsOptions,
+): void {
+  for (const decl of MINIMAL_COMMANDS) {
+    const override = options?.policyOverrides?.[decl.name];
+    registry.register(
+      override && override !== decl.policy ? { ...decl, policy: override } : decl,
+    );
+  }
+}

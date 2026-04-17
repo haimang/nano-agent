@@ -1,0 +1,16 @@
+{
+  // Minimal wrangler config skeleton for Session DO Runtime.
+  // `main` points at the compiled Worker entry — `npm run build` produces
+  // `dist/worker.js` from `src/worker.ts`.
+  "name": "nano-agent-session",
+  "compatibility_date": "2024-12-01",
+  "main": "dist/worker.js",
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "SESSION_DO",
+        "class_name": "NanoSessionDO"
+      }
+    ]
+  }
+}

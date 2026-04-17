@@ -5,14 +5,14 @@
 > 类型: `new`
 > 作者: `GPT-5.4`
 > 时间: `2026-04-16`
-> 文件位置: `packages/nacp-session/`（独立 repo，位于 `packages/` 下）
+> 文件位置: `packages/nacp-session/`（主仓 monorepo 内的 workspace package）
 > 关联设计 / 调研文档:
 > - `docs/nacp-by-opus.md`（NACP v2 主设计文档）
 > - `docs/nacp-reviewed-by-GPT.md`（对 Session blind spot 的 critique 来源）
 > - `docs/action-plan/nacp-core.md`（已完成的 Core 地基）
 > - `docs/design/hooks-by-GPT.md`（Hook → `session.stream.event` 映射）
 > - `docs/design/llm-wrapper-by-GPT.md`（LLM stream → Session stream 映射）
-> - `README.md` §1 / §3 / §4 / §5（WebSocket-first、独立 repo、多仓策略）
+> - `README.md` §1 / §3 / §4 / §5（WebSocket-first、主仓 monorepo、workspace 协作）
 > - 参考代码：`packages/nacp-core/`、`context/smcp/`、`context/safe/`
 > 文档状态: `draft`
 
@@ -37,9 +37,9 @@
   - nano-agent 目前只有 Core internal contract，缺少 client ↔ session DO 的稳定 wire profile → WebSocket 恢复语义无法冻结
   - Hook / Tool progress / 未来 LLM delta 都需要一个统一的 server-push channel → 否则各子系统会各推各的事件 shape
   - Core 已经把 `session.*` 从内部协议里剥离出来 → 现在必须有一份独立 action-plan 把它们正式落到实现层
-  - README 已明确 `packages/*` 为独立 repo → `@nano-agent/nacp-session` 必须在一开始就按独立 package / 独立 git 的方式规划
+  - README 现明确 `packages/*` 由主仓 monorepo 统一跟踪 → `@nano-agent/nacp-session` 必须按稳定 workspace package / protocol package 的方式规划
 - **本次计划的直接产出**：
-  - `@nano-agent/nacp-session` 包（可 `pnpm install` 的 workspace 依赖，作为独立 repo 跟踪）
+  - `@nano-agent/nacp-session` 包（可 `pnpm install` 的 workspace 依赖，由主仓统一跟踪）
   - **完整的 Session profile schema + runtime helpers**（message schema / replay buffer / ack policy / heartbeat / websocket adapter）
   - **针对 reconnect / replay / ack / progress stream 的测试体系**
   - **可导出的 JSON Schema**（`dist/nacp-session.schema.json`）与注册表文档（`docs/nacp-session-registry.md`）
@@ -56,7 +56,7 @@
 2. 再把 **authority 戳印、client/server frame 边界、role gate、状态约束** 固化为独立 helper，确保 Session 不会把 Core 的信任模型搞乱；
 3. 然后实现 **replay / resume / ack / heartbeat** 这套真正决定“会不会丢事件”的 runtime helper；
 4. 再接 **WebSocket profile / DO integration contract / progress forwarding**；
-5. 最后补齐 **hooks / tool / llm 的 Session adapter seam**、测试、schema 导出、文档与独立 repo 收尾。
+5. 最后补齐 **hooks / tool / llm 的 Session adapter seam**、测试、schema 导出、文档与主仓协作收尾。
 
 **刻意推迟**的东西：
 
@@ -75,7 +75,7 @@
 | Phase 3 | **Replay / Resume / Ack / Heartbeat 运行时** | M | ring buffer、resume policy、ack window、heartbeat timeout、Session error registry | Phase 1, Phase 2 |
 | Phase 4 | **WebSocket Profile + DO 集成助手** | L | websocket helper、attach/resume contract、replay 发送、progress forwarding seam | Phase 2, Phase 3 |
 | Phase 5 | **Session Stream Adapter 与 Redaction** | M | hook / tool / llm / compact / system 到 `session.stream.event` 的映射与 redaction builder | Phase 1, Phase 4 |
-| Phase 6 | **测试、Schema 导出、文档与独立 repo 收尾** | M | unit + integration tests、schema export、registry doc、README、独立 repo 约定收口 | Phase 1-5 |
+| Phase 6 | **测试、Schema 导出、文档与主仓协作收尾** | M | unit + integration tests、schema export、registry doc、README、主仓协作约定收口 | Phase 1-5 |
 
 **工作量估算口径**：
 
@@ -104,7 +104,7 @@
    - **核心目标**：统一 hook / tool / llm / compact / system 的 client-facing event shape，并消费 Core `redaction_hint`
    - **为什么放在这里**：Session profile 的价值不只是连接不断，而是**所有 server-push 都走同一事件层**
 
-6. **Phase 6 — 测试、Schema 导出、文档与独立 repo 收尾**
+6. **Phase 6 — 测试、Schema 导出、文档与主仓协作收尾**
    - **核心目标**：让 `@nano-agent/nacp-session` 真正成为一个可独立追踪、可被下游导入、可被 review 收口的 package
    - **为什么放在这里**：只有前面五个 Phase 稳定后，schema 导出、registry 文档、README 与 integration case 才不会反复重写
 
@@ -169,7 +169,7 @@ packages/nacp-session/
 ├── tsconfig.json                   [Phase 1]
 ├── README.md                       [Phase 1-6]
 ├── CHANGELOG.md                    [Phase 1-6]
-└── .gitignore                      [Phase 6]     独立 repo 忽略规则
+└── .gitignore                      [Phase 6]     workspace package 忽略规则
 ```
 
 **对主仓文档的反向影响**：
@@ -218,7 +218,7 @@ docs/
 - **[S17]** integration tests：至少覆盖 reconnect/replay、ack window、heartbeat timeout 三条路径
 - **[S18]** `scripts/export-schema.ts`：导出 `dist/nacp-session.schema.json`
 - **[S19]** `scripts/gen-registry-doc.ts`：生成 `docs/nacp-session-registry.md`
-- **[S20]** `packages/nacp-session/` 独立 repo 跟踪约定与 README 说明
+- **[S20]** `packages/nacp-session/` 主仓 workspace 跟踪约定与 README 说明
 
 ### 2.2 Out-of-Scope（本次 action-plan 明确不做）
 
@@ -278,7 +278,7 @@ docs/
 | P6-01 | Phase 6 | unit test 全覆盖 | `add` | `test/*.test.ts` | 所有高风险 helper 都有单测 | high |
 | P6-02 | Phase 6 | reconnect/ack/heartbeat integration | `add` | `test/integration/*.test.ts` | Session profile 的关键恢复路径被验证 | high |
 | P6-03 | Phase 6 | schema/doc 生成 | `add` | `scripts/export-schema.ts`、`scripts/gen-registry-doc.ts` | 对外输出 schema 与 registry artifact | low |
-| P6-04 | Phase 6 | README / 独立 repo / 主仓文档回填 | `update` | `README.md`、`.gitignore`、`docs/*` | 完成 package 级与主仓级协作说明 | low |
+| P6-04 | Phase 6 | README / 主仓 workspace / 主仓文档回填 | `update` | `README.md`、`.gitignore`、`docs/*` | 完成 package 级与主仓级协作说明 | low |
 
 ---
 
@@ -288,7 +288,7 @@ docs/
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P1-01 | package 骨架 | 创建独立 package 基础文件与导出入口 | `package.json`、`tsconfig.json`、`README.md`、`CHANGELOG.md`、`src/index.ts` | `@nano-agent/nacp-session` 可作为 workspace 包被引用 | `pnpm build` | 包结构稳定、README 写明独立 repo 策略 |
+| P1-01 | package 骨架 | 创建独立 package 基础文件与导出入口 | `package.json`、`tsconfig.json`、`README.md`、`CHANGELOG.md`、`src/index.ts` | `@nano-agent/nacp-session` 可作为 workspace 包被引用 | `pnpm build` | 包结构稳定、README 写明主仓 workspace 策略 |
 | P1-02 | 版本与子协议常量 | 定义 protocol version、WS subprotocol、兼容常量 | `src/version.ts` | `NACP_SESSION_VERSION` / `NACP_SESSION_WS_SUBPROTOCOL` 可统一导入 | `version.test.ts` | 常量冻结且被 README 引用 |
 | P1-03 | 7 个 Session 消息 schema | 定义所有 Session message body schema 与 message family | `src/messages.ts` | Session profile 的消息面不再散落在文档里 | `messages.test.ts` | 7 个消息全可 parse / invalid case 可拒绝 |
 | P1-04 | stream event catalog | 建立 `session.stream.event` v1 kinds 与 shared fields | `src/stream-event.ts` | tool / hook / llm / system 都有统一事件承载层 | `stream-event.test.ts` | union 可区分 kind 且能扩展 |
@@ -330,14 +330,14 @@ docs/
 | P5-03 | tool / compact / system adapters | 把 tool progress/result、compact、system/error 统一映射 | `src/adapters/tool.ts`、`compact.ts`、`system.ts` | 非 LLM 事件也统一走 session stream | `tool/compact/system adapter tests` | event shape 一致、trace preserved |
 | P5-04 | llm adapter seam | 为 future wrapper 暴露 normalized llm delta → stream.event API | `src/adapters/llm.ts` | wrapper 不需要自己发明 client event shape | `llm-adapter.test.ts` | 只冻结 seam，不绑定 provider 细节 |
 
-### 4.6 Phase 6 — 测试、Schema 导出、文档与独立 repo 收尾
+### 4.6 Phase 6 — 测试、Schema 导出、文档与主仓协作收尾
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
 | P6-01 | unit test 全覆盖 | 为每个核心 helper 建单测 | `test/*.test.ts` | Session package 的高风险路径全部有 regression guard | `pnpm test` | 核心 helper 覆盖充分 |
 | P6-02 | reconnect/ack/heartbeat integration | 补三条最关键 integration path | `test/integration/*.test.ts` | Session 的恢复语义被真实模拟验证 | `pnpm test:integration` | reconnect/replay/ack/heartbeat 均通过 |
 | P6-03 | schema/doc 生成 | 导出 JSON Schema 与 registry Markdown | `scripts/export-schema.ts`、`scripts/gen-registry-doc.ts` | 非 TS 使用方可消费 schema artifact | `pnpm build:schema`、`pnpm build:docs` | 生成物稳定且可追踪 |
-| P6-04 | README / 独立 repo / 主仓文档回填 | 更新 package README、独立 repo 约定、主仓文档关联 | `README.md`、`.gitignore`、`docs/*` | Session package 的协作方式对外清楚 | 文档检查 | 主仓与子仓边界清楚、可 review |
+| P6-04 | README / 主仓 workspace / 主仓文档回填 | 更新 package README、主仓 workspace 约定、主仓文档关联 | `README.md`、`.gitignore`、`docs/*` | Session package 的协作方式对外清楚 | 文档检查 | 主仓与 package 边界清楚、可 review |
 
 ---
 
@@ -505,7 +505,7 @@ docs/
 - **本 Phase 风险提醒**：
   - 如果 adapter 抽象过重，会把业务层过早绑死
 
-### 5.6 Phase 6 — 测试、Schema 导出、文档与独立 repo 收尾
+### 5.6 Phase 6 — 测试、Schema 导出、文档与主仓协作收尾
 
 - **Phase 目标**：把 `nacp-session` 从设计稿变成真正可执行、可审查、可独立跟踪的 package
 - **本 Phase 对应编号**：
@@ -528,7 +528,7 @@ docs/
 - **具体功能预期**：
   1. unit / integration / schema/doc generation 形成完整闭环
   2. `nacp-session` 的 README 与主仓文档对齐
-  3. package 按 `packages/*` 独立 repo 策略完成初始化说明
+  3. package 按 `packages/*` 主仓 workspace 策略完成协作说明
 - **具体测试安排**：
   - **单测**：全模块回归
   - **集成测试**：reconnect/replay、ack、heartbeat 至少三条
@@ -537,7 +537,7 @@ docs/
 - **收口标准**：
   - `pnpm test`、`pnpm build`、`pnpm build:schema`、`pnpm build:docs` 均通过
   - 核心恢复路径有 integration 级验证或明确 re-baseline 记录
-  - 文档、README、主仓说明与独立 repo 策略一致
+  - 文档、README、主仓说明与 monorepo workspace 策略一致
 - **本 Phase 风险提醒**：
   - 若没有可用的 websocket test harness，integration 可能要正式 re-baseline 到 deployment suite
 
@@ -602,7 +602,7 @@ docs/
 
 - **技术前提**：`@nano-agent/nacp-core` 已可作为稳定 dependency；Session profile 继续使用 TypeScript + zod + JSON Schema 导出路线
 - **运行时前提**：宿主为 Cloudflare Workers + Durable Objects + WebSocket；一条连接只服务一个 team；authority 由 server-stamped
-- **组织协作前提**：`packages/nacp-session/` 按根 README 约定作为独立 repo 管理；主仓保留设计、计划、审查、workspace 引用
+- **组织协作前提**：`packages/nacp-session/` 按根 README 约定作为主仓 monorepo 内的 workspace package 管理；设计、计划、审查、源码与测试统一在主仓维护
 - **上线 / 合并前提**：至少完成 reconnect/replay 主路径验证，或在 action-plan / code-review 中正式写明 re-baseline 理由
 
 ### 7.3 文档同步要求
@@ -662,7 +662,7 @@ docs/
 | 测试 | 高风险路径均有 unit tests；reconnect/replay 至少一条 integration path 成立 |
 | 文档 | action-plan、README、registry doc、相关设计文档对齐 |
 | 风险收敛 | authority 边界、replay out-of-range、ack mismatch、redaction drift 都有明确行为与测试 |
-| 可交付性 | `packages/nacp-session/` 可作为独立 repo 初始化与后续 code review 对象 |
+| 可交付性 | `packages/nacp-session/` 可作为主仓 workspace package 持续演进，并作为后续 code review 对象 |
 
 ---
 
@@ -672,7 +672,7 @@ docs/
 - **哪些编号的拆分还不够合理**：`若 P4-04 的 progress seam 过大，可再拆成主路径与 fallback 路径`
 - **哪些问题本应更早问架构师**：`Q1（首条输入）与 Q2（单/多 attach）`
 - **哪些测试安排在实际执行中证明不够**：`若 fake websocket harness 无法模拟 hibernation，需要补 deployment suite`
-- **模板本身还需要补什么字段**：`若未来 session profile 经常涉及“独立 repo + workspace 依赖”协作，可给模板增加 repo strategy 专栏`
+- **模板本身还需要补什么字段**：`若未来 session profile 经常涉及 monorepo workspace / package mirroring 协作，可给模板增加 repo strategy 专栏`
 
 ---
 

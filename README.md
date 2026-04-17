@@ -90,13 +90,13 @@ nano-agent 不是从真空里长出来的。
 
 ### 3.1 仓库结构说明
 
-`packages/*` 下的每个子目录是**独立的 Git 仓库**，独立发布到 GitHub Packages 做私有化管理。根仓只保留设计文档、计划文档、审查文档与 pnpm workspace 引用。根仓的 `.gitignore` 有意忽略 `packages/`——这不是遗漏，而是多仓策略的体现。
+`packages/*` 现在由**主仓统一跟踪**，作为 monorepo 内的 workspace packages 进行开发、审查与跨包测试。  
+如后续需要独立发布或权限隔离，可以再把单个 package **split / mirror** 到独立仓库，但主仓是当前唯一的 source of truth。
 
 | 目录 | 仓库类型 | 说明 |
 |------|---------|------|
-| `/` (根) | nano-agent 主仓 | 设计、计划、审查、workspace 配置 |
-| `packages/nacp-core/` | 独立 repo | NACP-Core 协议内部信封层 |
-| `packages/nacp-session/` | 独立 repo | NACP-Session 客户端 WebSocket 交互协议 |
+| `/` (根) | nano-agent 主仓（source of truth） | 设计、计划、审查、workspace 配置、packages 源码与跨包测试 |
+| `packages/*` | 主仓 monorepo workspace packages | 协议层、runtime skeleton、storage / hooks / eval 等核心实现 |
 | `context/` | 参考代码（不进仓） | 三方 agent CLI / smcp / safe / just-bash 的只读副本 |
 
 ---

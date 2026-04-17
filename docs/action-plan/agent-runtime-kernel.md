@@ -5,7 +5,7 @@
 > 类型: `new`
 > 作者: `GPT-5.4`
 > 时间: `2026-04-16`
-> 文件位置: `packages/agent-runtime-kernel/`（独立 repo，位于 `packages/` 下）
+> 文件位置: `packages/agent-runtime-kernel/`（主仓 monorepo 内的 workspace package）
 > 关联设计 / 调研文档:
 > - `docs/design/agent-runtime-kernel-by-GPT.md`
 > - `docs/design/hooks-by-GPT.md`
@@ -199,7 +199,7 @@ packages/agent-runtime-kernel/
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P1-01 | package 骨架 | 按 `nacp-core` / `nacp-session` 现有 package 约定建立独立 repo 骨架、scripts 与导出面 | `package.json`、`tsconfig.json`、`README.md`、`CHANGELOG.md` | package 可 `build/typecheck/test` | 基础命令校验 | 目录结构与脚本约定收口 |
+| P1-01 | package 骨架 | 按 `nacp-core` / `nacp-session` 现有 package 约定建立 workspace package 骨架、scripts 与导出面 | `package.json`、`tsconfig.json`、`README.md`、`CHANGELOG.md` | package 可 `build/typecheck/test` | 基础命令校验 | 目录结构与脚本约定收口 |
 | P1-02 | 核心状态类型 | 定义 `SessionState`、`TurnState`、`KernelSnapshotMeta`、source-agnostic `PendingWait` / input-arrived signal 等类型 | `src/types.ts`、`src/state.ts` | 跨 turn / 单 turn 状态槽位固定 | 类型测试 / compile-only | 状态字段与生命周期归属明确 |
 | P1-03 | step / interrupt 类型 | 定义 `KernelStep`、`StepDecision`、`KernelPhase`、`InterruptReason` | `src/step.ts`、`src/interrupt.ts` | 推进与中断不再靠字符串散落 | 单测 + 类型断言 | 所有核心 union 类型冻结 |
 | P1-04 | delegate contracts | 定义 `LlmDelegate`、`CapabilityDelegate`、`HookDelegate`、`CompactDelegate` | `src/delegates.ts` | kernel 与具体实现解耦 | 假对象编译测试 | 所有依赖方均可按 contract mock |
@@ -457,7 +457,7 @@ packages/agent-runtime-kernel/
 
 - **技术前提**：Cloudflare Workers / Durable Objects / TypeScript / 单线程 V8 isolate
 - **运行时前提**：单活跃 turn、无 sub-agent、caller-managed session health、checkpoint 由 Session DO 决定 flush 时机；session runtime 后续应同时支持 WebSocket-first 与 HTTP fallback，而不是只依赖 heartbeat 管理
-- **组织协作前提**：`packages/*` 为独立 repo；文档与实现需按多仓策略维护；最终 deployable Worker / DO 组装层在后续运行时包中完成，而不是把当前 package 直接当发布单元
+- **组织协作前提**：`packages/*` 现由主仓 monorepo 统一跟踪；文档、实现、跨包测试与 code review 以主仓为 source of truth；最终 deployable Worker / DO 组装层在后续运行时包中完成，而不是把当前 package 直接当发布单元
 - **上线 / 合并前提**：不得破坏现有 `nacp-core` / `nacp-session` 已冻结边界
 
 ### 7.3 文档同步要求

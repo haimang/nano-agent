@@ -5,7 +5,7 @@
 > 类型: `new`
 > 作者: `GPT-5.4`
 > 时间: `2026-04-16`
-> 文件位置: `packages/session-do-runtime/`（独立 repo，位于 `packages/` 下；作为首个 deploy-oriented Worker / Session DO 组装包）
+> 文件位置: `packages/session-do-runtime/`（主仓 monorepo 内的 workspace package；作为首个 deploy-oriented Worker / Session DO 组装包）
 > 关联设计 / 调研文档:
 > - `docs/design/session-do-runtime-by-opus.md`
 > - `docs/design/agent-runtime-kernel-by-GPT.md`
@@ -54,7 +54,7 @@
   - WebSocket-first 与 HTTP fallback 的运行时职责仍未被同一份行动计划收口
   - checkpoint / restore / graceful shutdown / heartbeat / ack health / trace sink 的调用时机需要由 Session DO 明确承担
 - **本次计划的直接产出**：
-  - `packages/session-do-runtime/` 独立 repo 骨架
+  - `packages/session-do-runtime/` workspace package 骨架
   - Worker entry、Session DO class、composition factory、ingress adapter、checkpoint/alarm/shutdown helpers
   - 与 `@nano-agent/nacp-session` reality 严格对齐的 WebSocket / HTTP 双入口运行时
   - 可驱动 kernel delegates 的 Session actor loop 与 fixture-based integration tests
@@ -511,7 +511,7 @@ packages/session-do-runtime/
 
 - **技术前提**：Cloudflare Workers / Durable Objects / TypeScript / 单线程 V8 isolate / `nacp-session` 负责 WS profile reality
 - **运行时前提**：single-active-turn、WebSocket-first + HTTP fallback、caller-managed ack/heartbeat health、Session DO 是 runtime assembly host 而不是子系统实现全集
-- **组织协作前提**：`packages/*` 为独立 repo；`@nano-agent/session-do-runtime` 是首个 deploy-oriented assembly package，但仍与 kernel/llm/capability/workspace/hooks/eval 分仓协作
+- **组织协作前提**：`packages/*` 现由主仓 monorepo 统一跟踪；`@nano-agent/session-do-runtime` 是首个 deploy-oriented assembly package，但仍与 kernel/llm/capability/workspace/hooks/eval 分包协作
 - **上线 / 合并前提**：不得让 `nacp-core` 重新承担 Session WebSocket legality；不得在本包里偷偷发明新的 Session wire truth；不得写死最终 archive/storage 策略
 
 ### 7.3 文档同步要求

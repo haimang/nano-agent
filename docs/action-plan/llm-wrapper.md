@@ -5,7 +5,7 @@
 > 类型: `new`
 > 作者: `GPT-5.4`
 > 时间: `2026-04-16`
-> 文件位置: `packages/llm-wrapper/`（独立 repo，位于 `packages/` 下）
+> 文件位置: `packages/llm-wrapper/`（主仓 monorepo 内的 workspace package）
 > 关联设计 / 调研文档:
 > - `docs/design/llm-wrapper-by-GPT.md`
 > - `docs/design/workspace-context-artifacts-by-GPT.md`
@@ -467,7 +467,7 @@ packages/llm-wrapper/
 
 - **技术前提**：Cloudflare Workers / `fetch` / TypeScript / 无重型 provider SDK 依赖
 - **运行时前提**：WebSocket-first client output、保留 HTTP fallback、HTTPS-first provider calls、128MB isolate、R2 staged object path；会话层的持久化与返回不应只依赖 heartbeat
-- **组织协作前提**：`packages/*` 独立 repo；设计先行，后续由 action-plan 驱动实现；最终 deployable Worker / DO 会在更上层运行时包中组装这些 packages
+- **组织协作前提**：`packages/*` 现由主仓 monorepo 统一跟踪；设计先行，后续由 action-plan 驱动实现；最终 deployable Worker / DO 会在更上层运行时包中组装这些 packages
 - **上线 / 合并前提**：不得绕过当前 `nacp-session` reality；不得自行发明 `llm.invoke` Core 域
 
 ### 7.3 文档同步要求

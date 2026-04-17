@@ -5,7 +5,7 @@
 > 类型: `new`
 > 作者: `GPT-5.4`
 > 时间: `2026-04-16`
-> 文件位置: `packages/hooks/`（独立 repo，位于 `packages/` 下）
+> 文件位置: `packages/hooks/`（主仓 monorepo 内的 workspace package）
 > 关联设计 / 调研文档:
 > - `docs/design/hooks-by-GPT.md`
 > - `docs/design/hooks-by-opus.md`
@@ -463,7 +463,7 @@ packages/hooks/
 
 - **技术前提**：Cloudflare Workers / Durable Objects / TypeScript / 单线程 V8 isolate / 无 shell runtime
 - **运行时前提**：single-active-turn、WebSocket-first + HTTP fallback session delivery、hooks 是治理扩展层而不是客户端回写层、client-visible hook 事件必须复用现有 `session.stream.event`
-- **组织协作前提**：`packages/*` 为独立 repo；`@nano-agent/hooks` 作为库供 kernel/session/capability/eval 复用；最终 deployable Worker / DO 组装层在后续运行时包中完成
+- **组织协作前提**：`packages/*` 现由主仓 monorepo 统一跟踪；`@nano-agent/hooks` 作为库供 kernel/session/capability/eval 复用；最终 deployable Worker / DO 组装层在后续运行时包中完成
 - **上线 / 合并前提**：不得重新引入 shell-command hooks、自由 JSON outcome、错误的 session kind 宇宙；不得把真实 storage wiring 写死进本包
 
 ### 7.3 文档同步要求

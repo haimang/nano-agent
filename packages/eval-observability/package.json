@@ -1,0 +1,40 @@
+{
+  "name": "@nano-agent/eval-observability",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Eval and Observability — trace taxonomy, sink, timeline, scenario runner, replay",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "build:schema": "tsx scripts/export-schema.ts",
+    "build:docs": "tsx scripts/gen-trace-doc.ts"
+  },
+  "peerDependencies": {
+    "zod": ">=3.22.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0",
+    "zod": "^3.24.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nano-agent/nano-agent.git",
+    "directory": "packages/eval-observability"
+  },
+  "license": "UNLICENSED"
+}

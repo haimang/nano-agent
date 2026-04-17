@@ -1,0 +1,43 @@
+{
+  "name": "@nano-agent/nacp-session",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "NACP-Session — client ↔ session DO WebSocket profile for nano-agent",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:integration": "vitest run test/integration/",
+    "build:schema": "tsx scripts/export-schema.ts",
+    "build:docs": "tsx scripts/gen-registry-doc.ts"
+  },
+  "dependencies": {
+    "@nano-agent/nacp-core": "workspace:*"
+  },
+  "peerDependencies": {
+    "zod": ">=3.22.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0",
+    "zod": "^3.24.0",
+    "zod-to-json-schema": "^3.24.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nano-agent/nano-agent.git",
+    "directory": "packages/nacp-session"
+  },
+  "license": "UNLICENSED"
+}

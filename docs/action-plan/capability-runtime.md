@@ -5,7 +5,7 @@
 > 类型: `new`
 > 作者: `GPT-5.4`
 > 时间: `2026-04-16`
-> 文件位置: `packages/capability-runtime/`（独立 repo，位于 `packages/` 下）
+> 文件位置: `packages/capability-runtime/`（主仓 monorepo 内的 workspace package）
 > 关联设计 / 调研文档:
 > - `docs/design/capability-runtime-by-GPT.md`
 > - `docs/design/workspace-context-artifacts-by-GPT.md`
@@ -498,7 +498,7 @@ packages/capability-runtime/
 
 - **技术前提**：Cloudflare Workers / Durable Objects / TypeScript / 单线程 V8 isolate / 无真实宿主进程
 - **运行时前提**：single-active-turn、caller-managed session health、fake bash 是 compatibility surface、service-binding 可作为远端能力执行 seam；后续 deployable Worker 会同时暴露 WebSocket-first 与 HTTP fallback ingress，但 capability contract 不应区分两种入口
-- **组织协作前提**：`packages/*` 为独立 repo；Capability Runtime 必须以独立包供 kernel/hook/llm 复用；最终 deployable Worker / DO 组装层在后续运行时包中完成
+- **组织协作前提**：`packages/*` 现由主仓 monorepo 统一跟踪；Capability Runtime 作为 workspace package 供 kernel/hook/llm 复用；最终 deployable Worker / DO 组装层在后续运行时包中完成
 - **上线 / 合并前提**：不得重新引入 Linux-first / shell-first 假设；不得突破当前 `nacp-core` / `nacp-session` 已冻结边界；不得把 `context/just-bash` 直接作为 runtime dependency 打进产物
 
 ### 7.3 文档同步要求

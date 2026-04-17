@@ -1,0 +1,18 @@
+import { NacpValidationError } from "@nano-agent/nacp-core";
+
+export class NacpSessionError extends NacpValidationError {
+  constructor(errors: string[], code: string) {
+    super(errors, code);
+    this.name = "NacpSessionError";
+  }
+}
+
+export const SESSION_ERROR_CODES = {
+  NACP_SESSION_INVALID_PHASE: "NACP_SESSION_INVALID_PHASE",
+  NACP_SESSION_AUTHORITY_REQUIRED: "NACP_SESSION_AUTHORITY_REQUIRED",
+  NACP_SESSION_FORGED_AUTHORITY: "NACP_SESSION_FORGED_AUTHORITY",
+  NACP_REPLAY_OUT_OF_RANGE: "NACP_REPLAY_OUT_OF_RANGE",
+  NACP_SESSION_ACK_MISMATCH: "NACP_SESSION_ACK_MISMATCH",
+  NACP_SESSION_HEARTBEAT_TIMEOUT: "NACP_SESSION_HEARTBEAT_TIMEOUT",
+  NACP_SESSION_ALREADY_ATTACHED: "NACP_SESSION_ALREADY_ATTACHED",
+} as const;
