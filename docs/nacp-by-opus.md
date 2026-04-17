@@ -16,7 +16,7 @@
 > - `docs/value-proposition-analysis-by-opus.md`
 > - `docs/value-proposition-analysis-by-GPT.md`
 > - `docs/vpa-fake-bash-by-opus.md`
-> - `docs/design/hooks-by-opus.md`
+> - `docs/design/after-nacp/hooks-by-opus.md`
 > - **`docs/nacp-reviewed-by-GPT.md`**（v2 修订的直接输入）
 > 文档状态: `draft-v2`
 

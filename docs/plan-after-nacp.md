@@ -5,12 +5,12 @@
 > 作者: `GPT-5.4`
 > 文档性质: `phase review / closure memo / next-phase proposal`
 > 证据来源:
-> - `docs/action-plan/*.md`
+> - `docs/action-plan/after-nacp/*.md`
 > - `packages/*`
 > - `test/*.test.mjs`
 > - `test/e2e/*.test.mjs`
-> - `docs/progress-report/mvp-wave-2nd-round-fixings.md`
-> - `docs/code-review/e2e-test-01.md`
+> - `docs/progress-report/after-nacp/mvp-wave-2nd-round-fixings.md`
+> - `docs/code-review/after-nacp/e2e-test-01.md`
 
 ---
 
