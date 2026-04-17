@@ -29,9 +29,8 @@ const helper = new SessionWebSocketHelper({
     team_uuid: "your-team-uuid",
     plan_level: "pro",
     session_uuid: "your-session-uuid",
-    trace_id: "your-trace-id",
-    producer_id: "nano-agent.session.do@v1",
-    stamped_by: "nano-agent.platform.ingress@v1",
+    // Internal identity naming is being standardized to UUID-based fields.
+    // Pass the session/trace UUIDs and producer metadata required by your build.
   },
 });
 helper.attach(webSocket);
@@ -63,7 +62,8 @@ This package **depends on** `@nano-agent/nacp-core` and extends its types:
 
 For MVP, `session.start.body.initial_input` is the formal entry for the first turn so the session skeleton can be validated without inventing runtime-private wire messages.
 
-**The first post-MVP expansion item for `@nano-agent/nacp-session` is to add a formal follow-up input family** so multi-turn conversations become first-class protocol reality rather than ad hoc runtime behavior. This decision is aligned with `docs/investigation/action-plan-qna-clarification-batch-1.md` (Batch-1 / Q5).
+**The formal follow-up input family is intentionally deferred to the post-runtime-closure expansion phase.**  
+The current phase first closes contract freeze, trace-first observability, and session edge v1 reality. When follow-up input arrives, it must still land as a protocol-layer extension rather than as ad hoc runtime-private behavior.
 
 ## Commands
 

@@ -228,8 +228,8 @@ These are intentionally small, high-signal notes that should guide the first upg
 
 | Area | Todo note | Why it matters | Reference |
 |---|---|---|---|
-| **NACP-Session** | **Add a formal follow-up input family right after MVP** so multi-turn conversations become protocol-native instead of being blocked behind the current first-turn-only `session.start.initial_input` entry. | MVP can validate the session skeleton with the existing minimal ingress, but the first meaningful protocol expansion after that should be multi-turn input truth in `@nano-agent/nacp-session`. | `docs/investigation/action-plan-qna-clarification-batch-1.md` — Batch-1 / Q5 |
-| **NACP-Session** | Keep the follow-up input family as a **protocol-layer extension**, not a `session-do-runtime` private message shape. | This preserves a single source of truth for client ↔ session DO semantics and avoids runtime/protocol drift. | `docs/investigation/action-plan-qna-clarification-batch-1.md` — Batch-1 / Q5 |
+| **NACP-Session** | **Defer the formal follow-up input family to the post-runtime-closure expansion phase** instead of forcing it into the current closure cycle. | The current phase must first freeze contracts, establish trace-first observability, and close session/runtime truth; multi-round input should land only after those foundations are stable. | `docs/plan-after-skeleton.md` |
+| **NACP-Session** | When the follow-up input family is eventually added, keep it as a **protocol-layer extension**, not a `session-do-runtime` private message shape. | This preserves a single source of truth for client ↔ session DO semantics and avoids runtime/protocol drift. | `docs/plan-after-skeleton.md` |
 
 ---
 
