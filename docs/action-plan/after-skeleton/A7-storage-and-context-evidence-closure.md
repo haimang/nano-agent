@@ -485,3 +485,85 @@ storage-and-context-evidence-closure
 ## 10. 结语
 
 这份 action-plan 以 **把 nano-agent 的 storage/context 能力从“有类型、有测试、有设计说法”推进到“持续产证、可做 judgement、能被下一阶段直接引用”** 为第一优先级，采用 **先冻结 taxonomy/ownership，再接 runtime emitters，再做 calibration 与 real spot-check，最后用 report/principles/exit pack 收口** 的推进方式，优先解决 **evidence 只停留在 tests、runtime owner 不清、verdict 与 maturity 语言混用** 这三类问题，并把 **不做 D1/database-first、不把 transcript 当证据、不把 provisional 假设偷渡成 frozen baseline** 作为主要约束。整个计划完成后，`Storage / Context / Evidence` 应达到 **五类 evidence 都能挂 trace_uuid、tenant scope、durable landing zone，并能形成 calibration judgement** 的状态，从而为后续的 **context architecture、storage threshold freeze、API / data / frontend 设计** 提供真正可信的上游证据。
+
+---
+
+## 11. 工作报告（A7 execution log）
+
+> 执行人：Claude Opus 4.7（1M context）
+> 执行时间：`2026-04-18`
+> 执行对象：`docs/action-plan/after-skeleton/A7-storage-and-context-evidence-closure.md` Phase 1-5
+> 执行结论：**五条 evidence 流（placement / assembly / compact / artifact / snapshot）已完成 vocabulary + emitter wiring + verdict 聚合 + 报告 + 原则的 closure；A8/A9/A10 已能通过 `aggregateEvidenceVerdict()` 与两份 docs 直接消费 P6 证据。**
+
+### 11.1 工作目标与内容回顾
+
+- **目标**：让 P6 从 “模型存在、测试可演示” 推进到 “runtime 持续产证 + 可形成 judgement + 可交接给下一阶段”。具体即：冻结五条 evidence 流的 vocabulary、给真实业务路径接上 emitters、把 placement/assembly/compact/artifact/snapshot 都纳入 calibration verdict、产出 storage evidence report 与 context layering principles。
+- **AX-QNA 绑定**：Q5（DO hot anchor + R2 cold archive + D1 deferred）、Q13（四档 verdict）、Q14（verdict 与 PX grade 永久分离）、Q20（D1 升格须独立 memo）— 全部冻结输入。
+- **Phase 真实执行路径**：
+  - Phase 1 — `eval-observability/src/evidence-streams.ts` 冻结五条 typed evidence + `EvidenceRecorder` + `CALIBRATION_VERDICTS / computeCalibrationVerdict` + 三档默认阈值；`test/evidence-streams.test.ts` 9 cases pin 住。
+  - Phase 2 — `eval-observability/src/evidence-bridge.ts` 提供 `placementEvidenceFromRecord / bridgeEvidenceToPlacementLog / recordPlacementEvidence`；`DoStorageTraceSink` 接受 optional `evidenceSink`，每次真实 `storage.put()` 都会发出 `PlacementEvidence`；`test/sinks/do-storage-placement-emission.test.ts` 3 cases + `test/integration/placement-runtime-loop.test.ts` 5 cases pin 住运行面。
+  - Phase 3 — `workspace-context-artifacts/src/evidence-emitters.ts` 暴露 `buildAssemblyEvidence / buildCompactEvidence / buildArtifactEvidence / buildSnapshotEvidence` + `emit*Evidence`；通过 `EvidenceAnchorLike + EvidenceSinkLike` 解耦 `eval-observability`；`test/evidence-emitters.test.ts` 13 cases 覆盖 happy / error / boundary / lifecycle / restore-coverage 五条路径。
+  - Phase 4 — `eval-observability/src/evidence-verdict.ts` 实现 `aggregateEvidenceVerdict` + `DEFAULT_VERDICT_RULES`（5 hypothesis：`placement.do.hot-anchor / write-amp / assembly.required-layer-respected / compact.success-rate / snapshot.restore-coverage`）；`test/integration/p6-evidence-verdict.test.ts` 5 cases pin 住健康场景全 evidence-backed、oversize → needs-revisit、持续失败 → contradicted-by-evidence、外部 rule 注入。
+  - Phase 5 — `docs/eval/after-skeleton-storage-evidence-report.md` + `docs/eval/after-skeleton-context-layering-principles.md` 共同形成 evidence exit pack；P6 design `B. A7 执行后状态` + v0.3 同步；本 action-plan §11 工作报告。
+- **参考案例核对**：`context/claude-code/services/compact/microCompact.ts` 在 P3-02 compact phase 划分上提供方法学参考（request / response / boundary / error 四阶段，错误情况单独成型）；`context/mini-agent/mini_agent/logger.py` 仍作为反面教材（plain-text 单文件 + 缺 anchor → 不能被 P6 verdict 消费）。`just-bash` 与本轮无直接交集，仅借鉴其 “evidence 必须独立可验证” 的方法学，体现在 `aggregateEvidenceVerdict` 接受 external rules 不污染 default catalog。
+
+### 11.2 实际代码清单
+
+- **新增 — eval-observability**
+  - `packages/eval-observability/src/evidence-streams.ts`：五类 `EvidenceRecord` + `EvidenceRecorder` + `CALIBRATION_VERDICTS / computeCalibrationVerdict`。
+  - `packages/eval-observability/src/evidence-bridge.ts`：`bridgeEvidenceToPlacementLog / placementEvidenceFromRecord / recordPlacementEvidence`。
+  - `packages/eval-observability/src/evidence-verdict.ts`：`VerdictRule / VerdictReport / VerdictAggregateResult / aggregateEvidenceVerdict / DEFAULT_VERDICT_RULES`。
+- **改写 — eval-observability**
+  - `packages/eval-observability/src/sinks/do-storage.ts`：constructor 接受 `evidenceSink`，每次真实 `storage.put()` 调用 `emitPlacement()` 发出 `PlacementEvidence`。
+  - `packages/eval-observability/src/index.ts`：导出 evidence streams / bridge / verdict 三个模块。
+- **新增 — workspace-context-artifacts**
+  - `packages/workspace-context-artifacts/src/evidence-emitters.ts`：`buildAssemblyEvidence / buildCompactEvidence / buildArtifactEvidence / buildSnapshotEvidence` + `emit*Evidence`，通过 `EvidenceAnchorLike + EvidenceSinkLike` 解耦上游包。
+  - `packages/workspace-context-artifacts/src/index.ts`：追加 emitter 导出。
+- **新增 — 测试**
+  - `packages/eval-observability/test/evidence-streams.test.ts`（9 cases）。
+  - `packages/eval-observability/test/integration/placement-runtime-loop.test.ts`（5 cases）。
+  - `packages/eval-observability/test/sinks/do-storage-placement-emission.test.ts`（3 cases）。
+  - `packages/eval-observability/test/integration/p6-evidence-verdict.test.ts`（5 cases）。
+  - `packages/workspace-context-artifacts/test/evidence-emitters.test.ts`（13 cases）。
+- **新增 — 文档**
+  - `docs/eval/after-skeleton-storage-evidence-report.md`：7 章节 + 默认 hypothesis 目录 + open hypotheses + 下一阶段引用路径。
+  - `docs/eval/after-skeleton-context-layering-principles.md`：7 条 evidence-backed 原则 + 明确 "what this phase does NOT settle"。
+- **改写 — 文档**
+  - `docs/design/after-skeleton/P6-storage-and-context-evidence-closure.md`：附录 B + v0.3。
+  - `docs/action-plan/after-skeleton/A7-storage-and-context-evidence-closure.md`（本文件）：§11 工作报告。
+
+### 11.3 测试制作与测试结果
+
+- **新增 cases 合计**：evidence-streams 9 + placement-runtime-loop 5 + do-storage-placement-emission 3 + p6-evidence-verdict 5 + workspace evidence-emitters 13 = **35 新 cases**。
+- **运行结果**
+  - `pnpm --filter @nano-agent/eval-observability test` — `22 files / 194 tests passed`。
+  - `pnpm --filter @nano-agent/workspace-context-artifacts test` — `15 files / 163 tests passed`。
+  - `pnpm --filter @nano-agent/{nacp-core, nacp-session, hooks, capability-runtime, llm-wrapper, agent-runtime-kernel, storage-topology, session-do-runtime} test` — 全部通过（按 `pnpm -r test` 输出汇总）。
+  - `pnpm -r typecheck / build` — 10 projects 全绿。
+  - `node --test test/*.test.mjs`（root contract + A6 verification）— `52 tests / 52 passed`。
+  - `npm run test:cross`（root e2e）— `14/14 passed`。
+- **A7 evidence loop dry-run**
+  - 健康路径（3 placement + 3 assembly + 3 compact + 3 snapshot 记录）：5 hypothesis 全部 `evidence-backed`。
+  - oversize 写入路径：`placement.do.write-amp` → `needs-revisit`，其余 `evidence-backed`。
+  - 持续失败 restore：`snapshot.restore-coverage` → `contradicted-by-evidence`。
+  - 外部 rule 注入：`aggregateEvidenceVerdict(records, [customRule])` 隔离 default catalog，custom rule 单独输出 `evidence-backed`。
+
+### 11.4 收口分析与下一阶段安排
+
+- **AX-QNA / Definition of Done 对照**
+  - **功能**：五条 evidence 流 + verdict 聚合 + 默认 hypothesis 目录 + 真实 sink emission + storage evidence report + context layering principles 全部落地。
+  - **测试**：package + integration + root cross 共 35 新 cases；既有测试全绿；oversize / failed-restore 两条降级路径有显式守卫。
+  - **文档**：P6 design 附录 B、storage evidence report、context layering principles、本 action-plan §11 四方一致。
+  - **风险收敛**：evidence 不再只停留在 tests（DoStorageTraceSink 真实 emit）；emitter ownership 已分离（eval = vocab + sink，业务包 = live emit）；verdict 与 PX grade 通过类型 + 文档强制分离；transcript 不再是 placement/context 替代。
+  - **可交付性**：A8（minimal bash）可读 `snapshot.restore-coverage` 钩子；后续 storage threshold freeze / context architecture 可直接读 `placement.do.*` 与 `assembly` / `compact` verdict + revisit hint。
+- **复盘要点回填**
+  - 工作量估计偏差：Phase 4 verdict aggregator 比预估省力 —— 一旦 evidence-streams 的 discriminated union 形态固定，VerdictRule 可以是单文件、零依赖；Phase 3 比预估重，因为要协调真实 `WorkspaceSnapshotFragment` schema (`mountConfigs` 而非 `mounts`) 与 `CompactBoundaryRecord` 真实形状 (`turnRange / archivedAt` 而非 `boundaryIndex / tokensBefore`)。
+  - 拆分合理度：P5-01 (报告) 与 P5-02 (原则) 应分别形成独立可引用的文档 — 我按这一思路输出了两份；未来模板可以把它们标为 "**parallel artifacts**" 而不是 "sequential phase items"。
+  - 需要更早问架构师：本次没有；Q5 / Q13 / Q14 / Q20 已覆盖。
+  - 测试覆盖不足之处：emitter 与真实 `ContextAssembler.assemble()` 调用之间没有 end-to-end test —— 接 context architecture 时建议补一条 "assembler → emitter → recorder → verdict" 的 e2e 测试。
+  - 模板需补字段：`Phase 3` 的 `consideredKinds` / `requiredLayerBudgetViolation` 这类 "evidence input" 字段未来可以在模板里写明 "由调用者提供，非 result 自带"，避免 reviewer 误以为来自 AssemblyResult。
+- **下一阶段安排（A8 / A9 / A10）**
+  - **A8 (`P7a / 7b / 7c minimal bash`)**：A7 主要为它提供 `snapshot.restore-coverage` 钩子（tool execution 写入 workspace 后的 fragment 覆盖度）。
+  - **后续 storage threshold freeze**（若纳入下一阶段）：直接读 `placement.do.*` 的 supporting / contradictory 计数 + revisit hint；判断阈值是否需要从 1 MB 调整。
+  - **后续 context architecture**（若纳入下一阶段）：`assembly` + `compact` evidence 可作为 "是否引入 retrieval / embedding ranking" 的判据；`docs/eval/after-skeleton-context-layering-principles.md §7` 明确列出本轮不做的项目，避免 scope creep。
+  - **D1 升格守卫**：本 closure 不改 D1 状态；任何 D1 路径变更必须先按 AX-QNA Q20 提交独立 benchmark memo（命名规范 `docs/eval/trace-substrate-benchmark-v{N}.md`）。

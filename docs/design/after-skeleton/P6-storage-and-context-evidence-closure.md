@@ -456,9 +456,27 @@ Phase 1-5 做完之后，nano-agent 会拥有：
 
 ## 附录
 
+### B. A7 执行后状态（2026-04-18 收口）
+
+P6 design 的所有 evidence closure 前提已由 A7 落地为代码 + 文档 + report + principles 四合一交付：
+
+- **Evidence taxonomy freeze（P1-01）**：`packages/eval-observability/src/evidence-streams.ts` 冻结五类 `EvidenceRecord`（`placement / assembly / compact / artifact / snapshot`）、每个记录的 `EvidenceAnchor`（`traceUuid + sessionUuid + teamUuid + sourceRole + timestamp`）以及 `EvidenceRecorder` 内存 sink。
+- **Emitter ownership（P1-02）**：`eval-observability` 只拥有 vocabulary + sink；业务 emitter owner 分别落在 `DoStorageTraceSink`（placement）与 `workspace-context-artifacts` 的 `ContextAssembler / CompactBoundaryManager / PreparedArtifacts / WorkspaceSnapshotBuilder`（assembly / compact / artifact / snapshot）。
+- **Calibration verdict contract（P1-03）**：`CALIBRATION_VERDICTS / computeCalibrationVerdict / DEFAULT_EVIDENCE_BACKED_MIN_SIGNALS / DEFAULT_NEEDS_REVISIT_MIN_CONTRADICTORY / DEFAULT_CONTRADICTED_MIN_CONTRADICTORY` 固化 AX-QNA Q13 的四档语言与默认阈值，并通过文档说明与 PX grade 永久分离（Q14）。
+- **Placement runtime emission（P2-01）**：`DoStorageTraceSink` 接收 optional `evidenceSink`，每次真实 `storage.put()` 都会发出 `PlacementEvidence`（含 `key / sizeBytes / durationMs / outcome`）；`test/sinks/do-storage-placement-emission.test.ts` 3 cases pin 住行为。
+- **Calibration bridge（P2-02）**：新增 `packages/eval-observability/src/evidence-bridge.ts` 的 `placementEvidenceFromRecord / bridgeEvidenceToPlacementLog / recordPlacementEvidence`，让新旧 placement-log 口径互通；`test/integration/placement-runtime-loop.test.ts` 5 cases pin 住 bridge。
+- **Context / Compact / Artifact / Snapshot emitters（P3-01~04）**：新增 `packages/workspace-context-artifacts/src/evidence-emitters.ts`，暴露 `buildAssemblyEvidence / buildCompactEvidence / buildArtifactEvidence / buildSnapshotEvidence`（每个都带 `emit*` 变体），并定义 `EvidenceAnchorLike / EvidenceSinkLike` 解耦 `eval-observability`。`test/evidence-emitters.test.ts` 13 cases 覆盖 happy / error / boundary / lifecycle / restore-coverage 五条路径。
+- **Verdict aggregator + default catalog（P4-01）**：`packages/eval-observability/src/evidence-verdict.ts` 导出 `VerdictRule / VerdictReport / aggregateEvidenceVerdict / DEFAULT_VERDICT_RULES`；默认目录包含 `placement.do.hot-anchor / placement.do.write-amp / assembly.required-layer-respected / compact.success-rate / snapshot.restore-coverage` 五条 hypothesis，直接对应 AX-QNA Q5 + P6 design 的 provisional 集合。
+- **Real-storage spot-check（P4-02）**：`test/integration/p6-evidence-verdict.test.ts` 驱动真实 `DoStorageTraceSink.flush()` → `aggregateEvidenceVerdict()`，五条 hypothesis 在健康场景下全部升级为 `evidence-backed`；同时验证 oversize 写入 → `needs-revisit`、持续失败 restore → `contradicted-by-evidence` 两条降级路径。
+- **Threshold / revisit rules（P4-03）**：`VerdictRule.revisitHint` 里挂了每个 hypothesis 的 revisit 条件；`PLACEMENT_WRITE_AMP_BYTES = 1_000_000` 与 `RESTORE_COVERAGE_THRESHOLD = 0.8` 作为初版阈值。
+- **Storage evidence report（P5-01）**：`docs/eval/after-skeleton-storage-evidence-report.md`（7 章节 + open hypotheses + 下一阶段引用路径）已产出。
+- **Context layering principles（P5-02）**：`docs/eval/after-skeleton-context-layering-principles.md`（7 条原则 + "what this phase does NOT settle"）已产出。
+- **Exit pack（P5-03）**：本 action-plan §11 工作报告、storage evidence report、context layering principles 三份文档共同组成可被 A8 / A9 / A10 直接消费的 evidence pack；A6 verdict bundle 是实时上游。
+
 ### C. 版本历史
 
 | 版本 | 日期 | 修改者 | 主要变更 |
 |------|------|--------|----------|
+| v0.3 | `2026-04-18` | `Claude Opus 4.7` | A7 收口：附录 B 增补 P6 真实落地状态 |
 | v0.2 | `2026-04-18` | `GPT-5.4` | 补齐尾部章节；增加 instrumentation owner、术语边界与 evidence schema 细节 |
 | v0.1 | `2026-04-17` | `GPT-5.4` | 初稿 |
