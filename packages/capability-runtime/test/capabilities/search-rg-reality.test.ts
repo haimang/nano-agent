@@ -144,4 +144,74 @@ describe("rg — canonical search reality", () => {
     const out = (await handler({ pattern: "x" })) as { output: string };
     expect(out.output).toContain("[rg] no workspace bound");
   });
+
+  // A8-A10 review GPT R2 / Kimi R1: the dot-heuristic regression guards.
+  describe("traversal handles dot-containing directory names and extensionless files (A8-A10 review GPT R2 / Kimi R1)", () => {
+    it("recurses into directories whose name contains '.'", async () => {
+      const ws = new FakeWorkspace(
+        new Map([
+          ["/workspace/project/.config/settings.json", '{"needle":true}'],
+          ["/workspace/project/foo.bar/readme.txt", "find the needle here"],
+          ["/workspace/project/normal/readme.txt", "needle stays"],
+        ]),
+      );
+      const out = (await rgHandler(ws)({
+        pattern: "needle",
+        path: "project",
+      })) as { output: string };
+      expect(out.output).toContain("/workspace/project/.config/settings.json");
+      expect(out.output).toContain("/workspace/project/foo.bar/readme.txt");
+      expect(out.output).toContain("/workspace/project/normal/readme.txt");
+    });
+
+    it("reads extensionless files (LICENSE / Makefile) without spurious recursion", async () => {
+      const ws = new FakeWorkspace(
+        new Map([
+          ["/workspace/repo/LICENSE", "MIT needle license"],
+          ["/workspace/repo/Makefile", "build: ## needle target\n\techo"],
+          ["/workspace/repo/src/app.ts", "const x = 1; // needle"],
+        ]),
+      );
+      const out = (await rgHandler(ws)({
+        pattern: "needle",
+        path: "repo",
+      })) as { output: string };
+      expect(out.output).toContain("/workspace/repo/LICENSE");
+      expect(out.output).toContain("/workspace/repo/Makefile");
+      expect(out.output).toContain("/workspace/repo/src/app.ts");
+    });
+  });
+
+  describe("Q16 grep alias flags honoured (A8-A10 review GPT R1)", () => {
+    it("`-i` makes matching case-insensitive", async () => {
+      const ws = new FakeWorkspace(
+        new Map([["/workspace/a.txt", "NEEDLE in the haystack"]]),
+      );
+      // Without the flag, a lowercase pattern would miss uppercase text.
+      const plain = (await rgHandler(ws)({ pattern: "needle" })) as {
+        output: string;
+      };
+      expect(plain.output).toMatch(/^\[rg\] no matches/);
+      const ci = (await rgHandler(ws)({
+        pattern: "needle",
+        caseInsensitive: true,
+      })) as { output: string };
+      expect(ci.output).toContain("/workspace/a.txt");
+      expect(ci.output).toContain("NEEDLE");
+    });
+
+    it("`lineNumbers=false` drops the line-number column", async () => {
+      const ws = new FakeWorkspace(
+        new Map([["/workspace/a.txt", "alpha\nbeta needle\ngamma"]]),
+      );
+      const out = (await rgHandler(ws)({
+        pattern: "needle",
+        lineNumbers: false,
+      })) as { output: string };
+      // With lineNumbers=false the output line is `path:content` (no
+      // numeric middle segment).
+      expect(out.output).toContain("/workspace/a.txt:beta needle");
+      expect(out.output).not.toMatch(/\/workspace\/a\.txt:2:/);
+    });
+  });
 });

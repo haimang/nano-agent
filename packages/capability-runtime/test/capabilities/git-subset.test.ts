@@ -99,6 +99,42 @@ describe("git subset (A10 Q18)", () => {
     expect(out.output).toContain("0 tracked-like entries");
   });
 
+  // A8-A10 review Kimi R2: pre-fix, a FakeWorkspace whose `listDir`
+  // returned `[]` for a synthetic "empty directory" child would get
+  // that child pushed into the output list. The new traversal uses
+  // `readFile(entry)` as the leaf disambiguator, so empty directory
+  // entries silently drop and `git status` only reports real files.
+  it("status omits leaf entries whose readFile returns null (empty-directory guard)", async () => {
+    // This custom workspace advertises an `emptyDir` child via listDir
+    // but returns null from readFile — mirroring a namespace that has
+    // a registered empty directory without any files beneath it.
+    class WsWithEmptyDir implements WorkspaceFsLike {
+      async readFile(p: string): Promise<string | null> {
+        if (p === "/workspace/file.txt") return "content";
+        return null;
+      }
+      async writeFile(): Promise<void> {}
+      async listDir(p: string): Promise<Array<{ path: string; size: number }>> {
+        if (p === "/workspace") {
+          return [
+            { path: "/workspace/file.txt", size: 7 },
+            { path: "/workspace/emptyDir", size: 0 },
+          ];
+        }
+        return [];
+      }
+      async deleteFile(): Promise<boolean> {
+        return false;
+      }
+    }
+    const handlers = createVcsHandlers({ namespace: new WsWithEmptyDir() });
+    const out = (await handlers.get("git")!({
+      subcommand: "status",
+    })) as { output: string };
+    expect(out.output).toContain("/workspace/file.txt");
+    expect(out.output).not.toContain("/workspace/emptyDir");
+  });
+
   it("status without a namespace keeps the legacy not-wired disclosure", async () => {
     const handlers = createVcsHandlers();
     const out = (await handlers.get("git")!({

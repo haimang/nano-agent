@@ -9,11 +9,22 @@
  * (and therefore to `docs/design/after-skeleton/PX-capability-inventory.md`
  * in the same PR).
  *
+ * A8-A10 review GPT R4 upgrade: the test now ALSO parses PX §7.1 from
+ * the real `PX-capability-inventory.md` file and asserts that the
+ * table's row order and policy column match the code's canonical
+ * order and policy map. This is what closes the GPT R4 loop: "code
+ * changed without docs updated" and "docs changed without code
+ * updated" now BOTH fail CI.
+ *
  * This is the single enforcement point Q19 refers to when it asks
  * that "prompt / registry / inventory never diverge". If this test
  * fires, PX inventory needs to be updated in lockstep — otherwise
  * reviewers must refuse the PR.
  */
+
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { describe, it, expect } from "vitest";
 import {
@@ -26,6 +37,14 @@ import {
   OOM_RISK_COMMANDS,
   GIT_SUPPORTED_SUBCOMMANDS,
 } from "../src/index.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const PX_INVENTORY_PATH = resolve(
+  __dirname,
+  "../../..",
+  "docs/design/after-skeleton/PX-capability-inventory.md",
+);
 
 const EXPECTED_COMMAND_ORDER: readonly string[] = [
   "pwd", "ls", "cat", "write", "mkdir", "rm", "mv", "cp",
@@ -135,5 +154,64 @@ describe("capability inventory drift guard (A10 Q19)", () => {
 
   it("git subset is frozen to [status, diff, log] (Q18)", () => {
     expect([...GIT_SUPPORTED_SUBCOMMANDS]).toEqual(["status", "diff", "log"]);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────
+// A8-A10 review GPT R4 — PX-capability-inventory §7.1 docs guard
+// ────────────────────────────────────────────────────────────────
+
+interface PxInventoryRow {
+  readonly name: string;
+  readonly policy: "allow" | "ask" | "deny";
+}
+
+/**
+ * Parse the `### 7.1 Command Inventory` markdown table out of
+ * `PX-capability-inventory.md`. Returns rows in document order so
+ * callers can assert positional equality against the code's
+ * canonical order. Intentionally forgiving about extra whitespace
+ * and header-column variation so trivial formatting edits don't
+ * break CI — the check that matters is `(name, policy)`.
+ */
+function parsePxCommandInventory(markdown: string): PxInventoryRow[] {
+  const lines = markdown.split("\n");
+  const startIdx = lines.findIndex((l) => /^### 7\.1 Command Inventory/.test(l));
+  if (startIdx === -1) {
+    throw new Error("PX-capability-inventory.md: §7.1 heading not found");
+  }
+  const rows: PxInventoryRow[] = [];
+  for (let i = startIdx + 1; i < lines.length; i++) {
+    const line = lines[i]!;
+    // Stop at the next h3 or h2 heading.
+    if (/^#{2,3}\s/.test(line)) break;
+    // Match table rows whose first cell is a backticked command name.
+    const m = line.match(/^\|\s*`([^`]+)`\s*\|([^|]*)\|([^|]*)\|\s*(allow|ask|deny)\s*\|/);
+    if (!m) continue;
+    const [, name, , , policyRaw] = m;
+    const policy = policyRaw!.trim() as "allow" | "ask" | "deny";
+    rows.push({ name: name!.trim(), policy });
+  }
+  return rows;
+}
+
+describe("PX-capability-inventory §7.1 docs guard (A8-A10 review GPT R4)", () => {
+  const markdown = readFileSync(PX_INVENTORY_PATH, "utf-8");
+  const pxRows = parsePxCommandInventory(markdown);
+
+  it("§7.1 contains exactly the 12 canonical commands in the canonical order", () => {
+    expect(pxRows.map((r) => r.name)).toEqual(EXPECTED_COMMAND_ORDER);
+  });
+
+  it("§7.1 policy column matches the code's canonical policy for every command", () => {
+    for (const row of pxRows) {
+      expect(row.policy).toBe(EXPECTED_POLICY[row.name]);
+    }
+  });
+
+  it("§7.1 has no ghost rows that do not exist in the registry", () => {
+    for (const row of pxRows) {
+      expect(EXPECTED_POLICY).toHaveProperty(row.name);
+    }
   });
 });

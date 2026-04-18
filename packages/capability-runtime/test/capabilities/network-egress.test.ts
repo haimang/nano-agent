@@ -79,6 +79,25 @@ describe("curl — host deny-list (localhost / private / link-local / metadata /
     };
     expect(res.output).toContain("https://example.com/");
   });
+
+  // A8-A10 review Kimi R3: `isPrivateHost()` is a deny-list, not an
+  // allow-list — any public hostname not on the deny-list is
+  // accepted. The below cases document that explicitly so future
+  // readers don't misread `example.com` above as "the only accepted
+  // host".
+  it("accepts other common public hostnames (deny-list semantics, not allow-list)", async () => {
+    const handlers2 = createNetworkHandlers();
+    for (const url of [
+      "https://api.github.com/",
+      "https://registry.npmjs.org/",
+      "https://raw.githubusercontent.com/",
+    ]) {
+      const res = (await handlers2.get("curl")!({ url })) as {
+        output: string;
+      };
+      expect(res.output).toContain(url);
+    }
+  });
 });
 
 describe("curl — fetchImpl injection path (structured schema)", () => {
@@ -133,6 +152,50 @@ describe("curl — fetchImpl injection path (structured schema)", () => {
     expect(res.output).toContain("0123");
     expect(res.output).not.toContain("456");
     expect(res.output).toContain(CURL_OUTPUT_TRUNCATED_NOTE);
+  });
+
+  // A8-A10 review GPT R3 / Kimi R4: truncation is UTF-8-byte-aware.
+  // Each CJK character encodes to 3 bytes, so `"你".repeat(5)` is 15
+  // UTF-8 bytes. A `maxOutputBytes: 4` cap should emit AT MOST 4
+  // bytes of CJK payload (i.e. at most one full character — three
+  // bytes — never four CJK chars / twelve bytes as the pre-fix
+  // implementation did).
+  it("truncates multi-byte (UTF-8) responses on the byte boundary, not code-unit boundary", async () => {
+    const fetchImpl = (async () =>
+      new Response("你".repeat(5), {
+        status: 200,
+        statusText: "OK",
+      })) as typeof fetch;
+    const handlers = createNetworkHandlers({ fetchImpl });
+    const res = (await handlers.get("curl")!({
+      url: "https://example.com/cjk",
+      maxOutputBytes: 4,
+    })) as { output: string };
+    // The truncated payload body (after the first newline) must not
+    // exceed 4 bytes of CJK content. `你` is 3 bytes in UTF-8, so we
+    // expect either 0 or 1 `你` character, never 4 or 5.
+    const lines = res.output.split("\n");
+    const body = lines.slice(1).join("\n");
+    const cjkCount = (body.match(/你/gu) ?? []).length;
+    expect(cjkCount).toBeLessThanOrEqual(1);
+    expect(res.output).toContain(CURL_OUTPUT_TRUNCATED_NOTE);
+    expect(new TextEncoder().encode(body).byteLength).toBeLessThanOrEqual(4);
+  });
+
+  it("does NOT truncate when UTF-8 byte length is within cap even if body has multi-byte chars", async () => {
+    // `"你好"` is 6 UTF-8 bytes. cap=10 should NOT trigger truncation.
+    const fetchImpl = (async () =>
+      new Response("你好", {
+        status: 200,
+        statusText: "OK",
+      })) as typeof fetch;
+    const handlers = createNetworkHandlers({ fetchImpl });
+    const res = (await handlers.get("curl")!({
+      url: "https://example.com/ok",
+      maxOutputBytes: 10,
+    })) as { output: string };
+    expect(res.output).toContain("你好");
+    expect(res.output).not.toContain(CURL_OUTPUT_TRUNCATED_NOTE);
   });
 
   it("aborts on timeout and emits the timeout marker", async () => {
