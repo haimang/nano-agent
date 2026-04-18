@@ -1,4 +1,4 @@
-# NACP-Session Registry — v1.0.0
+# NACP-Session Registry — v1.1.0
 
 > Subprotocol: `nacp-session.v1`
 > Auto-generated. Do not edit manually.
@@ -9,6 +9,7 @@
 |---|---|
 | `session.cancel` | — |
 | `session.end` | ✅ |
+| `session.followup_input` | ✅ |
 | `session.heartbeat` | ✅ |
 | `session.resume` | ✅ |
 | `session.start` | ✅ |

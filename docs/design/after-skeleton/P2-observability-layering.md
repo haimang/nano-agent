@@ -347,13 +347,13 @@
 
 ### 9.3 下一步行动
 
-- [ ] **决策确认**：确认 Anchor / Durable / Diagnostic 三层口径。
-- [ ] **关联 Issue / PR**：让 `TraceEvent`、`classification`、`registry` 的注释与 README 一致。
-- [ ] **待深入调查的子问题**：
-  - [ ] 是否在 future `TraceLayer` enum 中显式引入 `anchor`
-- [ ] **需要更新的其他设计文档**：
-  - `A3-trace-first-observability-foundation.md`
-  - `A7-storage-and-context-evidence-closure.md`
+- [x] **决策确认**：A3 P1-02 / P2-02 已把 Anchor / Durable / Diagnostic 三层通过 `ConceptualTraceLayer` 与 `CONCEPTUAL_LAYER_OF_TRACE_LAYER` 映射表显式固定下来。
+- [x] **关联 Issue / PR**：`TraceEvent` / `classification` / `DurablePromotionRegistry` 的注释已与本 memo 口径一致；`packages/eval-observability/README.md` 示例也在 A2-A3 review R4 同步更新为 trace-law carriers。
+- [x] **待深入调查的子问题**：
+  - [x] `TraceLayer` 实现枚举保持 `live / durable-audit / durable-transcript`；`anchor` 只以概念层形式存在于 `ConceptualTraceLayer`，不再双线维护。
+- [x] **需要更新的其他设计文档**：已同步
+  - `P2-trace-first-observability-foundation.md`（§9.3 + 附录 B/B.1）
+  - `P1-trace-substrate-decision.md`（§9.3 checklist）
 
 ---
 

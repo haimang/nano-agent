@@ -526,20 +526,22 @@ trace-first-observability-foundation
 
 ### 11.3 测试制作与测试结果
 
+> **A2-A3 code review 回填（2026-04-18，GPT R5 + Kimi R4）**：`test:cross` 此前仅因 `test/**/*.test.mjs` 的 shell glob 展开只匹配到 `test/e2e/*.test.mjs`（14 个 e2e 文件），contract suites 未被默认 cross runner 执行。A2-A3 review 已把根 `package.json` 的 `test:cross` 改为 `node --test test/*.test.mjs test/e2e/*.test.mjs`（并新增 `test:contracts` / `test:e2e` 两个专用入口）。同步校正下方实际 case 数字与 contract-suite 覆盖叙述。
+
 - **新增测试汇总**
   - eval-observability：`trace-event.test.ts`（14）、`anchor-recovery.test.ts`（11）、`integration/trace-recovery.test.ts`（4）、`audit-record.test.ts` 新增 2 条失败守卫。
   - nacp-core：`observability.test.ts`（7）。
   - session-do-runtime：`traces.test.ts`（22）覆盖新 builder。
-  - root：`trace-first-law-contract.test.mjs`（15）、`hooks-protocol-contract.test.mjs`（+1）、`observability-protocol-contract.test.mjs`（4）。
-- **运行结果**
+  - root：`trace-first-law-contract.test.mjs`（**9 cases**；此处此前误标 15）、`hooks-protocol-contract.test.mjs`（+1）、`observability-protocol-contract.test.mjs`（4）。
+- **运行结果（实际最新数字，review 回填后）**
   - `pnpm --filter @nano-agent/nacp-core test` — `12 files / 231 tests passed`。
   - `pnpm --filter @nano-agent/nacp-session test` — `14 files / 115 tests passed`（不直接受影响，交叉守护通过）。
-  - `pnpm --filter @nano-agent/eval-observability test` — `18 files / 172 tests passed`。
-  - `pnpm --filter @nano-agent/session-do-runtime test` — `19 files / 258 tests passed`。
+  - `pnpm --filter @nano-agent/eval-observability test` — **`22 files / 196 tests passed`**（A3 初稿数字 172 已失真，review 后对齐当前现实；+2 case 来自 A2-A3 review R2 的 listless readback + Q5 p50 budget）。
+  - `pnpm --filter @nano-agent/session-do-runtime test` — **`23 files / 312 tests passed`**（A3 初稿数字 258 已失真；新增 3 case 来自 A2-A3 review R1 orchestration trace-law 断言 + R6 alarm onFlushFailure + Kimi R2 local-mirror 结构守卫）。
   - `pnpm --filter @nano-agent/agent-runtime-kernel / capability-runtime / hooks / llm-wrapper / storage-topology / workspace-context-artifacts test` — 均通过（见 `pnpm -r test` 输出）。
-  - `pnpm -r typecheck` — 10 projects 全绿。
+  - `pnpm -r typecheck` — 10 projects 全绿；`eval-observability` 新增 `tsconfig.scripts.json` 让 `scripts/` 也进入 typecheck 范围（A2-A3 review R3）。
   - `pnpm -r build` — 10 projects 全绿。
-  - `npm run test:cross` — `14/14 e2e + 3 contract suites + trace-first-law 全部通过`，含 `trace-first-law-contract` 15 cases + `observability-protocol-contract` 4 cases + `hooks-protocol-contract` 2 cases。
+  - `npm run test:cross` — **`66 tests passed`**（14 e2e + 52 contract suites）。`trace-first-law-contract` 为 9 cases + `observability-protocol-contract` 4 cases + `hooks-protocol-contract` 2 cases，以及其余根级 contract smoke 文件。
 
 ### 11.4 收口分析与下一阶段安排
 

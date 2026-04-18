@@ -366,13 +366,13 @@
 
 ### 9.3 下一步行动
 
-- [ ] **决策确认**：确认 `stamped_by -> stamped_by_key` 与 `reply_to -> reply_to_message_uuid` 是否一并纳入迁移。
-- [ ] **关联 Issue / PR**：Phase 0 rename PR 需先改 `nacp-core` / `nacp-session` / observability / llm-wrapper adapter seam。
+- [x] **决策确认**：`stamped_by -> stamped_by_key` 与 `reply_to -> reply_to_message_uuid` 已与 Phase 0 rename 一并在 A1 Phase 2 落地（envelope + compat shim + tests）。
+- [x] **关联 Issue / PR**：A1 P2/P3/P4 已完成 `nacp-core` / `nacp-session` / observability / llm-wrapper adapter seam 全量 rename；`rg 'trace_id|stream_id|span_id|producer_id|consumer_hint|stamped_by|reply_to' packages/**/src/**/*.ts` 只命中 compat migration 与 translation-zone 注释。
 - [ ] **待深入调查的子问题**：
-  - [ ] 是否引入 lint 阻止 canonical code 中新增 `_id`
-- [ ] **需要更新的其他设计文档**：
-  - `contract-freeze-matrix.md`
-  - `nacp-versioning-policy.md`
+  - [ ] 是否引入 lint 阻止 canonical code 中新增 `_id`（A1 未做；作为 guard-rail follow-up 留到后续 governance phase）。
+- [x] **需要更新的其他设计文档**：已同步
+  - `P0-contract-freeze-matrix.md`
+  - `P0-nacp-versioning-policy.md`
 
 ---
 

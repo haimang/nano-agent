@@ -367,18 +367,18 @@
 
 ### 9.3 下一步行动
 
-- [x] **决策确认**：业主已通过 AX-QNA Q5 确认 substrate 方向（conditional yes）；A2 benchmark artifact 把它升格为 evidence-backed yes。
-- [x] **Benchmark artifact**：`docs/eval/after-skeleton-trace-substrate-benchmark.md` 已产出，配套 runner `packages/eval-observability/scripts/trace-substrate-benchmark.ts` 与回归测试 `packages/eval-observability/test/scripts/trace-substrate-benchmark.test.ts`。
+- [x] **决策确认**：业主已通过 AX-QNA Q5 确认 substrate 方向（conditional yes）；A2 benchmark artifact 把它升格为 `package-local-isolate evidence-backed yes`（remote Q5 p50/p99 closure 仍保留给 A6 deployment dry-run）。
+- [x] **Benchmark artifact**：`docs/eval/after-skeleton-trace-substrate-benchmark.md` 已产出，配套 runner `packages/eval-observability/scripts/trace-substrate-benchmark.ts` 与回归测试 `packages/eval-observability/test/scripts/trace-substrate-benchmark.test.ts`。A2-A3 review R2 已把 `BENCH_THRESHOLDS` 扩为 `emitP50MsMax = 20 / emitP99MsMax = 100`，并新增 listless (`_index`-only) readback probe。
 - [x] **Q20 gate 落地**：D1 升格前必须先交独立 `trace-substrate-benchmark-vN.md` memo，并满足该 memo 的 5 项必备字段；本 memo 的 §4 / §5 已写入此口径。
-- [ ] **关联 Issue / PR**：A3 / P2 foundation 按 DO storage hot path 继续设计；按 Finding F1 把 `maxBufferSize ≥ events-per-turn` 与 `flush()` 在 `turn.end` 触发写入 sizing policy。
+- [x] **关联 Issue / PR**：A3 / P2 foundation 已按 DO storage hot path 推进；Finding F1 的 `maxBufferSize ≥ events-per-turn` + turn-boundary flush sizing policy 已在 A3 执行期间体现于 sink 行为。
 - [ ] **待深入调查的子问题**：
   - [ ] R2 archive 的 flush/compaction 触发条件（A7 / P6 主线）
   - [ ] future D1 index 的最小 schema 何时进入议程（须满足 Q20 gate 才启动）
   - [ ] sink-level append-only-without-RMW 升级（属于后续 sink-level memo，不属于 substrate decision）
-- [ ] **需要同步更新的其他设计文档**：
+- [x] **需要同步更新的其他设计文档**：已同步
   - `A3-trace-first-observability-foundation.md`
-  - `observability-layering.md`
-  - `A7-storage-and-context-evidence-closure.md`
+  - `P2-observability-layering.md`
+  - 跨阶段 handoff：真实 DO p50/p99 closure 保留给 A6 `deployment-dry-run-and-real-boundary-verification.md`
 
 ---
 

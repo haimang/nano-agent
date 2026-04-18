@@ -302,6 +302,10 @@ contract-and-identifier-freeze
 - **本 Phase 风险提醒**：
   - 如果 follow-up family shape 未先拍板，P3 很容易重新陷入 scope 膨胀
   - 如果 queue semantics 被不小心混进来，会打破“P0 只冻协议，不冻调度语义”的边界
+- **已知局限（Kimi A1 review R3 — 2026-04-18 追加）**：
+  - `packages/nacp-session/src/ingress.ts` 的 `normalizeClientFrame()` 只接受已被 `NacpClientFrameSchema` 验证过的 `NacpClientFrame`，**不会自动对 session frame 跑 `migrate_v1_0_to_v1_1`**。老客户端若直接通过 WebSocket 发送仍携带 `trace_id / producer_id / stamped_by / stream_id` 的 session frame，会在 schema parse 阶段被拒绝，与 envelope-level 的 `validateEnvelope()` 行为不一致（后者会先走 Layer 0 compat shim 再解析）。
+  - 这是 A1 的显式已知限制：A1 只负责把 envelope-level compat shim 落地到位；session frame 层的 compat 接入属 **A3 / A4 session edge** 的责任范围，会在那里单独设计 ingress 层 compat shim 与相应测试。
+  - 在 A3 / A4 closure 之前，任何非经 envelope 层的 direct-to-WS 客户端必须自行升级到 1.1 canonical 字段，才能被 session ingress 接受。
 
 ### 5.4 Phase 4 — Downstream Adoption & Guardrail
 

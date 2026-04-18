@@ -255,10 +255,10 @@ Phase 0 最大的风险不是“没人写 design”，而是**不同人对“现
 - **输出**：core 各 section 的状态表
 - **主要调用者**：`nacp-core`、跨包消费者
 - **核心逻辑**：
-  - `header`: Frozen with Rename（`producer_id -> producer_key`, `consumer_hint -> consumer_key`）
-  - `authority`: Frozen with Rename（`stamped_by -> stamped_by_key`）
-  - `trace`: Frozen with Rename（`trace_id/stream_id/span_id -> *_uuid`）
-  - `control`: Frozen with Rename（`reply_to -> reply_to_message_uuid`）
+  - `header`: Frozen（A1 P2 已完成 `producer_id -> producer_key`, `consumer_hint -> consumer_key` rename）
+  - `authority`: Frozen（A1 P2 已完成 `stamped_by -> stamped_by_key` rename）
+  - `trace`: Frozen（A1 P2 已完成 `trace_id/stream_id/span_id -> *_uuid` rename）
+  - `control`: Frozen（A1 P2 已完成 `reply_to -> reply_to_message_uuid` rename）
   - `refs`: Frozen（tenant-scoped key rule 已明确）
 - **边界情况**：
   - `extra` 只冻结为 safety valve，不扩张语义
@@ -270,10 +270,10 @@ Phase 0 最大的风险不是“没人写 design”，而是**不同人对“现
 - **输出**：session profile 状态表
 - **主要调用者**：session runtime、client protocol reviewers
 - **核心逻辑**：
-  - 当前 7 个 session message types：Frozen
-  - `session_frame`: Frozen with Rename（`stream_id -> stream_uuid`）
-  - `SessionContext`: Frozen with Rename（`trace_id` / `producer_id`）
-  - formal follow-up / multi-round family：Directional Only（Q8 已确认必须纳入 Phase 0，并在本阶段结束前升级为 Frozen）
+  - v1 session message family widened 至 8 kinds（`session.start/resume/cancel/end/stream.event/stream.ack/heartbeat/followup_input`）：Frozen
+  - `session_frame`: Frozen（A1 P3 已完成 `stream_id -> stream_uuid` rename）
+  - `SessionContext`: Frozen（A1 P3 已完成 `trace_uuid / producer_key / stamped_by_key` rename）
+  - formal follow-up / multi-round family：Frozen（A1 P3 已把最小 shape `session.followup_input.body = { text, context_ref?, stream_seq? }` 正式纳入 v1；queue/replace/merge 仍属于 out-of-scope 扩张）
 - **边界情况**：
   - 当前 reality 被冻住，不代表 future v2 family 可以跳过 Phase 0 直接在 runtime 私造
 - **一句话收口目标**：✅ **`session 现在到底冻了哪些消息与字段，一眼可见`**
@@ -327,10 +327,10 @@ Phase 0 最大的风险不是“没人写 design”，而是**不同人对“现
 | `public API / frontend contract` | 未定 | Deferred | 下一阶段首个工作流 |
 | `business DDL / registry schema` | 未定 | Deferred | 等 runtime evidence 后再做 |
 
-**Gate note**
+**Gate note (A1 收口后同步 — 2026-04-18)**
 
-- 任何依赖 **canonical `trace_uuid` 已经跨包成立** 的 phase（尤其是 P2 / P3 / P4 / P6）都必须等待 `core.trace`、`session frame`、`SessionContext` 这些 `Frozen with Rename` 项真正完成 migration。
-- 在这些 rename 落地之前，后续 phase 只能把 `trace_uuid` 当作 owner-aligned target law，不能把它误写成“当前代码 reality 已成立”。
+- A1 Phase 2/3 已把 `core.trace`、`session frame`、`SessionContext` 的 identifier-law rename 全部落地；后续 phase（P2 / P3 / P4 / P6）可以直接把 `trace_uuid` 当作 **跨包已成立的 canonical reality**，不再需要把它视为「尚未 migration 的 target law」。
+- 退出点由 A1 P5 的 baseline cut + `NACP_VERSION = "1.1.0"` / `NACP_VERSION_KIND = "frozen"` 标记；这两个常量与 `migrate_v1_0_to_v1_1` compat shim 一同构成 Layer 0 的 「1.0 payload 自动升级到 1.1」路径，让 pre-freeze client 仍可继续工作。
 
 ---
 
@@ -382,14 +382,14 @@ Phase 0 最大的风险不是“没人写 design”，而是**不同人对“现
 
 ### 9.3 下一步行动
 
-- [ ] **决策确认**：确认 matrix 中 `Frozen with Rename / Directional Only / Deferred` 的状态划分。
-- [ ] **关联 Issue / PR**：后续 rename PR 与 action-plan 必须逐项对应 matrix。
+- [x] **决策确认**：matrix 中 `Frozen / Directional Only / Deferred` 的状态划分已在 A1 Phase 0 完成；执行后 `Frozen with Rename` 已全部转为 `Frozen`。
+- [x] **关联 Issue / PR**：A1-contract-and-identifier-freeze.md 已逐项对齐本 matrix；后续 rename PR 不再新增。
 - [ ] **待深入调查的子问题**：
-  - [ ] observability alert 的 `trace_uuid` 例外条件是否单独列成一项
-- [ ] **需要更新的其他设计文档**：
-  - `A1-contract-and-identifier-freeze.md`
-  - `identifier-law.md`
-  - `nacp-versioning-policy.md`
+  - [ ] observability alert 的 `trace_uuid` 例外条件在 A3 observability 落地时再评估是否单独列成一项。
+- [x] **需要更新的其他设计文档**：已同步
+  - `A1-contract-and-identifier-freeze.md`（执行计划 + 已知限制回填）
+  - `P0-identifier-law.md`（§9.3 已转为 closed checklist）
+  - `P0-nacp-versioning-policy.md`（§3 预期状态 + §9.3 checklist 同步）
 
 ---
 

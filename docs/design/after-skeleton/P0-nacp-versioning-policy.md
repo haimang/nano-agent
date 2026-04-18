@@ -14,7 +14,9 @@
 
 ## 0. 背景与前置约束
 
-当前 `packages/nacp-core/src/version.ts` 已经写入 `NACP_VERSION = "1.0.0"` 与 `NACP_VERSION_COMPAT = "1.0.0"`，但 `packages/nacp-core/src/compat/migrations.ts` 仍只是 placeholder，而且 owner 已经明确要求进行一轮带 breaking 性质的命名收敛（`trace_uuid` / `*_uuid` / 取消 `*_id`），并把 formal follow-up input family 纳入 Phase 0 contract freeze。 这意味着 **nano-agent 现在最缺的不是再加一个版本常量，而是先把“什么变化算 breaking、何时允许迁移、alias 可以活多久、哪些 widened session surfaces 应直接进入 frozen baseline”讲清楚。**
+**A1 收口后状态（2026-04-18）**：`packages/nacp-core/src/version.ts` 现已写入 `NACP_VERSION = "1.1.0"` / `NACP_VERSION_COMPAT = "1.0.0"` / `NACP_VERSION_KIND = "frozen"`，且 `packages/nacp-core/src/compat/migrations.ts` 已落地真实的 `migrate_v1_0_to_v1_1`（不再是 placeholder），覆盖 Phase 0 identifier-law rename 与 session follow-up family widening 两条 baseline 线。本文档下述策略即为 A1 落地时遵循的 owner-aligned policy；保留原讨论脉络以便后续 reviewer 审阅。
+
+（原始背景）当时 owner 明确要求进行一轮带 breaking 性质的命名收敛（`trace_uuid` / `*_uuid` / 取消 `*_id`），并把 formal follow-up input family 纳入 Phase 0 contract freeze。**nano-agent 当时最缺的不是再加一个版本常量，而是先把“什么变化算 breaking、何时允许迁移、alias 可以活多久、哪些 widened session surfaces 应直接进入 frozen baseline”讲清楚。**
 
 - **项目定位回顾**：nano-agent 不是一个本地 CLI 里“差不多能跑就行”的临时协议；它后面要承载 DO hibernation、WebSocket replay、context assembly、service-binding tools。
 - **本次讨论的前置共识**：
@@ -361,14 +363,15 @@
 
 ### 9.3 下一步行动
 
-- [ ] **决策确认**：确认“当前 1.0.0 为 provisional baseline、Phase 0 之后切 frozen baseline”的口径。
-- [ ] **关联 Issue / PR**：为 `nacp-core` 建立真实 migration 函数与 compat tests。
-- [ ] **待深入调查的子问题**：
-  - [ ] frozen baseline 最终是否命名为 `1.1.0`
-  - [ ] compat floor 是否需要跨两个 minor 保留
-- [ ] **需要更新的其他设计文档**：
+- [x] **决策确认**：「1.0.0 provisional → 1.1.0 frozen」口径已由 A1 Phase 5 落盘；`NACP_VERSION_KIND = "frozen"` 是 runtime 可观测的当前 baseline。
+- [x] **关联 Issue / PR**：`nacp-core` 的 `migrate_v1_0_to_v1_1` 与 `compat.test.ts` 14 个 case 已落地，接入 `validateEnvelope` Layer 0 compat shim。
+- [x] **待深入调查的子问题**：
+  - [x] frozen baseline 命名为 `1.1.0`
+  - [x] compat floor 保留在 `1.0.0`（A1 owner decision — 跨一个 minor 足够）
+- [x] **需要更新的其他设计文档**：已同步
   - `A1-contract-and-identifier-freeze.md`
-  - `contract-freeze-matrix.md`
+  - `P0-contract-freeze-matrix.md`
+  - `P0-identifier-law.md`
 
 ---
 

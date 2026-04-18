@@ -18,12 +18,18 @@
 
 > **trace_uuid 如何成为 runtime 的第一事实，如何在 ingress、session edge、LLM/tool/hook/compact、checkpoint/restore 中被持续携带、锚定、恢复和解释。**
 
+> **A2/A3 收口后状态（2026-04-18，Kimi review R3 回填）**：§0 列出的 pre-A3 代码行号在 A3 P1/P2 已被重写。下面保留原始论据脉络供审阅，并在每条后附当前 reality 与对应代码锚点。
+
 当前代码现实说明我们已经有了 foundation 的半成品，但还没有真正 trace-first：
 
-- `NacpObservabilityEnvelope` 已经使用 `trace_uuid`，但它仍是 optional（`packages/nacp-core/src/observability/envelope.ts:12-29`）。
-- `TraceEventBase` 目前只有 `sessionUuid` / `teamUuid` / `turnUuid`，还没有 `traceUuid`（`packages/eval-observability/src/trace-event.ts:13-70`）。
-- `session-do-runtime/src/traces.ts` 仍在生成 `turn.started` / `turn.completed` 这类与当前 session event catalog 已经漂移的名字，且没有携带 `trace_uuid`（`packages/session-do-runtime/src/traces.ts:37-105`）。
-- `SessionInspector`、`DoStorageTraceSink`、`audit-record` codec、`DurablePromotionRegistry` 都已经搭好了骨架，说明“基础设施外壳”存在；真正欠缺的是 **trace-first 语义闭合**。
+- `NacpObservabilityEnvelope` 已经使用 `trace_uuid`，但它仍是 optional（`packages/nacp-core/src/observability/envelope.ts:12-29`）。  
+  **Post-A3**：A3 P1-01 把 `trace_uuid` 收紧为「只有 `scope === "platform"` 的 alert 才允许省略」；refine + 7 tests 落地（`packages/nacp-core/src/observability/envelope.ts` 当前约 80+ 行，参见 `NacpAlertPayloadSchema` refine 段）。
+- `TraceEventBase` 目前只有 `sessionUuid` / `teamUuid` / `turnUuid`，还没有 `traceUuid`（`packages/eval-observability/src/trace-event.ts:13-70`）。  
+  **Post-A3**：A3 P1-02 已升级 `TraceEventBase`，新增 `traceUuid` / `sourceRole` 必填、`sourceKey?` / `messageUuid?` 可选；`validateTraceEvent` / `isTraceLawCompliant` / `assertTraceLaw` 三个 helper 导出（`packages/eval-observability/src/trace-event.ts` 当前约 190 行，base fields 集中在 `TraceEventBase` 段）。
+- `session-do-runtime/src/traces.ts` 仍在生成 `turn.started` / `turn.completed` 这类与当前 session event catalog 已经漂移的名字，且没有携带 `trace_uuid`（`packages/session-do-runtime/src/traces.ts:37-105`）。  
+  **Post-A3 + A2-A3 review R1**：A3 P2-03 已把 event kind 收敛到 `turn.begin / turn.end`；`buildTurnBeginTrace / buildTurnEndTrace / buildSessionEndTrace` 三个 builder 都强制带 `TraceContext`。A2-A3 review 进一步把 orchestration 主路径也改为走 builder（见 §11.5 追加记录）。
+- `SessionInspector`、`DoStorageTraceSink`、`audit-record` codec、`DurablePromotionRegistry` 都已经搭好了骨架，说明“基础设施外壳”存在；真正欠缺的是 **trace-first 语义闭合**。  
+  **Post-A3**：`DurablePromotionRegistry` 的 `turn.begin / turn.end / session.start / session.end` 已标注 `conceptualLayer: "anchor"`；`audit-record` codec 的 `traceEventToAuditBody` / `auditBodyToTraceEvent` 均落地 trace carrier 保留 + 解码时 trace-law 断言。
 
 - **项目定位回顾**：nano-agent 的 observability 不是外挂，而是 runtime correctness 的组成部分。Worker/DO 环境没有传统本地 stdout 和稳定常驻进程，trace-first 更加必要。
 - **本次讨论的前置共识**：
@@ -401,16 +407,15 @@
 
 ### 9.3 下一步行动
 
-- [ ] **决策确认**：确认 TraceEvent base contract 必须增补 `traceUuid`。
-- [ ] **关联 Issue / PR**：收敛 `session-do-runtime` builders 与 `eval-observability` base types。
-- [ ] **关联 Issue / PR**：建立集中 event-kind registry，并让 edge/runtime/observability 共享它。
-- [ ] **待深入调查的子问题**：
-  - [ ] `messageUuid` 是否进入所有 TraceEvent base fields
-  - [ ] alert exception 是否需要单独 schema 类型区分
-- [ ] **需要更新的其他设计文档**：
-  - `observability-layering.md`
-  - `A4-session-edge-closure.md`
-  - `A7-storage-and-context-evidence-closure.md`
+- [x] **决策确认**：A3 P1-02 已把 `TraceEventBase` 的 `traceUuid` 升级为必填，配合 `sourceRole` 一同锁进 trace law。
+- [x] **关联 Issue / PR**：A3 P2-03 已收敛 `session-do-runtime` builders 与 `eval-observability` base types；A2-A3 review 后 orchestration 主路径也走 builder（见附录 B）。
+- [x] **关联 Issue / PR**：当前 event-kind 由 `session-do-runtime/src/traces.ts::STEP_KIND_MAP` + `eval-observability/src/classification.ts` 共同承载；未来合并为单一 registry 的工作延后至 Phase 8+。
+- [x] **待深入调查的子问题**：
+  - [x] `messageUuid` 已作为可选 carrier 进入 `TraceEventBase`；依赖 messageUuid 的 ingress/audit 路径按需填写。
+  - [x] alert exception 通过 `NacpAlertPayloadSchema` 的 `scope` 枚举 + refine 单独区分，仅 `platform` 允许省略 `trace_uuid`。
+- [x] **需要更新的其他设计文档**：已同步
+  - `P2-observability-layering.md`（§9.3 checklist 同步收尾）
+  - `P1-trace-substrate-decision.md`（A2 收口后关闭）
 
 ---
 
@@ -433,6 +438,17 @@ P2 design 的所有 trace-first 前提已被 A3 落地为代码：
 - Anchor / recovery 已成形：`attemptTraceRecovery / TraceRecoveryError / TRACE_RECOVERY_REASONS` 暴露 8 项错误分类（`packages/eval-observability/src/anchor-recovery.ts`），`restoreSessionCheckpoint` 抛出对齐的 `CheckpointInvalidError`（`packages/session-do-runtime/src/checkpoint.ts`）。
 - 邻接包 sweep：`buildHookAuditRecord(..., { traceContext })` 已能让 hook audit body 带回 trace carrier；audit codec `traceEventToAuditBody` / `auditBodyToTraceEvent` 强制 trace law 守卫；root contract `test/trace-first-law-contract.test.mjs` 与扩展后的 `test/observability-protocol-contract.test.mjs` / `test/hooks-protocol-contract.test.mjs` 守住跨包不漂移。
 - evidence pack：`packages/eval-observability/test/integration/trace-recovery.test.ts` 同时给出 recovery success（anchor 修复 + audit 往返）与 explicit failure（`trace-carrier-mismatch`）证据。
+
+### B.1 A2/A3 Code Review Follow-up（2026-04-18）
+
+A2/A3 GPT+Kimi 联合 code review 在已有 A3 落地之上又打通了以下几条实际执行缺口，全部已修复并补齐测试证据：
+
+- **R1 (GPT high — correctness)**：`SessionOrchestrator.startTurn / endSession` 主路径不再直接把 raw 对象喂给 `emitTrace`——改为调用 `buildTurnBeginTrace / buildTurnEndTrace / buildSessionEndTrace`，并在 `nano-session-do.ts::buildOrchestrationDeps()` 的 `emitTrace` 包装里对每个 event 执行 `assertTraceLaw()`。同步把 retired 的 `session.ended` 改名为 canonical `session.end`，避免 `shouldPersist()` 把终结事件当成未知 kind 丢弃。orchestration tests 新增 carrier 断言。
+- **R3 (GPT medium — test-gap) / Kimi R1**：benchmark runner `makeEvent` 现在返回含 `traceUuid / sourceRole / sourceKey` 的 fixture；`test/scripts/trace-substrate-benchmark.test.ts` 对齐 carrier；`packages/eval-observability/tsconfig.scripts.json` 把 scripts 纳入专属 typecheck（`pnpm --filter ... typecheck` 同时跑 `src` 与 `scripts`），`scripts/types.d.ts` 补齐最小 Node shim。
+- **R6 (GPT medium — correctness)**：`AlarmHandler` 的 `flushTraces()` 不再 silent swallow——当 `AlarmDeps.onFlushFailure` 注入时交给它做 `trace.recovery` 上报，否则 rethrow 让上层 alarm() 看到异常栈。`test/alarm.test.ts` 已加 2 个正反 case。
+- **Kimi R2 (medium — delivery-gap)**：`packages/session-do-runtime/test/traces.test.ts` 新增「TraceEvent local-mirror ↔ eval-observability」结构对齐断言：两个 `TraceEvent` 互相赋值成立时才通过 `tsc`，任何一侧新增必填字段都会立即触发编译失败。
+
+这一批 follow-up 同步更新了 P7 adjacent 文档，详见 `docs/code-review/after-skeleton/A2-A3-reviewed-by-GPT.md` §6 的逐项回应。
 
 ### C. 版本历史
 

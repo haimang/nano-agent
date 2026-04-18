@@ -12,12 +12,12 @@
 
 ## 0. Summary (TL;DR)
 
-- **DO storage hot anchor — confirmed.** Tenant-scoped, hibernation-safe, append-only JSONL. Brand-new sink instances reconstruct the full timeline from the `_index` key with **100% fidelity** in every probe.
+- **DO storage hot anchor — confirmed (package-local).** Tenant-scoped, hibernation-safe, append-only JSONL. Brand-new sink instances reconstruct the full timeline from the `_index` key with **100% fidelity**. After A2-A3 review R2 this claim is backed by a dedicated *listless* (no-`list()`) readback probe that forces `enumerateDataKeys()` onto the `_index` fallback path — the previous probe allowed `RecordingFakeStorage.list()` to short-circuit that codepath, which did not actually prove the memo's `_index` reconstruction claim.
 - **R2 cold archive — confirmed as deferred seam.** No runtime wiring yet, but the role boundary is now written down and gated.
 - **D1 deferred query — confirmed.** Zero D1 wiring. Q20 promotes "any D1 role expansion must first ship an independent benchmark/investigation memo" to a hard gate.
 - **One sink-level finding to act on (separately):** `DoStorageTraceSink` does read-modify-write per flush against the same date-keyed JSONL value. Multi-flush sessions therefore inflate write volume. Not a blocker for the substrate decision; documented below as **Finding F1** with a recommended sizing policy and follow-up owner.
 
-Verdict on the substrate decision: **Q5 conditional yes is upgraded to evidence-backed yes.**
+Verdict on the substrate decision: **Q5 is upgraded from *conditional yes* to *package-local-isolate evidence-backed yes***. Real Cloudflare DO remote `p50 ≤ 20ms / p99 ≤ 100ms` closure is explicitly reserved for A6 deployment dry-run (see §6 Limitations).
 
 ---
 
@@ -196,8 +196,13 @@ the second half.
 ## 5. Decision
 
 1. **DO storage stays as the v1 trace hot anchor + durable audit substrate.**
-   Q5 (AX-QNA) is upgraded from *conditional yes* to **evidence-backed yes**;
-   the linked memo is this file.
+   Q5 (AX-QNA) is upgraded from *conditional yes* to **package-local-isolate evidence-backed yes**;
+   the linked memo is this file. The remote DO `p50 ≤ 20ms / p99 ≤ 100ms` gate
+   is still owed to A6 deployment dry-run and is NOT considered closed by this
+   memo. A2-A3 review R2 further tightened the runner: `computeVerdict()` now
+   encodes those absolute budgets (red-level) and asserts the `_index` fallback
+   through a listless storage view so the "fresh sink reconstructs the timeline"
+   claim cannot be satisfied by the `list()` fast-path alone.
 2. **R2 stays the cold archive substrate**, with no runtime wiring required
    in P1. Wiring is A7's responsibility.
 3. **D1 stays the deferred query substrate.** Q20 (AX-QNA) is upgraded from

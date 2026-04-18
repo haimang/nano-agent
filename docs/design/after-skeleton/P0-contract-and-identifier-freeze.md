@@ -385,12 +385,12 @@
 
 ### 9.3 下一步行动
 
-- [ ] **决策确认**：业主确认本设计与 `plan-after-skeleton.md` 口径一致。
-- [ ] **关联 Issue / PR**：进入 Phase 0 action-plan 时，先做 canonical field rename 与 contract tests。
-- [ ] **待深入调查的子问题**：
-  - [ ] `observability envelope` 中非请求级 alert 是否允许无 `trace_uuid`
-  - [ ] `reply_to` 是否统一重命名为 `reply_to_message_uuid`
-- [ ] **需要更新的其他设计文档**：
+- [x] **决策确认**：业主已确认本设计与 `plan-after-skeleton.md` 口径一致；`AX-QNA.md` Q1-Q8 已逐项落地。
+- [x] **关联 Issue / PR**：A1 action-plan 已完成 canonical field rename + compat shim + contract tests（`pnpm --filter @nano-agent/nacp-core test` 231 cases 全绿）。
+- [x] **待深入调查的子问题**：
+  - [x] `reply_to` 已统一重命名为 `reply_to_message_uuid`（A1 P2 落地）
+  - [ ] `observability envelope` 中非请求级 alert 是否允许无 `trace_uuid` — 推迟至 A3 observability 阶段决策（当前规则为「所有 envelope 必须带 `trace_uuid`」）
+- [x] **需要更新的其他设计文档**：已同步
   - `docs/design/after-skeleton/P0-nacp-versioning-policy.md`
   - `docs/design/after-skeleton/P0-identifier-law.md`
   - `docs/design/after-skeleton/P0-contract-freeze-matrix.md`
