@@ -463,10 +463,22 @@ P4 design 的全部 external seam 前提已由 A5 落地为代码：
 - **Tests**：`packages/session-do-runtime/test/{composition-profile,remote-bindings,cross-seam}.test.ts` 共 35 cases + 既有测试继续通过；`packages/hooks/test/runtimes/service-binding.test.ts` 5 cases 覆盖 ServiceBindingRuntime；`packages/llm-wrapper/test/integration/fake-provider-worker.test.ts` 3 cases 证明 fake provider 与现有 OpenAIChatAdapter / normalizer / session-stream-adapter 同构；`test/external-seam-closure-contract.test.mjs` 10 cases 把 catalog / taxonomy / 三类 fake worker 的闭环钉死。
 - **Reserved skill seam**：`SKILL_WORKERS` 仍保留在 env 中，`readCompositionProfile / makeRemoteBindingsFactory` 显式忽略它，测试 `V1 binding catalog (AX-QNA Q9)` 验证 catalog 不含 skill。
 
+### B.1 A4-A5 Code Review Follow-up（2026-04-18）
+
+GPT R3/R4 + Kimi R5 指出 A5 把 remote seam 做成了 "primitives 就位但没接入 live path"。本轮 4 条 fix 把 primitives 变成 runtime truth：
+
+- **R3 / Kimi R5**：`NanoSessionDO` constructor 默认参数从 `createDefaultCompositionFactory()` 改为 `selectCompositionFactory(env)`；任一 v1 binding（`CAPABILITY_WORKER / HOOK_WORKER / FAKE_PROVIDER_WORKER`）存在就自动选 `makeRemoteBindingsFactory()`。deploy 时再也不需要手动在 `worker.ts` 切 factory。
+- **R3 下游消费**：`makeRemoteBindingsFactory()` 输出的 `hooks` handle 除了 `serviceBindingTransport` 还暴露 `.emit(event, payload, context)` 薄包装；`OrchestrationDeps.emitHook` 因此真正会调远端 `HOOK_WORKER`，不再只是把 transport 放在一边没人用。
+- **R4 cross-seam anchor 传播**：`callBindingJson / makeHookTransport / makeCapabilityTransport / makeProviderFetcher` 都接受可选 `CrossSeamAnchor`，`buildCrossSeamHeaders()` 在出站 Request 上写入 `x-nacp-trace-uuid / session-uuid / team-uuid / request-uuid / source-role / source-key / deadline-ms` 头。`remote-bindings.test.ts` 新增 4 cases 守护 header propagation；fake hook / capability / provider 现在都能被 server-side `readCrossSeamHeaders()` 还原出 anchor。
+- **R4 StartupQueue 范围收敛**：`StartupQueue<T>` 保留为 utility，在 runtime 中尚无 use-site。文档口径改为 "utility-only；接入 runtime 需要独立 memo 触发" —— 不再暗示它已经在 early-event path 上生效。
+- **Kimi R2 placeholder URL**：`callBindingJson` + `makeProviderFetcher` 的 `https://binding.local` / `https://fake-provider.local` 加上 JSDoc 说明 Cloudflare service-binding 按绑定表而非 DNS 路由，host 只是日志可读性占位。
+- **Kimi R6 streamDelayMs**：`test/fixtures/external-seams/fake-provider-worker.ts::buildStreamBody` 现在真正消费 `opts.streamDelayMs`，每个 chunk 在 enqueue 前按毫秒数 `setTimeout`，P6 / A6 的 slow-provider 场景可以直接跑。
+
 ### C. 版本历史
 
 | 版本 | 日期 | 修改者 | 主要变更 |
 |------|------|--------|----------|
+| v0.4 | `2026-04-18` | `Claude Opus 4.7` | A4-A5 code review 回填：附录 B.1 记录 R3 / R4 / Kimi R2 / R5 / R6 共 6 条修复 |
 | v0.3 | `2026-04-18` | `Claude Opus 4.7` | A5 收口：附录 B 增补 P4 真实落地状态 |
 | v0.2 | `2026-04-18` | `GPT-5.4` | 补齐尾部章节；增加 binding catalog/skill reserved/early-events queue/fake provider schema 口径 |
 | v0.1 | `2026-04-17` | `GPT-5.4` | 初稿 |

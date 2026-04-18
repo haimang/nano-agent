@@ -101,8 +101,16 @@ produce an `evidence-backed` snapshot simply by:
 3. Feeding the resulting per-scenario placement evidence through
    `aggregateEvidenceVerdict()`
 
-The loop is **closed** even though the network-bound promotion step is
-owner-local.
+The loop is **wired end-to-end inside the workspace-context-artifacts
+package** (A6-A7 review GPT R4 / Kimi R3 fix): `ContextAssembler`,
+`CompactBoundaryManager`, and `WorkspaceSnapshotBuilder` now call the
+emitters automatically when `evidenceSink + evidenceAnchor` are wired.
+
+The loop is **not yet closed at the DO / deploy edge**: the P5 gate
+writes `p6-handoff.json` and per-scenario bundles, but there is no
+live reader that feeds those bundles into `aggregateEvidenceVerdict()`
+in production. Consuming the P5 handoff is explicitly a future task —
+see the action-plan §11.4 closure note for the current status.
 
 ## 6. Open hypotheses (handed off)
 

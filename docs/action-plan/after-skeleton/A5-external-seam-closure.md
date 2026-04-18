@@ -555,12 +555,18 @@ external-seam-closure
 
 ### 11.4 收口分析与下一阶段安排
 
-- **AX-QNA / Definition of Done 对照**
-  - **功能**：binding catalog + composition profile + hook/capability remote seam + fake provider seam + cross-seam law + startup queue 全部落地；local reference path 完好无损。
-  - **测试**：session-do-runtime + hooks + llm-wrapper + 根 cross tests 形成闭环；53 新 cases + 14 e2e 同时保护。
-  - **文档**：P4 design 附录 B、本 action-plan §11、package exports 三方口径一致。
-  - **风险收敛**：不再有 “composition factory 只会返回 undefined” / “hook remote runtime throw-only” / “provider 只有 interface” 三类漂移；`SKILL_WORKERS` 显式从 catalog 中排除并由 `V1 binding catalog` 测试守护；failure taxonomy 从 3 个包各自一套收敛为 5 项统一枚举。
-  - **可交付性**：A6 可以直接把 `makeRemoteBindingsFactory()` + 三个 fake worker fixture 装进 `wrangler.jsonc` 的 service-binding 槽位做 L1/L2 验证；`makeProviderFetcher` 接 `gpt-4.1-nano` 时只需替换 `FAKE_PROVIDER_WORKER` 绑定即可。
+> **A4-A5 code review 回填（2026-04-18）**：GPT R3 / R4 指出原 §11.4 把 "cross-seam law 已落地" / "composition factory 已接线" 写得比实际状态更硬 —— 真实情况是 binding catalog / taxonomy / adapter 都落地了，但 a) `NanoSessionDO` 默认 constructor 还在用 `createDefaultCompositionFactory()`，remote handles 没被消费；b) `buildCrossSeamHeaders` + `StartupQueue` 在 `src/` 里没有 use-site。本轮已补齐前两点（R3/R5）+ cross-seam header 注入（R4），`StartupQueue` 维持为 utility（utility-only 口径）。
+
+- **AX-QNA / Definition of Done 对照（review 回填后）**
+  - **功能（review 后）**：binding catalog + composition profile + hook/capability remote seam + fake provider seam + cross-seam law + startup queue 已落地 **且 review 四条 fix 闭合**：
+    - `NanoSessionDO` constructor 默认通过 `selectCompositionFactory(env)` 自动选 `makeRemoteBindingsFactory()`，任一 v1 binding 存在即切远端（R3 / Kimi R5）。
+    - `makeRemoteBindingsFactory()` 输出的 `hooks` handle 新增 `.emit(event, payload, context)` 适配层，DO 的 `emitHook` 现在可以真正消费远端 transport（R3）。
+    - `callBindingJson` / `makeHookTransport` / `makeCapabilityTransport` / `makeProviderFetcher` 都接受可选 `CrossSeamAnchor`，`buildCrossSeamHeaders()` 把 `x-nacp-trace/session/team/request/source-*` 写到真实出站 Request 头（R4）。
+    - `StartupQueue<T>` 继续存在为 utility；当前没有 runtime use-site，文档也已降级为 "utility-only，P4-B 再决定是否接入"（R4）。
+  - **测试（review 后）**：session-do-runtime 新增 4 个 R4 anchor propagation cases + 3 个 R3 remote-composition cases + 1 个 R2 helper-outbound-wiring case；继续覆盖 Kimi R6 `streamDelayMs` 已实现。
+  - **文档**：P4 design 附录 B 追加 "A4-A5 review follow-up"；`callBindingJson` + `makeProviderFetcher` 的 placeholder URL 加了 Kimi R2 要求的 JSDoc 说明。
+  - **风险收敛**：本轮 fix 之后 GPT R3 "remote seam 不在 live path"、R4 "anchor propagation 是 dead code" 两条 blocker 实际闭合；`SKILL_WORKERS` 的 reserved 状态保持不变。
+  - **可交付性**：A6 可以直接：(a) 配置三个 fake worker 到 `wrangler.jsonc`，`selectCompositionFactory` 会自动选远端；(b) 在 DO 的 `buildTraceContext()` 基础上向 transport 透传 `CrossSeamAnchor`（默认已经走通），让 deploy smoke 的跨 worker 日志保持同一 trace。
 - **复盘要点回填**
   - 工作量估计偏差：Phase 4（cross-seam law）比预估轻 —— 因为 transport precheck pipeline 在 `nacp-core` 早就固化（`validateEnvelope → verifyTenantBoundary → checkAdmissibility`），A5 只需要再加 header / failure / startup queue 三项。真正花时间的是 Phase 2 的 ServiceBindingRuntime 重写 + 对应 failure taxonomy，以及 Phase 3 fake provider worker 的 SSE 流实现（需对齐 OpenAI 的 `[DONE]` 协议尾）。
   - 拆分合理度：Phase 2 的 "Session Runtime Hook/Capability Composition"（P2-03）最终在 `remote-bindings.ts` 的 `makeRemoteBindingsFactory()` 里一次性装配，没有单独修改 `nano-session-do.ts`；这是有意为之（DO 不该关心具体 profile），未来模板可明确 “若通过 factory 装配则 DO 不改动” 这条规则。

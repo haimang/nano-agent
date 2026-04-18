@@ -513,24 +513,32 @@ session-edge-closure
   - `http-controller.test.ts` 保持 11 cases，行为兼容
   - `do/nano-session-do.test.ts`（26 cases，增加 follow-up + 单活跃 turn + role-illegal end + HTTP start POST + HTTP status 实锚点）
   - `integration/edge-trace.test.ts`（3 cases，新增）
-- **运行结果**
-  - `pnpm --filter @nano-agent/session-do-runtime test` — `20 files / 274 tests passed`。
+- **运行结果（A4-A5 code review 回填后的最新数字 — 2026-04-18）**
+
+  > A4 初稿报告 `session-do-runtime: 20 files / 274 tests` 与 `eval-observability: 18 files / 172 tests` — A5 以及后续 review fix 又新增了 `remote-bindings / cross-seam / composition-profile / helper-outbound-wiring / remote-composition-default / orchestration drain` 等 cases，所以当前实际数字是下面记录的。原始数字作为 A4 执行时的快照保留在 Kimi R3 报告的 §1.2 里。
+
+  - `pnpm --filter @nano-agent/session-do-runtime test` — **`25 files / 323 tests passed`**（其中 A4-A5 review 新增 drain test、helper outbound wiring、remote composition auto-select、callBindingJson anchor propagation 等 ≈8 cases）。
   - `pnpm --filter @nano-agent/nacp-session test` — `14 files / 115 tests passed`（不受影响但作为相邻守护跑过）。
-  - `pnpm --filter @nano-agent/eval-observability test` — `18 files / 172 tests passed`。
+  - `pnpm --filter @nano-agent/eval-observability test` — `22 files / 196 tests passed`（数字更新同 A2-A3 review R5）。
   - `pnpm --filter @nano-agent/nacp-core test` — `12 files / 231 tests passed`。
   - `pnpm -r typecheck` — 10 projects 全绿。
   - `pnpm -r build` — 10 projects 全绿。
-  - `npm run test:cross` — `14/14 e2e passed`。
-  - `node --test test/trace-first-law-contract.test.mjs test/observability-protocol-contract.test.mjs test/hooks-protocol-contract.test.mjs` — `15 + 4 + 2 cases passed`。
+  - `npm run test:cross` — **`66 tests passed`**（14 e2e + 52 contract suites；A2-A3 review R5 已把 root cross glob 纠正为 `test/*.test.mjs test/e2e/*.test.mjs`）。
+  - `node --test test/trace-first-law-contract.test.mjs test/observability-protocol-contract.test.mjs test/hooks-protocol-contract.test.mjs` — `9 + 4 + 2 cases passed`（trace-first-law 在 A2-A3 review 已修正为 9，非 15）。
 
 ### 11.4 收口分析与下一阶段安排
 
-- **AX-QNA / Definition of Done 对照**
-  - **功能**：normalized ingress + WS helper + HTTP fallback + single-active-turn + edge trace 全部落地；raw JSON 解析主路径下线。
-  - **测试**：session-do-runtime / nacp-session / 邻接包 tests + root cross + 新 edge-trace integration + A3 trace-first contract 四方闭环。
-  - **文档**：P3 design 附录 B 明确收口状态；turn-ingress.ts 的 TURN_INGRESS_NOTE 不再自称 “not yet frozen”；WsUpgradeOutcome / IngressRejection 两个 reason 联合体成为下一阶段 public contract 的起点。
-  - **风险收敛**：不再存在 raw parse/switch 主路径、controller stub 幻觉、runtime-private follow-up wire、session/HTTP actor 双宇宙；session.end 的 role 边界由 `nacp-session` 单方面守护，DO/HTTP 都只能接受。
-  - **可交付性**：A5（external seam closure）可直接把 `IngressEnvelope` / `IngressRejection` / `session.edge.*` 当 cross-worker edge vocabulary；A6（deploy verification）能利用 HTTP fallback 的 POST /start 路径直接构造 golden path 而无需 WS。
+> **A4-A5 code review 回填（2026-04-18）**：GPT R1/R2 + Kimi R1 在本轮指出 A4 §11.4 原文把 "helper 主路径闭合" "single-active-turn closure" "HTTP fallback 共享 actor" 写成了 "全部落地"，但实际 a) `pendingInputs` 只入队未出队；b) `SessionWebSocketHelper` 没 `attach()` 到 WS，也没承接 outbound stream events；c) HTTP fallback 的 `buildClientFrame` 自生 `trace_uuid`。本轮已全部 fix，下面把结论改写为「review 回填后才算 closure」的口径。
+
+- **AX-QNA / Definition of Done 对照（review 回填后）**
+  - **功能**：normalized ingress + WS helper + HTTP fallback + single-active-turn + edge trace 已落地 **且由 review fix 闭合**：
+    - single-active-turn drain — orchestrator 新增 `drainNextPendingInput()` + DO 新增 `drainPendingInputs()` 循环；`session.start / session.followup_input / session.cancel` 在 turn 结束后都会清空队列（GPT R1）。
+    - helper-is-the-outbound-truth — orchestration 的 `pushStreamEvent` 经 `helper.pushEvent(streamUuid, body)` 送出；WS upgrade 时 DO 经 `attachHelperToSocket()` 让 helper 持有真实 socket（GPT R2）。
+    - HTTP fallback 共用 traceUuid — `HttpDispatchHost.getTraceUuid` 新增，`buildClientFrame` 优先使用 DO 的 `this.traceUuid`（Kimi R1）。
+  - **测试**：session-do-runtime / nacp-session / 邻接包 tests + root cross + 新 edge-trace / helper-outbound-wiring / orchestration.drainNextPendingInput / remote-composition-default / callBindingJson anchor 集成，共约 8 个 review-follow-up cases 把 closure 变成回归护栏。
+  - **文档**：P3 design 附录 B 追加 "A4-A5 review follow-up" 段，说明本轮四条 fix 的落地位置；`turn-ingress.ts` 的 `TURN_INGRESS_NOTE` 不再自称 "not yet frozen"。
+  - **风险收敛**：raw parse/switch、controller stub 幻觉、runtime-private follow-up wire、session/HTTP actor 双宇宙等 A4 原 DoD 在加上 code review 收口后真实闭合；`session.end` 的 role 边界由 `nacp-session` 单方面守护。
+  - **可交付性**：A5 / A6 仍按原计划衔接；新增的 drain / attach / shared-trace 让 A6 的 deploy-shaped 烟测不会因为 trace 断链或输入丢失而翻车。
 - **复盘要点回填**
   - 工作量估计偏差：Phase 3 比预估轻 —— HTTP fallback 只需要把已有 ingress pipeline 复用，不是重写 controller；反而 Phase 2 比预估重，因为 `NanoSessionDO` 原有字段 `streamSeq` / `wsHelper` / `traceUuid` 的懒构造 + storage 适配器需要额外设计。
   - 拆分合理度：Phase 4 的 health / alarm wiring 与 A3 P3-02 (`CheckpointInvalidError`) 已有重合，实际落到本轮就是 `emitEdgeTrace` + 3 类事件；本 action-plan 原来的 P4-02 "caller-managed health" 更接近 checklist 而非新 wiring，建议下个模板把它归入 P4-01 以免重复。

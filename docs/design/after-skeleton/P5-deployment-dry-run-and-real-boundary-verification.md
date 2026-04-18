@@ -461,10 +461,21 @@ P5 design 的全部 verification-gate 前提已由 A6 落地为代码 + 文档 +
 - **P6 handoff evidence pack（P5-02）**：`p6-handoff.json` 声明 `consumedBy = "A7 / P6 storage-and-context-evidence-closure"`，暴露 `placement / timeline / latencyBaseline / failureRecord` 四个字段作为 P6 真实运行证据入口。
 - **Secret injection policy**：README + profile manifests 明确 L1 → `.dev.vars`、L2 → `wrangler secret put`，`.gitignore` 已追加 `.dev.vars` 与 `test/verification/verdict-bundles/*.json` 规则。
 
+### B.1 A6-A7 Code Review Follow-up（2026-04-18）
+
+GPT R1/R2/R3/R5 指出附录 B 把几条 primitives 写得比 live-path reality 更硬。本轮 review fix 收紧了以下口径，补齐了可实际执行的证据：
+
+- **R1 — WorkerHarness baseUrl proxy**：`test/verification/smokes/runner.ts::WorkerHarness.fetch()` 在 `localFallback === false` 时真的 forward 到 `baseUrl` 远端 URL；之前该选项只记录在字段里，请求永远在进程内 resolve。
+- **R2 — L1 external-seam fixture-contract downgrade**：`l1-external-seams.smoke.ts` 现在自写 `blocker = "fixture-contract only — deploy-shaped service-binding boundary not yet exercised"`；`test/l1-smoke.test.mjs` 的断言同步改为 `verdict === "red"`，`test/a6-gate.test.mjs` 也同步。真实 L1 需要 companion `wranglers/{fake-hook,fake-capability,fake-provider}` workers。
+- **R3 / Kimi R1 — L2 real-cloud 对齐 profile contract**：`runRealSmoke()` 现在按 `deploy-smoke-l2.json::smokeAssertionContract` 验证 `body.status === "ok" && body.output.length > 0`；harness-fallback 显式 `recordFailure()` 声明 contract 不满足。之前 real-cloud 路径只看 `/start => 200`。
+- **R5 / Kimi R3 / Kimi R4 — docs honesty + evidence-grade 词汇**：README 新增「Evidence-grade vocabulary」段（`local-l0-harness` / `remote-dev-l1` / `deploy-smoke-l2`）；A6/A7 §11.4 + storage evidence report 改写为 "wired inside the package but not yet consumed at deploy edge" 的口径。`p6-handoff.json` 仍是 pointer 文件，没有 live reader —— 当前 **A7 的 evidence consumer 是 future work**。
+- **Kimi R5 / R6 — harness typing + optional-smoke coverage**：`WorkerHarness.envOverrides` 改为 `HarnessEnvOverrides` 具名类型（去掉 `as never`）；`test/a6-gate.test.mjs` 新增 "gate ignores optional smokes" case，守护 inventory 未来扩 `optional` 条目时 verdict 不翻车。
+
 ### C. 版本历史
 
 | 版本 | 日期 | 修改者 | 主要变更 |
 |------|------|--------|----------|
+| v0.4 | `2026-04-18` | `Claude Opus 4.7` | A6-A7 code review 回填：附录 B.1 记录 GPT R1/R2/R3/R5 + Kimi R1/R5/R6 六条修复 |
 | v0.3 | `2026-04-18` | `Claude Opus 4.7` | A6 收口：附录 B 增补 P5 真实落地状态 |
 | v0.2 | `2026-04-18` | `GPT-5.4` | 补齐尾部章节；明确 verification gate、wrangler profile 分支、provider decision 与 verdict thresholds |
 | v0.1 | `2026-04-17` | `GPT-5.4` | 初稿 |

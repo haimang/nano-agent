@@ -473,10 +473,23 @@ P6 design 的所有 evidence closure 前提已由 A7 落地为代码 + 文档 + 
 - **Context layering principles（P5-02）**：`docs/eval/after-skeleton-context-layering-principles.md`（7 条原则 + "what this phase does NOT settle"）已产出。
 - **Exit pack（P5-03）**：本 action-plan §11 工作报告、storage evidence report、context layering principles 三份文档共同组成可被 A8 / A9 / A10 直接消费的 evidence pack；A6 verdict bundle 是实时上游。
 
+### B.1 A6-A7 Code Review Follow-up（2026-04-18）
+
+GPT R4 + Kimi R3 指出 A7 附录 B 把 emitter 状态写成 "不再只在 synthetic test 中可见"，但 reviewer 全仓 grep 后确认除 `DoStorageTraceSink` 的 placement hook 外，三条 context/compact/snapshot emitter 在 `src/**/*.ts` 没有任何业务入口 use-site。本轮 review fix 在业务对象上真正安装了 evidence 钩子：
+
+- **R4 — `ContextAssembler` 真实 emit**：新增 `ContextAssemblerOptions` (`evidenceSink + evidenceAnchor`) 与 `setEvidenceWiring()`；`assemble()` 在返回前调用 `buildAssemblyEvidence()` 并通过 sink 发出 `assembly` record。无 anchor 时静默跳过。
+- **R4 — `CompactBoundaryManager` 真实 emit**：`CompactBoundaryManagerOptions` + `setEvidenceWiring()`；`buildCompactRequest()` 发 `compact.request`；`applyCompactResponse()` 按成功/失败路径分别发 `compact.response + compact.boundary` 或 `compact.response + compact.error`。
+- **R4 — `WorkspaceSnapshotBuilder` 真实 emit**：`WorkspaceSnapshotBuilderOptions` + `setEvidenceWiring()` + `emitRestoreEvidence()`；`buildFragment()` 返回前发 `snapshot.capture`；restore path 由 caller 主动调用 `emitRestoreEvidence(fragment, coverage, missing)`。
+- **R4 — End-to-end 回归护栏**：`packages/workspace-context-artifacts/test/integration/evidence-runtime-wiring.test.ts` 新增 7 cases，断言三条 emitter 确实随业务方法调用发生（不是靠测试额外 recorder.emit）。
+- **Kimi R2 — `computeCalibrationVerdict` 冗余三元表达式简化**：`contradictory >= needsRevisitMin` 分支的 `? "needs-revisit" : "needs-revisit"` 合并为单 return + Q13 注释。
+- **Kimi R4 — `DoStorageTraceSink.emitPlacement` anchor timestamp 对齐**：placement evidence 的 `anchor.timestamp` 现在优先使用 `firstEvent.timestamp`，避免 replay 时 placement 看起来比 event 晚。
+- **GPT R5 — docs 降级**：A6/A7 §11.4 + 本附录 B + storage evidence report 全部改写为 "wired inside the package but not yet consumed at deploy edge"；"loop closed" 口径只在 workspace-context-artifacts 包内部成立，A7 对 P5 bundle 的 consumer 仍是 future work。
+
 ### C. 版本历史
 
 | 版本 | 日期 | 修改者 | 主要变更 |
 |------|------|--------|----------|
+| v0.4 | `2026-04-18` | `Claude Opus 4.7` | A6-A7 code review 回填：附录 B.1 记录 GPT R4/R5 + Kimi R2/R3/R4 五条修复 |
 | v0.3 | `2026-04-18` | `Claude Opus 4.7` | A7 收口：附录 B 增补 P6 真实落地状态 |
 | v0.2 | `2026-04-18` | `GPT-5.4` | 补齐尾部章节；增加 instrumentation owner、术语边界与 evidence schema 细节 |
 | v0.1 | `2026-04-17` | `GPT-5.4` | 初稿 |

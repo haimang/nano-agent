@@ -544,12 +544,17 @@ deployment-dry-run-and-real-boundary-verification
 
 ### 11.4 收口分析与下一阶段安排
 
-- **AX-QNA / Definition of Done 对照**
-  - **功能**：verification ladder + wrangler profiles + fake worker fixtures（A5 复用）+ L1 smoke + L2 smoke + verdict bundle + gate aggregator 全部落地。
-  - **测试**：L0/L1/L2 共同构成最小验证闭环；root + package tests 全绿；harness fallback 路径有显式 RED 守卫，禁止 silent green。
-  - **文档**：P5 design 附录 B、本 action-plan §11、verification README、profile JSON 三方一致；reviewer 不再需要解释 “Phase 5 到底跑了什么”。
-  - **风险收敛**：`wrangler.jsonc` 不再是单 DO skeleton；fake worker fixture 真正进入 service-binding 路径；real provider 与 fake provider 共用一份 schema（fake-provider-worker mirror Chat Completions），避免 schema 漂移；harness fallback 不会被误读为 deploy reality。
-  - **可交付性**：A7 直接消费 `p6-handoff.json` 与 per-scenario bundle 的 `placement / timeline / latencyBaseline / failureRecord` 字段；reviewer 在拿到 owner key 后，一次 `pnpm exec tsx test/verification/smokes/gate.ts` 即可把 gate 翻成 GREEN。
+> **A6-A7 code review 回填（2026-04-18，GPT R1/R2/R3/R5 + Kimi R1）**：A6 初稿把 "L1 deploy-shaped boundary" 与 "A7 可直接消费 p6-handoff.json" 写成了 "全部落地"，但实际 a) `WorkerHarness.baseUrl` 没有真正转发远端；b) `l1-external-seams` 是 in-process fake-binding round-trip，不是 service-binding boundary；c) `l2-real-provider` 的 real-cloud 路径只验证 `/start => 200`，没有比对 profile 的 `smokeAssertionContract`；d) `p6-handoff.json` 是 pointer 文件，没有 reader。本轮的 review fix 明确降级这些表述，并把 gate 已知存在的 RED 写进测试期望。
+
+- **AX-QNA / Definition of Done 对照（review 回填后）**
+  - **功能（review 后）**：verification ladder + wrangler profiles + fake worker fixtures（A5 复用）+ L1 session-edge smoke + L1 external-seam **fixture-contract smoke** + L2 real-provider **profile-contract gate** + verdict bundle + gate aggregator 全部落地；GPT R1 / R2 / R3 暴露的 "primitives 存在但没真接通" 已由以下 fix 收口：
+    - `WorkerHarness.fetch()` 在 `localFallback === false` 时真正 forward 到 `baseUrl` 远端（GPT R1）。
+    - `l1-external-seams` 自动在 bundle 写入 `blocker = "fixture-contract only"`；`test/l1-smoke.test.mjs` 期望也同步为 RED（GPT R2），直到 `wranglers/{fake-*}` companion workers 就位才能翻绿。
+    - `l2-real-provider` 的 real-cloud 路径现在对齐 profile `smokeAssertionContract`（`status === 'ok' && output.length > 0`），harness-fallback 路径显式 RED（GPT R3 + Kimi R1）。
+  - **测试**：L0/L1/L2 共同构成最小验证闭环；root + package tests 全绿；`test/a6-gate.test.mjs` 现在 pin 住 3 条期望：session-edge green / external-seams red / real-provider red → gate red。
+  - **文档**：P5 design 附录 B + 本 action-plan §11 + verification README 增补「Evidence-grade vocabulary」段，明确区分 `local-l0-harness`、`remote-dev-l1`、`deploy-smoke-l2` 三档证据级别（GPT R5）。
+  - **风险收敛**：harness fallback 不能再被误读为 deploy reality；gate bundle 的 RED 状态是**诚实的当前状态**，不是 review 漏洞。
+  - **可交付性（降级）**：`p6-handoff.json` 保留为 pointer 文件；A7 读取它的 path 还没有 reader。A7 现在读取 P5 bundle 的 `placement / timeline / latencyBaseline / failureRecord` 字段**由 A7 自行实现 consumer** 时才成立，当前处于 "prepared but not yet consumed by live code" 状态（GPT R5）。
 - **复盘要点回填**
   - 工作量估计偏差：Phase 4 比预估轻 —— 因为 A5 已经把 `makeProviderFetcher` 抽出，L2 smoke 只需要换一组 binding 即可同时跑 fake-only 与 real-cloud。Phase 1 比预估重 —— 三份 profile JSON + manifest + inventory + README 的同口径校对花了较多时间。
   - 拆分合理度：Phase 5 “gate aggregator” 与 Phase 1 “verdict thresholds” 关系紧密，未来模板可以把它们合并为 “Gate Closure Phase”，避免阈值定义和聚合逻辑分布在两个 phase。

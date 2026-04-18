@@ -550,12 +550,18 @@ storage-and-context-evidence-closure
 
 ### 11.4 收口分析与下一阶段安排
 
-- **AX-QNA / Definition of Done 对照**
-  - **功能**：五条 evidence 流 + verdict 聚合 + 默认 hypothesis 目录 + 真实 sink emission + storage evidence report + context layering principles 全部落地。
-  - **测试**：package + integration + root cross 共 35 新 cases；既有测试全绿；oversize / failed-restore 两条降级路径有显式守卫。
-  - **文档**：P6 design 附录 B、storage evidence report、context layering principles、本 action-plan §11 四方一致。
-  - **风险收敛**：evidence 不再只停留在 tests（DoStorageTraceSink 真实 emit）；emitter ownership 已分离（eval = vocab + sink，业务包 = live emit）；verdict 与 PX grade 通过类型 + 文档强制分离；transcript 不再是 placement/context 替代。
-  - **可交付性**：A8（minimal bash）可读 `snapshot.restore-coverage` 钩子；后续 storage threshold freeze / context architecture 可直接读 `placement.do.*` 与 `assembly` / `compact` verdict + revisit hint。
+> **A6-A7 code review 回填（2026-04-18，GPT R4/R5 + Kimi R3）**：A7 初稿声称 "evidence 不再只停留在 tests"，但 reviewer 全仓 grep 后指出除 `DoStorageTraceSink` 的 placement hook 之外，`ContextAssembler / CompactBoundaryManager / WorkspaceSnapshotBuilder` 在 `src/**/*.ts` 里没有任何 emitter use-site。本轮 review fix 已把三条 emitter 分别接入业务主路径 + 新增 end-to-end test；下方结论已重写为 review 回填后的真实状态。
+
+- **AX-QNA / Definition of Done 对照（review 回填后）**
+  - **功能（review 后）**：五条 evidence 流 + verdict 聚合 + 默认 hypothesis 目录 + 真实 sink emission + storage evidence report + context layering principles 已落地 **且 review R4 / Kimi R3 的 emitter 接线已闭合**：
+    - `ContextAssembler` 新增 `ContextAssemblerOptions` + `setEvidenceWiring()`；每次 `assemble()` 返回前对 `assembly` evidence 发出一次 record（需要 caller 提供 `evidenceSink + evidenceAnchor`）。
+    - `CompactBoundaryManager` 新增 `CompactBoundaryManagerOptions`；`buildCompactRequest()` 发 `compact.request`、`applyCompactResponse()` 同时发 `compact.response`、`compact.boundary`、`compact.error`。
+    - `WorkspaceSnapshotBuilder` 新增 `WorkspaceSnapshotBuilderOptions` + `setEvidenceWiring()` + `emitRestoreEvidence()`；`buildFragment()` 返回前自动发 `snapshot.capture`。
+    - 新 `packages/workspace-context-artifacts/test/integration/evidence-runtime-wiring.test.ts` 7 cases 证明三条 emitter 确实随真实方法调用发生（不再是测试单独构造）。
+  - **测试**：package + integration + root cross 共 42 新 cases（原 35 + review R4 的 7 新 cases）；既有测试全绿。
+  - **文档**：P6 design 附录 B、storage evidence report、context layering principles、本 action-plan §11 四方一致；附录 B.1 追加 review follow-up 段（GPT R5）。
+  - **风险收敛**：evidence 不再只停留在 tests 或 placement 单点；emitter 已进入真实业务 method；`computeCalibrationVerdict` 的冗余三元表达式已简化为单 return（Kimi R2）；`DoStorageTraceSink.emitPlacement` 的 anchor timestamp 优先使用 firstEvent timestamp（Kimi R4）。
+  - **可交付性（降级后诚实版）**：A8（minimal bash）可读 `snapshot.restore-coverage` 钩子；后续 storage threshold freeze / context architecture 可直接读 `placement.do.*` 与 `assembly / compact` verdict + revisit hint。但 **A7 自身不再声称 "已消费 P5 p6-handoff.json"** —— handoff 文件仍是 pointer，A7 的 consumer 是 future work（GPT R5）。
 - **复盘要点回填**
   - 工作量估计偏差：Phase 4 verdict aggregator 比预估省力 —— 一旦 evidence-streams 的 discriminated union 形态固定，VerdictRule 可以是单文件、零依赖；Phase 3 比预估重，因为要协调真实 `WorkspaceSnapshotFragment` schema (`mountConfigs` 而非 `mounts`) 与 `CompactBoundaryRecord` 真实形状 (`turnRange / archivedAt` 而非 `boundaryIndex / tokensBefore`)。
   - 拆分合理度：P5-01 (报告) 与 P5-02 (原则) 应分别形成独立可引用的文档 — 我按这一思路输出了两份；未来模板可以把它们标为 "**parallel artifacts**" 而不是 "sequential phase items"。

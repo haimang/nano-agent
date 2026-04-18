@@ -424,10 +424,21 @@ P3 design 的所有 session edge 前提已由 A4 落地为代码：
 - **Edge trace wiring**：`emitEdgeTrace` 在 WS attach、WS close、session.resume 处发出 `session.edge.{attach|detach|resume}` 事件，事件通过 `SubsystemHandles.eval.emit` 走到 A3 建立的 eval-observability sink，全部字段满足 `validateTraceEvent`。
 - **Cross-package guard**：`test/trace-first-law-contract.test.mjs` / `test/observability-protocol-contract.test.mjs` 保持绿色；新增 `packages/session-do-runtime/test/integration/edge-trace.test.ts` 把 attach / resume / detach 三类 edge trace 钉住。
 
+### B.1 A4-A5 Code Review Follow-up（2026-04-18）
+
+A4-A5 GPT+Kimi code review 在 A4 落地之上又暴露了三条「接线半成品」缺口，本轮已全部修复，结果同步在此：
+
+- **R1 (GPT high — correctness)**：`pendingInputs` 原来只入队不出队。修复：`SessionOrchestrator.drainNextPendingInput()` 新增 FIFO 出队 + DO 的 `drainPendingInputs()` 循环在 `startTurn / cancelTurn` 结束后自动清队；`pre-A4 §8.4` 提到的反例行号同步失效。
+- **R2 (GPT high — correctness)**：`SessionWebSocketHelper` 不是真实 outbound 路径。修复：`OrchestrationDeps.pushStreamEvent` 改为先走 `helper.pushEvent()`，WS upgrade 时 DO 的 `attachHelperToSocket()` 把真实 socket 绑到 helper；HTTP `timeline` 现在真正读到 runtime 发出的事件（`packages/session-do-runtime/test/integration/helper-outbound-wiring.test.ts` 守护）。
+- **R1 (Kimi medium — correctness)**：HTTP fallback `buildClientFrame` 自生 `trace_uuid`。修复：`HttpDispatchHost.getTraceUuid` + DO 在 `attachHost()` 时注入 `this.traceUuid`；HTTP 与 WS 现在共享同一 trace identity。
+
+后续 §8.4 反例行号随 A4 重写而失效，阅读时以当前 `packages/session-do-runtime/src/do/nano-session-do.ts` / `http-controller.ts` 的最新结构为准（Kimi R4 已在 review 报告中记录）。
+
 ### C. 版本历史
 
 | 版本 | 日期 | 修改者 | 主要变更 |
 |------|------|--------|----------|
+| v0.4 | `2026-04-18` | `Claude Opus 4.7` | A4-A5 code review 回填：附录 B.1 记录 R1/R2 + Kimi R1 三条修复 |
 | v0.3 | `2026-04-18` | `Claude Opus 4.7` | A4 收口：附录 B 增补 P3 真实落地状态 |
 | v0.2 | `2026-04-18` | `GPT-5.4` | 根据 PX-QNA Q8 改写 follow-up family 口径：不再 defer 到下一阶段，改为由 Phase 0 冻结并由 Phase 3 消费 |
 | v0.1 | `2026-04-17` | `GPT-5.4` | 初稿 |
