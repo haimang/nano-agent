@@ -35,23 +35,38 @@ export interface GateVerdict {
 export interface GateOptions {
   readonly persist?: boolean;
   readonly baseUrl?: string;
+  /**
+   * A6-A7 review Kimi R6: allow tests to inject a pre-built
+   * `perScenario` map so we can prove that `optional` smokes do not
+   * influence the verdict aggregation, without having to stand up a
+   * fake SMOKE_INVENTORY. When supplied the runner skips the L1/L2
+   * smoke executions and goes straight to aggregation.
+   */
+  readonly perScenarioOverride?: Record<string, VerdictBundle>;
 }
 
 /** Aggregate every required smoke into a single gate verdict. */
 export async function runGate(
   options: GateOptions = {},
 ): Promise<GateVerdict> {
-  const [sessionEdge, externalSeams, realProvider] = await Promise.all([
-    runL1SessionEdgeSmoke({ baseUrl: options.baseUrl, persist: options.persist }),
-    runL1ExternalSeamsSmoke({ persist: options.persist }),
-    runL2RealProviderSmoke({ persist: options.persist }),
-  ]);
-
-  const perScenario: Record<string, VerdictBundle> = {
-    "l1-session-edge": sessionEdge,
-    "l1-external-seams": externalSeams,
-    "l2-real-provider": realProvider,
-  };
+  const perScenario: Record<string, VerdictBundle> =
+    options.perScenarioOverride !== undefined
+      ? { ...options.perScenarioOverride }
+      : await (async () => {
+          const [sessionEdge, externalSeams, realProvider] = await Promise.all([
+            runL1SessionEdgeSmoke({
+              baseUrl: options.baseUrl,
+              persist: options.persist,
+            }),
+            runL1ExternalSeamsSmoke({ persist: options.persist }),
+            runL2RealProviderSmoke({ persist: options.persist }),
+          ]);
+          return {
+            "l1-session-edge": sessionEdge,
+            "l1-external-seams": externalSeams,
+            "l2-real-provider": realProvider,
+          };
+        })();
 
   // Required smokes (see SMOKE_INVENTORY). The gate's verdict is:
   //   - red   when any required L1 scenario is red OR the L2 golden

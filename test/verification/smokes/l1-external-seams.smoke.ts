@@ -1,9 +1,24 @@
 /**
- * A6 Phase 3 P3-02 — L1 external seam dry-run smoke.
+ * A6 Phase 3 P3-02 — L1 external seam fixture-contract smoke.
  *
- * Drives the three v1 binding-catalog seams against their fake worker
- * fixtures via the same adapter code the deployed Session DO uses.
- * Proves that:
+ * Scope (revised after A6-A7 review GPT R2):
+ * -----------------------------------------------------------------
+ * This smoke runs the `makeHookTransport / makeCapabilityTransport /
+ * makeProviderFetcher` adapters against their *in-process* fake
+ * worker fixtures. It does NOT cross a real service-binding boundary
+ * or a real wrangler dev session — `localFallback = true` below is
+ * the explicit record of that. It answers "do the adapter + fake
+ * worker fixture contracts still match?", which is valuable for
+ * keeping the fixtures honest but does not by itself prove the A6
+ * deploy-shaped L1 external seam boundary.
+ *
+ * Until a companion `wranglers/{fake-hook,fake-capability,fake-provider}`
+ * worker is stood up (see `packages/session-do-runtime/wrangler.jsonc`
+ * for the intended bindings), reviewers should treat this smoke as
+ * evidence at the `local-l0-harness` ladder, NOT at L1. The bundle's
+ * `blocking` list now records that explicitly.
+ *
+ * Assertions:
  *   - `makeHookTransport` → fake-hook-worker round trip returns the
  *     schema-compliant `hook.outcome` body.
  *   - `makeCapabilityTransport` → fake-capability-worker round trip
@@ -11,9 +26,6 @@
  *     acks cleanly.
  *   - `makeProviderFetcher` → fake-provider-worker `/chat/completions`
  *     returns an SSE stream ending with `[DONE]`.
- *
- * Every success / failure is emitted into the verdict bundle so
- * reviewers can read a single artifact to understand the L1 verdict.
  */
 
 import { performance } from "node:perf_hooks";
@@ -152,6 +164,16 @@ export async function runL1ExternalSeamsSmoke(
       "L1 external-seams smoke aborted — one of the v1 binding catalog seams failed",
     );
   }
+
+  // A6-A7 review GPT R2: even when every step passes, this smoke only
+  // exercises in-process fake bindings, not a real service-binding
+  // boundary. Record that explicitly so the gate bundle cannot be
+  // misread as "L1 deploy-shaped seam proven". A real-boundary run
+  // (wrangler deploy companion fake workers + this same smoke against
+  // the deployed baseUrl) is the follow-up that flips this to green L1.
+  recorder.block(
+    "L1 external-seams smoke is fixture-contract only — deploy-shaped service-binding boundary not yet exercised (requires wranglers/{fake-hook,fake-capability,fake-provider} companion workers)",
+  );
 
   const bundle = recorder.build();
   writeVerdictBundle(bundle, { persist: options.persist });

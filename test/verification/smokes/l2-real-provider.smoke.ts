@@ -122,12 +122,34 @@ async function runRealSmoke(
   if (res.status !== 200) {
     throw new Error(`real golden path returned ${res.status}`);
   }
-  const body = (await res.json()) as { ok?: boolean; phase?: string };
+  // A6-A7 review GPT R3 + Kimi R1: the profile's
+  // `smokeAssertionContract` reads
+  //   "response.status === 'ok' && response.output.length > 0"
+  // Previously this smoke only checked `body.ok === true`, which did
+  // not prove any provider content was produced. Now we check both
+  // fields; if the Worker hasn't been taught the golden output yet,
+  // the assertion FAILS and the bundle is marked `red` — which is the
+  // honest state until the real-provider wiring is complete.
+  const body = (await res.json()) as {
+    ok?: boolean;
+    status?: string;
+    output?: string;
+    phase?: string;
+  };
+  const contractOk =
+    body.status === "ok" &&
+    typeof body.output === "string" &&
+    body.output.length > 0;
   recorder.step(
-    "real golden path returned 200",
-    body.ok === true ? "pass" : "fail",
+    "real golden path matches profile smokeAssertionContract (status === 'ok' && output.length > 0)",
+    contractOk ? "pass" : "fail",
     performance.now() - turnStart,
   );
+  if (!contractOk) {
+    recorder.recordFailure(
+      "smokeAssertionContract not yet satisfied — Worker returns `ok:true` but no provider output (provider still `local` in deploy-smoke-l2.json); see P5 appendix B.1 for remediation plan",
+    );
+  }
   recorder.emitTimeline({ kind: "l2.real.start", body });
   recorder.setLatency({ firstByteMs: performance.now() - turnStart });
 }
@@ -143,7 +165,7 @@ async function runHarnessFallback(recorder: SmokeRecorder): Promise<void> {
     envOverrides: {
       TEAM_UUID,
       FAKE_PROVIDER_WORKER: providerBinding,
-    } as never,
+    },
     evalSink: { emit: (event) => recorder.emitTrace(event) },
   });
 
@@ -173,14 +195,23 @@ async function runHarnessFallback(recorder: SmokeRecorder): Promise<void> {
     note: "harness path — not a real-cloud run; see bundle.blocking",
   });
 
-  // Second assertion: the deploy-smoke profile must still carry the
-  // correct composition (provider=local by design), so the harness run
-  // still proves the scaffolding is ready for a real-cloud smoke.
+  // Second assertion: the deploy-smoke profile's
+  // `smokeAssertionContract` is intentionally not satisfied by the
+  // harness-fallback branch (harness replies `{ok:true}` without
+  // running a real provider). The profile still carries
+  // `provider: "local"` — this is by A6 design so L2 stays a gate
+  // rather than a black-box pass; the harness path records a blocker
+  // so the bundle lands on `red` until a real-cloud run is wired
+  // (see GPT R3 + Kimi R1 in
+  // `docs/code-review/after-skeleton/A6-A7-reviewed-by-GPT.md`).
   const profile = harness.describeProfile();
   recorder.step(
-    "deploy-smoke profile asserts provider=local",
+    "deploy-smoke profile asserts provider=local (harness-fallback marker)",
     profile.compositionProfile.provider === "local" ? "pass" : "fail",
     0,
+  );
+  recorder.recordFailure(
+    "harness-fallback cannot satisfy smokeAssertionContract (status === 'ok' && output.length > 0); real-cloud L2 run required for phase advancement",
   );
 }
 

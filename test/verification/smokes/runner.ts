@@ -249,13 +249,37 @@ export function writeVerdictBundle(
 // WorkerHarness
 // ─────────────────────────────────────────────────────────────────────
 
+/**
+ * A6-A7 review Kimi R5: explicit allowlist of env overrides that
+ * smoke specs may pass through to the harness. Using a named
+ * interface (instead of `as never` / `as unknown`) keeps typecheck
+ * honest: if `SessionRuntimeEnv` drops `TEAM_UUID` / `SESSION_UUID` /
+ * `HOOK_WORKER` / `CAPABILITY_WORKER` / `FAKE_PROVIDER_WORKER`, every
+ * smoke that supplies them fails at compile time instead of silently
+ * passing an inert override.
+ */
+export interface HarnessEnvOverrides
+  extends Partial<
+    Pick<
+      SessionRuntimeEnv,
+      | "TEAM_UUID"
+      | "SESSION_UUID"
+      | "HOOK_WORKER"
+      | "CAPABILITY_WORKER"
+      | "FAKE_PROVIDER_WORKER"
+    >
+  > {
+  // Intentionally closed: adding a new override should be a deliberate
+  // decision visible in this interface, not a one-off `as never`.
+}
+
 export interface WorkerHarnessOptions {
   /** Profile id (`local-l0` / `remote-dev-l1` / `deploy-smoke-l2`). */
   readonly profileId: string;
   /** Optional baseUrl — when set, the harness `fetch()` proxies to a real wrangler dev session. */
   readonly baseUrl?: string;
   /** Override env overrides — handy for plugging in fake worker fixtures. */
-  readonly envOverrides?: Partial<SessionRuntimeEnv>;
+  readonly envOverrides?: HarnessEnvOverrides;
   /** Optional composition profile override (debug / spike). */
   readonly compositionProfile?: CompositionProfile;
   /** Optional eval sink so smoke cases can record traces into the bundle. */
@@ -306,16 +330,40 @@ export class WorkerHarness {
     });
   }
 
-  /** Fetch as if the request hit the deployed Worker entrypoint. */
+  /**
+   * Fetch as if the request hit the deployed Worker entrypoint.
+   *
+   * A6-A7 review GPT R1: when `baseUrl` is explicitly set (meaning the
+   * caller chose NOT to fall back to the local harness), rewrite the
+   * request URL so the path lands on the real `wrangler dev --remote`
+   * (or deployed) endpoint and forward it via the ambient `fetch`.
+   * This is the only way a green L1 run can legitimately claim the
+   * deploy-shaped Worker/DO boundary was exercised — previously the
+   * harness silently resolved every request through the in-process
+   * `NanoSessionDO` regardless of `baseUrl`, which is what R1 flagged.
+   */
   async fetch(
     request: Request | string,
     init?: RequestInit,
   ): Promise<Response> {
     const req =
       typeof request === "string" ? new Request(request, init) : request;
+    if (!this.localFallback) {
+      return this.forwardToRemote(req);
+    }
     const sessionUuid = this.extractSessionUuid(req);
     const stub = this.getInstance(sessionUuid);
     return stub.fetch(req);
+  }
+
+  private async forwardToRemote(req: Request): Promise<Response> {
+    const originalUrl = new URL(req.url);
+    const remote = new URL(this.baseUrl);
+    // Preserve the incoming path + query; only the origin changes.
+    remote.pathname = originalUrl.pathname;
+    remote.search = originalUrl.search;
+    const forwarded = new Request(remote.toString(), req);
+    return fetch(forwarded);
   }
 
   private getInstance(sessionUuid: string): NanoSessionDO {

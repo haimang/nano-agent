@@ -113,15 +113,29 @@ export function buildStreamChunks(
   return out;
 }
 
-/** Render an SSE stream as a `ReadableStream<Uint8Array>` body. */
-export function buildStreamBody(chunks: readonly string[]): ReadableStream<Uint8Array> {
+/**
+ * Render an SSE stream as a `ReadableStream<Uint8Array>` body.
+ *
+ * A4-A5 review R6 (Kimi): when `streamDelayMs` is supplied, each
+ * chunk is deferred via `setTimeout(delay)` so smoke/contract tests
+ * can model slow providers. Zero / undefined keeps the previous
+ * synchronous behaviour.
+ */
+export function buildStreamBody(
+  chunks: readonly string[],
+  opts: { streamDelayMs?: number } = {},
+): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
+  const delay = opts.streamDelayMs ?? 0;
   let i = 0;
   return new ReadableStream<Uint8Array>({
-    pull(controller) {
+    async pull(controller) {
       if (i >= chunks.length) {
         controller.close();
         return;
+      }
+      if (delay > 0) {
+        await new Promise<void>((r) => setTimeout(r, delay));
       }
       controller.enqueue(encoder.encode(chunks[i]!));
       i += 1;
@@ -194,7 +208,9 @@ export async function fakeProviderFetch(
 
   if (mode === "stream") {
     const chunks = buildStreamChunks(body, opts);
-    const stream = buildStreamBody(chunks);
+    const stream = buildStreamBody(chunks, {
+      streamDelayMs: opts.streamDelayMs,
+    });
     return new Response(stream, {
       status: 200,
       headers: { "content-type": "text/event-stream" },

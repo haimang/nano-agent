@@ -33,6 +33,33 @@ test/verification/
 | **L1** | deploy-shaped dry-run | `wrangler dev --remote` (or simulated `WorkerHarness`) | Worker / DO / service-binding boundary in a fast feedback loop | every milestone, PR-trigger optional |
 | **L2** | real-boundary smoke | `wrangler deploy` + `workers.dev` smoke | Real cloud bindings + real provider (`gpt-4.1-nano`) | gate before phase advancement |
 
+### Evidence-grade vocabulary (A6-A7 review GPT R1/R2)
+
+The ladder above describes intent. The actual smoke runs carry one of
+three **evidence grades** that a reviewer should read before trusting
+a verdict:
+
+| Grade | What the smoke actually exercised |
+|-------|-----------------------------------|
+| `local-l0-harness` | In-process `WorkerHarness` + fake bindings; no service-binding boundary, no real network. Useful for adapter contract drift, insufficient for L1 claims. |
+| `remote-dev-l1` | `baseUrl` set to a live `wrangler dev --remote` URL AND `WorkerHarness.localFallback === false`; the smoke path hits the deployed Worker entry. |
+| `deploy-smoke-l2` | `wrangler deploy` target URL + real provider + real cloud bindings; the profile's `smokeAssertionContract` actually holds. |
+
+Current state (2026-04-18, post A4-A5 + A6-A7 review fix):
+
+- `l1-session-edge`: can now actually reach a remote baseUrl when one
+  is supplied (harness `fetch()` proxies instead of silently resolving
+  locally). Default still runs as `local-l0-harness`.
+- `l1-external-seams`: still `local-l0-harness` only — the bundle
+  `blocking` list now says so explicitly. Companion
+  `wranglers/{fake-hook,fake-capability,fake-provider}` workers are
+  needed before this can become real L1 evidence.
+- `l2-real-provider`: `runRealSmoke()` now enforces the profile's
+  `smokeAssertionContract` (`response.status === 'ok' &&
+  response.output.length > 0`); harness-fallback path records the
+  contract gap as a blocker. Real-cloud evidence still depends on a
+  Worker that routes the golden prompt through the provider.
+
 ## Verdict thresholds (frozen)
 
 | Verdict | Definition |

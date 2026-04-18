@@ -50,7 +50,7 @@ export async function runL1SessionEdgeSmoke(
   const harness = new WorkerHarness({
     profileId: "remote-dev-l1",
     baseUrl: options.baseUrl,
-    envOverrides: { TEAM_UUID } as never,
+    envOverrides: { TEAM_UUID },
     evalSink: { emit: (event) => recorder.emitTrace(event) },
   });
 

@@ -26,14 +26,20 @@ test("L1 session edge smoke runs green against the in-process harness", async ()
   assert.equal(bundle.profileLadder, "local-l0-harness");
 });
 
-test("L1 external seams smoke runs green against the fake worker fixtures", async () => {
+test("L1 external seams smoke passes fixture-contract assertions but is blocked from L1 grade", async () => {
+  // A6-A7 review GPT R2: this smoke exercises in-process fake bindings
+  // only; the smoke now self-reports a blocker so the verdict is `red`
+  // until companion `wranglers/{fake-*}` workers are stood up. The
+  // assertions below still require the three seam round-trips to pass
+  // (no regression in the fixture contract itself).
   const bundle = await runL1ExternalSeamsSmoke({ persist: false });
-  if (bundle.verdict !== "green") {
-    console.error("L1 external-seams bundle:", JSON.stringify(bundle, null, 2));
-  }
-  assert.equal(bundle.verdict, "green");
+  assert.equal(bundle.verdict, "red", "must advertise blocker until real service-binding boundary is wired");
+  assert.ok(
+    bundle.blocking.some((msg) => msg.includes("fixture-contract only")),
+    "blocker string must name the fixture-contract scope",
+  );
+  // Fixture round-trips themselves must still succeed.
   assert.equal(bundle.summary.failures, 0);
-  // All three seams must be reflected.
   const stepNames = bundle.steps.map((s) => s.name);
   assert.ok(stepNames.includes("hook seam round trip"));
   assert.ok(stepNames.includes("capability seam call + cancel"));
