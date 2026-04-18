@@ -462,3 +462,85 @@ session-edge-closure
 ## 10. 结语
 
 这份 action-plan 以 **把 `nacp-session` 的 frozen truth 变成 `session-do-runtime` 的唯一边界现实** 为第一优先级，采用 **先同步 upstream truth、再替换 raw ingress、再装配 WS helper、再闭合 fallback/trace/health、最后用 tests/docs 封箱** 的推进方式，优先解决 **DO 内 raw parse/switch 主路径、controller stub、follow-up family 只停留在上游 freeze 而未进入 runtime** 这三类问题，并把 **不私造 protocol、不把 HTTP fallback 长成第二协议、不断言 richer queue semantics 已成熟** 作为主要约束。整个计划完成后，`Session Runtime / Edge` 应达到 **WS-first、HTTP fallback、single-active-turn、replay/ack/heartbeat/checkpoint、edge trace/health 都共享同一套 truth** 的状态，从而为后续的 **external seam closure、deploy-shaped verification、API / SDK 设计** 提供稳定基础。
+
+---
+
+## 11. 工作报告（A4 execution log）
+
+> 执行人：Claude Opus 4.7（1M context）
+> 执行时间：`2026-04-18`
+> 执行对象：`docs/action-plan/after-skeleton/A4-session-edge-closure.md` Phase 1-5
+> 执行结论：**WS 主路径 + HTTP fallback + follow-up ingress + edge trace 共享同一套 `nacp-session` 真相；raw parse/switch 彻底下线。**
+
+### 11.1 工作目标与内容回顾
+
+- **目标**：让 Phase 3 的 session edge 成为 runtime 唯一主路径：消费 P0 widened truth、走 normalizeClientFrame、装配 SessionWebSocketHelper、让 HTTP fallback 共享 actor/session model、在 widened ingress 上维持 single-active-turn、接通 edge trace。绝不在 runtime 私造 follow-up wire、不把 fallback 长成第二协议、不抢跑 richer queue。
+- **AX-QNA 绑定**：Q6/Q7/Q8 已有 owner 决策（trace-first + 三层 observability + follow-up in Phase 0），A4 仅在不改变决策的前提下收口执行。
+- **Phase 真实执行路径**：
+  - Phase 1 — 重写 `turn-ingress.ts`：加入 `session-followup-input` kind、消除 `future-prompt-family` placeholder、将 `messageType` 明确到 TurnInput；新建 `session-edge.ts` 封装 `acceptIngress()`（decode + normalizeClientFrame + validateSessionFrame + phase/role gate）；`NanoSessionDO.webSocketMessage` 改为两步流程（`acceptClientFrame` → `dispatchAdmissibleFrame`）；`session-do-runtime` 新增 runtime `dependencies` 引用 `@nano-agent/nacp-session`（workspace:*）。
+  - Phase 2 — 重写 `ws-controller.ts` 为 façade：`WsUpgradeOutcome` 带 `missing-session-id / invalid-session-id / upgrade-failed` 拒绝原因，`attachHooks({onMessage,onClose})`；DO 的 `handleWebSocketUpgrade` 在 101 之后 `ensureWsHelper()` 并 `attachHooks`；`ensureWsHelper` 懒构造 `SessionWebSocketHelper`，注入 A3 的 trace/producer/stamped_by_key；`session.resume` / `session.stream.ack` / `session.heartbeat` 全部走 helper；`persistCheckpoint` 首先调用 `wsHelper.checkpoint(storage)`。
+  - Phase 3 — 重写 `http-controller.ts`：接受 `HttpDispatchHost`（`submitFrame / getPhase / readTimeline`）；每个 action 构造真实 NacpClientFrame JSON 再经 DO ingress；`end` 返回 405；`status` 返回真实 phase；`timeline` 读取 helper 的 replay buffer。DO 的 http-fallback 路由现在会把 host 注入 controller 并在 POST/PUT/PATCH 请求里解析 body。`dispatchAdmissibleFrame` 引入 single-active-turn：`session.start` / `session.followup_input` 到达时若正在跑，则入 `pendingInputs`；否则 startTurn。
+  - Phase 4 — 新增 `emitEdgeTrace(kind, extra?, layer?)`：统一从 `SubsystemHandles.eval.emit` 发出 trace-law-compliant（`validateTraceEvent` 通过）的 `session.edge.{attach|detach|resume}` 事件；当没有 teamUuid/sessionUuid 时静默跳过（无锚点，不应假装发）。
+  - Phase 5 — 跑 full test gate：`pnpm -r typecheck/build/test`、root cross、新增 `test/integration/edge-trace.test.ts`；回填 P3 design 附录 B 的执行后状态 + 版本 v0.3；本文件 §11 工作报告。
+- **参考案例核对**：`context/codex/codex-rs/tools/src/tool_registry_plan.rs` 提供了“registry-first / schema-frozen”的思路，让我们在 HTTP fallback 里坚持一个方向：fallback 只是构造同一套 NacpClientFrame 重新走 ingress，不自创 schema。`context/claude-code/services/tools/toolExecution.ts` 的 `routeTypeForMcp` / telemetry prefix 手法作为方法学参考：边界层只分类（role / phase / reason），不在边界里实现业务语义。`just-bash` 与本轮无直接交集（它是 fake bash sandbox，而 A4 聚焦 session edge），没有直接引用。
+
+### 11.2 实际代码清单
+
+- **session-do-runtime / ingress & edge assembly**
+  - `packages/session-do-runtime/src/turn-ingress.ts`：重写；新增 `session-followup-input` kind、`messageType` 字段、`TURN_INGRESS_NOTE` 更新为双路径语义。
+  - `packages/session-do-runtime/src/session-edge.ts`：新增；`acceptIngress()` + `IngressEnvelope` + `IngressRejection` + 5 种 `IngressRejectionReason`。
+  - `packages/session-do-runtime/src/ws-controller.ts`：重写；`WsUpgradeOutcome`、`WsControllerHooks`、`attachHooks()`、UUID gate。
+  - `packages/session-do-runtime/src/http-controller.ts`：重写；`HttpDispatchHost` + `attachHost()` + 真实 action 实现（构造 NacpClientFrame，end→405，status/timeline 读 DO state）。
+  - `packages/session-do-runtime/src/do/nano-session-do.ts`：`webSocketMessage` 改为 acceptClientFrame+dispatchAdmissibleFrame；`acceptClientFrame / dispatchAdmissibleFrame / buildIngressContext / ensureWsHelper / getWsHelper / getTraceUuid / getLastIngressRejection / wsHelperStorage / emitEdgeTrace` 新增；`persistCheckpoint` 加 helper.checkpoint；`fetch()` 注入 HttpDispatchHost；session.resume/heartbeat/stream.ack 全部经 helper。
+  - `packages/session-do-runtime/package.json`：新增 `dependencies: { "@nano-agent/nacp-session": "workspace:*" }`。
+- **nacp-session**
+  - `packages/nacp-session/src/index.ts`：追加 `SessionPhase` 类型导出（session-registry 原本只 re-export 给内部）。
+- **Tests**
+  - `packages/session-do-runtime/test/turn-ingress.test.ts`：重写；加入 `session.followup_input` happy-path + 拒绝路径 + note 断言，共 9 cases。
+  - `packages/session-do-runtime/test/ws-controller.test.ts`：重写；10 cases 覆盖 UUID gate + attachHooks + onMessage/onClose 钩子。
+  - `packages/session-do-runtime/test/do/nano-session-do.test.ts`：重写；26 cases 覆盖 normalized ingress、followup_input、单活跃 turn 队列、role/phase 拒绝、HTTP fallback、WS close。
+  - `packages/session-do-runtime/test/integration/ws-http-fallback.test.ts`：调整 sessionId 为 UUID 以符合新 WS gate。
+  - `packages/session-do-runtime/test/integration/edge-trace.test.ts`：新增；3 cases 证明 attach / detach / resume 都通过 eval sink 发 trace-law-compliant 事件，且缺锚点时不发。
+- **文档**
+  - `docs/design/after-skeleton/P3-session-edge-closure.md`：附录 B 增补 A4 执行后状态；版本升到 v0.3。
+  - `docs/action-plan/after-skeleton/A4-session-edge-closure.md`（本文件）：§11 工作报告。
+
+### 11.3 测试制作与测试结果
+
+- **新增 / 大改测试**
+  - `turn-ingress.test.ts`（9 cases）
+  - `ws-controller.test.ts`（10 cases）
+  - `http-controller.test.ts` 保持 11 cases，行为兼容
+  - `do/nano-session-do.test.ts`（26 cases，增加 follow-up + 单活跃 turn + role-illegal end + HTTP start POST + HTTP status 实锚点）
+  - `integration/edge-trace.test.ts`（3 cases，新增）
+- **运行结果**
+  - `pnpm --filter @nano-agent/session-do-runtime test` — `20 files / 274 tests passed`。
+  - `pnpm --filter @nano-agent/nacp-session test` — `14 files / 115 tests passed`（不受影响但作为相邻守护跑过）。
+  - `pnpm --filter @nano-agent/eval-observability test` — `18 files / 172 tests passed`。
+  - `pnpm --filter @nano-agent/nacp-core test` — `12 files / 231 tests passed`。
+  - `pnpm -r typecheck` — 10 projects 全绿。
+  - `pnpm -r build` — 10 projects 全绿。
+  - `npm run test:cross` — `14/14 e2e passed`。
+  - `node --test test/trace-first-law-contract.test.mjs test/observability-protocol-contract.test.mjs test/hooks-protocol-contract.test.mjs` — `15 + 4 + 2 cases passed`。
+
+### 11.4 收口分析与下一阶段安排
+
+- **AX-QNA / Definition of Done 对照**
+  - **功能**：normalized ingress + WS helper + HTTP fallback + single-active-turn + edge trace 全部落地；raw JSON 解析主路径下线。
+  - **测试**：session-do-runtime / nacp-session / 邻接包 tests + root cross + 新 edge-trace integration + A3 trace-first contract 四方闭环。
+  - **文档**：P3 design 附录 B 明确收口状态；turn-ingress.ts 的 TURN_INGRESS_NOTE 不再自称 “not yet frozen”；WsUpgradeOutcome / IngressRejection 两个 reason 联合体成为下一阶段 public contract 的起点。
+  - **风险收敛**：不再存在 raw parse/switch 主路径、controller stub 幻觉、runtime-private follow-up wire、session/HTTP actor 双宇宙；session.end 的 role 边界由 `nacp-session` 单方面守护，DO/HTTP 都只能接受。
+  - **可交付性**：A5（external seam closure）可直接把 `IngressEnvelope` / `IngressRejection` / `session.edge.*` 当 cross-worker edge vocabulary；A6（deploy verification）能利用 HTTP fallback 的 POST /start 路径直接构造 golden path 而无需 WS。
+- **复盘要点回填**
+  - 工作量估计偏差：Phase 3 比预估轻 —— HTTP fallback 只需要把已有 ingress pipeline 复用，不是重写 controller；反而 Phase 2 比预估重，因为 `NanoSessionDO` 原有字段 `streamSeq` / `wsHelper` / `traceUuid` 的懒构造 + storage 适配器需要额外设计。
+  - 拆分合理度：Phase 4 的 health / alarm wiring 与 A3 P3-02 (`CheckpointInvalidError`) 已有重合，实际落到本轮就是 `emitEdgeTrace` + 3 类事件；本 action-plan 原来的 P4-02 "caller-managed health" 更接近 checklist 而非新 wiring，建议下个模板把它归入 P4-01 以免重复。
+  - 需要更早问架构师：本次没有。Q6/Q7/Q8 足够支撑完整执行。
+  - 测试覆盖不足之处：`edge-trace.test.ts` 目前只断言事件形状，没有断言事件顺序；下一阶段 A5/A6 应补一个 `ordering` 场景。
+  - 模板需补字段：`Phase 4` 里 `alarm.ts / health.ts` 字面列为修改文件但本轮实际未动（alarm 已经足够小，health gate 改动在 A3 已完成）；后续模板可以加一行 “若落地时未实际修改，请在工作报告里解释”。
+- **下一阶段安排（A5 / A6 / 后续 API 设计）**
+  - **A5 (`P4-external-seam-closure`)**：已就位。可直接依赖：
+    - `IngressRejection` 5 种 reason 作为 worker 间 error codes 的一层锚点
+    - HttpDispatchHost / WsControllerHooks 两个 façade 作为 cross-worker session edge 的标准入口
+    - `session.edge.{attach|detach|resume}` 作为 trace-first 第一批 edge events
+  - **A6 (`P5-deployment-dry-run-and-real-boundary-verification`)**：HTTP fallback 成为 deploy-shaped 烟测的最短金链路 —— `POST /sessions/{uuid}/start`（JSON body：`{initial_input}`）一次调用即可走完 ingress + orchestrator + actor transition；real smoke 不再需要 WS fixture。
+  - **后续 API/SDK 设计**：`acceptIngress()` 是下一阶段 API design 的天然起点；frontend 可以使用同一个 NacpClientFrame，后端 WS / HTTP 两条路径共享同一 legality 真相，不会再出现 v1→v2 协议断层。

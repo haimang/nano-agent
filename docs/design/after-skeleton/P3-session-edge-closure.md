@@ -410,9 +410,24 @@
   - **B 方观点**：当前更关键的是不再让 session edge 漂移
   - **最终共识**：按 owner Q8 决策，formal follow-up family 必须先进入 Phase 0 的 `nacp-session` contract freeze；Phase 3 负责消费这条 truth，而不是继续 defer 或在 runtime 私造消息
 
+### B. A4 执行后状态（2026-04-18 收口）
+
+P3 design 的所有 session edge 前提已由 A4 落地为代码：
+
+- **Upstream truth sync**：`packages/session-do-runtime/src/turn-ingress.ts` 已经消费 `session.followup_input`，`future-prompt-family` placeholder 移除，两种 ingress kind（`session-start-initial-input` / `session-followup-input`）均返回 trace-compatible `TurnInput`。
+- **Normalized ingress pipeline**：`packages/session-do-runtime/src/session-edge.ts` 新增 `acceptIngress()`，封装 `normalizeClientFrame` + `validateSessionFrame` + role/phase legality，暴露 5 种 `IngressEnvelope`/`IngressRejection` 情况。`NanoSessionDO.webSocketMessage` / HTTP fallback 都必经该函数；原始 `JSON.parse + message_type switch` 主路径已消失。
+- **Session role/phase enforcement handoff**：legality 只存在于 `@nano-agent/nacp-session`。DO 通过 `acceptIngress()` 消费结果，`session.end` 因为在 client producer 集合之外被明确拒绝（`role-illegal`），而不是在 DO 内部维护第二套表。
+- **WsController real assembly**：`packages/session-do-runtime/src/ws-controller.ts` 从 stub 升级为 façade：`WsUpgradeOutcome` 携带 `missing-session-id / invalid-session-id` 拒绝原因，`attachHooks()` 允许 DO 绑定 `onMessage` / `onClose` 钩子；`handleUpgrade` 现在强制 UUID 形式，拒绝 `sess-42` 这类旧 sentinel。
+- **SessionWebSocketHelper wiring**：`NanoSessionDO.ensureWsHelper()` 负责构造 / 复用 `SessionWebSocketHelper`，并把 replay/ack/heartbeat/checkpoint/restore 行为集中到 helper；DO 不再维护平行的 per-stream 计数器。`session.resume` 使用 helper `restore` + `handleResume`；`session.stream.ack` 走 helper `handleAck`；checkpoint 保存时会先让 helper `checkpoint()` 写入 DO storage。
+- **HttpController real actions**：`packages/session-do-runtime/src/http-controller.ts` 现在接受一个 `HttpDispatchHost`，在 DO 注入后，`start` 构造一个 `session.start` 客户端 frame，`input` 构造 `session.followup_input`，`cancel` 构造 `session.cancel`；`end` 返回 `405` 因为 client 不能发 session.end；`status` 返回真实 `actorState.phase`；`timeline` 读取 helper 的 replay buffer。stub 行为在 host 未注入时保持。
+- **Single-active-turn edge model**：`dispatchAdmissibleFrame` 对 `session.start` / `session.followup_input`：若 `actorState.phase === turn_running`，则把 `TurnInput` 加入 `pendingInputs` 而不是并行 startTurn；否则走正常 startTurn 路径。queue/replace/merge 严格留给下一阶段。
+- **Edge trace wiring**：`emitEdgeTrace` 在 WS attach、WS close、session.resume 处发出 `session.edge.{attach|detach|resume}` 事件，事件通过 `SubsystemHandles.eval.emit` 走到 A3 建立的 eval-observability sink，全部字段满足 `validateTraceEvent`。
+- **Cross-package guard**：`test/trace-first-law-contract.test.mjs` / `test/observability-protocol-contract.test.mjs` 保持绿色；新增 `packages/session-do-runtime/test/integration/edge-trace.test.ts` 把 attach / resume / detach 三类 edge trace 钉住。
+
 ### C. 版本历史
 
 | 版本 | 日期 | 修改者 | 主要变更 |
 |------|------|--------|----------|
+| v0.3 | `2026-04-18` | `Claude Opus 4.7` | A4 收口：附录 B 增补 P3 真实落地状态 |
 | v0.2 | `2026-04-18` | `GPT-5.4` | 根据 PX-QNA Q8 改写 follow-up family 口径：不再 defer 到下一阶段，改为由 Phase 0 冻结并由 Phase 3 消费 |
 | v0.1 | `2026-04-17` | `GPT-5.4` | 初稿 |

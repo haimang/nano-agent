@@ -46,7 +46,7 @@ export {
   SESSION_ROLE_REQUIREMENTS, assertSessionRoleAllowed,
   isSessionMessageAllowedInPhase, assertSessionPhaseAllowed,
 } from "./session-registry.js";
-export type { SessionRoleRequirement } from "./session-registry.js";
+export type { SessionRoleRequirement, SessionPhase } from "./session-registry.js";
 
 // ── Ingress ──
 export { normalizeClientFrame } from "./ingress.js";
