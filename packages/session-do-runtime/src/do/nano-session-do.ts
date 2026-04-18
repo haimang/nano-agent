@@ -29,6 +29,7 @@ import { DEFAULT_RUNTIME_CONFIG } from "../env.js";
 import type { RuntimeConfig } from "../env.js";
 import { SessionOrchestrator } from "../orchestration.js";
 import type { OrchestrationDeps, OrchestrationState } from "../orchestration.js";
+import { assertTraceLaw, type TraceContext } from "../traces.js";
 import { extractTurnInput } from "../turn-ingress.js";
 import { transitionPhase as transitionPhaseImported } from "../actor-state.js";
 import { validateSessionCheckpoint } from "../checkpoint.js";
@@ -608,17 +609,51 @@ export class NanoSessionDO {
         return undefined;
       },
       emitTrace: async (event) => {
+        // A2-A3 review R1: orchestrator now always hands a typed
+        // `TraceEvent` built through the shared builders, so the sink
+        // boundary is the right place to assert trace-law before any
+        // storage/WAL side-effect runs. A violation here points at a
+        // code path that bypasses the builder and must be fixed
+        // before the event becomes an audit anomaly.
+        assertTraceLaw(event);
         const evalSink = handles.eval as
           | { emit?: (e: unknown) => Promise<void> | void }
           | undefined;
         if (evalSink?.emit) await evalSink.emit(event);
       },
+      traceContext: this.buildTraceContext(),
       pushStreamEvent: (_kind, body) => {
         const stream = handles.kernel as
           | { pushStreamEvent?: (body: Record<string, unknown>) => void }
           | undefined;
         if (stream?.pushStreamEvent) stream.pushStreamEvent(body);
       },
+    };
+  }
+
+  /**
+   * Build the per-session `TraceContext` the orchestrator hands to its
+   * trace builders. Returns `undefined` when the DO has not yet latched
+   * a sessionUuid / teamUuid (e.g. right after cold start, before the
+   * first client frame). In that window the orchestrator falls back to
+   * its `ZERO_TRACE_CONTEXT` placeholder — this keeps trace-law
+   * assertions happy while flagging that the producer is not yet
+   * identified.
+   */
+  private buildTraceContext(): TraceContext | undefined {
+    const envTeamUuid = (this.env as { TEAM_UUID?: unknown } | undefined)?.TEAM_UUID;
+    const teamUuid =
+      typeof envTeamUuid === "string" && envTeamUuid.length > 0
+        ? envTeamUuid
+        : null;
+    if (!teamUuid || !this.sessionUuid) return undefined;
+    if (!this.traceUuid) this.traceUuid = crypto.randomUUID();
+    return {
+      sessionUuid: this.sessionUuid,
+      teamUuid,
+      traceUuid: this.traceUuid,
+      sourceRole: "session",
+      sourceKey: "nano-agent.session.do@v1",
     };
   }
 

@@ -27,6 +27,10 @@ function makeDurableEvent(overrides: Partial<TraceEvent> = {}): TraceEvent {
   return {
     eventKind: "turn.begin",
     timestamp: "2026-04-16T10:00:00.000Z",
+    // A2-A3 review R3: trace-law carriers
+    traceUuid: "00000000-0000-4000-8000-000000000004",
+    sourceRole: "session",
+    sourceKey: "test-fixture@v1",
     sessionUuid: "sess-001",
     teamUuid: "team-001",
     audience: "internal",

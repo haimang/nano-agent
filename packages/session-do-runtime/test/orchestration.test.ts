@@ -189,8 +189,16 @@ describe("SessionOrchestrator", () => {
       );
     });
 
-    it("emits a trace for turn begin (internal observability channel)", async () => {
-      const deps = createMockDeps();
+    it("emits a trace-law-compliant turn.begin for observability (A2-A3 review R1)", async () => {
+      const deps = createMockDeps({
+        traceContext: {
+          sessionUuid: "sess-trace-ctx",
+          teamUuid: "team-trace-ctx",
+          traceUuid: "trace-abc",
+          sourceRole: "session",
+          sourceKey: "nano-agent.session.do@v1",
+        },
+      });
       const orchestrator = new SessionOrchestrator(deps, DEFAULT_RUNTIME_CONFIG);
       const initial = orchestrator.createInitialState();
       const input = createTurnInput();
@@ -198,7 +206,48 @@ describe("SessionOrchestrator", () => {
       await orchestrator.startTurn(initial, input);
 
       expect(deps.emitTrace).toHaveBeenCalledWith(
-        expect.objectContaining({ eventKind: "turn.begin" }),
+        expect.objectContaining({
+          eventKind: "turn.begin",
+          traceUuid: "trace-abc",
+          sessionUuid: "sess-trace-ctx",
+          teamUuid: "team-trace-ctx",
+          sourceRole: "session",
+          sourceKey: "nano-agent.session.do@v1",
+          turnUuid: "turn-001",
+          audience: "internal",
+          layer: "durable-audit",
+        }),
+      );
+    });
+
+    it("emits a trace-law-compliant turn.end when the step loop completes (A2-A3 review R1)", async () => {
+      const deps = createMockDeps({
+        traceContext: {
+          sessionUuid: "sess-trace-ctx",
+          teamUuid: "team-trace-ctx",
+          traceUuid: "trace-abc",
+          sourceRole: "session",
+          sourceKey: "nano-agent.session.do@v1",
+        },
+      });
+      const orchestrator = new SessionOrchestrator(deps, DEFAULT_RUNTIME_CONFIG);
+      const initial = orchestrator.createInitialState();
+      const input = createTurnInput();
+
+      await orchestrator.startTurn(initial, input);
+
+      expect(deps.emitTrace).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventKind: "turn.end",
+          traceUuid: "trace-abc",
+          sessionUuid: "sess-trace-ctx",
+          teamUuid: "team-trace-ctx",
+          sourceRole: "session",
+          turnUuid: "turn-001",
+          durationMs: expect.any(Number),
+          audience: "internal",
+          layer: "durable-audit",
+        }),
       );
     });
 
@@ -474,7 +523,7 @@ describe("SessionOrchestrator", () => {
       );
     });
 
-    it("emits session.ended trace", async () => {
+    it("emits canonical session.end trace (A2-A3 review R1)", async () => {
       const deps = createMockDeps();
       const orchestrator = new SessionOrchestrator(deps, DEFAULT_RUNTIME_CONFIG);
       const initial = orchestrator.createInitialState();
@@ -490,8 +539,21 @@ describe("SessionOrchestrator", () => {
 
       await orchestrator.endSession(attached);
 
+      // Canonical kind is `session.end` (not `session.ended`) so the
+      // downstream classification / durable-promotion registry treats
+      // it as an anchor event.
       expect(deps.emitTrace).toHaveBeenCalledWith(
-        expect.objectContaining({ eventKind: "session.ended" }),
+        expect.objectContaining({
+          eventKind: "session.end",
+          // Trace carriers are always populated by the builder, even in
+          // tests that don't supply a traceContext (zero-fill fallback).
+          traceUuid: expect.any(String),
+          sessionUuid: expect.any(String),
+          teamUuid: expect.any(String),
+          sourceRole: "session",
+          audience: "internal",
+          layer: "durable-audit",
+        }),
       );
     });
 

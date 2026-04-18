@@ -128,23 +128,41 @@ describe("AlarmHandler", () => {
     });
   });
 
-  describe("trace flush failure", () => {
-    it("does not throw when flushTraces fails", async () => {
+  describe("trace flush failure (A2-A3 review R6)", () => {
+    it("rethrows flushTraces() error when no onFlushFailure hook is supplied (no silent swallow)", async () => {
       const deps = makeDeps({
         flushTraces: vi.fn(async () => {
           throw new Error("Trace backend unavailable");
         }),
       });
 
-      // Should not throw
-      await expect(handler.handleAlarm(deps)).resolves.toBeUndefined();
+      await expect(handler.handleAlarm(deps)).rejects.toThrow(
+        "Trace backend unavailable",
+      );
     });
 
-    it("still sets the next alarm after trace flush failure", async () => {
+    it("delegates to onFlushFailure when supplied, suppressing the throw", async () => {
+      const seen: unknown[] = [];
       const deps = makeDeps({
         flushTraces: vi.fn(async () => {
           throw new Error("Trace backend unavailable");
         }),
+        onFlushFailure: vi.fn(async (err) => {
+          seen.push(err);
+        }),
+      });
+
+      await expect(handler.handleAlarm(deps)).resolves.toBeUndefined();
+      expect(deps.onFlushFailure).toHaveBeenCalledOnce();
+      expect((seen[0] as Error).message).toBe("Trace backend unavailable");
+    });
+
+    it("still sets the next alarm even when onFlushFailure absorbs the error", async () => {
+      const deps = makeDeps({
+        flushTraces: vi.fn(async () => {
+          throw new Error("Trace backend unavailable");
+        }),
+        onFlushFailure: vi.fn(async () => undefined),
       });
 
       await handler.handleAlarm(deps);

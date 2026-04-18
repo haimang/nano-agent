@@ -42,10 +42,18 @@ class FakeDoStorageWithList extends FakeDoStorage implements DoStorageLike {
 
 const TEAM = "team-001";
 
+// A2-A3 review R3: trace-law carriers are now required on every fixture
+const TRACE_CARRIERS = {
+  traceUuid: "00000000-0000-4000-8000-000000000005",
+  sourceRole: "session" as const,
+  sourceKey: "test-fixture@v1",
+};
+
 function makeDurableEvent(overrides: Partial<TraceEvent> = {}): TraceEvent {
   return {
     eventKind: "turn.begin",
     timestamp: "2026-04-16T10:00:00.000Z",
+    ...TRACE_CARRIERS,
     sessionUuid: "sess-001",
     teamUuid: TEAM,
     audience: "internal",
@@ -58,6 +66,7 @@ function makeLiveEvent(overrides: Partial<TraceEvent> = {}): TraceEvent {
   return {
     eventKind: "llm.delta",
     timestamp: "2026-04-16T10:00:00.000Z",
+    ...TRACE_CARRIERS,
     sessionUuid: "sess-001",
     teamUuid: TEAM,
     audience: "internal",

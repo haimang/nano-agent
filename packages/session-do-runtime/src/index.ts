@@ -114,10 +114,12 @@ export type { OrchestrationDeps, OrchestrationState } from "./orchestration.js";
 export {
   buildTurnBeginTrace,
   buildTurnEndTrace,
+  buildSessionEndTrace,
   buildStepTrace,
   mapRuntimeStepKindToTraceKind,
+  assertTraceLaw,
 } from "./traces.js";
-export type { TraceContext, TraceDeps } from "./traces.js";
+export type { TraceContext, TraceDeps, TraceEvent, TraceSourceRole } from "./traces.js";
 
 // ── NanoSessionDO ──
 export { NanoSessionDO } from "./do/nano-session-do.js";

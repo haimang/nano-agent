@@ -34,6 +34,13 @@ import type { ActorState } from "./actor-state.js";
 import { createInitialActorState, transitionPhase } from "./actor-state.js";
 import type { TurnInput } from "./turn-ingress.js";
 import type { RuntimeConfig } from "./env.js";
+import {
+  buildSessionEndTrace,
+  buildTurnBeginTrace,
+  buildTurnEndTrace,
+  type TraceContext,
+  type TraceEvent,
+} from "./traces.js";
 
 // ═══════════════════════════════════════════════════════════════════
 // §1 — OrchestrationDeps
@@ -62,7 +69,21 @@ export interface OrchestrationDeps {
     payload: unknown,
     context?: unknown,
   ) => Promise<unknown>;
-  readonly emitTrace: (event: unknown) => Promise<void>;
+  /**
+   * Emit a trace-law-compliant event. The orchestrator ALWAYS hands this
+   * sink a properly-shaped `TraceEvent` built by `buildTurnBeginTrace /
+   * buildTurnEndTrace / buildSessionEndTrace`; the sink is expected to
+   * enforce trace-law at the boundary (see `nano-session-do.ts`).
+   */
+  readonly emitTrace: (event: TraceEvent) => Promise<void>;
+  /**
+   * Trace carrier context for this session. Optional because legacy
+   * test setups may still pass a bare mock — when absent, the
+   * orchestrator falls back to a zero-fill carrier so the builders
+   * still produce trace-law-compliant objects but callers should
+   * migrate to supplying the real context.
+   */
+  readonly traceContext?: TraceContext;
 
   // ── Session stream ──
   /**
@@ -93,11 +114,30 @@ export interface OrchestrationState {
 // §3 — SessionOrchestrator
 // ═══════════════════════════════════════════════════════════════════
 
+/**
+ * Zero-fill fallback used when the caller has not supplied a
+ * `TraceContext`. Keeps the orchestrator trace-law compliant in unit
+ * tests that construct mock deps without threading identity through.
+ * Production wiring in `nano-session-do.ts` ALWAYS supplies the real
+ * context — see §7 in `traces.ts` and `buildOrchestrationDeps()`.
+ */
+const ZERO_TRACE_CONTEXT: TraceContext = {
+  sessionUuid: "00000000-0000-4000-8000-000000000000",
+  teamUuid: "00000000-0000-4000-8000-000000000000",
+  traceUuid: "00000000-0000-4000-8000-000000000000",
+  sourceRole: "session",
+  sourceKey: "nano-agent.session.do@v1",
+};
+
 export class SessionOrchestrator {
   constructor(
     private readonly deps: OrchestrationDeps,
     private readonly config: RuntimeConfig,
   ) {}
+
+  private traceCtx(): TraceContext {
+    return this.deps.traceContext ?? ZERO_TRACE_CONTEXT;
+  }
 
   // ── Initial state ────────────────────────────────────────────
 
@@ -158,11 +198,12 @@ export class SessionOrchestrator {
     });
 
     // 5. Emit a trace event for observability (not client-visible).
-    await this.deps.emitTrace({
-      eventKind: "turn.begin",
-      turnId: input.turnId,
-      timestamp: new Date().toISOString(),
-    });
+    // A2-A3 review R1: always go through the shared builder so
+    // traceUuid / sessionUuid / teamUuid / sourceRole are present and
+    // the kind is canonical (never the retired `turn.started`).
+    await this.deps.emitTrace(
+      buildTurnBeginTrace(input.turnId, this.traceCtx()),
+    );
 
     const newState: OrchestrationState = {
       actorState,
@@ -212,6 +253,14 @@ export class SessionOrchestrator {
             kind: "turn.end",
             turn_uuid: activeTurnId,
           });
+          // A2-A3 review R1: parallel durable-audit trace event for
+          // the runtime observability channel. durationMs is unknown at
+          // this seam (the orchestrator does not track turn start wall
+          // time), so we emit 0 — downstream consumers can join on
+          // `turn.begin / turn.end` by `turnUuid` to compute latency.
+          await this.deps.emitTrace(
+            buildTurnEndTrace(activeTurnId, 0, this.traceCtx()),
+          );
         }
 
         let actorState = state.actorState;
@@ -297,10 +346,13 @@ export class SessionOrchestrator {
       timestamp: new Date().toISOString(),
     });
 
-    await this.deps.emitTrace({
-      eventKind: "session.ended",
-      timestamp: new Date().toISOString(),
-    });
+    // A2-A3 review R1: emit canonical `session.end` through the shared
+    // builder. The previous `session.ended` string was non-canonical —
+    // `shouldPersist()` / durable-promotion would have dropped it as an
+    // unknown kind.
+    await this.deps.emitTrace(
+      buildSessionEndTrace(this.traceCtx(), state.turnCount),
+    );
 
     // Session end surfaces to the client as a system.notify with
     // severity=info. `session.ended` is NOT a session.stream.event kind.

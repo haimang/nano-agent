@@ -44,6 +44,16 @@ export const BENCH_THRESHOLDS = Object.freeze({
    * `p99/p50 > 5` without explanation downgrades the verdict to `yellow`.
    */
   tailRatioWarn: 5,
+  /**
+   * A2-A3 review R2: Q5 absolute per-event emit-path latency budgets.
+   * These are *package-local isolate* thresholds, NOT real DO p50/p99 —
+   * remote Q5 closure is reserved for A6 deployment dry-run.
+   *   - `emitP50MsMax = 20ms`  per AX-QNA Q5
+   *   - `emitP99MsMax = 100ms` per AX-QNA Q5
+   * Violating either downgrades the verdict to `red`.
+   */
+  emitP50MsMax: 20,
+  emitP99MsMax: 100,
 });
 
 // ─────────────────────────────────────────────────────────────────────
@@ -189,6 +199,26 @@ class RecordingFakeStorage implements DoStorageLike {
       .sort();
   }
 
+  /**
+   * Produce a view of this storage that DOES NOT expose `list()`.
+   * The `DoStorageTraceSink.enumerateDataKeys()` routine will then be
+   * forced to fall back to the persisted `_index` key — this is the
+   * assertion the substrate memo makes ("fresh sink reconstructs the
+   * full timeline from the _index key with 100% fidelity"), and it
+   * must be probed without the list-fast-path in the way.
+   */
+  asListless(): {
+    get: RecordingFakeStorage["get"];
+    put: RecordingFakeStorage["put"];
+    // intentionally no `list`
+  } {
+    const self = this;
+    return {
+      get: (k: string) => self.get(k),
+      put: (k: string, v: string) => self.put(k, v),
+    };
+  }
+
   get bytesWritten(): number {
     return this._bytesWritten;
   }
@@ -245,9 +275,18 @@ function makeEvent(
 ): TraceEvent {
   const kind = DURABLE_KINDS[Math.floor(rand() * DURABLE_KINDS.length)]!;
   const ts = new Date(baseEpochMs + idx * 37).toISOString();
+  // A2-A3 review R3 / Kimi R1: fixture MUST carry trace carriers.
+  // Prior to A3, `traceUuid` / `sourceRole` were optional — the
+  // benchmark fixture was not upgraded when the trace-law freeze
+  // landed. A deterministic synthetic traceUuid per (sessionUuid, idx)
+  // keeps the fixture reproducible without relying on `crypto.randomUUID`.
+  const traceUuid = `00000000-0000-4000-8000-${(idx & 0xffff).toString(16).padStart(12, "0")}`;
   return {
     eventKind: kind,
     timestamp: ts,
+    traceUuid,
+    sourceRole: "session",
+    sourceKey: "trace-substrate-benchmark@v1",
     sessionUuid,
     teamUuid,
     turnUuid: `turn-${Math.floor(rand() * 4)}`,
@@ -446,6 +485,18 @@ interface ReadbackResult {
   perSessionMismatches: number;
   orderViolations: number;
   indexKeysObserved: number;
+  /**
+   * A2-A3 review R2: result from the listless (no-`list()`) readback
+   * pass. This is the probe that actually exercises the `_index`
+   * fallback path in `DoStorageTraceSink.enumerateDataKeys()` — the
+   * default readback with `list()` present can never prove that claim.
+   */
+  listlessReadback: {
+    totalWritten: number;
+    totalRead: number;
+    successPct: number;
+    perSessionMismatches: number;
+  };
 }
 
 async function runReadbackProbe(opts: CliOptions): Promise<ReadbackResult> {
@@ -502,6 +553,32 @@ async function runReadbackProbe(opts: CliOptions): Promise<ReadbackResult> {
     .keys()
     .filter((k) => k.endsWith("/_index")).length;
 
+  // ── Listless reader phase (A2-A3 review R2) ──
+  // Replay the reader phase against a view that exposes ONLY `get` /
+  // `put` — no `list`. This forces `enumerateDataKeys()` to take the
+  // `_index` fallback branch, which is the load-bearing claim of the
+  // substrate memo. Default-path readback with `list()` present does
+  // NOT actually prove `_index` reconstruction works.
+  let listlessWritten = 0;
+  let listlessRead = 0;
+  let listlessMismatches = 0;
+  const listless = storage.asListless();
+  for (const [key, writtenEvents] of sessionsWritten) {
+    const { team, sessionUuid } = parseSessionKey(key);
+    // `DoStorageTraceSink` narrows its storage surface by structural typing
+    // — supplying the listless view here gives it no `list()` to call.
+    const freshSink = new DoStorageTraceSink(
+      listless as unknown as RecordingFakeStorage,
+      team,
+      sessionUuid,
+      { maxBufferSize: opts.bufferSize },
+    );
+    const timeline = await freshSink.readTimeline();
+    listlessWritten += writtenEvents.length;
+    listlessRead += timeline.length;
+    if (timeline.length !== writtenEvents.length) listlessMismatches += 1;
+  }
+
   return {
     scenario: "readback-probe",
     sessions: opts.readbackSessions,
@@ -513,6 +590,15 @@ async function runReadbackProbe(opts: CliOptions): Promise<ReadbackResult> {
     perSessionMismatches,
     orderViolations,
     indexKeysObserved,
+    listlessReadback: {
+      totalWritten: listlessWritten,
+      totalRead: listlessRead,
+      successPct:
+        listlessWritten === 0
+          ? 0
+          : round((listlessRead / listlessWritten) * 100),
+      perSessionMismatches: listlessMismatches,
+    },
   };
 }
 
@@ -568,6 +654,19 @@ function computeVerdict(
           `${scope}: emit p99/p50 = ${r.emitLatency.tailRatio}× — above ${BENCH_THRESHOLDS.tailRatioWarn}× warn threshold; artifact must explain or only claim "yellow"`,
         );
       }
+      // A2-A3 review R2: enforce Q5 absolute budgets (package-local only).
+      if (r.emitLatency.p50Ms > BENCH_THRESHOLDS.emitP50MsMax) {
+        worst = "red";
+        notes.push(
+          `${scope}: emit p50 = ${r.emitLatency.p50Ms}ms exceeds Q5 budget ${BENCH_THRESHOLDS.emitP50MsMax}ms (package-local — remote Q5 closure still gated on A6)`,
+        );
+      }
+      if (r.emitLatency.p99Ms > BENCH_THRESHOLDS.emitP99MsMax) {
+        worst = "red";
+        notes.push(
+          `${scope}: emit p99 = ${r.emitLatency.p99Ms}ms exceeds Q5 budget ${BENCH_THRESHOLDS.emitP99MsMax}ms (package-local — remote Q5 closure still gated on A6)`,
+        );
+      }
     }
   }
 
@@ -594,6 +693,22 @@ function computeVerdict(
       if (worst === "green") worst = "yellow";
       notes.push(
         `expected ${report.readback.sessions} _index keys, observed ${report.readback.indexKeysObserved}`,
+      );
+    }
+    // A2-A3 review R2: `_index` fallback must be proven without
+    // list() in the way — otherwise the substrate memo's claim is
+    // vacuous.
+    const lr = report.readback.listlessReadback;
+    if (lr.successPct < BENCH_THRESHOLDS.readbackSuccessPct) {
+      worst = "red";
+      notes.push(
+        `listless (_index-only) readback success ${lr.successPct}% below ${BENCH_THRESHOLDS.readbackSuccessPct}% threshold — the substrate memo's "fresh sink reconstructs from _index" claim does not hold`,
+      );
+    }
+    if (lr.perSessionMismatches > 0) {
+      worst = "red";
+      notes.push(
+        `${lr.perSessionMismatches} session(s) differ between write and listless readback`,
       );
     }
   }

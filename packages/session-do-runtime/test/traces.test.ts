@@ -13,8 +13,12 @@ import {
   buildStepTrace,
   mapRuntimeStepKindToTraceKind,
   type TraceContext,
+  type TraceEvent as SessionDoTraceEvent,
 } from "../src/traces.js";
-import { isTraceLawCompliant } from "@nano-agent/eval-observability";
+import {
+  isTraceLawCompliant,
+  type TraceEvent as EvalTraceEvent,
+} from "@nano-agent/eval-observability";
 
 const CTX: TraceContext = {
   sessionUuid: "11111111-1111-4111-8111-111111111111",
@@ -159,6 +163,49 @@ describe("buildStepTrace", () => {
   it("sets layer=live for step events (diagnostic)", () => {
     const trace = buildStepTrace({ type: "llm.delta" }, CTX);
     expect(trace.layer).toBe("live");
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════
+// Compile-time mirror drift guard (Kimi A2-A3 review R2)
+// ═══════════════════════════════════════════════════════════════════
+//
+// `session-do-runtime` keeps a LOCAL `TraceEvent` interface so the
+// runtime package can be built without depending on
+// `@nano-agent/eval-observability` at compile time (eval is a devDep,
+// not a prod dep). The following two assignments are the structural
+// compatibility check: if the eval-observability `TraceEvent` gains a
+// required field, the first assignment fails at `tsc`; if the local
+// mirror gains a required field the second assignment fails. Either
+// failure is a hard signal to update both sides in lockstep.
+//
+// The `satisfies` is intentional — we want the whole object literal to
+// be checked against the target type without narrowing the inferred
+// type. Any property mismatch fires at compile time.
+
+describe("TraceEvent local-mirror ↔ eval-observability structural parity (Kimi R2)", () => {
+  it("structurally matches @nano-agent/eval-observability::TraceEvent at compile time", () => {
+    const traceCarriers = {
+      traceUuid: "00000000-0000-4000-8000-000000000000",
+      sourceRole: "session" as const,
+      sourceKey: "mirror-drift-guard@v1",
+    };
+    const local: SessionDoTraceEvent = {
+      eventKind: "turn.begin",
+      timestamp: "2026-04-18T10:00:00.000Z",
+      sessionUuid: "sess-mirror",
+      teamUuid: "team-mirror",
+      audience: "internal",
+      layer: "durable-audit",
+      ...traceCarriers,
+    };
+    // A SessionDoTraceEvent MUST be assignable into the eval TraceEvent.
+    const asEval: EvalTraceEvent = local;
+    // And back — compile-time check that extending the eval type with
+    // a new required field would force a session-do-runtime update.
+    const asLocal: SessionDoTraceEvent = asEval;
+    expect(asLocal.eventKind).toBe("turn.begin");
+    expect(isTraceLawCompliant(asLocal)).toBe(true);
   });
 });
 

@@ -29,6 +29,20 @@ export interface AlarmDeps {
   readonly closeConnection: (reason: string) => Promise<void>;
   readonly setNextAlarm: (delayMs: number) => void;
   readonly flushTraces: () => Promise<void>;
+  /**
+   * A2-A3 review R6: explicit failure observer for the trace-flush
+   * path. When `flushTraces()` throws, the AlarmHandler surfaces the
+   * error through this hook instead of silently swallowing it. The DO
+   * wires this to `emitAlarmTrace("trace.recovery", { ... })` so every
+   * flush failure is itself audit-visible — the opposite of the
+   * previous behaviour where the alarm could drop traces without a
+   * single observable signal.
+   *
+   * If `onFlushFailure` is omitted the AlarmHandler still does NOT
+   * swallow silently — it rethrows the original error so the caller's
+   * top-level alarm() sees a stack frame instead of a dropped signal.
+   */
+  readonly onFlushFailure?: (err: unknown) => Promise<void> | void;
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -65,11 +79,20 @@ export class AlarmHandler {
       await deps.closeConnection("ack_backpressure");
     }
 
-    // Step 3 — flush traces (best-effort)
+    // Step 3 — flush traces. A2-A3 review R6: the previous
+    // silent-swallow contradicted A3 "no silent trace loss". When the
+    // flush fails we either hand the error to the injected
+    // `onFlushFailure` hook (the DO wires that to a
+    // `trace.recovery` emission), or rethrow so the alarm() caller
+    // sees a stack frame instead of dropping the signal entirely.
     try {
       await deps.flushTraces();
-    } catch {
-      // Trace flush failure is non-fatal — swallow and continue.
+    } catch (err) {
+      if (deps.onFlushFailure) {
+        await deps.onFlushFailure(err);
+      } else {
+        throw err;
+      }
     }
 
     // Step 4 — schedule next alarm

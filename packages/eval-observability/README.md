@@ -89,6 +89,11 @@ const sink = new DoStorageTraceSink(storage, teamUuid, sessionUuid);
 await sink.emit({
   eventKind: "turn.begin",
   timestamp: new Date().toISOString(),
+  // Trace-law carriers (A3): every event MUST declare the owning
+  // trace UUID and the producing source role.
+  traceUuid,
+  sourceRole: "session",
+  sourceKey: "nano-agent.session.do@v1",
   sessionUuid,
   teamUuid,
   audience: "internal",

@@ -53,6 +53,39 @@ export interface TraceEvent {
   readonly error?: { readonly code: string; readonly message: string };
 }
 
+/**
+ * Runtime-safe mirror of `@nano-agent/eval-observability::assertTraceLaw`.
+ *
+ * session-do-runtime stays dep-free from eval-observability at runtime
+ * (A2-A3 review R1 + Kimi R2 discussion): the sink boundary enforcement
+ * should work even when the package is built without the eval devDep.
+ * A cross-check test (`test/traces.test.ts`) imports the eval helper
+ * as a dev dependency to verify the mirror does not drift.
+ */
+export function assertTraceLaw(event: TraceEvent): void {
+  if (!event || typeof event !== "object") {
+    throw new Error("trace-law: event must be an object");
+  }
+  if (typeof event.traceUuid !== "string" || event.traceUuid.length === 0) {
+    throw new Error("trace-law: traceUuid is required");
+  }
+  if (typeof event.sourceRole !== "string" || event.sourceRole.length === 0) {
+    throw new Error("trace-law: sourceRole is required");
+  }
+  if (typeof event.sessionUuid !== "string" || event.sessionUuid.length === 0) {
+    throw new Error("trace-law: sessionUuid is required");
+  }
+  if (typeof event.teamUuid !== "string" || event.teamUuid.length === 0) {
+    throw new Error("trace-law: teamUuid is required");
+  }
+  if (typeof event.eventKind !== "string" || event.eventKind.length === 0) {
+    throw new Error("trace-law: eventKind is required");
+  }
+  if (typeof event.timestamp !== "string" || event.timestamp.length === 0) {
+    throw new Error("trace-law: timestamp is required");
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // §1 — TraceDeps + TraceContext
 // ═══════════════════════════════════════════════════════════════════
@@ -170,6 +203,38 @@ export function buildTurnEndTrace(
     messageUuid: ctx.messageUuid,
     turnUuid,
     durationMs,
+    audience: "internal",
+    layer: "durable-audit",
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// §4b — Session End Trace (A2/A3 review R1)
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Build a trace event for session termination.
+ *
+ * Emits the canonical `session.end` kind (not `session.ended`) so the
+ * downstream classification / durable-promotion registry accepts it as
+ * an anchor event. `turnCount` is optional context: it lets audit
+ * consumers correlate the session's lifecycle length without replaying
+ * the full timeline.
+ */
+export function buildSessionEndTrace(
+  ctx: TraceContext,
+  turnCount?: number,
+): TraceEvent {
+  return {
+    eventKind: "session.end",
+    timestamp: new Date().toISOString(),
+    traceUuid: ctx.traceUuid,
+    sessionUuid: ctx.sessionUuid,
+    teamUuid: ctx.teamUuid,
+    sourceRole: ctx.sourceRole,
+    sourceKey: ctx.sourceKey,
+    messageUuid: ctx.messageUuid,
+    stepIndex: typeof turnCount === "number" ? turnCount : undefined,
     audience: "internal",
     layer: "durable-audit",
   };

@@ -8,7 +8,13 @@
 import "./messages/index.js";
 
 // ── Version ──
-export { NACP_VERSION, NACP_VERSION_COMPAT, cmpSemver } from "./version.js";
+export {
+  NACP_VERSION,
+  NACP_VERSION_COMPAT,
+  NACP_VERSION_KIND,
+  cmpSemver,
+} from "./version.js";
+export type { NacpVersionKind } from "./version.js";
 
 // ── Error types ──
 export { NacpValidationError, NacpAdmissibilityError } from "./errors.js";

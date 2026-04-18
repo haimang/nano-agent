@@ -112,10 +112,74 @@ describe("trace-substrate-benchmark / verdict logic", () => {
         perSessionMismatches: 1,
         orderViolations: 0,
         indexKeysObserved: 4,
+        // A2-A3 review R2: the listless (_index-only) readback probe
+        // now carries its own success figures that verdict logic
+        // inspects separately. Keep it green here so only the primary
+        // readback failure is the driver.
+        listlessReadback: {
+          totalWritten: 40,
+          totalRead: 40,
+          successPct: 100,
+          perSessionMismatches: 0,
+        },
       },
     });
     expect(v.verdict).toBe("red");
     expect(v.notes.some((n) => n.includes("75%"))).toBe(true);
+  });
+
+  it("flags red when listless (_index-only) readback drops below threshold (A2-A3 review R2)", () => {
+    const v = computeVerdict({
+      readback: {
+        scenario: "readback-probe",
+        sessions: 4,
+        eventsPerSession: 10,
+        totalWritten: 40,
+        totalRead: 40,
+        successPct: 100,
+        perSessionMismatches: 0,
+        orderViolations: 0,
+        indexKeysObserved: 4,
+        listlessReadback: {
+          totalWritten: 40,
+          totalRead: 10,
+          successPct: 25,
+          perSessionMismatches: 3,
+        },
+      },
+    });
+    expect(v.verdict).toBe("red");
+    expect(
+      v.notes.some((n) => n.includes("listless (_index-only) readback")),
+    ).toBe(true);
+  });
+
+  it("flags red when emit p50 exceeds the Q5 20ms budget (A2-A3 review R2)", () => {
+    const v = computeVerdict({
+      localBench: {
+        scenario: "local-bench",
+        steady: {
+          events: 100,
+          emitLatency: summariseLatencies([25, 25, 25, 25]),
+          manualFlushMs: 1,
+          storageOps: 5,
+          storageBytes: 1000,
+          rawJsonlBytes: 1000,
+          writeAmplification: 1,
+        },
+        burst: {
+          events: 0,
+          emitLatency: summariseLatencies([1]),
+          manualFlushMs: 1,
+          storageOps: 0,
+          storageBytes: 0,
+          rawJsonlBytes: 0,
+          writeAmplification: 0,
+        },
+      },
+    });
+    expect(v.verdict).toBe("red");
+    expect(v.notes.some((n) => n.includes("Q5 budget 20ms"))).toBe(true);
   });
 
   it("flags red when write amplification exceeds the cap", () => {
@@ -204,9 +268,14 @@ describe("trace-substrate-benchmark / artifact + telemetry", () => {
     const sink = new DoStorageTraceSink(storage, "team-z", "sess-z", {
       maxBufferSize: 1,
     });
+    // A2-A3 review R3 / Kimi R1: fixture upgraded to carry trace-law
+    // required carriers (`traceUuid` + `sourceRole`).
     await sink.emit({
       eventKind: "session.start",
       timestamp: "2026-04-18T10:00:00.000Z",
+      traceUuid: "00000000-0000-4000-8000-000000000001",
+      sourceRole: "session",
+      sourceKey: "trace-substrate-benchmark-test@v1",
       sessionUuid: "sess-z",
       teamUuid: "team-z",
       audience: "internal",

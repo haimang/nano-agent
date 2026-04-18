@@ -5,6 +5,8 @@
   "description": "Cloudflare-native agent runtime",
   "packageManager": "pnpm@9.15.0",
   "scripts": {
-    "test:cross": "node --test test/**/*.test.mjs"
+    "test:contracts": "node --test test/*.test.mjs",
+    "test:e2e": "node --test test/e2e/*.test.mjs",
+    "test:cross": "node --test test/*.test.mjs test/e2e/*.test.mjs"
   }
 }
