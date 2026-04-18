@@ -467,3 +467,99 @@ trace-first-observability-foundation
 ## 10. 结语
 
 这份 action-plan 以 **把 `trace_uuid` 从命名法推进到 runtime 第一事实** 为第一优先级，采用 **先冻结 trace law/base contract、再收敛 builders/recovery、再扩 instrumentation、最后用 tests/docs 封箱** 的推进方式，优先解决 **TraceEventBase 缺 trace carrier、session/eval event reality 漂移、recovery 仍是隐性 best-effort** 这三类问题，并把 **不抢跑 D1/query/exporter、不抢跑 external seam propagation、不接受 silent trace loss** 作为主要约束。整个计划完成后，`Observability / Trace Law` 应达到 **core/eval/session/邻接包都能共享同一套 trace truth，并且关键 lifecycle 可恢复、可失败、可验证** 的状态，从而为后续的 **session edge closure、external seam closure、storage/context evidence closure** 提供稳定基础。
+
+---
+
+## 11. 工作报告（A3 execution log）
+
+> 执行人：Claude Opus 4.7（1M context）
+> 执行时间：`2026-04-18`
+> 执行对象：`docs/action-plan/after-skeleton/A3-trace-first-observability-foundation.md` Phase 1-5
+> 执行结论：**`trace_uuid` 已成为 core / eval / session / 邻接包共享的 runtime 第一事实；anchor-recovery 提供 8 项 typed 失败分类；邻接包（hooks）已接入，跨包 contract 守 trace-first 不漂移。**
+
+### 11.1 工作目标与内容回顾
+
+- **目标**：把 Q6（`TraceEventBase.traceUuid` 必带）与 Q7（Anchor/Durable/Diagnostic 概念层）落到代码、测试、契约测试三层；把 recovery 从 best-effort 提升为 typed taxonomy；让邻接包有最小 trace emit seam；确保不抢跑 D1/query/exporter、不抢跑 service-binding propagation（P4 职责）。
+- **AX-QNA 绑定**：Q6 / Q7 已有 owner 决策，A3 只在不改变决策的前提下收口执行。
+- **Phase 真实执行路径**：
+  - Phase 1 — 升级 `TraceEventBase` 以 `traceUuid / sourceRole / sourceKey? / messageUuid?` 为必带，暴露 `validateTraceEvent / isTraceLawCompliant / assertTraceLaw` + `TraceLawReason`；`NacpAlertPayload` 加 `scope` 枚举与 refine，只有 `platform` 可省 `trace_uuid`；新增 `ConceptualTraceLayer` + `CONCEPTUAL_LAYER_OF_TRACE_LAYER` 表，与 `TraceLayer` 实现枚举显式分离。
+  - Phase 2 — audit codec 将 `traceUuid / sourceRole / sourceKey / messageUuid` 显式保留在 `detail`，并在 decode 时强制 trace law；`DurablePromotionEntry` 加 `conceptualLayer` 字段，默认 registry 把 `turn.begin / turn.end / session.start / session.end` 标注 `anchor`，其余 durable 标注 `durable`；session trace builder 重命名 `buildTurnStartTrace→buildTurnBeginTrace`、`buildTurnEndTrace` 签名改为 `(turnUuid, durationMs, ctx)`，新增 `mapRuntimeStepKindToTraceKind` 并对 step 事件同步 mapping。
+  - Phase 3 — 新增 `packages/eval-observability/src/anchor-recovery.ts`：`TraceRecoveryError` + `TRACE_RECOVERY_REASONS` 暴露 8 项失败分类（`anchor-missing / anchor-ambiguous / checkpoint-invalid / timeline-readback-failed / compat-unrecoverable / cross-seam-trace-loss / trace-carrier-mismatch / replay-window-gap`），`attemptTraceRecovery` 做 anchor threading；`restoreSessionCheckpoint` 抛 `CheckpointInvalidError` 对齐 `checkpoint-invalid` reason。
+  - Phase 4 — `packages/hooks/src/audit.ts` 加 `HookTraceContext` + `options.traceContext` 钩子：audit body 会把 trace carrier 写进 `detail`，`auditBodyToTraceEvent` 能无缝回读；root contract 新增 `test/trace-first-law-contract.test.mjs`（15 test cases）、扩展 `test/hooks-protocol-contract.test.mjs` + `test/observability-protocol-contract.test.mjs` 以守 trace-first 守跨包。
+  - Phase 5 — 新增 `packages/eval-observability/test/integration/trace-recovery.test.ts` 给 recovery success + explicit failure 双路径证据；回填 P2 design 附录 B、AX-QNA Q6/Q7；全仓 typecheck + build + test + cross 收口。
+- **context/ 参考案例核对**：mini-agent `logger.py` 以 `tool_call_id` 为唯一 correlation 字段、没有 trace identity —— 这是 A3 要反转的反例；just-bash 没有 trace/observability 主题，不直接引用，但本轮依旧遵循其 script-only harness 纪律（runner 留在 `tsx` 脚本里，不污染 src）；claude-code `services/tools/toolExecution.ts` 的 error classification 只在 telemetry prefix 层 stitch，不足以作为 trace-first 方案直接借鉴，但提醒我们“失败要有 typed reason”这件事。`NacpAlertPayloadSchema` 的 scope refine 直接借鉴 SMCP 的 observability envelope 思路（context/smcp/src/runtime/observability.ts），与 Q7 的概念层语言叠加。
+
+### 11.2 实际代码清单
+
+- **eval-observability**
+  - `packages/eval-observability/src/trace-event.ts`：升级 `TraceEventBase`；新增 `TraceLawReason / TraceLawViolation / validateTraceEvent / isTraceLawCompliant / assertTraceLaw`。
+  - `packages/eval-observability/src/types.ts`：新增 `ConceptualTraceLayer / TraceSourceRole / CONCEPTUAL_LAYER_OF_TRACE_LAYER`；显式说明与实现枚举分层。
+  - `packages/eval-observability/src/audit-record.ts`：`AuditRecordMeta` 新增 `traceUuid / sourceRole / sourceKey / messageUuid`；encode 保留 trace carrier、decode 强制 trace law。
+  - `packages/eval-observability/src/durable-promotion-registry.ts`：`DurablePromotionEntry.conceptualLayer` 新字段；默认 registry 给 anchor 事件标注 `anchor`；新增 `listByConceptualLayer`。
+  - `packages/eval-observability/src/anchor-recovery.ts`（新增）：`TraceRecoveryError / TRACE_RECOVERY_REASONS / TraceAnchor / TraceCandidate / TraceRecoveryOptions / attemptTraceRecovery / traceRecoveryError`。
+  - `packages/eval-observability/src/index.ts`：导出上述新表面（trace law、conceptual layer、anchor-recovery）。
+- **nacp-core**
+  - `packages/nacp-core/src/observability/envelope.ts`：`NacpAlertScopeSchema` + refine；`NacpAlertPayload` 新增 `scope / session_uuid / turn_uuid`，`trace_uuid` 只对 platform 可省。
+- **session-do-runtime**
+  - `packages/session-do-runtime/src/traces.ts`：重写为 `buildTurnBeginTrace / buildTurnEndTrace / buildStepTrace`（签名加 `ctx: TraceContext`），新增 `mapRuntimeStepKindToTraceKind` + `STEP_KIND_MAP`；本地 mirror `TraceEvent / TraceSourceRole` 类型避免 runtime 包依赖。
+  - `packages/session-do-runtime/src/checkpoint.ts`：`CheckpointInvalidError` 新增（`reason = "checkpoint-invalid"`）并用于 `restoreSessionCheckpoint`。
+  - `packages/session-do-runtime/src/index.ts`：导出 `TraceContext / CheckpointInvalidError / mapRuntimeStepKindToTraceKind` 等新表面；旧 `buildTurnStartTrace` 移除。
+  - `packages/session-do-runtime/package.json`：加 `@nano-agent/eval-observability` 作为 workspace devDep，供测试跨包 assert trace law。
+- **hooks**
+  - `packages/hooks/src/audit.ts`：新增 `HookTraceContext`；`buildHookAuditRecord(options.traceContext?)` 会把 `traceUuid / sourceRole / sourceKey / turnUuid` 写入 `detail`。
+  - `packages/hooks/src/index.ts`：导出 `HookTraceContext`。
+- **root contract + integration tests**
+  - `test/trace-first-law-contract.test.mjs`（新增，15 cases）：跨包守 trace-first 不漂移。
+  - `test/observability-protocol-contract.test.mjs`（重写，4 cases）：对齐新 builder 名称、audit codec 保真、registry anchor 归属。
+  - `test/hooks-protocol-contract.test.mjs`（扩展）：新增 `hook audit records carry trace-first fields when a trace context is threaded in` 一条测试。
+  - `packages/eval-observability/test/integration/trace-recovery.test.ts`（新增，4 cases）：recovery success（anchor threading + audit 往返）+ explicit failure（mismatch + missing-anchor）双路径证据。
+  - `packages/eval-observability/test/trace-event.test.ts`（重写）：14 cases 覆盖 base fixture + trace law validator + 概念层 mapping。
+  - `packages/eval-observability/test/anchor-recovery.test.ts`（新增，11 cases）：recovery 成功 / 失败 / 不变性。
+  - `packages/eval-observability/test/audit-record.test.ts`（扩展，16 cases）：保留 trace 碳片 + 新增两条 trace-law 抛错保护。
+  - `packages/eval-observability/test/integration/failure-replay.test.ts`：fixture 加 `traceUuid / sourceRole` 保持 trace-law 合规。
+  - `packages/nacp-core/test/observability.test.ts`（新增，7 cases）：scope-based alert exception 校验。
+  - `packages/session-do-runtime/test/traces.test.ts`（重写，22 cases）：新 builder 名称 + 概念层 + kind mapping。
+- **文档**
+  - `docs/design/after-skeleton/P2-trace-first-observability-foundation.md`：新增附录 B “A3 执行后状态”，列出代码层面已落地的全部 trace-first 能力；附录 C 版本历史加 v0.2。
+  - `docs/action-plan/after-skeleton/AX-QNA.md`：Q6 / Q7 条目加 `2026-04-18 执行后追记` 段落。
+  - `docs/action-plan/after-skeleton/A3-trace-first-observability-foundation.md`（本文件）：§11 工作报告。
+
+### 11.3 测试制作与测试结果
+
+- **新增测试汇总**
+  - eval-observability：`trace-event.test.ts`（14）、`anchor-recovery.test.ts`（11）、`integration/trace-recovery.test.ts`（4）、`audit-record.test.ts` 新增 2 条失败守卫。
+  - nacp-core：`observability.test.ts`（7）。
+  - session-do-runtime：`traces.test.ts`（22）覆盖新 builder。
+  - root：`trace-first-law-contract.test.mjs`（15）、`hooks-protocol-contract.test.mjs`（+1）、`observability-protocol-contract.test.mjs`（4）。
+- **运行结果**
+  - `pnpm --filter @nano-agent/nacp-core test` — `12 files / 231 tests passed`。
+  - `pnpm --filter @nano-agent/nacp-session test` — `14 files / 115 tests passed`（不直接受影响，交叉守护通过）。
+  - `pnpm --filter @nano-agent/eval-observability test` — `18 files / 172 tests passed`。
+  - `pnpm --filter @nano-agent/session-do-runtime test` — `19 files / 258 tests passed`。
+  - `pnpm --filter @nano-agent/agent-runtime-kernel / capability-runtime / hooks / llm-wrapper / storage-topology / workspace-context-artifacts test` — 均通过（见 `pnpm -r test` 输出）。
+  - `pnpm -r typecheck` — 10 projects 全绿。
+  - `pnpm -r build` — 10 projects 全绿。
+  - `npm run test:cross` — `14/14 e2e + 3 contract suites + trace-first-law 全部通过`，含 `trace-first-law-contract` 15 cases + `observability-protocol-contract` 4 cases + `hooks-protocol-contract` 2 cases。
+
+### 11.4 收口分析与下一阶段安排
+
+- **AX-QNA / Definition of Done 对照**
+  - **功能**：trace law + base contract + builder/codec convergence + anchor/recovery + adjacent instrumentation sweep 全部落地。
+  - **测试**：eval / session / nacp-core / 邻接包 tests + root cross + 新 trace-first-law 合约共同形成闭环；`attemptTraceRecovery` 与 `CheckpointInvalidError` 都有显式失败测试。
+  - **文档**：P2 design 附录 B、AX-QNA Q6/Q7、本 action-plan §11 三方口径一致；`plan-after-skeleton.md` §7.3 的 trace-first law 入口直接指向 `packages/eval-observability` / `packages/session-do-runtime/src/traces.ts`。
+  - **风险收敛**：不再有 “trace 是 optional 日志字段”“builder 沿用 `turn.started` / `turn.completed`”“recovery 是 best-effort”这三类漏洞；邻接包已暴露最小 trace emit seam，后续 P3/P4/P6 不再需要重新发明。
+  - **可交付性**：A4（session edge closure）可直接把 `TraceContext` 与 `attemptTraceRecovery` 当作 first-class 契约；A5（external seam closure）可把 8 项 recovery reason 当 cross-worker error 分类的锚点；A7（storage evidence closure）可直接用 `listByConceptualLayer("anchor")` 做 replay 证据入口。
+- **复盘要点回填**
+  - 工作量估计偏差：Phase 4 的 “instrumentation sweep” 实际比估计轻 —— llm-wrapper / capability-runtime / workspace-context-artifacts 目前都没有内部 audit 构建器（它们只持有 TraceSink 依赖点），因此本轮只需要 hooks 走完 `traceContext` 钩子即可；其他包的 sweep 将随 P4 external seam closure 进入 contract 范围。
+  - 拆分合理度：Phase 3 把 `CheckpointInvalidError` 与 `attemptTraceRecovery` 放在不同包（各自的职责边界）是对的；但 alarm / turn-ingress 实际上没有产出 trace event 的代码入口，所以 “alarm wiring” 在当前 action-plan 范围内只以 “checkpoint 类型化失败” 收尾，没有额外 wiring。
+  - 需要更早问架构师：本次没有；Q6 / Q7 已覆盖所有执行歧义。
+  - 测试覆盖不足之处：`turn-ingress.ts` 仍是 schematic placeholder，没有真正的 trace-loss ingress 场景；A4 真正接 `normalizeClientFrame` 时再补 failure replay。
+  - 模板需补字段：`docs/action-plan` 模板里 “Phase 新增文件 / 修改文件” 经常在 Phase 3/4 因合并被精简，未来模板可以加一行 “若合并请注明原编号” 便于溯源。
+- **下一阶段安排（A4 / A5 / A7 启动条件）**
+  - **A4 (`P3-session-edge-closure`)**：已就位。Session DO / ingress 可直接依赖：
+    - `TraceEventBase.traceUuid / sourceRole` 必带
+    - `buildTurnBeginTrace / buildTurnEndTrace / buildStepTrace` 以 `TraceContext` 为参
+    - `CheckpointInvalidError / attemptTraceRecovery` 作为 recovery 入口
+    - `NacpAlertPayloadSchema` scope refine 作为 session-level alert 的 trace-law 守门
+  - **A5 (`P4-external-seam-closure`)**：可从本 memo 的 8 项 `TraceRecoveryReason` 开始扩展 `cross-seam-trace-loss` / `replay-window-gap` 在 worker/service-binding 之间的具体实现；P2 trace 已是 first-class，不会成为 service-binding 的变量。
+  - **A7 (`P6-storage-and-context-evidence-closure`)**：`DurablePromotionRegistry.listByConceptualLayer("anchor")` 可直接作为 storage evidence 的 anchor 选择器；`CONCEPTUAL_LAYER_OF_TRACE_LAYER` 可作为 placement cost model 的一个维度。

@@ -153,6 +153,7 @@
 
 - **问题**：`是否确认 Phase 2 必须升级 TraceEvent base contract，使其显式携带 traceUuid，而不是只依赖 sessionUuid / turnUuid 等旁证？`
 - **业主回答**：同意 Opus 的判断。
+- **2026-04-18 执行后追记（A3 收口）**：A3 已把 `TraceEventBase` 扩展为 `eventKind / timestamp / traceUuid / sessionUuid / teamUuid / sourceRole / sourceKey? / messageUuid? / turnUuid? / stepIndex? / durationMs? / audience / layer / error?`，并暴露 `validateTraceEvent` / `assertTraceLaw`。session-do-runtime 的 `buildTurnBeginTrace / buildTurnEndTrace / buildStepTrace` 重命名并全部强制携带 trace carrier；audit codec `auditBodyToTraceEvent` 在缺失 `traceUuid` 时抛 "trace law violation"。accepted internal work 已无法绕过 trace-first 校验。
 
 ### Q7 — Observability 是否正式采用 Anchor / Durable / Diagnostic 三层语言（来源：A3, A4）
 
@@ -177,6 +178,7 @@
 
 - **问题**：`是否确认 nano-agent 的 observability 采用 Anchor / Durable / Diagnostic 三层语言，并要求后续 design / action-plan 按此组织？`
 - **业主回答**：同意 Opus 的判断。
+- **2026-04-18 执行后追记（A3 收口）**：三层概念语言已以 `ConceptualTraceLayer` 类型 + `CONCEPTUAL_LAYER_OF_TRACE_LAYER` 映射表落在 `packages/eval-observability/src/types.ts`；`DurablePromotionEntry` 新增 `conceptualLayer` 字段并为 `turn.begin / turn.end / session.start / session.end` 标注 `anchor`，其余 durable 事件标注 `durable`，live-only 事件维持 `diagnostic`。`DurablePromotionRegistry.listByConceptualLayer()` 暴露查询入口，root `test/trace-first-law-contract.test.mjs` 与 `test/observability-protocol-contract.test.mjs` 校验 anchor 归属。概念层语言与 runtime `TraceLayer` 实现枚举保持显式分离，不互相替代。
 
 ### Q8 — Follow-up / multi-round input family 是否必须进入 Phase 0，而不是继续延后（来源：A1, A4）
 

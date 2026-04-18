@@ -423,8 +423,20 @@
   - **B 方观点**：accepted internal request 必须有 trace_uuid 与 anchor
   - **最终共识**：trace_uuid 是 runtime law，而不是 best-effort label
 
+### B. A3 执行后状态（2026-04-18 收口）
+
+P2 design 的所有 trace-first 前提已被 A3 落地为代码：
+
+- `TraceEventBase` 已新增 `traceUuid / sourceRole / sourceKey? / messageUuid?` 必带字段，并暴露 `validateTraceEvent` / `assertTraceLaw` 助手（`packages/eval-observability/src/trace-event.ts`）。
+- `NacpAlertPayload` 已加 `scope` 枚举与 refine：只有 `platform` 允许省略 `trace_uuid`，`request / session / turn` 必须携带（`packages/nacp-core/src/observability/envelope.ts`）。
+- session trace builder 重命名为 `buildTurnBeginTrace / buildTurnEndTrace / buildStepTrace` + `mapRuntimeStepKindToTraceKind`，所有产出都经过 `validateTraceEvent` 校验（`packages/session-do-runtime/src/traces.ts`）。
+- Anchor / recovery 已成形：`attemptTraceRecovery / TraceRecoveryError / TRACE_RECOVERY_REASONS` 暴露 8 项错误分类（`packages/eval-observability/src/anchor-recovery.ts`），`restoreSessionCheckpoint` 抛出对齐的 `CheckpointInvalidError`（`packages/session-do-runtime/src/checkpoint.ts`）。
+- 邻接包 sweep：`buildHookAuditRecord(..., { traceContext })` 已能让 hook audit body 带回 trace carrier；audit codec `traceEventToAuditBody` / `auditBodyToTraceEvent` 强制 trace law 守卫；root contract `test/trace-first-law-contract.test.mjs` 与扩展后的 `test/observability-protocol-contract.test.mjs` / `test/hooks-protocol-contract.test.mjs` 守住跨包不漂移。
+- evidence pack：`packages/eval-observability/test/integration/trace-recovery.test.ts` 同时给出 recovery success（anchor 修复 + audit 往返）与 explicit failure（`trace-carrier-mismatch`）证据。
+
 ### C. 版本历史
 
 | 版本 | 日期 | 修改者 | 主要变更 |
 |------|------|--------|----------|
 | v0.1 | `2026-04-17` | `GPT-5.4` | 初稿 |
+| v0.2 | `2026-04-18` | `Claude Opus 4.7` | A3 收口：在附录 B 增补 P2 在代码层落地的实际状态 |
