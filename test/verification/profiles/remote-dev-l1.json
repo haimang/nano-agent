@@ -1,0 +1,22 @@
+{
+  "id": "remote-dev-l1",
+  "label": "L1 deploy-shaped dry-run (wrangler dev --remote)",
+  "tooling": "wrangler dev --remote",
+  "purpose": "Worker / DO / service-binding boundary in a fast feedback loop.",
+  "bindings": [
+    {"name": "SESSION_DO", "kind": "durable_object", "class_name": "NanoSessionDO"},
+    {"name": "R2_ARTIFACTS", "kind": "r2_bucket", "preview_bucket_name": "nano-agent-artifacts-dev"},
+    {"name": "KV_CONFIG", "kind": "kv_namespace", "preview_id": "nano-agent-kv-config-dev"},
+    {"name": "HOOK_WORKER", "kind": "service", "service": "nano-agent-fake-hook-worker"},
+    {"name": "CAPABILITY_WORKER", "kind": "service", "service": "nano-agent-fake-capability-worker"},
+    {"name": "FAKE_PROVIDER_WORKER", "kind": "service", "service": "nano-agent-fake-provider-worker"}
+  ],
+  "secrets": [
+    {"name": "TEAM_UUID", "source": ".dev.vars", "required": true, "note": "owner-local; no commit"}
+  ],
+  "compositionProfile": {"capability": "remote", "hooks": "remote", "provider": "remote"},
+  "providerGoldenPath": "fake-only",
+  "verdictTrigger": "milestone gate; PR-trigger optional",
+  "ladderPosition": "L1",
+  "secretInjection": ".dev.vars (gitignored)"
+}

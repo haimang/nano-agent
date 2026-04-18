@@ -1,0 +1,5 @@
+# Placeholder so the bundle directory exists in fresh clones.
+# Bundle JSON files in this directory are intentionally NOT committed —
+# each verification run produces a timestamped artifact that lives in
+# the reviewer's local copy, the deploy environment, or a CI artifact
+# store. See ../README.md for the bundle shape.
