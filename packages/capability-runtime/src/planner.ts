@@ -60,27 +60,71 @@ export function parseSimpleCommand(raw: string): {
 }
 
 /**
+ * A8 P3-02 — narrow command aliases (Q16).
+ *
+ * Maps a bash-side keyword to the canonical capability name. Aliases
+ * MUST stay narrow (single-name → single-canonical) — anything richer
+ * belongs to a structured tool call, not the bash surface. Today the
+ * only sanctioned alias is `grep -> rg`; `egrep / fgrep` remain
+ * out-of-scope per the action plan.
+ */
+export const COMMAND_ALIASES: Record<string, string> = {
+  grep: "rg",
+};
+
+type AliasRewrite =
+  | { ok: true; canonical: string; args: string[] }
+  | { ok: false; reason: string };
+
+function parseAliasArgs(cmd: string, args: string[]): AliasRewrite {
+  const canonical = COMMAND_ALIASES[cmd];
+  if (!canonical) return { ok: true, canonical: cmd, args };
+  if (cmd === "grep") {
+    if (args.length === 0) {
+      return {
+        ok: false,
+        reason:
+          "grep: pattern required; alias rewrites to `rg <pattern> [path]`",
+      };
+    }
+    if (args[0]!.startsWith("-")) {
+      return {
+        ok: false,
+        reason: `grep alias is intentionally narrow (Q16). Drop the '${args[0]}' flag and call \`rg\` directly for richer options.`,
+      };
+    }
+    return { ok: true, canonical, args };
+  }
+  return { ok: true, canonical, args };
+}
+
+/**
  * Plan a capability execution from a bash-shaped command string.
  *
- * Returns null if the command is not recognized in the registry.
+ * Returns null if the command is not recognized in the registry, and
+ * throws when a narrow alias (e.g. `grep`) is used with an
+ * unsupported flag set.
  */
 export function planFromBashCommand(
   command: string,
   registry: CapabilityRegistry,
 ): CapabilityPlan | null {
   const { command: cmd, args } = parseSimpleCommand(command);
+  if (!cmd) return null;
 
-  if (!cmd || !registry.has(cmd)) {
-    return null;
+  const rewrite = parseAliasArgs(cmd, args);
+  if (!rewrite.ok) {
+    throw new Error(rewrite.reason);
   }
 
-  const decl = registry.get(cmd)!;
+  const canonical = rewrite.canonical;
+  if (!registry.has(canonical)) return null;
 
-  // Build input based on the command kind
-  const input = buildInputFromArgs(cmd, args);
+  const decl = registry.get(canonical)!;
+  const input = buildInputFromArgs(canonical, rewrite.args);
 
   return {
-    capabilityName: cmd,
+    capabilityName: canonical,
     input,
     executionTarget: decl.executionTarget,
     source: "bash-command",

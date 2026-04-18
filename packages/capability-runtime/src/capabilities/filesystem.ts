@@ -1,14 +1,30 @@
 /**
- * Filesystem Capability Handlers
+ * Filesystem Capability Handlers (A8 Phase 2 hardening).
  *
- * Minimal in-process implementations of filesystem operations.
- * These operate on a virtual workspace namespace (a base directory path).
+ * The handlers below consume the v1 path law from
+ * `capabilities/workspace-truth.ts` so file ops, search, and snapshot
+ * evidence speak the same path universe. Important guarantees:
  *
- * In a real deployment, these would be replaced by sandboxed implementations.
- * Here they serve as the reference implementation for testing.
+ *   - All paths flow through `resolveWorkspacePath()`. A
+ *     `reserved-namespace` (`/_platform/**`) attempt produces a typed
+ *     "path is in the reserved /_platform namespace" error rather than
+ *     accidentally landing in workspace storage.
+ *   - `mkdir` is **partial-with-disclosure** (AX-QNA Q21): the backend
+ *     does not yet have a directory primitive, so `mkdir <path>` only
+ *     ack-creates a prefix. The output explicitly says so and emits a
+ *     stable structured `note: "mkdir-partial-no-directory-entity"`
+ *     so reviewers / prompts cannot misread the result.
+ *   - Reads from the workspace return either the file contents or
+ *     `null` — null is converted to `No such file` exactly as before
+ *     so existing E2E assertions are unchanged.
  */
 
 import type { LocalCapabilityHandler } from "../targets/local-ts.js";
+import {
+  DEFAULT_WORKSPACE_ROOT,
+  resolveWorkspacePath,
+  type WorkspaceFsLike,
+} from "./workspace-truth.js";
 
 /** Input shapes for filesystem commands. */
 interface PathInput {
@@ -27,36 +43,46 @@ interface TwoPathInput {
 
 interface FilesystemHandlersConfig {
   workspacePath?: string;
-  namespace?: {
-    readFile(path: unknown): Promise<string | null>;
-    writeFile(path: unknown, content: string): Promise<void>;
-    listDir(path: unknown): Promise<Array<{ path: string; size: number }>>;
-    deleteFile(path: unknown): Promise<boolean>;
-  };
+  namespace?: WorkspaceFsLike;
 }
+
+/**
+ * The literal note emitted by the `mkdir` handler so prompt
+ * disclosure / inventory text can grep for it. See AX-QNA Q21.
+ */
+export const MKDIR_PARTIAL_NOTE = "mkdir-partial-no-directory-entity";
 
 /**
  * Create filesystem capability handlers scoped to a workspace.
  *
  * @param namespace Configuration for the workspace. Currently accepts
- *   `{ workspacePath: string }` to set the root directory.
+ *   `{ workspacePath: string; namespace?: WorkspaceFsLike }`.
  */
 export function createFilesystemHandlers(
   namespace: unknown,
 ): Map<string, LocalCapabilityHandler> {
   const config = isFilesystemHandlersConfig(namespace) ? namespace : undefined;
-  const base = config?.workspacePath ?? "/workspace";
+  const base = config?.workspacePath ?? DEFAULT_WORKSPACE_ROOT;
   const workspace = config?.namespace;
 
   const handlers = new Map<string, LocalCapabilityHandler>();
 
-  handlers.set("pwd", async (_input) => {
-    return { output: base };
-  });
+  function resolveOrThrow(prefix: string, raw: string): string {
+    const result = resolveWorkspacePath(base, raw);
+    if (result.ok) return result.path;
+    if (result.error?.reason === "reserved-namespace") {
+      throw new Error(
+        `${prefix}: path '${result.error.path}' is in the reserved /_platform namespace`,
+      );
+    }
+    throw new Error(`${prefix}: path '${raw}' escapes the workspace root`);
+  }
+
+  handlers.set("pwd", async () => ({ output: base }));
 
   handlers.set("ls", async (input) => {
     const { path = "." } = (input ?? {}) as PathInput;
-    const resolved = resolvePath(base, path);
+    const resolved = resolveOrThrow("ls", path);
     if (workspace) {
       const entries = await workspace.listDir(resolved);
       return {
@@ -66,72 +92,54 @@ export function createFilesystemHandlers(
           .join("\n"),
       };
     }
-    // Simulated listing
-    return {
-      output: `[ls] listing: ${resolved}`,
-    };
+    return { output: `[ls] listing: ${resolved}` };
   });
 
   handlers.set("cat", async (input) => {
     const { path = "" } = (input ?? {}) as PathInput;
-    if (!path) {
-      throw new Error("cat: no file path provided");
-    }
-    const resolved = resolvePath(base, path);
+    if (!path) throw new Error("cat: no file path provided");
+    const resolved = resolveOrThrow("cat", path);
     if (workspace) {
       const content = await workspace.readFile(resolved);
       if (content === null) {
         throw new Error(`cat: ${resolved}: No such file`);
       }
-      return {
-        output: content,
-      };
+      return { output: content };
     }
-    return {
-      output: `[cat] reading: ${resolved}`,
-    };
+    return { output: `[cat] reading: ${resolved}` };
   });
 
   handlers.set("write", async (input) => {
     const { path = "", content = "" } = (input ?? {}) as WriteInput;
-    if (!path) {
-      throw new Error("write: no file path provided");
-    }
-    const resolved = resolvePath(base, path);
-    if (workspace) {
-      await workspace.writeFile(resolved, content);
-    }
-    return {
-      output: `[write] wrote ${content.length} bytes to ${resolved}`,
-    };
+    if (!path) throw new Error("write: no file path provided");
+    const resolved = resolveOrThrow("write", path);
+    if (workspace) await workspace.writeFile(resolved, content);
+    return { output: `[write] wrote ${content.length} bytes to ${resolved}` };
   });
 
+  // mkdir — A8 P2-02 partial closure (Q21).
+  // The current `WorkspaceFsLike` shape has no directory primitive, so
+  // `mkdir` only ack-creates a prefix. The output line uses a fixed
+  // marker so callers can grep for it and so PX inventory can describe
+  // the limitation in the same words.
   handlers.set("mkdir", async (input) => {
     const { path = "" } = (input ?? {}) as PathInput;
-    if (!path) {
-      throw new Error("mkdir: no directory path provided");
-    }
-    const resolved = resolvePath(base, path);
+    if (!path) throw new Error("mkdir: no directory path provided");
+    const resolved = resolveOrThrow("mkdir", path);
     return {
-      output: `[mkdir] created: ${resolved}`,
+      output: `[mkdir] partial: ack-only prefix ${resolved} (${MKDIR_PARTIAL_NOTE}; backend has no directory primitive — write a file under this prefix to make it visible to ls)`,
     };
   });
 
   handlers.set("rm", async (input) => {
     const { path = "" } = (input ?? {}) as PathInput;
-    if (!path) {
-      throw new Error("rm: no path provided");
-    }
-    const resolved = resolvePath(base, path);
+    if (!path) throw new Error("rm: no path provided");
+    const resolved = resolveOrThrow("rm", path);
     if (workspace) {
       const deleted = await workspace.deleteFile(resolved);
-      if (!deleted) {
-        throw new Error(`rm: ${resolved}: No such file`);
-      }
+      if (!deleted) throw new Error(`rm: ${resolved}: No such file`);
     }
-    return {
-      output: `[rm] removed: ${resolved}`,
-    };
+    return { output: `[rm] removed: ${resolved}` };
   });
 
   handlers.set("mv", async (input) => {
@@ -139,8 +147,8 @@ export function createFilesystemHandlers(
     if (!source || !destination) {
       throw new Error("mv: source and destination required");
     }
-    const resolvedSrc = resolvePath(base, source);
-    const resolvedDst = resolvePath(base, destination);
+    const resolvedSrc = resolveOrThrow("mv", source);
+    const resolvedDst = resolveOrThrow("mv", destination);
     if (workspace) {
       const content = await workspace.readFile(resolvedSrc);
       if (content === null) {
@@ -149,9 +157,7 @@ export function createFilesystemHandlers(
       await workspace.writeFile(resolvedDst, content);
       await workspace.deleteFile(resolvedSrc);
     }
-    return {
-      output: `[mv] moved: ${resolvedSrc} -> ${resolvedDst}`,
-    };
+    return { output: `[mv] moved: ${resolvedSrc} -> ${resolvedDst}` };
   });
 
   handlers.set("cp", async (input) => {
@@ -159,8 +165,8 @@ export function createFilesystemHandlers(
     if (!source || !destination) {
       throw new Error("cp: source and destination required");
     }
-    const resolvedSrc = resolvePath(base, source);
-    const resolvedDst = resolvePath(base, destination);
+    const resolvedSrc = resolveOrThrow("cp", source);
+    const resolvedDst = resolveOrThrow("cp", destination);
     if (workspace) {
       const content = await workspace.readFile(resolvedSrc);
       if (content === null) {
@@ -168,43 +174,16 @@ export function createFilesystemHandlers(
       }
       await workspace.writeFile(resolvedDst, content);
     }
-    return {
-      output: `[cp] copied: ${resolvedSrc} -> ${resolvedDst}`,
-    };
+    return { output: `[cp] copied: ${resolvedSrc} -> ${resolvedDst}` };
   });
 
   return handlers;
 }
 
-/** Resolve a path relative to the base workspace path. */
-function resolvePath(base: string, path: string): string {
-  const raw = path.startsWith("/") ? path : `${stripTrailingSlash(base)}/${path}`;
-  const segments = raw.split("/").filter((segment) => segment !== "" && segment !== ".");
-  const resolved: string[] = [];
-
-  for (const segment of segments) {
-    if (segment === "..") {
-      if (resolved.length === 0) {
-        throw new Error(`Path escapes workspace root: ${path}`);
-      }
-      resolved.pop();
-      continue;
-    }
-    resolved.push(segment);
-  }
-
-  return "/" + resolved.join("/");
-}
-
-function stripTrailingSlash(path: string): string {
-  return path === "/" ? "/" : path.replace(/\/+$/, "");
-}
-
-function isFilesystemHandlersConfig(value: unknown): value is FilesystemHandlersConfig {
-  if (!value || typeof value !== "object") {
-    return false;
-  }
-
+function isFilesystemHandlersConfig(
+  value: unknown,
+): value is FilesystemHandlersConfig {
+  if (!value || typeof value !== "object") return false;
   const candidate = value as Record<string, unknown>;
   if (
     "workspacePath" in candidate &&
@@ -213,15 +192,12 @@ function isFilesystemHandlersConfig(value: unknown): value is FilesystemHandlers
   ) {
     return false;
   }
-
   if (!("namespace" in candidate) || candidate.namespace === undefined) {
     return true;
   }
-
   if (!candidate.namespace || typeof candidate.namespace !== "object") {
     return false;
   }
-
   const namespace = candidate.namespace as Record<string, unknown>;
   return (
     typeof namespace.readFile === "function" &&

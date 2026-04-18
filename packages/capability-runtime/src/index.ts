@@ -90,3 +90,17 @@ export { createSearchHandlers } from "./capabilities/search.js";
 export { createNetworkHandlers } from "./capabilities/network.js";
 export { createExecHandlers } from "./capabilities/exec.js";
 export { createVcsHandlers } from "./capabilities/vcs.js";
+
+// ── A8 Phase 1 — workspace truth + path law ──
+export {
+  DEFAULT_WORKSPACE_ROOT,
+  RESERVED_NAMESPACE_PREFIX,
+  isReservedNamespacePath,
+  resolveWorkspacePath,
+  resolveWorkspacePathOrThrow,
+} from "./capabilities/workspace-truth.js";
+export type {
+  WorkspacePathError,
+  WorkspacePathResult,
+  WorkspaceFsLike,
+} from "./capabilities/workspace-truth.js";
