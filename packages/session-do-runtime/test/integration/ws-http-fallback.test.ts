@@ -35,7 +35,7 @@ function makeRequest(
 // ── Tests ──
 
 describe("WS and HTTP fallback integration", () => {
-  const sessionId = "sess-ws-http-001";
+  const sessionId = "11111111-1111-4111-8111-111111111111";
 
   describe("routing dispatches to correct controller type", () => {
     it("WS route returns websocket type for /sessions/:id/ws", () => {
