@@ -159,3 +159,24 @@ export function registerMinimalCommands(
     );
   }
 }
+
+/**
+ * A10 Phase 3 — inventory disclosure helpers (Q19 ask-gated orthogonal
+ * dimension). Both helpers read the canonical declaration list so the
+ * answer never drifts from the registry truth.
+ */
+
+/** Return the minimal command declarations in canonical order. */
+export function getMinimalCommandDeclarations(): readonly CapabilityDeclaration[] {
+  return MINIMAL_COMMANDS;
+}
+
+/** Return every command name whose canonical policy is `ask`. */
+export function getAskGatedCommands(): readonly string[] {
+  return MINIMAL_COMMANDS.filter((d) => d.policy === "ask").map((d) => d.name);
+}
+
+/** Return every command name whose canonical policy is `allow`. */
+export function getAllowGatedCommands(): readonly string[] {
+  return MINIMAL_COMMANDS.filter((d) => d.policy === "allow").map((d) => d.name);
+}

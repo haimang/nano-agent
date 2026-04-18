@@ -8,6 +8,11 @@
 
 import type { CapabilityRegistry } from "./registry.js";
 import type { CapabilityPlan } from "./types.js";
+import {
+  GIT_SUBCOMMAND_BLOCKED_NOTE,
+  GIT_SUPPORTED_SUBCOMMANDS,
+  isSupportedGitSubcommand,
+} from "./capabilities/vcs.js";
 
 /**
  * Parse a simple shell-like command string into command + args.
@@ -154,6 +159,23 @@ function checkBashNarrow(cmd: string, args: string[]): BashNarrowCheck {
         ok: false,
         reason:
           `ts-exec: bash path accepts only an inline code string (${TS_EXEC_BASH_NARROW_NOTE}). Drop '${args[0]}' and call the structured tool call if richer options are ever added.`,
+      };
+    }
+    return { ok: true };
+  }
+  if (cmd === "git") {
+    if (args.length === 0) {
+      return {
+        ok: false,
+        reason: `git: subcommand required; v1 subset = ${GIT_SUPPORTED_SUBCOMMANDS.join("/")} (AX-QNA Q18).`,
+      };
+    }
+    const sub = args[0]!;
+    if (!isSupportedGitSubcommand(sub)) {
+      return {
+        ok: false,
+        reason:
+          `git: subcommand "${sub}" is not supported (${GIT_SUBCOMMAND_BLOCKED_NOTE}; v1 subset = ${GIT_SUPPORTED_SUBCOMMANDS.join("/")}; mutating subcommands are Deferred per AX-QNA Q18).`,
       };
     }
     return { ok: true };

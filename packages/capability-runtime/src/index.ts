@@ -60,7 +60,12 @@ export { BrowserRenderingTarget } from "./targets/browser-rendering.js";
 
 // ── Fake Bash ──
 export { FakeBashBridge } from "./fake-bash/bridge.js";
-export { registerMinimalCommands } from "./fake-bash/commands.js";
+export {
+  registerMinimalCommands,
+  getMinimalCommandDeclarations,
+  getAskGatedCommands,
+  getAllowGatedCommands,
+} from "./fake-bash/commands.js";
 export type { RegisterMinimalCommandsOptions } from "./fake-bash/commands.js";
 export {
   UNSUPPORTED_COMMANDS,
@@ -110,7 +115,15 @@ export {
   TS_EXEC_SYNTAX_ERROR_NOTE,
   TS_EXEC_MAX_CODE_BYTES,
 } from "./capabilities/exec.js";
-export { createVcsHandlers } from "./capabilities/vcs.js";
+export {
+  createVcsHandlers,
+  GIT_SUPPORTED_SUBCOMMANDS,
+  GIT_SUBCOMMAND_BLOCKED_NOTE,
+  GIT_PARTIAL_NO_HISTORY_NOTE,
+  GIT_PARTIAL_NO_BASELINE_NOTE,
+  isSupportedGitSubcommand,
+} from "./capabilities/vcs.js";
+export type { CreateVcsHandlersOptions } from "./capabilities/vcs.js";
 
 // ── A8 Phase 1 — workspace truth + path law ──
 export {
