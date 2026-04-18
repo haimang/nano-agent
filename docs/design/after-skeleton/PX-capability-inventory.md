@@ -246,8 +246,8 @@
 | `cp` | filesystem | `local-ts` | ask | **Supported (ask-gated)** | E2 | handler 真实存在；默认非交互路径需 policy allow 才执行 |
 | `mkdir` | filesystem | `local-ts` | ask | **Partial (ask-gated)** | E2 | A8 收口为 partial-with-disclosure：handler 只 ack-create prefix，每次输出携带 `mkdir-partial-no-directory-entity` 标识（AX-QNA Q21） |
 | `rg` | search | `local-ts` | allow | **Supported** | E2 | A8 P3-01 已实现 namespace-backed 真实搜索 + bounded output；canonical search baseline（AX-QNA Q15） |
-| `curl` | network | `local-ts` | ask | **Partial (ask-gated)** | E1 | URL 校验后返回 not-connected 风格 stub |
-| `ts-exec` | exec | `local-ts` | ask | **Partial (ask-gated)** | E1 | 只确认代码长度，未接真实 sandbox |
+| `curl` | network | `local-ts` | ask | **Partial (ask-gated)** | E2 | A9 P2 收口为 restricted baseline：scheme allow-list (http/https)、host deny-list (localhost/RFC1918/link-local/CGNAT/IPv6 ULA/cloud-metadata)、`timeoutMs`/`maxOutputBytes` 双 cap、`fetchImpl` 注入注接，bash path 仅承诺 `curl <url>`，richer `{ url, method, headers, body, timeoutMs }` 只走 structured tool call（AX-QNA Q17） |
+| `ts-exec` | exec | `local-ts` | ask | **Partial (ask-gated)** | E2 | A9 P3 按 Q22 冻结为 honest partial：syntax validation (`new Function`) + length ack + 固定 `ts-exec-partial-no-execution` marker；不执行 code，升级口保留为 future remote tool-runner via `ServiceBindingTarget` |
 | `git` | vcs | `local-ts` | allow | **Partial** | E1 | 只承诺 `status/diff/log`，且仍是 stub |
 
 ### 7.2 Target Inventory
@@ -275,8 +275,9 @@
 | `grep -> rg` 最窄兼容 alias | **Landed (A8 P3-02)** | planner 层最窄改写，仅接 `grep <pattern> [path]`；任何 `-flag` 拒绝并提示 "grep alias is intentionally narrow (Q16)"；不进入 registry，`r.has("grep") === false` |
 | `egrep/fgrep` | Deferred | 当前完全未注册；扩张需重新评估 parser/semantics 复杂度（A8 §2.3） |
 | `find/head/tail/touch/tee` | Deferred | fake bash 专项分析里建议过，但当前仓内未落地 |
-| richer `curl` flags | Deferred | 未来优先走 structured path |
-| file-based / argv-based `ts-exec` | Deferred | 当前只适合 inline code |
+| richer `curl` flags via bash argv | **Frozen Out (A9 Q17)** | bash path 仅 `curl <url>`；planner 拦截 `-X / -H / --data / extra-token` 并提示 `curl-bash-narrow-use-structured` —— richer 必须走 structured `{ url, method, headers, body, timeoutMs, maxOutputBytes }` |
+| file-based / argv-based `ts-exec` | Deferred | 当前 v1 仅 honest partial，inline code only；upgrade path 保留给 future remote tool-runner via service-binding |
+| host interpreter / nested shell (`python` / `python3` / `node` / `nodejs` / `bash` / `sh` / `zsh` / `deno` / `bun`) | **Unsupported (A9 P1-02)** | Workers-native runtime 无宿主 shell；详见 §7.5 |
 | `git add/commit/restore/branch/...` | Deferred | 当前无 virtual index/ref model |
 
 ### 7.5 Unsupported / Risk-Blocked Surface
@@ -284,11 +285,12 @@
 | Surface | 分类 | 备注 |
 |---------|------|------|
 | `apt/apt-get/npm/npx/yarn/pnpm/pip/pip3` | Unsupported | package manager / install flow 明确禁止 |
+| `python/python3/node/nodejs/bash/sh/zsh/deno/bun` | Unsupported (A9) | host interpreter / nested shell 幻觉；`ts-exec` 是唯一 sanctioned script seam |
 | `sudo/su/chmod/chown/chgrp` | Unsupported | privilege / OS mutation |
 | `docker/docker-compose/podman` | Unsupported | container host assumptions |
 | `systemctl/service/journalctl/reboot/shutdown/poweroff` | Unsupported | system lifecycle control |
 | `ssh/scp/rsync/wget` | Unsupported | remote shell / unrestricted network shape |
-| `curl localhost` / private-address destinations | Unsupported | policy-blocked behavior，不属于 v1 verification capability |
+| `curl localhost` / private-address destinations | Unsupported (A9 egress guard) | scheme allow-list + host deny-list 强制阻断；marker `curl-private-address-blocked` / `curl-scheme-blocked` |
 | `install-then-run` / background server loops | Unsupported | Worker-native fake bash 明确拒绝本地机器幻觉 |
 | `tar/gzip/gunzip/zcat/zip/unzip/bzip2/xz` | Risk-Blocked | isolate memory risk，需 streaming capability 才能回补 |
 
@@ -340,3 +342,4 @@
 |------|------|--------|----------|
 | v0.1 | `2026-04-17` | `GPT-5.4` | 初稿 |
 | v0.2 | `2026-04-18` | `GPT-5.4` | A8 收口：`mkdir` 升级为 Partial(ask-gated)+disclosure（Q21）；`rg` 升级为 Supported E2 +namespace-backed（Q15）；Deferred 表移除 `grep -> rg` 行并新增 Landed(A8 P3-02) 记录（Q16）；`egrep/fgrep` 单列 Deferred |
+| v0.3 | `2026-04-18` | `GPT-5.4` | A9 收口：`curl` 升级为 Partial(ask-gated) E2 + restricted baseline / egress guard（Q17）；`ts-exec` 升级为 Partial(ask-gated) E2 honest partial（Q22）；Deferred 表把 richer `curl` flags 重标 Frozen Out + 新增 host interpreter Unsupported 行；Unsupported 表新增 `python/node/bash/sh/...` 与 egress guard 对齐 |

@@ -438,8 +438,30 @@
 
 ## 附录
 
+### B. A9 执行后状态（2026-04-18）
+
+A9 action-plan 已落盘，本节用最短篇幅记录 P7b 在执行阶段被冻结成的真相，避免 design 与 reality 漂移：
+
+- **Bash vs structured contract 冻结 (Q17)**：`packages/capability-runtime/src/planner.ts` 新增 `checkBashNarrow()`，bash 路径上 `curl` 仅承诺 `curl <url>`：缺 URL、`-flag`、或多于一个 token 都直接抛错并嵌入固定 marker `curl-bash-narrow-use-structured`，错误文本明示 `{ url, method, headers, body, timeoutMs }` 才是 structured-only 入口；`ts-exec` bash 路径只接收 inline code，前导 `-flag` 拒绝并嵌入 `ts-exec-bash-narrow-no-flags`。
+- **Restricted `curl` baseline (Q17 + egress guard)**：`capabilities/network.ts` 完全重写为 `{ url, method?, headers?, body?, timeoutMs?, maxOutputBytes? }` schema，落地以下硬边界：
+  - scheme allow-list `http/https`，`file://` / `ftp://` / `gopher://` / `data:` 一律拒，marker `curl-scheme-blocked`。
+  - host deny-list 覆盖 `localhost` / `*.localhost` / `0.0.0.0` / `127.0.0.0/8` / `10.0.0.0/8` / `172.16.0.0/12` / `192.168.0.0/16` / `100.64.0.0/10` (CGNAT) / `169.254.0.0/16` (link-local + 云 metadata) / `::1` / `fc00::/7` (IPv6 ULA) / `fe80::/10` (IPv6 link-local)，marker `curl-private-address-blocked`。
+  - 默认 cap：`DEFAULT_CURL_TIMEOUT_MS = 30_000`、`DEFAULT_CURL_MAX_BYTES = 64 KiB`；caller 可缩小但不得放大。
+  - 离线 stub 仍保留 (`curl-not-connected` marker)；注入 `fetchImpl` 后通过 `AbortController` 严格执行超时与字节裁剪 (`curl-timeout-exceeded` / `curl-output-truncated`)。
+- **`ts-exec` honest partial (Q22)**：`capabilities/exec.ts` 重写为 syntax-validation-only baseline：
+  - 通过 `new Function(code)` 做语法编译（不执行 body），代码长度上限 `TS_EXEC_MAX_CODE_BYTES = 64 KiB`。
+  - 输出固定文案 `[ts-exec] partial: validated N chars (ts-exec-partial-no-execution; ...)`，prompt/inventory/tests 都可 grep 该 marker。
+  - 语法错误走 `ts-exec-syntax-error` 分支，与 partial 状态可区分。
+  - 输出永不回显 caller 代码本体，避免敏感字段泄漏；future remote tool-runner 升级走 `ServiceBindingTarget`，`tool.call.*` message family 不变。
+- **Unsupported surface 扩张 (P1-02)**：`fake-bash/unsupported.ts` 的 `UNSUPPORTED_COMMANDS` 集合新增 `python / python3 / node / nodejs / bash / sh / zsh / deno / bun`，与 PX inventory §7.5 对齐。`ts-exec` 是唯一 sanctioned script seam。
+- **Service-binding upgrade seam (P4-01)**：`packages/capability-runtime/test/integration/remote-seam-upgrade.test.ts` 验证 `curl` 与 `ts-exec` plan 都可经 `service-binding` 透明转发：transport 收到的 `body.tool_name` 与 `body.tool_input` 与 local-ts 路径完全一致，progress/cancel 复用既有 `tool.call.*` 帧；future remote tool-runner 替换 transport 即可，不必改 handler 或 schema。
+- **Inventory 同步**：`PX-capability-inventory.md` v0.3 已把 `curl` 与 `ts-exec` 升级为 Partial(ask-gated) E2，Deferred 表把 richer `curl` flags 重标 Frozen Out，Unsupported 表新增 host interpreter 行 + egress guard 描述；版本历史记录 A9 收口。
+
+§9.3 下一步行动条目已在 A9 阶段闭合，可在执行复盘时直接对照本节核对。
+
 ### C. 版本历史
 
 | 版本 | 日期 | 修改者 | 主要变更 |
 |------|------|--------|----------|
 | v0.1 | `2026-04-17` | `GPT-5.4` | 初稿 |
+| v0.3 | `2026-04-18` | `GPT-5.4` | 追加附录 B「A9 执行后状态」；冻结 bash/structured 双路径合同、restricted `curl` baseline + egress guard、`ts-exec` honest partial、host interpreter unsupported、service-binding upgrade seam regression |

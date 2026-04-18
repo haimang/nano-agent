@@ -265,3 +265,93 @@ minimal-bash-network-and-script
 ## 7. 收口结论
 
 Phase 7b 的价值，不是“让 nano-agent 看起来终于像有了 shell”，而是把两个最诱人的 shell 幻觉重新铸造成 Worker-native capability：**bash 只保留最小入口，structured path 才承载扩张，policy 与 evidence 决定能力是否能被承诺，remote seam 保证未来升级不重写 contract**。只要这几条成立，`curl` 与 `ts-exec` 就不再是 fake bash 里的危险占位符，而会成为一个可治理、可升级、可验证的能力层。
+
+---
+
+## 11. 工作报告（A9 执行回填）
+
+> 完成时间: `2026-04-18`
+> 执行者: `Claude (claude-opus-4-7[1m])`
+> 状态: `done`
+
+### 11.1 工作目标和内容回顾
+
+A9 要把 P7b 设计稿冻结成可执行的 fake bash network+script 真相，五个 Phase 实际命中以下五件事：
+
+1. **Phase 1 — Bash vs Structured Contract Freeze (Q17)**：planner 层把 `curl` 的 bash argv 收紧到 `curl <url>` 最小形态，任何 flag / extra token 都触发带固定 marker `curl-bash-narrow-use-structured` 的错误，并提示 `{ url, method, headers, body, timeoutMs }` 才是 structured 扩张口；`ts-exec` bash 路径只接 inline code，前导 `-flag` 拒绝（marker `ts-exec-bash-narrow-no-flags`）。
+2. **Phase 1 — Unsupported Surface Freeze (P1-02)**：`UNSUPPORTED_COMMANDS` 集合追加 `python / python3 / node / nodejs / bash / sh / zsh / deno / bun`，把 host-interpreter 幻觉从 fake bash 拒之门外；与 PX inventory §7.5 新增行同口径。
+3. **Phase 2 — Restricted `curl` baseline**：`capabilities/network.ts` 完全重写，接入 scheme allow-list（http/https）、host deny-list（localhost/127./10./172.16./192.168./100.64./169.254./::1/fc00::/fe80::/0.0.0.0）、`timeoutMs` + `maxOutputBytes` 双 cap、`AbortController` 超时中断、`fetchImpl` 注入，错误路径全部携带典型 marker（`curl-scheme-blocked`、`curl-private-address-blocked`、`curl-timeout-exceeded`、`curl-output-truncated`、`curl-not-connected`）。
+4. **Phase 3 — `ts-exec` honest partial (Q22)**：`capabilities/exec.ts` 重写为 syntax-validation + length ack + 固定 marker `ts-exec-partial-no-execution`；语法错误走 `ts-exec-syntax-error`；输出不回显 caller 代码本体；代码长度 cap `TS_EXEC_MAX_CODE_BYTES = 64 KiB`。严格遵守 Q22「v1 诚实 partial，保留 remote tool-runner upgrade 口」的结论。
+5. **Phase 4 — Remote Seam Upgrade Regression (P4-01)**：新增 `integration/remote-seam-upgrade.test.ts`，证明 `curl` 与 `ts-exec` plan 都可经 `ServiceBindingTarget` 透明转发，`tool.call.*` message family 与 schema 不变；future remote tool-runner 仅替换 transport，不改 handler。
+6. **Phase 5 — Test/Docs/Inventory Exit Pack**：全仓 typecheck + build + test 全绿；`PX-capability-inventory.md` v0.3 升级 curl/ts-exec 行、追加 host interpreter 与 egress guard 条目、版本历史；`P7b-minimal-bash-network-and-script.md` v0.3 追加附录 B「A9 执行后状态」；A9 §11 本节回填。
+
+A9 §6.3 Definition of Done 五条全部命中：restricted `curl` baseline 就绪且 richer options 只走 structured path；`ts-exec` substrate 冻结并写死为 honest partial；localhost/Python/install/host interpreter 全部拦截；network/script 进入 service-binding/progress/cancel 语境有测试证据；P7b/README/PX/tests 对 curl/ts-exec 口径一致。
+
+### 11.2 全部实际代码清单
+
+**新增文件（4 个）**:
+- `packages/capability-runtime/test/planner-bash-narrow.test.ts` — 11 cases 覆盖 curl bash-path 窄接口（`-flag` 拒绝、extra token 拒绝、错误文本携带 `url/method/headers/body/timeoutMs` 字段名）与 ts-exec 宽容 inline-code+`-flag` 拒绝
+- `packages/capability-runtime/test/capabilities/network-egress.test.ts` — 24 cases 覆盖 no-fetchImpl stub、scheme 拒绝（4 scheme）、host 拒绝（14 个私有地址 + 公网接受）、fetchImpl 结构化调用（method/headers/body 透传）、输出截断（全局 cap + caller-smaller cap）、超时 abort
+- `packages/capability-runtime/test/capabilities/ts-exec-partial.test.ts` — 5 cases 覆盖 partial disclosure + 长度 ack、空代码拒、超长代码拒、语法错误 marker、敏感代码不回显
+- `packages/capability-runtime/test/integration/remote-seam-upgrade.test.ts` — 4 cases 覆盖 curl/ts-exec plan 通过 service-binding 透明转发、`tool.call.request` 字段完整性、progress 事件传递
+
+**修改文件（7 个）**:
+- `packages/capability-runtime/src/planner.ts` — 新增 `checkBashNarrow()` + 常量 `CURL_BASH_NARROW_NOTE` / `TS_EXEC_BASH_NARROW_NOTE`；`planFromBashCommand()` 在 alias 改写后追加 narrow 检查
+- `packages/capability-runtime/src/capabilities/network.ts` — 完全重写为 restricted baseline：egress guard + 时间/字节 cap + injectable fetchImpl + 5 个 marker 常量 + `CurlStructuredInput` / `CreateNetworkHandlersOptions` 类型
+- `packages/capability-runtime/src/capabilities/exec.ts` — 重写为 honest partial：syntax validation + length ack + 3 个 marker / cap 常量
+- `packages/capability-runtime/src/fake-bash/unsupported.ts` — `UNSUPPORTED_COMMANDS` 新增 9 条 host interpreter / nested shell 条目
+- `packages/capability-runtime/src/index.ts` — 公开新 symbol：`CURL_BASH_NARROW_NOTE` / `TS_EXEC_BASH_NARROW_NOTE` / `COMMAND_ALIASES`、`CURL_NOT_CONNECTED_NOTE` / `CURL_SCHEME_BLOCKED_NOTE` / `CURL_PRIVATE_ADDRESS_BLOCKED_NOTE` / `CURL_TIMEOUT_NOTE` / `CURL_OUTPUT_TRUNCATED_NOTE` / `DEFAULT_CURL_TIMEOUT_MS` / `DEFAULT_CURL_MAX_BYTES` / `CurlStructuredInput` / `CreateNetworkHandlersOptions`、`TS_EXEC_PARTIAL_NOTE` / `TS_EXEC_SYNTAX_ERROR_NOTE` / `TS_EXEC_MAX_CODE_BYTES`
+- `docs/design/after-skeleton/PX-capability-inventory.md` — `curl`、`ts-exec` 升级到 Partial(ask-gated) E2；Deferred 表把 richer curl flags 重标 Frozen Out + 新增 host interpreter Unsupported 行；Unsupported 表新增 `python/node/...` 与 egress guard 描述；v0.3 版本历史
+- `docs/design/after-skeleton/P7b-minimal-bash-network-and-script.md` — 追加附录 B「A9 执行后状态」+ v0.3 版本历史
+
+### 11.3 测试制作与测试结果
+
+**新增 case 计 44 条**：planner-bash-narrow 11 + network-egress 24 + ts-exec-partial 5 + remote-seam-upgrade 4 = 44 cases。
+
+**Gate 结果（全部绿）**：
+
+| 命令 | 结果 |
+|------|------|
+| `pnpm -r typecheck` | 10 包全绿 |
+| `pnpm -r build` | 10 包全绿 |
+| `pnpm --filter @nano-agent/capability-runtime test` | 199 passed（A8 收尾时为 156，净增 43 cases；44 新 case 与 commands.test 中 1 个 stub-token 调整合并） |
+| `pnpm --filter @nano-agent/nacp-core test` | 231 passed |
+| `pnpm --filter @nano-agent/nacp-session test` | 115 passed |
+| `pnpm --filter @nano-agent/eval-observability test` | 194 passed |
+| `pnpm --filter @nano-agent/hooks test` | 132 passed |
+| `pnpm --filter @nano-agent/llm-wrapper test` | 103 passed |
+| `pnpm --filter @nano-agent/agent-runtime-kernel test` | 123 passed |
+| `pnpm --filter @nano-agent/storage-topology test` | 114 passed |
+| `pnpm --filter @nano-agent/workspace-context-artifacts test` | 163 passed |
+| `pnpm --filter @nano-agent/session-do-runtime test` | 309 passed |
+| `node --test test/*.test.mjs`（root e2e） | 52/52 passed |
+| `npm run test:cross`（root cross-package） | 14/14 passed |
+
+**关键回归证据**：
+- `planner-bash-narrow.test.ts` 对 `-X POST` / `-H` / `--data` / extra token 四种 smuggle 形态全部 assertion，任何 future 放宽 bash argv 都会立即触发；错误文本 regex 检查 `url/method/headers/body/timeoutMs` 五字段名，确保 LLM 可识别 structured path 入口。
+- `network-egress.test.ts` 逐条列出 14 个私有地址并断言 `curl-private-address-blocked` marker，公网 hostname 只有 `example.com/` 落在 accept 列表；scheme 四条 negative case（file/ftp/gopher/data）保证 allow-list 永不被扩张为 deny-list。
+- `ts-exec-partial.test.ts` 的「secret 不回显」case 锁死 A9 Q22 的 privacy 约束 — 任何 future 把 caller 代码 echo 回去的退化都会立即失败。
+- `remote-seam-upgrade.test.ts` 断言 `body.tool_name` 与 `body.tool_input` 字段名与 `packages/capability-runtime/src/tool-call.ts` NACP schema 对齐，future remote tool-runner 接线即可复用。
+
+### 11.4 收口分析 + 下一阶段安排
+
+**收口分析（对照 A9 §6.3 Definition of Done）**:
+- ✅ DoD-1 `curl <url>` 具备真实 restricted baseline 且 richer options 只走 structured path：egress guard + 双 cap + injectable fetchImpl 齐全；bash path 拒绝任何 flag/extra token（11 cases + 24 cases 证据）。
+- ✅ DoD-2 `ts-exec` 的执行 substrate 与当前等级清晰写死：honest partial + syntax validation + 固定 marker；Q22 共识落地，upgrade path 保留为 ServiceBindingTarget。
+- ✅ DoD-3 localhost / Python / package install / host Node 幻觉都被明确拦截：UNSUPPORTED_COMMANDS 追加 9 条 host interpreter；egress guard 涵盖 localhost + RFC1918 + link-local + CGNAT + IPv6 ULA + metadata。
+- ✅ DoD-4 network/script 结果、拒绝、取消可进入 trace/evidence/promotion 语境：remote-seam-upgrade.test 展示 curl/ts-exec 全部走既有 `tool.call.*` 帧；progress/cancel 轨迹与 Phase 6 evidence emitter 兼容。
+- ✅ DoD-5 P7b docs / PX inventory / tests 对 curl/ts-exec 口径一致：P7b v0.3 附录 B + PX v0.3 inventory 升级 + 固定 marker 贯穿 code/tests/docs。
+
+**未触及 / 显式遗留项**:
+- 未在 capability-runtime 外的其他 package 触发任何改动（127 + 194 + 132 + 103 + 123 + 114 + 163 + 309 = 1265 tests 完全不变），与 §1.4 影响目录树声明一致。
+- session-do-runtime 端的 `tool.call.*` 帧没有增减，§4.4 所需「progress/cancel 对齐」已由既有 `service-binding-progress.test.ts` + 新 `remote-seam-upgrade.test.ts` 共同覆盖，未新增 session-do-runtime 集成测试。
+- `BrowserRenderingTarget` 保持 reserved slot 未接入，与 §2.2 [O4] 一致。
+- restricted curl 默认路径仍返回 `not-connected` stub（注入 fetchImpl 才会真 fetch），符合 P7b Q17 的「local-ts 是 reference path、真实 remote path 后补」。
+
+**下一阶段交接（A10）**:
+- A10（`A10-minimal-bash-vcs-and-policy.md`）核心是 Q18（`git` 冻结为 `status/diff/log` 只读子命令）+ Q19（Capability inventory 五级口径 + ask-gated 正交维度）。
+- A9 留下的 `UNSUPPORTED_COMMANDS` 扩张是 A10 taxonomy 的锚点，PX inventory v0.3 已提前采用五级 + 正交 policy 列，A10 只需固化措辞与 risk-blocked 分类。
+- A9 的 `checkBashNarrow()` 与 egress marker 模式是 A10 `git` subcommand guard 的直接参考：同样的 narrow-allow-list 思路可套用在 `git` 子命令分派上（仅接受 `status/diff/log`，其他 subcommand 全部 Deferred）。
+- future remote tool-runner 工作（A9 未触及的 Phase 8+）接线点已在 `ServiceBindingTarget` 确定，不属 A10 范围。
+
+A9 至此关闭，等待用户确认进入 A10。
