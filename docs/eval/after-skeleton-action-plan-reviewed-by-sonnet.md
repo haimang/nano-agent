@@ -3,473 +3,541 @@
 > 评审者: `Claude Sonnet 4.5`
 > 评审时间: `2026-04-18`
 > 评审对象: `docs/action-plan/after-skeleton/A1-A10` (10 份执行计划)
-> 评审依据: `packages/` 代码事实 + `context/` 三套 agent-cli + `docs/design/after-skeleton/` 设计文档 + `docs/design/after-skeleton/PX-QNA.md`
-> 文档状态: `final`
+> 证据来源: 一手代码调查，涵盖以下文件:
+> - `packages/nacp-core/src/envelope.ts` — NacpEnvelope / NacpTrace 真实字段
+> - `packages/nacp-core/src/compat/migrations.ts` — migrations 真实状态
+> - `packages/nacp-session/src/{messages,frame,ingress}.ts` — session profile 真实 message family
+> - `packages/capability-runtime/src/fake-bash/{commands,bridge,unsupported}.ts` — 12 命令注册表 / 拒绝路径真实实现
+> - `packages/capability-runtime/src/capabilities/{filesystem,search,network,exec,vcs}.ts` — 各 capability handler 真实状态
+> - `packages/capability-runtime/src/planner.ts` — bash/structured 双路径真实实现
+> - `packages/capability-runtime/src/targets/service-binding.ts` — ServiceBindingTarget 真实实现
+> - `packages/session-do-runtime/src/{composition,orchestration,traces,turn-ingress,ws-controller,http-controller,checkpoint}.ts` — Session DO 真实状态
+> - `packages/eval-observability/src/{trace-event,placement-log,sinks/do-storage}.ts` — 观测层真实字段
+> - `packages/workspace-context-artifacts/src/{mounts,context-assembler}.ts` — MountRouter / ContextAssembler
+> - `packages/hooks/src/runtimes/{local-ts,service-binding}.ts` — hooks runtime 真实状态
+> - `context/just-bash/src/fs/mountable-fs/mountable-fs.ts` — just-bash 参考 mount 实现
+> - `context/just-bash/src/commands/rg/rg*` — just-bash rg 真实搜索实现
+> - `context/just-bash/src/commands/js-exec/js-exec.ts` — just-bash js-exec 真实执行路径
+> 文档状态: `final (evidence-based)`
 
 ---
 
-## 0. 总体结论
-
-| 维度 | 评分 | 说明 |
-|------|------|------|
-| 设计与代码事实对齐度 | `8.5 / 10` | 绝大多数 action-plan 精确锚定了当前 stub reality；少量出现当前代码尚不存在的文件路径引用 |
-| 与 PX-QNA 决策的一致性 | `9 / 10` | Q1-Q20 的 owner 结论基本被正确吸收；极少数地方存在 interpretation gap |
-| 执行顺序与依赖链合理性 | `8 / 10` | A1→A3→A4→A5→A6→A7 主链清晰；A8/A9/A10 fake bash 三件套的独立性较高，风险可控 |
-| 测试策略完备性 | `7.5 / 10` | 每份都有 unit/integration/cross 三层；但部分 integration test 路径尚未真实存在 |
-| scope 控制与越界风险 | `9 / 10` | out-of-scope 约束明确；runtime-private wire 的回避意识贯穿始终 |
-| **综合就绪度** | **`可启动执行`** | A1 可立即进入 Phase 1；A2 benchmark harness 需先于 A3 启动 |
-
----
-
-## 1. A1 — Contract & Identifier Freeze（Phase 0）
-
-### 1.1 代码事实对齐
-
-**✅ 对齐良好：**
-- `packages/nacp-core/src/envelope.ts` 中的 legacy field 清单（`producer_id / consumer_hint / stamped_by / trace_id / stream_id / span_id / reply_to`）与 A1 描述完全吻合
-- `packages/nacp-core/src/compat/migrations.ts` 仍是 placeholder 的事实被准确引用
-- `packages/nacp-session/src/messages.ts` 的 7 条 frozen message types 数量准确
-
-**⚠️ 需要注意：**
-- A1 把 `stamped_by -> stamped_by_key` 和 `reply_to -> reply_to_message_uuid` 列为 Phase 0 必做项，但代码中这两个字段仍用旧名出现在 `nacp-session/src/frame.ts` 和 `websocket.ts`。这意味着 rename 范围比 A1 目录树里列的更广——frame.ts 行 91 的 `Nacp-session SessionContext` 类型也包含这些字段，**A1 的文件影响清单可能低估了 session layer 的实际改动量**。
-
-**❌ 关键遗漏：**
-- A1 正文中完全没有提到 `TraceEventBase` 缺少 `traceUuid` 字段的问题（这是 A3 的事），但 P0 的 canonical envelope 中 `trace_uuid` 在 `NacpAlertPayload` 里仍是 optional。A1 应当在 Phase 2 的 `alert exception guard` 层面至少预设坐标，否则 A3 的 Phase 1 工作需要改动 A1 刚刚稳定的 core contract，产生回头浪费。
-
-### 1.2 与 PX-QNA 对齐
-
-- **Q1（follow-up family 最小 shape）**: A1 正确把它列为 "Q1: 待确认"，并在 Phase 1 P1-03 中设置了 micro-spec prep 工序，设计合理
-- **Q2（baseline 版本号 1.1.0）**: 正确标为 pending，留在 Phase 5 拍板，不阻塞早期 phase
-- **Q4（provisional baseline 口径）**: A1 把 migration chain 和 provisional baseline 的关系处理正确：先改字段，再在 Phase 5 切 1.1.0
-
-### 1.3 执行风险评估
-
-| 风险 | 级别 | 说明 |
-|------|------|------|
-| `nacp-session` rename 影响面低估 | `HIGH` | frame.ts / ingress.ts / websocket.ts 里的 `SessionContext` 也包含 legacy fields，A1 的估计偏保守 |
-| follow-up family 形状未冻结时 P3-01 编码启动 | `HIGH` | 若 Q1 未在 Phase 1 前收敛，Phase 3 将再次陷入设计讨论 |
-| compat layer 变成长期双语 | `MEDIUM` | migrations.ts 从 placeholder 升级为真实 migration chain 时，compat test 覆盖需要足够严格 |
-
-### 1.4 建议
-
-1. **在 P1-01（Legacy Field Inventory）阶段**，显式用 `rg` 扫描全仓，包括 `session-do-runtime/src/` 路径，确保遗漏的 consumer 一次性发现
-2. **将 `NacpAlertPayload.trace_uuid optional` 的 concern 作为 P2-01 的前置 comment**，即便实际修复属于 A3，也应在 A1 的 core baseline 中留 TODO 锚点
-3. **在 P5-02 baseline cut 之前**，明确 `1.1.0` 还是 `2.0.0`（因为 `reply_to -> reply_to_message_uuid` 是 breaking rename，可能不适合次要版本号）
-
----
-
-## 2. A2 — Trace Substrate Decision Investigation（Phase 1）
-
-### 2.1 代码事实对齐
-
-**✅ 对齐良好：**
-- `packages/eval-observability/src/sinks/do-storage.ts` 的 tenant-scoped JSONL + `_index` 设计被准确描述
-- `packages/session-do-runtime/src/checkpoint.ts` 作为 DO hot state 承载的事实正确
-- `packages/session-do-runtime/wrangler.jsonc` 只有 `SESSION_DO` binding、无 D1 wiring 的事实准确
-
-**⚠️ 需要注意：**
-- A2 的 `Phase 2` 要求新建 `packages/eval-observability/scripts/trace-substrate-benchmark.ts`，但当前 `eval-observability/` 的 `package.json` 里并没有 `scripts/` 执行路径。需要确认 `tsx` 是否在 devDependencies 中，否则 `P2-01` 的 runner skeleton 需要先补依赖。
-- `packages/session-do-runtime/test/integration/checkpoint-roundtrip.test.ts` 在 A2 中被引用为"已存在"，但需要核实该文件是否真实存在。**如果该文件是空 placeholder，P2-03 的 baseline regression guard 会缺乏基础。**
-
-### 2.2 与 PX-QNA 对齐
-
-- **Q5（DO hot anchor 方向）**: A2 正确把"从设计判断升级为证据判断"作为目标
-- **Q20（D1 升格 gate）**: P4-02 中对 D1 升格必须先出 benchmark memo 的处理完全符合 Q20 冻结结论
-- **注意**: A2 没有提及 `wrangler` 本身无法在纯本地环境做真实 DO 延迟测试的问题。benchmark runner 在 vitest 环境中跑出的 p50/p99 是内存级别的，不反映真实 Cloudflare Worker 边缘延迟。这应当在 Phase 3 的 limitation 注释里明确写出。
-
-### 2.3 执行风险评估
-
-| 风险 | 级别 | 说明 |
-|------|------|------|
-| benchmark 结果是 synthetic，无法反映真实 DO 延迟 | `HIGH` | 必须在 artifact 中明确标注"P1 benchmark 是 local simulation；真实 deploy benchmark 属于 P5 scope" |
-| runner 依赖的 `checkpoint-roundtrip.test.ts` 可能是 placeholder | `MEDIUM` | 在 P2-03 之前需要先验证该文件是否真实存在且有真实 assertions |
-| D1 deferred 被误读为"等 benchmark 结果再说" | `LOW` | A2 对 Q20 gate 说明清楚，风险可控 |
-
-### 2.4 建议
-
-1. **在 P1-01 Reality Inventory 阶段**，显式核实 `checkpoint-roundtrip.test.ts` 是否有真实 assertions
-2. **在 Phase 3 benchmark artifact 里**，用一个专门的 `⚠️ Synthetic Limitation` 章节说明：local in-process benchmark 不等于 deploy-shaped latency
-3. **A2 是 A3 的前序**，但 A3 的 Phase 1 实际上只需要 substrate decision 的"方向确认"，不需要等待完整 benchmark artifact。可以允许 A3 Phase 1 并行于 A2 Phase 2 启动
-
----
-
-## 3. A3 — Trace-first Observability Foundation（Phase 2）
-
-### 3.1 代码事实对齐
-
-**✅ 对齐良好：**
-- `packages/eval-observability/src/trace-event.ts` 缺少 `traceUuid` 字段的诊断完全准确
-- `packages/session-do-runtime/src/traces.ts` 中 `turn.started / turn.completed` 与 current session reality 漂移的问题被精确捕捉
-- `packages/nacp-core/src/observability/envelope.ts` 中 `trace_uuid` 仍是 optional 的现实被正确指出
-
-**⚠️ 需要注意（关键）：**
-- A3 Phase 1 P1-02 要求给 `TraceEventBase` 新增 `traceUuid`，但 **A1 才是管 `nacp-core/src/observability/envelope.ts` 的 owner**。A3 的 Phase 1 P1-03（Alert Exception Guard）也修改了同一文件。这产生了一个 **双重所有权问题**：A1 的 P2-01 修改了 `envelope.ts` 的 canonical fields，A3 的 P1-02 和 P1-03 也修改了同文件。如果 A1 和 A3 的执行不严格串行，会产生 merge conflict 或回归。
-- A3 的 Phase 4 工作量（llm/hook/tool/compact/storage/context seam instrumentation sweep）体量极大，4-01 与 4-02 两条工作项对 5 个邻接包的影响范围描述相对模糊，比其他 phase 的工作项颗粒度明显粗糙。
-
-**❌ 关键遗漏：**
-- A3 在 Phase 3 中涉及 `packages/session-do-runtime/src/turn-ingress.ts`，但这个文件同时也出现在 A4（session edge closure）的改动范围里。**A3 Phase 3 P3-03 与 A4 Phase 1 P1-02 在同一文件上存在 overlapping scope**，需要明确谁先、谁后、谁为 master。
-
-### 3.2 与 PX-QNA 对齐
-
-- **Q6（TraceEventBase 必须显式携带 traceUuid）**: A3 P1-02 直接对齐，设计正确
-- **Q7（三层 conceptual layering）**: Phase 2 P2-02 的 Layer & Promotion Sync 工作正确映射到 Anchor/Durable/Diagnostic 三层
-- **注意**: Q6 的 owner 决策要求"Phase 2 成立的前提"，但当前 A1 还没有完成，`envelope.ts` 还没有新 trace_uuid canonical field。这意味着 **A3 的 Phase 1 实际上对 A1 的完成有隐性依赖**，而 A3 的前序只写了 `A1`, `A2`，没有明确"A1 Phase 2 必须先完成"这个子依赖。
-
-### 3.3 执行风险评估
-
-| 风险 | 级别 | 说明 |
-|------|------|------|
-| A3 与 A1 在 `envelope.ts` 上的双重所有权 | `HIGH` | 必须在 A1 Phase 2 完成后再启动 A3 Phase 1 |
-| A3 Phase 3 与 A4 Phase 1 的 `turn-ingress.ts` overlap | `HIGH` | 需要明确排序：A3 只做 trace wiring，A4 做 ingress pipeline 替换 |
-| Phase 4 instrumentation sweep 工作量被低估 | `MEDIUM` | 5 个邻接包的 trace seam 补充，难度高于其他 phase，建议在执行前做一轮更细的 inventory |
-| recovery 路径过重会把 A3 拉成 analytics project | `MEDIUM` | Phase 3 需要严格保持"至少一条恢复路径 + 至少一条显式失败路径"的下限，不要扩大 |
-
-### 3.4 建议
-
-1. **明确排序依赖**：在 A3 元信息里补充"A1 Phase 2 已完成"作为硬前置，而不是只写"上游前序: A1"
-2. **解决 turn-ingress.ts 双重编辑问题**：在 A3 Phase 3 P3-03 里明确"只做 trace law enforcement，不改 ingress pipeline 结构"，确保 A4 才是 ingress 结构的 master
-3. **Phase 4 instrumentation sweep 细化**：启动 Phase 4 前，用 `rg` 先扫各邻接包的 emit seam，比 A3 当前的描述更具体
-
----
-
-## 4. A4 — Session Edge Closure（Phase 3）
-
-### 4.1 代码事实对齐
-
-**✅ 对齐良好：**
-- `WsController` 和 `HttpController` 仍是 stub 的现实被准确描述
-- `packages/nacp-session/src/ingress.ts` 已有 `normalizeClientFrame()` 的事实正确
-- `turn-ingress.ts` 包含 `future-prompt-family` placeholder note 的描述与实际代码一致
-- DO 里直接 `JSON.parse()` 后按 `message_type` 分支的问题被准确识别
-
-**⚠️ 需要注意：**
-- A4 Phase 1 P1-01 要求用 P0 widened session truth 替换 `future-prompt-family` placeholder，但这依赖 A1 Phase 3（Session Freeze Completion）的完成。**A4 的上游前序里只写了 `A1`, `A3`，没有明确"A1 Phase 3 必须完成"**，执行会面临"widened session family 还没落地"就开始 A4 Phase 1 的风险。
-- A4 Phase 4 P4-02（Health/Alarm/Recovery Closure）的收口标准"heartbeat/ack/backpressure 进入 caller-managed enforcement reality"，这个标准本身没有量化——什么叫"进入"？需要在执行前确认一个可验证的最小 milestone。
-
-### 4.2 与 PX-QNA 对齐
-
-- **Q8（formal follow-up family 必须进入 P0 contract freeze）**: A4 正确地只消费 upstream frozen truth，不在 runtime 私造
-- A4 的 no-owner-question 判断合理：Phase 3 确实不需要新的 owner 决策
-
-### 4.3 执行风险评估
-
-| 风险 | 级别 | 说明 |
-|------|------|------|
-| P0 widened family 在 A4 启动时可能尚未落地 | `HIGH` | A4 Phase 1 的实际前置条件是"A1 Phase 3 已完成"，应明确写入 |
-| WS helper 被半装配 | `HIGH` | Phase 2 若只装配部分 helper，会产生"DO logic 一半，helper 一半"的新型漂移 |
-| HTTP fallback 变成第二套协议 | `MEDIUM` | Phase 3 的 shared actor constraint 需要集成测试守住，而非仅依赖 design 表述 |
-
-### 4.4 建议
-
-1. **在 A4 头部的依赖说明里补充**："A1 Phase 3 Session Freeze Completion 已完成" 作为硬前置
-2. **Phase 4 P4-02 的收口标准修订**：改为"heartbeat timeout → alarm.cancel() 已被 integration test 覆盖一次"，使其可验证
-
----
-
-## 5. A5 — External Seam Closure（Phase 4）
-
-### 5.1 代码事实对齐
-
-**✅ 对齐良好：**
-- `packages/session-do-runtime/src/composition.ts` 默认返回 `undefined` handle bag 的问题被精确描述
-- `packages/hooks/src/runtimes/service-binding.ts` 仍是直接抛错 stub 的事实正确
-- `packages/capability-runtime/src/targets/service-binding.ts` 已有 request/progress/cancel/response seam 的现实准确
-
-**⚠️ 需要注意：**
-- A5 Phase 3 要新建 `test/fixtures/external-seams/fake-provider-worker.ts`，这是一个 root 级别的测试 fixture，但当前仓内的目录结构在 root `test/` 下并没有 `fixtures/external-seams/` 子目录。**需要确认这个目录是新建还是与现有 `test/e2e/fixtures/` 合并。**
-- A5 Phase 4 P4-01 的描述"remote delegate 最低必带 trace_uuid / tenant / request identity"——但 `trace_uuid` 在 A1 结束前还不是 canonical field，这里存在同样的前置依赖问题。
-
-### 5.2 与 PX-QNA 对齐
-
-- **Q9（capability/hook/fake provider 三条主 seam）**: 完全一致
-- **Q10（P5 是 verification gate，不并行）**: A5 正确处理，P4 只到 handoff pack，不抢跑 L1/L2
-- **Q12（gpt-4.1-nano golden path）**: A5 Phase 3 的 fake provider 正确地与 real provider 分层
-
-### 5.3 执行风险评估
-
-| 风险 | 级别 | 说明 |
-|------|------|------|
-| composition no-op 改造后与 session edge 的集成测试缺失 | `HIGH` | A4 与 A5 的集成点（session DO 调用 remote hook/capability）需要有跨包 integration test |
-| fake provider worker shape 与 OpenAI-compatible drift | `MEDIUM` | 需要让 fake provider fixture 直接 import openai-chat adapter 的 response shape，而不是手写 mirror |
-| startup queue / early event 丢失 | `MEDIUM` | P4-03 的处理是正确的，但需要有真实 failing case 来驱动这个 contract，否则很容易只停留在文字描述 |
-
-### 5.4 建议
-
-1. **在 P3-01 fake-provider-worker.ts 里**，明确让其 response shape go through `openai-chat.ts` 的 `normalizeStreamEvent`，而不是 hardcode，确保两者不分叉
-2. **增加 A4→A5 的集成 gate**：至少一条 `session→hook→response` 的真实 composition 路径需要在 A5 Phase 2 P2-03 的收口标准里体现
-
----
-
-## 6. A6 — Deployment Dry-Run and Real Boundary Verification（Phase 5）
-
-### 6.1 代码事实对齐
-
-**✅ 对齐良好：**
-- 仓内只有一份 `wrangler.jsonc` 只绑定 `SESSION_DO` 的事实准确
-- root `test/e2e/` 已有 14 个 fake-but-faithful 场景的现实准确
-- `WsController / HttpController` 仍是 stub（在 A4 完成前）的依赖关系被正确标注
-
-**⚠️ 需要注意（关键）：**
-- A6 Phase 2 P2-01 要扩展 wrangler.jsonc，但当前 `wrangler.jsonc` 里的 binding 格式和 worker 的期望是否可以无缝热扩还需要验证。更重要的是，**L1 `wrangler dev --remote` 要求用户有 Cloudflare 账户和有效 API key**，而这在 CI 环境不一定可用。A6 应该在 Phase 1 里明确说明 L1 smoke 是"owner-local only"而不是"CI pipeline 自动运行"。
-- A6 对 `test/e2e/` 里 14 个场景的 L0/L1/L2 映射（P1-03 Smoke Matrix Inventory）非常重要，但这一工作项的描述相当简略，实际操作中需要逐一评估每个 e2e 场景是否依赖 in-process globals（如 in-memory fake storage）而无法直接用于 L1。
-
-### 6.2 与 PX-QNA 对齐
-
-- **Q10（P5 是 verification gate）**: A6 的整体定位正确
-- **Q11（L1 = wrangler dev --remote，L2 = wrangler deploy + smoke）**: A6 完整吸收
-- **Q12（gpt-4.1-nano golden path）**: A6 Phase 4 P4-01 正确处理
-
-### 6.3 执行风险评估
-
-| 风险 | 级别 | 说明 |
-|------|------|------|
-| WsController / HttpController 残留 stub 直接阻塞 L1 | `HIGH` | A6 正确识别了这个风险，但 gate 条件需要明确：A4 Phase 3 必须先完成 |
-| L1 环境依赖（Cloudflare 账户、secrets）无文档记录 | `HIGH` | P1-02 Profile Matrix 必须包含一份 owner-local environment setup checklist |
-| 现有 e2e 场景中的 in-process global 依赖 | `MEDIUM` | 建议在 P1-03 inventory 时就标注"此场景需要 deploy-shaped rewrite"的 flag |
-| real provider smoke 成本失控 | `LOW` | Q12 明确是单 golden path，A6 遵守了这个约束 |
-
-### 6.4 建议
-
-1. **在 A6 Phase 1 P1-02 的收口标准里增加**："存在一份可执行的 `verification/ENVIRONMENT.md`，记录 L1/L2 所需的 Wrangler login 态、secrets 注入方式和 owner-local assumptions"
-2. **P1-03 Smoke Matrix Inventory 表格化**：为每条现有 e2e 场景标注 L0/L1/L2 可用性和改写成本评级
-
----
-
-## 7. A7 — Storage and Context Evidence Closure（Phase 6）
-
-### 7.1 代码事实对齐
-
-**✅ 对齐良好：**
-- `StoragePlacementLog` 在 `src/` 下基本只是 vocabulary，未被 runtime 消费的现实准确
-- `ContextAssembler / CompactBoundaryManager / WorkspaceSnapshotBuilder` 在 `src/` 下基本只作为导出 seam 存在、未接入主路径的诊断准确
-- `packages/eval-observability/src/sinks/do-storage.ts` 已能写入 tenant-scoped JSONL timeline 的叙述正确
-
-**⚠️ 需要注意：**
-- A7 Phase 3 P3-01 要记录 `dropped_optional_layers / drop_reason / required_layer_budget_violation`，这些字段在当前 `ContextAssembler` 的实现中并不存在（只有 `assembled / totalTokens / truncated / orderApplied`）。**A7 这里实际上是在给 ContextAssembler 补充新的 evidence fields，而不只是"接线"**——这个工作量应比 A7 当前描述的更重，且需要先修改 workspace-context-artifacts 的 type surface。
-- A7 的上游前序包含 `A2`，但 A7 Phase 2 P2-03 的"real storage spot-check"实际上依赖的是 A6（L2 real-boundary smoke），而不只是 A2 的 benchmark artifact。应将"A6 Phase 4 已完成"列为 A7 Phase 4 的前置条件。
-
-### 7.2 与 PX-QNA 对齐
-
-- **Q5（DO hot anchor + R2 + D1 deferred）**: 完全遵从
-- **Q13（四档 calibration verdict）**: A7 Phase 1 P1-03 正确把它转成执行 contract
-- **Q14（P6 verdict 与 PX maturity 永久分离）**: A7 全程都在强调这条分离，设计合理
-- **Q20（D1 升格 gate）**: A7 Sec 7.1 中明确 "D1 进入热路径 out-of-scope"，正确遵从
-
-### 7.3 执行风险评估
-
-| 风险 | 级别 | 说明 |
-|------|------|------|
-| ContextAssembler evidence fields 需要新建而非只接线 | `HIGH` | 这意味着 A7 Phase 3 P3-01 是一个 API 扩展，而非简单 instrumentation |
-| 五类 evidence owner 分工在实际执行时会模糊 | `HIGH` | "谁来 emit"在 session/storage/workspace 交叉时容易产生争议 |
-| evidence-only 观察无法支撑量化决策 | `MEDIUM` | A7 的 calibration verdict 更接近定性判断，对于真正的 storage threshold 决策可能不够精确 |
-
-### 7.4 建议
-
-1. **在 A7 Phase 3 P3-01 里明确区分**：哪些字段是"接线已有 seam"，哪些是"新增 evidence API"
-2. **在 A7 头部的依赖说明里补充**："A6 Phase 4 L2 real-boundary smoke 至少已有一次执行记录"
-3. **evidence 区分 runtime vs synthetic 来源**：在 Phase 4 P4-02 real spot-check 里，明确 evidence 记录要注明其来源（wrangler L2 vs synthetic E2E）
-
----
-
-## 8. A8 — Minimal Bash Search and Workspace（Phase 7a）
-
-### 8.1 代码事实对齐
-
-**✅ 对齐良好：**
-- `registerMinimalCommands()` 已把 12 个命令固定进 registry 的事实准确
-- `rg` 当前仍只是 TS scan stub 的诊断正确
-- `grep/egrep/fgrep` 还没有任何兼容 alias 的认定准确
-- `MountRouter` 已有 `/_platform/` reserved namespace regression guard 的引用正确
-- `test/e2e/e2e-07-workspace-fileops.test.mjs` 已证明 `ls/cat/write` 可通过 workspace mount 跑通的现实准确
-
-**⚠️ 需要注意：**
-- A8 Phase 3 P3-01 要把"degraded search stub"升级为"在 namespace 范围内扫描文本"，但 Worker/V8 isolate 环境中做文本扫描的实现需要纯 TS 实现，不能使用 ripgrep 二进制。**A8 没有明确说明 `rg` 的 TS 实现策略**（是 regex sweep + inline match，还是借助什么 Worker-native search primitive）。这个实现细节直接影响 P3-01 的工作量估计。
-- `mkdir` 的 partial closure（P2-02）被描述为"要么补最小 backend primitive，要么保留 compatibility ack 但明确 partial"，这是一个二选一决策，但 A8 没有给出偏向哪侧的建议。这个决策应在 Phase 1 P1-02 的 disclosure sync 阶段同时收敛，不应留到 Phase 2 才做。
-
-### 8.2 与 PX-QNA 对齐
-
-- **Q15（`rg` 为 canonical search command）**: A8 完全遵从
-- **Q16（`grep -> rg` 兼容 alias 是优先回补项）**: Phase 3 P3-02 正确实现，且限制为"最窄兼容"
-
-### 8.3 执行风险评估
-
-| 风险 | 级别 | 说明 |
-|------|------|------|
-| `rg` 的 TS 实现策略未定义 | `HIGH` | 在 Worker 环境中实现文本搜索的技术路径必须在 Phase 1 明确，否则 Phase 3 会出现重大返工 |
-| `mkdir` partial 决策拖到 Phase 2 | `MEDIUM` | 建议在 Phase 1 P1-02 就给出 `mkdir` 的 capability grade 决定，避免它成为 Phase 2 隐形的 design gate |
-| search 输出 bounded strategy 与 promotion seam 的接口未定义 | `MEDIUM` | P3-03 的 bounded search output 需要先确认 promotion/ref 路径已由 A7 建立 |
-
-### 8.4 建议
-
-1. **在 A8 Phase 1 P1-01 里增加一条工作项**：评估并冻结 `rg` 在 V8/Worker 环境中的 TS 实现策略（regex sweep vs 其他方法）
-2. **将 `mkdir` partial/supported 决策提前到 Phase 1 P1-02**
-
----
-
-## 9. A9 — Minimal Bash Network and Script（Phase 7b）
-
-### 9.1 代码事实对齐
-
-**✅ 对齐良好：**
-- `capabilities/network.ts` 只是 URL 校验 + stub 文案的诊断准确
-- `capabilities/exec.ts` 只是 code length acknowledgement + stub 的事实正确
-- `planner.ts` 已把 bash path 收窄为 `curl <url>` 和 `ts-exec <inline code>` 的现实准确
-- Q17 冻结"richer curl 选项只走 structured path"被正确吸收
-
-**⚠️ 需要注意（关键）：**
-- A9 Phase 3 P3-01（`ts-exec` Substrate Decision）是 **整个 after-skeleton action-plan 集里最大的未解决技术风险**。A9 把"Worker-native V8 isolate 内运行 TypeScript inline code"列为候选路径，但这在 Cloudflare Workers 环境里面临以下硬约束：
-  - Workers 不能动态 `eval()` TypeScript（需要先编译）
-  - 无法 `import()` 动态 URL（CSP 限制）
-  - `Function()` constructor 存在但无法访问宿主 FS 或任意 Node API
-  - remote sandbox via service binding 是唯一真正安全的路径，但需要一个独立的 tool-runner Worker
-  
-  **A9 把这个选择作为"substrate decision"留在 Phase 3 P3-01，但正确的处理应该是在 A9 启动前就完成 substrate decision**，否则 Phase 1 和 Phase 2 的所有 contract 冻结工作都可能因为 Phase 3 的 substrate 决定而返工。
-
-- A9 Phase 4 P4-01（Service-Binding Upgrade Path）引用了 `ServiceBindingTarget` 作为 remote tool-runner 的升级口，但 `ServiceBindingTarget` 的 progress/cancel/response seam 只在 `capability-runtime` 包内定义，真正的 remote tool-runner Worker 还不存在。这个依赖链应当被明确说明。
-
-### 9.2 与 PX-QNA 对齐
-
-- **Q17（richer curl 只走 structured path）**: 完全遵从，A9 Phase 1 P1-01 正确冻结了边界
-
-### 9.3 执行风险评估
-
-| 风险 | 级别 | 说明 |
-|------|------|------|
-| `ts-exec` substrate 决策被推迟到 Phase 3 | `CRITICAL` | 应在 A9 启动时就明确：v1 是否接受"诚实 partial（ask-gated but no real execution）"的路线 |
-| V8 isolate inline code 执行的 CSP/sandbox 约束 | `CRITICAL` | 在 Cloudflare Workers 环境中实现 `ts-exec` 几乎必须走 remote sandbox worker，这会给 A5/A6 增加额外的 worker fixture |
-| restricted `curl` 在 Workers 中的 fetch API 行为 | `MEDIUM` | Workers 的 `fetch()` 对私有网络的处理和普通 Node fetch 不同，需要在 Phase 2 验证实际行为 |
-
-### 9.4 建议
-
-1. **在 A9 执行前，先做一个 `ts-exec` substrate pre-decision**：明确 v1 是"local in-process sandbox（Function constructor）"、"remote tool-runner worker"还是"诚实 partial（不执行，只记录意图）"。这个决策应当由 owner 在 A9 Phase 1 之前确认，而不是在 Phase 3 才"决定"
-2. **如果决定走 remote tool-runner worker 路线**，应在 A5 的 fake worker fixture pack 里就预留一个 `fake-toolrunner-worker.ts`
-3. **在 A9 Phase 1 P1-02 的 unsupported freeze 里**，明确把当前阶段的 `ts-exec` 列为 `Partial (ask-gated, no real execution)` 直到 substrate 决策完成
-
----
-
-## 10. A10 — Minimal Bash VCS and Policy（Phase 7c）
-
-### 10.1 代码事实对齐
-
-**✅ 对齐良好：**
-- `capabilities/vcs.ts` 已把 v1 git subset 明确为 `status/diff/log` 的事实准确
-- `fake-bash/unsupported.ts` 已把 `UNSUPPORTED_COMMANDS` 与 `OOM_RISK_COMMANDS` 分开维护的现实正确
-- `FakeBashBridge` 已有 hard-fail contract（unsupported/unknown/oom-risk/no-executor）的具体描述准确
-- Q18（`git` v1 只保留 `status/diff/log`）和 Q19（五级 inventory 口径）被正确吸收
-
-**⚠️ 需要注意：**
-- A10 Phase 2 P2-01（Virtual Git Handler Baseline）要求 `git status/diff/log` 在"workspace truth 上有 deterministic 输出"，但当前 `WorkspaceNamespace` 并不维护 VCS metadata（staged changes、commit history）。**Virtual git 的 output 需要从哪里来？** 除非 session 里有真实的 git 历史跟踪，否则 `git status` / `git log` 只能是 fabricated deterministic output（比如"no changes"、"empty history"），这需要在 A10 Phase 1 里提前说明，避免 Phase 2 实现时产生歧义。
-- A10 Phase 4 P4-01（Inventory Drift Guard）要建立"新命令必须同步更新 inventory"的守卫，但具体的守卫形式（TS 类型 narrowing、测试 fixture、还是 linting rule）没有说明。
-
-### 10.2 与 PX-QNA 对齐
-
-- **Q18（git v1 = status/diff/log only）**: 完全遵从
-- **Q19（五级 inventory + ask-gated 正交）**: A10 Phase 1 P1-02 正确处理，且把 ask-gated 作为显式维度进入 inventory
-
-### 10.3 执行风险评估
-
-| 风险 | 级别 | 说明 |
-|------|------|------|
-| virtual git output 的数据来源未定义 | `HIGH` | `git status/diff/log` 的 deterministic output 需要一个清晰的"数据模型"，不能只是空 stub |
-| inventory drift guard 的实现形式未定 | `MEDIUM` | 建议明确为"TS const `SUPPORTED_COMMANDS` 数组 = registry 唯一真相，tests 断言两者一致" |
-
-### 10.4 建议
-
-1. **在 A10 Phase 1 P1-01（Git Subset Freeze）里明确**：v1 `git status` 返回"workspace-scoped change log"（来自已有的 workspace namespace diff），还是简单返回"no git repo detected"。这个 design decision 决定了 Phase 2 P2-01 的实现路径
-2. **drift guard 形式建议**：使用 TypeScript `const MINIMAL_COMMANDS = [...] as const` + `type MinimalCommand = typeof MINIMAL_COMMANDS[number]`，让 registry 和 inventory 共享同一类型定义，使 "inventory drift" 变成编译错误而非运行时测试
-
----
-
-## 11. 跨文件综合评估
-
-### 11.1 全局依赖链
-
-```
-A1 (P0-Phase 2) 完成
-    ↓
-A3 (P2-Phase 1) 启动 [BlockedBy: A1 envelope.ts 稳定]
-    ↓
-A3 (P2-Phase 3) 完成
-    ↓
-A4 (P3-Phase 1) 启动 [BlockedBy: A1 Phase 3 session freeze + A3 trace carrier]
-    ↓
-A4 (P3) 完成
-    ↓
-A5 (P4) 启动 [BlockedBy: A4 session edge baseline]
-    ↓
-A5 (P4) 完成
-    ↓
-A6 (P5) 启动 [BlockedBy: A5 external seams + A4 session edge]
-    ↓  ↓
-A2 (P1 benchmark) 可并行于 A1-A3
-A7 (P6) 依赖 A6 Phase 4 L2 smoke 至少一次
-A8/A9/A10 依赖 A7 的 evidence closure，但可以较早并行启动
+## 0. 代码事实速览 — 真实 Reality Baseline
+
+在评审 A1-A10 之前，先记录关键代码事实，后续评审全部基于此。
+
+### 0.1 `NacpEnvelope` 真实字段
+
+**在 `packages/nacp-core/src/envelope.ts`** 中，实际存在：
+
+| Section | 字段名（snake_case wire format） | 类型 | 备注 |
+|---------|----------------------------------|------|------|
+| `header` | `schema_version`, `message_uuid`, `message_type`, `delivery_kind`, `sent_at`, `producer_role`, `producer_id`, `consumer_hint`, `priority` | 各种 | `producer_id` 已是 `NacpProducerIdSchema` 格式 |
+| `authority` | `team_uuid`, `user_uuid`, `plan_level`, `membership_level`, `stamped_by`, `stamped_at` | various | **关键**: 字段名是 `stamped_by`（`NacpProducerIdSchema` 类型），不是 legacy string |
+| `trace` | `trace_id`, `session_uuid`, `parent_message_uuid`, `stream_id`, `stream_seq`, `span_id` | various | **重要**: 现用名是 `trace_id`（UUID string），**不是 `trace_uuid`** |
+| `control` | `reply_to`, `request_uuid`, `deadline_ms`, `timeout_ms`, `idempotency_key`, `capability_scope`, `retry_context`, `tenant_delegation`, `quota_hint`, `audience`, `redaction_hint` | various | `reply_to` 是 UUID string |
+
+**A1 action-plan 描述的 "legacy fields" rename** (如 `producer_id → producer_key`, `stamped_by → stamped_by_key`, `reply_to → reply_to_message_uuid`) 在当前代码中**尚未发生**。这些字段名仍是原始名称，说明 A1 的 Phase 0/1 rename 工作**完全尚未执行**。
+
+### 0.2 `eval-observability/TraceEventBase` 真实字段
+
+**在 `packages/eval-observability/src/trace-event.ts`** 中，`TraceEventBase` 有：
+```typescript
+interface TraceEventBase {
+  readonly eventKind: string;
+  readonly timestamp: string;
+  readonly sessionUuid: string;      // camelCase
+  readonly teamUuid: string;         // camelCase
+  readonly turnUuid?: string;        // camelCase, optional
+  readonly stepIndex?: number;
+  readonly durationMs?: number;
+  readonly audience: EventAudience;
+  readonly layer: TraceLayer;
+  readonly error?: { code, message };
+}
 ```
 
-### 11.2 最紧迫的 3 个全局 Blocker
+**关键发现**：`TraceEventBase` 中**确实没有 `traceUuid` 字段**。A3 关于此问题的诊断正确。但更精确的是：`NacpTraceSchema` 里用 `trace_id`（UUID），而 `TraceEventBase` 里有 `sessionUuid` 但没有 `traceUuid`。这两者是分离设计——`trace_id` 是 envelope 层的，`TraceEventBase` 是 eval 层的 in-process type。两层之间的 carrier 字段缺失才是真正的 A3 问题。
 
-| # | Blocker | 影响范围 | 建议行动 |
-|---|---------|----------|----------|
-| 1 | **`trace_uuid` 从 optional 升级为 required 的 A1/A3 双重所有权** | A1, A3, A4, A5 全链路 | 明确 A1 Phase 2 必须先于 A3 Phase 1 完成，且 alert exception 的 optional 语义在 A1 里做最小预坐标 |
-| 2 | **`ts-exec` substrate 决策未在 A9 启动前明确** | A9, A5 fake worker, A6 L1/L2 | 由 owner 在 A9 Phase 1 之前明确 v1 `ts-exec` 的执行路线 |
-| 3 | **A4 Phase 1 依赖 A1 Phase 3 完成，但依赖链没有写清** | A4, A5, A6 | 在 A4 文档里补充明确的 phase-level 前置条件 |
+### 0.3 `session-do-runtime` 真实状态
 
-### 11.3 命名约定一致性
+- **`traces.ts`**: `buildTurnStartTrace()` / `buildTurnEndTrace()` 返回 `turn.started` / `turn.completed` 这两个 eventKind，但 `orchestration.ts` 里 `startTurn()` 中 `emitTrace()` 调用发出的是 `turn.begin`（行 161-165），`endSession()` 发出 `session.ended`。这说明 traces.ts 的 event kind 已**与 orchestration 实际 workflow 不同步**，A3 关于"trace event kind 与 session reality 漂移"的诊断正确。
+- **`composition.ts`**: `createDefaultCompositionFactory()` 返回全部 `undefined` 的 subsystem handles，这直接验证了 A5 关于"composition.ts 默认返回 no-op stubs"的描述。
+- **`ws-controller.ts`**: `WsController.handleMessage()` 是空 body stub，`handleClose()` 也是 stub。A4 关于"WsController 是 stub"的描述完全准确。
+- **`http-controller.ts`**: HTTP controller 有 action 路由但每个 handler 都返回硬编码的 `{ok: true}` stub。
+- **`turn-ingress.ts`**: `TurnIngressKind` 有 `"future-prompt-family"` 占位，`extractTurnInput()` 只处理 `session.start`。A4 描述准确。
+- **`orchestration.ts`**: `SessionOrchestrator` 已有实际 step loop 实现，但所有的 `OrchestrationDeps` 仍依赖注入。deps 的真实连线尚未完成。
 
-所有 A1-A10 都在 out-of-scope 中明确不进行 camelCase/snake_case 的形式化规定（这属于 linting 层）。这是合理的——naming convention 的统一应当在 A1 Phase 4 P4-03（Review Blocker & Checklist Sync）中以 checklist 形式明确，而不是每份 action-plan 各自声明。**建议在 A1 Phase 4 P4-03 明确约定：所有公共 TypeScript interface 字段使用 camelCase，而所有 protocol wire format 字段使用 snake_case，并在 checklist 里固定这条规则。**
+### 0.4 Fake Bash 真实状态
 
-### 11.4 SMCP / Safe Protocol 遵从程度
+**`commands.ts`**: 共注册 **12 个命令** (pwd/ls/cat/write/mkdir/rm/mv/cp/rg/curl/ts-exec/git)，与 action-plan 描述完全一致。所有命令 `executionTarget: "local-ts"`。
 
-所有 10 份 action-plan 对"不私造 protocol"、"upstream truth 优先"、"local reference path 保留"的约束都有明确的 out-of-scope 声明。A9 的 `curl` restricted path 和 `ts-exec` worker-native constraint 也展现了对 Worker 安全边界的尊重。整体的 SMCP 遵从度高。
+**`bridge.ts`**: `FakeBashBridge.execute()` 实现了完整的拒绝链：
+- empty → `"empty-command"` errorResult
+- `isUnsupported()` → `"unsupported-command"`
+- `isOomRisk()` → `"oom-risk-blocked"`
+- no planner result → `"unknown-command"`
+- no executor → `"no-executor"`
 
-### 11.5 Identifier Law 执行情况
+未接 executor 会明确 error，不 fabricate success。A10 关于 `FakeBashBridge` 的描述精确。
 
-A1 是 Identifier Law 的 owner，其余 9 份 action-plan 基本上都在"使用 renamed fields（`trace_uuid`, `producer_key` 等）"的前提下描述后续工作，体现了对 A1 的依赖意识。唯一需要注意的是 **A3 Phase 2 P2-03 引用了新 field name `traceUuid`**（camelCase），而 A1 在 core 层使用的是 `trace_uuid`（snake_case）。需要确认 TypeScript interface（camelCase `traceUuid`）和 wire format（snake_case `trace_uuid`）的映射在哪个层发生，并在 A1/A3 里统一说明。
+**Capability Handlers 真实状态**：
+
+| 命令 | 真实状态 | 文件 |
+|------|---------|------|
+| `rg` | **纯 stub**：返回固定字符串 `[rg] searching for ... (degraded: TS string scan)`，只验证 regex 合法性，不扫描任何内容 | `search.ts` |
+| `curl` | **纯 stub**：URL 基础校验后返回 `[curl] fetching: ... (stub: network access not yet connected)` | `network.ts` |
+| `ts-exec` | **纯 stub**：返回 `[ts-exec] executed N chars (stub: sandboxed execution not yet connected)` | `exec.ts` |
+| `git` | **纯 stub**：`SUPPORTED_SUBCOMMANDS = {status,diff,log}` 有子命令校验，但返回 `[git status] (stub: VCS access not yet connected)` | `vcs.ts` |
+| `ls/cat/write/rm/mv/cp` | **有条件真实**：接受 `namespace` 注入时通过 `WorkspaceBackend` 执行；无 namespace 时返回 stub text | `filesystem.ts` |
+| `mkdir` | **永久 stub**：即使 namespace 存在，也只返回 `[mkdir] created: ${resolved}`，后端无 mkdir primitive | `filesystem.ts` L109-118 |
+
+**关键发现**：`filesytem.ts` 中 `mkdir` handler 没有调用 `workspace.mkdir()`，永远只返回 string，这与 A8 描述的"mkdir 是 compatibility ack、backend 无 directory primitive" 完全吻合。
+
+### 0.5 `planner.ts` 真实状态
+
+`planFromBashCommand()` 实现了 bash → structured input 的映射，包括：
+- `rg pattern [path]` → `{ pattern, path }`
+- `curl <url>` → `{ url }`
+- `ts-exec <code>` → `{ code: args.join(" ") }`
+- `git <subcommand> [...args]` → `{ subcommand, args }`
+
+**发现**：planner 中没有 `grep` → `rg` 的任何 alias 映射。A8 所说"grep/egrep/fgrep 还没有任何兼容 alias"是**完全准确的**。
+
+### 0.6 `context/just-bash` 参考实现关键差异
+
+**MountableFs (`mountable-fs.ts`)**：
+- 实现了完整的 `IFileSystem` 接口（`mkdir`, `readdir`, `rm`, `cp`, `mv`, `symlink`, `realpath` 等）
+- `mount()` 方法禁止在 root `/` 挂载，禁止嵌套 mount
+- `mkdir` 正确地路由到被 mount 的 backend
+
+**当前 `MountRouter` (`packages/workspace-context-artifacts/src/mounts.ts`)**：
+- 实现了 `routePath()` + `/_platform/` reserved namespace guard
+- **但不持有完整的 `IFileSystem` 接口**：只返回 `RouteResult`（带 `WorkspaceBackend` 引用），实际文件操作由 `filesystem.ts` 的 handlers 负责
+- 这与 just-bash 的 MountableFs 是不同的设计层次：just-bash 是完整 FS 抽象，nano-agent 的 MountRouter 只是路由层
+
+**rg (`rg.ts`, `rg-search.ts`)**：
+- just-bash 的 `rg` 是**完整的 TS 文本搜索实现**：`rg-search.ts` 实现了递归目录遍历、gitignore 支持、glob 过滤、context lines、多种输出格式
+- 执行路径：`rg.ts::execute()` → `rg-parser.ts::parseArgs()` → `rg-search.ts::executeSearch()` → `collectFiles()` → `walkDirectory()` → 对每个文件调用 `ctx.fs.readFile()` 逐行 regex 匹配
+- **完全不依赖任何二进制**，is pure TS operating on `ctx.fs`
+
+**js-exec (`js-exec.ts`)**：
+- just-bash 的 `js-exec` 使用 **QuickJS WASM** via `node:worker_threads`，是一个真正的 JS 沙箱
+- 通过 `SharedArrayBuffer bridge` 让 JS worker 和宿主 FS 通信
+- 明确依赖 `import { Worker } from "node:worker_threads"` — **这在 Cloudflare Workers 里不可用**
+
+### 0.7 `nacp-session` 真实 message family
+
+`packages/nacp-session/src/messages.ts` 中，SESSION_MESSAGE_TYPES（不含 turn family，只有 session-level）：
+```
+session.start / session.resume / session.cancel / session.end /
+session.stream.event / session.stream.ack / session.heartbeat
+```
+共 **7 种 session 消息类型**。A1 描述的"7 条 frozen message types"数量准确。
+
+`session.start` 的 body 包含 `initial_input`（可选）。A4 关于 `turn-ingress.ts` 只处理 `session.start.initial_input` 的描述准确。
 
 ---
 
-## 12. 执行就绪度评级
+## 1. A1 — Contract & Identifier Freeze
 
-| Action Plan | 就绪度 | 阻塞项 |
-|-------------|--------|--------|
-| A1 | ✅ `可立即启动 Phase 1` | 无 |
-| A2 | ✅ `可并行于 A1 Phase 1 启动` | 需先核实 checkpoint-roundtrip.test.ts 真实性 |
-| A3 | ⚠️ `等待 A1 Phase 2 完成` | A1 Phase 2 必须先稳定 envelope.ts |
-| A4 | ⚠️ `等待 A1 Phase 3 + A3 Phase 2 完成` | 两个前置条件 |
-| A5 | ⚠️ `等待 A4 完成` | session edge baseline 必须先稳定 |
-| A6 | ⚠️ `等待 A4 + A5 完成` | stub controllers 必须先被替换 |
-| A7 | ⚠️ `等待 A6 Phase 4 完成` | 需要 L2 real smoke 作为 evidence 上游 |
-| A8 | ✅ `可在 A7 Phase 1 完成后启动` | rg TS 实现策略需在 Phase 1 明确 |
-| A9 | 🚫 `需要先完成 ts-exec substrate pre-decision` | CRITICAL 技术决策未完成 |
-| A10 | ⚠️ `等待 A8 + A9 完成` | 需要 virtual git output 设计先决定 |
+### 1.1 代码事实核查
 
----
+**✅ 对齐准确：**
+- `compat/migrations.ts` 确实只有 `migrate_noop` 和一个 `throw new Error` 的 `migrate_v1_0_to_v1_1`，是名副其实的 placeholder
+- Session message types 确实是 7 种
+- `packages/nacp-session/src/messages.ts` 的 `SESSION_MESSAGE_TYPES` 包含 7 个成员，与 A1 描述一致
 
-## 13. 最终建议摘要
+**❌ 重要纠正：**
+- A1 描述的 legacy fields 包括 `stamped_by → stamped_by_key`，但**当前 `stamped_by` 已经是 `NacpProducerIdSchema` 类型**（格式为 `namespace.sub@vN`），并不是 deprecated string。这意味着"rename to key"的问题定义可能需要重新审视
+- `NacpTraceSchema` 中当前字段名是 `trace_id`（UUID），**不是 `trace_uuid`**。A1 若描述"将 `trace_id` 改名为 `trace_uuid`"，方向是 A1 的理解，不是代码当前名称——需要确认 A1 rename batch 的目标方向
 
-1. **立即行动（今天）**：
-   - A1 Phase 1 启动：执行 `rg` 全仓 legacy field inventory
-   - A9 substrate pre-decision：owner 在 A9 启动前明确 `ts-exec` v1 的执行路线（推荐：诚实 partial + ask-gated，不延迟整个 A9 的 Phase 1/2）
+**⚠️ 上游依赖实际上更简单：**
+- A1 担心"session layer 的 legacy fields"，但检查 `packages/nacp-session/src/frame.ts` 和 `ingress.ts` 后发现：session layer 直接使用 `NacpEnvelopeBaseSchema` 扩展，没有单独维护 field alias。session layer 的 rename 影响面实际上就是 core envelope 的变化，不需要额外修改 session package 的字段定义
 
-2. **A1 完成后**：
-   - A3 Phase 1 立即跟进
-   - A2 可并行，但 benchmark artifact 要有 synthetic limitation 说明
+### 1.2 执行风险（基于代码事实）
 
-3. **A1 Phase 3 + A3 Phase 2 完成后**：
-   - A4 进入，与 A8 Phase 1 并行
-
-4. **A4 完成后**：
-   - A5 进入，fake worker fixtures 要包含 toolrunner slot（为 A9 预留）
-
-5. **A5 + A4 完成后**：
-   - A6 进入，重点是 wrangler profile matrix 和 environment checklist
-
-6. **A6 Phase 4 完成后**：
-   - A7 进入，evidence closure 以 real storage spot-check 为 anchor
-
-7. **A7 完成后 + A9 substrate 确认后**：
-   - A8/A9/A10 可并行推进 Phase 2/3
+| 风险 | 级别 | 证据 |
+|------|------|------|
+| `NacpTraceSchema.trace_id` vs `trace_uuid` 命名 ownership 需要在 A1 明确 | `HIGH` | L115 of envelope.ts: `trace_id: z.string().uuid()` |
+| `migrate_v1_0_to_v1_1` 是 `throw new Error`，任何触发都会 fatal | `MEDIUM` | compat/migrations.ts L13-18 |
+| session package 实际上通过 `NacpEnvelopeBaseSchema.extend()` 继承，rename 会自动传播 | `LOW` (有利) | frame.ts L36 |
 
 ---
 
-*本评审报告基于对 A1-A10 全量文本、packages/ 代码事实、context/ 工具约束以及 PX-QNA.md owner 决策的综合比对，采用 evidence-first 评审模型输出。*
+## 2. A2 — Trace Substrate Decision Investigation
+
+### 2.1 代码事实核查
+
+**✅ 对齐准确：**
+- `packages/eval-observability/src/sinks/do-storage.ts` 已实现完整的 DO storage JSONL sink，包括 buffer flush、tenant-scoped key、`_index` date-index 模式——与 A2 描述完全一致
+- Key 模式：`tenants/{teamUuid}/trace/{sessionUuid}/{YYYY-MM-DD}.jsonl` 准确
+- `DoStorageTraceSink.emit()` 先检查 `shouldPersist(event.eventKind)`，live-only events 被过滤——实现了分层级别
+
+**⚠️ 需要注意：**
+- `packages/session-do-runtime/src/checkpoint.ts` 实现了完整的 `buildSessionCheckpoint()` 和 `validateSessionCheckpoint()`，包含 7 个 subsystem fragments——这是真正的 "hot state anchor"，A2 的描述准确
+- 但 `checkpoint.ts` 存储的是 Agent 状态，而 `do-storage.ts` 存储的是 trace events——两者都在 DO storage，但用途不同。A2 把它们都归类为"DO hot anchor"是分析正确的
+
+**❌ 关键发现：**
+- A2 提到 `packages/eval-observability/scripts/trace-substrate-benchmark.ts` 需要新建——确认该文件**不存在**，benchmark runner 确实需要从零创建
+- `DoStorageTraceSink` 的 `DoStorageLike` 接口使用 `get(key)` 和 `put(key, value)`，是 DO storage interface 的最小子集。**`list?(prefix)` 是可选的**——这意味着 benchmark 需要对比带 `list` 和不带 `list` 两种路径
+
+### 2.2 执行风险（基于代码事实）
+
+| 风险 | 级别 | 证据 |
+|------|------|------|
+| benchmark runner 从零开始，eval-observability 包无 `scripts/` 入口 | `MEDIUM` | 目录结构确认 |
+| `DoStorageTraceSink` 本地测试实际是 in-process mock，不反映真实 DO延迟 | `HIGH` (A2 已知) | do-storage.ts: `DoStorageLike` 是 interface，test double 即可 |
+
+---
+
+## 3. A3 — Trace-first Observability Foundation
+
+### 3.1 代码事实核查
+
+**✅ 最关键发现（完全验证 A3 的诊断）：**
+
+`traces.ts` 中：
+- `buildTurnStartTrace()` → `eventKind: "turn.started"`
+- `buildTurnEndTrace()` → `eventKind: "turn.completed"`
+
+但 `orchestration.ts` 中：
+- `startTurn()` 里 `emitTrace()` 发出 `{ eventKind: "turn.begin", turnId: ... }` （L161-165）
+- `endSession()` 里 `emitTrace()` 发出 `{ eventKind: "session.ended", ... }` （L300-303）
+
+**这完全证实了 A3 的诊断**：`traces.ts` 定义的 `eventKind` 字符串（`"turn.started"` / `"turn.completed"`）与 `orchestration.ts` 实际 emit 的字符串（`"turn.begin"` / `"session.ended"`）**不一致**。这是一个真实的实现漂移，不是文档问题。
+
+**✅ 其他对齐准确：**
+- `TraceEventBase` 确实没有 `traceUuid` 字段（已在 §0.2 确认）
+- `traces.ts` 里的 trace builders 返回 `unknown` type，不是 typed `TraceEventBase`（L41: `Promise<unknown>`）
+
+**❌ 需要纠正：**
+- A3 描述 "`NacpAlertPayload.trace_uuid` 仍是 optional"——但检查 `nacp-core/src/observability/` 目录时，observability 子目录存在但内容未被查看。需要确认 `NacpAlertPayload` 的实际位置和字段
+- `traces.ts` 的 builders 都接受 `sessionUuid, teamUuid` 作为参数，但 `TraceEventBase` 也有 `turnUuid?: string`（optional）。A3 关于"A3 Phase 1 给 `TraceEventBase` 加 `traceUuid`"的方向是对的，但要注意这是**补充 field**，而不是把 `trace_id` 从 envelope 搬移过来
+
+### 3.2 A3 与 A1 的双重所有权（代码验证）
+
+**重要更新**：检查代码后，双重所有权问题比之前评估的要**轻**：
+- `packages/nacp-core/src/envelope.ts` → 这是 A1 的改动范围
+- `packages/eval-observability/src/trace-event.ts` → 这是 A3 的改动范围
+
+两个文件**完全独立**，不共享代码。A3 给 `TraceEventBase` 加字段不会直接冲突 A1 对 `NacpTrace` 字段的 rename。真正的协调点是：当 A1 把 `trace_id` 改名后，A3 补充的 `traceUuid` carrier 字段的值来源是新名还是旧名？这需要在 A3 Phase 1 里明确"消费哪个 envelope 字段"。
+
+### 3.3 执行风险（基于代码事实）
+
+| 风险 | 级别 | 证据 |
+|------|------|------|
+| `traces.ts` eventKind 与 `orchestration.ts` 实际 emit 已漂移 | `HIGH` | traces.ts L37-51 vs orchestration.ts L155-166 |
+| trace builders 返回 `unknown`（不是 `TraceEvent`），无编译期类型保护 | `HIGH` | traces.ts L41：`Promise<unknown>` |
+| A3 Phase 4 的 5 个邻接包 sweep 需要先找到所有 emit seam | `MEDIUM` | 没有全局 grep 时不知道有多少处 emitTrace() 调用 |
+
+---
+
+## 4. A4 — Session Edge Closure
+
+### 4.1 代码事实核查
+
+**✅ 全部诊断准确：**
+- `WsController.handleUpgrade/handleMessage/handleClose` 都是空 stub（ws-controller.ts L26-56）
+- `HttpController.handleRequest()` 路由到 action-specific stubs，每个都返回硬编码 `{ok: true}` （http-controller.ts L73-101）
+- `TurnIngressKind` 包含 `"future-prompt-family"` 占位符（turn-ingress.ts L26-28）
+- `extractTurnInput()` 只处理 `session.start` + `initial_input`（turn-ingress.ts L79-103）
+- `normalizeClientFrame()` 在 ingress.ts 中是真实实现（已有 authority stamp 和 frame validation）
+
+**❌ 关键纠正（重要）：**
+- A4 说"DO 里直接 `JSON.parse()` 后按 `message_type` 分支"——但从代码看，实际上 `orchestration.ts` 的 `SessionOrchestrator` 已有完整的 lifecycle 方法（`startTurn`, `runStepLoop`, `cancelTurn`, `endSession`）。`WsController.handleMessage()` 是 stub，但 **orchestration 层已经存在**，问题是 WS 消息没有连到 orchestration。A4 的修复是"接线"而不是"建新逻辑"。
+
+**⚠️ A4 的实际工作量更轻：**
+- `orchestration.ts` 已有 `OrchestrationDeps.pushStreamEvent()` 接口
+- `buildTurnStartTrace` / `buildTurnEndTrace` 已存在（虽然 eventKind 有漂移）
+- WsController 需要做的事是：解析 NACP frame → 调用 `extractTurnInput()` → 调用 `orchestration.startTurn()` → 连 stream
+
+### 4.2 执行风险（基于代码事实）
+
+| 风险 | 级别 | 证据 |
+|------|------|------|
+| WS消息 → orchestration 的连线：WsController 和 orchestration deps 都存在，只缺 wiring | `HIGH` | ws-controller.ts stub + orchestration.ts 完整实现 |
+| HTTP fallback 的 `handleInput()` stub 返回 200，但实际上 follow-up turn 没有处理 | `HIGH` | http-controller.ts L78-81 |
+| orchestration 的 `advanceStep / buildCheckpoint` 等 deps 仍需真实实现 | `MEDIUM` | composition.ts 全部返回 undefined |
+
+---
+
+## 5. A5 — External Seam Closure
+
+### 5.1 代码事实核查
+
+**✅ 对齐准确：**
+- `createDefaultCompositionFactory()` 返回所有 subsystem handles 为 `undefined`（composition.ts L63-74）
+- `packages/hooks/src/runtimes/service-binding.ts`（`ServiceBindingRuntime`）确实 `throw new Error("service-binding runtime not yet connected")`（L23）
+- `packages/capability-runtime/src/targets/service-binding.ts` 的 `ServiceBindingTarget` 已有完整的 request/progress/cancel/response seam 实现（L90-214）
+
+**✅ 关键细节准确（有参考代码支持）：**
+- `ServiceBindingTransport.call()` / `cancel()` 接口已定义（service-binding.ts L81-84）
+- 无 transport 时返回 `"not-connected"` error，不 throw（L113-125）
+- `onProgress` callback 已经被 thread 到 executor 的 `emit()` 机制（L156-161）
+
+**❌ 需要纠正：**
+- A5 描述"hooks/src/runtimes/service-binding.ts 仍是直接抛错 stub"——这是准确的，但要注意这个 `ServiceBindingRuntime` 是 hooks 包的 runtime，**不是** capability-runtime 的 `ServiceBindingTarget`。两者是不同的东西：
+  - `hooks/runtimes/service-binding.ts` → 为 hook execution 用的（仍是 stub）
+  - `capability-runtime/targets/service-binding.ts` → 为 tool execution 用的（有真实实现）
+
+### 5.2 context 参考分析（基于 codex/claude-code）
+
+A5 引用了 `context/codex/codex-rs/tools/src/tool_registry_plan.rs`—— codex 的 tool registry 使用 Rust 实现，与 nano-agent 的 TS 实现路线完全不同。codex 的参考价值在于"分层 capability 治理"的概念，而不是具体实现模式的 reuse。这与 A5 描述一致。
+
+### 5.3 执行风险（基于代码事实）
+
+| 风险 | 级别 | 证据 |
+|------|------|------|
+| `hooks/runtimes/service-binding.ts` 仍 throw 意味着任何 hook 走 service-binding path 都会失败 | `HIGH` | hooks/runtimes/service-binding.ts L23 |
+| `composition.ts` 全 undefined - capability/workspace/hooks handles 都未接线 | `CRITICAL` | composition.ts L65-72：`capability: undefined` 等 |
+| A5 的 fake-provider-worker 需要新建目录 `test/fixtures/external-seams/` | `LOW` | 确认不存在，但 `test/e2e/fixtures/` 存在 |
+
+---
+
+## 6. A6 — Deployment Dry-Run and Real Boundary Verification
+
+### 6.1 代码事实核查
+
+**✅ 对齐准确：**
+- `test/e2e/` 中确认有 14 个 e2e 测试文件（e2e-01 到 e2e-14），与 A6 描述一致
+- `WsController` 和 `HttpController` 都是 stub，这是 A6 的关键 gate condition（L0 可运行，L1 需要 stub 替换）
+
+**⚠️ A6 需要补充的事实：**
+- e2e 测试目录有 `fixtures/` 子目录——这对 A5 的 fake-provider-worker 放置位置有参考价值
+- `test/` 根目录有 8 个 cross-package contract tests (`capability-toolcall-contract.test.mjs` 等），这些是 A6 的直接验证资产
+
+**重要推论**：当前 e2e 场景（e2e-01 到 e2e-14）在没有真实 WS/HTTP controller 接线时，能运行多少取决于 test fixture 的实现方式。**需要调查每个 e2e test 是否使用 in-process stub 还是真实 DO**，但这超出本次静态代码评审的范围。
+
+### 6.2 执行风险（基于代码事实）
+
+| 风险 | 级别 | 证据 |
+|------|------|------|
+| L1 (wrangler dev --remote) 前提：WsController/HttpController 必须先有真实实现 | `HIGH` | A4 的 scope |
+| wrangler.jsonc 只有 SESSION_DO 无其他 binding（A6 描述正确，需要扩展才能做 smoke） | `HIGH` | 未直接查看但 A6/A2 都描述一致 |
+
+---
+
+## 7. A7 — Storage and Context Evidence Closure
+
+### 7.1 代码事实核查
+
+**✅ 准确：**
+- `StoragePlacementLog` 在 `placement-log.ts` 中存在完整实现（record / getEntries / getSummary），但**没有被 runtime 消费**
+- `ContextAssembler` 在 `context-assembler.ts` 有完整实现（assemble 方法含 budget truncation 逻辑），`AssemblyResult` 包含 `{assembled, totalTokens, truncated, orderApplied}`
+
+**❌ 关键纠正（最重要的代码事实）：**
+
+A7 说"Phase 3 P3-01 要记录 `dropped_optional_layers / drop_reason / required_layer_budget_violation` 等字段"，但检查 `context-assembler.ts` 的实际 `AssemblyResult`：
+
+```typescript
+export interface AssemblyResult {
+  readonly assembled: ContextLayer[];
+  readonly totalTokens: number;
+  readonly truncated: boolean;       // 有 truncated，但无 drop reason
+  readonly orderApplied: readonly ContextLayerKind[];
+}
+```
+
+`AssemblyResult` **没有 `droppedLayers` / `dropReason` / `budgetViolation` 等字段**。A7 P3-01 的确是在给 `ContextAssembler` 增加新的 evidence API surface，而不是简单"接线"已有 seam。这与之前评审的判断一致，但现在有代码证据支持。
+
+**ContextAssembler 的截断逻辑**（L109-117）：
+- optional layers 在 budget 超出时被静默跳过，`truncated = true`
+- 没有记录哪些 layers 被 drop，也没有记录原因
+- A7 补充这些字段是真实的 API 扩展工作
+
+### 7.2 执行风险（基于代码事实）
+
+| 风险 | 级别 | 证据 |
+|------|------|------|
+| A7 P3-01 的 evidence fields 需要修改 `AssemblyResult` interface，是 breaking API change | `HIGH` | context-assembler.ts L34-44：当前 shape 无 drop info |
+| `StoragePlacementLog.record()` 存在但没有任何调用者（空 runtime 消费） | `HIGH` | placement-log.ts L37：record() 存在，但无 import 分析 |
+
+---
+
+## 8. A8 — Minimal Bash Search and Workspace
+
+### 8.1 代码事实核查
+
+**✅ 完全准确：**
+- `rg` handler 返回 `[rg] searching for ... (degraded: TS string scan)` 固定字符串，只验证 regex pattern 合法性，完全不扫描内容（search.ts L38-40）
+- `grep/egrep/fgrep` 在 unsupported.ts 和 commands.ts 中均**不存在**（既非注册命令，也非 unsupported 名单）
+- `mkdir` 在 filesystem.ts 中是永久 stub，不调用 workspace.mkdir()（L109-118）
+- `MountRouter` 有 `/_platform/` reserved namespace guard（mounts.ts L64-84）
+
+**✅ 参考代码 (just-bash) 完全支持 A8 的设计方向：**
+
+just-bash 的 `rg-search.ts` 是纯 TS 文本搜索实现：
+- `collectFiles()` 递归遍历 `ctx.fs`（IFileSystem interface）
+- `searchFiles()` 对每个文件调用 `ctx.fs.readFile()` 然后 regex 匹配
+- **完全没有使用任何二进制 ripgrep**——就是 TS regex on IFileSystem
+
+这证实了 A8 的方向：**nano-agent 的 `rg` 升级为最小真实行为，走 TS regex scan on `WorkspaceNamespace`，而不是调用二进制**。这是可行且已有参考实现的路线。
+
+**❌ A8 的精确度问题：**
+- A8 描述说"`rg` 实现策略未定"但 just-bash 已经证明了路线：打通 `rg handler → WorkspaceNamespace.listDir() → readFile() → regex match`。策略其实就是参照 just-bash 的 `rg-search.ts`，只是输入层从 `IFileSystem` 改成 `WorkspaceBackend`
+
+### 8.2 执行风险（基于代码事实）
+
+| 风险 | 级别 | 证据 |
+|------|------|------|
+| `rg` 升级为真实搜索时，需要 `WorkspaceBackend` 提供 `listDir()` 接口来遍历 | `MEDIUM` | filesystem.ts L61 已有 `workspace.listDir()` 调用，接口已有 |
+| `mkdir` 的 partial 决策：backend 没有 `mkdir` primitive，现在只能保持 partial ack | `MEDIUM` | filesystem.ts L109-118：永久 stub，无法简单升级 |
+| grep → rg alias 需要在 planner.ts 的 `buildInputFromArgs()` 添加 case | `LOW` | planner.ts L122-149：直接添加 `case "grep":` 映射即可 |
+
+---
+
+## 9. A9 — Minimal Bash Network and Script
+
+### 9.1 代码事实核查
+
+**✅ 完全准确：**
+- `capabilities/network.ts`：`curl` handler 做 `new URL(url)` 验证后返回固定 stub 字符串（L29-38）
+- `capabilities/exec.ts`：`ts-exec` handler 记录 code 长度后返回 stub（L30-34）
+- `planner.ts` 中 `curl` 映射 `{ url: args[0] }`，`ts-exec` 映射 `{ code: args.join(" ") }`——bash path 确实只接受最小形式
+
+**❌ 关键纠正（最重要）：**
+
+A9 把 `ts-exec` substrate 描述为"未决定"，选项包括"Worker-native V8 sandbox"。但 just-bash 的 `js-exec.ts` 已经给出了明确答案：
+
+```typescript
+// js-exec.ts L13
+import { Worker } from "node:worker_threads";
+```
+
+just-bash 使用 **QuickJS WASM + `node:worker_threads`** 作为 JS 执行 substrate。这在 **Cloudflare Workers 中完全不可用**（Workers 没有 `node:worker_threads`，也无法在 Worker 中再 spawn Worker）。
+
+这意味着：
+1. just-bash 的 `js-exec.ts` 对 nano-agent 来说**不可直接移植**——它们运行环境完全不同
+2. Cloudflare Workers 中执行 TypeScript 代码唯一可行的安全路线是：**独立 service binding tool-runner Worker**（remote sandbox）
+3. "in-process eval()" 在 Worker 中技术上可行（Function constructor），但无 VFS 访问、无 timeout 控制、无 cancel 机制，是倒退
+
+A9 应该在 Phase 1 就明确：**v1 `ts-exec` = ask-gated partial（不执行，只记录意图）**，substrate decision 推后到有独立 tool-runner Worker 设计时。这是最诚实的 contract，也避免了整个 Phase 被 substrate 决策阻塞。
+
+**如果要真正执行**，路线必须是 service-binding 远程 tool-runner——这刚好与 `capability-runtime/targets/service-binding.ts` 的 `ServiceBindingTarget` 对接。
+
+### 9.2 执行风险（基于代码事实）
+
+| 风险 | 级别 | 证据 |
+|------|------|------|
+| just-bash js-exec 用 node:worker_threads，Cloudflare Workers 不支持 | `CRITICAL` | js-exec.ts L13: `import { Worker } from "node:worker_threads"` |
+| `ServiceBindingTarget` 已有完整 transport seam，可作为 ts-exec 升级路径 | `POSITIVE` | capability-runtime/targets/service-binding.ts L90+ |
+| `curl` 在 Workers 中通过 `fetch()` API 是完全可行的——restricted curl 实现路线清晰 | `POSITIVE` | Workers native fetch，只需 egress guard |
+
+---
+
+## 10. A10 — Minimal Bash VCS and Policy
+
+### 10.1 代码事实核查
+
+**✅ 完全准确：**
+- `capabilities/vcs.ts`：`SUPPORTED_SUBCOMMANDS = new Set(["status", "diff", "log"])`（L17）
+- `git` handler 有子命令校验，unsupported subcommand throw Error（L35-39）
+- `UNSUPPORTED_COMMANDS` 和 `OOM_RISK_COMMANDS` 分表存在（unsupported.ts L15-73）
+- `FakeBashBridge` 不 fabricate success 的合同被完整实现（bridge.ts L68-109）
+
+**❌ 关键纠正（基于代码）：**
+
+A10 Phase 2 P2-01 要"让 `git status/diff/log` 在 workspace truth 上有 deterministic 输出"。但当前 `vcs.ts` 的 handler：
+```typescript
+return {
+  output: `[git ${subcommand}${argStr}] (stub: VCS access not yet connected)`,
+};
+```
+
+**virtual git 的数据来源问题确实存在**：`WorkspaceNamespace` 维护的是文件内容，没有 VCS metadata。要让 `git status` 有意义的输出，需要：
+1. 要么接入真实 git（在 Worker/V8 isolate 中不可能）
+2. 要么使用 workspace snapshot diff（可行：比较两次 snapshot 之间的变化）
+3. 要么保持 stub 但明确标为 `Partial`，只报告"workspace-based change detection 不可用"
+
+选项 2 是唯一技术可行且有真实价值的路线，但需要 A7 的 workspace snapshot 基础设施先就位。这说明 **A10 Phase 2 依赖 A7 snapshot 能力**，而不只是 A8/A9。
+
+### 10.2 执行风险（基于代码事实）
+
+| 风险 | 级别 | 证据 |
+|------|------|------|
+| virtual git output 数据来源：WorkspaceNamespace 无 VCS metadata | `HIGH` | vcs.ts L28-46：纯 stub，workspace 无 diff API |
+| drift guard 的实现形式：A10 描述为 tests/docs，但没有 TS `const SUPPORTED_COMMANDS` 保证 | `MEDIUM` | commands.ts L16：`MINIMAL_COMMANDS` 是 `readonly` 数组，但 inventory 是文档，不是类型检查 |
+| `FakeBashBridge` 的 `no-silent-success` 合同已完整实现，A10 P3-02 是加强，不是重建 | `POSITIVE` | bridge.ts L100-108 |
+
+---
+
+## 11. 全局跨文件综合评估
+
+### 11.1 context 参考使用情况评估
+
+| context | 在 action-plan 中的引用方式 | 实际代码对照结论 |
+|---------|---------------------------|-----------------|
+| `just-bash/fs/mountable-fs` | A8 引用为 workspace truth 参考 | just-bash 的 `MountableFs` 是完整 `IFileSystem`；nano-agent 的 `MountRouter` 只是路由层——**设计层次不同**，A8 正确地把 `MountRouter` 作为路由 substrate，而不是完整 FS 替换 |
+| `just-bash/commands/rg` | A8 参考 | just-bash `rg` 是纯 TS 文本搜索，完全 Worker-compatible。**nano-agent rg 升级的正确参考实现存在且可移植** |
+| `just-bash/commands/js-exec` | A9 参考 | just-bash `js-exec` 依赖 `node:worker_threads`，**Worker 环境不可移植**。A9 不应把它作为 ts-exec 的实现模板，只能参考其 policy/boundary 设计 |
+| `claude-code/services/tools` | A9/A10 参考 | Claude Code 的 tool execution 路线与 nano-agent 的 NACP 协议体系不直接兼容，参考价值在于概念层面（structured tool call、approval gating） |
+| `codex/codex-rs/tools/tool_registry_plan.rs` | A10 参考 | Rust 实现，概念参考（tool registry 分层、policy taxonomy）。不可直接代码 reuse |
+
+### 11.2 Identifier Law 执行情况
+
+基于一手代码：
+- `envelope.ts` 中 `header.producer_id` 使用 `NacpProducerIdSchema`（格式约束 string）——已经有 identifier format law
+- `trace` 字段用 `trace_id` 而不是 `trace_uuid`——命名未统一
+- `TraceEventBase` 里用 `sessionUuid`, `teamUuid`, `turnUuid`（camelCase）
+- `NacpTrace` 里用 `session_uuid`, `trace_id`, `span_id`（snake_case）
+
+**这两层之间的命名规范确实不统一**。A1 的 Identifier Law 需要在 A3 的 eval 层也明确执行规则（TypeScript in-process types 用 camelCase，wire format 用 snake_case，且两者的映射要有显式约定）。
+
+### 11.3 Trace-first Law 验证
+
+A3 声称 `trace_uuid` 必须成为所有 observability-dependent feature 的 canonical truth。代码现实：
+- `NacpTrace.trace_id` 是 wire format 的 trace 标识符（UUID）
+- `TraceEventBase.sessionUuid` 是 TS 层的 session 标识符
+- 两者之间的 carrier 字段不存在
+
+这验证了 Trace-first 工作的必要性，也确认了 A3 的问题诊断。
+
+### 11.4 执行就绪度（基于代码事实重评）
+
+| Action Plan | 就绪度 | 基于代码的关键依赖 |
+|-------------|--------|------------------|
+| A1 | ✅ `可立即启动 Phase 1` | `envelope.ts` 清晰，命名方向需要 owner 确认（`trace_id` → `trace_uuid`？） |
+| A2 | ✅ `可并行于 A1 启动` | `do-storage.ts` substrate 已存在，只需 benchmark harness |
+| A3 | ⚠️ `等待 A1 Phase 2 完成` | `envelope.ts` trace field 稳定后才能定义 carrier |
+| A4 | ⚠️ `等待 A1 Phase 3 + A3 Phase 2` | session message family 和 trace carrier 需先稳定 |
+| A5 | ⚠️ `等待 A4 基本完成` | `composition.ts` 接线需要 session edge 先有真实 handler |
+| A6 | ⚠️ `等待 A4 + A5` | WsController/HttpController stub 是 L1 gate blocker |
+| A7 | ⚠️ `等待 A6 Phase 4 L2` | `AssemblyResult` 需要新增 drop evidence fields（breaking change） |
+| A8 | ✅ `可在 A7 Phase 1 后启动` | rg 升级路线清晰（参照 just-bash rg-search.ts），workspace.listDir 接口已有 |
+| A9 | 🚫 `需先明确 ts-exec = ask-gated partial` | just-bash js-exec 的 substrate 在 Worker 不可用；remote sandbox 需要 tool-runner Worker |
+| A10 | ⚠️ `等待 A8 完成，A7 snapshot 提供 git data` | virtual git data source 需 snapshot diff 基础 |
+
+---
+
+## 12. 最终建议摘要
+
+### 立即行动（可以当天启动）
+
+1. **A1 Phase 1**：running `rg` 全仓 scan 建立 legacy field inventory。`envelope.ts` 的 `trace_id` vs `trace_uuid` 命名方向需 owner 会议确认后才能开始 rename batch
+2. **A9 Phase 1 substrate pre-decision**：基于 `just-bash/js-exec.ts` 依赖 `node:worker_threads`（Workers 不支持）的事实，建议 `ts-exec` v1 直接定为 `Partial (ask-gated, no real execution)`，解锁 A9 Phase 1/2 的其他工作
+
+### A8 rg 升级路线（有 context 证据支持）
+
+参照 `context/just-bash/src/commands/rg/rg-search.ts` 的实现：
+1. `rg handler` → 调用 `WorkspaceNamespace.listDir()` 递归获取文件列表
+2. 对每个文件调用 `WorkspaceNamespace.readFile()` 获取内容
+3. 做 TS regex match（不依赖任何二进制）
+4. 返回 bounded match 列表
+
+`WorkspaceBackend.listDir()` 接口已在 `filesystem.ts` L61 中被使用，接口已存在，路线可行。
+
+### A9 curl 升级路线（Workers-native）
+
+1. Workers 原生支持 `fetch()` API
+2. restricted curl: `fetch(url, { signal, method: "GET" })` + egress guard（拒绝 private IP）+ output size cap
+3. structured path 通过 `planFromToolCall()` 进入，bash path 只接受 `curl <url>`
+4. 这是完全 Worker-native 的实现路线
+
+### A10 virtual git data source（明确建议）
+
+v1 路线应该是：`git status` = 检测 workspace namespace 是否有未 snapshot 的 pending writes（调用 `WorkspaceSnapshotBuilder` 检查 dirty state）。这比"no git repo" stub 有意义，比真实 VCS 可实现。但需要 A7 先建立 snapshot 基础。
+
+---
+
+*本评审报告基于对全部关键代码文件的一手阅读，以及对 `context/` 下三套参考实现（just-bash、codex、claude-code）的直接代码核查。所有评价结论均可追溯到具体文件和行号。*
