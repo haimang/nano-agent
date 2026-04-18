@@ -54,7 +54,7 @@ test("E2E-05: Session Resume — Checkpoint → Restore → Continue Turn", asyn
   const replayBuf = new ReplayBuffer();
   for (let i = 0; i < 8; i++) {
     replayBuf.append({
-      session_frame: { stream_id: "main", stream_seq: 12 + i, body: { kind: "llm.delta", content: `d${i}` } },
+      session_frame: { stream_uuid: "main", stream_seq: 12 + i, body: { kind: "llm.delta", content: `d${i}` } },
     });
   }
   const replayFragment = replayBuf.checkpoint();

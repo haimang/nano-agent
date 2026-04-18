@@ -29,7 +29,7 @@ test("E2E-11: WebSocket-first Live Stream → Ack/Replay → HTTP Fallback Durab
     const kind = mapRuntimeEventToStreamKind(runtimeEvent);
     const body = buildStreamEventBody(runtimeEvent);
     const frame = {
-      session_frame: { stream_id: "main", stream_seq: seq++, body },
+      session_frame: { stream_uuid: "main", stream_seq: seq++, body },
     };
     replayBuf.append(frame);
 
