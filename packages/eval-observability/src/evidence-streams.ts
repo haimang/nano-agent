@@ -292,9 +292,13 @@ export function computeCalibrationVerdict(
     return "contradicted-by-evidence";
   }
   if (summary.contradictory >= needsRevisitMin) {
-    return summary.supporting >= evidenceBackedMin
-      ? "needs-revisit"
-      : "needs-revisit";
+    // A6-A7 review Kimi R2: AX-QNA Q13 treats any `contradictory >=
+    // needsRevisitMin` as a reason to revisit, regardless of how many
+    // supporting records exist — mixed evidence is still ambiguous
+    // evidence. The previous ternary branched on `supporting` but
+    // produced the same literal on both sides, which reviewers read as
+    // hidden logic. Collapsed to a single return.
+    return "needs-revisit";
   }
   if (summary.supporting >= evidenceBackedMin) {
     return "evidence-backed";

@@ -151,7 +151,12 @@ export class DoStorageTraceSink implements TraceSink {
         sourceRole: first?.sourceRole ?? "session",
         sourceKey: first?.sourceKey ?? "nano-agent.eval.do-storage-sink@v1",
         turnUuid: first?.turnUuid,
-        timestamp: new Date().toISOString(),
+        // A6-A7 review Kimi R4: prefer the first event's timestamp so
+        // replay / timeline consumers see the placement aligned to the
+        // actual event the flush originated from, rather than wall
+        // clock at flush time. Fall back to `Date.now()` only when no
+        // event is available (e.g. keep-alive flush with empty buffer).
+        timestamp: first?.timestamp ?? new Date().toISOString(),
       },
       dataItem: "trace.timeline",
       backend: "do-storage",
