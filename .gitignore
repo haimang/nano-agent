@@ -39,3 +39,7 @@ Cargo.lock
 context/
 
 # packages/ 现由主库统一跟踪；子目录中的构建产物仍由上面的通用规则忽略
+
+# A6 verification artifacts (per-run, never committed)
+test/verification/verdict-bundles/*.json
+.dev.vars

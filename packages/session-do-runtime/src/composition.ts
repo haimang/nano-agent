@@ -5,15 +5,24 @@
  * subsystem handles via a `CompositionFactory`, which is the single seam
  * that prevents the DO class from directly importing subsystem internals.
  *
+ * Phase 4 (A5) note: the factory now honours a `CompositionProfile` so
+ * the same assembly host can run all-local (default) or promote any of
+ * the three v1 seams — `capability / hooks / provider` — to a
+ * service-binding delegate without changing the DO class. The default
+ * factory still returns no-op handles so the DO remains usable
+ * standalone in tests; deployed builds inject a profile-aware factory.
+ *
  * All handles are typed as `unknown` at this layer — the DO interacts
  * with subsystems through their own typed interfaces, not through this
  * struct. The factory accepts the runtime env + config and returns a
  * fully-assembled `SubsystemHandles` bag.
- *
- * Reference: docs/action-plan/session-do-runtime.md Phase 1 (P1-01 to P1-03)
  */
 
-import type { SessionRuntimeEnv, RuntimeConfig } from "./env.js";
+import type { CompositionProfile, SessionRuntimeEnv, RuntimeConfig } from "./env.js";
+import {
+  DEFAULT_COMPOSITION_PROFILE,
+  readCompositionProfile,
+} from "./env.js";
 
 // ── Subsystem Handles ──
 
@@ -28,6 +37,7 @@ import type { SessionRuntimeEnv, RuntimeConfig } from "./env.js";
  *   hooks      — hooks dispatcher (pre/post/guard) with `emit(event, …)`
  *   eval       — eval-observability trace sink with `emit(event)`
  *   storage    — storage-topology helpers for placement-aware I/O
+ *   profile    — the active composition profile (set by the factory)
  */
 export interface SubsystemHandles {
   readonly kernel: unknown;
@@ -37,30 +47,50 @@ export interface SubsystemHandles {
   readonly hooks: unknown;
   readonly eval: unknown;
   readonly storage: unknown;
+  readonly profile: CompositionProfile;
 }
 
 // ── Composition Factory ──
 
-/**
- * Factory that wires up subsystem handles from the runtime environment.
- *
- * Implementations provide the actual kernel / llm / capability / … handles.
- * The DO calls `create()` once during initialization.
- */
 export interface CompositionFactory {
   create(env: SessionRuntimeEnv, config: RuntimeConfig): SubsystemHandles;
 }
 
 /**
- * Default composition factory used when no factory is injected.
+ * Compute the effective composition profile:
+ *   1. explicit `config.compositionProfile` wins,
+ *   2. otherwise read from `env` (presence → remote, absence → local),
+ *   3. finally fall back to `DEFAULT_COMPOSITION_PROFILE`.
  *
- * Returns a `SubsystemHandles` bag filled with no-op stubs so the DO
- * class is usable standalone (tests + vitest). Deployed builds SHOULD
- * supply a real factory that wires real subsystem packages.
+ * The default factory publishes the resolved profile on `handles.profile`
+ * so downstream composition layers can inspect what was chosen without
+ * re-running the resolution logic.
+ */
+export function resolveCompositionProfile(
+  env: SessionRuntimeEnv,
+  config: RuntimeConfig,
+): CompositionProfile {
+  if (config.compositionProfile) return config.compositionProfile;
+  const envProfile = readCompositionProfile(env);
+  return {
+    capability: envProfile.capability ?? DEFAULT_COMPOSITION_PROFILE.capability,
+    hooks: envProfile.hooks ?? DEFAULT_COMPOSITION_PROFILE.hooks,
+    provider: envProfile.provider ?? DEFAULT_COMPOSITION_PROFILE.provider,
+  };
+}
+
+/**
+ * Default composition factory — produces an otherwise-empty handle bag
+ * but carries the resolved profile so downstream wiring (eval sink,
+ * remote seams) can branch on it without re-reading env. Deployed
+ * builds should supply a richer factory that wires concrete subsystem
+ * packages; see `makeRemoteBindingsComposition()` for the hook/capability/
+ * fake-provider wiring pattern.
  */
 export function createDefaultCompositionFactory(): CompositionFactory {
   return {
-    create(_env: SessionRuntimeEnv, _config: RuntimeConfig): SubsystemHandles {
+    create(env: SessionRuntimeEnv, config: RuntimeConfig): SubsystemHandles {
+      const profile = resolveCompositionProfile(env, config);
       return {
         kernel: undefined,
         llm: undefined,
@@ -69,6 +99,7 @@ export function createDefaultCompositionFactory(): CompositionFactory {
         hooks: undefined,
         eval: undefined,
         storage: undefined,
+        profile,
       };
     },
   };

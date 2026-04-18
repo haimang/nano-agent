@@ -45,7 +45,17 @@ export type { HookEmitContext } from "./dispatcher.js";
 // ── Runtimes ──
 export { LocalTsRuntime } from "./runtimes/local-ts.js";
 export type { LocalHookHandler, HookRuntime } from "./runtimes/local-ts.js";
-export { ServiceBindingRuntime } from "./runtimes/service-binding.js";
+export {
+  ServiceBindingRuntime,
+  HookRuntimeError,
+} from "./runtimes/service-binding.js";
+export type {
+  HookTransport,
+  HookTransportCall,
+  HookTransportResult,
+  HookRuntimeFailureReason,
+  ServiceBindingRuntimeOptions,
+} from "./runtimes/service-binding.js";
 
 // ── Core mapping ──
 export {

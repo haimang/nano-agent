@@ -11,11 +11,51 @@
 export { SESSION_DO_VERSION } from "./version.js";
 
 // ── Environment ──
-export { DEFAULT_RUNTIME_CONFIG } from "./env.js";
-export type { SessionRuntimeEnv, RuntimeConfig } from "./env.js";
+export {
+  DEFAULT_RUNTIME_CONFIG,
+  DEFAULT_COMPOSITION_PROFILE,
+  V1_BINDING_CATALOG,
+  RESERVED_BINDINGS,
+  readCompositionProfile,
+} from "./env.js";
+export type {
+  SessionRuntimeEnv,
+  RuntimeConfig,
+  CompositionMode,
+  CompositionProfile,
+  ServiceBindingLike,
+} from "./env.js";
 
 // ── Composition ──
-export { createDefaultCompositionFactory } from "./composition.js";
+export {
+  createDefaultCompositionFactory,
+  resolveCompositionProfile,
+} from "./composition.js";
+
+// ── Remote binding adapters (A5 Phase 2-3) ──
+export {
+  callBindingJson,
+  makeHookTransport,
+  makeCapabilityTransport,
+  makeProviderFetcher,
+  makeRemoteBindingsFactory,
+} from "./remote-bindings.js";
+
+// ── Cross-seam propagation + failure law (A5 Phase 4) ──
+export {
+  CROSS_SEAM_HEADERS,
+  CROSS_SEAM_FAILURE_REASONS,
+  CrossSeamError,
+  StartupQueue,
+  buildCrossSeamHeaders,
+  readCrossSeamHeaders,
+  validateCrossSeamAnchor,
+  classifySeamError,
+} from "./cross-seam.js";
+export type {
+  CrossSeamAnchor,
+  CrossSeamFailureReason,
+} from "./cross-seam.js";
 export type {
   SubsystemHandles,
   CompositionFactory,

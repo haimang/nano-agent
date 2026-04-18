@@ -27,9 +27,27 @@ export interface DurableObjectNamespaceLike {
   get(id: unknown): { fetch(request: Request): Promise<Response> };
 }
 
-/** Minimum env shape — bindings declared in `wrangler.jsonc`. */
+/**
+ * Minimum env shape — bindings declared in `wrangler.jsonc`.
+ *
+ * The optional `R2_ARTIFACTS / KV_CONFIG / HOOK_WORKER /
+ * CAPABILITY_WORKER / FAKE_PROVIDER_WORKER` slots mirror the v1 binding
+ * catalog defined in `env.ts`. Keeping them on the Worker entrypoint
+ * means the same TypeScript shape covers both `wrangler dev --remote`
+ * and `wrangler deploy --env deploy_smoke` profiles without per-env
+ * type drift. They stay `unknown` at this layer because the Worker
+ * entry only forwards into `NanoSessionDO.fetch()`.
+ */
 export interface WorkerEnv {
   readonly SESSION_DO: DurableObjectNamespaceLike;
+  readonly R2_ARTIFACTS?: unknown;
+  readonly KV_CONFIG?: unknown;
+  readonly HOOK_WORKER?: unknown;
+  readonly CAPABILITY_WORKER?: unknown;
+  readonly FAKE_PROVIDER_WORKER?: unknown;
+  readonly LLM_API_KEY?: string;
+  readonly OPENAI_API_KEY?: string;
+  readonly ENVIRONMENT?: string;
 }
 
 const DEFAULT_SESSION_ID = "default";
