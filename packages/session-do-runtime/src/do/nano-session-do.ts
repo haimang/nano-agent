@@ -34,6 +34,15 @@ import { transitionPhase as transitionPhaseImported } from "../actor-state.js";
 import { validateSessionCheckpoint } from "../checkpoint.js";
 import { createDefaultCompositionFactory } from "../composition.js";
 import type { CompositionFactory, SubsystemHandles } from "../composition.js";
+import { acceptIngress } from "../session-edge.js";
+import type { IngressEnvelope } from "../session-edge.js";
+import {
+  SessionWebSocketHelper,
+  type IngressContext,
+  type SessionContext,
+  type SessionPhase,
+  type SessionStorageLike,
+} from "@nano-agent/nacp-session";
 
 // ═══════════════════════════════════════════════════════════════════
 // §1 — DurableObjectState subset
@@ -91,6 +100,29 @@ export class NanoSessionDO {
    */
   private sessionUuid: string | null = null;
 
+  /** Per-stream sequence assigned to each accepted client frame. */
+  private streamSeq = 0;
+  /**
+   * Stream UUID handed to nacp-session at ingress. The DO uses a single
+   * primary stream ("main") for the lifetime of the actor; richer
+   * multi-stream semantics belong to a later session protocol cut.
+   */
+  private readonly streamUuid: string = "main";
+  /** Last typed ingress rejection — exposed to tests and the controller layer. */
+  private lastIngressRejection: IngressEnvelope | null = null;
+
+  /** Lazily-created session trace UUID for this DO actor. */
+  private traceUuid: string | null = null;
+
+  /**
+   * Optional SessionWebSocketHelper for replay/ack/heartbeat/checkpoint.
+   * Constructed on first WS attach; shared across subsequent reconnects
+   * so the replay buffer + pending acks survive detach. The fields are
+   * mutable because the helper needs a real `sessionUuid` which is only
+   * known after the first upgrade.
+   */
+  private wsHelper: SessionWebSocketHelper | null = null;
+
   constructor(
     doState: DurableObjectStateLike,
     env: unknown,
@@ -147,9 +179,37 @@ export class NanoSessionDO {
           );
         }
         this.attachSessionUuid(route.sessionId);
+
+        // Share the DO's actor + timeline with the HTTP controller so
+        // WS and HTTP fallback resolve to the same session model.
+        this.httpController.attachHost({
+          submitFrame: (raw) => this.webSocketMessage(null, raw),
+          getPhase: () => this.state.actorState.phase,
+          readTimeline: () => {
+            const helper = this.getWsHelper();
+            if (!helper) return [];
+            const frames = helper.replay.replay(this.streamUuid, 0);
+            return frames.map((f) => f.body as Record<string, unknown>);
+          },
+        });
+
+        // Optional JSON body from HTTP clients (start / input carry content).
+        let body: unknown = undefined;
+        if (
+          request.method === "POST" ||
+          request.method === "PUT" ||
+          request.method === "PATCH"
+        ) {
+          try {
+            body = await request.json();
+          } catch {
+            body = undefined;
+          }
+        }
         const result = await this.httpController.handleRequest(
           route.sessionId,
           route.action,
+          body,
         );
         return new Response(JSON.stringify(result.body), {
           status: result.status,
@@ -183,40 +243,95 @@ export class NanoSessionDO {
   /**
    * Handle an incoming WebSocket message.
    *
-   * Message dispatch (nacp-session reality):
-   *   session.start       → extractTurnInput → orchestrator.startTurn
-   *   session.cancel      → orchestrator.cancelTurn
-   *   session.end         → orchestrator.endSession
-   *   session.resume      → read `last_seen_seq` + restoreFromStorage
-   *   session.stream.ack  → ack accounting (decrement pending)
-   *   session.heartbeat   → heartbeat timestamp
+   * A4 P1-02: every client frame goes through `acceptIngress()` so
+   * `nacp-session` is the single source of truth for schema, authority
+   * stamping, and phase/role legality. The DO never parses
+   * `message_type` directly. Typed rejections are routed to
+   * `recordIngressRejection()` for caller-managed handling.
+   *
+   * Dispatched message types:
+   *   session.start            → extractTurnInput → orchestrator.startTurn
+   *   session.followup_input   → extractTurnInput → orchestrator.startTurn
+   *   session.cancel           → orchestrator.cancelTurn
+   *   session.end              → orchestrator.endSession
+   *   session.resume           → read `last_seen_seq` + restoreFromStorage
+   *   session.stream.ack       → ack accounting (decrement pending)
+   *   session.heartbeat        → heartbeat timestamp
    */
   async webSocketMessage(
     _ws: unknown,
     message: string | ArrayBuffer,
   ): Promise<void> {
-    const text =
+    const raw =
       typeof message === "string"
         ? message
         : new TextDecoder().decode(message);
 
-    let parsed: Record<string, unknown>;
-    try {
-      parsed = JSON.parse(text) as Record<string, unknown>;
-    } catch {
-      return;
+    const envelope = this.acceptClientFrame(raw);
+    if (!envelope.ok) return;
+
+    await this.dispatchAdmissibleFrame(envelope.messageType, envelope.body);
+  }
+
+  /**
+   * Run a raw wire payload through nacp-session ingress + legality gate.
+   * The DO uses this for both WS and HTTP fallback so they share one
+   * truth. Returns a typed envelope; rejections are recorded so callers
+   * (and tests) can introspect them without exceptions.
+   */
+  acceptClientFrame(raw: string | unknown): IngressEnvelope {
+    const result = acceptIngress({
+      raw,
+      authority: this.buildIngressContext(),
+      streamSeq: this.streamSeq,
+      streamUuid: this.streamUuid,
+      phase: this.state.actorState.phase as SessionPhase,
+    });
+    if (result.ok) {
+      this.streamSeq += 1;
+      this.lastIngressRejection = null;
+    } else {
+      this.lastIngressRejection = result;
     }
+    return result;
+  }
 
-    const messageType = parsed.message_type as string | undefined;
-    if (!messageType) return;
-
-    const body = (parsed.body as Record<string, unknown> | undefined) ?? parsed;
-
+  /**
+   * Dispatch a frame that the legality gate already accepted. No
+   * legality decisions live here — they all happened in
+   * `acceptClientFrame()`.
+   */
+  async dispatchAdmissibleFrame(
+    messageType: string,
+    body: Record<string, unknown> | undefined,
+  ): Promise<void> {
     switch (messageType) {
-      case "session.start": {
-        const turnInput = extractTurnInput(messageType, body);
+      case "session.start":
+      case "session.followup_input": {
+        const turnInput = extractTurnInput(messageType, body ?? {});
         if (turnInput) {
-          this.state = await this.orchestrator.startTurn(this.state, turnInput);
+          // A4 P3-02 single-active-turn invariant: if a turn is already
+          // running, queue the input for the next turn instead of
+          // starting a parallel one. Phase 3 only acks the queued
+          // input; richer queue / replace / merge semantics are out of
+          // scope.
+          if (this.state.actorState.phase === "turn_running") {
+            this.state = {
+              ...this.state,
+              actorState: {
+                ...this.state.actorState,
+                pendingInputs: [
+                  ...this.state.actorState.pendingInputs,
+                  turnInput,
+                ],
+              },
+            };
+          } else {
+            this.state = await this.orchestrator.startTurn(
+              this.state,
+              turnInput,
+            );
+          }
         }
         break;
       }
@@ -232,16 +347,40 @@ export class NanoSessionDO {
       }
 
       case "session.resume": {
-        // Use the real SessionResumeBody field — `last_seen_seq`.
-        const lastSeenSeq = body["last_seen_seq"];
+        const lastSeenSeq = body?.["last_seen_seq"];
         if (typeof lastSeenSeq === "number" && Number.isFinite(lastSeenSeq)) {
           await this.doState.storage?.put(LAST_SEEN_SEQ_KEY, lastSeenSeq);
+          // Ask the helper to replay the gap, if it exists. The helper
+          // is the single source of truth for per-stream seq + replay
+          // buffer state (A4 P2-02 / P2-03).
+          const helper = this.ensureWsHelper();
+          if (helper) {
+            // Restore the helper from the DO storage first so that a
+            // reconnect after hibernation sees the pre-detach buffer.
+            const helperStorage = this.wsHelperStorage();
+            if (helperStorage) await helper.restore(helperStorage);
+            helper.handleResume(this.streamUuid, lastSeenSeq);
+          }
         }
         await this.restoreFromStorage();
+        await this.emitEdgeTrace("session.edge.resume", {
+          lastSeenSeq:
+            typeof lastSeenSeq === "number" ? lastSeenSeq : null,
+        });
         break;
       }
 
       case "session.stream.ack": {
+        const ackedSeq = body?.["acked_seq"];
+        const streamUuid = body?.["stream_uuid"];
+        if (
+          typeof ackedSeq === "number" &&
+          Number.isFinite(ackedSeq) &&
+          typeof streamUuid === "string"
+        ) {
+          const helper = this.ensureWsHelper();
+          if (helper) helper.handleAck(streamUuid, ackedSeq);
+        }
         if (this.ackWindow.pendingCount > 0) {
           this.ackWindow.pendingCount -= 1;
         }
@@ -250,12 +389,120 @@ export class NanoSessionDO {
 
       case "session.heartbeat": {
         this.heartbeatTracker.lastHeartbeatAt = new Date().toISOString();
+        const helper = this.ensureWsHelper();
+        if (helper) helper.handleHeartbeat();
         break;
       }
 
       default:
         break;
     }
+  }
+
+  /** Build the IngressContext for nacp-session's authority stamping. */
+  private buildIngressContext(): IngressContext {
+    const envTeamUuid = (this.env as { TEAM_UUID?: unknown } | undefined)
+      ?.TEAM_UUID;
+    const teamUuid =
+      typeof envTeamUuid === "string" && envTeamUuid.length > 0
+        ? envTeamUuid
+        : "_unknown";
+    const planLevel: IngressContext["plan_level"] = "internal";
+    return {
+      team_uuid: teamUuid,
+      plan_level: planLevel,
+      stamped_by_key: "nano-agent.session.do@v1",
+    };
+  }
+
+  /** Get the most recent typed ingress rejection (or null if last frame was admitted). */
+  getLastIngressRejection(): IngressEnvelope | null {
+    return this.lastIngressRejection;
+  }
+
+  /**
+   * Return the DO-owned SessionWebSocketHelper, constructing it lazily
+   * with the best-available session context. This is the same helper
+   * referenced by replay / ack / heartbeat / checkpoint / restore.
+   *
+   * `null` return means the DO does not yet have a sessionUuid and
+   * cannot construct a helper safely — the caller should avoid relying
+   * on replay/ack state until the session has an identity.
+   */
+  ensureWsHelper(): SessionWebSocketHelper | null {
+    if (this.wsHelper) return this.wsHelper;
+    if (this.sessionUuid === null) return null;
+    const envTeamUuid = (this.env as { TEAM_UUID?: unknown } | undefined)
+      ?.TEAM_UUID;
+    const teamUuid =
+      typeof envTeamUuid === "string" && envTeamUuid.length > 0
+        ? envTeamUuid
+        : null;
+    if (teamUuid === null) return null;
+    if (!this.traceUuid) this.traceUuid = crypto.randomUUID();
+
+    const sessionContext: SessionContext = {
+      team_uuid: teamUuid,
+      plan_level: "internal",
+      session_uuid: this.sessionUuid,
+      trace_uuid: this.traceUuid,
+      producer_key: "nano-agent.session.do@v1",
+      stamped_by_key: "nano-agent.session.do@v1",
+    };
+    this.wsHelper = new SessionWebSocketHelper({ sessionContext });
+    return this.wsHelper;
+  }
+
+  /** Get the current WS helper without constructing it. */
+  getWsHelper(): SessionWebSocketHelper | null {
+    return this.wsHelper;
+  }
+
+  /** Current trace UUID, if assigned. */
+  getTraceUuid(): string | null {
+    return this.traceUuid;
+  }
+
+  /**
+   * Emit an edge-lifecycle trace event through the composition's eval
+   * sink (A4 P4-01). The event is typed structurally against
+   * `@nano-agent/eval-observability`'s `TraceEventBase` so any sink wired
+   * in by a composition factory sees a trace-law compliant event.
+   *
+   * No-op when the session has no team UUID / session UUID yet — in that
+   * case there is no anchor to thread, so silently dropping is the
+   * correct trace-first behaviour (the DO has nothing to anchor to).
+   */
+  private async emitEdgeTrace(
+    eventKind: string,
+    extra: Record<string, unknown> = {},
+    layer: "live" | "durable-audit" = "durable-audit",
+  ): Promise<void> {
+    const evalSink = this.subsystems.eval as
+      | { emit?: (e: unknown) => Promise<void> | void }
+      | undefined;
+    if (!evalSink?.emit) return;
+    if (!this.traceUuid) this.traceUuid = crypto.randomUUID();
+    const envTeamUuid = (this.env as { TEAM_UUID?: unknown } | undefined)
+      ?.TEAM_UUID;
+    const teamUuid =
+      typeof envTeamUuid === "string" && envTeamUuid.length > 0
+        ? envTeamUuid
+        : null;
+    if (!teamUuid || !this.sessionUuid) return;
+
+    await evalSink.emit({
+      eventKind,
+      timestamp: new Date().toISOString(),
+      traceUuid: this.traceUuid,
+      sessionUuid: this.sessionUuid,
+      teamUuid,
+      sourceRole: "session",
+      sourceKey: "nano-agent.session.do@v1",
+      audience: "internal",
+      layer,
+      ...extra,
+    });
   }
 
   // ── webSocketClose ─────────────────────────────────────────
@@ -265,6 +512,7 @@ export class NanoSessionDO {
    * available, then detaches the actor back to the `unattached` phase.
    */
   async webSocketClose(_ws: unknown): Promise<void> {
+    await this.emitEdgeTrace("session.edge.detach");
     await this.persistCheckpoint();
 
     if (this.state.actorState.phase === "turn_running") {
@@ -376,9 +624,33 @@ export class NanoSessionDO {
 
   // ── Persistence ────────────────────────────────────────────
 
+  /**
+   * Narrow the DO storage surface to the `SessionStorageLike` shape the
+   * helper expects. Returns null when the DO was constructed without
+   * storage (e.g. the default test harness), in which case the helper
+   * runs in isolate-memory-only mode.
+   */
+  private wsHelperStorage(): SessionStorageLike | null {
+    const storage = this.doState.storage;
+    if (!storage) return null;
+    return {
+      get: async <T,>(k: string) => storage.get<T>(k),
+      put: async <T,>(k: string, v: T) => {
+        await storage.put(k, v);
+      },
+    };
+  }
+
   private async persistCheckpoint(): Promise<void> {
     const storage = this.doState.storage;
     if (!storage) return;
+
+    // A4 P2-03: persist the WS helper's replay + stream seq state so a
+    // fresh DO instance can reconstruct the buffer after hibernation.
+    const helperStorage = this.wsHelperStorage();
+    if (this.wsHelper && helperStorage) {
+      await this.wsHelper.checkpoint(helperStorage);
+    }
 
     // Refuse to persist an invalid checkpoint. This is the symmetry
     // invariant for `validateSessionCheckpoint()`: a DO that cannot
@@ -436,11 +708,27 @@ export class NanoSessionDO {
   private async handleWebSocketUpgrade(sessionId: string): Promise<Response> {
     const result = await this.wsController.handleUpgrade(sessionId);
     if (result.status !== 101) {
-      return new Response(JSON.stringify({ error: "Upgrade failed" }), {
-        status: result.status,
-        headers: { "Content-Type": "application/json" },
-      });
+      const reason = result.status === 400 ? result.reason : "upgrade-failed";
+      return new Response(
+        JSON.stringify({ error: "Upgrade failed", reason }),
+        {
+          status: result.status,
+          headers: { "Content-Type": "application/json" },
+        },
+      );
     }
+
+    // Construct (or re-use) the SessionWebSocketHelper and plumb it
+    // through the controller so `handleMessage` / `handleClose` have a
+    // real target. The DO calls `webSocketMessage` directly in
+    // production, but tests may route through the controller, so the
+    // hook is always attached.
+    this.ensureWsHelper();
+    this.wsController.attachHooks({
+      onMessage: (raw) => this.webSocketMessage(null, raw),
+      onClose: () => this.webSocketClose(null),
+    });
+    await this.emitEdgeTrace("session.edge.attach");
 
     // If the runtime provides `acceptWebSocket`, use it — this is the
     // real Cloudflare DO WebSocket path. Otherwise return a synthetic

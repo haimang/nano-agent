@@ -1,56 +1,83 @@
 /**
- * Session DO Runtime — WebSocket controller stub.
+ * Session DO Runtime — WebSocket controller façade (A4 Phase 2).
  *
- * Handles WebSocket lifecycle for a session: upgrade, message
- * processing, and close. This is a stub that defines the contract;
- * real implementations will integrate with the kernel and stream
- * subsystems.
+ * The controller is the named edge-side façade that the DO calls from
+ * `fetch()` / `webSocketMessage()` / `webSocketClose()`. It owns:
  *
- * Reference: docs/action-plan/session-do-runtime.md Phase 2
+ *   - the upgrade verdict (accept / reject with reason)
+ *   - a bridge into the DO's ingress pipeline via `onMessage(raw)` —
+ *     the DO registers a handler at construction so the controller can
+ *     route client bytes into `acceptIngress()` + dispatch without
+ *     each DO lifecycle method having to wire the pipeline itself
+ *   - the `detach()` hook (persist + signal health on close)
+ *
+ * The controller purposely does NOT instantiate a `SessionWebSocketHelper`
+ * itself — the DO holds one and shares it through the handler closures.
+ * This keeps replay/ack/heartbeat helpers as a single source of truth.
  */
 
-/**
- * WebSocket controller for session real-time communication.
- *
- * Manages the lifecycle of a WebSocket connection to a session DO:
- * upgrade negotiation, message dispatch, and cleanup on close.
- */
+export type WsUpgradeOutcome =
+  | { status: 101 }
+  | { status: 400; reason: "missing-session-id" | "invalid-session-id" };
+
+export interface WsControllerHooks {
+  /** Called once per admitted client frame. */
+  readonly onMessage?: (raw: string | ArrayBuffer) => Promise<void>;
+  /** Called when the WS is about to close. */
+  readonly onClose?: () => Promise<void>;
+}
+
+/** UUID (v1–v5) pattern matching the DO's `attachSessionUuid` gate. */
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 export class WsController {
+  private hooks: WsControllerHooks;
+
+  constructor(hooks: WsControllerHooks = {}) {
+    this.hooks = hooks;
+  }
+
+  /** Late-bind the DO-owned hooks (used when the DO constructs the controller
+   *  before the helper is available). */
+  attachHooks(hooks: WsControllerHooks): void {
+    this.hooks = { ...this.hooks, ...hooks };
+  }
+
   /**
-   * Handle a WebSocket upgrade request for the given session.
-   *
-   * Returns a status code indicating the result:
-   *   101 — upgrade accepted
-   *   400 — invalid session ID
+   * Verdict for a WebSocket upgrade. `101` means the DO may call
+   * `acceptWebSocket()`. `400` means reject with a typed reason so the
+   * caller can surface a specific response body.
    */
-  async handleUpgrade(sessionId: string): Promise<{ status: number }> {
+  async handleUpgrade(sessionId: string): Promise<WsUpgradeOutcome> {
     if (!sessionId || sessionId.trim().length === 0) {
-      return { status: 400 };
+      return { status: 400, reason: "missing-session-id" };
     }
-    // Stub: in production this would initiate the WebSocket handshake
-    // and attach the connection to the session actor.
+    // Require UUID-shaped session ids so the checkpoint path never
+    // persists a "bad-session" sentinel. Non-UUID ids still give 400,
+    // preserving the earlier "empty string" rejection behaviour.
+    if (!UUID_RE.test(sessionId)) {
+      return { status: 400, reason: "invalid-session-id" };
+    }
     return { status: 101 };
   }
 
   /**
-   * Handle an incoming WebSocket message for the given session.
-   *
-   * The message is dispatched to the session actor for processing.
-   * This is a fire-and-forget call from the WebSocket frame handler.
+   * Forward an incoming message to the DO-owned ingress pipeline. No-op
+   * when no handler is attached (test scaffolding / pre-wire).
    */
-  async handleMessage(_sessionId: string, _message: unknown): Promise<void> {
-    // Stub: in production this would parse the NACP frame,
-    // extract turn input, and dispatch to the kernel step loop.
+  async handleMessage(
+    _sessionId: string,
+    message: unknown,
+  ): Promise<void> {
+    if (!this.hooks.onMessage) return;
+    if (typeof message === "string" || message instanceof ArrayBuffer) {
+      await this.hooks.onMessage(message);
+    }
   }
 
-  /**
-   * Handle a WebSocket close event for the given session.
-   *
-   * Triggers detach logic: checkpoint state, release resources,
-   * and clean up the session actor's connection tracking.
-   */
+  /** Trigger detach on a close event. */
   async handleClose(_sessionId: string): Promise<void> {
-    // Stub: in production this would trigger session detach,
-    // persist checkpoint, and notify the health gate.
+    if (this.hooks.onClose) await this.hooks.onClose();
   }
 }

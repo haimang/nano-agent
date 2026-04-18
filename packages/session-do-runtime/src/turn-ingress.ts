@@ -1,104 +1,112 @@
 /**
- * Turn Ingress Contract — explicitly documents the current minimal reality
- * for how user turns enter the Session DO.
+ * Turn Ingress Contract — the canonical adapter from a normalized session
+ * frame onto a kernel-friendly `TurnInput`.
  *
- * Current state (v1):
- *   - Only `session.start` with `initial_input` is a known turn ingress path.
- *   - Follow-up turn input (e.g. user replies mid-conversation) is NOT yet
- *     frozen in the NACP-Session profile.
+ * A4 P1-01 (Phase 0 widened surface):
+ *   - The legacy `future-prompt-family` placeholder is gone. The Phase 0
+ *     contract freeze (AX-QNA Q8) added `session.followup_input` to the
+ *     `nacp-session` truth, and this module now consumes it directly.
+ *   - The two ingress kinds are:
+ *       * `session-start-initial-input` — first turn carried by
+ *         `session.start.body.initial_input`
+ *       * `session-followup-input`      — subsequent turn(s) carried by
+ *         `session.followup_input.body.text`
+ *   - Anything else returns `null`. The runtime never invents a third
+ *     ingress family.
  *
- * This module makes that gap explicit in code, not just in docs, so that
- * downstream consumers (kernel, workspace) can depend on a stable contract
- * and will get a compile-time signal when the ingress family expands.
- *
- * Reference: docs/action-plan/session-do-runtime.md Phase 1 (P1-01 to P1-03)
- * Reference code: packages/nacp-session/src/ingress.ts (normalizeClientFrame)
+ * Reference code: `packages/nacp-session/src/{messages,ingress}.ts`
  */
 
 // ── Turn Ingress Kind ──
 
 /**
- * Discriminant for turn input sources.
- *
- *   "session-start-initial-input" — the only v1 reality: session.start body contains initial_input
- *   "future-prompt-family"        — placeholder for follow-up prompt messages (not yet frozen)
+ * Discriminant for turn input sources. Both kinds are first-class — the
+ * runtime treats follow-up input as just another turn for the purposes
+ * of `single-active-turn` admissibility (A4 P3-02).
  */
 export type TurnIngressKind =
   | "session-start-initial-input"
-  | "future-prompt-family";
+  | "session-followup-input";
 
 // ── Turn Input ──
 
 /**
  * Normalized turn input that the kernel can consume.
  *
- * Regardless of how the turn arrived (session.start, future prompt message),
- * the kernel always receives a TurnInput with content, a turnId, and a timestamp.
+ * Regardless of how the turn arrived, the kernel always receives a
+ * `TurnInput` with content, a turnId, a receivedAt, and the originating
+ * `messageType`. `messageType` lets the orchestrator and traces explain
+ * which session message this turn came from without losing the legality
+ * gate's verdict.
  */
 export interface TurnInput {
   readonly kind: TurnIngressKind;
   readonly content: string;
   readonly turnId: string;
   readonly receivedAt: string;
+  readonly messageType: "session.start" | "session.followup_input";
 }
 
 // ── Ingress Note ──
 
 /**
- * Documents that follow-up turn input is NOT yet frozen.
- *
- * This constant exists so that code and generated docs both carry the same
- * caveat. When the NACP-Session profile freezes the follow-up prompt family,
- * this note should be updated and the "future-prompt-family" kind should be
- * replaced with concrete message types.
+ * Documents the post-Phase 0 reality: the widened session ingress surface
+ * is now `session.start.initial_input` + `session.followup_input.text`.
+ * This constant exists so generated docs and prompt disclosures stay in
+ * sync with the code without anyone having to re-discover the contract.
  */
 export const TURN_INGRESS_NOTE =
-  "Follow-up turn input (user replies after session.start) is NOT yet frozen " +
-  "in the NACP-Session profile. The 'future-prompt-family' TurnIngressKind is " +
-  "a placeholder. The concrete message type(s), body schema, and delivery " +
-  "semantics will be added in a future NACP-Session version. Until then, only " +
-  "'session-start-initial-input' is a supported ingress path.";
+  "Session DO accepts two turn ingress paths: 'session.start' with a non-empty " +
+  "initial_input (first turn) and 'session.followup_input' with a non-empty text " +
+  "(follow-up turns). Both run through nacp-session's normalizeClientFrame and " +
+  "are subject to the role/phase legality gate. Richer queue / replace / merge " +
+  "semantics are explicitly out of scope and remain for a future session protocol cut.";
 
 // ── Extract Turn Input ──
 
 /**
- * Extracts a TurnInput from an incoming message, or returns null if the
- * message is not a recognized turn ingress.
- *
- * v1 reality: only handles `session.start` with a body containing `initial_input`.
- * All other message types return null.
- *
- * @param messageType - The NACP message_type string (e.g. "session.start")
- * @param body - The parsed message body (unknown shape, validated here)
- * @returns TurnInput if the message carries turn content, null otherwise
+ * Extracts a `TurnInput` from an incoming message body, or returns null
+ * if the message is not a recognised turn ingress. The caller is
+ * responsible for having already run the message through
+ * `normalizeClientFrame()` so that `messageType` and `body` arrive
+ * already-validated against the nacp-session schemas.
  */
 export function extractTurnInput(
   messageType: string,
   body: unknown,
 ): TurnInput | null {
-  if (messageType !== "session.start") {
+  if (body === null || body === undefined || typeof body !== "object") {
     return null;
   }
-
-  if (
-    body === null ||
-    body === undefined ||
-    typeof body !== "object"
-  ) {
-    return null;
-  }
-
   const record = body as Record<string, unknown>;
-  const initialInput = record["initial_input"];
 
-  if (typeof initialInput !== "string" || initialInput.length === 0) {
-    return null;
+  if (messageType === "session.start") {
+    const initialInput = record["initial_input"];
+    if (typeof initialInput !== "string" || initialInput.length === 0) {
+      return null;
+    }
+    return {
+      kind: "session-start-initial-input",
+      content: initialInput,
+      turnId: crypto.randomUUID(),
+      receivedAt: new Date().toISOString(),
+      messageType: "session.start",
+    };
   }
 
-  return {
-    kind: "session-start-initial-input",
-    content: initialInput,
-    turnId: crypto.randomUUID(),
-    receivedAt: new Date().toISOString(),
-  };
+  if (messageType === "session.followup_input") {
+    const text = record["text"];
+    if (typeof text !== "string" || text.length === 0) {
+      return null;
+    }
+    return {
+      kind: "session-followup-input",
+      content: text,
+      turnId: crypto.randomUUID(),
+      receivedAt: new Date().toISOString(),
+      messageType: "session.followup_input",
+    };
+  }
+
+  return null;
 }
