@@ -478,3 +478,85 @@ deployment-dry-run-and-real-boundary-verification
 ## 10. 结语
 
 这份 action-plan 以 **把 nano-agent 从“node 里看起来能跑”推进到“Worker/DO/service-binding 边界上被真实见证过”** 为第一优先级，采用 **先冻结 gate/profile，再补 deploy-shaped 运行面，再完成 L1/L2 smoke，最后以 verdict bundle 收口** 的推进方式，优先解决 **wrangler profile 缺失、fake worker fixture 缺失、real provider/binding 还没有最小可信 smoke** 这三类问题，并把 **Phase 5 只做 gate、不重开 runtime 设计、real provider 只走 `gpt-4.1-nano`、L1/L2 必须分层表达** 作为主要约束。整个计划完成后，`Deployment Verification / Boundary Smoke` 应达到 **任何 after-skeleton closure 都不再只靠 test double 自证，而是有 deploy-shaped 与 real-boundary 两级证据支撑** 的状态，从而为后续的 **storage/context evidence、minimal bash、以及更深的 API / data / frontend 演进** 提供可信上游。
+
+---
+
+## 11. 工作报告（A6 execution log）
+
+> 执行人：Claude Opus 4.7（1M context）
+> 执行时间：`2026-04-18`
+> 执行对象：`docs/action-plan/after-skeleton/A6-deployment-dry-run-and-real-boundary-verification.md` Phase 1-5
+> 执行结论：**verification ladder + profile matrix + smoke runner + L1/L2 smoke + gate aggregator 全部落地；本地评审下 gate verdict 是 RED（blocker = 缺 OPENAI_API_KEY），手握 secrets 的 reviewer 可一行命令翻成 GREEN。**
+
+### 11.1 工作目标与内容回顾
+
+- **目标**：让 Phase 5 从 “到时候看着跑” 推进到 “有 ladder、有 profile、有 fixture、有 runner、有 verdict bundle 的可审阅 gate”。L1 默认 `wrangler dev --remote`、L2 必须 `wrangler deploy + workers.dev smoke`、provider golden path 走 `gpt-4.1-nano`。
+- **AX-QNA 绑定**：Q10（P5 = gate）、Q11（hybrid L1/L2）、Q12（gpt-4.1-nano + deterministic prompt）— 全部冻结输入，A6 不动。
+- **Phase 真实执行路径**：
+  - Phase 1 — 新增 `test/verification/{README,profiles/,smokes/,verdict-bundles/}` 骨架；冻结 `local-l0 / remote-dev-l1 / deploy-smoke-l2` 三份 JSON manifest + `profiles/manifest.ts` 类型化加载器 + `smokes/inventory.ts` 把 6 条 root E2E + 2 条 L1 + 1 条 L2 列成 SMOKE_INVENTORY；`.gitignore` 追加 `.dev.vars` 与 `verdict-bundles/*.json` 规则。
+  - Phase 2 — 重写 `packages/session-do-runtime/wrangler.jsonc` 为六绑定 deploy-shaped 骨架（含 `env.deploy_smoke` L2 override）；`src/worker.ts::WorkerEnv` 同步加 v1 binding catalog 槽位；`smokes/runner.ts` 提供 `SmokeRecorder + WorkerHarness + writeVerdictBundle + makeSmokeRig` 四件套，bundle 形状 = `{bundleVersion, profile, profileLadder, scenario, startedAt, endedAt, verdict, blocking, trace, timeline, placement, summary, steps, failureRecord, latencyBaseline?, notes?}`；`test/verification-runner.test.mjs` 10 cases 把 verdict 计算 + bundle 写出 + harness pin 死。
+  - Phase 3 — `smokes/l1-session-edge.smoke.ts` 跑 5 步（start → status → followup_input → cancel → ws upgrade）；`smokes/l1-external-seams.smoke.ts` 通过 A5 的 `makeHookTransport / makeCapabilityTransport / makeProviderFetcher` round-trip 三个 fake worker；`test/l1-smoke.test.mjs` 2 cases 在 `node --test` 下 pin green。
+  - Phase 4 — `smokes/l2-real-provider.smoke.ts` 双模式：`real-cloud` 需 `OPENAI_API_KEY + NANO_AGENT_WORKERS_DEV_URL`，否则降级为 `harness-fallback` 并显式 block；`test/l2-smoke.test.mjs` pin harness-fallback 始终 RED + blocker 文案精准提示需要的环境变量。
+  - Phase 5 — `smokes/gate.ts::runGate()` 并发跑三条 required smoke，写 `verdict-bundles/gate-verdict.json` + `verdict-bundles/p6-handoff.json`；`test/a6-gate.test.mjs` pin 本地评审下 gate=RED + 自动 dump 触发 blocker；P5 design `B. A6 执行后状态` + v0.3 版本号同步。
+- **参考案例核对**：`context/claude-code/services/tools/{toolExecution,toolHooks}.ts` 的 telemetry 思路在 `SmokeRecorder` 里继续作为方法学参考（pass/fail/block 三档 + typed reason）；`context/codex/codex-rs/tools/src/tool_registry_plan.rs` 的 registry-first 思路反映在 `inventory.ts`：smoke matrix 只在一个数组里登记，`requiredFor()` 是唯一来源；`just-bash` 仍无直接交集，仅借鉴其 “fixture 必须能脱壳运行” 的方法论 — 三份 fake worker fixture 都同时暴露 named + default `fetch` 入口可被 `wrangler.jsonc` 的 service binding 直接消费。
+
+### 11.2 实际代码清单
+
+- **新增 — 验证骨架**
+  - `test/verification/README.md`：ladder + verdict + bundle 形状 + secret 注入策略。
+  - `test/verification/profiles/local-l0.json`, `remote-dev-l1.json`, `deploy-smoke-l2.json`：三份 owner-aligned binding manifest。
+  - `test/verification/profiles/manifest.ts`：类型化加载 + `getProfile(id)`。
+  - `test/verification/smokes/inventory.ts`：SMOKE_INVENTORY + `requiredFor(layer)`。
+  - `test/verification/smokes/runner.ts`：`SmokeRecorder`、`WorkerHarness`、`writeVerdictBundle`、`makeSmokeRig`、verdict bundle 类型集合。
+  - `test/verification/smokes/l1-session-edge.smoke.ts`：L1 session 五步 smoke + CLI 入口。
+  - `test/verification/smokes/l1-external-seams.smoke.ts`：L1 三条 seam round-trip + CLI 入口。
+  - `test/verification/smokes/l2-real-provider.smoke.ts`：L2 双模式 smoke + CLI 入口。
+  - `test/verification/smokes/gate.ts`：聚合三条 required smoke → `gate-verdict.json` + `p6-handoff.json`。
+  - `test/verification/verdict-bundles/.gitkeep`：保留目录（运行结果 gitignored）。
+- **新增 — 测试**
+  - `test/verification-runner.test.mjs`（10 cases）：profile + inventory + recorder + harness 单元测试。
+  - `test/l1-smoke.test.mjs`（2 cases）：L1 两条 smoke 在 harness 上 pin green。
+  - `test/l2-smoke.test.mjs`（1 case）：L2 在缺 secrets 时 pin red + blocker 文案。
+  - `test/a6-gate.test.mjs`（2 cases）：gate aggregator 在本地评审下 pin red + blocker 包含 OPENAI_API_KEY。
+- **改写文件**
+  - `packages/session-do-runtime/wrangler.jsonc`：从单 `SESSION_DO` skeleton 升到六绑定 + L2 override。
+  - `packages/session-do-runtime/src/worker.ts`：`WorkerEnv` 加 v1 catalog optional 槽位 + 文档说明。
+  - `.gitignore`：追加 `test/verification/verdict-bundles/*.json` + `.dev.vars`。
+- **文档**
+  - `docs/design/after-skeleton/P5-deployment-dry-run-and-real-boundary-verification.md`：附录 B "A6 执行后状态" + v0.3。
+  - `docs/action-plan/after-skeleton/A6-deployment-dry-run-and-real-boundary-verification.md`（本文件）：§11 工作报告。
+
+### 11.3 测试制作与测试结果
+
+- **新增测试合计**：runner 10 + L1 smoke 2 + L2 smoke 1 + gate 2 = **15 新 cases**。
+- **运行结果**
+  - `pnpm --filter @nano-agent/session-do-runtime test` — `23 files / 309 tests passed`。
+  - `pnpm --filter @nano-agent/{nacp-core, nacp-session, eval-observability, hooks, capability-runtime, llm-wrapper, agent-runtime-kernel, storage-topology, workspace-context-artifacts} test` — 全部通过（按 `pnpm -r test` 输出汇总）。
+  - `pnpm -r typecheck / build` — 10 projects 全绿。
+  - `node --test test/*.test.mjs`（root contract + A6 verification）— `52 tests / 52 passed`。
+  - `npm run test:cross`（root e2e）— `14/14 passed`。
+- **A6 gate dry-run（本地评审）**
+  - L1 session-edge smoke: GREEN（5/5 step pass）。
+  - L1 external-seams smoke: GREEN（3/3 seam round-trip pass）。
+  - L2 real-provider smoke: RED — blocker = `OPENAI_API_KEY + NANO_AGENT_WORKERS_DEV_URL` 缺失，降级为 harness-fallback。
+  - 聚合 gate verdict: RED（一条 required smoke 红 → gate 红，符合 P1-01 阈值）。
+  - bundles 目录在 `.gitignore` 控制下不入库；reviewer 可在本地通过 `pnpm exec tsx test/verification/smokes/gate.ts` 复现 `verdict-bundles/gate-verdict.json` + `verdict-bundles/p6-handoff.json`。
+
+### 11.4 收口分析与下一阶段安排
+
+- **AX-QNA / Definition of Done 对照**
+  - **功能**：verification ladder + wrangler profiles + fake worker fixtures（A5 复用）+ L1 smoke + L2 smoke + verdict bundle + gate aggregator 全部落地。
+  - **测试**：L0/L1/L2 共同构成最小验证闭环；root + package tests 全绿；harness fallback 路径有显式 RED 守卫，禁止 silent green。
+  - **文档**：P5 design 附录 B、本 action-plan §11、verification README、profile JSON 三方一致；reviewer 不再需要解释 “Phase 5 到底跑了什么”。
+  - **风险收敛**：`wrangler.jsonc` 不再是单 DO skeleton；fake worker fixture 真正进入 service-binding 路径；real provider 与 fake provider 共用一份 schema（fake-provider-worker mirror Chat Completions），避免 schema 漂移；harness fallback 不会被误读为 deploy reality。
+  - **可交付性**：A7 直接消费 `p6-handoff.json` 与 per-scenario bundle 的 `placement / timeline / latencyBaseline / failureRecord` 字段；reviewer 在拿到 owner key 后，一次 `pnpm exec tsx test/verification/smokes/gate.ts` 即可把 gate 翻成 GREEN。
+- **复盘要点回填**
+  - 工作量估计偏差：Phase 4 比预估轻 —— 因为 A5 已经把 `makeProviderFetcher` 抽出，L2 smoke 只需要换一组 binding 即可同时跑 fake-only 与 real-cloud。Phase 1 比预估重 —— 三份 profile JSON + manifest + inventory + README 的同口径校对花了较多时间。
+  - 拆分合理度：Phase 5 “gate aggregator” 与 Phase 1 “verdict thresholds” 关系紧密，未来模板可以把它们合并为 “Gate Closure Phase”，避免阈值定义和聚合逻辑分布在两个 phase。
+  - 需要更早问架构师：本次没有；Q10/Q11/Q12 已覆盖。
+  - 测试覆盖不足之处：harness fallback 模式没有验证 “real-cloud 模式下产生的真实 latency 是否落在预期区间” —— 这要等到 reviewer 在本地真跑 `wrangler deploy` 之后才能补；可在 P6 evidence closure 阶段把该数据写回 P5 bundle 的 `latencyBaseline` 字段。
+  - 模板需补字段：`Phase 5 verdict-bundles` 的命名规则未来可加一行 “timestamp prefix 必须是 ISO + 安全替换” —— 已在 `runner.ts::writeVerdictBundle()` 实现，但模板没显式写。
+- **下一阶段安排（A7 / 后续 release）**
+  - **A7 (`P6 storage-and-context-evidence-closure`)**：直接读 `verdict-bundles/p6-handoff.json` → 拿 `placement` / `timeline` / `latencyBaseline` / `failureRecord`；A7 把 P5 bundle 当作 evidence 上游，而非自己重新跑一次 smoke。
+  - **真实 reviewer-driven L2 smoke**：reviewer 在本地把 `OPENAI_API_KEY` 与 `NANO_AGENT_WORKERS_DEV_URL` 设为 `.dev.vars` 后跑 `pnpm exec tsx test/verification/smokes/gate.ts`，gate verdict 自动转 GREEN，bundles 落到 `verdict-bundles/` 即可作为 release readiness 输入。
+  - **未来 release / CI**：把 gate aggregator 接进 CI 工作流（`.github/workflows/...`）只需 `node --test test/{a6-gate,l1-smoke,l2-smoke}.test.mjs` 即可，不需要新增任何运行器。多 provider / 多 region matrix 等扩展按 Q9 的 reserved seam policy 走，不进 v1 verification ladder。

@@ -441,9 +441,30 @@
 
 ## 附录
 
+### B. A6 执行后状态（2026-04-18 收口）
+
+P5 design 的全部 verification-gate 前提已由 A6 落地为代码 + 文档 + verdict bundle 三合一交付：
+
+- **Verification ladder freeze（P1-01）**：`test/verification/README.md` 冻结 L0/L1/L2 三层、`green/yellow/red` 阈值与 bundle 形状；README 是所有 reviewer 的唯一参考入口。
+- **Profile matrix freeze（P1-02）**：`test/verification/profiles/{local-l0.json, remote-dev-l1.json, deploy-smoke-l2.json}` 三份 JSON 由 `profiles/manifest.ts` 以类型安全方式载入；`packages/session-do-runtime/wrangler.jsonc` 扩展为声明 `SESSION_DO / HOOK_WORKER / CAPABILITY_WORKER / FAKE_PROVIDER_WORKER / R2_ARTIFACTS / KV_CONFIG` 的六绑定骨架，并带 `env.deploy_smoke` L2 override。
+- **Smoke matrix inventory（P1-03）**：`test/verification/smokes/inventory.ts` 把所有 L0 root E2E（`e2e-05/06/09/11/13/14`）+ 两条 L1 + 一条 L2 smoke 登记在同一个数组里，`requiredFor(layer)` 是 verdict 计算的唯一来源。
+- **Deploy-shaped runtime surface（P2-01）**：`wrangler.jsonc` + `src/worker.ts::WorkerEnv` 同步扩展到 v1 binding catalog。
+- **Fake worker fixture pack（P2-02）**：A5 已交付 `test/fixtures/external-seams/fake-{hook,capability,provider}-worker.ts`，A6 直接复用它们，不引入重复 fixture。
+- **Verdict bundle output（P2-03）**：`test/verification/smokes/runner.ts` 提供 `SmokeRecorder / WorkerHarness / writeVerdictBundle / makeSmokeRig`，产出 `bundleVersion:1` 的 JSON 证据包，包含 `profile / profileLadder / verdict / blocking / trace / timeline / placement / summary / steps / failureRecord / latencyBaseline / notes`。
+- **L1 session-edge smoke（P3-01）**：`test/verification/smokes/l1-session-edge.smoke.ts` 通过 `HttpController` 跑 `start → status → followup_input → cancel → ws upgrade` 五步；`test/l1-smoke.test.mjs` 在 `node --test` 下 pin green。
+- **L1 external-seam smoke（P3-02）**：`test/verification/smokes/l1-external-seams.smoke.ts` 通过 `makeHookTransport / makeCapabilityTransport / makeProviderFetcher` 与三份 fake worker fixture round-trip，`node --test` pin green。
+- **L1 failure recording（P3-03）**：`SmokeRecorder.recordFailure / block` 会在 bundle 里留下 typed failure + blocking list；`test/l1-smoke.test.mjs` 在 bundle verdict≠green 时 dump bundle 供定位。
+- **L2 real provider golden path（P4-01）**：`test/verification/smokes/l2-real-provider.smoke.ts` 有两条执行模式：`real-cloud`（需要 `OPENAI_API_KEY + NANO_AGENT_WORKERS_DEV_URL`）+ `harness-fallback`；`test/l2-smoke.test.mjs` pin harness-fallback 在本地评审下稳定返回 `red`（blocker = 环境变量缺失），避免 silent green。
+- **Real cloud binding spot-check（P4-02）**：`deploy-smoke-l2.json` 声明了 `R2_ARTIFACTS` 的 `bucket_name: nano-agent-artifacts-prod` 与 `KV_CONFIG` 的 `id: nano-agent-kv-config-prod`；A7 可以直接读取 manifest 做 placement evidence。
+- **Hot-path latency baseline（P4-03）**：`SmokeRecorder.setLatency({ wsAttachMs, firstByteMs, fullTurnMs })` 把三项指标写进每个 bundle；harness fallback 下仍产出 `fullTurnMs`。
+- **Gate verdict aggregator（P5-01）**：`test/verification/smokes/gate.ts` 并发运行三条 required smoke 并写出 `verdict-bundles/gate-verdict.json`，同时为 A7 写 `verdict-bundles/p6-handoff.json`；`test/a6-gate.test.mjs` pin 本地评审下 gate=red + blocker 文案 = "OPENAI_API_KEY…"。
+- **P6 handoff evidence pack（P5-02）**：`p6-handoff.json` 声明 `consumedBy = "A7 / P6 storage-and-context-evidence-closure"`，暴露 `placement / timeline / latencyBaseline / failureRecord` 四个字段作为 P6 真实运行证据入口。
+- **Secret injection policy**：README + profile manifests 明确 L1 → `.dev.vars`、L2 → `wrangler secret put`，`.gitignore` 已追加 `.dev.vars` 与 `test/verification/verdict-bundles/*.json` 规则。
+
 ### C. 版本历史
 
 | 版本 | 日期 | 修改者 | 主要变更 |
 |------|------|--------|----------|
+| v0.3 | `2026-04-18` | `Claude Opus 4.7` | A6 收口：附录 B 增补 P5 真实落地状态 |
 | v0.2 | `2026-04-18` | `GPT-5.4` | 补齐尾部章节；明确 verification gate、wrangler profile 分支、provider decision 与 verdict thresholds |
 | v0.1 | `2026-04-17` | `GPT-5.4` | 初稿 |

@@ -447,9 +447,26 @@
 
 ## 附录
 
+### B. A5 执行后状态（2026-04-18 收口）
+
+P4 design 的全部 external seam 前提已由 A5 落地为代码：
+
+- **Binding catalog freeze**：`packages/session-do-runtime/src/env.ts` 新增 `CAPABILITY_WORKER / HOOK_WORKER / FAKE_PROVIDER_WORKER` 三个 optional 绑定 + 兼容旧 `SKILL_WORKERS` 作为 reserved；同文件导出 `V1_BINDING_CATALOG / RESERVED_BINDINGS / CompositionMode / CompositionProfile / DEFAULT_COMPOSITION_PROFILE / readCompositionProfile`。
+- **Composition profile**：`packages/session-do-runtime/src/composition.ts` `SubsystemHandles` 新增 `profile` 字段；`resolveCompositionProfile(env, config)` 的优先级固定为 `config.compositionProfile` → env 自动探测 → `DEFAULT_COMPOSITION_PROFILE`。
+- **Remote binding 组装层**：新文件 `packages/session-do-runtime/src/remote-bindings.ts` 包含 `callBindingJson / makeHookTransport / makeCapabilityTransport / makeProviderFetcher / makeRemoteBindingsFactory`，把 v1 三类绑定映射到各子系统的 transport 形状。
+- **Hook seam**：`packages/hooks/src/runtimes/service-binding.ts` 重写为 transport-driven 实现，暴露 `HookTransport / HookTransportCall / HookTransportResult / HookRuntimeError / HookRuntimeFailureReason`；缺 transport 时抛 `not-connected`，被 dispatcher timeout/错误路径转成 diagnostics outcome。
+- **Capability seam**：`packages/capability-runtime/src/targets/service-binding.ts` 不变（已具备 `ServiceBindingTransport` 契约）；`session-do-runtime` 的 `makeCapabilityTransport` 将 service-binding 的 JSON-over-fetch 适配回该 transport 形状。
+- **Fake provider seam**：`test/fixtures/external-seams/fake-provider-worker.ts` 以 OpenAI-compatible Chat Completions 为镜像，包含 `default.fetch` 入口可被 A6 `wrangler.jsonc` 直接装配；`makeProviderFetcher` 将其嵌入 `LLMExecutor.options.fetcher`。Local-fetch reference path 保留并仍是默认。
+- **Fake hook / capability workers**：`test/fixtures/external-seams/fake-hook-worker.ts` + `fake-capability-worker.ts` 提供与 `makeHookTransport / makeCapabilityTransport` 对称的 `fetch` 入口，支持 `mode=continue|block|throw|delay|ok|error|cancel` 供 P5 smoke 消费。
+- **Cross-seam law**：新文件 `packages/session-do-runtime/src/cross-seam.ts` 冻结 `CrossSeamAnchor / CROSS_SEAM_HEADERS / buildCrossSeamHeaders / readCrossSeamHeaders / validateCrossSeamAnchor`；`CROSS_SEAM_FAILURE_REASONS = [not-connected, transport-error, timeout, cancelled, not-ready]`；`CrossSeamError + classifySeamError` 让三条 seam 说同一种失败语。
+- **Startup queue**：`StartupQueue<T>` 支持 buffer → `markReady(consumer)` → 同步 replay，或 `drop()` 后显式以 `not-ready` `CrossSeamError` 拒绝新入队，保证 early event 不 silent vanish。
+- **Tests**：`packages/session-do-runtime/test/{composition-profile,remote-bindings,cross-seam}.test.ts` 共 35 cases + 既有测试继续通过；`packages/hooks/test/runtimes/service-binding.test.ts` 5 cases 覆盖 ServiceBindingRuntime；`packages/llm-wrapper/test/integration/fake-provider-worker.test.ts` 3 cases 证明 fake provider 与现有 OpenAIChatAdapter / normalizer / session-stream-adapter 同构；`test/external-seam-closure-contract.test.mjs` 10 cases 把 catalog / taxonomy / 三类 fake worker 的闭环钉死。
+- **Reserved skill seam**：`SKILL_WORKERS` 仍保留在 env 中，`readCompositionProfile / makeRemoteBindingsFactory` 显式忽略它，测试 `V1 binding catalog (AX-QNA Q9)` 验证 catalog 不含 skill。
+
 ### C. 版本历史
 
 | 版本 | 日期 | 修改者 | 主要变更 |
 |------|------|--------|----------|
+| v0.3 | `2026-04-18` | `Claude Opus 4.7` | A5 收口：附录 B 增补 P4 真实落地状态 |
 | v0.2 | `2026-04-18` | `GPT-5.4` | 补齐尾部章节；增加 binding catalog/skill reserved/early-events queue/fake provider schema 口径 |
 | v0.1 | `2026-04-17` | `GPT-5.4` | 初稿 |

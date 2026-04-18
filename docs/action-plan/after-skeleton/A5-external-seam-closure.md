@@ -486,3 +486,88 @@ external-seam-closure
 ## 10. 结语
 
 这份 action-plan 以 **把 Session DO 对外能力边界从“包内有 seam”推进到“runtime 中可装配、可测试、可交接的真实 worker seam”** 为第一优先级，采用 **先冻结 binding catalog/profile、再闭合 hook/capability、再补 fake provider、再统一 propagation/failure law、最后用 tests/docs/handoff pack 封箱** 的推进方式，优先解决 **composition no-op、hooks remote stub、provider remote path 只有 interface 没有 boundary proof** 这三类问题，并把 **不扩大到 skill worker、不破坏 local reference path、不把 fake provider 误当产品主路径** 作为主要约束。整个计划完成后，`Runtime Composition / External Seams` 应达到 **hook / capability / fake provider 三条主 seam 都有稳定 contract、稳定 profile、稳定 tests 和可交付 handoff** 的状态，从而为后续的 **deploy-shaped verification、真实 provider smoke、future skill / browser / compactor seam 扩展** 提供稳定基础。
+
+---
+
+## 11. 工作报告（A5 execution log）
+
+> 执行人：Claude Opus 4.7（1M context）
+> 执行时间：`2026-04-18`
+> 执行对象：`docs/action-plan/after-skeleton/A5-external-seam-closure.md` Phase 1-5
+> 执行结论：**`CAPABILITY_WORKER / HOOK_WORKER / FAKE_PROVIDER_WORKER` 三条 v1 seam 成为 runtime 可装配真相；hooks/capability/provider 说同一套 failure 词汇；fake worker set 可交给 A6 做 deploy-shaped 验证。**
+
+### 11.1 工作目标与内容回顾
+
+- **目标**：把 Phase 4 从“包内 seam 可独立跑”推进到“runtime 能按 profile 真实装配三条 remote seam”；为 A6 deploy-shaped verification 提供 fake worker set + binding profile + 失败语言。
+- **AX-QNA 绑定**：Q9（v1 binding catalog 只含 capability/hook/fake provider）、Q10（P5 是 verification gate）、Q12（P5 golden path 走 OpenAI-compatible + gpt-4.1-nano）— 都是已冻结输入，A5 不触动。
+- **Phase 真实执行路径**：
+  - Phase 1 — 重写 `packages/session-do-runtime/src/env.ts`：新增 `CAPABILITY_WORKER / HOOK_WORKER / FAKE_PROVIDER_WORKER` 三个 optional binding；导出 `V1_BINDING_CATALOG / RESERVED_BINDINGS / CompositionMode / CompositionProfile / DEFAULT_COMPOSITION_PROFILE / readCompositionProfile / ServiceBindingLike`；`RuntimeConfig` 新增 `compositionProfile?`。重写 `composition.ts`：`SubsystemHandles` 加 `profile` 字段；`resolveCompositionProfile(env, config)` 遵守 `config.compositionProfile → env binding presence → 默认全 local`。
+  - Phase 2 — 重写 `packages/hooks/src/runtimes/service-binding.ts`：`ServiceBindingRuntime` 接受 `{ transport, signalFromContext }`；暴露 `HookTransport / HookTransportCall / HookTransportResult / HookRuntimeError / HookRuntimeFailureReason`；未接 transport 时抛 `not-connected`，被 dispatcher 错误路径转 diagnostics outcome。新建 `packages/session-do-runtime/src/remote-bindings.ts`：`callBindingJson / makeHookTransport / makeCapabilityTransport / makeProviderFetcher / makeRemoteBindingsFactory`，把 v1 catalog 映射到各子系统的 transport 形状；`makeRemoteBindingsFactory()` 的 `SubsystemHandles` 公开 profile 字段，方便 DO 调试 / 测试查阅。
+  - Phase 3 — 新建 `test/fixtures/external-seams/fake-provider-worker.ts` + `fake-hook-worker.ts` + `fake-capability-worker.ts`：三个 fixture 都暴露 `default.fetch` 与命名 `fakeXxxFetch`，行为可通过 URL search params 切换（`mode=full|stream|error|cancel` / `continue|block|throw|delay` / `ok|error|cancel`）。`packages/llm-wrapper/test/integration/fake-provider-worker.test.ts`：非流 + 流 + 错误三个场景跑通 `LLMExecutor + fakeProviderFetch`；验证 `SessionStreamEventBodySchema` 仍接受所有 body。Local-fetch SSE 路径保持不变作为 reference。
+  - Phase 4 — 新建 `packages/session-do-runtime/src/cross-seam.ts`：冻结 `CrossSeamAnchor / CROSS_SEAM_HEADERS / buildCrossSeamHeaders / readCrossSeamHeaders / validateCrossSeamAnchor`；`CROSS_SEAM_FAILURE_REASONS = [not-connected, transport-error, timeout, cancelled, not-ready]`；`CrossSeamError` + `classifySeamError` 统一三条 seam 的失败语；`StartupQueue<T>` 支持 `enqueue → markReady(consumer)` 同步 flush、`drop()` 后 `not-ready` 拒绝 early events。
+  - Phase 5 — 新建 root `test/external-seam-closure-contract.test.mjs`（10 cases）：catalog 断言 + 失败分类 + fake worker 真实调用 + profile 解析；跑全量 `pnpm -r build/test/typecheck + npm run test:cross + node --test`；回填 P4 design 附录 B + v0.3；A5 §11 工作报告。
+- **参考案例核对**：`context/claude-code/services/tools/{toolExecution,toolHooks}.ts` 仍作为 failure-classification / progress-event 的写法参考，`CROSS_SEAM_FAILURE_REASONS` 的 5 项就借鉴其 closed-set + 显式 enum 的做法（A3 trace recovery + A4 ingress rejection 都沿用该风格）。`context/codex/codex-rs/tools/src/tool_registry_plan.rs` 继续提供 registry-first + 可测试 handoff 的思路：`makeRemoteBindingsFactory()` 的 `SubsystemHandles.profile` 让 deployed build 在不改 DO class 的前提下切换 profile，正是该思路在 TypeScript 侧的落地。`just-bash` 与本轮仍无直接交集；`context/mini-agent` 的 plain-log 反面教材继续作为“external seam 必须有 trace_uuid 不丢”的参照。
+
+### 11.2 实际代码清单
+
+- **session-do-runtime / 新增文件**
+  - `packages/session-do-runtime/src/remote-bindings.ts`（新增）：transport 适配层。
+  - `packages/session-do-runtime/src/cross-seam.ts`（新增）：propagation / failure / startup queue 三合一 law。
+  - `packages/session-do-runtime/test/composition-profile.test.ts`（新增，10 cases）。
+  - `packages/session-do-runtime/test/remote-bindings.test.ts`（新增，12 cases）。
+  - `packages/session-do-runtime/test/cross-seam.test.ts`（新增，13 cases）。
+- **session-do-runtime / 改写文件**
+  - `packages/session-do-runtime/src/env.ts`：v1 binding catalog + reserved 表 + profile helpers。
+  - `packages/session-do-runtime/src/composition.ts`：`SubsystemHandles.profile` + `resolveCompositionProfile`。
+  - `packages/session-do-runtime/src/index.ts`：新增导出面 `V1_BINDING_CATALOG / RESERVED_BINDINGS / ... / CrossSeamError / StartupQueue / ...`。
+- **hooks**
+  - `packages/hooks/src/runtimes/service-binding.ts`：transport-driven ServiceBindingRuntime。
+  - `packages/hooks/src/index.ts`：导出 `HookTransport / HookRuntimeError` 等。
+  - `packages/hooks/test/runtimes/service-binding.test.ts`（新增，5 cases）。
+- **llm-wrapper**
+  - `packages/llm-wrapper/test/integration/fake-provider-worker.test.ts`（新增，3 cases）。
+- **test/fixtures/external-seams/**
+  - `fake-provider-worker.ts`（新增）：OpenAI-compatible Chat Completions fake，含 `default.fetch` Cloudflare-Worker 入口。
+  - `fake-hook-worker.ts`（新增）：`POST /hooks/emit` fake。
+  - `fake-capability-worker.ts`（新增）：`POST /capability/{call,cancel}` fake。
+- **root tests**
+  - `test/external-seam-closure-contract.test.mjs`（新增，10 cases）：catalog + taxonomy + 三条 seam real-fake round-trip。
+- **文档**
+  - `docs/design/after-skeleton/P4-external-seam-closure.md`：附录 B 增补 A5 执行后状态；版本升到 v0.3。
+  - `docs/action-plan/after-skeleton/A5-external-seam-closure.md`（本文件）：§11 工作报告。
+
+### 11.3 测试制作与测试结果
+
+- **新增测试**：composition-profile (10) + remote-bindings (12) + cross-seam (13) + hook service-binding (5) + fake-provider integration (3) + root external-seam-closure contract (10) = **53 新 cases**。
+- **运行结果**
+  - `pnpm --filter @nano-agent/session-do-runtime test` — `23 files / 309 tests passed`。
+  - `pnpm --filter @nano-agent/hooks test` — `15 files / 132 tests passed`。
+  - `pnpm --filter @nano-agent/llm-wrapper test` — `11 files / 103 tests passed`。
+  - `pnpm --filter @nano-agent/capability-runtime test` — 既有测试全部通过（未引入破坏性改动）。
+  - `pnpm --filter @nano-agent/nacp-core test` — `12 files / 231 tests passed`。
+  - `pnpm --filter @nano-agent/nacp-session test` — `14 files / 115 tests passed`。
+  - `pnpm --filter @nano-agent/eval-observability test` — `18 files / 172 tests passed`。
+  - `pnpm -r typecheck` — 10 projects 全绿。
+  - `pnpm -r build` — 10 projects 全绿。
+  - `npm run test:cross` — `14/14 e2e passed`。
+  - `node --test test/external-seam-closure-contract.test.mjs` — `10/10 passed`。
+  - 其他 root contract tests（`trace-first-law-contract / observability-protocol-contract / hooks-protocol-contract`）继续保持绿色。
+
+### 11.4 收口分析与下一阶段安排
+
+- **AX-QNA / Definition of Done 对照**
+  - **功能**：binding catalog + composition profile + hook/capability remote seam + fake provider seam + cross-seam law + startup queue 全部落地；local reference path 完好无损。
+  - **测试**：session-do-runtime + hooks + llm-wrapper + 根 cross tests 形成闭环；53 新 cases + 14 e2e 同时保护。
+  - **文档**：P4 design 附录 B、本 action-plan §11、package exports 三方口径一致。
+  - **风险收敛**：不再有 “composition factory 只会返回 undefined” / “hook remote runtime throw-only” / “provider 只有 interface” 三类漂移；`SKILL_WORKERS` 显式从 catalog 中排除并由 `V1 binding catalog` 测试守护；failure taxonomy 从 3 个包各自一套收敛为 5 项统一枚举。
+  - **可交付性**：A6 可以直接把 `makeRemoteBindingsFactory()` + 三个 fake worker fixture 装进 `wrangler.jsonc` 的 service-binding 槽位做 L1/L2 验证；`makeProviderFetcher` 接 `gpt-4.1-nano` 时只需替换 `FAKE_PROVIDER_WORKER` 绑定即可。
+- **复盘要点回填**
+  - 工作量估计偏差：Phase 4（cross-seam law）比预估轻 —— 因为 transport precheck pipeline 在 `nacp-core` 早就固化（`validateEnvelope → verifyTenantBoundary → checkAdmissibility`），A5 只需要再加 header / failure / startup queue 三项。真正花时间的是 Phase 2 的 ServiceBindingRuntime 重写 + 对应 failure taxonomy，以及 Phase 3 fake provider worker 的 SSE 流实现（需对齐 OpenAI 的 `[DONE]` 协议尾）。
+  - 拆分合理度：Phase 2 的 "Session Runtime Hook/Capability Composition"（P2-03）最终在 `remote-bindings.ts` 的 `makeRemoteBindingsFactory()` 里一次性装配，没有单独修改 `nano-session-do.ts`；这是有意为之（DO 不该关心具体 profile），未来模板可明确 “若通过 factory 装配则 DO 不改动” 这条规则。
+  - 需要更早问架构师：本次没有。三条 owner 决策（Q9/Q10/Q12）都足够支撑执行。
+  - 测试覆盖不足之处：`makeRemoteBindingsFactory()` 尚未在 `NanoSessionDO.constructor` 的默认路径中被选用（仍使用 `createDefaultCompositionFactory`）。这是 Phase 1 "不抢 DO 行为" 的刻意留白；A6 deploy 时会通过 `worker.ts` 的 env 读入选择合适的 factory。
+  - 模板需补字段：本次没有必须补的字段；A5 模板整体清楚。
+- **下一阶段安排（A6 / 后续扩展）**
+  - **A6（P5 deploy verification）**：直接使用本轮产出的 fake worker set + `makeRemoteBindingsFactory()`；L1 `wrangler dev --remote` 把三个 fake worker 作为 service-binding 目标；L2 deploy smoke 把 `FAKE_PROVIDER_WORKER` 替换为 `gpt-4.1-nano` 上游（遵守 Q12 golden path）。失败分类直接复用 `CROSS_SEAM_FAILURE_REASONS`。
+  - **Skill seam（A10 / 后续）**：`RESERVED_BINDINGS` 已把 `SKILL_WORKERS` 守住；未来独立 memo 通过后，扩展 `V1_BINDING_CATALOG` + 增加一个新 `makeSkillTransport` 即可，不需要再动 `cross-seam.ts` 的 5 项 taxonomy。
+  - **Real provider matrix**：`makeProviderFetcher` 的抽象已经足够吞下 Anthropic / Gemini 之类的其他 provider —— 只需要新增一个 `makeXxxProviderBinding` fixture 并扩展 adapter 即可。
