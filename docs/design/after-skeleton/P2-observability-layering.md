@@ -78,7 +78,7 @@
   2. `session-do-runtime`
   3. future public API / docs / review
 - 它依赖：
-  - `trace-first-observability-foundation.md`
+  - `A3-trace-first-observability-foundation.md`
   - 当前 `classification` / `durable-promotion-registry` / `inspector` / `timeline` reality
 - 它被谁依赖：
   - 后续所有 event kind 增删判断
@@ -352,8 +352,8 @@
 - [ ] **待深入调查的子问题**：
   - [ ] 是否在 future `TraceLayer` enum 中显式引入 `anchor`
 - [ ] **需要更新的其他设计文档**：
-  - `trace-first-observability-foundation.md`
-  - `storage-and-context-evidence-closure.md`
+  - `A3-trace-first-observability-foundation.md`
+  - `A7-storage-and-context-evidence-closure.md`
 
 ---
 

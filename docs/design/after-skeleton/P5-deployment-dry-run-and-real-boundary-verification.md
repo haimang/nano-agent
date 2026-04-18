@@ -434,8 +434,8 @@
   - [ ] owner 是否更偏好 `wrangler dev --remote` 还是 `deploy + workers.dev smoke` 作为默认 L1/L2 profile
   - [ ] real provider smoke 选择哪个 OpenAI-compatible provider/model 作为最小 golden path
 - [ ] **需要更新的其他设计文档**：
-  - `P4-external-seam-closure.md`
-  - `P6-storage-and-context-evidence-closure.md`
+  - `A5-external-seam-closure.md`
+  - `A7-storage-and-context-evidence-closure.md`
 
 ---
 

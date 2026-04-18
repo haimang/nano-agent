@@ -136,7 +136,7 @@
 ### 3.4 聚合点（哪里要刻意收敛）
 
 - **聚合对象**：trace law、alert exception、instrumentation point catalog、TraceEvent base contract
-- **聚合形式**：由 `trace-first-observability-foundation.md` 统一规定，再由 `eval-observability` / `session-do-runtime` 实作
+- **聚合形式**：由 `A3-trace-first-observability-foundation.md` 统一规定，再由 `eval-observability` / `session-do-runtime` 实作
 - **为什么不能分散**：如果 trace law 分散在各包 README、tests、comments 里，任何一个包都可能重新发明“自己的 trace 真相”。
 
 ---
@@ -409,8 +409,8 @@
   - [ ] alert exception 是否需要单独 schema 类型区分
 - [ ] **需要更新的其他设计文档**：
   - `observability-layering.md`
-  - `session-edge-closure.md`
-  - `storage-and-context-evidence-closure.md`
+  - `A4-session-edge-closure.md`
+  - `A7-storage-and-context-evidence-closure.md`
 
 ---
 

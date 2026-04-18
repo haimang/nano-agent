@@ -88,8 +88,8 @@
   4. `llm-wrapper`
   5. `eval-observability`
 - 它依赖：
-  - `session-edge-closure.md`
-  - `trace-first-observability-foundation.md`
+  - `A4-session-edge-closure.md`
+  - `A3-trace-first-observability-foundation.md`
   - `@nano-agent/nacp-core` service-binding transport reality
   - `CompositionFactory` / `SessionRuntimeEnv` seam
 - 它被谁依赖：

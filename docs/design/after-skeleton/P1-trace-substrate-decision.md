@@ -374,9 +374,9 @@
   - [ ] future D1 index 的最小 schema 何时进入议程
   - [ ] 是否需要单独产出 `trace-substrate-benchmark.md` 作为 future D1 promotion 的 gate artifact
 - [ ] **需要更新的其他设计文档**：
-  - `trace-first-observability-foundation.md`
+  - `A3-trace-first-observability-foundation.md`
   - `observability-layering.md`
-  - `storage-and-context-evidence-closure.md`
+  - `A7-storage-and-context-evidence-closure.md`
 
 ---
 

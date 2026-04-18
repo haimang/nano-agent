@@ -82,7 +82,7 @@
   4. `eval-observability`
 - 它依赖：
   - `nacp-session` 的 frame/message/registry/websocket helper reality
-  - `trace-first-observability-foundation.md`
+  - `A3-trace-first-observability-foundation.md`
   - `turn-ingress.ts` 的当前最小现实
 - 它被谁依赖：
   - `agent-runtime-kernel`
@@ -396,8 +396,8 @@
 - [ ] **待深入调查的子问题**：
   - [ ] HTTP fallback 的最小返回体是否直接复用 timeline/status reader seam
 - [ ] **需要更新的其他设计文档**：
-  - `trace-first-observability-foundation.md`
-  - `external-seam-closure.md`
+  - `A3-trace-first-observability-foundation.md`
+  - `A5-external-seam-closure.md`
 
 ---
 

@@ -87,8 +87,8 @@
   3. future session-do runtime glue
   4. prompt / capability inventory / policy review
 - 它依赖：
-  - `P4-external-seam-closure.md`
-  - `P6-storage-and-context-evidence-closure.md`
+  - `A5-external-seam-closure.md`
+  - `A7-storage-and-context-evidence-closure.md`
   - `MountRouter + WorkspaceNamespace`
   - `FakeBashBridge + CapabilityExecutor + CapabilityPolicyGate`
 - 它被谁依赖：

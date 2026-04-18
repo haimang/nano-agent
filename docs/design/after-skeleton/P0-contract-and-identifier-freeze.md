@@ -141,7 +141,7 @@
 ### 3.4 聚合点（哪里要刻意收敛）
 
 - **聚合对象**：所有 internal contract 的最终口径
-- **聚合形式**：`contract-and-identifier-freeze.md` + `identifier-law.md` + `nacp-versioning-policy.md` + `contract-freeze-matrix.md`
+- **聚合形式**：`A1-contract-and-identifier-freeze.md` + `identifier-law.md` + `nacp-versioning-policy.md` + `contract-freeze-matrix.md`
 - **为什么不能分散**：如果 contract、naming、versioning、freeze status 分散在十几份 design / README / tests 里，Phase 1 之后必然再次出现口径漂移。
 
 ---

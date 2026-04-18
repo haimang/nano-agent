@@ -93,7 +93,7 @@
   4. policy / observability / inventory
 - 它依赖：
   - `P7a-minimal-bash-search-and-workspace.md`
-  - `P4-external-seam-closure.md`
+  - `A5-external-seam-closure.md`
   - `ServiceBindingTarget`
   - `FakeBashBridge`
 - 它被谁依赖：

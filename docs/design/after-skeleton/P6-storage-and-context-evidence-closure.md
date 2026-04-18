@@ -449,7 +449,7 @@ Phase 1-5 做完之后，nano-agent 会拥有：
   - [ ] `dropped_optional_layers` / `drop_reason` / `required_layer_budget_violation` 是否统一进入 assembly evidence schema
   - [ ] early evidence queue 是否与 Phase 4/P5 的 startup queue 共享同一装配层缓冲
 - [ ] **需要更新的其他设计文档**：
-  - `P2-trace-first-observability-foundation.md`
+  - `A3-trace-first-observability-foundation.md`
   - `PX-capability-inventory.md`
 
 ---

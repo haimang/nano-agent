@@ -367,7 +367,7 @@
   - [ ] frozen baseline 最终是否命名为 `1.1.0`
   - [ ] compat floor 是否需要跨两个 minor 保留
 - [ ] **需要更新的其他设计文档**：
-  - `contract-and-identifier-freeze.md`
+  - `A1-contract-and-identifier-freeze.md`
   - `contract-freeze-matrix.md`
 
 ---

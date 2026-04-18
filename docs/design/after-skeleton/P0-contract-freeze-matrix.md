@@ -387,7 +387,7 @@ Phase 0 最大的风险不是“没人写 design”，而是**不同人对“现
 - [ ] **待深入调查的子问题**：
   - [ ] observability alert 的 `trace_uuid` 例外条件是否单独列成一项
 - [ ] **需要更新的其他设计文档**：
-  - `contract-and-identifier-freeze.md`
+  - `A1-contract-and-identifier-freeze.md`
   - `identifier-law.md`
   - `nacp-versioning-policy.md`
 

@@ -860,16 +860,16 @@ Phase 7a / 7b / 7c
 
 | 对应 Phase | 文件路径 | 说明 |
 |---|---|---|
-| **Phase 0** | `docs/action-plan/after-skeleton/contract-and-identifier-freeze.md` | 把 contract freeze / rename / migration 分批执行 |
-| **Phase 1** | `docs/action-plan/after-skeleton/trace-substrate-decision-investigation.md` | 1-week investigation 的执行计划 |
-| **Phase 2** | `docs/action-plan/after-skeleton/trace-first-observability-foundation.md` | instrumentation、recovery、schema、tests |
-| **Phase 3** | `docs/action-plan/after-skeleton/session-edge-closure.md` | normalizeClientFrame 接线、controller、replay/fallback |
-| **Phase 4** | `docs/action-plan/after-skeleton/external-seam-closure.md` | fake workers、service binding、trace propagation |
-| **Phase 5** | `docs/action-plan/after-skeleton/deployment-dry-run-and-real-boundary-verification.md` | wrangler dev、real provider smoke、latency baseline |
-| **Phase 6** | `docs/action-plan/after-skeleton/storage-and-context-evidence-closure.md` | real R2/KV/DO evidence、context principles |
-| **Phase 7a** | `docs/action-plan/after-skeleton/minimal-bash-search-and-workspace.md` | `grep` 与 workspace consistency |
-| **Phase 7b** | `docs/action-plan/after-skeleton/minimal-bash-network-and-script.md` | `curl`、脚本执行边界 |
-| **Phase 7c** | `docs/action-plan/after-skeleton/minimal-bash-vcs-and-policy.md` | `git subset`、inventory、unsupported policy |
+| **Phase 0** | `docs/action-plan/after-skeleton/A1-contract-and-identifier-freeze.md` | 把 contract freeze / rename / migration 分批执行 |
+| **Phase 1** | `docs/action-plan/after-skeleton/A2-trace-substrate-decision-investigation.md` | 1-week investigation 的执行计划 |
+| **Phase 2** | `docs/action-plan/after-skeleton/A3-trace-first-observability-foundation.md` | instrumentation、recovery、schema、tests |
+| **Phase 3** | `docs/action-plan/after-skeleton/A4-session-edge-closure.md` | normalizeClientFrame 接线、controller、replay/fallback |
+| **Phase 4** | `docs/action-plan/after-skeleton/A5-external-seam-closure.md` | fake workers、service binding、trace propagation |
+| **Phase 5** | `docs/action-plan/after-skeleton/A6-deployment-dry-run-and-real-boundary-verification.md` | wrangler dev、real provider smoke、latency baseline |
+| **Phase 6** | `docs/action-plan/after-skeleton/A7-storage-and-context-evidence-closure.md` | real R2/KV/DO evidence、context principles |
+| **Phase 7a** | `docs/action-plan/after-skeleton/A8-minimal-bash-search-and-workspace.md` | `grep` 与 workspace consistency |
+| **Phase 7b** | `docs/action-plan/after-skeleton/A9-minimal-bash-network-and-script.md` | `curl`、脚本执行边界 |
+| **Phase 7c** | `docs/action-plan/after-skeleton/A10-minimal-bash-vcs-and-policy.md` | `git subset`、inventory、unsupported policy |
 
 ### 14.3 推荐的撰写顺序
 
@@ -918,16 +918,16 @@ Phase 7a / 7b / 7c
 
 推荐顺序：
 
-1. `contract-and-identifier-freeze.md`
-2. `trace-substrate-decision-investigation.md`
-3. `trace-first-observability-foundation.md`
-4. `session-edge-closure.md`
-5. `external-seam-closure.md`
-6. `deployment-dry-run-and-real-boundary-verification.md`
-7. `storage-and-context-evidence-closure.md`
-8. `minimal-bash-search-and-workspace.md`
-9. `minimal-bash-network-and-script.md`
-10. `minimal-bash-vcs-and-policy.md`
+1. `A1-contract-and-identifier-freeze.md`
+2. `A2-trace-substrate-decision-investigation.md`
+3. `A3-trace-first-observability-foundation.md`
+4. `A4-session-edge-closure.md`
+5. `A5-external-seam-closure.md`
+6. `A6-deployment-dry-run-and-real-boundary-verification.md`
+7. `A7-storage-and-context-evidence-closure.md`
+8. `A8-minimal-bash-search-and-workspace.md`
+9. `A9-minimal-bash-network-and-script.md`
+10. `A10-minimal-bash-vcs-and-policy.md`
 
 ### 14.5 如果要先控制文档数量，优先看哪几份
 
