@@ -1,15 +1,30 @@
 /**
- * Tests for trace building functions.
+ * Tests for session DO trace builders.
+ *
+ * After A3 P2-03 the builders emit canonical trace-law-compliant events
+ * (`turn.begin` / `turn.end`), carry `traceUuid` + `sourceRole`, and map
+ * kernel runtime step kinds to canonical trace event kinds.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
-  buildTurnStartTrace,
+  buildTurnBeginTrace,
   buildTurnEndTrace,
   buildStepTrace,
+  mapRuntimeStepKindToTraceKind,
+  type TraceContext,
 } from "../src/traces.js";
+import { isTraceLawCompliant } from "@nano-agent/eval-observability";
 
-describe("buildTurnStartTrace", () => {
+const CTX: TraceContext = {
+  sessionUuid: "11111111-1111-4111-8111-111111111111",
+  teamUuid: "team-xyz",
+  traceUuid: "22222222-2222-4222-8222-222222222222",
+  sourceRole: "session",
+  sourceKey: "nano-agent.session.do@v1",
+};
+
+describe("buildTurnBeginTrace", () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-16T12:00:00.000Z"));
@@ -19,40 +34,34 @@ describe("buildTurnStartTrace", () => {
     vi.useRealTimers();
   });
 
-  it("produces a trace with eventKind turn.started", () => {
-    const trace = buildTurnStartTrace("turn-001", "session-abc", "team-xyz") as Record<string, unknown>;
-
-    expect(trace.eventKind).toBe("turn.started");
+  it("emits eventKind turn.begin (renamed from turn.started)", () => {
+    const trace = buildTurnBeginTrace("turn-001", CTX);
+    expect(trace.eventKind).toBe("turn.begin");
   });
 
-  it("includes sessionUuid and teamUuid", () => {
-    const trace = buildTurnStartTrace("turn-001", "session-abc", "team-xyz") as Record<string, unknown>;
-
-    expect(trace.sessionUuid).toBe("session-abc");
-    expect(trace.teamUuid).toBe("team-xyz");
+  it("carries traceUuid and sourceRole (trace-law compliant)", () => {
+    const trace = buildTurnBeginTrace("turn-001", CTX);
+    expect(trace.traceUuid).toBe(CTX.traceUuid);
+    expect(trace.sourceRole).toBe("session");
+    expect(isTraceLawCompliant(trace)).toBe(true);
   });
 
-  it("includes turnUuid", () => {
-    const trace = buildTurnStartTrace("turn-001", "session-abc", "team-xyz") as Record<string, unknown>;
-
+  it("carries sessionUuid, teamUuid, turnUuid, sourceKey", () => {
+    const trace = buildTurnBeginTrace("turn-001", CTX);
+    expect(trace.sessionUuid).toBe(CTX.sessionUuid);
+    expect(trace.teamUuid).toBe(CTX.teamUuid);
     expect(trace.turnUuid).toBe("turn-001");
+    expect(trace.sourceKey).toBe("nano-agent.session.do@v1");
   });
 
-  it("includes a timestamp", () => {
-    const trace = buildTurnStartTrace("turn-001", "session-abc", "team-xyz") as Record<string, unknown>;
-
+  it("includes the current timestamp", () => {
+    const trace = buildTurnBeginTrace("turn-001", CTX);
     expect(trace.timestamp).toBe("2026-04-16T12:00:00.000Z");
   });
 
-  it("sets audience to internal", () => {
-    const trace = buildTurnStartTrace("turn-001", "session-abc", "team-xyz") as Record<string, unknown>;
-
+  it("sets audience=internal, layer=durable-audit", () => {
+    const trace = buildTurnBeginTrace("turn-001", CTX);
     expect(trace.audience).toBe("internal");
-  });
-
-  it("sets layer to durable-audit", () => {
-    const trace = buildTurnStartTrace("turn-001", "session-abc", "team-xyz") as Record<string, unknown>;
-
     expect(trace.layer).toBe("durable-audit");
   });
 });
@@ -60,129 +69,115 @@ describe("buildTurnStartTrace", () => {
 describe("buildTurnEndTrace", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-16T12:05:00.000Z"));
+    vi.setSystemTime(new Date("2026-04-16T12:00:00.000Z"));
   });
 
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  it("produces a trace with eventKind turn.completed", () => {
-    const trace = buildTurnEndTrace("turn-001", "session-abc", "team-xyz", 5000) as Record<string, unknown>;
-
-    expect(trace.eventKind).toBe("turn.completed");
+  it("emits eventKind turn.end (renamed from turn.completed)", () => {
+    const trace = buildTurnEndTrace("turn-001", 5000, CTX);
+    expect(trace.eventKind).toBe("turn.end");
   });
 
   it("includes durationMs", () => {
-    const trace = buildTurnEndTrace("turn-001", "session-abc", "team-xyz", 5000) as Record<string, unknown>;
-
-    expect(trace.durationMs).toBe(5000);
+    const trace = buildTurnEndTrace("turn-001", 1234, CTX);
+    expect(trace.durationMs).toBe(1234);
   });
 
-  it("includes sessionUuid and teamUuid", () => {
-    const trace = buildTurnEndTrace("turn-001", "session-abc", "team-xyz", 1234) as Record<string, unknown>;
-
-    expect(trace.sessionUuid).toBe("session-abc");
-    expect(trace.teamUuid).toBe("team-xyz");
+  it("is trace-law compliant", () => {
+    const trace = buildTurnEndTrace("turn-001", 100, CTX);
+    expect(isTraceLawCompliant(trace)).toBe(true);
   });
 
-  it("includes turnUuid", () => {
-    const trace = buildTurnEndTrace("turn-001", "session-abc", "team-xyz", 500) as Record<string, unknown>;
-
-    expect(trace.turnUuid).toBe("turn-001");
-  });
-
-  it("sets audience to internal", () => {
-    const trace = buildTurnEndTrace("turn-001", "session-abc", "team-xyz", 100) as Record<string, unknown>;
-
+  it("sets audience=internal, layer=durable-audit", () => {
+    const trace = buildTurnEndTrace("turn-001", 100, CTX);
     expect(trace.audience).toBe("internal");
-  });
-
-  it("sets layer to durable-audit", () => {
-    const trace = buildTurnEndTrace("turn-001", "session-abc", "team-xyz", 100) as Record<string, unknown>;
-
     expect(trace.layer).toBe("durable-audit");
   });
 });
 
 describe("buildStepTrace", () => {
-  beforeEach(() => {
-    vi.useFakeTimers();
-    vi.setSystemTime(new Date("2026-04-16T12:00:30.000Z"));
+  it("maps runtime turn.started -> canonical turn.begin", () => {
+    const trace = buildStepTrace(
+      { type: "turn.started", turnId: "turn-001" },
+      CTX,
+    );
+    expect(trace.eventKind).toBe("turn.begin");
   });
 
-  afterEach(() => {
-    vi.useRealTimers();
+  it("maps runtime turn.completed -> canonical turn.end", () => {
+    const trace = buildStepTrace(
+      { type: "turn.completed", turnId: "turn-001" },
+      CTX,
+    );
+    expect(trace.eventKind).toBe("turn.end");
   });
 
-  it("extracts eventKind from event type field", () => {
-    const event = { type: "llm.delta", turnId: "t1", delta: "hello", timestamp: "2026-04-16T12:00:00.000Z" };
-    const trace = buildStepTrace(event, "session-abc", "team-xyz") as Record<string, unknown>;
-
+  it("passes llm.delta through unchanged", () => {
+    const trace = buildStepTrace({ type: "llm.delta" }, CTX);
     expect(trace.eventKind).toBe("llm.delta");
   });
 
-  it("falls back to 'step' if event has no type", () => {
-    const event = { data: "something" };
-    const trace = buildStepTrace(event, "session-abc", "team-xyz") as Record<string, unknown>;
+  it("falls through for unknown kinds", () => {
+    const trace = buildStepTrace({ type: "custom.probe" }, CTX);
+    expect(trace.eventKind).toBe("custom.probe");
+  });
 
+  it("defaults to step when no type is provided", () => {
+    const trace = buildStepTrace({}, CTX);
     expect(trace.eventKind).toBe("step");
   });
 
-  it("uses event timestamp when available", () => {
-    const event = { type: "tool.call.result", timestamp: "2026-04-16T12:00:15.000Z" };
-    const trace = buildStepTrace(event, "session-abc", "team-xyz") as Record<string, unknown>;
-
-    expect(trace.timestamp).toBe("2026-04-16T12:00:15.000Z");
+  it("carries traceUuid / sourceRole on every step event", () => {
+    const trace = buildStepTrace(
+      { type: "tool.call.result", turnId: "turn-7" },
+      CTX,
+    );
+    expect(trace.traceUuid).toBe(CTX.traceUuid);
+    expect(trace.sourceRole).toBe("session");
+    expect(trace.turnUuid).toBe("turn-7");
   });
 
-  it("falls back to current time when event has no timestamp", () => {
-    const event = { type: "compact.notify" };
-    const trace = buildStepTrace(event, "session-abc", "team-xyz") as Record<string, unknown>;
-
-    expect(trace.timestamp).toBe("2026-04-16T12:00:30.000Z");
+  it("preserves kernel timestamp when present", () => {
+    const trace = buildStepTrace(
+      { type: "llm.delta", timestamp: "2026-04-17T00:00:03.000Z" },
+      CTX,
+    );
+    expect(trace.timestamp).toBe("2026-04-17T00:00:03.000Z");
   });
 
-  it("includes sessionUuid and teamUuid", () => {
-    const event = { type: "hook.broadcast" };
-    const trace = buildStepTrace(event, "session-abc", "team-xyz") as Record<string, unknown>;
-
-    expect(trace.sessionUuid).toBe("session-abc");
-    expect(trace.teamUuid).toBe("team-xyz");
+  it("is trace-law compliant for steps emitted with context", () => {
+    const trace = buildStepTrace(
+      { type: "llm.delta", turnId: "turn-1" },
+      CTX,
+    );
+    expect(isTraceLawCompliant(trace)).toBe(true);
   });
 
-  it("extracts turnUuid from event if present", () => {
-    const event = { type: "llm.delta", turnId: "turn-99" };
-    const trace = buildStepTrace(event, "session-abc", "team-xyz") as Record<string, unknown>;
-
-    expect(trace.turnUuid).toBe("turn-99");
-  });
-
-  it("leaves turnUuid undefined when event has no turnId", () => {
-    const event = { type: "system.notify" };
-    const trace = buildStepTrace(event, "session-abc", "team-xyz") as Record<string, unknown>;
-
-    expect(trace.turnUuid).toBeUndefined();
-  });
-
-  it("extracts stepIndex from event if present", () => {
-    const event = { type: "tool.call.result", stepIndex: 7 };
-    const trace = buildStepTrace(event, "session-abc", "team-xyz") as Record<string, unknown>;
-
-    expect(trace.stepIndex).toBe(7);
-  });
-
-  it("sets audience to internal", () => {
-    const event = { type: "llm.delta" };
-    const trace = buildStepTrace(event, "session-abc", "team-xyz") as Record<string, unknown>;
-
-    expect(trace.audience).toBe("internal");
-  });
-
-  it("sets layer to live", () => {
-    const event = { type: "llm.delta" };
-    const trace = buildStepTrace(event, "session-abc", "team-xyz") as Record<string, unknown>;
-
+  it("sets layer=live for step events (diagnostic)", () => {
+    const trace = buildStepTrace({ type: "llm.delta" }, CTX);
     expect(trace.layer).toBe("live");
+  });
+});
+
+describe("mapRuntimeStepKindToTraceKind", () => {
+  it("maps known legacy kinds to canonical kinds", () => {
+    expect(mapRuntimeStepKindToTraceKind("turn.started")).toBe("turn.begin");
+    expect(mapRuntimeStepKindToTraceKind("turn.completed")).toBe("turn.end");
+  });
+
+  it("passes canonical kinds through unchanged", () => {
+    expect(mapRuntimeStepKindToTraceKind("tool.call.result")).toBe(
+      "tool.call.result",
+    );
+    expect(mapRuntimeStepKindToTraceKind("llm.delta")).toBe("llm.delta");
+  });
+
+  it("returns the input unchanged for unknown kinds", () => {
+    expect(mapRuntimeStepKindToTraceKind("future.custom")).toBe(
+      "future.custom",
+    );
   });
 });

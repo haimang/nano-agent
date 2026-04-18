@@ -241,15 +241,28 @@ export interface RestoredCheckpoint {
  * in a single record so the caller (Session DO) can thread them into
  * its orchestration state.
  *
- * Throws when the checkpoint fails validation so callers do NOT silently
- * continue with a half-restored state.
+ * Throws a `CheckpointInvalidError` (A3 P3-02 — taxonomy code
+ * `checkpoint-invalid`) when the checkpoint fails validation so callers
+ * do NOT silently continue with a half-restored state. The error name
+ * matches the eval-observability `TraceRecoveryReason` so observers can
+ * route to the same dashboard.
  */
+export class CheckpointInvalidError extends Error {
+  readonly reason = "checkpoint-invalid" as const;
+  constructor(message: string) {
+    super(message);
+    this.name = "CheckpointInvalidError";
+  }
+}
+
 export async function restoreSessionCheckpoint(
   raw: unknown,
   deps: RestoreDeps,
 ): Promise<RestoredCheckpoint> {
   if (!validateSessionCheckpoint(raw)) {
-    throw new Error("restoreSessionCheckpoint: invalid checkpoint");
+    throw new CheckpointInvalidError(
+      "restoreSessionCheckpoint: invalid checkpoint (taxonomy: checkpoint-invalid)",
+    );
   }
 
   const kernelSnapshot = deps.restoreKernel(raw.kernelFragment);

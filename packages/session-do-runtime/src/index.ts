@@ -48,6 +48,7 @@ export {
   buildSessionCheckpoint,
   validateSessionCheckpoint,
   restoreSessionCheckpoint,
+  CheckpointInvalidError,
 } from "./checkpoint.js";
 export type {
   SessionCheckpoint,
@@ -70,8 +71,13 @@ export { SessionOrchestrator } from "./orchestration.js";
 export type { OrchestrationDeps, OrchestrationState } from "./orchestration.js";
 
 // ── Traces ──
-export { buildTurnStartTrace, buildTurnEndTrace, buildStepTrace } from "./traces.js";
-export type { TraceDeps } from "./traces.js";
+export {
+  buildTurnBeginTrace,
+  buildTurnEndTrace,
+  buildStepTrace,
+  mapRuntimeStepKindToTraceKind,
+} from "./traces.js";
+export type { TraceContext, TraceDeps } from "./traces.js";
 
 // ── NanoSessionDO ──
 export { NanoSessionDO } from "./do/nano-session-do.js";
