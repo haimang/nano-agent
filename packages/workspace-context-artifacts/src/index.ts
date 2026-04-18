@@ -131,3 +131,31 @@ export type { Mount, RouteResult } from "./mounts.js";
 
 // ── Namespace ──
 export { WorkspaceNamespace } from "./namespace.js";
+
+// ── A7 Phase 6 evidence emitters ──
+export {
+  buildAssemblyEvidence,
+  emitAssemblyEvidence,
+  buildCompactEvidence,
+  emitCompactEvidence,
+  buildArtifactEvidence,
+  emitArtifactEvidence,
+  buildSnapshotEvidence,
+  emitSnapshotEvidence,
+} from "./evidence-emitters.js";
+export type {
+  EvidenceAnchorLike,
+  EvidenceSinkLike,
+  AssemblyEvidenceInput,
+  CompactEvidencePhase,
+  CompactEvidenceInput,
+  CompactRequestEvidenceInput,
+  CompactResponseEvidenceInput,
+  CompactBoundaryEvidenceInput,
+  CompactErrorEvidenceInput,
+  ArtifactLifecycleStage,
+  ArtifactEvidenceInput,
+  SnapshotEvidenceInput,
+  SnapshotCaptureEvidenceInput,
+  SnapshotRestoreEvidenceInput,
+} from "./evidence-emitters.js";

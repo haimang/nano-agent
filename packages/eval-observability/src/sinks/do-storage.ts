@@ -18,6 +18,7 @@
 import type { TraceEvent } from "../trace-event.js";
 import type { TraceSink } from "../sink.js";
 import { shouldPersist } from "../classification.js";
+import type { EvidenceSink } from "../evidence-streams.js";
 
 /**
  * Minimal storage interface matching the subset of Cloudflare
@@ -51,16 +52,27 @@ export class DoStorageTraceSink implements TraceSink {
   private readonly maxBufferSize: number;
   private readonly prefix: string;
   private readonly indexKey: string;
+  private readonly evidenceSink: EvidenceSink | undefined;
 
   constructor(
     private readonly storage: DoStorageLike,
     private readonly teamUuid: string,
     private readonly sessionUuid: string,
-    options?: { maxBufferSize?: number },
+    options?: {
+      maxBufferSize?: number;
+      /**
+       * Optional Phase 6 evidence sink (A7 P2-01). When supplied, every
+       * real `storage.put()` call produced by `flush()` emits a typed
+       * `PlacementEvidence` record so calibration / verdict bundles can
+       * see the runtime placement decisions.
+       */
+      evidenceSink?: EvidenceSink;
+    },
   ) {
     this.maxBufferSize = options?.maxBufferSize ?? DEFAULT_MAX_BUFFER_SIZE;
     this.prefix = `tenants/${this.teamUuid}/trace/${this.sessionUuid}/`;
     this.indexKey = `${this.prefix}_index`;
+    this.evidenceSink = options?.evidenceSink;
   }
 
   /** Emit a trace event. Non-durable events are silently dropped. */
@@ -104,11 +116,52 @@ export class DoStorageTraceSink implements TraceSink {
       const newLines = events.map((e) => JSON.stringify(e)).join("\n");
       const existing = await this.storage.get(key);
       const value = existing ? `${existing}\n${newLines}` : newLines;
+      const t0 = Date.now();
       await this.storage.put(key, value);
+      const durationMs = Date.now() - t0;
       knownDates.add(dateFromKey(key));
+      this.emitPlacement({
+        key,
+        sizeBytes: value.length,
+        durationMs,
+        eventCount: events.length,
+        firstEvent: events[0],
+      });
     }
 
     await this.writeIndex([...knownDates].sort());
+  }
+
+  /** Emit one A7 placement-evidence record per real `storage.put()`. */
+  private emitPlacement(args: {
+    key: string;
+    sizeBytes: number;
+    durationMs: number;
+    eventCount: number;
+    firstEvent: TraceEvent | undefined;
+  }): void {
+    if (!this.evidenceSink) return;
+    const first = args.firstEvent;
+    void this.evidenceSink.emit({
+      stream: "placement",
+      anchor: {
+        traceUuid: first?.traceUuid ?? "00000000-0000-4000-8000-000000000000",
+        sessionUuid: this.sessionUuid,
+        teamUuid: this.teamUuid,
+        sourceRole: first?.sourceRole ?? "session",
+        sourceKey: first?.sourceKey ?? "nano-agent.eval.do-storage-sink@v1",
+        turnUuid: first?.turnUuid,
+        timestamp: new Date().toISOString(),
+      },
+      dataItem: "trace.timeline",
+      backend: "do-storage",
+      op: "write",
+      key: args.key,
+      sizeBytes: args.sizeBytes,
+      durationMs: args.durationMs,
+      outcome: "ok",
+      note: `flushed ${args.eventCount} events`,
+    });
   }
 
   /**

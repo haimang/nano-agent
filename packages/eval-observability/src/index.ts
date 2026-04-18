@@ -118,3 +118,46 @@ export type { AttributionRecord } from "./attribution.js";
 // ── Storage placement log ──
 export { StoragePlacementLog } from "./placement-log.js";
 export type { PlacementEntry, PlacementSummaryEntry } from "./placement-log.js";
+
+// ── A7 Phase 6 evidence streams ──
+export {
+  EvidenceRecorder,
+  CALIBRATION_VERDICTS,
+  DEFAULT_EVIDENCE_BACKED_MIN_SIGNALS,
+  DEFAULT_NEEDS_REVISIT_MIN_CONTRADICTORY,
+  DEFAULT_CONTRADICTED_MIN_CONTRADICTORY,
+  computeCalibrationVerdict,
+} from "./evidence-streams.js";
+export type {
+  EvidenceAnchor,
+  EvidenceRecord,
+  EvidenceStream,
+  EvidenceSink,
+  EvidenceStorageBackend,
+  EvidenceStorageOp,
+  PlacementEvidence,
+  AssemblyEvidence,
+  CompactPhase,
+  CompactEvidence,
+  ArtifactLifecycleStage,
+  ArtifactEvidence,
+  SnapshotPhase,
+  SnapshotEvidence,
+  CalibrationVerdict,
+  VerdictSignalSummary,
+  CalibrationVerdictOptions,
+} from "./evidence-streams.js";
+export {
+  bridgeEvidenceToPlacementLog,
+  placementEvidenceFromRecord,
+  recordPlacementEvidence,
+} from "./evidence-bridge.js";
+export {
+  aggregateEvidenceVerdict,
+  DEFAULT_VERDICT_RULES,
+} from "./evidence-verdict.js";
+export type {
+  VerdictRule,
+  VerdictReport,
+  VerdictAggregateResult,
+} from "./evidence-verdict.js";
