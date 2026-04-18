@@ -228,8 +228,8 @@ These are intentionally small, high-signal notes that should guide the first upg
 
 | Area | Todo note | Why it matters | Reference |
 |---|---|---|---|
-| **NACP-Session** | **Defer the formal follow-up input family to the post-runtime-closure expansion phase** instead of forcing it into the current closure cycle. | The current phase must first freeze contracts, establish trace-first observability, and close session/runtime truth; multi-round input should land only after those foundations are stable. | `docs/plan-after-skeleton.md` |
-| **NACP-Session** | When the follow-up input family is eventually added, keep it as a **protocol-layer extension**, not a `session-do-runtime` private message shape. | This preserves a single source of truth for client ↔ session DO semantics and avoids runtime/protocol drift. | `docs/plan-after-skeleton.md` |
+| **NACP-Session** | **Promote the formal follow-up input family into the Phase 0 contract freeze** instead of deferring it to a later expansion phase. | This keeps the v1 protocol surface wide enough for multi-round conversations and avoids an avoidable API v1 → v2 cliff. | `docs/design/after-skeleton/PX-QNA.md` |
+| **NACP-Session** | When freezing the follow-up input family, keep it as a **protocol-layer extension**, not a `session-do-runtime` private message shape. | This preserves a single source of truth for client ↔ session DO semantics and avoids runtime/protocol drift. | `docs/design/after-skeleton/PX-QNA.md` |
 
 ---
 
