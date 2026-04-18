@@ -45,4 +45,25 @@ describe("session phase gate", () => {
   it("assertSessionPhaseAllowed throws on illegal transition", () => {
     expect(() => assertSessionPhaseAllowed("ended", "session.start")).toThrow(NacpSessionError);
   });
+
+  // Phase 0 widened surface coverage (Q1 + Q8)
+  it("session.followup_input allowed in attached", () => {
+    expect(isSessionMessageAllowedInPhase("attached", "session.followup_input")).toBe(true);
+  });
+  it("session.followup_input allowed in turn_running", () => {
+    expect(isSessionMessageAllowedInPhase("turn_running", "session.followup_input")).toBe(true);
+  });
+  it("session.followup_input blocked in unattached", () => {
+    expect(isSessionMessageAllowedInPhase("unattached", "session.followup_input")).toBe(false);
+  });
+  it("session.followup_input blocked in ended", () => {
+    expect(isSessionMessageAllowedInPhase("ended", "session.followup_input")).toBe(false);
+  });
+  it("client is allowed to produce session.followup_input", () => {
+    expect(SESSION_ROLE_REQUIREMENTS.client.producer.has("session.followup_input")).toBe(true);
+    expect(() => assertSessionRoleAllowed("client", "session.followup_input", "produce")).not.toThrow();
+  });
+  it("session role does not produce session.followup_input", () => {
+    expect(SESSION_ROLE_REQUIREMENTS.session.producer.has("session.followup_input")).toBe(false);
+  });
 });

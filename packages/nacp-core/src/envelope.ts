@@ -12,6 +12,7 @@
 import { z } from "zod";
 import { NacpValidationError } from "./errors.js";
 import { NACP_VERSION, NACP_VERSION_COMPAT, cmpSemver } from "./version.js";
+import { migrate_v1_0_to_v1_1 } from "./compat/migrations.js";
 
 // ═══════════════════════════════════════════════════════════════════
 // §1 — Primitive schemas
@@ -36,13 +37,13 @@ export const NacpProducerRoleSchema = z.enum([
 ]);
 export type NacpProducerRole = z.infer<typeof NacpProducerRoleSchema>;
 
-export const NacpProducerIdSchema = z
+export const NacpProducerKeySchema = z
   .string()
   .min(3)
   .max(128)
   .regex(
     /^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+@v\d+$/,
-    "producer_id must follow 'namespace.sub@vN' pattern (e.g. nano-agent.session.do@v1)",
+    "producer_key must follow 'namespace.sub@vN' pattern (e.g. nano-agent.session.do@v1)",
   );
 
 export const NacpDeliveryKindSchema = z.enum([
@@ -87,8 +88,8 @@ export const NacpHeaderSchema = z.object({
   delivery_kind: NacpDeliveryKindSchema,
   sent_at: z.string().datetime({ offset: true }),
   producer_role: NacpProducerRoleSchema,
-  producer_id: NacpProducerIdSchema,
-  consumer_hint: NacpProducerIdSchema.optional(),
+  producer_key: NacpProducerKeySchema,
+  consumer_key: NacpProducerKeySchema.optional(),
   priority: NacpPrioritySchema.default("normal"),
 });
 export type NacpHeader = z.infer<typeof NacpHeaderSchema>;
@@ -102,7 +103,7 @@ export const NacpAuthoritySchema = z.object({
   user_uuid: z.string().uuid().optional(),
   plan_level: NacpPlanLevelSchema,
   membership_level: NacpMembershipLevelSchema.optional(),
-  stamped_by: NacpProducerIdSchema,
+  stamped_by_key: NacpProducerKeySchema,
   stamped_at: z.string().datetime({ offset: true }),
 });
 export type NacpAuthority = z.infer<typeof NacpAuthoritySchema>;
@@ -112,12 +113,12 @@ export type NacpAuthority = z.infer<typeof NacpAuthoritySchema>;
 // ═══════════════════════════════════════════════════════════════════
 
 export const NacpTraceSchema = z.object({
-  trace_id: z.string().uuid(),
+  trace_uuid: z.string().uuid(),
   session_uuid: z.string().uuid(),
   parent_message_uuid: z.string().uuid().optional(),
-  stream_id: z.string().min(1).max(128).optional(),
+  stream_uuid: z.string().min(1).max(128).optional(),
   stream_seq: z.number().int().min(0).optional(),
-  span_id: z.string().max(32).optional(),
+  span_uuid: z.string().max(32).optional(),
 });
 export type NacpTrace = z.infer<typeof NacpTraceSchema>;
 
@@ -163,7 +164,7 @@ export const NacpRedactionHintSchema = z.array(z.string().max(128));
 
 export const NacpControlSchema = z
   .object({
-    reply_to: z.string().uuid().optional(),
+    reply_to_message_uuid: z.string().uuid().optional(),
     request_uuid: z.string().uuid().optional(),
     deadline_ms: z.number().int().min(0).optional(),
     timeout_ms: z.number().int().min(100).max(300_000).optional(),
@@ -273,8 +274,21 @@ export function registerMessageType(
 const MAX_ENVELOPE_BYTES = 96 * 1024;
 
 export function validateEnvelope(raw: unknown): NacpEnvelope {
+  // Layer 0: compat migration — rewrite retired v1.0 field names into
+  // canonical v1.1 shape before anything else looks at the payload.
+  const migrated =
+    typeof raw === "object" &&
+    raw !== null &&
+    !Array.isArray(raw) &&
+    typeof (raw as Record<string, unknown>).header === "object" &&
+    (raw as { header?: { schema_version?: unknown } }).header !== null &&
+    typeof (raw as { header: { schema_version?: unknown } }).header.schema_version === "string" &&
+    ((raw as { header: { schema_version: string } }).header.schema_version).startsWith("1.0.")
+      ? migrate_v1_0_to_v1_1(raw)
+      : raw;
+
   // Layer 1: structural shape
-  const parsed = NacpEnvelopeBaseSchema.safeParse(raw);
+  const parsed = NacpEnvelopeBaseSchema.safeParse(migrated);
   if (!parsed.success) {
     throw new NacpValidationError(
       parsed.error.issues.map(

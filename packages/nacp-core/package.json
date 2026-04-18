@@ -1,6 +1,6 @@
 {
   "name": "@nano-agent/nacp-core",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "description": "NACP-Core — Nano-Agent Communication Protocol internal envelope layer",
   "main": "./dist/index.js",

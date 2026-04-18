@@ -34,16 +34,16 @@ function makeEnv(
       delivery_kind: "command",
       sent_at: SENT,
       producer_role: producerRole,
-      producer_id: `nano-agent.${producerRole}.test@v1`,
+      producer_key: `nano-agent.${producerRole}.test@v1`,
       priority: "normal",
     },
     authority: {
       team_uuid: TEAM,
       plan_level: "pro",
-      stamped_by: "nano-agent.platform.ingress@v1",
+      stamped_by_key: "nano-agent.platform.ingress@v1",
       stamped_at: SENT,
     },
-    trace: { trace_id: UUID, session_uuid: UUID },
+    trace: { trace_uuid: UUID, session_uuid: UUID },
     body,
   };
 }

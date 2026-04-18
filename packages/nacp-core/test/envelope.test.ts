@@ -3,7 +3,7 @@ import {
   NacpSemverSchema,
   NacpPrioritySchema,
   NacpProducerRoleSchema,
-  NacpProducerIdSchema,
+  NacpProducerKeySchema,
   NacpDeliveryKindSchema,
   NacpHeaderSchema,
   NacpAuthoritySchema,
@@ -36,7 +36,7 @@ function makeValidHeader(overrides: Record<string, unknown> = {}) {
     delivery_kind: "command",
     sent_at: VALID_SENT_AT,
     producer_role: "session",
-    producer_id: VALID_PRODUCER_ID,
+    producer_key: VALID_PRODUCER_ID,
     priority: "normal",
     ...overrides,
   };
@@ -46,7 +46,7 @@ function makeValidAuthority(overrides: Record<string, unknown> = {}) {
   return {
     team_uuid: VALID_TEAM_UUID,
     plan_level: "pro",
-    stamped_by: "nano-agent.platform.ingress@v1",
+    stamped_by_key: "nano-agent.platform.ingress@v1",
     stamped_at: VALID_SENT_AT,
     ...overrides,
   };
@@ -54,7 +54,7 @@ function makeValidAuthority(overrides: Record<string, unknown> = {}) {
 
 function makeValidTrace(overrides: Record<string, unknown> = {}) {
   return {
-    trace_id: VALID_UUID,
+    trace_uuid: VALID_UUID,
     session_uuid: VALID_UUID,
     ...overrides,
   };
@@ -122,16 +122,16 @@ describe("NacpProducerRoleSchema", () => {
   });
 });
 
-describe("NacpProducerIdSchema", () => {
-  it("accepts valid namespaced IDs", () => {
-    expect(NacpProducerIdSchema.parse("nano-agent.session.do@v1")).toBe("nano-agent.session.do@v1");
-    expect(NacpProducerIdSchema.parse("acme.plugin.foo@v2")).toBe("acme.plugin.foo@v2");
+describe("NacpProducerKeySchema", () => {
+  it("accepts valid namespaced keys", () => {
+    expect(NacpProducerKeySchema.parse("nano-agent.session.do@v1")).toBe("nano-agent.session.do@v1");
+    expect(NacpProducerKeySchema.parse("acme.plugin.foo@v2")).toBe("acme.plugin.foo@v2");
   });
-  it("rejects invalid IDs", () => {
-    expect(() => NacpProducerIdSchema.parse("no-version")).toThrow();
-    expect(() => NacpProducerIdSchema.parse("x@v1")).toThrow(); // too short / no dot
-    expect(() => NacpProducerIdSchema.parse("UPPER.case@v1")).toThrow();
-    expect(() => NacpProducerIdSchema.parse("")).toThrow();
+  it("rejects invalid keys", () => {
+    expect(() => NacpProducerKeySchema.parse("no-version")).toThrow();
+    expect(() => NacpProducerKeySchema.parse("x@v1")).toThrow(); // too short / no dot
+    expect(() => NacpProducerKeySchema.parse("UPPER.case@v1")).toThrow();
+    expect(() => NacpProducerKeySchema.parse("")).toThrow();
   });
 });
 
@@ -168,13 +168,13 @@ describe("NacpHeaderSchema", () => {
     expect(() => NacpHeaderSchema.parse(rest)).toThrow();
   });
 
-  it("rejects invalid producer_id format", () => {
-    expect(() => NacpHeaderSchema.parse(makeValidHeader({ producer_id: "bad" }))).toThrow();
+  it("rejects invalid producer_key format", () => {
+    expect(() => NacpHeaderSchema.parse(makeValidHeader({ producer_key: "bad" }))).toThrow();
   });
 
-  it("accepts optional consumer_hint", () => {
-    const result = NacpHeaderSchema.parse(makeValidHeader({ consumer_hint: "nano-agent.skill.browser@v1" }));
-    expect(result.consumer_hint).toBe("nano-agent.skill.browser@v1");
+  it("accepts optional consumer_key", () => {
+    const result = NacpHeaderSchema.parse(makeValidHeader({ consumer_key: "nano-agent.skill.browser@v1" }));
+    expect(result.consumer_key).toBe("nano-agent.skill.browser@v1");
   });
 });
 
@@ -197,8 +197,8 @@ describe("NacpAuthoritySchema", () => {
     expect(() => NacpAuthoritySchema.parse(makeValidAuthority({ team_uuid: "" }))).toThrow();
   });
 
-  it("requires stamped_by", () => {
-    const { stamped_by, ...rest } = makeValidAuthority();
+  it("requires stamped_by_key", () => {
+    const { stamped_by_key: _unused, ...rest } = makeValidAuthority() as Record<string, unknown> & { stamped_by_key: string };
     expect(() => NacpAuthoritySchema.parse(rest)).toThrow();
   });
 
@@ -229,20 +229,20 @@ describe("NacpAuthoritySchema", () => {
 describe("NacpTraceSchema", () => {
   it("accepts minimal trace", () => {
     const result = NacpTraceSchema.parse(makeValidTrace());
-    expect(result.trace_id).toBe(VALID_UUID);
+    expect(result.trace_uuid).toBe(VALID_UUID);
   });
 
   it("accepts full trace with stream fields", () => {
     const result = NacpTraceSchema.parse(makeValidTrace({
       parent_message_uuid: VALID_UUID,
-      stream_id: "tool-call-42",
+      stream_uuid: "tool-call-42",
       stream_seq: 0,
-      span_id: "abc123",
+      span_uuid: "abc123",
     }));
     expect(result.stream_seq).toBe(0);
   });
 
-  it("rejects missing trace_id", () => {
+  it("rejects missing trace_uuid", () => {
     expect(() => NacpTraceSchema.parse({ session_uuid: VALID_UUID })).toThrow();
   });
 
@@ -250,8 +250,8 @@ describe("NacpTraceSchema", () => {
     expect(() => NacpTraceSchema.parse(makeValidTrace({ stream_seq: -1 }))).toThrow();
   });
 
-  it("rejects non-uuid trace_id", () => {
-    expect(() => NacpTraceSchema.parse(makeValidTrace({ trace_id: "not-a-uuid" }))).toThrow();
+  it("rejects non-uuid trace_uuid", () => {
+    expect(() => NacpTraceSchema.parse(makeValidTrace({ trace_uuid: "not-a-uuid" }))).toThrow();
   });
 });
 
@@ -271,7 +271,7 @@ describe("NacpControlSchema", () => {
 
   it("accepts full control with delegation + quota", () => {
     const result = NacpControlSchema.parse({
-      reply_to: VALID_UUID,
+      reply_to_message_uuid: VALID_UUID,
       request_uuid: VALID_UUID,
       deadline_ms: 1700000000000,
       timeout_ms: 30000,
@@ -453,11 +453,26 @@ describe("validateEnvelope", () => {
       expect(result.header.schema_version).toBe(NACP_VERSION);
     });
 
-    it("accepts future patch version", () => {
+    it("accepts future patch version within the frozen baseline", () => {
       const env = makeValidEnvelope();
-      env.header.schema_version = "1.0.1";
+      env.header.schema_version = "1.1.1";
       const result = validateEnvelope(env);
-      expect(result.header.schema_version).toBe("1.0.1");
+      expect(result.header.schema_version).toBe("1.1.1");
+    });
+
+    it("accepts legacy 1.0.x payloads by running them through the compat shim", () => {
+      const env: any = makeValidEnvelope();
+      // roll the payload back to the v1.0 field surface so the shim exercises
+      env.header.schema_version = "1.0.1";
+      env.header.producer_id = env.header.producer_key;
+      delete env.header.producer_key;
+      env.authority.stamped_by = env.authority.stamped_by_key;
+      delete env.authority.stamped_by_key;
+      env.trace.trace_id = env.trace.trace_uuid;
+      delete env.trace.trace_uuid;
+      const result = validateEnvelope(env);
+      expect(result.header.schema_version).toBe(NACP_VERSION);
+      expect(result.header.producer_key).toBe(VALID_PRODUCER_ID);
     });
   });
 

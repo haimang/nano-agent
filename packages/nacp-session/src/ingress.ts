@@ -19,14 +19,14 @@ export interface IngressContext {
   user_uuid?: string;
   plan_level: "free" | "pro" | "enterprise" | "internal";
   membership_level?: "owner" | "admin" | "operator" | "member" | "readonly";
-  stamped_by: string;
+  stamped_by_key: string;
 }
 
 export function normalizeClientFrame(
   raw: NacpClientFrame,
   ctx: IngressContext,
   sessionStreamSeq: number,
-  streamId: string,
+  streamUuid: string,
 ): NacpSessionFrame {
   // Reject if client tried to author authority
   if (raw.authority) {
@@ -49,7 +49,7 @@ export function normalizeClientFrame(
     user_uuid: ctx.user_uuid,
     plan_level: ctx.plan_level,
     membership_level: ctx.membership_level,
-    stamped_by: ctx.stamped_by,
+    stamped_by_key: ctx.stamped_by_key,
     stamped_at: new Date().toISOString(),
   };
 
@@ -62,7 +62,7 @@ export function normalizeClientFrame(
     refs: raw.refs,
     extra: raw.extra,
     session_frame: {
-      stream_id: streamId,
+      stream_uuid: streamUuid,
       stream_seq: sessionStreamSeq,
       delivery_mode: "at-most-once",
       ack_required: false,

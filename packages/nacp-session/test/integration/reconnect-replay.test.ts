@@ -3,8 +3,8 @@ import { SessionWebSocketHelper, type SessionSocketLike, type SessionContext } f
 
 const CTX: SessionContext = {
   team_uuid: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", plan_level: "pro",
-  session_uuid: "22222222-2222-2222-2222-222222222222", trace_id: "33333333-3333-3333-3333-333333333333",
-  producer_id: "nano-agent.session.do@v1", stamped_by: "nano-agent.platform.ingress@v1",
+  session_uuid: "22222222-2222-2222-2222-222222222222", trace_uuid: "33333333-3333-3333-3333-333333333333",
+  producer_key: "nano-agent.session.do@v1", stamped_by_key: "nano-agent.platform.ingress@v1",
 };
 function mockSock(): SessionSocketLike & { sent: string[] } {
   return { sent: [], send(d: string) { this.sent.push(d); }, close: vi.fn() };

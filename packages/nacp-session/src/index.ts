@@ -16,11 +16,13 @@ export { NacpSessionError, SESSION_ERROR_CODES } from "./errors.js";
 export {
   SessionStartBodySchema, SessionResumeBodySchema, SessionCancelBodySchema,
   SessionEndBodySchema, SessionStreamAckBodySchema, SessionHeartbeatBodySchema,
+  SessionFollowupInputBodySchema,
   SESSION_BODY_SCHEMAS, SESSION_BODY_REQUIRED, SESSION_MESSAGE_TYPES,
 } from "./messages.js";
 export type {
   SessionStartBody, SessionResumeBody, SessionCancelBody,
   SessionEndBody, SessionStreamAckBody, SessionHeartbeatBody,
+  SessionFollowupInputBody,
 } from "./messages.js";
 
 // ── Stream events ──

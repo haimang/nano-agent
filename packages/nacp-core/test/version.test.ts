@@ -1,5 +1,10 @@
 import { describe, it, expect } from "vitest";
-import { NACP_VERSION, NACP_VERSION_COMPAT, cmpSemver } from "../src/version.js";
+import {
+  NACP_VERSION,
+  NACP_VERSION_COMPAT,
+  NACP_VERSION_KIND,
+  cmpSemver,
+} from "../src/version.js";
 
 describe("version constants", () => {
   it("NACP_VERSION is valid semver", () => {
@@ -12,6 +17,15 @@ describe("version constants", () => {
 
   it("NACP_VERSION >= NACP_VERSION_COMPAT", () => {
     expect(cmpSemver(NACP_VERSION, NACP_VERSION_COMPAT)).toBeGreaterThanOrEqual(0);
+  });
+
+  it("first frozen baseline is 1.1.0 with compat floor 1.0.0", () => {
+    expect(NACP_VERSION).toBe("1.1.0");
+    expect(NACP_VERSION_COMPAT).toBe("1.0.0");
+  });
+
+  it("NACP_VERSION_KIND is 'frozen' once the Phase 0 baseline is cut", () => {
+    expect(NACP_VERSION_KIND).toBe("frozen");
   });
 });
 

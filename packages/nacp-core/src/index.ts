@@ -18,7 +18,7 @@ export {
   NacpSemverSchema,
   NacpPrioritySchema,
   NacpProducerRoleSchema,
-  NacpProducerIdSchema,
+  NacpProducerKeySchema,
   NacpDeliveryKindSchema,
   NacpPlanLevelSchema,
   NacpMembershipLevelSchema,

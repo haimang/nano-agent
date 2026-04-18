@@ -22,12 +22,26 @@ export interface SessionRoleRequirement {
 
 export const SESSION_ROLE_REQUIREMENTS: Record<string, SessionRoleRequirement> = {
   client: {
-    producer: new Set(["session.start", "session.resume", "session.cancel", "session.stream.ack", "session.heartbeat"]),
+    producer: new Set([
+      "session.start",
+      "session.resume",
+      "session.cancel",
+      "session.stream.ack",
+      "session.heartbeat",
+      "session.followup_input",
+    ]),
     consumer: new Set(["session.end", "session.stream.event", "session.heartbeat"]),
   },
   session: {
     producer: new Set(["session.end", "session.stream.event", "session.heartbeat"]),
-    consumer: new Set(["session.start", "session.resume", "session.cancel", "session.stream.ack", "session.heartbeat"]),
+    consumer: new Set([
+      "session.start",
+      "session.resume",
+      "session.cancel",
+      "session.stream.ack",
+      "session.heartbeat",
+      "session.followup_input",
+    ]),
   },
   ingress: {
     producer: new Set<string>(),
@@ -69,6 +83,7 @@ const SESSION_PHASE_ALLOWED: Record<SessionPhase, Set<string>> = {
     "session.stream.event",
     "session.stream.ack",
     "session.heartbeat",
+    "session.followup_input",
   ]),
   turn_running: new Set([
     "session.cancel",
@@ -76,6 +91,7 @@ const SESSION_PHASE_ALLOWED: Record<SessionPhase, Set<string>> = {
     "session.stream.event",
     "session.stream.ack",
     "session.heartbeat",
+    "session.followup_input",
   ]),
   ended: new Set([
     "session.heartbeat",  // final heartbeat before close

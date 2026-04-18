@@ -17,17 +17,17 @@ function makeEnvelope(overrides: Record<string, unknown> = {}): NacpEnvelope {
       delivery_kind: "command",
       sent_at: VALID_SENT_AT,
       producer_role: "session",
-      producer_id: VALID_PRODUCER_ID,
+      producer_key: VALID_PRODUCER_ID,
       priority: "normal",
     },
     authority: {
       team_uuid: TEAM_A,
       plan_level: "pro",
-      stamped_by: "nano-agent.platform.ingress@v1",
+      stamped_by_key: "nano-agent.platform.ingress@v1",
       stamped_at: VALID_SENT_AT,
     },
     trace: {
-      trace_id: "11111111-1111-1111-1111-111111111111",
+      trace_uuid: "11111111-1111-1111-1111-111111111111",
       session_uuid: "22222222-2222-2222-2222-222222222222",
     },
     ...overrides,
@@ -82,12 +82,12 @@ describe("verifyTenantBoundary — attack scenarios", () => {
   });
 
   it("ATTACK 6: DO team = A, envelope team = B → NACP_TENANT_MISMATCH", async () => {
-    const env = makeEnvelope({ authority: { team_uuid: TEAM_B, plan_level: "pro", stamped_by: "nano-agent.platform.ingress@v1", stamped_at: VALID_SENT_AT } });
+    const env = makeEnvelope({ authority: { team_uuid: TEAM_B, plan_level: "pro", stamped_by_key: "nano-agent.platform.ingress@v1", stamped_at: VALID_SENT_AT } });
     await expectBoundaryRejects(env, ctx("any", { do_team_uuid: TEAM_A }), "NACP_TENANT_MISMATCH");
   });
 
   it("ATTACK 7: _platform with non-platform role → NACP_TENANT_BOUNDARY_VIOLATION", async () => {
-    const env = makeEnvelope({ authority: { team_uuid: "_platform", plan_level: "internal", stamped_by: "nano-agent.platform.ingress@v1", stamped_at: VALID_SENT_AT } });
+    const env = makeEnvelope({ authority: { team_uuid: "_platform", plan_level: "internal", stamped_by_key: "nano-agent.platform.ingress@v1", stamped_at: VALID_SENT_AT } });
     await expectBoundaryRejects(env, ctx("any"), "NACP_TENANT_BOUNDARY_VIOLATION");
   });
 
@@ -139,8 +139,8 @@ describe("verifyTenantBoundary — happy paths", () => {
 
   it("passes when _platform used by platform role", async () => {
     const env = makeEnvelope({
-      header: { schema_version: "1.0.0", message_uuid: "11111111-1111-1111-1111-111111111111", message_type: "tool.call.request", delivery_kind: "command", sent_at: VALID_SENT_AT, producer_role: "platform", producer_id: "nano-agent.platform.cron@v1", priority: "normal" },
-      authority: { team_uuid: "_platform", plan_level: "internal", stamped_by: "nano-agent.platform.ingress@v1", stamped_at: VALID_SENT_AT },
+      header: { schema_version: "1.0.0", message_uuid: "11111111-1111-1111-1111-111111111111", message_type: "tool.call.request", delivery_kind: "command", sent_at: VALID_SENT_AT, producer_role: "platform", producer_key: "nano-agent.platform.cron@v1", priority: "normal" },
+      authority: { team_uuid: "_platform", plan_level: "internal", stamped_by_key: "nano-agent.platform.ingress@v1", stamped_at: VALID_SENT_AT },
     });
     await expect(verifyTenantBoundary(env, ctx("any"))).resolves.toBeUndefined();
   });

@@ -6,9 +6,9 @@ const CTX: SessionContext = {
   team_uuid: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
   plan_level: "pro",
   session_uuid: "22222222-2222-2222-2222-222222222222",
-  trace_id: "33333333-3333-3333-3333-333333333333",
-  producer_id: "nano-agent.session.do@v1",
-  stamped_by: "nano-agent.platform.ingress@v1",
+  trace_uuid: "33333333-3333-3333-3333-333333333333",
+  producer_key: "nano-agent.session.do@v1",
+  stamped_by_key: "nano-agent.platform.ingress@v1",
 };
 
 function mockSocket(): SessionSocketLike & { sent: string[] } {
@@ -38,7 +38,7 @@ describe("SessionWebSocketHelper", () => {
     h.pushEvent("s1", { kind: "system.notify", severity: "info", message: "a" });
     h.pushEvent("s2", { kind: "system.notify", severity: "info", message: "b" });
     h.pushEvent("s1", { kind: "system.notify", severity: "info", message: "c" });
-    const seqs = sock.sent.map(s => { const p = JSON.parse(s); return { stream: p.session_frame.stream_id, seq: p.session_frame.stream_seq }; });
+    const seqs = sock.sent.map(s => { const p = JSON.parse(s); return { stream: p.session_frame.stream_uuid, seq: p.session_frame.stream_seq }; });
     expect(seqs).toEqual([{ stream: "s1", seq: 0 }, { stream: "s2", seq: 0 }, { stream: "s1", seq: 1 }]);
   });
 

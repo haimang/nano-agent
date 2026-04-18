@@ -1,8 +1,8 @@
 /**
- * Replay Buffer — per-stream_id ring buffer for session event replay.
+ * Replay Buffer — per-stream_uuid ring buffer for session event replay.
  *
  * Hot path: isolate memory. Hibernation: checkpoint to DO storage.
- * Default: 200 events per stream_id, 1000 total across all streams.
+ * Default: 200 events per stream_uuid, 1000 total across all streams.
  */
 
 import { NacpSessionError, SESSION_ERROR_CODES } from "./errors.js";
@@ -30,7 +30,7 @@ export class ReplayBuffer {
   }
 
   append(frame: NacpSessionFrame): void {
-    const sid = frame.session_frame.stream_id;
+    const sid = frame.session_frame.stream_uuid;
     const seq = frame.session_frame.stream_seq;
 
     let buf = this.streams.get(sid);
@@ -55,14 +55,14 @@ export class ReplayBuffer {
     }
   }
 
-  replay(streamId: string, fromSeq: number): NacpSessionFrame[] {
-    const buf = this.streams.get(streamId);
+  replay(streamUuid: string, fromSeq: number): NacpSessionFrame[] {
+    const buf = this.streams.get(streamUuid);
     if (!buf) return [];
 
     const endSeq = buf.baseSeq + buf.events.length;
     if (fromSeq < buf.baseSeq) {
       throw new NacpSessionError(
-        [`replay_from ${fromSeq} is before buffer start ${buf.baseSeq} for stream '${streamId}'`],
+        [`replay_from ${fromSeq} is before buffer start ${buf.baseSeq} for stream '${streamUuid}'`],
         SESSION_ERROR_CODES.NACP_REPLAY_OUT_OF_RANGE,
       );
     }
@@ -72,8 +72,8 @@ export class ReplayBuffer {
     return buf.events.slice(offset);
   }
 
-  getLatestSeq(streamId: string): number {
-    const buf = this.streams.get(streamId);
+  getLatestSeq(streamUuid: string): number {
+    const buf = this.streams.get(streamUuid);
     if (!buf || buf.events.length === 0) return -1;
     return buf.events[buf.events.length - 1]!.session_frame.stream_seq;
   }

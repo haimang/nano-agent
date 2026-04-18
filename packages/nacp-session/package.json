@@ -1,6 +1,6 @@
 {
   "name": "@nano-agent/nacp-session",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
   "description": "NACP-Session — client ↔ session DO WebSocket profile for nano-agent",
   "main": "./dist/index.js",

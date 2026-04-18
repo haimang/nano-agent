@@ -20,7 +20,8 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "build:schema": "tsx scripts/export-schema.ts",
-    "build:docs": "tsx scripts/gen-trace-doc.ts"
+    "build:docs": "tsx scripts/gen-trace-doc.ts",
+    "bench:trace-substrate": "tsx scripts/trace-substrate-benchmark.ts"
   },
   "peerDependencies": {
     "zod": ">=3.22.0"

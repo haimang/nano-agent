@@ -9,23 +9,23 @@ function makeEnvelope(
 ): NacpEnvelope {
   return {
     header: {
-      schema_version: "1.0.0",
+      schema_version: "1.1.0",
       message_uuid: "11111111-1111-1111-1111-111111111111",
       message_type: messageType,
       delivery_kind: "command",
       sent_at: new Date().toISOString(),
       producer_role: "session",
-      producer_id: "nano-agent.session.do@v1",
+      producer_key: "nano-agent.session.do@v1",
       priority: "normal",
     },
     authority: {
       team_uuid: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
       plan_level: "pro",
-      stamped_by: "nano-agent.platform.ingress@v1",
+      stamped_by_key: "nano-agent.platform.ingress@v1",
       stamped_at: new Date().toISOString(),
     },
     trace: {
-      trace_id: "11111111-1111-1111-1111-111111111111",
+      trace_uuid: "11111111-1111-1111-1111-111111111111",
       session_uuid: "22222222-2222-2222-2222-222222222222",
     },
     control: Object.keys(controlOverrides).length > 0 ? controlOverrides : undefined,

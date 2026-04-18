@@ -3,8 +3,8 @@ import { ReplayBuffer } from "../src/replay.js";
 import { NacpSessionError, SESSION_ERROR_CODES } from "../src/errors.js";
 import type { NacpSessionFrame } from "../src/frame.js";
 
-function fakeFrame(streamId: string, seq: number): NacpSessionFrame {
-  return { session_frame: { stream_id: streamId, stream_seq: seq, delivery_mode: "at-most-once", ack_required: false } } as NacpSessionFrame;
+function fakeFrame(streamUuid: string, seq: number): NacpSessionFrame {
+  return { session_frame: { stream_uuid: streamUuid, stream_seq: seq, delivery_mode: "at-most-once", ack_required: false } } as NacpSessionFrame;
 }
 
 describe("ReplayBuffer", () => {

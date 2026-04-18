@@ -18,6 +18,12 @@ import type { FinishReason, LLMUsage } from "../usage.js";
 import { createEmptyUsage } from "../usage.js";
 
 // ── Internal OpenAI-format types ────────────────────────────────
+//
+// Translation-zone exception (P0 identifier-law §F3): `tool_call_id` and the
+// bare `id` on OpenAIToolCall below are provider-raw field names; they only
+// exist on these adapter-local interfaces and MUST NOT leak into canonical
+// domain types. Anything that crosses back into nano-agent canonical code
+// is named under the `*_uuid` / `*_key` law.
 
 interface OpenAIMessage {
   role: string;

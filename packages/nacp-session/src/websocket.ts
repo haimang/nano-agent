@@ -14,6 +14,7 @@ import { HeartbeatTracker, type HeartbeatOptions } from "./heartbeat.js";
 import { SessionStreamEventBodySchema, type SessionStreamEventBody } from "./stream-event.js";
 import { NacpSessionError, SESSION_ERROR_CODES } from "./errors.js";
 import { NACP_SESSION_WS_SUBPROTOCOL } from "./version.js";
+import { NACP_VERSION } from "@nano-agent/nacp-core";
 
 export interface SessionSocketLike {
   send(data: string): void;
@@ -30,10 +31,10 @@ export interface SessionContext {
   team_uuid: string;
   plan_level: "free" | "pro" | "enterprise" | "internal";
   session_uuid: string;
-  trace_id: string;
-  producer_id: string;
+  trace_uuid: string;
+  producer_key: string;
   user_uuid?: string;
-  stamped_by: string;
+  stamped_by_key: string;
 }
 
 export interface SessionWebSocketHelperOptions {
@@ -94,7 +95,7 @@ export class SessionWebSocketHelper {
   // ── Send (R2 + R3 fixed) ──
 
   pushEvent(
-    streamId: string,
+    streamUuid: string,
     eventBody: SessionStreamEventBody,
     opts: { ackRequired?: boolean } = {},
   ): NacpSessionFrame {
@@ -109,35 +110,35 @@ export class SessionWebSocketHelper {
       );
     }
 
-    const seq = this.nextSeq(streamId); // R1 fix: per-stream
+    const seq = this.nextSeq(streamUuid); // R1 fix: per-stream
     const deliveryMode = opts.ackRequired ? "at-least-once" : "at-most-once";
 
     // R3 fix: use real session context, not placeholders
     const frame: NacpSessionFrame = {
       header: {
-        schema_version: "1.0.0",
+        schema_version: NACP_VERSION,
         message_uuid: crypto.randomUUID(),
         message_type: "session.stream.event",
         delivery_kind: "event",
         sent_at: new Date().toISOString(),
         producer_role: "session",
-        producer_id: this.ctx.producer_id,
+        producer_key: this.ctx.producer_key,
         priority: "normal",
       },
       authority: {
         team_uuid: this.ctx.team_uuid,
         plan_level: this.ctx.plan_level,
         user_uuid: this.ctx.user_uuid,
-        stamped_by: this.ctx.stamped_by,
+        stamped_by_key: this.ctx.stamped_by_key,
         stamped_at: new Date().toISOString(),
       },
       trace: {
-        trace_id: this.ctx.trace_id,
+        trace_uuid: this.ctx.trace_uuid,
         session_uuid: this.ctx.session_uuid,
       },
       body: eventBody,
       session_frame: {
-        stream_id: streamId,
+        stream_uuid: streamUuid,
         stream_seq: seq,
         delivery_mode: deliveryMode,
         ack_required: shouldRequireAck(deliveryMode),
@@ -149,7 +150,7 @@ export class SessionWebSocketHelper {
     if (this.socket && this.attached) {
       this.socket.send(JSON.stringify(frame));
       if (frame.session_frame.ack_required) {
-        this.ackWindow.track(streamId, seq);
+        this.ackWindow.track(streamUuid, seq);
       }
     }
 
@@ -158,13 +159,13 @@ export class SessionWebSocketHelper {
 
   // ── Resume / Replay ──
 
-  handleResume(streamId: string, lastSeenSeq: number): NacpSessionFrame[] {
-    const frames = this.replay.replay(streamId, lastSeenSeq + 1);
+  handleResume(streamUuid: string, lastSeenSeq: number): NacpSessionFrame[] {
+    const frames = this.replay.replay(streamUuid, lastSeenSeq + 1);
     if (this.socket && this.attached) {
       for (const f of frames) {
         this.socket.send(JSON.stringify(f));
         if (f.session_frame.ack_required) {
-          this.ackWindow.track(f.session_frame.stream_id, f.session_frame.stream_seq);
+          this.ackWindow.track(f.session_frame.stream_uuid, f.session_frame.stream_seq);
         }
       }
     }
@@ -182,15 +183,15 @@ export class SessionWebSocketHelper {
    * - This helper will reject future acks (acked_seq beyond latest sent seq) as protocol error.
    * - Redundant/stale acks (already cleared) are silently accepted (no error).
    */
-  handleAck(streamId: string, ackedSeq: number): number {
-    const latestSeq = this.replay.getLatestSeq(streamId);
+  handleAck(streamUuid: string, ackedSeq: number): number {
+    const latestSeq = this.replay.getLatestSeq(streamUuid);
     if (latestSeq >= 0 && ackedSeq > latestSeq) {
       throw new NacpSessionError(
-        [`ack seq ${ackedSeq} is beyond latest sent seq ${latestSeq} for stream '${streamId}'`],
+        [`ack seq ${ackedSeq} is beyond latest sent seq ${latestSeq} for stream '${streamUuid}'`],
         SESSION_ERROR_CODES.NACP_SESSION_ACK_MISMATCH,
       );
     }
-    return this.ackWindow.ack(streamId, ackedSeq);
+    return this.ackWindow.ack(streamUuid, ackedSeq);
   }
 
   // ── Heartbeat (R5 fix: timeout enforcement) ──

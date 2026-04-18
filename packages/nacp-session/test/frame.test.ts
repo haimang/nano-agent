@@ -3,17 +3,17 @@ import { NacpSessionFrameSchema, NacpClientFrameSchema, validateSessionMessageTy
 import { NacpSessionError } from "../src/errors.js";
 
 const VALID_HEADER = {
-  schema_version: "1.0.0", message_uuid: "11111111-1111-1111-1111-111111111111",
+  schema_version: "1.1.0", message_uuid: "11111111-1111-1111-1111-111111111111",
   message_type: "session.start", delivery_kind: "command",
   sent_at: "2026-04-16T00:00:00.000+00:00",
-  producer_role: "client", producer_id: "nano-agent.client.cli@v1", priority: "normal",
+  producer_role: "client", producer_key: "nano-agent.client.cli@v1", priority: "normal",
 };
 const VALID_AUTHORITY = {
   team_uuid: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", plan_level: "pro",
-  stamped_by: "nano-agent.platform.ingress@v1", stamped_at: "2026-04-16T00:00:00.000+00:00",
+  stamped_by_key: "nano-agent.platform.ingress@v1", stamped_at: "2026-04-16T00:00:00.000+00:00",
 };
-const VALID_TRACE = { trace_id: "11111111-1111-1111-1111-111111111111", session_uuid: "22222222-2222-2222-2222-222222222222" };
-const VALID_SESSION_FRAME = { stream_id: "main", stream_seq: 0, delivery_mode: "at-most-once", ack_required: false };
+const VALID_TRACE = { trace_uuid: "11111111-1111-1111-1111-111111111111", session_uuid: "22222222-2222-2222-2222-222222222222" };
+const VALID_SESSION_FRAME = { stream_uuid: "main", stream_seq: 0, delivery_mode: "at-most-once", ack_required: false };
 
 describe("NacpSessionFrameSchema", () => {
   it("accepts valid server frame", () => {
@@ -21,7 +21,7 @@ describe("NacpSessionFrameSchema", () => {
       header: VALID_HEADER, authority: VALID_AUTHORITY, trace: VALID_TRACE,
       session_frame: VALID_SESSION_FRAME, body: {},
     });
-    expect(r.session_frame.stream_id).toBe("main");
+    expect(r.session_frame.stream_uuid).toBe("main");
   });
   it("rejects missing session_frame", () => {
     expect(() => NacpSessionFrameSchema.parse({

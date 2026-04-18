@@ -14,10 +14,10 @@ const SENT = "2026-04-16T00:00:00.000+00:00";
 const BOUNDARY: TenantBoundaryContext = { serving_team_uuid: TEAM, accept_delegation: false };
 
 function makeToolRequest(): NacpEnvelope {
-  return { header: { schema_version: NACP_VERSION, message_uuid: UUID, message_type: "tool.call.request", delivery_kind: "command", sent_at: SENT, producer_role: "session", producer_id: "nano-agent.session.do@v1", priority: "normal" }, authority: { team_uuid: TEAM, plan_level: "pro", stamped_by: "nano-agent.platform.ingress@v1", stamped_at: SENT }, trace: { trace_id: UUID, session_uuid: UUID }, body: { tool_name: "bash", tool_input: { command: "ls" } } } as NacpEnvelope;
+  return { header: { schema_version: NACP_VERSION, message_uuid: UUID, message_type: "tool.call.request", delivery_kind: "command", sent_at: SENT, producer_role: "session", producer_key: "nano-agent.session.do@v1", priority: "normal" }, authority: { team_uuid: TEAM, plan_level: "pro", stamped_by_key: "nano-agent.platform.ingress@v1", stamped_at: SENT }, trace: { trace_uuid: UUID, session_uuid: UUID }, body: { tool_name: "bash", tool_input: { command: "ls" } } } as NacpEnvelope;
 }
 function makeToolResponse(): NacpEnvelope {
-  return { header: { schema_version: NACP_VERSION, message_uuid: "22222222-2222-2222-2222-222222222222", message_type: "tool.call.response", delivery_kind: "response", sent_at: SENT, producer_role: "capability", producer_id: "nano-agent.capability.bash@v1", priority: "normal" }, authority: { team_uuid: TEAM, plan_level: "pro", stamped_by: "nano-agent.platform.ingress@v1", stamped_at: SENT }, trace: { trace_id: UUID, session_uuid: UUID }, control: { reply_to: UUID }, body: { status: "ok", output: "file.txt\n" } } as NacpEnvelope;
+  return { header: { schema_version: NACP_VERSION, message_uuid: "22222222-2222-2222-2222-222222222222", message_type: "tool.call.response", delivery_kind: "response", sent_at: SENT, producer_role: "capability", producer_key: "nano-agent.capability.bash@v1", priority: "normal" }, authority: { team_uuid: TEAM, plan_level: "pro", stamped_by_key: "nano-agent.platform.ingress@v1", stamped_at: SENT }, trace: { trace_uuid: UUID, session_uuid: UUID }, control: { reply_to_message_uuid: UUID }, body: { status: "ok", output: "file.txt\n" } } as NacpEnvelope;
 }
 
 describe("ServiceBindingTransport", () => {

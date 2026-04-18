@@ -22,7 +22,7 @@ import { NacpSessionError, SESSION_ERROR_CODES } from "./errors.js";
 // ── Session frame extension fields ──
 
 export const SessionFrameFieldsSchema = z.object({
-  stream_id: z.string().min(1).max(128),
+  stream_uuid: z.string().min(1).max(128),
   stream_seq: z.number().int().min(0),
   last_seen_seq: z.number().int().min(0).optional(),
   replay_from: z.number().int().min(0).optional(),

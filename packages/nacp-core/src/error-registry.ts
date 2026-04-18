@@ -82,7 +82,7 @@ def("NACP_DELEGATION_INVALID", "security", false, "tenant_delegation signature/e
 
 // ── State machine ──
 def("NACP_STATE_MACHINE_VIOLATION", "permanent", false, "message not allowed in current session phase");
-def("NACP_REPLY_TO_CLOSED", "permanent", false, "reply_to points to closed request");
+def("NACP_REPLY_TO_CLOSED", "permanent", false, "reply_to_message_uuid points to closed request");
 def("NACP_PRODUCER_ROLE_MISMATCH", "security", false, "producer_role not allowed for this message_type");
 def("NACP_REPLAY_OUT_OF_RANGE", "permanent", false, "replay_from seq out of buffer range");
 

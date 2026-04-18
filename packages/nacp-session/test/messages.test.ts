@@ -2,8 +2,11 @@ import { describe, it, expect } from "vitest";
 import {
   SessionStartBodySchema, SessionResumeBodySchema, SessionCancelBodySchema,
   SessionEndBodySchema, SessionStreamAckBodySchema, SessionHeartbeatBodySchema,
-  SESSION_MESSAGE_TYPES, SESSION_BODY_REQUIRED,
+  SessionFollowupInputBodySchema,
+  SESSION_MESSAGE_TYPES, SESSION_BODY_REQUIRED, SESSION_BODY_SCHEMAS,
 } from "../src/messages.js";
+
+const TEAM = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
 
 describe("Session message schemas", () => {
   it("session.start accepts valid body with initial_input", () => {
@@ -25,22 +28,53 @@ describe("Session message schemas", () => {
     expect(SessionEndBodySchema.parse({ reason: "completed" }).reason).toBe("completed");
     expect(() => SessionEndBodySchema.parse({ reason: "invalid" })).toThrow();
   });
-  it("session.stream.ack requires stream_id + acked_seq", () => {
+  it("session.stream.ack requires stream_uuid + acked_seq", () => {
     expect(() => SessionStreamAckBodySchema.parse({})).toThrow();
-    const r = SessionStreamAckBodySchema.parse({ stream_id: "s1", acked_seq: 10 });
+    const r = SessionStreamAckBodySchema.parse({ stream_uuid: "s1", acked_seq: 10 });
     expect(r.acked_seq).toBe(10);
+    expect(r.stream_uuid).toBe("s1");
   });
   it("session.heartbeat requires ts", () => {
     expect(SessionHeartbeatBodySchema.parse({ ts: Date.now() })).toBeDefined();
   });
+
+  // Phase 0 widened surface (Q1 + Q8)
+  it("session.followup_input requires text", () => {
+    expect(() => SessionFollowupInputBodySchema.parse({})).toThrow();
+    const r = SessionFollowupInputBodySchema.parse({ text: "second turn" });
+    expect(r.text).toBe("second turn");
+  });
+  it("session.followup_input rejects empty text", () => {
+    expect(() => SessionFollowupInputBodySchema.parse({ text: "" })).toThrow();
+  });
+  it("session.followup_input accepts optional context_ref + stream_seq", () => {
+    const r = SessionFollowupInputBodySchema.parse({
+      text: "more",
+      stream_seq: 3,
+      context_ref: {
+        kind: "r2",
+        binding: "R2_WORKSPACE",
+        team_uuid: TEAM,
+        key: `tenants/${TEAM}/sessions/s/attach/x.json`,
+        role: "input",
+      },
+    });
+    expect(r.stream_seq).toBe(3);
+    expect(r.context_ref?.kind).toBe("r2");
+  });
 });
 
 describe("registries", () => {
-  it("has 7 session message types", () => {
-    expect(SESSION_MESSAGE_TYPES.size).toBe(7);
+  it("has 8 session message types (initial 7 + followup)", () => {
+    expect(SESSION_MESSAGE_TYPES.size).toBe(8);
+    expect(SESSION_MESSAGE_TYPES.has("session.followup_input")).toBe(true);
   });
-  it("body required set excludes cancel", () => {
+  it("body required set excludes cancel but includes followup", () => {
     expect(SESSION_BODY_REQUIRED.has("session.cancel")).toBe(false);
     expect(SESSION_BODY_REQUIRED.has("session.start")).toBe(true);
+    expect(SESSION_BODY_REQUIRED.has("session.followup_input")).toBe(true);
+  });
+  it("SESSION_BODY_SCHEMAS exposes the followup body schema", () => {
+    expect(SESSION_BODY_SCHEMAS["session.followup_input"]).toBeDefined();
   });
 });
