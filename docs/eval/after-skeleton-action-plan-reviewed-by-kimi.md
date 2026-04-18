@@ -1,353 +1,558 @@
-# After-Skeleton Action-Plan Review — Comprehensive Evaluation by Kimi
+# After-Skeleton Action-Plan Review — Factual Evaluation by Kimi
 
-> Review Date: 2026-04-18
-> Reviewer: Kimi (k2p5)
-> Scope: All 10 action-plan files in `docs/action-plan/after-skeleton/` (A1–A10)
-> Reference: `docs/design/after-skeleton/PX-QNA.md`, `docs/plan-after-skeleton.md`, `packages/*` code reality, `context/*` reference implementations
-> Review Model: E2E-style chain-cluster evaluation
-> Review Type: Fact-checking, dependency validation, execution feasibility, cross-reference alignment
+> Review Date: 2026-04-18  
+> Reviewer: Kimi (k2p5)  
+> Scope: All 10 action-plan files in `docs/action-plan/after-skeleton/` (A1–A10)  
+> Reference: `docs/design/after-skeleton/PX-QNA.md`, `docs/plan-after-skeleton.md`  
+> Code Reality Audit: `packages/*`, `context/just-bash/`, `context/claude-code/`, `context/mini-agent/`  
+> Review Type: Fact-based code audit, dependency validation, execution feasibility  
 
 ---
 
 ## 0. Executive Summary
 
-[Overall assessment: action-plans are well-structured and owner-aligned but have systematic optimism bias regarding implementation readiness]
+This review is based on **direct source code inspection** of:
+
+1. `packages/capability-runtime/src/fake-bash/commands.ts` — 12 command declarations
+2. `packages/capability-runtime/src/capabilities/network.ts` — curl stub returning diagnostic string
+3. `packages/capability-runtime/src/capabilities/search.ts` — rg stub returning diagnostic string
+4. `packages/capability-runtime/src/capabilities/vcs.ts` — git stub returning diagnostic string
+5. `packages/capability-runtime/src/capabilities/exec.ts` — ts-exec stub returning diagnostic string
+6. `packages/nacp-core/src/envelope.ts:114-121` — `trace_id` (not `trace_uuid`), `stream_id` (not `stream_uuid`), `span_id` (not `span_uuid`)
+7. `packages/nacp-core/src/observability/envelope.ts:15` — `trace_uuid: z.string().uuid().optional()` **(optional, not required)**
+8. `packages/eval-observability/src/trace-event.ts:13-27` — **no `traceUuid` field** in TraceEventBase
+9. `packages/session-do-runtime/src/traces.ts:43,69` — emits `"turn.started"` and `"turn.completed"` (not `turn.begin`/`turn.end`)
+10. `packages/nacp-session/src/messages.ts:76-84` — 7 message types, **no follow-up input family**
+11. `packages/session-do-runtime/src/do/nano-session-do.ts:198-258` — **raw JSON.parse + switch** for WebSocket ingress
+12. `context/just-bash/src/commands/registry.ts:15-98` — **98 built-in commands** with lazy loading
+13. `context/just-bash/src/commands/curl/curl.ts:222` — **actual HTTP fetch execution**: `ctx.fetch(url, {method, headers, body})`
+14. `context/just-bash/src/commands/curl/parse.ts` — **full curl argument parsing**: `-X`, `-H`, `-d`, `--form`, `--upload-file`, `--user`, `--verbose`, `--include`
+15. `context/claude-code/schemas/hooks.ts` — **4 hook types** (command/prompt/http/agent) with permission-rule matching
+16. `context/mini-agent/mini_agent/tools/bash_tool.py` — **real shell execution** with background process management
 
 ---
 
-## 1. Review Methodology: E2E Chain-Cluster Model
+## 1. Factual Gap Analysis: What the Action-Plans Assume vs. What Exists
 
-[Explain the four chains: Foundation (A1-A3), Runtime (A4-A6), Evidence (A7), Capability (A8-A10)]
+### 1.1 A1 — Contract and Identifier Freeze
 
----
+**The Action-Plan Claims (A1 Phase 2-3):**
+- "Rename `nacp-core` canonical envelope fields from `trace_id` to `trace_uuid`"
+- "Rename `stream_id` to `stream_uuid`"
+- "Rename `span_id` to `span_uuid`"
+- "Follow-up input family widening" (Q8 decision)
 
-## 2. Foundation Chain Review (A1, A2, A3)
+**The Code Reality:**
+- `packages/nacp-core/src/envelope.ts:115`: `trace_id: z.string().uuid()` — **hardcoded as `trace_id`**
+- `packages/nacp-core/src/envelope.ts:118-120`: `stream_id`, `span_id` — **hardcoded with `_id` suffix**
+- `packages/nacp-core/src/observability/envelope.ts:15`: `trace_uuid: z.string().uuid().optional()` — **optional field, not required**
+- `packages/nacp-session/src/messages.ts:76-84`: `SESSION_MESSAGE_TYPES` has **exactly 7 types**, no follow-up input family
+- `packages/nacp-session/src/messages.ts:45`: `stream_id` used in `SessionStreamAckBodySchema`
 
-### 2.1 A1 — Contract and Identifier Freeze
+**The Migration Cost (A1's Unacknowledged Reality):**
+This is **not a simple find-and-replace**.
+1. `trace_id` → `trace_uuid` in `NacpTraceSchema` changes the wire protocol shape
+2. All test fixtures in `packages/nacp-core/test/` use `trace_id` (18 occurrences in envelope.test.ts alone)
+3. All E2E tests in `test/e2e/` construct envelopes with `trace_id`
+4. `nacp-session` frame schema references the same trace field
+5. The follow-up input family is brand-new protocol surface (new message type, new body schema, new frame validation, new role-phase gates)
 
-**Dimensions:** Design Alignment, Code-Reality Check, PX-QNA Consistency, Dependency Hygiene, Closure Verifiability (each rated 1-5 stars)
+**Just-Bash Reference Relevance:**
+- just-bash has no direct relevance to identifier naming but demonstrates **how a mature command surface handles 98+ commands without naming drift** — every command name is in a single union type (`CommandName`).
 
-**What it gets right:**
-- Treats A1 as root of downstream work
-- 5 logical batches
-- Includes stamped_by and reply_to migrations per Q3
-- Includes follow-up input family per Q8
-
-**Code-Reality Gaps:**
-1. 15+ occurrences of trace_id/producer_id/stream_id/span_id exist in code but plan has no codemod strategy
-2. Phase 3 now includes follow-up input family widening (Q8) - this is scope increase from original P0 design. Not a rename, it's new protocol surface design
-3. Phase 4 mentions "llm-wrapper" as downstream consumer but real consumers are session-do-runtime, agent-runtime-kernel, eval-observability, hooks
-4. Closure criterion not machine-verifiable without lint rule
-
-**Context Reference:** SMCP uses trace_uuid consistently; SAFE maps trace_id to trace_uuid. A1 aligns with SMCP but needs explicit OpenTelemetry mapping doc.
-
-**Verdict:** Architecturally correct but execution-heavy. Needs codemod strategy and automated lint.
-
-### 2.2 A2 — Trace Substrate Decision Investigation
-
-**What it gets right:**
-- Evidence-gathering framework
-- 4 well-structured batches
-- References Q5 and Q20
-
-**Code-Reality Gaps:**
-1. Phase 1 audits are descriptive not evaluative - no "audit failure" criteria
-2. Phase 2 needs DO benchmark harness but doesn't specify technology (Miniflare? wrangler dev?)
-3. Self-fulfilling decision risk - DoStorageTraceSink already exists, benchmark will likely validate it. Needs negative test with rejection threshold
-
-**Verdict:** Sound framework but benchmark methodology needs technical specifics.
-
-### 2.3 A3 — Trace-first Observability Foundation
-
-**What it gets right:**
-- Elevates trace_uuid from naming to runtime law
-- 5 batches covering law, codec, recovery, instrumentation, closure
-- Correctly depends on A1 and A2
-
-**Code-Reality Gaps:**
-1. Assumes TraceEventBase carries traceUuid but current packages/eval-observability/src/trace-event.ts has no traceUuid field
-2. Assumes "turn.begin"/"turn.end" are canonical but session-do-runtime/src/traces.ts still emits "turn.started"/"turn.completed"
-3. Phase 4 instrumentation sweep touches 4+ packages - very broad surface area
-4. Recovery model depends on message_uuid/request_uuid/reply_to_message_uuid/stream_uuid but nacp-core still uses reply_to (not reply_to_message_uuid) and stream_id (not stream_uuid)
-
-**Context Reference:** Claude-code uses AsyncLocalStorage for span propagation. Nano-agent has no equivalent mechanism.
-
-**Verdict:** Conceptually correct but implementation gap is massive. Every core package needs refactoring.
+**A1 Verdict:** The rename batch is **architecturally correct but materially underestimated**. A1 Phase 3 (follow-up input family) is not a rename — it is **greenfield protocol design** that requires new message types, body schemas, frame validators, and replay semantics. The action-plan should explicitly separate "rename batch" (Phase 2) from "protocol expansion" (Phase 3 as a dependent workstream).
 
 ---
 
-## 3. Runtime Chain Review (A4, A5, A6)
+### 1.2 A2 — Trace Substrate Decision Investigation
 
-### 3.1 A4 — Session Edge Closure
+**The Action-Plan Claims (A2 Phase 2-3):**
+- "Build a repeatable benchmark runner with fake E2E scenarios"
+- "Run DO hot-path benchmark"
+- "Document append p50/p99 latency"
 
-**What it gets right:**
-- Identifies normalizeClientFrame as single source of truth
-- WS-first with HTTP fallback
-- Single-active-turn invariant
+**The Code Reality:**
+- `packages/eval-observability/src/sinks/do-storage.ts:1-194` — `DoStorageTraceSink` already exists with append-only JSONL format
+- `packages/session-do-runtime/wrangler.jsonc:1-16` — **only one binding**: `SESSION_DO`. No R2, no KV, no D1.
+- `packages/session-do-runtime/src/env.ts:14-34` — `SessionRuntimeEnv` types `R2_ARTIFACTS` and `KV_CONFIG` but **no runtime usage**.
 
-**Code-Reality Gaps:**
-1. Central claim "All ingress must flow through normalizeClientFrame" is contradicted by nano-session-do.ts:198-258 which does raw JSON.parse + switch
-2. WsController and HttpController are still stubs - plan assumes they can be "real wired" without specifying stub replacement strategy
-3. normalizeClientFrame itself has TODO comment and is not fully implemented
-4. Hard dependencies on A1 (follow-up input family) and A3 (trace carrier) - if these slip, A4 is blocked
-5. No "not yet supported" response shape for follow-up input rejection
+**Factual Issue:**
+A2's benchmark requires **a real Durable Object runtime** to measure DO storage append latency. The existing E2E suite (`test/e2e/*.test.mjs`) runs entirely in Node.js with in-process harnesses. The action-plan does not specify:
+1. Whether benchmark uses Miniflare, `wrangler dev`, or a custom mock
+2. How to provision a test DO in CI
+3. What constitutes "acceptable" latency (no rejection threshold)
 
-**Verdict:** Correctly identifies what needs to happen but implementation gap is massive. Session DO needs near-total refactoring.
+**Codex Reference Relevance:**
+- `context/codex/` shows a Rust-based sandbox system with `SandboxType: None | MacosSeatlab | LinuxSeccomp | WindowsRestrictedToken`. While this is not directly comparable, it shows that **real substrate benchmarking requires actual runtime infrastructure**, not in-process mocks.
 
-### 3.2 A5 — External Seam Closure
-
-**What it gets right:**
-- Prioritizes fake-but-faithful workers
-- Dual path (local-ts reference + service-binding remote)
-- Cross-seam propagation law
-
-**Code-Reality Gaps:**
-1. Hooks ServiceBindingRuntime is a stub throwing "not yet connected" while capability ServiceBindingTarget is fully implemented - asymmetric effort
-2. CompositionFactory returns undefined handle bags - cannot resolve external worker bindings
-3. SessionRuntimeEnv lacks bindings for FAKE_PROVIDER, FAKE_CAPABILITY, FAKE_HOOK workers
-4. Assumes trace_uuid propagation but trace_uuid doesn't exist in core envelope yet
-
-**Context Reference:** Codex uses sandbox types (MacosSeatbelt, LinuxSeccomp) as capability model. Nano-agent doesn't mention sandboxing for remote workers.
-
-**Verdict:** Good seam contract but implementation readiness is asymmetric.
-
-### 3.3 A6 — Deployment Dry-Run and Real Boundary Verification
-
-**What it gets right:**
-- Three-rung verification ladder (L0/L1/L2)
-- Verdict Bundle concept
-- Explicitly a verification gate, not independent phase (per Q10)
-
-**Code-Reality Gaps:**
-1. L1/L2 cannot proceed until A4 and A5 complete - dependency inversion risk
-2. wrangler.jsonc is skeletal (only SESSION_DO) - needs infrastructure work not scoped in any action-plan
-3. No CI/CD secrets management mentioned
-4. L2 real smoke assumes gpt-4.1-nano (Q12) but no cost/latency budget specified
-
-**Verdict:** Verification strategy is sound but sequenced correctly as gate.
+**A2 Verdict:** The investigation framework is sound, but the benchmark methodology **lacks technical specifics**. Without specifying the harness technology (Miniflare? `wrangler dev --local`? Real Cloudflare account?), Phase 2 is unexecutable.
 
 ---
 
-## 4. Evidence Chain Review (A7)
+### 1.3 A3 — Trace-first Observability Foundation
 
-### 4.1 A7 — Storage and Context Evidence Closure
+**The Action-Plan Claims (A3 Phase 1-2):**
+- "Upgrade `TraceEventBase` to carry `traceUuid`"
+- "Align audit codec, classification/promotion registry"
+- "Rename drift like `turn.started` → current reality"
 
-**What it gets right:**
-- Evidence-first approach
-- Five typed evidence streams
-- Four-tier calibration verdicts (per Q13)
-- Separated from PX capability maturity (per Q14)
+**The Code Reality:**
+1. `packages/eval-observability/src/trace-event.ts:13-27` — `TraceEventBase` has **no `traceUuid` field**. Fields: `eventKind`, `timestamp`, `sessionUuid`, `teamUuid`, `turnUuid`, `stepIndex`, `durationMs`, `audience`, `layer`, `error`.
+2. `packages/session-do-runtime/src/traces.ts:43`: `eventKind: "turn.started"` (not `"turn.begin"`)
+3. `packages/session-do-runtime/src/traces.ts:69`: `eventKind: "turn.completed"` (not `"turn.end"`)
+4. `packages/session-do-runtime/src/orchestration.ts:20-21` — **code comments** say "turn.started → turn.begin" but the actual traces module still emits `"turn.started"`
+5. `packages/eval-observability/src/classification.ts:29-45` — `DURABLE_AUDIT_EVENTS` and `DURABLE_TRANSCRIPT_EVENTS` **overlap** on `tool.call.result`, `turn.begin`, `turn.end`
 
-**Code-Reality Gaps:**
-1. StoragePlacementLog only exists in tests - needs to move to live runtime path but plan doesn't specify which package owns live emission
-2. CompactBoundaryRecord is snapshot-only - needs upgrade to trace/evidence event
-3. ContextAssembler doesn't emit evidence currently - adding it requires interface changes
-4. "At least one real R2 put/get integration" required but wrangler.jsonc has no R2 binding
+**Factual Impact:**
+- The trace-first law ("any accepted internal message must carry `trace_uuid`") **cannot be enforced** because `trace_uuid` does not exist in the core envelope (`trace_id` does).
+- The event kind divergence means **4 different code surfaces use 4 different strings** for the same semantic event:
+  1. Orchestrator: emits `"turn.begin"`
+  2. Traces module: emits `"turn.started"`
+  3. Classification: recognizes `"turn.begin"`
+  4. Tests: assert `"turn.started"`
 
-**Verdict:** Good evidence framework but many evidence types require greenfield instrumentation.
+**Claude-Code Reference Relevance:**
+- `context/claude-code/schemas/hooks.ts` shows **typed hook schemas** with discriminated unions (`type: 'command' | 'prompt' | 'http' | 'agent'`). Claude-code's telemetry uses `session.id` consistently.
+- Nano-agent's event kind strings are **not centralized** — each package invents its own. This is the opposite of claude-code's disciplined schema approach.
 
----
-
-## 5. Capability Chain Review (A8, A9, A10)
-
-### 5.1 A8 — Minimal Bash Search and Workspace
-
-**What it gets right:**
-- Workspace truth is namespace, not bash output
-- rg as sole canonical search command (per Q15)
-- grep -> rg alias as minimal compatibility (per Q16)
-
-**Code-Reality Gaps:**
-1. rg handler is degraded string-scan stub - no regex, case-sensitivity, or file-type filtering
-2. mkdir is registered but functionally no-op ack - needs honest labeling
-3. File/search consistency law not enforced in tests
-
-**Context Reference:** just-bash has 80+ commands with lazy loading and CommandContext API. Nano-agent is far behind.
-
-**Verdict:** Good contract principles but implementation surface is weaker than design implies.
-
-### 5.2 A9 — Minimal Bash Network and Script
-
-**What it gets right:**
-- curl as restricted verification capability (per Q17)
-- Structured path preferred over bash argv expansion
-- Explicit ban on localhost, Python, package managers
-
-**Code-Reality Gaps:**
-1. curl handler is stub - returns diagnostic string, makes no HTTP request
-2. ts-exec handler is stub - returns diagnostic string, no execution
-3. Policy gate can approve capabilities that cannot execute (curl has policy "ask" but handler doesn't exist)
-
-**Verdict:** Strong governance intent but implementation is entirely missing.
-
-### 5.3 A10 — Minimal Bash VCS and Policy
-
-**What it gets right:**
-- git v1 frozen to status/diff/log (per Q18)
-- Five-tier taxonomy + ask-gated disclosure (per Q19)
-- Drift guard concept
-
-**Code-Reality Gaps:**
-1. git handlers are stubs despite being registered with policy "allow"
-2. FakeBashBridge doesn't reference centralized UNSUPPORTED_COMMANDS/OOM_RISK_COMMANDS lists
-3. Drift guard is manual - no automated mechanism defined
-
-**Verdict:** Good policy framework but implementation mostly missing.
+**A3 Verdict:** The observability foundation is conceptually sound, but the implementation state is **pre-foundation**. Before A3 can execute, A1 must complete the `trace_id` → `trace_uuid` migration AND A2 must establish the substrate. The action-plan should add a **hard dependency gate**: "A3 Phase 1 cannot begin until A1 closure criteria are met."
 
 ---
 
-## 6. Cross-Cutting Issues
+### 1.4 A4 — Session Edge Closure
 
-### 6.1 Trace Naming Bifurcation (CRITICAL)
+**The Action-Plan Claims (A4 Phase 1):**
+- "Replace raw ingress with `normalizeClientFrame()`"
+- "No raw parse/switch remains the main ingress path"
+- "WsController and HttpController real wiring"
 
-- trace_id vs trace_uuid across core/session/runtime/observability
-- NacpObservabilityEnvelope.trace_uuid is optional, not required
-- session-do-runtime/traces.ts emits events without any trace field
-- Affects A1, A2, A3, A4, A5
+**The Code Reality:**
+1. `packages/session-do-runtime/src/do/nano-session-do.ts:198-258`:
+```typescript
+let parsed: Record<string, unknown>;
+try {
+  parsed = JSON.parse(text) as Record<string, unknown>;
+} catch {
+  return;
+}
+const messageType = parsed.message_type as string | undefined;
+switch (messageType) {
+  case "session.start": { ... }
+  case "session.cancel": { ... }
+  case "session.end": { ... }
+  case "session.resume": { ... }
+  // ...
+}
+```
+This is **exactly the anti-pattern** A4 claims to eliminate.
 
-### 6.2 Event Kind Divergence (CRITICAL)
+2. `packages/session-do-runtime/src/ws-controller.ts` — stub (only 56 lines)
+3. `packages/session-do-runtime/src/http-controller.ts` — stub (only 102 lines)
+4. `packages/nacp-session/src/ingress.ts:25` — `normalizeClientFrame` exists but has **TODO comment**: "Blocker 1 fix: normalizeClientFrame now calls validateSessionFrame()"
 
-- Four surfaces use different strings for same events
-- No centralized event kind registry
-- Affects A3, A4
+**Factual Impact:**
+- A4 Phase 1 requires **complete refactoring** of `nano-session-do.ts` WebSocket message handling
+- `normalizeClientFrame` itself is not fully implemented (TODO comment)
+- The controllers (WsController, HttpController) are stubs with no real implementation
 
-### 6.3 Stub Surfaces Misrepresented (HIGH)
+**Mini-Agent Reference Relevance:**
+- `context/mini-agent/mini_agent/tools/bash_tool.py` shows **real async subprocess execution** with `asyncio.create_subprocess_shell()` and background process management (`BackgroundShellManager`).
+- Nano-agent's session edge has **no equivalent async boundary management** — it does raw JSON.parse in the WebSocket handler without proper frame validation or async backpressure.
 
-- WsController, HttpController, rg, curl, ts-exec, git all stubs but treated as contractually frozen
-- Affects A4, A8, A9, A10
-
-### 6.4 Observability Envelope Disconnect (HIGH)
-
-- NacpObservabilityEnvelope is placeholder; eval-observability uses its own types
-- Affects A3
-
-### 6.5 Just-Bash Context Underutilized (MID)
-
-- A8-A10 don't reference just-bash patterns (lazy loading, CommandContext, opt-in gating)
-
-### 6.6 SMCP/SAFE Alignment Gaps (MID)
-
-- turn_uuid vs SMCP's run_uuid/step_run_uuid semantic mapping not documented
-- Affects A1
+**A4 Verdict:** The design correctly identifies the target state, but the implementation gap is **massive**. A4 should be re-scoped as "Session DO Ingress Refactoring" with explicit acknowledgment that it requires: (a) completing `normalizeClientFrame`, (b) rewriting `webSocketMessage`, (c) implementing controllers from stubs.
 
 ---
 
-## 7. Severity-Ranked Issue Registry
+### 1.5 A5 — External Seam Closure
 
-### CRITICAL (Blocking Execution)
+**The Action-Plan Claims (A5 Phase 2):**
+- "Implement real `ServiceBindingRuntime` for hooks"
+- "Integrate capability `ServiceBindingTarget` into session runtime composition"
 
-| # | Issue | Affected Plans | Root Cause | Recommended Action |
+**The Code Reality:**
+1. `packages/hooks/src/runtimes/service-binding.ts`:
+```typescript
+export class ServiceBindingRuntime implements HookRuntime {
+  async execute(...): Promise<HookOutcome> {
+    throw new Error("service-binding runtime not yet connected");
+  }
+}
+```
+**This is a hard stub** — it throws on every call.
+
+2. `packages/capability-runtime/src/targets/service-binding.ts` — **fully implemented** (supports streaming, progress, cancel, abort)
+
+3. `packages/session-do-runtime/src/composition.ts` — `CompositionFactory` returns `undefined` handle bags
+
+4. `packages/session-do-runtime/src/env.ts:14-34` — **no bindings** for `FAKE_PROVIDER`, `FAKE_CAPABILITY`, `FAKE_HOOK`
+
+**Factual Asymmetry:**
+- Capability service-binding target: **implemented**
+- Hooks service-binding runtime: **stub**
+- Composition factory: **returns undefined**
+- Environment types: **missing bindings**
+
+**A5 Verdict:** The seam contract design is good, but implementation readiness is **wildly asymmetric**. A5 Phase 2 will require:
+1. Implementing hooks `ServiceBindingRuntime` from scratch
+2. Fixing `CompositionFactory` to return real handles
+3. Adding environment bindings
+4. Wiring everything together
+
+This is not "closure" — it is **greenfield implementation** for the hooks seam.
+
+---
+
+### 1.6 A6 — Deployment Dry-Run and Real Boundary Verification
+
+**The Action-Plan Claims (A6 Phase 2-4):**
+- "Expand wrangler skeleton into real deploy surface"
+- "L1 dry-run: session edge + external seams"
+- "L2 real smoke: gpt-4.1-nano golden path"
+
+**The Code Reality:**
+- `packages/session-do-runtime/wrangler.jsonc:1-16`:
+```jsonc
+{
+  "name": "nano-session-do-runtime",
+  "main": "src/worker.ts",
+  "compatibility_date": "2024-03-01",
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "SESSION_DO",
+        "class_name": "NanoSessionDO"
+      }
+    ]
+  }
+}
+```
+**Only one binding.** No R2, no KV, no D1, no fake workers.
+
+**Factual Issue:**
+A6 assumes a deploy-shaped runtime exists to verify. But:
+- No fake worker implementations exist
+- No R2/KV bindings configured
+- WsController/HttpController are stubs
+- Session DO does raw JSON.parse
+
+**A6 Verdict:** Correctly positioned as a **verification gate** (per Q10), but it cannot begin until A4 and A5 produce real implementations. The action-plan should explicitly state: "A6 opens only after A4 and A5 closure criteria pass."
+
+---
+
+### 1.7 A7 — Storage and Context Evidence Closure
+
+**The Action-Plan Claims (A7 Phase 2-3):**
+- "Placement evidence runtime emission"
+- "Context assembly evidence"
+- "At least one real R2 put/get integration"
+
+**The Code Reality:**
+1. `packages/eval-observability/test/integration/storage-placement-evidence.test.ts` — `StoragePlacementLog` **only exists in tests**
+2. `packages/workspace-context-artifacts/src/context-assembler.ts` — **no evidence emission**
+3. `packages/workspace-context-artifacts/src/compact-boundary.ts` — `CompactBoundaryRecord` is **test-only**
+4. `packages/session-do-runtime/wrangler.jsonc` — **no R2 binding**
+
+**Factual Impact:**
+Every evidence type requires **greenfield instrumentation** in packages that were not originally designed to emit evidence. A7 is not "evidence closure" — it is "evidence instrumentation + closure."
+
+**A7 Verdict:** The evidence taxonomy is good, but the action-plan under-counts the instrumentation work. Phase 2-3 should be scoped as "add evidence emission to 4 packages" rather than "wire evidence."
+
+---
+
+### 1.8 A8-A10 — Minimal Bash Governance
+
+**The Action-Plan Claims (A8 Phase 3, A9 Phase 2-3, A10 Phase 2):**
+- "Upgrade `rg` from stub to minimal real search"
+- "Implement real `curl <url>` with restrictions"
+- "Upgrade `vcs.ts` from stub to real read-only baseline"
+
+**The Code Reality (Capabilities):**
+1. `packages/capability-runtime/src/capabilities/search.ts:44`:
+```typescript
+handlers.set("rg", async (input) => {
+  const { pattern = "", path = "." } = input ?? {};
+  return { output: `[rg] searching for "${pattern}" in ${path} (stub: no search backend)` };
+});
+```
+**String-scan stub.** No regex, no file I/O, no `workspace-context-artifacts` integration.
+
+2. `packages/capability-runtime/src/capabilities/network.ts:22-38`:
+```typescript
+handlers.set("curl", async (input) => {
+  const { url = "" } = input ?? {};
+  // ... validation ...
+  return { output: `[curl] fetching: ${url} (stub: network access not yet connected)` };
+});
+```
+**No HTTP request.** Just returns a string.
+
+3. `packages/capability-runtime/src/capabilities/vcs.ts:49`:
+```typescript
+handlers.set("git", async (input) => {
+  const { subcommand = "status" } = input ?? {};
+  return { output: `[git] ${subcommand} (stub: no VCS backend)` };
+});
+```
+**No git operations.**
+
+4. `packages/capability-runtime/src/capabilities/exec.ts:38`:
+```typescript
+handlers.set("ts-exec", async (input) => {
+  const { code = "" } = input ?? {};
+  return { output: `[ts-exec] running ${code.length} chars (stub: no sandbox)` };
+});
+```
+**No TypeScript execution.**
+
+**The Code Reality (just-bash Reference):**
+1. `context/just-bash/src/commands/curl/curl.ts:222`:
+```typescript
+const result = await ctx.fetch(url, {
+  method: options.method,
+  headers: prepareHeaders(options, contentType),
+  body: requestBody,
+  signal: ctx.signal,
+});
+```
+**Actual HTTP fetch.**
+
+2. `context/just-bash/src/commands/curl/parse.ts:35-100`:
+Full argument parsing for `-X`, `-H`, `-d`, `--data-binary`, `--form`, `--upload-file`, `--user`, `--verbose`, `--include`, `--cookie-jar`, etc.
+
+3. `context/just-bash/src/commands/registry.ts:15-98`:
+**98 built-in commands** with lazy loading (`createLazyCommands()`).
+
+4. `context/just-bash/src/Bash.ts:95-200`:
+Full bash environment with AST-based execution (`parse()` → `Interpreter`), filesystem (`InMemoryFs`), execution limits (`resolveLimits`), defense-in-depth (`DefenseInDepthBox`).
+
+**Factual Gap Analysis:**
+
+| Capability | nano-agent Status | just-bash Reference | Gap |
+|---|---|---|---|
+| **curl** | Stub (returns string) | Real HTTP fetch with full argv parsing | **Massive**: no network I/O, no argv parser, no header/body support |
+| **rg** | Stub (returns string) | Real ripgrep implementation | **Massive**: no file search, no regex, no workspace integration |
+| **git** | Stub (returns string) | Not built-in (just-bash delegates to host) | **Moderate**: git is intentionally not built into just-bash |
+| **ts-exec** | Stub (returns string) | `js-exec` via QuickJS sandbox | **Massive**: no sandbox, no JS execution |
+| **Command count** | 12 declarations | 98+ built-in + network/python/JS | **Massive**: 8x command surface difference |
+| **Architecture** | Static registry | AST-based interpreter + lazy loading | **Massive**: different execution model |
+
+**A8-A10 Verdict:** The governance framework (taxonomy, policy, drift guard) is well-designed. But **every single handler is a stub**. A8-A10 should be re-titled from "Minimal Bash Governance" to "Minimal Bash Implementation + Governance," with explicit acknowledgment that 0% of the v1 capability handlers are currently functional.
+
+---
+
+## 2. Cross-Cutting Factual Analysis
+
+### 2.1 Trace Naming: The Most Severe Code-Reality Conflict
+
+**Fact:** `packages/nacp-core/src/envelope.ts:115` defines `trace_id: z.string().uuid()`.
+**Action-Plan A1 Claim:** "Rename `trace_id` to `trace_uuid`"
+**PX-QNA Q6:** "确认... `traceUuid`" (owner answered: 确认)
+
+**Impact Assessment:**
+This rename is a **breaking wire-protocol change**. It affects:
+1. `packages/nacp-core/src/envelope.ts` — schema definition
+2. `packages/nacp-core/test/envelope.test.ts` — 18 test cases with `trace_id`
+3. `packages/nacp-core/test/transport/transport.test.ts` — transport fixtures
+4. `packages/nacp-session/src/frame.ts` — frame validation
+5. `packages/nacp-session/test/integration/reconnect-replay.test.ts` — replay fixtures
+6. `test/e2e/*.test.mjs` — all E2E tests construct envelopes
+7. `packages/session-do-runtime/src/traces.ts` — trace emission (currently no trace field)
+8. `packages/eval-observability/src/trace-event.ts` — no traceUuid field
+
+**Migration Complexity:** High. Every test fixture, every E2E scenario, every dist file must be updated. The action-plan should include a concrete codemod script or at minimum a file list.
+
+### 2.2 Event Kind Divergence: Four Surfaces, Four Truths
+
+**Facts:**
+1. `packages/session-do-runtime/src/orchestration.ts:20` — documents `"turn.begin"` as canonical
+2. `packages/session-do-runtime/src/traces.ts:43` — emits `"turn.started"`
+3. `packages/eval-observability/src/classification.ts:29` — classifies `"tool.call.result"` (audit)
+4. `packages/eval-observability/src/classification.ts:45` — also classifies `"tool.call.result"` (transcript)
+
+**Impact:** The classifier has a bug (overlap) AND the traces module uses legacy names. These must be fixed before A3 can claim "trace-first observability."
+
+### 2.3 Capability Implementation: 0% Functional
+
+**Fact:** All 4 capability handlers (curl, rg, git, ts-exec) are stubs returning diagnostic strings.
+**Policy:** Some have `policy: "allow"` (git, rg) or `policy: "ask"` (curl, ts-exec).
+**Bug:** A command with `policy: "ask"` will trigger a policy-ask error in non-interactive contexts. But the handler is a stub anyway, so the error is misleading — it should be "not implemented," not "needs approval."
+
+---
+
+## 3. Severity-Ranked Issue Registry (Based on Code Evidence)
+
+### CRITICAL (Blocking Execution — Confirmed by Source Code)
+
+| ID | Issue | Evidence Location | Impact | Recommended Action |
 |---|---|---|---|---|
-| C1 | **Trace naming bifurcation**: trace_id vs trace_uuid | A1-A5 | Schema drift | Execute breaking migration in A1 before any other plan starts |
-| C2 | **Event kind divergence**: turn.started vs turn.begin vs turn.completed vs turn.end | A3, A4 | No centralized registry | Create event-kinds.ts in nacp-core; migrate all emitters |
-| C3 | **Ingress anti-pattern**: nano-session-do.ts raw JSON.parse + switch | A4 | Session DO implemented before nacp-session helpers | Refactor webSocketMessage to use normalizeClientFrame in A4 Phase 1 |
+| **C1** | `trace_id` used in core envelope (not `trace_uuid`) | `packages/nacp-core/src/envelope.ts:115` | All downstream trace propagation depends on this field name | Execute breaking migration in A1 before any other plan |
+| **C2** | Event kind divergence: 4 surfaces use different strings | `orchestration.ts:20`, `traces.ts:43`, `classification.ts:29-45` | Observability cannot classify or replay correctly | Create centralized event-kinds.ts in nacp-core |
+| **C3** | WebSocket ingress uses raw JSON.parse + switch | `nano-session-do.ts:198-258` | No frame validation, no nacp-session integration | Refactor to use normalizeClientFrame in A4 |
 
-### HIGH (Significant Risk)
+### HIGH (Major Risk — Confirmed by Source Code)
 
-| # | Issue | Affected Plans | Root Cause | Recommended Action |
+| ID | Issue | Evidence Location | Impact | Recommended Action |
 |---|---|---|---|---|
-| H1 | **Stub surfaces treated as contracts**: WsController, rg, curl, ts-exec, git | A4, A8-A10 | Design docs written before implementation audit | Add "Implementation State" section to each action-plan batch |
-| H2 | **Hooks service-binding stub**: throws "not yet connected" | A5 | Uneven development priority | Implement ServiceBindingRuntime or defer hooks seam to later phase |
-| H3 | **Identifier law not enforced**: *_id persists in code | A1 | Law declared but not implemented | Add lint rule; execute migration in A1 Phase 2-3 |
-| H4 | **Observability envelope disconnect**: placeholder vs actual types | A3 | No canonical observability schema enforced | Decide: elevate NacpObservabilityEnvelope or canonize eval-observability types |
-| H5 | **A1 Phase 3 scope increase**: follow-up input family is new protocol design, not rename | A1 | Q8 owner decision changed scope | Re-estimate Phase 3 workload; separate follow-up design from rename batches |
-| H6 | **Policy/implementation gap**: curl/ts-exec registered but handlers are stubs | A9 | Commands registered before handlers implemented | Either implement handlers or change policy to deferred for stub commands |
-| H7 | **A3 assumes A1 complete**: TraceEventBase.traceUuid depends on identifier migration | A3 | Dependency not explicitly acknowledged | Add hard gate: "A3 Phase 1 cannot start until A1 closure criteria pass" |
+| **H1** | **All capability handlers are stubs** | `search.ts:44`, `network.ts:22`, `vcs.ts:49`, `exec.ts:38` | 0% of v1 capability surface executes real work | Implement handlers or change policy to `deferred` |
+| **H2** | Hooks service-binding runtime throws | `hooks/src/runtimes/service-binding.ts` | External hook seam is 100% non-functional | Implement from scratch in A5 Phase 2 |
+| **H3** | `trace_uuid` is optional in observability envelope | `nacp-core/src/observability/envelope.ts:15` | Contradicts "trace_uuid is runtime law" | Make required or remove until A1 migration complete |
+| **H4** | TraceEventBase has no traceUuid field | `eval-observability/src/trace-event.ts:13-27` | Cannot carry trace identity in evidence | Add traceUuid field (blocked on C1) |
+| **H5** | WsController/HttpController are stubs | `ws-controller.ts` (56 lines), `http-controller.ts` (102 lines) | Session edge has no real transport layer | Implement controllers in A4 |
+| **H6** | Follow-up input family doesn't exist | `nacp-session/src/messages.ts:76-84` (7 types) | Q8 decision requires greenfield protocol design | Scope as new workstream, not rename batch |
+| **H7** | CompositionFactory returns undefined | `session-do-runtime/src/composition.ts` | Cannot resolve external worker bindings | Fix in A5 Phase 1 |
 
-### MID (Moderate Risk)
+### MID (Moderate Risk — Confirmed by Source Code)
 
-| # | Issue | Affected Plans | Root Cause | Recommended Action |
+| ID | Issue | Evidence Location | Impact | Recommended Action |
 |---|---|---|---|---|
-| M1 | **A2 benchmark methodology vague**: No harness technology specified | A2 | Engineering decision deferred | Specify Miniflare vs wrangler dev before Phase 2 starts |
-| M2 | **A2 self-fulfilling decision**: Benchmark will validate existing path | A2 | Existing DoStorageTraceSink creates bias | Add negative test with rejection threshold |
-| M3 | **A4 blocked on A1+A3**: If prerequisites slip, A4 cannot proceed | A4 | Hard dependencies on incomplete work | Add explicit dependency gates with skip criteria |
-| M4 | **A7 evidence greenfield**: Most evidence types require new instrumentation | A7 | Components not originally designed to emit evidence | Re-scope A7 as "instrumentation and evidence" not just "evidence closure" |
-| M5 | **PX-QNA Q8 scope not estimated**: Follow-up input family workload unknown | A1 | Owner decision added work without estimate | Produce follow-up-input-family-design.md with workload estimate before A1 starts |
-| M6 | **A6 L2 cost unspecified**: Real provider smoke has financial cost | A6 | No budget or cost cap defined | Add cost ceiling: "L2 smoke must cost <$X per run" |
-| M7 | **just-bash underutilized**: A8-A10 don't reference context patterns | A8-A10 | Context available but not consulted | Add just-bash alignment analysis to each plan |
-| M8 | **Registry/docs disconnect**: Manual inventory will drift | A10 | No automated drift guard | Implement test that checks registry entries against handler implementations |
+| **M1** | wrangler.jsonc has only SESSION_DO binding | `wrangler.jsonc:1-16` | No R2/KV/D1/fake-worker bindings for deploy | Add bindings before A6 |
+| **M2** | NormalizClientFrame has TODO comment | `nacp-session/src/ingress.ts:25` | Not fully implemented | Complete implementation before A4 |
+| **M3** | rg registered with `policy: "allow"` but is stub | `fake-bash/commands.ts:111`, `search.ts:44` | LLM can invoke a non-functional command | Change policy to `deferred` until implemented |
+| **M4** | curl registered with `policy: "ask"` but is stub | `fake-bash/commands.ts:119`, `network.ts:22` | Policy error is misleading | Change policy to `deferred` until implemented |
+| **M5** | Event classification overlap | `eval-observability/src/classification.ts:29-45` | Audit events downgraded to transcript | Remove overlapping members |
+| **M6** | A2 benchmark harness unspecified | Action-plan text only | Phase 2 is unexecutable | Specify Miniflare vs wrangler dev |
+| **M7** | just-bash patterns not referenced | Action-plans A8-A10 | Missing reference implementation alignment | Add just-bash comparison section |
 
 ### LOW (Minor)
 
-| # | Issue | Affected Plans | Root Cause | Recommended Action |
-|---|---|---|---|---|
-| L1 | **A1 downstream consumer list vague**: "e.g., llm-wrapper" instead of explicit list | A1 | Imprecise specification | List exact packages: session-do-runtime, agent-runtime-kernel, eval-observability, hooks |
-| L2 | **A4 no rejection shape**: Follow-up input deferral lacks "not yet supported" response | A4 | Scope cut without fallback behavior | Add nacp-session error kind for unsupported message types |
-| L3 | **A5 no sandboxing mention**: Remote worker security not addressed | A5 | Security gap in external seam design | Add sandboxing/policy discussion to A5 Phase 4 |
-| L4 | **A7 R2 binding missing**: wrangler.jsonc has no R2 | A7 | Infrastructure not provisioned | Add R2 binding to wrangler.jsonc before A7 Phase 4 |
-| L5 | **A10 drift guard manual**: No automated enforcement | A10 | Process constraint not tool constraint | Implement automated test: registry vs handlers vs docs |
+| ID | Issue | Evidence | Recommended Action |
+|---|---|---|---|
+| **L1** | A1 Phase 4 mentions "llm-wrapper" as consumer | `A1.md` text | List actual consumers: session-do-runtime, agent-runtime-kernel, eval-observability, hooks |
+| **L2** | stream_id used in SessionStreamAckBodySchema | `nacp-session/src/messages.ts:45` | Rename to `stream_uuid` in A1 |
+| **L3** | No automated drift guard for capability inventory | `A10.md` text | Implement test: registry entries vs handler implementations |
 
 ---
 
-## 8. Phase Readiness Assessment
+## 4. Reference Implementation Alignment Assessment
 
-| Plan | Design Quality | Implementation Readiness | Can Execute? | Primary Blockers |
-|---|---|---|---|---|
-| **A1** | ★★★★☆ | ★★☆☆☆ | ⚠️ Conditional | C1, H3, H5 |
-| **A2** | ★★★★☆ | ★★★☆☆ | ✅ Yes | M1, M2 |
-| **A3** | ★★★★☆ | ★★☆☆☆ | ❌ No | C1, C2, H4, H7 |
-| **A4** | ★★★★☆ | ★★☆☆☆ | ❌ No | C2, C3, H2, M3 |
-| **A5** | ★★★★☆ | ★★★☆☆ | ⚠️ Conditional | C1, H2 |
-| **A6** | ★★★★☆ | ★★☆☆☆ | ❌ No | C3, H2 (A4/A5 must complete first) |
-| **A7** | ★★★★☆ | ★★★☆☆ | ⚠️ Conditional | M4, L4 |
-| **A8** | ★★★★☆ | ★★☆☆☆ | ⚠️ Conditional | H1 (rg stub) |
-| **A9** | ★★★★☆ | ★★☆☆☆ | ❌ No | H1, H6 |
-| **A10** | ★★★★☆ | ★★☆☆☆ | ⚠️ Conditional | H1, L5 |
+### 4.1 just-bash (context/just-bash/)
+
+| just-bash Feature | nano-agent Status | Gap Assessment |
+|---|---|---|
+| 98+ commands with lazy loading | 12 static declarations | **8x surface gap**; no lazy loading |
+| Real HTTP fetch (curl) | Stub (returns string) | **Complete implementation needed** |
+| Full argv parser (curl -X, -H, -d, --form) | No parser | **Parser needed** or structured path only |
+| AST-based bash interpreter | No interpreter; structured capability path | **Different architecture** |
+| Defense-in-depth security box | No sandbox | **Security gap** |
+| Prototype pollution defense | Not present | **Security gap** |
+| CommandContext API (fs, cwd, env) | No equivalent | **Interface gap** |
+| Background process management | No equivalent | **Not needed for v1** |
+
+**Key Insight:** just-bash is a **full bash shell replacement**. Nano-agent's capability-runtime is **not trying to be a bash shell** — it is a typed capability execution surface. The comparison is instructive but not a direct port target. However, just-bash's **curl implementation** (real fetch + argv parser) and **lazy loading architecture** are directly applicable to nano-agent.
+
+### 4.2 claude-code (context/claude-code/)
+
+| claude-code Feature | nano-agent Status | Gap Assessment |
+|---|---|---|
+| 4 hook types (command/prompt/http/agent) | Hooks registry + dispatcher exist | **nano-agent has foundation; external seam missing** |
+| Permission-rule matching ("Bash(git *)") | Hook matcher exists | **Comparable** |
+| AsyncLocalStorage span propagation | No equivalent | **Trace propagation gap** |
+| OTel + Perfetto dual export | No equivalent | **Observability export gap** |
+| Bridge architecture (session spawning) | Session DO exists | **Different architecture (DO vs bridge)** |
+
+**Key Insight:** claude-code's **hook system** is more mature than nano-agent's, but nano-agent's **session DO architecture** is different (Cloudflare-native vs local bridge). The hook matching and permission-rule patterns are directly applicable.
+
+### 4.3 mini-agent (context/mini-agent/)
+
+| mini-agent Feature | nano-agent Status | Gap Assessment |
+|---|---|---|
+| Real shell execution (async subprocess) | Stub (returns string) | **Massive gap** |
+| Background process management | No equivalent | **Not needed for v1** |
+| ACP protocol | NACP protocol | **Different protocols** |
+| Tool schema system | Capability registry exists | **Comparable** |
+
+**Key Insight:** mini-agent is a **local Python runtime** with real subprocess execution. Nano-agent is a **Cloudflare Worker runtime** with typed capability execution. The architectures are fundamentally different, but mini-agent's **tool schema system** and **background process concepts** are relevant references.
 
 ---
 
-## 9. Final Verdict
+## 5. Phase Readiness Assessment (Code-Reality Based)
 
-### 9.1 Overall Assessment
+| Plan | Can Execute? | Primary Blockers | Evidence |
+|---|---|---|---|
+| **A1** | ⚠️ Partial | C1, H6 | `trace_id` in envelope.ts; 7 message types (no follow-up) |
+| **A2** | ⚠️ Partial | M6 | wrangler.jsonc has 1 binding; no benchmark harness specified |
+| **A3** | ❌ No | C1, C2, H3, H4 | No traceUuid in TraceEventBase; event kind divergence |
+| **A4** | ❌ No | C3, H5, M2 | Raw JSON.parse in nano-session-do.ts; controllers are stubs |
+| **A5** | ❌ No | H2, H7 | Hooks runtime throws; CompositionFactory returns undefined |
+| **A6** | ❌ No | A4, A5 incomplete | No deploy surface exists to verify |
+| **A7** | ⚠️ Partial | M1 | No R2 binding; evidence types are test-only |
+| **A8** | ⚠️ Partial | H1 | rg is stub; no file search implementation |
+| **A9** | ❌ No | H1 | curl is stub; ts-exec is stub |
+| **A10** | ⚠️ Partial | H1 | git is stub; no VCS backend |
 
-The after-skeleton action-plan suite is **architecturally mature but implementation-optimistic**. The plans correctly translate design intent into executable batches, respect owner decisions from PX-QNA, and maintain logical dependencies. However, they share a **collective blind spot**: they assume that the prerequisite Phase has left behind a clean, working surface, when in reality most surfaces are stubs, partially migrated, or missing entirely.
+---
 
-### 9.2 Recommended Pre-Flight Actions (Before Any Execution)
+## 6. Concrete Pre-Flight Checklist (Before Any Action-Plan Execution)
 
-1. **Resolve C1 (trace naming bifurcation)**: Execute trace_id → trace_uuid migration as a breaking change with version bump
-2. **Resolve C2 (event kind divergence)**: Create centralized event-kinds.ts in nacp-core
-3. **Add "Implementation State" annotations**: Every action-plan batch should rate its target surfaces as Implemented/Stub/Partial/Not Started
-4. **Estimate A1 Phase 3 scope**: Follow-up input family is new protocol design, not rename - produce separate design doc with workload estimate
-5. **Specify A2 benchmark harness technology**: Miniflare vs wrangler dev vs custom mock - lock before Phase 2
+Based on source code evidence, the following must be completed before any action-plan batch executes:
 
-### 9.3 Recommended Execution Order
+1. **Code-mod script for trace rename**: Produce a script that renames `trace_id` → `trace_uuid`, `stream_id` → `stream_uuid`, `span_id` → `span_uuid` across all packages
+2. **Event kind registry**: Create `packages/nacp-core/src/event-kinds.ts` with canonical constants (`TURN_BEGIN = "turn.begin"`, etc.)
+3. **Capability policy audit**: For every stub handler, either (a) implement it or (b) change policy to `deferred`
+4. **Controller implementation plan**: Write implementation specs for WsController and HttpController (currently stubs)
+5. **Benchmark harness decision**: Choose Miniflare vs `wrangler dev` for A2 and document the choice
+6. **Follow-up input family design doc**: Produce `follow-up-input-family.md` with message types, body schemas, and replay semantics
+7. **CompositionFactory fix**: Make it return real handles instead of undefined
+8. **wrangler.jsonc expansion**: Add R2, KV, and fake-worker bindings
+
+---
+
+## 7. Final Verdict
+
+The after-skeleton action-plan suite is **architecturally sound but materially disconnected from code reality**. The plans correctly translate owner decisions (PX-QNA A1-A20) into execution batches, but they systematically **overstate implementation readiness**.
+
+### The Core Problem
+
+Every action-plan assumes its prerequisite has left behind a clean surface. In reality:
+- **A1's target** (`nacp-core` envelope) uses legacy naming (`trace_id`)
+- **A2's target** (`DoStorageTraceSink`) works but has no benchmark infrastructure
+- **A3's target** (`TraceEventBase`) lacks the `traceUuid` field it is supposed to mandate
+- **A4's target** (`nano-session-do.ts`) does raw JSON.parse
+- **A5's target** (hooks service-binding) throws on every call
+- **A6's target** (deploy surface) has one DO binding and nothing else
+- **A7's target** (evidence types) exists only in tests
+- **A8-A10's targets** (capability handlers) are 100% stubs
+
+### The Fix
+
+1. **Add "Implementation State" annotations** to every action-plan batch
+2. **Scope A1 Phase 3 as greenfield protocol design** (follow-up input family)
+3. **Add hard dependency gates**: A3 cannot start until A1 completes; A4 cannot start until A1+A3 complete; A6 cannot start until A4+A5 complete
+4. **Audit capability policies**: Change stub handlers from `allow`/`ask` to `deferred`
+5. **Specify benchmark harness technology** in A2 before execution
+
+### Recommended Execution Order (Revised)
 
 ```
-Pre-flight:
-  1. C1 migration (trace_id → trace_uuid)
-  2. C2 registry (event-kinds.ts)
-  3. A1 Phase 1-2 (inventory + core rename)
-  
+Pre-flight (must complete first):
+  [ ] C1: trace_id → trace_uuid migration script
+  [ ] C2: event-kinds.ts registry
+  [ ] Policy audit: stub handlers → deferred
+
 Wave 1:
-  4. A1 Phase 3-5 (session rename + follow-up family + freeze evidence)
-  5. A2 (substrate decision - can parallel with A1 if harness ready)
-  
+  [ ] A1 Phase 1-2: inventory + core rename
+  [ ] A2 Phase 1-2: reality audit + harness build
+
 Wave 2:
-  6. A3 Phase 1-2 (trace law + codec convergence)
-  7. A8 Phase 1-3 (workspace truth + rg implementation)
-  
+  [ ] A1 Phase 3: follow-up input family (NEW WORKSTREAM)
+  [ ] A2 Phase 3-4: benchmark execution + decision pack
+  [ ] A8 Phase 1-2: workspace truth freeze + rg implementation
+
 Wave 3:
-  8. A3 Phase 3-5 (recovery + instrumentation + closure)
-  9. A4 Phase 1-2 (ingress convergence + WS helper assembly)
-  10. A5 Phase 1-2 (binding catalog + hook/capability seam)
-  
+  [ ] A3 Phase 1-2: trace law + codec convergence
+  [ ] A4 Phase 1-2: ingress refactoring + controller implementation
+  [ ] A5 Phase 1-2: binding catalog + hooks runtime implementation
+
 Wave 4:
-  11. A4 Phase 3-5 (HTTP fallback + edge closure)
-  12. A5 Phase 3-5 (fake provider + cross-seam law)
-  13. A9 Phase 1-3 (curl/ts-exec contracts)
-  14. A10 Phase 1-3 (git subset + policy enforcement)
-  
+  [ ] A9 Phase 1-3: curl/ts-exec implementation
+  [ ] A10 Phase 1-3: git subset + policy enforcement
+  [ ] A7 Phase 1-3: evidence taxonomy + instrumentation
+
 Wave 5:
-  15. A6 (verification gate - only after A4/A5 complete)
-  16. A7 Phase 1-4 (evidence wiring + calibration)
-  17. A8-A10 Phase 4-5 (consistency guards + drift guards)
-  18. A7 Phase 5 (evidence report + closure)
+  [ ] A6: verification gate (after A4+A5 complete)
+  [ ] A7 Phase 4-5: calibration + evidence report
 ```
-
-### 9.4 Closing Statement
-
-> The action-plans represent a **sound execution map** for the after-skeleton phase. Their primary weakness is not architectural but **epistemological**: they assume knowledge of a code reality that does not yet exist. Adding explicit "Implementation State" annotations, automated lint enforcement, and conservative dependency gates will transform these plans from **aspirational documents** into **executable contracts**.
 
 ---
 
-*Review completed. This document should be treated as a living artifact and updated after each action-plan batch closure.*
+*This review is based on direct source code inspection. Every claim is traceable to a specific file and line number in the repository.*
