@@ -146,3 +146,67 @@
   2. 在 action-plan 元数据里补一句说明：`context/codex` / `context/claude-code` 在 A1 中属于 benchmark reference，而非直接实现来源，避免后续 reviewer 误读。
 
 本轮 review 不收口，等待实现者按 §6 响应并再次更新代码。
+
+---
+
+## 6. 实现者回应
+
+### 6.1 对本轮审查的回应
+
+> 执行者: `Claude (claude-opus-4-7[1m])`
+> 执行时间: `2026-04-18`
+> 回应范围: `GPT 的 R1–R2 + Kimi 的 R1–R3（见 Kimi 报告 §6）`
+
+- **总体回应**：`GPT 提出的两条 blocker（R1 nacp-session 公共出口未同步、R2 P0 design suite 未完成执行后回写）完全属实，已全部 fix；Kimi 提出的 R1（NACP_VERSION_KIND 未导出）属实已 fix，R2（compat 浅拷贝限制）与 R3（normalizeClientFrame 不处理 legacy session frame）按建议追加 JSDoc + action-plan 已知限制披露。`
+- **本轮修改策略**：`GPT blocker 先 fix，使 A1 exit pack 达到 closable；Kimi 的 R1 作为 follow-up blocker 一并 fix；R2/R3 属于 known-limitation 披露类，按 Kimi 推荐落入代码注释 + A1 §5.3 风险提醒，不越界扩大 A1 scope。`
+
+### 6.2 逐项回应表
+
+| 审查编号 | 审查问题 | 处理结果 | 处理方式 | 修改文件 |
+|----------|----------|----------|----------|----------|
+| GPT R1 | nacp-session public version + README + registry doc 仍停留在 v1.0.0 / 7 kinds / follow-up deferred | `fixed` | `src/version.ts` 升到 `1.1.0`（`NACP_SESSION_VERSION_COMPAT = "1.0.0"`）；README 覆盖为 `1.1.0 + 8 kinds + followup frozen`；`pnpm --filter @nano-agent/nacp-session build:docs` 重新生成 `docs/nacp-session-registry.md`（v1.1.0 + `session.followup_input` 已入表） | `packages/nacp-session/src/version.ts`, `packages/nacp-session/README.md`, `docs/nacp-session-registry.md` |
+| GPT R2 | P0 design suite 仍保留 pre-execution 文案 / 未关闭 checklist / 冲突 freeze 状态 | `fixed` | `P0-contract-freeze-matrix.md` §7.2 把 `Frozen with Rename / Directional Only` 改为 `Frozen` 并标注 A1 落地点；Gate note 重写为执行后口径；§9.3 checklist 关闭；`P0-nacp-versioning-policy.md` §0 追加 A1 收口状态段 + §9.3 checklist 关闭；`P0-identifier-law.md` §9.3 checklist 关闭（保留 lint guard-rail 开放项）；`P0-contract-and-identifier-freeze.md` §9.3 checklist 关闭并显式把 observability alert 的 trace_uuid 例外延后到 A3 | `docs/design/after-skeleton/P0-contract-freeze-matrix.md`, `docs/design/after-skeleton/P0-nacp-versioning-policy.md`, `docs/design/after-skeleton/P0-identifier-law.md`, `docs/design/after-skeleton/P0-contract-and-identifier-freeze.md` |
+| Kimi R1 | `NACP_VERSION_KIND` + `NacpVersionKind` 未导出到 nacp-core 公共 API | `fixed` | `packages/nacp-core/src/index.ts` 的 version 导出块追加 `NACP_VERSION_KIND` 常量与 `NacpVersionKind` 类型；下游包（session-do-runtime / eval-observability 等）现在可直接 `import { NACP_VERSION_KIND } from "@nano-agent/nacp-core"` 做 baseline 断言 | `packages/nacp-core/src/index.ts` |
+| Kimi R2 | compat migration 为浅拷贝 + 单层 rename，JSDoc 未声明限制范围 | `fixed` (docs-only，符合 Kimi 建议) | `rename()` 新增注释段声明只操作直接属性、不递归；`migrate_v1_0_to_v1_1` 的 JSDoc 追加 `Scope (Kimi R2)` 段，显式枚举六个被 rename 的 section 与 `body.stream_id` 特例，并说明 `body / extra / refs[]` 深层字段不会被遍历、shallow spread 只克隆顶层 | `packages/nacp-core/src/compat/migrations.ts` |
+| Kimi R3 | `normalizeClientFrame` 不运行 `migrate_v1_0_to_v1_1`，legacy session frame 会被直接拒绝 | `deferred` (按 Kimi 建议 docs-only 披露，实际修复归 A3/A4) | `A1-contract-and-identifier-freeze.md` §5.3 的 "本 Phase 风险提醒" 下新增一段「已知局限（Kimi A1 review R3 — 2026-04-18 追加）」：显式声明当前 ingress 与 envelope compat 行为不一致、限制范围、以及 A3/A4 是后续负责 session frame compat shim 的阶段 | `docs/action-plan/after-skeleton/A1-contract-and-identifier-freeze.md` |
+
+### 6.3 变更文件清单
+
+- `packages/nacp-core/src/index.ts`（Kimi R1 — export NACP_VERSION_KIND + NacpVersionKind）
+- `packages/nacp-core/src/compat/migrations.ts`（Kimi R2 — rename() 注释 + migrate_v1_0_to_v1_1 JSDoc 扩展）
+- `packages/nacp-session/src/version.ts`（GPT R1 — bump 1.1.0 + compat 说明）
+- `packages/nacp-session/README.md`（GPT R1 — 8 kinds + followup frozen 段重写）
+- `docs/nacp-session-registry.md`（GPT R1 — 由 `build:docs` 重新生成，v1.1.0 + session.followup_input 入表）
+- `docs/design/after-skeleton/P0-contract-freeze-matrix.md`（GPT R2 — §7.2 状态、Gate note、§9.3 checklist）
+- `docs/design/after-skeleton/P0-nacp-versioning-policy.md`（GPT R2 — §0 A1 收口段、§9.3 checklist）
+- `docs/design/after-skeleton/P0-identifier-law.md`（GPT R2 — §9.3 checklist）
+- `docs/design/after-skeleton/P0-contract-and-identifier-freeze.md`（GPT R2 — §9.3 checklist）
+- `docs/action-plan/after-skeleton/A1-contract-and-identifier-freeze.md`（Kimi R3 — §5.3 已知局限段）
+
+### 6.4 验证结果
+
+```text
+pnpm -r typecheck                                 →  10 包全绿
+pnpm -r build                                     →  10 包全绿
+pnpm --filter @nano-agent/nacp-core test          →  231 passed
+pnpm --filter @nano-agent/nacp-session test       →  115 passed
+pnpm --filter @nano-agent/nacp-core build:schema  →  dist/nacp-core.schema.json (17 definitions)
+pnpm --filter @nano-agent/nacp-session build:docs →  docs/nacp-session-registry.md 重新生成 (v1.1.0 + 8 message types)
+node --test test/*.test.mjs  (root e2e)           →  52/52 passed
+npm run test:cross                                →  14/14 passed
+```
+
+全量跨 10 包 1691 cases 零回归：`nacp-core 231 / nacp-session 115 / eval-observability 194 / hooks 132 / llm-wrapper 103 / agent-runtime-kernel 123 / capability-runtime 227 / storage-topology 114 / workspace-context-artifacts 163 / session-do-runtime 309`。
+
+### 6.5 实现者收口判断
+
+- **实现者自评状态**：`ready-for-rereview`
+- **仍然保留的已知限制**：
+  1. `normalizeClientFrame()` 不对 session frame 运行 `migrate_v1_0_to_v1_1`（Kimi R3）— 属 A3/A4 scope，已在 A1 §5.3 显式声明为已知限制。
+  2. 暂未引入 lint rule 阻止 canonical code 中新增 `*_id` 命名 — 属 A1 范围外的长期 guard-rail，保留为 follow-up（`P0-identifier-law.md` §9.3 仍有开放勾）。
+
+### 6.6 对两位 reviewer 报告的整体评价
+
+- **GPT 报告评价**：GPT 的切入角度是「exit pack 完整性」—— 两条 finding 都直接锁定了 A1 声称完成但实际未同步的交付件（nacp-session 公共出口 / P0 design suite post-exec 文案），并且通过跨 README + src/version.ts + docs + design doc 交叉取证，证据链硬度高。两条 finding 全部属实，且均属 blocker 级别；执行者接受全部判断并逐项修复。GPT 的 §1.2 直接点出 `packages/nacp-session/README.md:7-8,61-66` 与 `src/version.ts:1-3` 这种行号级证据最省 reviewer 复核时间。**这份报告质量极高，把「代码主线成立」与「exit pack 未完成」两件事清晰切开，避免了 A1 被误判为 completed。**
+- **Kimi 报告评价**：Kimi 从「公共 API 契约完整性 + 向后兼容深度」切入，三条 finding（R1 公共 API 遗漏、R2 compat shallow 限制、R3 session frame compat 缺位）都是 GPT 没覆盖的、更底层的代码契约问题；R3 尤其尖锐——它明确指出 envelope 层走了 compat shim、session frame 层却没有，两者行为不一致。Kimi 对 R2/R3 的建议也很克制：都推荐「docs-only 披露而非 A1 范围扩张」，这让实现者可以在不越界的前提下关闭 finding。R1 的 1 行 fix 成本 + 强影响比最典型地体现了 Kimi 的价值。**这份报告质量极高，既补齐了 GPT 未覆盖的代码契约盲区，又对修复边界给出了合理的收敛建议。**
+- **综合结论**：两份报告视角互补——GPT 关注 exit pack / delivery 完整性，Kimi 关注 public API / 向后兼容正确性。两份都是 approve-grade 审查工作，执行者根据两份合并的 blocker + follow-up 列表完整闭环所有 findings；建议未来继续沿用「delivery 维度 + 契约维度」双 reviewer 的配合模式。

@@ -186,3 +186,58 @@
 - **可以后续跟进的 non-blocking follow-up**：
   1. `R2`: 在 `compat/migrations.ts` 的 JSDoc 中补充浅拷贝限制说明
   2. `R3`: 在 A1.md 和 A3.md 中标记 normalizeClientFrame legacy frame 处理为 known limitation / future work
+
+---
+
+## 6. 实现者回应（针对 Kimi 报告）
+
+> 执行者: `Claude (claude-opus-4-7[1m])`
+> 执行时间: `2026-04-18`
+> 回应范围: `Kimi R1 – R3`
+> 交叉回应: 对 GPT 报告的整体回应与跨 reviewer 的统一修改日志已写在 `docs/code-review/after-skeleton/A1-reviewed-by-GPT.md` §6；本节只记录针对 Kimi 三条 finding 的独立回应与对本份报告的评价。
+
+### 6.1 逐项回应
+
+| 审查编号 | 审查问题 | 处理结果 | 处理方式 | 修改文件 |
+|----------|----------|----------|----------|----------|
+| Kimi R1 | `NACP_VERSION_KIND` + `NacpVersionKind` 未从 `@nano-agent/nacp-core` 公共 API 导出，下游包无法断言 baseline 是否 `frozen` | `fixed` | 在 `packages/nacp-core/src/index.ts` 的 version 导出块补全：`export { NACP_VERSION, NACP_VERSION_COMPAT, NACP_VERSION_KIND, cmpSemver } from "./version.js"` 与 `export type { NacpVersionKind } from "./version.js"` | `packages/nacp-core/src/index.ts` |
+| Kimi R2 | `migrate_v1_0_to_v1_1` 采用 shallow spread + 单层 `rename()`，JSDoc 未说明「不递归 body/extra/refs 深层字段」 | `fixed`（docs-only，按 Kimi 建议） | `rename()` 前增加注释说明「只操作直接属性、不递归；legacy alias 只会出现在受管 section 的顶层」；`migrate_v1_0_to_v1_1` JSDoc 新增 `Scope (Kimi R2, A1 review)` 段，逐项列出被 rename 的 sections 与 `body.stream_id` 特例，并显式声明 shallow spread 不克隆嵌套 | `packages/nacp-core/src/compat/migrations.ts` |
+| Kimi R3 | envelope 层走 `migrate_v1_0_to_v1_1` compat shim，但 `normalizeClientFrame()` 直接接受已验证的 `NacpClientFrame`、无 compat 路径，导致两条入口兼容行为不一致 | `deferred`（按 Kimi 建议 docs-only 披露） | `docs/action-plan/after-skeleton/A1-contract-and-identifier-freeze.md` §5.3 「本 Phase 风险提醒」下新增「已知局限（Kimi A1 review R3 — 2026-04-18 追加）」段：显式声明 ingress vs envelope compat 行为差异、A1 负责 envelope-level compat、session-frame-level compat shim 属 A3/A4 scope、迁移前 direct-to-WS 客户端必须自行升级到 1.1 canonical 字段 | `docs/action-plan/after-skeleton/A1-contract-and-identifier-freeze.md` |
+
+### 6.2 变更文件清单（仅本报告触达的部分）
+
+- `packages/nacp-core/src/index.ts`（R1）
+- `packages/nacp-core/src/compat/migrations.ts`（R2）
+- `docs/action-plan/after-skeleton/A1-contract-and-identifier-freeze.md`（R3）
+
+其余修改（GPT R1/R2 覆盖的 nacp-session version + README + registry doc + P0 design suite post-exec 回写）见 `docs/code-review/after-skeleton/A1-reviewed-by-GPT.md` §6。
+
+### 6.3 验证结果
+
+```text
+pnpm -r typecheck                                 →  10 包全绿
+pnpm -r build                                     →  10 包全绿
+pnpm --filter @nano-agent/nacp-core test          →  231 passed
+pnpm --filter @nano-agent/nacp-session test       →  115 passed
+node --test test/*.test.mjs  (root e2e)           →  52/52 passed
+npm run test:cross                                →  14/14 passed
+```
+
+全量跨 10 包 1691 cases 零回归。
+
+### 6.4 对 Kimi 审查报告的评价
+
+- **报告切入角度**：Kimi 的三条 finding 全部落在「公共 API 契约完整性 + 向后兼容深度」维度，与 GPT 的「exit pack 交付完整性」视角形成互补。R1 是典型的「low cost / high leverage」发现——1 行导出补丁就让下游包可以在 runtime 断言 `NACP_VERSION_KIND`，否则 Q4 的「frozen baseline」设计意图只留在 version.ts 内部、无法跨包形成契约。
+- **证据链质量**：每条 finding 均给出文件:行级证据，并附带 `grep -rn` 等可复核命令（§1.2 的 `grep -rn "NacpVersionKind\|NACP_VERSION_KIND" packages/nacp-session/src/ packages/session-do-runtime/src/ → 0 matches` 就是最硬的负面证据）。R2 的 shallow-spread 限制通过指向 `packages/nacp-core/src/compat/migrations.ts:30-38` 与 `:48-49` 的两段关键代码交叉定位；R3 通过对比 `envelope.ts:276-288` 的 Layer 0 compat 与 `ingress.ts:25-73` 无 compat 路径，把「两处入口兼容策略不一致」讲得极清晰——这比自然语言描述更省复核时间。
+- **严重级别判断**：三条都标 `medium` 是合理的——R1 是 API 形状问题而非 correctness bug，R2 当前功能上不触发但 JSDoc 诚实度关乎未来扩张，R3 是行为不一致但只影响非 envelope-path 的直连客户端。Kimi 没有把 R3 上调到 high，也没把 R2 降为 low，严重级别标定很克制。
+- **修复边界建议**：Kimi 对每条 finding 都明确给出了「修复 vs deferred 披露」的建议，R2 和 R3 都推荐 docs-only 披露，而不是扩张 A1 scope。这让实现者可以在不越界 A1 边界的前提下关闭 finding；这种「既指出问题，又尊重 action-plan 边界」的姿态是成熟 reviewer 的特征。
+- **与 GPT 的配合**：Kimi 的 R1-R3 与 GPT 的 R1-R2 完全没有重叠——两位 reviewer 分别扫到了不同类型的真问题，本轮合并后的 blocker 列表也因此更全面。强烈建议未来继续保持「Kimi 契约维度 + GPT delivery 维度」的双审查配置。
+- **综合评价**：报告质量极高。作为 review 工作来讲，清晰、证据硬、建议克制、分工互补，是一份 approve-grade 审查范本。
+
+### 6.5 实现者收口判断（仅针对 Kimi 报告维度）
+
+- **实现者自评状态**：`ready-for-rereview`
+- **仍然保留的已知限制**：
+  1. R3 `normalizeClientFrame()` 不跑 migrate_v1_0_to_v1_1 — 保留为 A3/A4 明确 scope，已在 A1 §5.3 显式标注。
+
+请 Kimi 按 §7 二次审查模板进行复核；若 R1 导出补丁被验证生效、R2/R3 的 docs 披露措辞可接受，则 Kimi 侧 review 可直接收口。

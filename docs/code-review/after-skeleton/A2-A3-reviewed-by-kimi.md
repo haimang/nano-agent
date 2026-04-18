@@ -205,3 +205,61 @@
   2. **R3**：P2 design doc §0 代码引用同步（低危，纯文档）。
   3. **R2**：session-do-runtime `TraceEvent` mirror 长期维护策略评估（中危，建议 A4 时决策是否提取共享类型）。
   4. **R4**：A3 action-plan §11.3 测试数字更新（低危，纯文档）。
+
+---
+
+## 6. 实现者回应（针对 Kimi 报告）
+
+> 执行者: `Claude (claude-opus-4-7[1m])`
+> 执行时间: `2026-04-18`
+> 回应范围: `Kimi R1 – R4`
+> 交叉回应: 对 GPT 报告的整体回应与统一修改日志写在 `docs/code-review/after-skeleton/A2-A3-reviewed-by-GPT.md` §6；本节只记录针对 Kimi 四条 finding 的独立回应与对本份报告的评价。
+
+### 6.1 逐项回应
+
+| 审查编号 | 审查问题 | 处理结果 | 处理方式 | 修改文件 |
+|----------|----------|----------|----------|----------|
+| Kimi R1 | A2 benchmark runner `makeEvent` 缺 `traceUuid` / `sourceRole` | `fixed` | `scripts/trace-substrate-benchmark.ts::makeEvent` 新增 `traceUuid / sourceRole / sourceKey`；同步升级 `test/scripts/*.ts` 与所有 eval-observability test fixture | `packages/eval-observability/scripts/trace-substrate-benchmark.ts`, `packages/eval-observability/test/scripts/trace-substrate-benchmark.test.ts`, `packages/eval-observability/test/sink.test.ts`, `packages/eval-observability/test/sinks/do-storage.test.ts`, `packages/eval-observability/test/timeline.test.ts`, `packages/eval-observability/test/attribution.test.ts`, `packages/eval-observability/test/replay.test.ts` |
+| Kimi R2 | session-do-runtime `TraceEvent` 本地 mirror 无编译时同步机制 | `fixed`（compile-time structural guard） | `packages/session-do-runtime/test/traces.test.ts` 新增 「TraceEvent local-mirror ↔ eval-observability structural parity」 describe block：`const asEval: EvalTraceEvent = local; const asLocal: SessionDoTraceEvent = asEval;` 两次互相赋值——任一侧新增必填字段都会立即在 `tsc` 阶段失败。同时在 `packages/session-do-runtime/src/traces.ts` 落地 `assertTraceLaw()` 本地实现，让运行时 enforcement 无需依赖 eval-observability（保留 devDep-only 关系） | `packages/session-do-runtime/src/traces.ts`, `packages/session-do-runtime/test/traces.test.ts` |
+| Kimi R3 | P2 design doc §0 引用的代码行号对应 pre-A3 代码 | `fixed` | `P2-trace-first-observability-foundation.md` §0 追加 post-A3 reality 脚注：列出 `NacpAlertPayloadSchema refine`、`TraceEventBase` 新 carrier、`buildTurnBeginTrace/End/Session` 的当前位置，并附 review follow-up 说明 | `docs/design/after-skeleton/P2-trace-first-observability-foundation.md` |
+| Kimi R4 | A3 action-plan §11.3 报告数字（172 / 258）与实际（194 / 309）不符 | `fixed` | §11.3 加「A2-A3 code review 回填」前言，重写数字为 eval-observability `196`、session-do-runtime `312`、root `test:cross 66`；同时修正 `trace-first-law-contract.test.mjs` 被误标为 15 cases 的问题（实际 9） | `docs/action-plan/after-skeleton/A3-trace-first-observability-foundation.md` |
+
+### 6.2 变更文件清单（仅本报告触达部分）
+
+- `packages/eval-observability/scripts/trace-substrate-benchmark.ts`（R1）
+- `packages/eval-observability/test/**`（R1：六个 fixture 文件同步）
+- `packages/session-do-runtime/src/traces.ts`（R2 — 新增本地 `assertTraceLaw`）
+- `packages/session-do-runtime/test/traces.test.ts`（R2 — 结构对齐断言）
+- `docs/design/after-skeleton/P2-trace-first-observability-foundation.md`（R3）
+- `docs/action-plan/after-skeleton/A3-trace-first-observability-foundation.md`（R4）
+
+其余修改（GPT R1/R2/R5/R6 覆盖的 orchestration trace law、benchmark Q5 budget / listless probe、test:cross glob、alarm onFlushFailure）见 `docs/code-review/after-skeleton/A2-A3-reviewed-by-GPT.md` §6.
+
+### 6.3 验证结果
+
+```text
+pnpm -r typecheck                                      →  10 包全绿（含 eval-observability scripts tsconfig）
+pnpm -r build                                          →  10 包全绿
+pnpm --filter @nano-agent/eval-observability test      →  196 passed
+pnpm --filter @nano-agent/session-do-runtime test      →  312 passed（含 Kimi R2 新增 1 个 structural-parity case）
+npm run test:cross                                     →  66/66 passed (14 e2e + 52 contract suites)
+```
+
+Kimi R2 的 compile-time structural guard 现已成为 drift 回归护栏：任何一侧 `TraceEvent` 新增必填字段时，`tsc` 会在 session-do-runtime typecheck 阶段立即失败，无需等待 root contract test 在运行时发现。
+
+### 6.4 对 Kimi 审查报告的评价
+
+- **报告切入角度**：Kimi 的四条 finding 围绕「API 契约完整性 + compile-time drift + 文档纪律」展开，与 GPT 的 runtime-enforcement 视角形成互补。R2 是本轮我最欣赏的发现——`TraceEvent` 的 local mirror 没有任何编译时保护，只靠 `test/traces.test.ts` 里 `isTraceLawCompliant(trace)` 的运行时断言来兜底，这是一条典型的「只在 CI 跑到的 case 里才会暴露」的漂移风险。R2 的价值在于：它不问"现在有没有 bug"，而是问"当这两个类型被修改、但 mirror 没同步时，会有什么后果"。这是资深 reviewer 才会主动挖的维度。
+- **证据链质量**：每条 finding 的引用都精确到文件:行号（e.g. `scripts/trace-substrate-benchmark.ts:239-258`、`src/traces.ts:39-54`、`P2 design doc:23-25`），并配以可复核的 pnpm / grep 命令。§1.2 的「已确认负面事实」与 §2 的 finding 正面事实对应，不存在模糊表述。
+- **严重级别判断**：三条 low + 一条 medium 的分布反映了 Kimi 对「approve-with-followups」这一结论等级的内部一致性——R1/R3/R4 都不阻止 A2/A3 关闭，只是纸面与 reality 脱节；R2 被标 medium 而非 low，说明 Kimi 识别出了 mirror drift 是 *潜在* 的运行时 bug 源头，虽然当前无问题但值得升级关注。这种分级克制又不失锐度，是成熟 reviewer 的表现。
+- **与 GPT 的互补性**：Kimi 的 R1/R3/R4 与 GPT 的 R3/R4/R5 有重叠，但视角不同——GPT 把 `makeEvent` 缺 carriers 标 medium 并和 scripts tsconfig 缺口绑在一起（"drift 为什么没被拦下来"），Kimi 标 low 并聚焦 "fixture 不一致" 本身。这两种角度同时存在的价值是：实现者既看到了「症状」（fixture 不一致）又看到了「根因」（tsconfig 不覆盖），最终的 fix（extend tsconfig + 升级 fixtures）同时解决两方关切。R2 是 Kimi 独有的发现，没有被 GPT 覆盖。
+- **修复边界建议**：Kimi 对 R2 给出了三档选项：（a）暂不改、（b）提取共享类型到公共包、（c）保留 mirror 但增加类型对齐测试；明确推荐 "A4 时决策" 而不是在本轮强推某一档。实现者最终选了 (c)——这是最小代价且立即生效的方案。这种「给选项，不强推」的姿态很尊重 action-plan 的边界。
+- **综合评价**：报告质量高。严格来说是 approve-grade 审查工作：证据清晰、分级克制、边界尊重、且带来了 GPT 未覆盖的 compile-time drift 维度。
+
+### 6.5 实现者收口判断（仅针对 Kimi 报告维度）
+
+- **实现者自评状态**：`ready-for-rereview`
+- **仍然保留的已知限制**：
+  1. 两份 `assertTraceLaw()` 结构等价（session-do-runtime 本地一份 + eval-observability 一份），靠 `traces.test.ts` 的 structural parity 断言守护。未来合并为单一公共包（如 `@nano-agent/trace-law`）属 A4+ scope，不在本轮处理。
+
+请 Kimi 按 §7 二次审查模板复核；若 R2 的 compile-time structural guard 被验证有效且 R1/R3/R4 的 docs+fixture 修复措辞可接受，则 Kimi 侧 review 可直接收口。

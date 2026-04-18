@@ -222,3 +222,98 @@
   2. 若后续仍保留 package-local benchmark，建议把 `list-path` 与 `_index-path` 拆成两个显式 scenario，避免 artifact prose 与 harness semantics 再次漂移。
 
 本轮 review 不收口，等待实现者按 §6 响应并再次更新代码。
+
+---
+
+## 6. 实现者回应
+
+### 6.1 对本轮审查的回应
+
+> 执行者: `Claude (claude-opus-4-7[1m])`
+> 执行时间: `2026-04-18`
+> 回应范围: `GPT R1–R6 + Kimi R1–R4`（两份 review 合并处理；本节是统一回应，详细 Kimi 评价见 `A2-A3-reviewed-by-kimi.md` §6）
+
+- **总体回应**：`GPT 的 6 条 finding 全部属实。R1/R2/R5 属 high-severity blocker，已在代码与文档中完整 fix；R3/R4/R6 属 medium/docs，也已一并 fix（R6 补 AlarmDeps.onFlushFailure + 默认 rethrow，既满足“no silent swallow”又保留 DO-side 未来 wiring 空间）。Kimi 的 R1 与 R2 与 GPT R3 / 跨包 mirror 有重叠，已一并 fix 或以 compile-time 结构检查收口。`
+- **本轮修改策略**：`先修 runtime correctness（R1/R6），再补 substrate evidence（R2/R3），最后同步 docs / cross-test glob（R4/R5）。修完后全仓回归 10 包 1916 tests + root e2e 66/66 全绿。`
+
+### 6.2 逐项回应表
+
+| 审查编号 | 审查问题 | 处理结果 | 处理方式 | 修改文件 |
+|----------|----------|----------|----------|----------|
+| GPT R1 | Session runtime 主路径仍绕过 trace law；`session.ended` 被当作未知 kind 丢弃 | `fixed` | `orchestration.ts::startTurn / endSession / runStepLoop` 改走 `buildTurnBeginTrace / buildTurnEndTrace / buildSessionEndTrace`；`OrchestrationDeps.emitTrace` 收紧为 `TraceEvent`；`OrchestrationDeps.traceContext` 新增；`nano-session-do.ts::buildOrchestrationDeps()` 的 emit 包装里调用 `assertTraceLaw()`；session.ended → canonical `session.end`；orchestration tests 新增 trace carrier 断言 | `packages/session-do-runtime/src/orchestration.ts`, `packages/session-do-runtime/src/traces.ts`, `packages/session-do-runtime/src/do/nano-session-do.ts`, `packages/session-do-runtime/test/orchestration.test.ts` |
+| GPT R2 | A2 benchmark/memo 过度宣称 `_index` fallback + Q5 evidence-backed yes | `fixed` | `BENCH_THRESHOLDS` 新增 `emitP50MsMax=20 / emitP99MsMax=100`（Q5 绝对预算）；`computeVerdict()` 对两个预算做 red-level 检查；`RecordingFakeStorage.asListless()` 产出不含 `list()` 的 view；`runReadbackProbe()` 增加 listless reader pass + `ReadbackResult.listlessReadback`；verdict 也检查 listless 成功率；memo prose 从 "evidence-backed yes" 降级为 "package-local-isolate evidence-backed yes"，remote Q5 closure 明确留给 A6 | `packages/eval-observability/scripts/trace-substrate-benchmark.ts`, `packages/eval-observability/test/scripts/trace-substrate-benchmark.test.ts`, `docs/eval/after-skeleton-trace-substrate-benchmark.md` |
+| GPT R3 / Kimi R1 | benchmark fixture 缺 trace carriers；scripts/tests 不在 tsconfig 覆盖，drift 无法在编译时拦截 | `fixed` | `makeEvent()` 新增 `traceUuid / sourceRole / sourceKey`；`test/scripts/trace-substrate-benchmark.test.ts` + `test/sink.test.ts` + `test/sinks/do-storage.test.ts` + `test/timeline.test.ts` + `test/attribution.test.ts` + `test/replay.test.ts` 的 fixture 全部上 carriers；新增 `packages/eval-observability/tsconfig.scripts.json` + `scripts/types.d.ts` 最小 Node shim；`package.json` 的 `typecheck` 同时跑 `src` 和 `scripts` tsconfig | 见 §6.3 |
+| GPT R4 / Kimi R3 | README 示例缺 trace carriers；P1/P2/P2-layering docs 仍有未关闭 checklist | `fixed` | `packages/eval-observability/README.md` 示例加 trace carriers；`P2-trace-first-observability-foundation.md` §0 引用行号附 post-A3 reality 注；§9.3 checklist 全部收尾 + 追加附录 B.1（A2/A3 review follow-up）；`P1-trace-substrate-decision.md` §9.3 关闭；`P2-observability-layering.md` §9.3 关闭 | 见 §6.3 |
+| GPT R5 | 根级 `test:cross` 实际只跑 14 e2e；A3 §11.3 的 15 cases / 172 / 258 全部失真 | `fixed` | `package.json` 新增三个入口：`test:contracts = node --test test/*.test.mjs`, `test:e2e = node --test test/e2e/*.test.mjs`, `test:cross = node --test test/*.test.mjs test/e2e/*.test.mjs`（覆盖 66 tests）；A3 §11.3 重写：`eval-observability 196` / `session-do-runtime 312` / `trace-first-law-contract 9 cases` / `test:cross 66` | `package.json`, `docs/action-plan/after-skeleton/A3-trace-first-observability-foundation.md` |
+| GPT R6 | `alarm.ts` silent-swallow `flushTraces()`，与 A3 "no silent fallback" 冲突 | `fixed` | `AlarmDeps` 新增可选 `onFlushFailure(err)` hook；flush 失败时交给 hook 处理，未注入 hook 则 rethrow（不再 silent swallow）；`alarm.test.ts` 改 3 个 case：rethrow when no hook / delegate when hook / next alarm still fires | `packages/session-do-runtime/src/alarm.ts`, `packages/session-do-runtime/test/alarm.test.ts` |
+| Kimi R2 | session-do-runtime TraceEvent 本地 mirror 无编译时同步机制 | `fixed`（docs + compile-time structural guard） | `packages/session-do-runtime/test/traces.test.ts` 新增 mirror-drift describe block：`const asEval: EvalTraceEvent = local; const asLocal: SessionDoTraceEvent = asEval;` 两行互相赋值，任一侧新增必填字段都会立即触发 `tsc` 失败；同时 `traces.ts` 新增本地 `assertTraceLaw()` 所以 nano-session-do 运行时也不依赖 eval-observability | `packages/session-do-runtime/src/traces.ts`, `packages/session-do-runtime/test/traces.test.ts` |
+| Kimi R4 | A3 §11.3 测试数字与实际不一致 | `fixed` | 与 GPT R5 合并处理；数字全部重写 | `docs/action-plan/after-skeleton/A3-trace-first-observability-foundation.md` |
+
+### 6.3 变更文件清单
+
+**源码（6 个）**:
+- `packages/session-do-runtime/src/orchestration.ts`
+- `packages/session-do-runtime/src/traces.ts`
+- `packages/session-do-runtime/src/do/nano-session-do.ts`
+- `packages/session-do-runtime/src/alarm.ts`
+- `packages/session-do-runtime/src/index.ts`
+- `packages/eval-observability/scripts/trace-substrate-benchmark.ts`
+
+**测试（7 个）**:
+- `packages/session-do-runtime/test/orchestration.test.ts`
+- `packages/session-do-runtime/test/alarm.test.ts`
+- `packages/session-do-runtime/test/traces.test.ts`
+- `packages/eval-observability/test/scripts/trace-substrate-benchmark.test.ts`
+- `packages/eval-observability/test/sink.test.ts`
+- `packages/eval-observability/test/sinks/do-storage.test.ts`
+- `packages/eval-observability/test/timeline.test.ts`
+- `packages/eval-observability/test/attribution.test.ts`
+- `packages/eval-observability/test/replay.test.ts`
+
+**配置（3 个）**:
+- `package.json`（root — test:cross glob）
+- `packages/eval-observability/package.json`（typecheck 含 scripts 入口）
+- `packages/eval-observability/tsconfig.scripts.json`（新建）
+- `packages/eval-observability/scripts/types.d.ts`（新建 — 最小 Node shim）
+
+**文档（5 个）**:
+- `packages/eval-observability/README.md`
+- `docs/eval/after-skeleton-trace-substrate-benchmark.md`
+- `docs/design/after-skeleton/P1-trace-substrate-decision.md`
+- `docs/design/after-skeleton/P2-trace-first-observability-foundation.md`
+- `docs/design/after-skeleton/P2-observability-layering.md`
+- `docs/action-plan/after-skeleton/A3-trace-first-observability-foundation.md`
+
+### 6.4 验证结果
+
+```text
+pnpm -r typecheck                                      →  10 包全绿（含 eval-observability scripts 入口）
+pnpm -r build                                          →  10 包全绿
+pnpm --filter @nano-agent/eval-observability test      →  196 passed (up from 194; +2 cases: listless verdict + Q5 p50 budget)
+pnpm --filter @nano-agent/session-do-runtime test      →  312 passed (up from 309; +3 cases: orchestration carriers + alarm onFlushFailure + mirror drift)
+pnpm --filter @nano-agent/nacp-core test               →  231 passed
+pnpm --filter @nano-agent/nacp-session test            →  115 passed
+pnpm --filter @nano-agent/hooks test                   →  132 passed
+pnpm --filter @nano-agent/llm-wrapper test             →  103 passed
+pnpm --filter @nano-agent/agent-runtime-kernel test    →  123 passed
+pnpm --filter @nano-agent/capability-runtime test      →  227 passed
+pnpm --filter @nano-agent/storage-topology test        →  114 passed
+pnpm --filter @nano-agent/workspace-context-artifacts test →  163 passed
+npm run test:cross                                     →  66/66 passed (14 e2e + 52 contract suites) — contract suites 现在真正被跑到
+```
+
+全仓 10 包 1916 tests + root 66 tests 零回归；review 中指出的 3 条高危修复（orchestration trace law / substrate evidence 降级 / test:cross 覆盖缺口）都有显式测试或显式 verdict 断言作为回归护栏。
+
+### 6.5 实现者收口判断
+
+- **实现者自评状态**：`ready-for-rereview`
+- **仍然保留的已知限制**：
+  1. 真实 Cloudflare DO `p50 ≤ 20ms / p99 ≤ 100ms` 远端 closure 仍留给 A6 deployment dry-run，本轮 benchmark memo 仅给出 package-local-isolate evidence（与 GPT R2 的建议一致）。
+  2. `AlarmHandler` 的 `onFlushFailure` hook 在 `AlarmDeps` 层面留了接线点，DO 侧实际把它接到 `trace.recovery` 上报的 wiring 仍属 future composition 层工作；当前若未注入 hook，alarm() 会 rethrow，至少保证 no silent swallow。
+  3. `session-do-runtime::assertTraceLaw` 与 `eval-observability::assertTraceLaw` 是两份结构等价的 helper，由新增的结构对齐测试在编译时守护（Kimi R2），未来合并到单一公共包仍属 A4+ scope。
+
+### 6.6 对两位 reviewer 报告的整体评价
+
+- **GPT 报告评价**：GPT 的切入角度是「runtime enforcement 真的触达了吗 / exit pack 是否成立」——六条 finding 全是 A2/A3 声称完成但实际未闭合的硬缺口。R1 + R5 尤其关键：R1 精确指出 `orchestration.ts:160-165,300-303` raw-object emit 与 `session.ended` 非 canonical 这件事 会让 `shouldPersist()` 把终结事件丢弃，证据链硬度极高；R5 把 `package.json:7-9` 的 shell-glob 行为与 A3 §11.3 的 15 cases / 172 / 258 叙述做 cross-check，直接证明 contract suites 根本没被默认 runner 跑到——这种「日志数字 vs 实际行为」的取证是其他 reviewer 容易漏掉的。R2 的方法论批评（"readback probe 没证明 `_index` fallback"）指向我没意识到的实验无效性，而且给出的修复思路（listless storage double）完全可行。六条 finding 全部属实、全部可 actionable、严重级别判定准确。**这份报告质量顶级——它把「代码主线已立」和「exit pack 未完成」切得极清，避免 A2/A3 被误判为 completed。**
+- **Kimi 报告评价**：Kimi 从「公共 API 契约完整性 + 向后兼容深度 + 文档纪律」三个维度切入，四条 finding 都相对温和（approve-with-followups），但 R2 是本轮最重要的补充视角——session-do-runtime 的 TraceEvent 是 eval-observability 的本地 mirror，没有任何编译时校验。Kimi 的修复建议（"将共享类型提取到公共包 or 增加类型对齐测试"）让我意识到最便宜的 fix 是 compile-time 结构对齐断言，最终在 `test/traces.test.ts` 用两行 `const asEval: EvalTraceEvent = local; const asLocal: SessionDoTraceEvent = asEval` 收口。R1 / R3 / R4 和 GPT 的对应 finding 有重叠，但 Kimi 的严重级别判定（low/low/low）更保守——对同一个 test fixture 缺 carrier 的问题，GPT 标 medium，Kimi 标 low，这之间的差距反映了二位 reviewer 对 "fixture 是否 production-critical" 的不同判断，也给实现者更全面的视角。**这份报告质量高——补齐了 GPT 未覆盖的 compile-time drift 维度，严重级别克制合理。**
+- **综合结论**：两份报告强烈互补：GPT 关注 runtime enforcement + exit pack，Kimi 关注 public API + compile-time drift + docs discipline。两者合并后的 blocker + follow-up 列表完整覆盖了 A2/A3 所有实际缺口，且没有出现重复修复需求。两份都是 approve-grade 审查工作。
