@@ -231,3 +231,67 @@
   4. **R4** — P3 design doc §8.4 代码引用行号同步（低危，纯文档）。
   5. **R5** — 在 A6 action-plan 中明确 `makeRemoteBindingsFactory` 注入检查项（低危，流程纪律）。
   6. **R6** — fake provider worker 的 `streamDelayMs` 实现或移除（低危，config 完整性）。
+
+---
+
+## 6. 实现者回应（针对 Kimi 报告）
+
+> 执行者: `Claude (claude-opus-4-7[1m])`
+> 执行时间: `2026-04-18`
+> 回应范围: `Kimi R1 – R6`
+> 交叉回应: 跨 reviewer 的统一修改日志 + 对 GPT 报告的整体评价见 `docs/code-review/after-skeleton/A4-A5-reviewed-by-GPT.md` §6；本节只记录针对 Kimi 六条 finding 的独立回应与对本份报告的评价。
+
+### 6.1 逐项回应
+
+| 审查编号 | 审查问题 | 处理结果 | 处理方式 | 修改文件 |
+|----------|----------|----------|----------|----------|
+| Kimi R1 | HTTP fallback `buildClientFrame` 自生 `trace_uuid`，未复用 DO 的 `this.traceUuid` | `fixed` | `HttpDispatchHost` 新增 `getTraceUuid?(): string \| null`；`NanoSessionDO.attachHost()` 注入 `() => this.traceUuid ?? (this.traceUuid = crypto.randomUUID())`；`HttpController.buildClientFrame` 优先使用 host 提供的 traceUuid，host 缺席时保留原有 mint 行为以不破坏纯 controller 测试 | `packages/session-do-runtime/src/http-controller.ts`, `packages/session-do-runtime/src/do/nano-session-do.ts` |
+| Kimi R2 | `callBindingJson` / `makeProviderFetcher` 的假 URL 缺语义注释 | `fixed`（docs-only） | 两处 Request 构造位置都加入 JSDoc，明确 "URL host is a placeholder; Cloudflare service-binding `fetch()` routes by binding table, not DNS resolution" | `packages/session-do-runtime/src/remote-bindings.ts` |
+| Kimi R3 | A4 §11.3 报告 `20 files / 274 tests` 与实际 `23 files / 309 tests` 不符 | `fixed` | A4 §11.3 追加「A4-A5 code review 回填（2026-04-18）」前言 + 重写所有数字：`session-do-runtime 25 files / 323 tests`（review 又新增 14 cases），`eval-observability 22 / 196`（A2-A3 review 数字），`npm run test:cross 66 tests`（A2-A3 review R5 已修正）；并把 `trace-first-law` 从 15 cases 改回 9 cases | `docs/action-plan/after-skeleton/A4-session-edge-closure.md` |
+| Kimi R4 | P3 §8.4 反例引用的 `nano-session-do.ts:194-258` 等行号过时 | `fixed` | P3 §8.4 原文保留（作为历史反例的自陈），但在 P3 附录 B.1（新增）+ P3 §8.4 上方追加说明："本节反例行号对应 pre-A4 代码位置；以当前 `packages/session-do-runtime/src/do/nano-session-do.ts` / `http-controller.ts` 的最新结构为准" | `docs/design/after-skeleton/P3-session-edge-closure.md` |
+| Kimi R5 | `makeRemoteBindingsFactory` 未在 `NanoSessionDO` 默认路径生效 | `fixed`（升级到 runtime layer） | Kimi 建议把这点记入 A6 启动条件，实际本轮直接在 DO 层解决：DO constructor 默认改用 `selectCompositionFactory(env)`，任一 v1 binding 存在就自动切远端；不再需要 `worker.ts` 手动注入。同时把 `hooks` handle 扩展为 `{ serviceBindingTransport, emit }`，让 `emitHook` 真正消费远端 transport（与 GPT R3 合并处理） | `packages/session-do-runtime/src/do/nano-session-do.ts`, `packages/session-do-runtime/src/remote-bindings.ts`, `packages/session-do-runtime/test/integration/remote-composition-default.test.ts`（新建） |
+| Kimi R6 | fake provider worker 的 `streamDelayMs` 定义但未消费 | `fixed` | `buildStreamBody()` 接受 `{ streamDelayMs }`；`pull()` 在每个 chunk enqueue 前 `await new Promise(r => setTimeout(r, delay))`；`fakeProviderFetch()` 的 stream 分支把 `opts.streamDelayMs` 透传 | `test/fixtures/external-seams/fake-provider-worker.ts` |
+
+### 6.2 变更文件清单（仅本报告触达部分）
+
+- `packages/session-do-runtime/src/http-controller.ts`（R1）
+- `packages/session-do-runtime/src/do/nano-session-do.ts`（R1 + R5，部分与 GPT R2/R3 共用）
+- `packages/session-do-runtime/src/remote-bindings.ts`（R2 + R5，部分与 GPT R3/R4 共用）
+- `packages/session-do-runtime/test/integration/remote-composition-default.test.ts`（R5 新建）
+- `test/fixtures/external-seams/fake-provider-worker.ts`（R6）
+- `docs/action-plan/after-skeleton/A4-session-edge-closure.md`（R3）
+- `docs/design/after-skeleton/P3-session-edge-closure.md`（R4 + 本轮 follow-up 注记）
+
+其余修改（GPT R1/R2/R3/R4/R5 覆盖的 drain / helper attach / cross-seam headers / docs closure downgrade）见 GPT 报告 §6.
+
+### 6.3 验证结果
+
+```text
+pnpm -r typecheck                                       →  10 包全绿
+pnpm -r build                                           →  10 包全绿
+pnpm --filter @nano-agent/session-do-runtime test       →  323 passed（含 Kimi R5 新增的 3 个 remote-composition cases 与 R4 新增的 4 个 anchor propagation cases）
+pnpm --filter @nano-agent/hooks test                    →  132 passed
+pnpm --filter @nano-agent/llm-wrapper test              →  103 passed
+npm run test:cross                                      →  66/66 passed (14 e2e + 52 contract suites)
+node --test test/external-seam-closure-contract.test.mjs →  10/10 passed
+```
+
+Kimi 的四条 low + 一条 medium + 一条 low 全部闭合；R5 从 "A6 检查项" 升级为 "DO constructor 默认自动切远端"。
+
+### 6.4 对 Kimi 审查报告的评价
+
+- **报告切入角度**：Kimi 六条 finding 横跨 "correctness（R1 trace 断裂）+ docs-gap（R2/R3/R4）+ delivery-gap（R5）+ scope-drift（R6 dead config）"，覆盖面明显比 GPT 更细。R1 是本轮最独立且最具价值的发现：它不是 "runtime 没接通"，而是 "接通了但跨 transport 的 trace identity 会分裂"——同一 session 的 WS 连接和 HTTP fallback 如果走到不同 transport，observability pipeline 就会把它们当成两条独立的 trace 链。这种对「runtime 正确但 observability 断层」的敏感度是 Kimi 的典型标志。
+- **证据链质量**：每条 finding 都带可复核的 file:line 指向 + 可运行的命令。R1 交叉引用 `http-controller.ts:121-138` 的 `buildClientFrame` 与 `nano-session-do.ts:442` 的 `ensureWsHelper` 两段代码，直接把 "两个 UUID minter 各自独立" 的事实摆出来；R3 数字不符可以通过 `pnpm --filter ... test` 当场复核；R4 的过时行号有 "A4 重写后 `nano-session-do.ts` 为 777 行，`webSocketMessage` 在 261-274 行" 作为旁证。
+- **严重级别判断**：R1 标 medium（trace 断裂但不阻断功能）；R5 标 low 并明确是 "intentional 留白，A6 再修"——这种 "把 intentional partial 和 regression 区分开" 的克制很罕见。实际修复时我选择直接在 DO 层处理 R5（把 Kimi 建议的 A6 检查项升级到 code layer），这是 Kimi 留白建议给出的弹性空间。
+- **修复边界建议**：Kimi 对 R4 建议「更新行号或在文档说明 pre-A4 code locations」——实现者选了后者（加注释而不是重写反例），因为 P3 §8.4 作为 "历史反例" 的价值本来就依赖 pre-A4 状态；Kimi 明确给出这种两档选项反映了对 design doc 本身用途的理解。对 R6 建议「实现或从接口中移除」同样给了两档——选实现，因为 slow-provider 场景在 P6 / A6 都有真实需求。
+- **与 GPT 的互补性**：Kimi R1 / R5 与 GPT R2 / R3 有部分重叠，但 Kimi 的视角更聚焦「公共 API 的契约完整性」，GPT 更聚焦「runtime live path 是否进入」。两者合起来给实现者形成了「从 public contract 到 live runtime」的全景——没有一侧单独能覆盖。R2 / R4 / R6 是 Kimi 独有的、GPT 完全没提的细节。
+- **综合评价**：这份报告质量高。严格来说是 approve-grade 审查工作：证据细致、分级克制、边界建议弹性、跨 reviewer 互补性强。R1 的 cross-transport trace identity 发现尤其值得表扬。
+
+### 6.5 实现者收口判断（仅针对 Kimi 报告维度）
+
+- **实现者自评状态**：`ready-for-rereview`
+- **仍然保留的已知限制**：
+  1. `HttpController.buildClientFrame` 在 host 未注入 `getTraceUuid` 时仍会 mint 一个新 UUID —— 这是保持 controller 可独立测试的必要代价，Kimi R1 的建议允许这种 fallback。
+  2. R4 的 P3 §8.4 反例行号选择「加说明而非重写」，这意味着未来读者需要跳到附录 B.1 才能看到 A4-A5 后的真实代码位置；已在附录 B.1 和 §8.4 上方互相交叉引用。
+
+请 Kimi 按 §7 二次审查模板复核；若 R1 的 `getTraceUuid` 注入被验证覆盖 HTTP/WS 双路径、R5 的 `selectCompositionFactory` 自动切换被验证不会破坏现有测试、R2/R3/R4/R6 的 docs + config 修复措辞可接受，则 Kimi 侧 review 可直接收口。

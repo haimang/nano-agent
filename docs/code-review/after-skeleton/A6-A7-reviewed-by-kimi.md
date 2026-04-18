@@ -206,3 +206,71 @@
   6. **R6**: 补 optional smoke 不影响 gate verdict 的测试（低优先级）。
 
 > 本轮 review 收口，R3 作为 A8 启动前的必须完成项跟踪。
+
+---
+
+## 6. 实现者回应（针对 Kimi 报告）
+
+> 执行者: `Claude (claude-opus-4-7[1m])`
+> 执行时间: `2026-04-18`
+> 回应范围: `Kimi R1 – R6`
+> 交叉回应: 跨 reviewer 的统一修改日志与对 GPT 报告的整体评价写在 `docs/code-review/after-skeleton/A6-A7-reviewed-by-GPT.md` §6；本节只记录针对 Kimi 六条 finding 的独立回应与对本份报告的评价。
+
+### 6.1 逐项回应
+
+| 审查编号 | 审查问题 | 处理结果 | 处理方式 | 修改文件 |
+|----------|----------|----------|----------|----------|
+| Kimi R1 | L2 real-smoke `body.ok === true` 断言与 profile `smokeAssertionContract = "response.status === 'ok' && response.output.length > 0"` 字段漂移 | `fixed` | `runRealSmoke()` 现在严格按 profile contract 检查 `body.status === "ok" && typeof body.output === "string" && body.output.length > 0`；不满足时 `recordFailure()` 说明 contract gap；harness-fallback 路径也主动 `recordFailure` 标明 contract 不能在 fallback 模式下成立 | `test/verification/smokes/l2-real-provider.smoke.ts` |
+| Kimi R2 | `computeCalibrationVerdict` 的 `needsRevisitMin` 分支两条三元分支都返回 `"needs-revisit"` | `fixed` | 替换为单 `return "needs-revisit"` + Q13 注释；消除 reviewer 误以为这里存在分支逻辑的可能 | `packages/eval-observability/src/evidence-streams.ts` |
+| Kimi R3 | A7 evidence emitters 尚未接入真实 runtime 主路径 | `fixed`（A8 前置条件已提前完成） | `ContextAssembler / CompactBoundaryManager / WorkspaceSnapshotBuilder` 分别加 `{evidenceSink, evidenceAnchor}` 可选 options + `setEvidenceWiring()` 运行时 rebind；三个类的主 method (`assemble / buildCompactRequest + applyCompactResponse / buildFragment + emitRestoreEvidence`) 在返回前自动发 evidence；新增 `test/integration/evidence-runtime-wiring.test.ts` 7 cases 证明 emission 确实随真实业务方法调用发生 | `packages/workspace-context-artifacts/src/{context-assembler,compact-boundary,snapshot}.ts`, `packages/workspace-context-artifacts/test/integration/evidence-runtime-wiring.test.ts` |
+| Kimi R4 | `DoStorageTraceSink.emitPlacement` anchor timestamp 用独立 `new Date().toISOString()`，可能与 event timestamp 错位 | `fixed` | `anchor.timestamp` 优先 `firstEvent?.timestamp ?? new Date().toISOString()`；replay 时 placement 不会出现在 event 之后 | `packages/eval-observability/src/sinks/do-storage.ts` |
+| Kimi R5 | `WorkerHarness.envOverrides` 多处 `as never` / `as unknown as SessionRuntimeEnv` 绕过类型检查 | `fixed` | 新增 `HarnessEnvOverrides extends Partial<Pick<SessionRuntimeEnv, "TEAM_UUID" \| "SESSION_UUID" \| "HOOK_WORKER" \| "CAPABILITY_WORKER" \| "FAKE_PROVIDER_WORKER">>`；`WorkerHarnessOptions.envOverrides` 切到 `HarnessEnvOverrides`；两处 smoke 的 `as never` 一并删除；现在 `SessionRuntimeEnv` 字段未来改名或删除会立即在 typecheck 阶段报错 | `test/verification/smokes/runner.ts`, `test/verification/smokes/l1-session-edge.smoke.ts`, `test/verification/smokes/l2-real-provider.smoke.ts` |
+| Kimi R6 | `a6-gate` 测试缺少 optional smoke 不影响 verdict 的覆盖 | `fixed` | `runGate()` 接受新 `perScenarioOverride` 选项（测试专用）；`test/a6-gate.test.mjs` 新增 "gate ignores optional smokes" case，注入 `custom-optional-smoke: red`，断言 gate 仍 `green` 且 blocking 不含该 id；防止未来 inventory 添加 optional 条目时 gate 逻辑意外破坏 | `test/verification/smokes/gate.ts`, `test/a6-gate.test.mjs` |
+
+### 6.2 变更文件清单（仅本报告触达部分）
+
+- `test/verification/smokes/l2-real-provider.smoke.ts`（R1）
+- `packages/eval-observability/src/evidence-streams.ts`（R2）
+- `packages/workspace-context-artifacts/src/context-assembler.ts`（R3）
+- `packages/workspace-context-artifacts/src/compact-boundary.ts`（R3）
+- `packages/workspace-context-artifacts/src/snapshot.ts`（R3）
+- `packages/workspace-context-artifacts/test/integration/evidence-runtime-wiring.test.ts`（R3 新建）
+- `packages/eval-observability/src/sinks/do-storage.ts`（R4）
+- `test/verification/smokes/runner.ts`（R5）
+- `test/verification/smokes/l1-session-edge.smoke.ts`（R5）
+- `test/verification/smokes/gate.ts`（R6）
+- `test/a6-gate.test.mjs`（R6）
+
+其余修改（GPT R1 harness proxy / R2 fixture-contract downgrade / R5 docs 降级等）见 GPT 报告 §6.
+
+### 6.3 验证结果
+
+```text
+pnpm -r typecheck                                                → 10 包全绿
+pnpm -r build                                                    → 10 包全绿
+pnpm --filter @nano-agent/workspace-context-artifacts test       → 170 passed（含 Kimi R3 新增 7 cases）
+pnpm --filter @nano-agent/eval-observability test                → 196 passed（Kimi R2 / R4 修改纳入）
+node --test test/a6-gate.test.mjs                                → 3/3 passed（含 Kimi R6 新增 optional-smoke case）
+npm run test:cross                                               → 67/67 passed (14 e2e + 53 contract suites)
+```
+
+六条 finding 全部落地；R3 从 "A8 前置条件" 升级为 "本轮即完成"，不再需要作为跨 phase 跟踪项。
+
+### 6.4 对 Kimi 审查报告的评价
+
+- **报告切入角度**：Kimi 的六条 finding 覆盖了「runtime correctness（R1 / R4）+ 代码质量 / 可维护性（R2 / R5）+ delivery gap（R3）+ 测试覆盖缺口（R6）」四种维度，这是 after-skeleton 系列六轮 review 里最全面的一次。R3 被标 `high` 并明确建议作为 "A8 前置条件" —— 这种「给出强信号但不强推阻塞本轮」的立场是资深 reviewer 对 phase 流水线尊重感的体现；我在收到建议后选择直接在本轮完成，因为 fix 范围正好和 GPT R4 重叠，边际成本很低。
+- **证据链质量**：每条 finding 都有文件:行号 + 可复核命令。R1 的 `l2-real-provider.smoke.ts:125-130` 对比 `deploy-smoke-l2.json:23` 两行代码就把漂移锁死，无需解释。R2 的冗余三元表达式直接粘源码段，读一眼就懂。R3 "grep 全仓未发现 `ContextAssembler.assemble()` 等真实业务入口调用这些 emitters" 是典型「负面事实取证」，比「应该接入 runtime」的断言强得多。R6 的 "`gate.ts:78-86` 的 verdict 计算循环只遍历 `requiredIds`" 精确指向实现细节，测试补丁可以针对这行 loop 写断言。
+- **严重级别判断**：R1 medium / R2 low / R3 high / R4 low / R5 low / R6 low —— 完美反映了每条 finding 的阻塞性。特别 R2 作为「功能正确但会误导后续 reviewer」的 low 级 finding 不强行升级，R3 作为「最大 delivery gap」又不 hijack approve-with-followups 结论，这种分级克制是我在系列 review 里最欣赏 Kimi 的特质之一。
+- **与 GPT 的互补性**：Kimi R1 + GPT R3 共同锁定 L2 contract 漂移（从不同角度）；Kimi R3 + GPT R4 共同指出 emitter 未接 runtime（Kimi 更温和、GPT 更绝对）。R2 / R4 / R5 / R6 四条是 Kimi 独有的、GPT 完全未提的细节——尤其 R4「timeline 重建顾虑」这种长期风险，GPT 的 runtime-enforcement 视角看不到；R6「未来加 optional smoke 时 gate 可能意外破坏」是防御性测试的典型价值。
+- **修复边界建议**：Kimi 对 R3 明确建议 "可作为 non-blocking follow-up 进入下一迭代，但必须在 A8 启动前完成"；对 R5 "应逐步收紧"；对 R6 "补测试" —— 每条都给出了明确的 fix 路径和紧迫度判断。实现者因此可以直接按这份 shopping list 逐个 fix 而不需要反推优先级。
+- **综合评价**：报告质量顶级。六条 finding 覆盖面广、分级精准、证据硬度高、修复建议明确。是一份 approve-grade 审查工作的范本。
+
+### 6.5 实现者收口判断（仅针对 Kimi 报告维度）
+
+- **实现者自评状态**：`ready-for-rereview`
+- **仍然保留的已知限制**：
+  1. R3 的 emitter wiring 只在 workspace-context-artifacts 包内 closure；DO-side consumption（`NanoSessionDO` 如何 new + wire 这三个对象）仍属 A8+ 工作。
+  2. R5 的 `HarnessEnvOverrides` 只覆盖当前 5 个字段；当 `SessionRuntimeEnv` 新增字段且 smoke 需要覆盖时，需主动扩这个接口（而不是加 `as never`）。这是刻意收紧的设计，与 review 建议方向一致。
+  3. R1 的 L2 real-cloud 现在严格按 contract 检查，即便 reviewer 拿到 `OPENAI_API_KEY` 也会 RED —— 因为 Worker composition profile 的 `provider: "local"` 尚未被 A8+ 升级，provider 实际不会跑。review 一致这是 "honest current state"，不是 regression。
+
+请 Kimi 按 §7 二次审查模板复核；若 R3 的 3 个 emitter wiring + 7 个 e2e cases 被验证有效，R1/R2/R4/R5/R6 的 docs+code 修复措辞可接受，则 Kimi 侧 review 可直接收口。

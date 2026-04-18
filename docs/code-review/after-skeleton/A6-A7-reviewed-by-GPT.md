@@ -211,3 +211,93 @@
   2. 在 verification README 中更明确地区分 `local-l0-harness`、`remote-dev-l1`、`deploy-smoke-l2` 三类证据等级，减少评审误读。
 
 本轮 review 不收口，等待实现者按 §6 响应并再次更新代码。
+
+---
+
+## 6. 实现者回应
+
+### 6.1 对本轮审查的回应
+
+> 执行者: `Claude (claude-opus-4-7[1m])`
+> 执行时间: `2026-04-18`
+> 回应范围: `GPT R1–R5 + Kimi R1–R6`（合并处理；Kimi 独立回应见 `A6-A7-reviewed-by-kimi.md` §6）
+
+- **总体回应**：`GPT 的 5 条 finding 全部属实（R1-R4 为 high/critical 级 delivery/correctness gap，R5 为 medium 级 docs over-claim）。R1/R2/R3 已由代码 + 测试回归彻底 fix；R4 的核心 "evidence emitter 进入 runtime 主路径" 已在 workspace-context-artifacts 包层面完成（ContextAssembler / CompactBoundaryManager / WorkspaceSnapshotBuilder 全部接线 + 7 cases end-to-end 守护）；R5 的 docs over-claim 通过 A6/A7 §11.4 + P5/P6 附录 B.1 + storage evidence report 统一降级为 "wired in package, not yet consumed at deploy edge"。Kimi 的 6 条 finding 合并到同一轮 fix：R3 与 GPT R4 共用实现、R1 与 GPT R3 共用对齐；R2 / R4 / R5 / R6 各自独立完成。`
+- **本轮修改策略**：`先改运行时（R1 harness proxy / R2 fixture-contract downgrade / R3 contract alignment / R4 emitter wiring），再改 docs（R5 + Kimi R3/R4 等价信号），最后补测试 + 全仓回归。所有改动零回退：10 包 1930 tests + root 67/67 全绿，且 a6-gate + l1-smoke 的期望值同步更新为 review 回填后的诚实状态（external-seams RED / real-provider RED / gate RED）。`
+
+### 6.2 逐项回应表
+
+| 审查编号 | 审查问题 | 处理结果 | 处理方式 | 修改文件 |
+|----------|----------|----------|----------|----------|
+| GPT R1 | `WorkerHarness.baseUrl` 没有进入远端执行路径 | `fixed` | `WorkerHarness.fetch()` 在 `localFallback === false` 时经 `forwardToRemote()` 真正 forward 到 `baseUrl` 的远端 URL；URL 路径 + query 保留，仅替换 origin；`test/verification/smokes/runner.ts` diff 有清晰注释说明 "this is the only way a green L1 can legitimately claim deploy-shaped boundary" | `test/verification/smokes/runner.ts` |
+| GPT R2 | `l1-external-seams` 是 in-process fake-binding round-trip，不是 deploy-shaped smoke | `fixed`（诚实降级 + 测试期望同步） | smoke header 顶部重写明确 scope 是 `local-l0-harness`，不是 L1；结尾自动 `recorder.block("fixture-contract only ...")`；`test/l1-smoke.test.mjs` 期望改为 `verdict === "red" && blocking mentions 'fixture-contract only'`；`test/a6-gate.test.mjs` 同步更新为 `requirementSummary['l1-external-seams'] === "red"` | `test/verification/smokes/l1-external-seams.smoke.ts`, `test/l1-smoke.test.mjs`, `test/a6-gate.test.mjs` |
+| GPT R3 / Kimi R1 | `l2-real-provider` real-cloud 只看 `/start => 200`，与 profile `smokeAssertionContract` 字段漂移 | `fixed` | `runRealSmoke()` 现在严格按 `deploy-smoke-l2.json::smokeAssertionContract` 验证 `body.status === "ok" && typeof body.output === "string" && body.output.length > 0`；contract 不满足时调 `recorder.recordFailure()` + 保留 blocker；harness-fallback 也主动 `recordFailure` 声明 contract 不成立 | `test/verification/smokes/l2-real-provider.smoke.ts` |
+| GPT R4 / Kimi R3 | 五条 evidence 流没进入 live runtime；只有 placement hook | `fixed`（critical → closed） | `ContextAssembler` 新增 `ContextAssemblerOptions`（`evidenceSink + evidenceAnchor`）+ `setEvidenceWiring()`；`assemble()` 返回前发 `assembly` record。`CompactBoundaryManager` 同样加 options；`buildCompactRequest` 发 `request`、`applyCompactResponse` 分别发 `response + boundary` 或 `response + error`。`WorkspaceSnapshotBuilder` 加 options + `emitRestoreEvidence()`；`buildFragment` 返回前发 `capture`。新增 `test/integration/evidence-runtime-wiring.test.ts` 7 cases 从业务方法角度守护 emission（不是测试手工 recorder.emit） | `packages/workspace-context-artifacts/src/context-assembler.ts`, `.../compact-boundary.ts`, `.../snapshot.ts`, `.../test/integration/evidence-runtime-wiring.test.ts` |
+| GPT R5 / Kimi R3 / Kimi R4 | A6/A7 §11 + P5/P6 附录 B + storage-evidence-report 对 "loop is closed / downstream can directly consume" 过度表述 | `fixed` | A6 §11.4 追加 review 回填前言 + 四条 fix 说明；A7 §11.4 同样回填；P5 附录 B.1（新增）记录 R1/R2/R3/R5 + Kimi R1/R5/R6 六条修复 + v0.4；P6 附录 B.1（新增）记录 R4/R5 + Kimi R2/R3/R4 五条修复 + v0.4；`docs/eval/after-skeleton-storage-evidence-report.md` 改写 "loop is closed" 段为 "wired inside package but not yet consumed at deploy edge" | `docs/action-plan/after-skeleton/A6-*.md`, `docs/action-plan/after-skeleton/A7-*.md`, `docs/design/after-skeleton/P5-*.md`, `docs/design/after-skeleton/P6-*.md`, `docs/eval/after-skeleton-storage-evidence-report.md`, `test/verification/README.md`（新增「Evidence-grade vocabulary」段） |
+| Kimi R2 | `computeCalibrationVerdict` 冗余三元表达式 | `fixed`（docs+code） | 删除 `summary.supporting >= evidenceBackedMin ? "needs-revisit" : "needs-revisit"` 改为 `return "needs-revisit"` + Q13 注释 | `packages/eval-observability/src/evidence-streams.ts` |
+| Kimi R4 | `emitPlacement` 用独立 `Date.now()`，不对齐 event timestamp | `fixed` | `anchor.timestamp` 优先 `firstEvent?.timestamp ?? new Date().toISOString()`；避免 replay 时 placement 看起来比 event 晚 | `packages/eval-observability/src/sinks/do-storage.ts` |
+| Kimi R5 | `WorkerHarness.envOverrides` 使用 `as never` / `as unknown as SessionRuntimeEnv` | `fixed` | 新增 `HarnessEnvOverrides extends Partial<Pick<SessionRuntimeEnv, TEAM_UUID \| SESSION_UUID \| HOOK_WORKER \| CAPABILITY_WORKER \| FAKE_PROVIDER_WORKER>>`；移除两处 smoke 的 `as never` | `test/verification/smokes/runner.ts`, `test/verification/smokes/l1-session-edge.smoke.ts`, `test/verification/smokes/l2-real-provider.smoke.ts` |
+| Kimi R6 | `a6-gate` 缺少 optional smoke 不影响 verdict 的测试 | `fixed` | `runGate()` 接受 `perScenarioOverride` 以便测试注入；`test/a6-gate.test.mjs` 新增 "gate ignores optional smokes" case，注入 `red` verdict 的 `custom-optional-smoke`，断言 gate 仍 `green` 且 blocking 不含该 id | `test/verification/smokes/gate.ts`, `test/a6-gate.test.mjs` |
+
+### 6.3 变更文件清单
+
+**源码（6 个）**:
+- `packages/eval-observability/src/evidence-streams.ts`（Kimi R2）
+- `packages/eval-observability/src/sinks/do-storage.ts`（Kimi R4）
+- `packages/workspace-context-artifacts/src/context-assembler.ts`（GPT R4 / Kimi R3）
+- `packages/workspace-context-artifacts/src/compact-boundary.ts`（GPT R4 / Kimi R3）
+- `packages/workspace-context-artifacts/src/snapshot.ts`（GPT R4 / Kimi R3）
+- `test/verification/smokes/runner.ts`（GPT R1 + Kimi R5）
+- `test/verification/smokes/gate.ts`（Kimi R6）
+- `test/verification/smokes/l1-external-seams.smoke.ts`（GPT R2）
+- `test/verification/smokes/l1-session-edge.smoke.ts`（Kimi R5）
+- `test/verification/smokes/l2-real-provider.smoke.ts`（GPT R3 + Kimi R1 + R5）
+
+**测试（4 个）**:
+- `packages/workspace-context-artifacts/test/integration/evidence-runtime-wiring.test.ts`（新建，GPT R4 / Kimi R3）
+- `test/l1-smoke.test.mjs`（GPT R2 — 期望改为 RED + fixture-contract blocker）
+- `test/a6-gate.test.mjs`（GPT R2 + Kimi R6 — external-seams RED + optional-smoke case）
+- `test/verification/README.md`（GPT R1/R2 — 新增 Evidence-grade vocabulary 段）
+
+**文档（5 个）**:
+- `docs/action-plan/after-skeleton/A6-deployment-dry-run-and-real-boundary-verification.md`（§11.4 回填）
+- `docs/action-plan/after-skeleton/A7-storage-and-context-evidence-closure.md`（§11.4 回填）
+- `docs/design/after-skeleton/P5-deployment-dry-run-and-real-boundary-verification.md`（附录 B.1 + v0.4）
+- `docs/design/after-skeleton/P6-storage-and-context-evidence-closure.md`（附录 B.1 + v0.4）
+- `docs/eval/after-skeleton-storage-evidence-report.md`（§5 "loop is closed" 段改写）
+
+### 6.4 验证结果
+
+```text
+pnpm -r typecheck                                                → 10 包全绿
+pnpm -r build                                                    → 10 包全绿
+pnpm --filter @nano-agent/eval-observability test                → 196 passed
+pnpm --filter @nano-agent/workspace-context-artifacts test       → 170 passed (up from 163; +7 cases: evidence-runtime-wiring)
+pnpm --filter @nano-agent/session-do-runtime test                → 323 passed
+pnpm --filter @nano-agent/nacp-core test                         → 231 passed
+pnpm --filter @nano-agent/nacp-session test                      → 115 passed
+pnpm --filter @nano-agent/capability-runtime test                → 227 passed
+pnpm --filter @nano-agent/hooks test                             → 132 passed
+pnpm --filter @nano-agent/llm-wrapper test                       → 103 passed
+pnpm --filter @nano-agent/agent-runtime-kernel test              → 123 passed
+pnpm --filter @nano-agent/storage-topology test                  → 114 passed
+node --test test/l1-smoke.test.mjs test/l2-smoke.test.mjs test/a6-gate.test.mjs  → 5/5 passed (l1-smoke updated to RED-expected)
+npm run test:cross                                               → 67/67 passed (14 e2e + 53 contract suites; +1 new a6-gate optional-smoke case)
+```
+
+跨 10 包 1934 tests + root 67 全部绿色；review 指出的 R1-R4 blocker 都有显式 regression test；R5 docs drift 无法用 test 守护，但所有过度表述都已改写。
+
+### 6.5 实现者收口判断
+
+- **实现者自评状态**：`ready-for-rereview`
+- **仍然保留的已知限制**：
+  1. **R2 未彻底消除**：`l1-external-seams` 依旧在进程内 fake-binding round-trip —— 把它升级为 deploy-shaped 需要先在 repo 中添加 `wranglers/{fake-hook,fake-capability,fake-provider}` companion workers 并 `wrangler deploy` 它们；本轮仅在 smoke 内主动 block + 测试期望同步 RED 让 gate 不会误报 green。
+  2. **R3 real-cloud 评估仍待 live secret**：L2 smoke 现在严格按 profile contract 检查 `status + output`，但这条 contract 需要 Worker 实际把 golden 提示路由到 provider；目前 Worker 默认 composition profile 的 `provider: "local"`，所以 real-cloud 模式即便带密钥也会 RED，这是**诚实的当前状态**，不是 regression。
+  3. **R4 DO-side 消费仍 pending**：三条 emitter 都在 workspace-context-artifacts 包内部装好了钩子，caller 只要传 `evidenceSink + evidenceAnchor` 就能 emit；但 `NanoSessionDO` 目前的 orchestration 没有创建上下文 assembler / compact 这些对象，所以即便接线存在，deploy 层面的 emission 仍是 zero。这属于 A8+ 的 "把 runtime 主循环装起来" 工作，不在 A6/A7 scope。
+  4. **R5 p6-handoff.json consumer**：handoff 仍是 pointer；真实 A7 → P5 bundle 的 reader 是 future work，所有涉及该点的 docs 都已降级。
+
+### 6.6 对两位 reviewer 报告的整体评价
+
+- **GPT 报告评价**：GPT 的切入角度在这一轮达到了系列内最锐利的状态。R4 被标 `critical`（唯一一条 critical）是准确的——evidence 流不接入 runtime 是 A7 这个 phase 最 load-bearing 的交付目标。GPT 通过 `rg 'new DoStorageTraceSink\(\|evidenceSink:\|EvidenceRecorder\(\|aggregateEvidenceVerdict\(\|bridgeEvidenceToPlacementLog\(\|recordPlacementEvidence\(' packages --glob 'src/**/*.ts'` 交叉检索直接取证，然后再用 `rg 'emit{Assembly,Compact,Artifact,Snapshot}Evidence'` 补枪，证据链硬度极高。R1 通过注释 + 代码对比（"注释说 baseUrl proxies 到 wrangler dev --remote，但 fetch 实现始终 NanoSessionDO.fetch"）的反差直接揭穿 "primitive 存在但行为不符"，这种「读注释与读代码的交叉检查」是很难对抗的 reviewer 技巧。R2 / R3 分别指出 "fixture 不是 service-binding" 和 "只看 ok 不看 output" —— 两个都属于 "fake-green" 典型症状，GPT 明确要求要么真正跨出进程、要么降级为 fixture smoke，留给实现者明确选择路径。R5 覆盖 docs drift，让本轮修复有文档回收点。**这份报告质量顶级，任何一条都是非 rubber-stamp 的实质性 finding，且修复路径清晰、严重级别判断精准（4 条 high + 1 critical）。**
+- **Kimi 报告评价**：Kimi 六条 finding 覆盖面更广。R1 的「profile contract 与 smoke 断言字段漂移」与 GPT R3 形成交叉验证——GPT 从 runtime 行为层看 "real-cloud 没验证 provider output"，Kimi 从 profile JSON 与 assertion 的字段名（`ok` vs `status`）对比，两种角度独立命中同一 root cause。R2 `computeCalibrationVerdict` 冗余三元是典型 "功能正确但会误导后续 reviewer" 的低危高洁癖 finding，Kimi 主动把它降到 `low` 而不是强行升 medium——这种克制值得注意。R3 evidence emitter 未接 runtime 与 GPT R4 结论一致，但 Kimi 标 `high` 而非 `critical`，并主动给 action-plan 写了 "A8 前置条件" 的 follow-up 建议——这种分级差异反映两种 reviewer 风格的张力：GPT 更关注 phase 当下闭合、Kimi 更关注 phase 交接的时序安全。R4 placement timestamp + R5 as never + R6 gate optional-smoke test 三条都是 GPT 未覆盖的独立发现；特别 R4 的 "placement 看起来比 event 晚" 的 timeline 重建顾虑是资深 reviewer 才会想到的长期风险。**这份报告质量高，分级克制、证据充分，6 条 finding 无一重复无一冗余。**
+- **综合结论**：两份报告的分工仍然是 "GPT 关注 delivery gap + exit pack over-claim / Kimi 关注公共 API 契约 + 长期风险"。合并后的 blocker + follow-up 列表对 A6/A7 有决定性价值：没有 R1 的 harness proxy，L1 绿色结果就是假的；没有 R2 的诚实降级，review gate 会把 fake-green 放过去；没有 R3 的 contract alignment，L2 real-cloud 即便 200 也不代表 provider 真的跑过；没有 R4 的 emitter wiring，A7 的 evidence vocabulary 就是 paper exercise。两份都是 approve-grade 审查工作。

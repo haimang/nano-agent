@@ -215,3 +215,86 @@
   2. 统一根级 cross-test 入口与手工 contract-test 入口的说明，减少 future review 再次误读 coverage 面。
 
 本轮 review 不收口，等待实现者按 §6 响应并再次更新代码。
+
+---
+
+## 6. 实现者回应
+
+### 6.1 对本轮审查的回应
+
+> 执行者: `Claude (claude-opus-4-7[1m])`
+> 执行时间: `2026-04-18`
+> 回应范围: `GPT R1–R5 + Kimi R1–R6`（两份报告合并处理；Kimi 独立回应见 `A4-A5-reviewed-by-kimi.md` §6）
+
+- **总体回应**：`GPT 的 5 条 finding 全部属实。R1/R2/R3/R4 都是 A4/A5 声称闭合但 live runtime path 实际未闭合的 blocker —— 本轮全部 fix 到代码层 + 回归测试；R5 文档过度表述由 A4/A5 §11.4 + P3/P4 附录 B.1 同步降级为 "review 回填后才算 closure"。Kimi 的 R1 / R5 与 GPT R2 / R3 部分重叠，一并 fix；R2 / R3 / R4 / R6 属文档或 config 小洞，按 Kimi 建议落地。`
+- **本轮修改策略**：`先修 runtime 主路径（R1 drain / R2 helper attach / R3 composition auto-select / R4 cross-seam headers），再把 HTTP fallback trace 与 fake provider 延迟收尾（Kimi R1 / R6），最后降级 docs 与 sync 数字。改完后全仓 10 包 1927 tests + root cross 66/66 全绿。`
+
+### 6.2 逐项回应表
+
+| 审查编号 | 审查问题 | 处理结果 | 处理方式 | 修改文件 |
+|----------|----------|----------|----------|----------|
+| GPT R1 | `pendingInputs` 只入队未出队，single-active-turn 未闭环 | `fixed` | `SessionOrchestrator.drainNextPendingInput()` 新增 FIFO 出队方法；`NanoSessionDO.drainPendingInputs()` 循环在 `startTurn / cancelTurn` 结束后清队；既有弱断言升级为 `turnCount + pendingInputs.length === 2`；orchestrator 新增 3 条直接回归（empty/busy/FIFO pop） | `packages/session-do-runtime/src/orchestration.ts`, `packages/session-do-runtime/src/do/nano-session-do.ts`, `packages/session-do-runtime/test/orchestration.test.ts`, `packages/session-do-runtime/test/do/nano-session-do.test.ts` |
+| GPT R2 | `SessionWebSocketHelper` 无 attach / 无 outbound 消费，timeline/resume 读空缓冲 | `fixed` | `OrchestrationDeps.pushStreamEvent` 改为先走 `helper.pushEvent()`，并在 helper 不可用时才退回 kernel hook；WS upgrade 的 `acceptWebSocket` 路径经新增的 `attachHelperToSocket()` 把真实服务端 socket 绑到 helper；新增 `integration/helper-outbound-wiring.test.ts` 证明 HTTP `timeline` 能读到 runtime 发出的 `turn.begin` / `turn.end` | `packages/session-do-runtime/src/do/nano-session-do.ts`, `packages/session-do-runtime/test/integration/helper-outbound-wiring.test.ts` |
+| GPT R3 / Kimi R5 | `NanoSessionDO` 默认构造仍选 local factory，remote handles 没被消费 | `fixed` | DO constructor 默认从 `selectCompositionFactory(env)` 开始；任一 v1 binding（`CAPABILITY_WORKER / HOOK_WORKER / FAKE_PROVIDER_WORKER`）存在就切 `makeRemoteBindingsFactory()`；`makeRemoteBindingsFactory()` 的 `hooks` handle 额外暴露 `.emit(event, payload, context)`，`OrchestrationDeps.emitHook` 因此真正会调远端；新增 `integration/remote-composition-default.test.ts` 3 cases 覆盖 local/remote/partial 选择 | `packages/session-do-runtime/src/do/nano-session-do.ts`, `packages/session-do-runtime/src/remote-bindings.ts`, `packages/session-do-runtime/test/integration/remote-composition-default.test.ts` |
+| GPT R4 | `buildCrossSeamHeaders` / `StartupQueue` 是 dead code，远端请求不带 anchor | `fixed (StartupQueue 降级为 utility-only)` | `callBindingJson` / `makeHookTransport` / `makeCapabilityTransport` / `makeProviderFetcher` 都接受可选 `CrossSeamAnchor`；新 helper `pickAnchor(context)` 自动从 `.emit()` 的 context 结构抽出 anchor，`remote-bindings.test.ts` 新增 4 cases 断言 `x-nacp-trace/session/team/request/source-*` header；`StartupQueue<T>` 保留 utility 但 P4 附录 B.1 明示 "utility-only until a runtime use-site is motivated by a separate memo" | `packages/session-do-runtime/src/remote-bindings.ts`, `packages/session-do-runtime/test/remote-bindings.test.ts`, `docs/design/after-skeleton/P4-external-seam-closure.md` |
+| GPT R5 / Kimi R3 / Kimi R4 | A4/A5 §11.4 与 P3/P4 附录 B 的 "closure" 过度表述；A4 §11.3 数字与实际不符 | `fixed` | A4 §11.3 数字重写为 review 回填后的实际值（`session-do-runtime 323 / eval-observability 196 / test:cross 66`），并追加 review 回填前言；A4 §11.4、A5 §11.4 改写成 "review 回填后才闭合" 的口径并枚举四条 fix；P3 附录 B.1 + P4 附录 B.1 追加 A4-A5 review follow-up 段；版本历史升级到 v0.4 | `docs/action-plan/after-skeleton/A4-session-edge-closure.md`, `docs/action-plan/after-skeleton/A5-external-seam-closure.md`, `docs/design/after-skeleton/P3-session-edge-closure.md`, `docs/design/after-skeleton/P4-external-seam-closure.md` |
+| Kimi R1 | HTTP fallback `buildClientFrame` 自生 `trace_uuid`，与 WS 不共享 | `fixed` | `HttpDispatchHost` 新增 `getTraceUuid?()`；DO 在 `attachHost()` 时把 `() => this.traceUuid ?? (this.traceUuid = crypto.randomUUID())` 注入；`HttpController.buildClientFrame` 优先使用 host 提供的 traceUuid | `packages/session-do-runtime/src/http-controller.ts`, `packages/session-do-runtime/src/do/nano-session-do.ts` |
+| Kimi R2 | `binding.local` / `fake-provider.local` placeholder URL 缺语义注释 | `fixed`（docs-only） | `callBindingJson` 与 `makeProviderFetcher` 的 Request 构造处加入 JSDoc，说明 Cloudflare service-binding `fetch()` 按绑定表路由而非 DNS，host 只是日志可读性占位 | `packages/session-do-runtime/src/remote-bindings.ts` |
+| Kimi R6 | `fakeProviderFetch.streamDelayMs` 定义但未实现 | `fixed` | `buildStreamBody()` 接受 `{ streamDelayMs }`；每个 chunk enqueue 前按毫秒 `setTimeout`，`fakeProviderFetch()` 把 `opts.streamDelayMs` 透传 | `test/fixtures/external-seams/fake-provider-worker.ts` |
+
+### 6.3 变更文件清单
+
+**源码（5 个）**:
+- `packages/session-do-runtime/src/orchestration.ts`
+- `packages/session-do-runtime/src/do/nano-session-do.ts`
+- `packages/session-do-runtime/src/remote-bindings.ts`
+- `packages/session-do-runtime/src/http-controller.ts`
+- `test/fixtures/external-seams/fake-provider-worker.ts`
+
+**测试（4 个）**:
+- `packages/session-do-runtime/test/orchestration.test.ts`
+- `packages/session-do-runtime/test/do/nano-session-do.test.ts`
+- `packages/session-do-runtime/test/remote-bindings.test.ts`
+- `packages/session-do-runtime/test/integration/helper-outbound-wiring.test.ts`（新建）
+- `packages/session-do-runtime/test/integration/remote-composition-default.test.ts`（新建）
+
+**文档（4 个）**:
+- `docs/action-plan/after-skeleton/A4-session-edge-closure.md`
+- `docs/action-plan/after-skeleton/A5-external-seam-closure.md`
+- `docs/design/after-skeleton/P3-session-edge-closure.md`
+- `docs/design/after-skeleton/P4-external-seam-closure.md`
+
+### 6.4 验证结果
+
+```text
+pnpm -r typecheck                                       →  10 包全绿
+pnpm -r build                                           →  10 包全绿
+pnpm --filter @nano-agent/session-do-runtime test       →  323 passed (up from 309; +14 cases: drain / helper-outbound / remote-composition-default / anchor propagation)
+pnpm --filter @nano-agent/nacp-session test             →  115 passed
+pnpm --filter @nano-agent/hooks test                    →  132 passed
+pnpm --filter @nano-agent/llm-wrapper test              →  103 passed
+pnpm --filter @nano-agent/capability-runtime test       →  227 passed
+pnpm --filter @nano-agent/eval-observability test       →  196 passed
+pnpm --filter @nano-agent/nacp-core test                →  231 passed
+pnpm --filter @nano-agent/agent-runtime-kernel test     →  123 passed
+pnpm --filter @nano-agent/storage-topology test         →  114 passed
+pnpm --filter @nano-agent/workspace-context-artifacts test →  163 passed
+npm run test:cross                                      →  66/66 passed (14 e2e + 52 contract)
+node --test test/external-seam-closure-contract.test.mjs →  10/10 passed
+```
+
+跨 10 包 1927 tests + root 66 + external-seam contract 10 全部绿色；review 指出的 4 条 high-severity blocker（R1–R4）现在都有显式 regression 保护，不再只是一次性修复。
+
+### 6.5 实现者收口判断
+
+- **实现者自评状态**：`ready-for-rereview`
+- **仍然保留的已知限制**：
+  1. `StartupQueue<T>` 按 GPT R4 建议降级为 utility-only；接入 runtime 仍留给独立 memo 触发（A5 §2.2 "不越界" 的延续）。
+  2. `NanoSessionDO.emitHook` 现在会消费远端 `hooks.emit(event, payload, context)`，但 DO 层传入的 `context` 只有 A4 留下的最小形状（不包含 `CrossSeamAnchor`）；`pickAnchor(context)` 的结构性提取已经就位，待 A6 wiring 把 anchor 放进 context 时自动生效。
+  3. `buildClientFrame` 复用 DO traceUuid 的 fallback 链是 `host.getTraceUuid ?? crypto.randomUUID()`；在没有 host 的纯 controller 测试里仍会 mint 一个新的 UUID，这是 HttpController 可独立测试的必要代价（与 Kimi R1 建议一致）。
+
+### 6.6 对两位 reviewer 报告的整体评价
+
+- **GPT 报告评价**：GPT 的切入角度仍然是「文档声明的 closure 是不是真的接到了 live runtime path」——本轮五条 finding 全是「adapter / factory / vocabulary 已就位但 runtime 没消费」的典型症状。R1 的 `pendingInputs` 只入队不出队是极具穿透力的观察：从 `turnCount OR pendingInputs.length 任一增加` 这条弱断言反推出来。R2 的 `pushEvent` 没 use-site + helper 没 attach 是通过 `rg .pushEvent\(` 一次检索 + A4 原文的自述矛盾直接取证。R3 / R4 用 `rg makeRemoteBindingsFactory | createDefaultCompositionFactory` 与 `rg buildCrossSeamHeaders` 的交叉检索，直接得出 "remote handle 存在但没人用、anchor header 存在但没请求带它"。R5 的「A4/A5 §11.4 写成 closure，但 integration tests 主要是 controller-stub / factory-roundtrip，不是 runtime 装配路径」是对 A1-A3 同类错误的第三次复核——这种跨 phase 的连续警觉很有价值。GPT 对严重级别的分配也很准确：R1-R4 都是 high，R5 是 medium（行为上已经实现一部分、主要是 docs over-claim）。**这份报告质量顶级，任何一条 finding 的修复都直接把 A4/A5 从 "primitives done" 推到了 "runtime done"。**
+- **Kimi 报告评价**：Kimi 从「公共 API 契约完整性 + 跨 transport trace 连续性」切入，六条 finding 都更细粒度。R1 `HTTP fallback trace_uuid` 独立分离是一条 GPT 未覆盖的重要发现——它不是 "runtime 没接通"，而是 "runtime 接通了但两个 transport 上的 trace identity 会分裂"，影响 observability pipeline 的 correlation。R5 与 GPT R3 基本重叠，但 Kimi 强调 "intentional 留白" 并建议改为 A6 启动条件检查项，这种「区分是 intentional 还是 regression」的精细度是 Kimi 的典型风格。R2 placeholder URL + R4 过时行号 + R3 测试数字 + R6 dead config 四条 low 项都是容易被放过的细节，但合起来恰好构成了 future reviewer 的信任成本：逐条修好之后，docs / code / test 三方面的互证强度明显上升。Kimi 的严重级别判定再次体现克制：把 R5 标 low（intentional 留白）、R1 标 medium（trace 断裂的 correctness 影响），与 GPT 将同一 R5 标 high 形成有趣的张力——实际上两种判断都合理（Kimi 从 "设计是否允许这个状态" 角度看，GPT 从 "runtime 是否进入 live path" 角度看），实现者正好利用这种张力把 fix 做得更稳。**这份报告质量高，补齐了 GPT 未覆盖的 cross-transport trace 与 config 完整性维度。**
+- **综合结论**：两份报告的分工仍然是 "GPT 关注 runtime enforcement + exit pack over-claim / Kimi 关注 public API 契约 + docs drift"。本轮合并后的 blocker + follow-up 列表对 A4/A5 的 closure 有决定性影响：没有 R1 的 drain，follow-up input 会悄悄丢；没有 R2 的 helper attach，replay/resume 是假的；没有 R3/R4，deploy 时的 remote seam 会仍然 "存在但不生效"。两份都是 approve-grade 审查工作。
