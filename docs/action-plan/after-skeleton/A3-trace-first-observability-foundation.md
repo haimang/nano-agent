@@ -23,7 +23,7 @@
 
 ## 0. 执行背景与目标
 
-Phase 2 的核心不是“再加一些日志”，而是把 `trace_uuid` 从 owner 决策和设计语言，真正推进到 runtime 第一事实。Q6 和 Q7 已经把边界冻结：`TraceEventBase` 必须显式携带 `traceUuid`，而 observability 讨论必须统一用 Anchor / Durable / Diagnostic 三层语言。当前仓里的问题也很集中：`packages/nacp-core/src/observability/envelope.ts` 里 `trace_uuid` 仍是 optional；`packages/eval-observability/src/trace-event.ts` 只有 `sessionUuid / teamUuid / turnUuid`，没有 `traceUuid`；`packages/session-do-runtime/src/traces.ts` 仍产出 `turn.started / turn.completed` 这类与当前 event reality 漂移的名字，而且没有 trace carrier。换句话说，基础设施骨架已经有了，但 trace-first semantics 还没有闭合。
+Phase 2 的核心不是“再加一些日志”，而是把 `trace_uuid` 从 owner 决策和设计语言，真正推进到 runtime 第一事实。Q6 和 Q7 已经把边界冻结：`TraceEventBase` 必须显式携带 `traceUuid`，而 observability 讨论必须统一用 Anchor / Durable / Diagnostic 三层语言。当前仓里的问题也很集中：`packages/nacp-core/src/observability/envelope.ts` 里 `trace_uuid` 仍只在 alert payload 上以 optional exception 形式出现；`packages/eval-observability/src/trace-event.ts` 只有 `sessionUuid / teamUuid / turnUuid`，没有 `traceUuid`；`packages/session-do-runtime/src/traces.ts` 仍产出 `turn.started / turn.completed` 这类与当前 event reality 漂移的名字，而且没有 trace carrier。换句话说，基础设施骨架已经有了，但 trace-first semantics 还没有闭合。
 
 这份 action-plan 的任务，就是把 **trace law、base contract、builder/codec、anchor/recovery、cross-package instrumentation、tests/docs closure** 拆成可执行批次。它的目标不是抢跑 P5/P6，也不是直接搭 query 平台，而是让 P3 以及后续所有 runtime 设计都不再需要争论“trace 到底是不是第一事实”。
 
@@ -175,7 +175,7 @@ trace-first-observability-foundation
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P3-01 | Anchor Shape & Recovery Error Taxonomy | 定义最小 trace anchor、恢复优先级、错误分类 | `packages/session-do-runtime/src/{checkpoint,traces,alarm}.ts`, `packages/eval-observability/src/replay.ts` | recovery 不再是模糊 best-effort | tests + docs | 至少区分 `anchor-missing / anchor-ambiguous / compat-unrecoverable / cross-seam-trace-loss` |
+| P3-01 | Anchor Shape & Recovery Error Taxonomy | 定义最小 trace anchor、恢复优先级、错误分类 | `packages/session-do-runtime/src/{checkpoint,traces,alarm}.ts`, `packages/eval-observability/src/replay.ts` | recovery 不再是模糊 best-effort | tests + docs | 至少区分 `anchor-missing / anchor-ambiguous / checkpoint-invalid / timeline-readback-failed / compat-unrecoverable / cross-seam-trace-loss / trace-carrier-mismatch / replay-window-gap` |
 | P3-02 | Checkpoint / Restore / Alarm Wiring | 把 recovery logic 接进 checkpoint/restore/alarm lifecycle | `packages/session-do-runtime/src/{checkpoint,alarm,do/nano-session-do}.ts`, integration tests | DO lifecycle 具备最小 trace survival 能力 | `pnpm --filter @nano-agent/session-do-runtime test` | checkpoint/restore/alarm 不再丢 trace 而无声继续 |
 | P3-03 | Ingress / Replay Recovery Guard | 在 turn ingress / orchestration / replay 读路径上 enforce trace law | `packages/session-do-runtime/src/{turn-ingress,orchestration}.ts`, related tests | accepted internal work 无 trace 会被恢复或显式拒绝 | package integration tests | replay/resume/ingress 路径不存在半坏 trace 状态 |
 
@@ -358,6 +358,8 @@ trace-first-observability-foundation
 
 ## 6. 需要业主 / 架构师回答的问题清单
 
+> **统一说明**：与本 action-plan 相关的业主 / 架构师问答，统一收录于 `docs/action-plan/after-skeleton/AX-QNA.md`；请仅在该汇总文件中填写答复，本文不再逐条填写。
+
 ### 6.1 当前判断
 
 - 当前 **无新增必须拍板的问题**。
@@ -385,7 +387,7 @@ trace-first-observability-foundation
 
 ### 7.2 约束与前提
 
-- **技术前提**：`P1 substrate decision 已可作为输入；Phase 2 不重新争论热写入基座`
+- **技术前提**：`A1 必须先冻结 trace_uuid naming law 与 compat cut；A2 必须先产出 benchmark memo / D1 gate；Phase 2 不重新争论热写入基座`
 - **运行时前提**：`accepted internal work 无 trace 必须恢复或显式失败；禁止 broad catch / silent fallback`
 - **组织协作前提**：`Anchor / Durable / Diagnostic 是 conceptual layering；当前 implementation enum 继续存在但必须可映射`
 - **上线 / 合并前提**：`eval-observability / session-do-runtime / root cross-package tests 与 docs sync 必须一起收口`

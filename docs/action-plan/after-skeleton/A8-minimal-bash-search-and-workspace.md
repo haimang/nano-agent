@@ -141,14 +141,14 @@ minimal-bash-search-and-workspace
 |------|--------|----------|------------------|----------|----------|----------|
 | P1-01 | Workspace Truth Freeze | 把 `MountRouter + WorkspaceNamespace` 明确写成 file/search 唯一 truth，拒绝任何 search 绕过 namespace 的实现路线 | `packages/workspace-context-artifacts/src/{mounts,namespace}.ts`, docs | file/search 都锚定同一个路径宇宙 | docs + code review | 后续实现不再能以“搜索另走一套宿主路径”为借口扩张 |
 | P1-02 | Search Canon & Disclosure Sync | 收紧 `registerMinimalCommands()`、planner、README、inventory 的口径：`rg` canonical、`grep` 仅 alias、`mkdir/rg` 仍可能 partial | `packages/capability-runtime/src/{fake-bash/commands,planner}.ts`, README, PX docs | registry truth 与对外披露一致 | `pnpm --filter @nano-agent/capability-runtime test` | 不再出现“代码写 partial，文档写 supported” |
-| P1-03 | Path Formatting Law | 明确 `ls/cat/rg` 的输入输出路径格式、workspace root 约定、relative/absolute normalization 策略 | filesystem/search handlers, docs | path naming law 固定 | targeted tests | list/cat/search 对同一路径给出一致命名 |
+| P1-03 | Path Formatting Law | 明确 `ls/cat/rg` 的输入输出路径格式、workspace root 约定、relative/absolute normalization 策略，以及 `/_platform/**` 永不进入 bash-visible path universe | filesystem/search handlers, docs | path naming law 固定 | targeted tests | list/cat/search 对同一路径给出一致命名，且保留空间不会被误暴露 |
 
 ### 4.2 Phase 2 — Filesystem Contract Hardening
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
 | P2-01 | Filesystem Handler Hardening | 继续以 namespace-backed handlers 为主轴，收紧 writable/readonly/delete/move/copy 对 mount access law 的消费 | `packages/capability-runtime/src/capabilities/filesystem.ts`, workspace tests | filesystem commands 与 workspace backend law 对齐 | package tests + E2E | `ls/cat/write/rm/mv/cp` 都不再绕开 namespace |
-| P2-02 | `mkdir` Partial Closure | 明确 `mkdir` 的 contract：要么补最小 backend primitive，要么保留 compatibility ack 但明确标记 partial 并补 deterministic tests | `capabilities/filesystem.ts`, `workspace-context-artifacts/src/backends/types.ts`, tests | `mkdir` 不再处于语义模糊区 | package tests | `mkdir` 的 capability grade 与实现 reality 一致可审阅 |
+| P2-02 | `mkdir` Partial Closure | 明确 `mkdir` 的 contract：要么补最小 backend primitive，要么保留 compatibility ack 但明确标记 partial 并补 deterministic tests；在此决策完成前不得把 `mkdir` 宣布为 fully supported | `capabilities/filesystem.ts`, `workspace-context-artifacts/src/backends/types.ts`, tests | `mkdir` 不再处于语义模糊区 | package tests | `mkdir` 的 capability grade 与实现 reality 一致可审阅 |
 | P2-03 | Reserved Namespace Search Guard | 把 `/_platform/` reserved namespace law 从 routing 扩到 search input validation 与 traversal | `capabilities/search.ts`, `mounts.ts`, tests | search 不会因 catch-all root mount 误扫保留空间 | workspace + capability tests | `/_platform/` 在 filesystem/search 两边同样受保护 |
 
 ### 4.3 Phase 3 — Canonical Search & Alias Closure
@@ -156,8 +156,8 @@ minimal-bash-search-and-workspace
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
 | P3-01 | Minimal `rg` Reality | 将当前 degraded search stub 升级为最小真实行为：在 namespace 范围内扫描文本、返回 bounded/deterministic matches、保持路径 law 一致 | `packages/capability-runtime/src/capabilities/search.ts`, tests | `rg` 拥有可验证最小价值，不再只是占位符 | `pnpm --filter @nano-agent/capability-runtime test` | 至少一条 search smoke 证明结果来自真实 workspace 内容 |
-| P3-02 | `grep -> rg` Alias Compatibility | 在 registry/planner 层增加最窄 alias，让常见 `grep pattern file` 心智映射到 canonical `rg`，但不暴露额外 grep feature promise | `fake-bash/commands.ts`, `planner.ts`, tests | LLM 兼容心智更平滑，但系统真相仍是 `rg` | command-surface smoke | `grep` 可被接住，且 inventory 仍只把 `rg` 记作 canonical capability |
-| P3-03 | Bounded Search Output | 为 search 结果增加 deterministic truncation / promotion 策略，避免无界 inline 输出 | search handlers, promotion/evidence seams | 搜索不会成为上下文炸弹 | package tests | 大结果有稳定截断或 ref/promotion 出口 |
+| P3-02 | `grep -> rg` Alias Compatibility | 在 registry/planner 层增加最窄 alias，让常见 `grep pattern [path]` 心智映射到 canonical `rg`，但不接受 flags / regex mode / grep family 扩张 | `fake-bash/commands.ts`, `planner.ts`, tests | LLM 兼容心智更平滑，但系统真相仍是 `rg` | command-surface smoke | `grep` 可被接住，且 inventory 仍只把 `rg` 记作 canonical capability |
+| P3-03 | Bounded Search Output | 为 search 结果增加 deterministic truncation / promotion 策略，避免无界 inline 输出；至少冻结 line-cap / byte-cap / artifact-ref fallback 三件事 | search handlers, promotion/evidence seams | 搜索不会成为上下文炸弹 | package tests | 大结果有稳定截断或 ref/promotion 出口 |
 
 ### 4.4 Phase 4 — File/Search Consistency & Evidence Wiring
 
@@ -205,7 +205,7 @@ minimal-bash-search-and-workspace
 - **Phase 目标**：让 `rg` 具备最小真实价值，并为 LLM 常见 `grep` 心智提供最窄兼容。
 - **具体功能预期**：
   1. `rg` 在 namespace 里扫描真实文本，不再返回纯占位字符串。
-  2. `grep pattern file` 可被 planner 接住并落到 canonical `rg` 语义。
+  2. `grep pattern [path]` 可被 planner 接住并落到 canonical `rg` 语义。
   3. 搜索输出 bounded/deterministic，必要时进入 promotion/ref 路径。
 - **测试与验证重点**：
   - search smoke
@@ -234,6 +234,8 @@ minimal-bash-search-and-workspace
 ---
 
 ## 6. 风险、依赖与验收
+
+> **统一说明**：与本 action-plan 相关的业主 / 架构师问答，统一收录于 `docs/action-plan/after-skeleton/AX-QNA.md`；请仅在该汇总文件中填写答复，本文不再逐条填写。
 
 ### 6.1 关键依赖
 

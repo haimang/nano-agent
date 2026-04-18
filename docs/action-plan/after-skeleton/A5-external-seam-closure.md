@@ -155,7 +155,7 @@ external-seam-closure
 | P2-01 | Phase 2 | Hook Worker Runtime Wiring | `update` | `packages/hooks/src/runtimes/service-binding.ts`, `dispatcher.ts`, tests | hooks remote runtime 不再只会抛错 | `high` |
 | P2-02 | Phase 2 | Capability Worker Runtime Wiring | `update` | `packages/capability-runtime/src/targets/service-binding.ts`, `executor.ts`, tests | capability remote path 成为 session runtime 可装配 reality | `medium` |
 | P2-03 | Phase 2 | Session Runtime Hook/Capability Composition | `update` | `packages/session-do-runtime/src/{composition,do/nano-session-do}.ts`, integration tests | Session DO 能按 profile 调用 remote hook/capability seam | `high` |
-| P3-01 | Phase 3 | Fake Provider Worker Contract | `add` | `test/fixtures/external-seams/fake-provider-worker.ts`, `packages/llm-wrapper/src/gateway.ts` | remote provider seam 有 deploy-shaped fake boundary | `medium` |
+| P3-01 | Phase 3 | Fake Provider Worker Contract | `add` | `test/fixtures/external-seams/fake-provider-worker.ts`, `packages/llm-wrapper/src/gateway.ts` | remote provider seam 有 deploy-shaped fake boundary，并附带可被 wrangler/profile 消费的 worker 入口 | `medium` |
 | P3-02 | Phase 3 | LLM Remote Delegate Wiring | `update` | `packages/llm-wrapper/src/{executor,gateway,session-stream-adapter}.ts`, tests | fake provider worker 与现有 stream normalization/session stream path 对齐 | `high` |
 | P3-03 | Phase 3 | Reference Path Preservation | `update` | `packages/llm-wrapper/test/integration/local-fetch-stream.test.ts`, docs | local-fetch 继续作为 reference path 存在 | `low` |
 | P4-01 | Phase 4 | Cross-seam Trace / Tenant / Request Propagation | `update` | `packages/nacp-core/src/transport/service-binding.ts`, session-do-runtime composition, tests | remote delegate 最低必带字段与 precheck law 固定下来 | `high` |
@@ -188,7 +188,7 @@ external-seam-closure
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P3-01 | Fake Provider Worker Contract | 新建 deploy-shaped fake provider worker fixture，镜像当前 OpenAI-compatible Chat Completions surface | `test/fixtures/external-seams/fake-provider-worker.ts`, `packages/llm-wrapper/src/gateway.ts` | remote provider seam 有真实 boundary proof | targeted tests | fake provider 输出能被现有 adapter/executor/normalizer 消费 |
+| P3-01 | Fake Provider Worker Contract | 新建 deploy-shaped fake provider worker fixture 与对应 worker/profile 入口，镜像当前 OpenAI-compatible Chat Completions surface | `test/fixtures/external-seams/fake-provider-worker.ts`, `packages/llm-wrapper/src/gateway.ts` | remote provider seam 有真实 boundary proof | targeted tests | fake provider 输出能被现有 adapter/executor/normalizer 消费，且能被 A6 的 wrangler profile 直接装配 |
 | P3-02 | LLM Remote Delegate Wiring | 让 session runtime / llm-wrapper 能在 local-fetch 之外切到 fake provider worker path | `packages/llm-wrapper/src/{executor,gateway,session-stream-adapter}.ts`, tests | remote provider seam 不再停留在 interface-only | `pnpm --filter @nano-agent/llm-wrapper test` | fake provider path 产出的 session stream bodies 仍通过 `nacp-session` schema |
 | P3-03 | Reference Path Preservation | 明确并测试 `local-fetch` 仍是 reference path；remote path 只是额外 seam，不是立即替代 | `packages/llm-wrapper/test/integration/local-fetch-stream.test.ts`, docs | dual path contract 稳定 | local-fetch integration + docs review | local/remote 两条路共享同一 typed contract，不互相漂移 |
 
@@ -279,12 +279,13 @@ external-seam-closure
   - `P3-03`
 - **本 Phase 新增文件**：
   - `test/fixtures/external-seams/fake-provider-worker.ts`
+  - 视需要补 `test/verification/profiles/**` 中的 fake-provider worker profile / manifest
   - 视需要新增 fake hook/capability worker fixtures
 - **本 Phase 修改文件**：
   - `packages/llm-wrapper/src/{gateway,executor,session-stream-adapter,index}.ts`
   - `packages/llm-wrapper/test/integration/{local-fetch-stream,retry-timeout}.test.ts`
 - **具体功能预期**：
-  1. fake provider worker 镜像当前 OpenAI-compatible Chat Completions shape
+  1. fake provider worker 镜像当前 OpenAI-compatible Chat Completions shape，且不是只停留在测试目录中的 `.ts` fixture；它必须拥有可被 `wrangler` / service-binding 消费的 deploy-shaped worker 入口
   2. remote provider path 与 `StreamNormalizer` / `session-stream-adapter` 共享同一 output truth
   3. `local-fetch` 继续作为 reference path 存在，不被 Phase 4 消灭
 - **具体测试安排**：
@@ -362,6 +363,8 @@ external-seam-closure
 ---
 
 ## 6. 需要业主 / 架构师回答的问题清单
+
+> **统一说明**：与本 action-plan 相关的业主 / 架构师问答，统一收录于 `docs/action-plan/after-skeleton/AX-QNA.md`；请仅在该汇总文件中填写答复，本文不再逐条填写。
 
 ### 6.1 当前判断
 

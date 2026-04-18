@@ -44,7 +44,7 @@ Phase 6 的任务不是重新设计 storage topology，也不是提前冻结 D1 
 
 ### 1.1 总体执行方式
 
-这份 action-plan 采用 **先冻结 evidence taxonomy 与 emitter ownership，再接通 placement runtime emission，然后补 context/compact/artifact/snapshot evidence，再执行 calibration + real storage spot-check，最后输出 principles/report/verdict pack** 的推进方式。核心原则是：**P6 做 evidence closure，不做 database-first；所有 evidence 都挂 `trace_uuid` 与 tenant scope；`eval-observability` 提供 vocabulary/sink，真正 emit evidence 的 owner 是发生业务动作的包，而不是观察包自己。**
+这份 action-plan 采用 **先冻结 evidence taxonomy 与 emitter ownership，再接通 placement runtime emission，然后补 context/compact/artifact/snapshot evidence，再执行 calibration + real storage spot-check，最后输出 principles/report/verdict pack** 的推进方式。核心原则是：**P6 做 instrumentation + evidence closure，不做 database-first；所有 evidence 都挂 `trace_uuid` 与 tenant scope；`eval-observability` 提供 vocabulary/sink，真正 emit evidence 的 owner 是发生业务动作的包，而不是观察包自己。**
 
 ### 1.2 Phase 总览
 
@@ -223,6 +223,7 @@ storage-and-context-evidence-closure
   1. 五类 evidence vocabulary 被明确定义
   2. live emitter owner 与 vocabulary/sink owner 边界不再模糊
   3. Q13/Q14 被转成真正的行动约束，而不是只停留在 QNA
+  4. A6→P6 handoff bundle 被明确固定为 `trace / timeline / placement / summary / failure-record / latency-baseline / profile-manifest`
 - **具体测试安排**：
   - **单测**：N/A，以类型/文档对齐为主
   - **集成测试**：N/A
@@ -250,7 +251,7 @@ storage-and-context-evidence-closure
   - `packages/storage-topology/src/{evidence,calibration,placement}.ts`
   - 相关 runtime caller surfaces
 - **具体功能预期**：
-  1. 真实 storage I/O 会持续产生 placement evidence
+  1. 真实 storage I/O 会持续产生 placement evidence；`StoragePlacementLog` 不再只作为内存 logger 存在，而是由 storage/workspace/session runtime callers 持续喂入
   2. placement logs 可以直接进入 calibration seam
   3. 至少一条真实 DO/R2 path 已进入 placement evidence
 - **具体测试安排**：
@@ -360,6 +361,8 @@ storage-and-context-evidence-closure
 ---
 
 ## 6. 需要业主 / 架构师回答的问题清单
+
+> **统一说明**：与本 action-plan 相关的业主 / 架构师问答，统一收录于 `docs/action-plan/after-skeleton/AX-QNA.md`；请仅在该汇总文件中填写答复，本文不再逐条填写。
 
 ### 6.1 当前判断
 

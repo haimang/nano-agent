@@ -23,7 +23,7 @@
 
 ## 0. 执行背景与目标
 
-Phase 3 的任务不是重新发明 session 协议，而是把已经存在的 `@nano-agent/nacp-session` truth 真正装配成 **唯一 session edge 主路径**。当前 repo 的现实非常清楚：`packages/nacp-session/src/ingress.ts` 已经提供 `normalizeClientFrame()`，`session-registry.ts` 已经冻结 session-owned phase/role legality，`stream-event.ts` 已经冻结 9 个 `session.stream.event` kinds，`websocket.ts` 已经实现 replay/ack/heartbeat/checkpoint/restore helper。与之相对，`packages/session-do-runtime/src/do/nano-session-do.ts` 仍直接 `JSON.parse()` 后按 `message_type` 分支，`WsController` 和 `HttpController` 仍是 stub，`turn-ingress.ts` 还保留 `future-prompt-family` placeholder。
+Phase 3 的任务不是重新发明 session 协议，而是把已经存在的 `@nano-agent/nacp-session` truth 真正装配成 **唯一 session edge 主路径**。当前 repo 的现实非常清楚：`packages/nacp-session/src/ingress.ts` 已经提供 `normalizeClientFrame()`，`session-registry.ts` 已经冻结 session-owned phase/role legality，`stream-event.ts` 已经冻结 9 个 `session.stream.event` kinds，`websocket.ts` 已经实现 replay/ack/heartbeat/checkpoint/restore helper；与此同时，`SessionOrchestrator` 也已经具备 `startTurn()` / `runStepLoop()` / `cancelTurn()` 的最小 orchestration 骨架。与之相对，`packages/session-do-runtime/src/do/nano-session-do.ts` 仍直接 `JSON.parse()` 后按 `message_type` 分支，`WsController` 和 `HttpController` 仍是 stub，`turn-ingress.ts` 还保留 `future-prompt-family` placeholder。
 
 Q8 已经把 formal follow-up input family 提升为 **Phase 0 必须冻结的 `nacp-session` contract surface**。因此这份 action-plan 的目标不是在 runtime 里私造 follow-up wire，而是 **消费上游已冻结 truth**，并把 WS ingress、HTTP fallback、replay/resume、ack/heartbeat、single-active-turn、edge trace emission 一次性收口到同一条路径上。完成后，`session-do-runtime` 不应再保留平行的 raw parse/switch reality，前端和后续 Phase 也不应再依赖 README/注释去猜 session edge 的真实行为。
 
@@ -215,6 +215,7 @@ session-edge-closure
   1. `turn-ingress.ts` 不再把 follow-up family 当永久 future placeholder
   2. DO 入口不再直接把 raw JSON 当业务输入
   3. role/phase legality 的真相源固定在 `nacp-session`
+  4. 继续复用既有 `SessionOrchestrator` 作为 single-active-turn coordination 骨架；A4 的主工作是 ingress/controller wiring，而不是重写 orchestration
 - **具体测试安排**：
   - **单测**：`packages/nacp-session/test/{ingress,session-registry}.test.ts`, `packages/session-do-runtime/test/{routes,turn-ingress}.test.ts`
   - **集成测试**：`packages/nacp-session test:integration`
@@ -351,6 +352,8 @@ session-edge-closure
 ---
 
 ## 6. 需要业主 / 架构师回答的问题清单
+
+> **统一说明**：与本 action-plan 相关的业主 / 架构师问答，统一收录于 `docs/action-plan/after-skeleton/AX-QNA.md`；请仅在该汇总文件中填写答复，本文不再逐条填写。
 
 ### 6.1 当前判断
 

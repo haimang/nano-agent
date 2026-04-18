@@ -158,7 +158,7 @@ minimal-bash-vcs-and-policy
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P4-01 | Inventory Drift Guard | 增加回归守卫：命令数、支持面、policy、taxonomy 更新时必须同步修改 inventory/docs | tests/docs/review notes | 支持面漂移能被尽早发现 | drift guard tests | 新命令或政策变化不会只改代码、不改披露 |
+| P4-01 | Inventory Drift Guard | 增加回归守卫：以 registry snapshot + unsupported/risk tables + checked-in inventory fixture 为基准，命令数、支持面、policy、taxonomy 更新时必须同步修改 inventory/docs | tests/docs/review notes | 支持面漂移能被尽早发现 | drift guard tests | 新命令或政策变化不会只改代码、不改披露 |
 | P4-02 | Registry / Prompt Alignment Guard | 收紧 README / command disclosure / prompt note 的来源顺序：registry truth 优先 | README/docs/tests | prompt 不再偷偷承诺代码没有的能力 | docs review + tests | 所有对外说明都可追溯到 registry/inventory |
 
 ### 4.5 Phase 5 — Tests, Docs & Exit Pack
@@ -212,6 +212,7 @@ minimal-bash-vcs-and-policy
   1. registry truth 成为所有能力披露的上游。
   2. inventory drift guard 能挡住“只改代码不改 docs”。
   3. future 新命令扩张有明确治理模板。
+  4. drift guard 以 root/package contract test 承载，而不是只靠 reviewer 人工记忆。
 - **测试与验证重点**：
   - inventory drift tests
   - README / prompt alignment review
@@ -227,6 +228,8 @@ minimal-bash-vcs-and-policy
 ---
 
 ## 6. 风险、依赖与验收
+
+> **统一说明**：与本 action-plan 相关的业主 / 架构师问答，统一收录于 `docs/action-plan/after-skeleton/AX-QNA.md`；请仅在该汇总文件中填写答复，本文不再逐条填写。
 
 ### 6.1 关键依赖
 

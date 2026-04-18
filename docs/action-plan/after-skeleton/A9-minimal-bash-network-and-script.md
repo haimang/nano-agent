@@ -146,13 +146,13 @@ minimal-bash-network-and-script
 |------|--------|----------|------------------|----------|----------|----------|
 | P2-01 | Restricted Curl Handler | 将当前 URL 校验 stub 升级为最小真实 fetch baseline：限定 scheme、默认 method、受 output/timeout 约束 | `packages/capability-runtime/src/capabilities/network.ts`, tests | `curl <url>` 有真实执行价值 | `pnpm --filter @nano-agent/capability-runtime test` | 至少一条 restricted curl smoke 走过真实 handler |
 | P2-02 | Structured Curl Input Path | 为 richer method/header/body/timeout 增加 structured input 入口，并保持与 bash path 分离 | planner/tool-call/runtime docs/tests | richer curl 有扩展口，但不污染 bash parser | package tests | bash path 与 structured path 边界清晰可测 |
-| P2-03 | Egress Guard & Timeout Policy | 明确并实现 private address、localhost、超长 timeout、过大 body/output 的 deny/ask 规则 | policy/network tests | network tool 具备 Worker-native 安全边界 | policy block tests | 高风险目标与长悬挂请求被确定性阻断 |
+| P2-03 | Egress Guard & Timeout Policy | 明确并实现 private address、localhost、RFC1918 / CGNAT / link-local / IPv6 ULA / metadata-style endpoint、超长 timeout、过大 body/output 的 deny/ask 规则 | policy/network tests | network tool 具备 Worker-native 安全边界 | policy block tests | 高风险目标与长悬挂请求被确定性阻断 |
 
 ### 4.3 Phase 3 — `ts-exec` Substrate Decision & Baseline
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P3-01 | `ts-exec` Substrate Decision | 基于 Worker/V8 isolate 约束，决定 v1 `ts-exec` 是最小本地沙箱、远程 tool-runner，还是保守 partial，并写成明确 contract | `packages/capability-runtime/src/capabilities/exec.ts`, docs | 不再一边注册命令、一边回避执行 substrate | docs + tests | `ts-exec` 的现实边界可被 reviewer 直接理解 |
+| P3-01 | `ts-exec` Substrate Decision | 基于 Worker/V8 isolate 约束，决定 v1 `ts-exec` 是最小本地沙箱、远程 tool-runner，还是保守 partial，并写成明确 contract；若 Phase 3 结束前仍未选定 substrate，则 inventory 必须继续标 `Partial (ask-gated)` | `packages/capability-runtime/src/capabilities/exec.ts`, docs | 不再一边注册命令、一边回避执行 substrate | docs + tests | `ts-exec` 的现实边界可被 reviewer 直接理解，且不允许“未决却对外宣称 supported” |
 | P3-02 | Minimal `ts-exec` Baseline | 按 P3-01 结论实现最小 baseline：inline code only、无宿主 FS、无 package install、无 Python sidecar | exec handler/tests | `ts-exec` 从纯 stub 进入最小可用或诚实 partial | package tests | 至少一条 script smoke 能证明 baseline 成立 |
 | P3-03 | Script Output Boundaries | 给脚本执行补 deterministic output cap、cancel/timeout 与 artifact promotion 出口 | exec handler + promotion tests | script 输出不会失控或挂死 | package tests | 大输出与长执行均有稳定边界 |
 
@@ -191,7 +191,7 @@ minimal-bash-network-and-script
 - **具体功能预期**：
   1. `curl <url>` 通过真实 fetch 路径拿到最小输出。
   2. richer structured input 可表达 method/header/body/timeout，但不污染 bash path。
-  3. private/local/network-size/timeout guard 成为 hard edge。
+  3. private/local/RFC1918/CGNAT/link-local/IPv6 ULA/metadata endpoint、network-size/timeout guard 成为 hard edge。
 - **测试与验证重点**：
   - restricted curl smoke
   - policy block tests
@@ -204,6 +204,7 @@ minimal-bash-network-and-script
   1. `ts-exec` substrate 结论被显式冻结。
   2. baseline 至少支持 inline code，且受严格 policy/timeout/output 限制。
   3. 若执行 substrate 仍未 ready，也必须在 inventory 中继续保持 partial，而非伪装完成。
+  4. Phase 3 只能在三种结论之一中选一：`local isolate sandbox`、`remote tool-runner via service binding`、`honest partial`；不允许继续停留在“以后再说”的灰区。
 - **测试与验证重点**：
   - restricted ts-exec smoke
   - cancel/timeout tests
@@ -231,6 +232,8 @@ minimal-bash-network-and-script
 ---
 
 ## 6. 风险、依赖与验收
+
+> **统一说明**：与本 action-plan 相关的业主 / 架构师问答，统一收录于 `docs/action-plan/after-skeleton/AX-QNA.md`；请仅在该汇总文件中填写答复，本文不再逐条填写。
 
 ### 6.1 关键依赖
 

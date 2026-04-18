@@ -142,7 +142,7 @@ deployment-dry-run-and-real-boundary-verification
 | 编号 | 所属 Phase | 工作项 | 类型 | 涉及模块 / 文件 | 目标一句话 | 风险等级 |
 |------|------------|--------|------|------------------|------------|----------|
 | P1-01 | Phase 1 | Verification Ladder Freeze | `update` | `docs/design/after-skeleton/P5-*.md`, `PX-QNA.md`, new verification notes | 固定 L0/L1/L2、green/yellow/red、进入条件与 owner-local assumptions | `high` |
-| P1-02 | Phase 1 | Profile & Binding Matrix Freeze | `update` | `packages/session-do-runtime/wrangler.jsonc`, env docs | 冻结 `remote-dev` / `deploy-smoke` 两套 binding manifest 与所需 secrets/bindings | `high` |
+| P1-02 | Phase 1 | Profile & Binding Matrix Freeze | `update` | `packages/session-do-runtime/wrangler.jsonc`, env docs | 冻结 `remote-dev` / `deploy-smoke` 两套 binding manifest 与所需 secrets/bindings，并明确 `.dev.vars` / `wrangler secret put` 注入方式 | `high` |
 | P1-03 | Phase 1 | Smoke Matrix Inventory | `update` | `test/e2e/**`, new verification docs | 把已有 E2E 资产映射成 L0/L1/L2 smoke matrix，而不是重新命名一套世界 | `medium` |
 | P2-01 | Phase 2 | Wrangler Surface Expansion | `update` | `packages/session-do-runtime/wrangler.jsonc`, `src/{env,composition,worker}.ts` | 从单 `SESSION_DO` skeleton 升级为 deploy-shaped binding surface | `high` |
 | P2-02 | Phase 2 | Fake Worker Fixture Pack | `add` | `test/verification/**`, `test/e2e/fixtures/**` | 提供 fake hook/capability/provider worker 的真实 worker 边界实现 | `high` |
@@ -165,7 +165,7 @@ deployment-dry-run-and-real-boundary-verification
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
 | P1-01 | Verification Ladder Freeze | 把 Q10/Q11/Q12 转成明确 gate 规则：L0=contract/E2E、L1=`wrangler dev --remote`、L2=`wrangler deploy + workers.dev smoke`、provider=`gpt-4.1-nano` | P5 docs, verification notes | Phase 5 不再是模糊 smoke 行为集合 | docs review | 所有人对 L1/L2/profile/golden path 的说法一致 |
-| P1-02 | Profile & Binding Matrix Freeze | 列清 remote-dev / deploy-smoke 需要的 Worker、DO、R2、KV、fake workers、secrets、trace sink bindings | `wrangler.jsonc`, env docs | smoke profile 不再靠口头猜测 | config review | 存在一份可执行 binding manifest matrix |
+| P1-02 | Profile & Binding Matrix Freeze | 列清 remote-dev / deploy-smoke 需要的 Worker、DO、R2、KV、fake workers、secrets、trace sink bindings，并明确 `.dev.vars` / `wrangler secret put` 的注入方式 | `wrangler.jsonc`, env docs | smoke profile 不再靠口头猜测 | config review | 存在一份可执行 binding manifest matrix，且 secret/env 注入路径可复现 |
 | P1-03 | Smoke Matrix Inventory | 将 `test/e2e/e2e-05/06/09/11/13/14` 等现有场景映射到 L0/L1/L2，保留哪些复用、哪些需要 deploy-shaped 重写 | root `test/e2e/**` | 现有资产被系统吸收，而非被遗忘 | test inventory review | L0/L1/L2 的场景矩阵完整可审阅 |
 
 ### 4.2 Phase 2 — Deploy-Shaped Runtime Surface Assembly
@@ -221,6 +221,7 @@ deployment-dry-run-and-real-boundary-verification
   1. L0/L1/L2 的职责边界明确，且不互相替代
   2. Q11 hybrid 方案被写成可执行 matrix，而不再只是问答结论
   3. Q12 的 `gpt-4.1-nano` golden path 成为唯一最小真实 provider baseline
+  4. `green / yellow / red` 具有可执行阈值：`green` = L0/L1/L2 主链全部通过；`yellow` = golden path 成立但存在已记录非主链阻塞；`red` = session edge 或 golden path 本身未成立
 - **具体测试安排**：
   - **单测**：N/A，以 docs/config 校验为主
   - **集成测试**：N/A
@@ -311,6 +312,7 @@ deployment-dry-run-and-real-boundary-verification
   1. `gpt-4.1-nano` real smoke 与当前 OpenAI-compatible adapter 直接对齐
   2. 至少一条真实 R2/KV/DO binding path 成立
   3. latency baseline 与 timeout/failure record 被正式记录
+  4. L2 只能在 A4 最小 session edge closure 与 A5 deploy-shaped fake-worker/profile closure 已具备之后进入
 - **具体测试安排**：
   - **单测**：保留受影响 package tests
   - **集成测试**：real-smoke specific runner validations
@@ -339,6 +341,7 @@ deployment-dry-run-and-real-boundary-verification
   1. `green / yellow / red` 阈值被真正执行，而不是留在设计文稿里
   2. blocking drift 有明确 owner 与重试策略
   3. P6 可以直接消费 P5 的真实运行证据
+  4. handoff pack 至少包含 `trace / timeline / placement / summary / failure-record / latency-baseline / profile-manifest`
 - **具体测试安排**：
   - **单测**：N/A，以 bundle/verdict review 为主
   - **集成测试**：N/A
@@ -355,6 +358,8 @@ deployment-dry-run-and-real-boundary-verification
 ---
 
 ## 6. 需要业主 / 架构师回答的问题清单
+
+> **统一说明**：与本 action-plan 相关的业主 / 架构师问答，统一收录于 `docs/action-plan/after-skeleton/AX-QNA.md`；请仅在该汇总文件中填写答复，本文不再逐条填写。
 
 ### 6.1 当前判断
 
@@ -387,9 +392,9 @@ deployment-dry-run-and-real-boundary-verification
 
 ### 7.2 约束与前提
 
-- **技术前提**：`P3 session edge 与 P4 external seam 至少具备最小 closure；Phase 5 不重开 runtime 设计`
+- **技术前提**：`A4 session edge 至少完成 normalized ingress + controller wiring 的最小 closure；A5 至少完成 binding catalog + deploy-shaped fake worker/profile closure；Phase 5 不重开 runtime 设计`
 - **运行时前提**：`wrangler dev --remote` 与 `wrangler deploy + workers.dev smoke` 是两层不同验证 rung，不得互相伪装`
-- **组织协作前提**：`owner-local secrets / Wrangler 登录态` 可以手动注入，但必须被 profile 说明明确记录
+- **组织协作前提**：`owner-local secrets / Wrangler 登录态` 可以手动注入，但必须被 profile 说明明确记录，并统一落到 `.dev.vars` / `wrangler secret put` / profile manifest 的说明里，禁止把 provider key 或 binding 值写进仓库
 - **上线 / 合并前提**：Phase 5 的结论必须附带 verdict bundle，而不是单次 smoke 口头结论
 
 ### 7.3 文档同步要求
