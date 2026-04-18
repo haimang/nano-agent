@@ -478,3 +478,114 @@ contract-and-identifier-freeze
 ## 10. 结语
 
 这份 action-plan 以 **先把 P0 变成真实 baseline** 为第一优先级，采用 **先上游 canonical truth、再 widened session contract、再下游 adoption、最后 evidence/exit pack** 的推进方式，优先解决 **legacy naming 漂移、compat placeholder、formal follow-up family 无执行路径** 这三类问题，并把 **不提前进入 P2/P3/Pnext 的运行时/产品语义** 作为主要约束。整个计划完成后，`NACP / Contract Governance` 应达到 **字段命名、versioning、compat、session widened surface 都可被后续 Phase 直接消费** 的状态，从而为后续的 **trace-first observability、session edge closure、external seam closure 与 context/storage evidence** 提供稳定基础。
+
+---
+
+## 11. 工作报告（A1 execution log）
+
+> 执行人：Claude Opus 4.7（1M context）
+> 执行时间：`2026-04-18`
+> 执行对象：`docs/action-plan/after-skeleton/A1-contract-and-identifier-freeze.md` Phase 1-5
+> 执行结论：**P0 contract-and-identifier freeze 已作为 `1.1.0` owner-aligned frozen baseline 落地。**
+
+### 11.1 工作目标与内容回顾
+
+- **目标**：把 `nacp-core` 的 canonical rename + versioning/compat 与 `nacp-session` 的 widened v1 surface（含 `session.followup_input`）落成可直接被后续 Phase 依赖的 baseline，并收口 direct consumers、tests、docs。
+- **AX-QNA 绑定**：Q1（followup 最小 shape `{ text, context_ref?, stream_seq? }`）、Q2（四档 Freeze Matrix 语言）、Q3（`stamped_by → stamped_by_key`、`reply_to → reply_to_message_uuid` 同批迁移）、Q4（`1.0.0 = provisional`、`1.1.0 = first frozen baseline`）、Q8（follow-up family 进入 Phase 0 frozen session surface）均已兑现。
+- **Phase 真实执行路径**：
+  - Phase 1 — 全仓扫描 22 files / 81 occurrences 的 legacy field 分布；冻结 rename map：`trace_id→trace_uuid / stream_id→stream_uuid / span_id→span_uuid / producer_id→producer_key / consumer_hint→consumer_key / stamped_by→stamped_by_key / reply_to→reply_to_message_uuid`；把 `session.followup_input` 的最小 shape 写死。
+  - Phase 2 — 改造 `nacp-core` 的 envelope schema、`version.ts`（提供 `NACP_VERSION_KIND`）、`compat/migrations.ts`（真实 `migrate_v1_0_to_v1_1`），并把 compat 接入 `validateEnvelope` 的 Layer 0。
+  - Phase 3 — 扩 `nacp-session`：`SESSION_MESSAGE_TYPES` 扩到 8、`SESSION_BODY_SCHEMAS` / `SESSION_BODY_REQUIRED` / `SESSION_ROLE_REQUIREMENTS` / `SESSION_PHASE_ALLOWED` 同步；`frame.ts`、`ingress.ts`、`websocket.ts`、`replay.ts` 完成 `stream_uuid / trace_uuid / producer_key / stamped_by_key` 的全面 rename；`SessionContext` 与 `IngressContext` 同步 rename。
+  - Phase 4 — 更新 `llm-wrapper` adapter 加 translation-zone 注释；更新 root `test/e2e/*.mjs` 2 处 `stream_id`；更新 `docs/design/after-skeleton/P0-contract-freeze-matrix.md` Freeze Matrix 本体；更新 `README.md` 加 §6.1 baseline-cut 段；`package.json` bump 两个 NACP 包到 `1.1.0`。
+  - Phase 5 — 全仓 `pnpm -r typecheck / build / test`、root `test:cross`、`build:docs` + `build:schema` 全通过。
+
+### 11.2 实际代码清单
+
+> 每一项均由本次执行直接修改或新增，与 Phase 1 estimate 完全对齐。
+
+- **nacp-core / canonical baseline**
+  - `packages/nacp-core/src/envelope.ts` — 重命名 `NacpProducerIdSchema → NacpProducerKeySchema`、Header/Authority/Trace/Control 全部改为 canonical 字段；`validateEnvelope` 加 Layer 0 compat shim；`decodeEnvelope` 自动走相同 shim。
+  - `packages/nacp-core/src/version.ts` — `NACP_VERSION = "1.1.0"`、`NACP_VERSION_COMPAT = "1.0.0"`、新增 `NACP_VERSION_KIND: "provisional" | "frozen"` 常量（当前值 `"frozen"`），注释说明 provisional→frozen 口径。
+  - `packages/nacp-core/src/compat/migrations.ts` — 真实实现 `migrate_v1_0_to_v1_1`：覆盖 header/authority/trace/control/session_frame/session.stream.ack 全部 rename 规则，并支持 canonical-wins 的保险策略；保留 `migrate_noop`。
+  - `packages/nacp-core/src/index.ts` — 导出改为 `NacpProducerKeySchema`。
+  - `packages/nacp-core/src/error-registry.ts` — `NACP_REPLY_TO_CLOSED` message 使用 canonical 字段名。
+  - `packages/nacp-core/package.json` — `version: "1.1.0"`。
+- **nacp-core / tests & generated docs**
+  - `packages/nacp-core/test/envelope.test.ts` — 全部 fixture 切到 canonical；`NacpProducerKeySchema` 测试组覆盖原 producer_id 期望；新增 “legacy 1.0.x payload acceptance via compat shim” 测试。
+  - `packages/nacp-core/test/compat.test.ts` — 重写成真实 evidence：覆盖 7 条 rename 规则 + schema_version bump + session_frame / session.stream.ack body + canonical-wins + `validateEnvelope` legacy 输入接受 + 1.1 canonical 不被 shim 误 mangle 共 14 个 case。
+  - `packages/nacp-core/test/version.test.ts` — 增加 `NACP_VERSION = 1.1.0`、`NACP_VERSION_COMPAT = 1.0.0`、`NACP_VERSION_KIND = "frozen"` 的 assertion。
+  - `packages/nacp-core/test/admissibility.test.ts` — fixture 切到 canonical。
+  - `packages/nacp-core/test/messages/messages.test.ts` — fixture 切到 canonical。
+  - `packages/nacp-core/test/tenancy/boundary.test.ts` — fixture 切到 canonical。
+  - `packages/nacp-core/test/transport/transport.test.ts` — fixture 切到 canonical（含 `reply_to_message_uuid`）。
+  - `docs/nacp-core-registry.md` — 由 `pnpm build:docs` 重新生成，已是 canonical 口径。
+  - `packages/nacp-core/dist/nacp-core.schema.json` — 由 `pnpm build:schema` 重新生成。
+- **nacp-session / widened v1 surface + rename**
+  - `packages/nacp-session/src/messages.ts` — 新增 `SessionFollowupInputBodySchema`（`text` 必带、`context_ref?: NacpRef`、`stream_seq?: number`），`SESSION_MESSAGE_TYPES` 扩到 8、`SESSION_BODY_SCHEMAS` / `SESSION_BODY_REQUIRED` 同步；`session.stream.ack` 改为 `stream_uuid`。
+  - `packages/nacp-session/src/session-registry.ts` — `SESSION_ROLE_REQUIREMENTS`（client 可 produce / session 可 consume `session.followup_input`）+ `SESSION_PHASE_ALLOWED`（`attached` / `turn_running` 允许，`unattached` / `ended` 拒绝）同步。
+  - `packages/nacp-session/src/frame.ts` — `SessionFrameFieldsSchema.stream_id → stream_uuid`。
+  - `packages/nacp-session/src/ingress.ts` — `IngressContext.stamped_by → stamped_by_key`；`normalizeClientFrame` 参数改名 `streamUuid`，组装 authority 与 session_frame 使用 canonical 字段。
+  - `packages/nacp-session/src/websocket.ts` — `SessionContext.trace_id/producer_id/stamped_by → trace_uuid/producer_key/stamped_by_key`；所有 frame emission 改用 canonical；`schema_version` 改用 core 的 `NACP_VERSION` 常量而非硬编码 `1.0.0`；`pushEvent / handleResume / handleAck` 参数改名为 `streamUuid`。
+  - `packages/nacp-session/src/replay.ts` — 所有 `stream_id` 读取 / 参数命名改为 `stream_uuid` / `streamUuid`。
+  - `packages/nacp-session/src/index.ts` — 导出 `SessionFollowupInputBodySchema` 与 `SessionFollowupInputBody` 类型。
+  - `packages/nacp-session/package.json` — `version: "1.1.0"`。
+- **nacp-session / tests**
+  - `packages/nacp-session/test/messages.test.ts` — 新增 4 条 `session.followup_input` 校验（必带、空串拒绝、context_ref + stream_seq、SESSION_BODY_SCHEMAS 暴露）；原有 7 条切到 canonical，SESSION_MESSAGE_TYPES 期望改为 8。
+  - `packages/nacp-session/test/session-registry.test.ts` — 新增 6 条 followup_input 的 role + phase 校验。
+  - `packages/nacp-session/test/ingress.test.ts` — fixture 切 canonical；新增 followup_input happy / missing-text 两条测试。
+  - `packages/nacp-session/test/frame.test.ts` — 常量切 canonical。
+  - `packages/nacp-session/test/replay.test.ts` — `fakeFrame` 采用 `stream_uuid`。
+  - `packages/nacp-session/test/websocket.test.ts` — CTX 切 canonical；assertion 用 `stream_uuid`。
+  - `packages/nacp-session/test/integration/ack-window.test.ts` — CTX 切 canonical。
+  - `packages/nacp-session/test/integration/heartbeat-timeout.test.ts` — CTX 切 canonical。
+  - `packages/nacp-session/test/integration/reconnect-replay.test.ts` — CTX 切 canonical。
+- **direct consumers / translation zone**
+  - `packages/llm-wrapper/src/adapters/openai-chat.ts` — 加 translation-zone 注释，明确 `tool_call_id` 只活在 adapter-local raw type。
+- **root e2e**
+  - `test/e2e/e2e-05-session-resume.test.mjs` — `session_frame.stream_id → stream_uuid`。
+  - `test/e2e/e2e-11-ws-replay-http-fallback.test.mjs` — `session_frame.stream_id → stream_uuid`。
+- **文档 / 治理**
+  - `docs/design/after-skeleton/P0-contract-freeze-matrix.md` — Freeze Matrix 本体由 `Frozen with Rename / Directional Only` 全部升级到 `Frozen`（除 observability substrate 仍是 Directional Only）。
+  - `README.md` — 新增 §6.1 Phase 0 baseline cut (1.1.0) 段落。
+
+### 11.3 测试制作与测试结果
+
+- **新增 / 大改测试**
+  - `packages/nacp-core/test/compat.test.ts`：14 cases（原 3 cases placeholder），覆盖每条 canonical rename、schema_version 升格、session frame / session.stream.ack body 特殊路径、canonical-wins 保险、validateEnvelope 通过 Layer 0 compat shim 读 1.0 payload 且不 mangle 1.1 canonical。
+  - `packages/nacp-core/test/envelope.test.ts`：拆原 “accepts future patch version” 为两条（canonical 1.1.x 直通 + 1.0.x 通过 shim 迁移）。
+  - `packages/nacp-core/test/version.test.ts`：新增 baseline + `NACP_VERSION_KIND` 断言。
+  - `packages/nacp-session/test/messages.test.ts`：新增 4 条 `session.followup_input` 校验。
+  - `packages/nacp-session/test/session-registry.test.ts`：新增 6 条 followup_input role + phase 校验。
+  - `packages/nacp-session/test/ingress.test.ts`：新增 2 条 followup_input 接入测试。
+- **package 结果**
+  - `@nano-agent/nacp-core test` — `11 files / 224 tests passed`。
+  - `@nano-agent/nacp-session test` — `14 files / 115 tests passed`。
+  - `@nano-agent/agent-runtime-kernel`、`capability-runtime`、`eval-observability`、`hooks`、`llm-wrapper`、`session-do-runtime`、`storage-topology`、`workspace-context-artifacts` 全部 `vitest run` 通过（数据详见 `pnpm -r test` 输出）。
+- **cross / e2e 结果**
+  - root `node --test test/**/*.test.mjs` — `14/14 pass`。
+- **typecheck / build 结果**
+  - `pnpm -r typecheck` — 10 projects 全绿。
+  - `pnpm -r build` — 10 projects 全绿。
+- **生成件 / evidence**
+  - `pnpm --filter @nano-agent/nacp-core build:docs` 生成的 `docs/nacp-core-registry.md` 与 canonical 口径一致。
+  - `pnpm --filter @nano-agent/nacp-core build:schema` 生成的 `packages/nacp-core/dist/nacp-core.schema.json` 与 canonical 口径一致。
+
+### 11.4 收口分析与下一阶段安排
+
+- **AX-QNA / Definition of Done 对照**
+  - **功能**：core rename + compat + versioning + session widened family + direct consumer adoption + README / P0 matrix sync 全部落地。
+  - **测试**：core / session package tests、跨包 e2e、root cross test、pnpm -r typecheck/build 均通过；compat 层不再只有 placeholder，retired aliases 仅存在于 `compat/migrations.ts`。
+  - **文档**：README §6.1 baseline cut、Freeze Matrix §7.4、version.ts 注释、AX-QNA Q1/Q3/Q4/Q8 结论与代码真实状态三方一致。
+  - **风险收敛**：已核对 `packages/**/src/**/*.ts`，除 `compat/migrations.ts` 外没有任何 src 引用 `trace_id / stream_id / producer_id / consumer_hint / span_id / stamped_by / reply_to`；`tool_call_id` 仅在 `packages/llm-wrapper/src/adapters/openai-chat.ts` 内，并已标注 translation-zone 说明；`session.followup_input` 只存在于 `nacp-session` 真相层，`session-do-runtime` 未私造 wire。
+  - **可交付性**：后续 A2/A3/A4 action-plan 可直接以 `NACP_VERSION = "1.1.0"`、`NACP_VERSION_KIND = "frozen"` 为前提，不再需要重新解释 P0 口径。
+- **复盘要点回填**
+  - 工作量估计偏差：Phase 4 “direct consumer sweep” 的实际工作量远小于预估 —— 当前 workspace 里只有 `llm-wrapper` 适配器需要 guardrail 注释，其他 package 没有直接依赖 retired 字段名；Opus 在 Q3 附加的 “影响面可能是 estimate 2-3 倍” 提醒未兑现，主要因为 retired 字段基本只停留在 `nacp-*` 两个包的 src + 直接 tests 中。
+  - 拆分合理度：Phase 2 把 compat backbone 和 core rename 放同一 Phase 是对的 —— rename 不先走，migration 就没有目标形状；如果再来一次，会考虑把 Phase 1 的 inventory 结果直接以一份短 map 文档化（而不是只在 action-plan 里叙述），便于后续 phase 复用。
+  - 需要更早问架构师的问题：本次没有；Q1+Q8 + Q3 + Q4 已覆盖几乎所有执行歧义。
+  - 测试覆盖不足之处：compat shim 目前只覆盖 envelope 级别的迁移路径，对 `validateEnvelope` 之外的其它入口（例如 future `normalizeClientFrame` 要不要也支持 legacy client frame）未做显式测试；这部分可在 A3 / A4 实际 runtime 接入时顺手补上，不属于 A1 的收口责任。
+  - 模板需补字段：`执行后复盘关注点` 表与 `工作报告` 之间重复度偏高，未来可考虑把两者合并为单一 Phase closure note，避免双记录。
+- **下一阶段安排（A2 / A3 / A4 启动条件）**
+  - **A2 (`P1-trace-substrate-decision`)**：可立即启动；A1 已把 `trace_uuid` 作为 canonical truth 锁定，benchmark 要输入 DO append p50 ≤ 20ms / p99 ≤ 100ms（见 AX-QNA Q5）即可。
+  - **A3 (`P2-trace-first-observability-foundation`)**：依赖 A2 的 substrate 结论；TraceEventBase 要新增 `traceUuid` (camelCase) 字段，引用 `@nano-agent/nacp-core` 的 canonical law 即可，不再需要 rename 包袱。
+  - **A4 (`P3-session-edge-closure`)**：可在 A3 启动之后并行开工；`session.followup_input` 已在 `nacp-session` 真相层，ingress / controller 直接消费；`SessionContext` 已是 canonical，不会再被 rename 扰动。
+  - **Skill roadmap（Q9 Opus 备注）**：建议在 A10 exit pack 或下一阶段首个 action-plan 里单列 Skill composition entry point，当前 A1 baseline 不会阻塞该讨论。

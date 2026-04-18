@@ -401,9 +401,19 @@ trace 丢失时，系统不能直接崩，也不能静默继续。
 3. 决策理由
 4. 后续 Phase 2 的输入约束
 
+### 交付物（2026-04-18 A2 收口追记）
+
+A2 已落地以下产物（替代上一节 “1. trace-substrate-decision.md” 的轻量描述）：
+
+1. `docs/eval/after-skeleton-trace-substrate-benchmark.md` v1（evidence pack，含 4 组实测、F1 sink 发现、R2/D1/KV comparative）
+2. `packages/eval-observability/scripts/trace-substrate-benchmark.ts`（可重复执行的 runner，模式 `local-bench` / `readback-probe` / `all`，CLI 提供 `--out` / `--markdown` / `--seed`）
+3. `packages/eval-observability/test/scripts/trace-substrate-benchmark.test.ts`（runner 自身的回归 + 阈值守卫）
+4. AX-QNA Q5 升格为 evidence-backed yes、Q20 升格为 hard gate
+5. `docs/design/after-skeleton/P1-trace-substrate-decision.md` §9.3 已回填执行后状态
+
 ### 收口标准
 
-1. trace persistence substrate 被正式决策
+1. trace persistence substrate 被正式决策（DO hot anchor + R2 cold archive + D1 deferred query；A2 evidence-backed yes）
 2. 不再在 charter 级别悬空 substrate 争论
 3. Phase 2 可以基于该 memo 开工
 

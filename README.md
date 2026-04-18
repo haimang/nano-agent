@@ -231,6 +231,30 @@ These are intentionally small, high-signal notes that should guide the first upg
 | **NACP-Session** | **Promote the formal follow-up input family into the Phase 0 contract freeze** instead of deferring it to a later expansion phase. | This keeps the v1 protocol surface wide enough for multi-round conversations and avoids an avoidable API v1 → v2 cliff. | `docs/design/after-skeleton/PX-QNA.md` |
 | **NACP-Session** | When freezing the follow-up input family, keep it as a **protocol-layer extension**, not a `session-do-runtime` private message shape. | This preserves a single source of truth for client ↔ session DO semantics and avoids runtime/protocol drift. | `docs/design/after-skeleton/PX-QNA.md` |
 
+### 6.1 Phase 0 baseline cut (`1.1.0`) — 2026-04-18
+
+The Phase 0 contract-and-identifier freeze has now landed and the `nacp-core`
+wire schema is the **first owner-aligned frozen baseline**, labelled
+`NACP_VERSION = "1.1.0"` with compat floor `NACP_VERSION_COMPAT = "1.0.0"`.
+Key commitments baked into the baseline:
+
+- `trace_uuid` is the single canonical trace identity; internal identity fields
+  follow the `*_uuid` / `*_key` law (`producer_id → producer_key`,
+  `consumer_hint → consumer_key`, `stamped_by → stamped_by_key`,
+  `reply_to → reply_to_message_uuid`, `trace_id → trace_uuid`,
+  `stream_id → stream_uuid`, `span_id → span_uuid`).
+- Retired v1.0 aliases are accepted on input only through
+  `packages/nacp-core/src/compat/migrations.ts::migrate_v1_0_to_v1_1` — writers
+  always emit canonical names; no canonical code may introduce a new `*_id`
+  identity field, and no review should merge one.
+- Provider / foreign IDs (e.g. OpenAI `tool_call_id`) stay inside the
+  translation zone (`packages/llm-wrapper/src/adapters/**`) and do not cross
+  back into canonical types.
+- The minimum client-produced `session.followup_input` family is now part of
+  the `nacp-session` frozen surface, allowed in `attached` / `turn_running`
+  phases; richer queue / replace / merge semantics remain out-of-scope for
+  Phase 0.
+
 ---
 
 ## 7. 结语和评价

@@ -414,3 +414,86 @@ trace-substrate-decision-investigation
 ## 10. 结语
 
 这份 action-plan 以 **把 substrate 决策从“方向正确”推进到“证据闭合”** 为第一优先级，采用 **先 reality inventory、再 benchmark contract、再 runner/scenario、最后 decision pack/gate freeze** 的推进方式，优先解决 **Q5 缺 benchmark artifact、Q20 缺执行化 gate、P2 后续仍可能反复争论底座** 这三类问题，并把 **不提前实现 D1/R2 主路径、不把 synthetic benchmark 冒充 deploy verification** 作为主要约束。整个计划完成后，`Observability / Trace Persistence` 应达到 **DO hot anchor / R2 cold archive / D1 deferred query 拥有明确证据与升级门槛** 的状态，从而为后续的 **trace-first observability foundation、session edge closure、storage/context evidence closure** 提供稳定基础。
+
+---
+
+## 11. 工作报告（A2 execution log）
+
+> 执行人：Claude Opus 4.7（1M context）
+> 执行时间：`2026-04-18`
+> 执行对象：`docs/action-plan/after-skeleton/A2-trace-substrate-decision-investigation.md` Phase 1-4
+> 执行结论：**substrate 决策从 “conditional yes” 升级为 “evidence-backed yes”，Q20 升格为 hard gate；附带 sink-level Finding F1 转交 A3/P2。**
+
+### 11.1 工作目标与内容回顾
+
+- **目标**：把 Q5 / Q20 的 owner 决策升级成可重复的 benchmark 证据 + 文档化 gate；不实现 D1 / R2 hot path；不抢 A6 的 deploy-shaped 验证职责。
+- **AX-QNA 绑定**：Q5 写明 “DO hot anchor + R2 cold archive + D1 deferred query” + 阈值 `p50 ≤ 20ms / p99 ≤ 100ms / WA ≤ 2× / readback success = 100%`；Q20 要求未来任何 D1 升格必须先交独立 benchmark memo。两者均已通过本轮交付兑现。
+- **Phase 真实执行路径**：
+  - Phase 1 — 盘点：DO storage = 唯一已接线热路径（`DoStorageTraceSink` + `_index`）；R2 / KV 仅类型槽位；D1 零接线。冻结 acceptance contract（`BENCH_THRESHOLDS = { readbackSuccessPct: 100, writeAmplificationMax: 2, tailRatioWarn: 5 }`）+ 方法学（package-local in-isolate only，禁止 wrangler / deploy-shaped）。
+  - Phase 2 — 建 runner：`packages/eval-observability/scripts/trace-substrate-benchmark.ts`，模式 `local-bench` / `readback-probe` / `all`，CLI `--out` JSON、`--markdown` MD、`--seed` 固定 fixture；package.json 加 `bench:trace-substrate` 脚本；新增回归测试 `test/scripts/trace-substrate-benchmark.test.ts`（10 cases）。
+  - Phase 3 — 跑出 4 组 evidence：默认 burst（buffer=64, 5×50）→ red；buffer=1024 模式 → red（burst 仍 5 次 flush）；single-flush 参考 → yellow（仅 tail-ratio 噪声）；readback probe 8×128 → green，successPct = 100%、indexKeysObserved = sessions、ordering violations = 0。把 R2/D1/KV 角色差异写入 comparative note。
+  - Phase 4 — 产出 `docs/eval/after-skeleton-trace-substrate-benchmark.md` v1（TL;DR + methodology + 4 组结果 + Findings F1/F2 + comparative table + decision + limitations + repro checklist）；回填 `P1-trace-substrate-decision.md` §9.3、`AX-QNA.md` Q5 / Q20、`docs/plan-after-skeleton.md` §7.2。
+- **参考案例核对**：mini-agent `logger.py` 的纯 plain-text 单文件追加确认了“缺 index / 缺 tenant 隔离 / 缺 hibernation 安全”是反面教材；just-bash 整体没有 trace/observability 主题，本轮以方法学（package-local script harness、deterministic fixture seed）作为间接参考；claude-code `toolExecution.ts` 仅在错误分类层有 telemetry（`telemetryMessage`），与本次 substrate 决策无直接交集，故未引入额外引用。
+
+### 11.2 实际代码清单
+
+- **新增 / 直接修改的代码**
+  - `packages/eval-observability/scripts/trace-substrate-benchmark.ts`（新增，~480 行）：runner + CLI + scenarios + Markdown 输出 + 阈值常量 + verdict 计算；导出 `runBenchmark` / `computeVerdict` / `summariseLatencies` / `renderMarkdown` / `RecordingFakeStorage` / `BENCH_THRESHOLDS` 给测试与未来 reuse。
+  - `packages/eval-observability/test/scripts/trace-substrate-benchmark.test.ts`（新增，10 cases）：smoke / verdict / artifact / RecordingFakeStorage 与 sink 的兼容性。
+  - `packages/eval-observability/package.json`：新增 `bench:trace-substrate` script 入口。
+- **新增 / 修改的文档**
+  - `docs/eval/after-skeleton-trace-substrate-benchmark.md`（新增 v1）：完整 evidence pack。
+  - `docs/design/after-skeleton/P1-trace-substrate-decision.md`：§9.3 回填执行后状态。
+  - `docs/action-plan/after-skeleton/AX-QNA.md`：Q5 / Q20 加 `2026-04-18 执行后追记` 段落。
+  - `docs/plan-after-skeleton.md`：§7.2 增补 A2 收口交付物清单。
+  - `docs/action-plan/after-skeleton/A2-trace-substrate-decision-investigation.md`（本文件）：§11 工作报告。
+- **未改动（确认范围一致）**
+  - `packages/eval-observability/src/sinks/do-storage.ts` — 没有改写 sink；F1 的修复属于 A3/P2 sink-level memo，不在 A2 scope。
+  - `packages/session-do-runtime/src/checkpoint.ts` / `src/env.ts` / `wrangler.jsonc` — A2 不引入 D1 binding，不改 SessionRuntimeEnv 类型槽位。
+
+### 11.3 测试制作与测试结果
+
+- **新增测试**
+  - `packages/eval-observability/test/scripts/trace-substrate-benchmark.test.ts`：
+    - `smoke / single-flush invocation never reports red and exposes both scenarios`
+    - `smoke / readback probe reaches 100% success and zero ordering violations`
+    - `smoke / single-flush WA stays under the published threshold`
+    - `smoke / multi-flush configuration surfaces high write amplification (sink finding)` ← 把 Finding F1 锁进 regression
+    - `verdict / flags red when readback success drops below threshold`
+    - `verdict / flags red when write amplification exceeds the cap`
+    - `verdict / downgrades to yellow on tail-ratio breach without other failures`
+    - `artifact / renderMarkdown produces a non-empty artifact with the verdict and scope`
+    - `artifact / RecordingFakeStorage stays compatible with DoStorageTraceSink keys`
+    - `artifact / run report carries the immutable thresholds object`
+- **运行结果**
+  - `pnpm --filter @nano-agent/eval-observability test` — `16 files / 146 tests passed`。
+  - `pnpm --filter @nano-agent/eval-observability typecheck` — 通过。
+  - `pnpm --filter @nano-agent/eval-observability build` — 通过。
+  - `pnpm --filter @nano-agent/session-do-runtime test` — `19 files / 259 tests passed`（不直接受 A2 影响，作为相邻 substrate 守卫一并跑过）。
+  - `npm run test:cross` — `14/14 e2e passed`。
+  - `pnpm --filter @nano-agent/eval-observability exec tsx scripts/trace-substrate-benchmark.ts --help` — CLI 可用、阈值正确、scope 提示明确。
+- **手动跑出的 4 份 artifact（已纳入 §11.4 收口分析）**
+  - 默认 burst（buffer=64, 5×50） → verdict `red`，notes 含 `steady WA 4.584×` / `burst WA 2.997×` / `burst tail 10.118×`
+  - buffer=1024 burst（5×50） → verdict `red`，notes 含 `steady tail 32.058×` / `burst WA 2.997×` / `burst tail 13.04×`
+  - single-flush（1×250, buffer=1024） → verdict `yellow`，notes 仅 `steady tail 8.787×`，**WA = 1.00× ✓**
+  - readback probe（8×128, buffer=32） → verdict `green`，successPct = 100%、indexKeysObserved = 8、ordering violations = 0
+
+### 11.4 收口分析与下一阶段安排
+
+- **AX-QNA / Definition of Done 对照**
+  - **功能**：runner + scenarios + artifact + decision/gate sync 全部落地。
+  - **测试**：runner regression + sink existing tests + cross e2e 形成最小证据闭环；sink-level Finding F1 已被 `multi-flush configuration surfaces high write amplification (sink finding)` 测试钉住，未来若 sink 升级降低 WA，测试需要同步调整且应在 sink-level memo 中说明。
+  - **文档**：benchmark memo + P1 design + PX-QNA + plan-after-skeleton 四份口径一致；下一份 D1 升格 memo 路径已固化为 `docs/eval/trace-substrate-benchmark-v{N}.md`。
+  - **风险收敛**：DO/D1/R2/KV 不再有 charter 级摇摆；Q20 写成 hard gate；F1 通过 sizing policy（`maxBufferSize ≥ events-per-turn` + `flush()` 在 `turn.end`）化解，不需要重写 substrate。
+  - **可交付性**：A3 / A6 / A7 可直接以本 memo 为已冻结输入开工；任何想动 D1 的提案先去填 §4 / §5 模板。
+- **复盘要点回填**
+  - 工作量估计偏差：Phase 3 的 Comparative Note 实际比预估省力 —— 因为 D1 / R2 / KV 都没有真实接线，对照表更多是边界声明而非 benchmark；Phase 2 的回归测试用时略超预估，主要是要兼顾 sink 的 read-modify-write 现实，否则 smoke 测试容易因为 WA / tail-ratio 把 CI 误判为 red。
+  - 拆分合理度：P2-03 “Baseline Regression Guards” 在落地时被合并到 `trace-substrate-benchmark.test.ts` 的 `RecordingFakeStorage / DoStorageTraceSink` 测试里，没有再去新增独立文件 —— 这是合理简化，避免双轨。
+  - 需要更早问架构师：本次没有；Q5 + Q20 已覆盖所有执行歧义。F1 暴露的 sink-level RMW 不需要新 owner 决策，按 §11.4 sizing policy 即可。
+  - 测试覆盖不足之处：runner 目前没有跨 OS / 容器的可重复性 fixture；考虑到 A2 only-package-local 边界，本轮不补；A6 deploy 验证时再正式保证。
+  - 模板需补字段：A2 模板的 “Phase 总览” 与 “Phase 业务表格” 之间 Phase ID 重复（都叫 Phase 1-4，但与 plan-after-skeleton 的 Phase 1 = trace substrate 阶段重名），未来模板可以加一行 “sub-phase 命名 prefix” 防止读者误读。
+- **下一阶段安排（A3 / A6 / A7 启动条件）**
+  - **A3 (`P2-trace-first-observability-foundation`)**：可立即启动；substrate 已 evidence-backed，TraceEventBase 加 `traceUuid` (camelCase) 字段直接对接 `DoStorageTraceSink`；按 Finding F1 写入 sink sizing policy（`maxBufferSize ≥ events-per-turn` 与 `flush() on turn.end`）。
+  - **A6 (`P5-deployment-dry-run-and-real-boundary-verification`)**：本 memo 明确标注 in-isolate 限制；A6 必须在 `wrangler dev --remote` / deploy-shaped 环境复测 p50 ≤ 20 ms / p99 ≤ 100 ms 的真实 DO put 阈值，并把结果回填本 memo 的 §6 Limitations。
+  - **A7 (`P6-storage-and-context-evidence-closure`)**：本 memo §4 已固化 R2 = cold archive seam 的角色；A7 接 R2 wiring 时直接消费此口径，无需重新决策。
+  - **未来 D1 升格**：必须新建 `docs/eval/trace-substrate-benchmark-v{N}.md` 并复用本仓 runner（或显式扩展 mode）；不允许任何 “非 benchmark” 路径绕过。

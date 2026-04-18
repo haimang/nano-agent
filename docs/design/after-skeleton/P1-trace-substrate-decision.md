@@ -367,13 +367,15 @@
 
 ### 9.3 下一步行动
 
-- [ ] **决策确认**：业主确认本 memo 的 substrate 结论。
-- [ ] **关联 Issue / PR**：Phase 2 foundation 按 DO storage hot path 继续设计。
+- [x] **决策确认**：业主已通过 AX-QNA Q5 确认 substrate 方向（conditional yes）；A2 benchmark artifact 把它升格为 evidence-backed yes。
+- [x] **Benchmark artifact**：`docs/eval/after-skeleton-trace-substrate-benchmark.md` 已产出，配套 runner `packages/eval-observability/scripts/trace-substrate-benchmark.ts` 与回归测试 `packages/eval-observability/test/scripts/trace-substrate-benchmark.test.ts`。
+- [x] **Q20 gate 落地**：D1 升格前必须先交独立 `trace-substrate-benchmark-vN.md` memo，并满足该 memo 的 5 项必备字段；本 memo 的 §4 / §5 已写入此口径。
+- [ ] **关联 Issue / PR**：A3 / P2 foundation 按 DO storage hot path 继续设计；按 Finding F1 把 `maxBufferSize ≥ events-per-turn` 与 `flush()` 在 `turn.end` 触发写入 sizing policy。
 - [ ] **待深入调查的子问题**：
-  - [ ] R2 archive 的 flush/compaction 触发条件
-  - [ ] future D1 index 的最小 schema 何时进入议程
-  - [ ] 是否需要单独产出 `trace-substrate-benchmark.md` 作为 future D1 promotion 的 gate artifact
-- [ ] **需要更新的其他设计文档**：
+  - [ ] R2 archive 的 flush/compaction 触发条件（A7 / P6 主线）
+  - [ ] future D1 index 的最小 schema 何时进入议程（须满足 Q20 gate 才启动）
+  - [ ] sink-level append-only-without-RMW 升级（属于后续 sink-level memo，不属于 substrate decision）
+- [ ] **需要同步更新的其他设计文档**：
   - `A3-trace-first-observability-foundation.md`
   - `observability-layering.md`
   - `A7-storage-and-context-evidence-closure.md`

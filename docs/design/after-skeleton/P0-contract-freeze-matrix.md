@@ -312,18 +312,18 @@ Phase 0 最大的风险不是“没人写 design”，而是**不同人对“现
 
 | Surface | 当前代码 reality | Phase 0 状态 | 备注 |
 |--------|------------------|--------------|------|
-| `core.header` | 已稳定，但含 `producer_id` / `consumer_hint` | Frozen with Rename | 语义稳定，命名需收敛 |
-| `core.authority` | 已稳定，但 `stamped_by` 为 bare handle | Frozen with Rename | 推荐 `stamped_by_key` |
-| `core.trace` | 已稳定，但 `trace_id/stream_id/span_id` 漂移 | Frozen with Rename | owner law 核心战场 |
-| `core.control` | 已稳定，`reply_to` 语义过宽 | Frozen with Rename | 推荐显式关联对象 |
+| `core.header` | `producer_key` / `consumer_key` 已落位，`schema_version = 1.1.0` | Frozen | rename 完成，迁移由 `migrate_v1_0_to_v1_1` 承担 |
+| `core.authority` | `stamped_by_key` 已落位 | Frozen | bare handle 已退出 canonical |
+| `core.trace` | `trace_uuid / stream_uuid / span_uuid` 已落位 | Frozen | `trace_uuid` 是唯一 canonical trace identity |
+| `core.control` | `reply_to_message_uuid` 已落位 | Frozen | 显式关联 message |
 | `core.refs` | 已稳定 | Frozen | `tenants/{team_uuid}/` 规则已明确 |
 | `core.extra` | safety valve | Frozen | 不扩张语义 |
-| `session message family v1` | 当前 7 kinds 已存在，但 formal follow-up family 缺席 | Frozen | 当前 reality 先冻结，且必须为 widened v1 surface 预留正式补位 |
-| `session frame` | 已存在 `stream_id` 等字段 | Frozen with Rename | 命名需对齐 law |
+| `session message family v1` | widened 至 8 kinds（含 `session.followup_input`） | Frozen | Q1+Q8 最小冻结 shape 落地；更丰富的 queue/replace/merge 留到下一阶段 |
+| `session frame` | `stream_uuid` 已落位 | Frozen | 命名已与 law 对齐 |
 | `session stream event current catalog` | 当前 reality 已存在 | Frozen | 不在本阶段扩展事件面 |
-| `formal follow-up / multi-round input family` | 尚未实现，且不得由 runtime 私造 | Directional Only | Q8 已确认纳入 Phase 0；需由 `nacp-session` 正式扩协议并在 P0 结束前冻结 |
-| `observability trace naming` | 仍有 optional `trace_uuid` 漂移 | Directional Only | 先定 law，再定 substrate |
-| `provider raw IDs` | adapter 内部已有 `tool_call_id` | Deferred to translation zone | 不能进 canonical model |
+| `formal follow-up / multi-round input family` | `session.followup_input` 已正式进入 `nacp-session` 真相层 | Frozen | 仅覆盖单条 client-produced shape；queue semantics 留给后续阶段 |
+| `observability trace naming` | `trace_uuid` 已成为 core canonical，observability 接线在 P2 | Directional Only | 命名法已冻结；substrate 仍走 P1 decision memo |
+| `provider raw IDs` | adapter 内部已有 `tool_call_id`（带 translation-zone 注释） | Deferred to translation zone | 不能进 canonical model |
 | `public API / frontend contract` | 未定 | Deferred | 下一阶段首个工作流 |
 | `business DDL / registry schema` | 未定 | Deferred | 等 runtime evidence 后再做 |
 
