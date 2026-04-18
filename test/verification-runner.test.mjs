@@ -145,6 +145,59 @@ test("WorkerHarness drives a real session.start through NanoSessionDO.fetch()", 
   assert.equal(body.action, "start");
 });
 
+test("WorkerHarness forwards to baseUrl via ambient fetch when remote mode is selected", async () => {
+  const SESSION_UUID = "33333333-3333-4333-8333-333333333333";
+  const calls = [];
+  const originalFetch = globalThis.fetch;
+  Object.defineProperty(globalThis, "fetch", {
+    configurable: true,
+    writable: true,
+    value: async (input, init) => {
+      const req = input instanceof Request ? input : new Request(input, init);
+      calls.push(req);
+      return new Response(JSON.stringify({ ok: true, remote: true }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    },
+  });
+
+  try {
+    const harness = new WorkerHarness({
+      profileId: "remote-dev-l1",
+      baseUrl: "https://remote.example.workers.dev",
+    });
+    const res = await harness.fetch(
+      new Request(
+        `https://harness.local/sessions/${SESSION_UUID}/start?mode=smoke`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ initial_input: "hi remote" }),
+        },
+      ),
+    );
+    assert.equal(harness.localFallback, false);
+    assert.equal(calls.length, 1);
+    const forwarded = calls[0];
+    assert.equal(
+      forwarded.url,
+      `https://remote.example.workers.dev/sessions/${SESSION_UUID}/start?mode=smoke`,
+    );
+    assert.equal(forwarded.method, "POST");
+    assert.equal(forwarded.headers.get("content-type"), "application/json");
+    assert.equal(await forwarded.text(), JSON.stringify({ initial_input: "hi remote" }));
+    assert.equal(res.status, 200);
+    assert.deepEqual(await res.json(), { ok: true, remote: true });
+  } finally {
+    Object.defineProperty(globalThis, "fetch", {
+      configurable: true,
+      writable: true,
+      value: originalFetch,
+    });
+  }
+});
+
 test("writeVerdictBundle does not persist when persist=false", () => {
   const dir = mkdtempSync(join(tmpdir(), "verdict-bundles-"));
   try {

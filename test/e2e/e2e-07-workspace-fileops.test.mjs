@@ -8,6 +8,8 @@ import {
   LocalTsTarget,
   registerMinimalCommands,
   createFilesystemHandlers,
+  createSearchHandlers,
+  planFromBashCommand,
 } from "../../packages/capability-runtime/dist/index.js";
 import {
   WorkspaceNamespace,
@@ -46,8 +48,15 @@ test("E2E-07: Workspace File Operations via Capability Runtime Mount Router", as
     workspacePath: "/workspace",
     namespace,
   });
+  const searchHandlers = createSearchHandlers({
+    workspacePath: "/workspace",
+    namespace,
+  });
   const localTarget = new LocalTsTarget();
   for (const [name, handler] of fsHandlers) {
+    localTarget.registerHandler(name, handler);
+  }
+  for (const [name, handler] of searchHandlers) {
     localTarget.registerHandler(name, handler);
   }
   
@@ -65,6 +74,7 @@ test("E2E-07: Workspace File Operations via Capability Runtime Mount Router", as
   // mkdir
   const mkdirResult = await execCmd("mkdir", { path: "/workspace/src" });
   assert.equal(mkdirResult.kind, "inline");
+  assert.match(mkdirResult.output, /mkdir-partial-no-directory-entity/);
 
   // write
   const writeResult = await execCmd("write", {
@@ -82,6 +92,18 @@ test("E2E-07: Workspace File Operations via Capability Runtime Mount Router", as
   const lsResult = await execCmd("ls", { path: "/workspace" });
   assert.equal(lsResult.kind, "inline");
   assert.ok(lsResult.output.includes("/workspace/src"));
+
+  // grep -> rg canonical alias via the planner
+  const grepPlan = planFromBashCommand(
+    "grep hello /workspace/src/main.ts",
+    registry,
+  );
+  assert.ok(grepPlan);
+  assert.equal(grepPlan.capabilityName, "rg");
+  const grepResult = await executor.execute(grepPlan);
+  assert.equal(grepResult.kind, "inline");
+  assert.ok(grepResult.output.includes("/workspace/src/main.ts"));
+  assert.ok(grepResult.output.includes("hello"));
 
   // readonly mount write should fail
   try {
