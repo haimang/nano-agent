@@ -40,6 +40,23 @@ export interface HookAuditEntry {
 }
 
 /**
+ * Optional trace-first context (A3 P4-01). When supplied, the hook audit
+ * record stamps `traceUuid` / `sourceRole` / `sourceKey` into `detail` so
+ * the audit body can round-trip through `auditBodyToTraceEvent` as a
+ * trace-law-compliant TraceEvent.
+ *
+ * Hook dispatch is the one adjacent seam where we always know both the
+ * dispatching role (`hook`) and the anchor (the turn's `traceUuid`), so
+ * plumbing this context is cheap.
+ */
+export interface HookTraceContext {
+  readonly traceUuid: string;
+  readonly sourceRole: "hook";
+  readonly sourceKey?: string;
+  readonly turnUuid?: string;
+}
+
+/**
  * Build an `audit.record`-compatible body from a hook dispatch lifecycle.
  *
  * `event_kind` is always `"hook.outcome"` (the canonical kind used by
@@ -51,7 +68,11 @@ export function buildHookAuditRecord(
   eventName: HookEventName,
   outcome: AggregatedHookOutcome,
   durationMs: number,
-  options?: { ref?: NacpRefLike; timestamp?: string },
+  options?: {
+    ref?: NacpRefLike;
+    timestamp?: string;
+    traceContext?: HookTraceContext;
+  },
 ): AuditRecordBody {
   const blockedBy = outcome.blocked
     ? outcome.outcomes.find((o) => o.action === "block" || o.action === "stop")?.handlerId
@@ -74,6 +95,16 @@ export function buildHookAuditRecord(
   }
   if (outcome.mergedDiagnostics !== undefined) {
     detail.diagnostics = outcome.mergedDiagnostics;
+  }
+
+  // A3 P4-01: stamp trace-first carriers into detail so the audit body
+  // round-trips back to a trace-law-compliant TraceEvent.
+  const ctx = options?.traceContext;
+  if (ctx) {
+    detail.traceUuid = ctx.traceUuid;
+    detail.sourceRole = ctx.sourceRole;
+    if (ctx.sourceKey !== undefined) detail.sourceKey = ctx.sourceKey;
+    if (ctx.turnUuid !== undefined) detail.turnUuid = ctx.turnUuid;
   }
 
   const body: AuditRecordBody = options?.ref

@@ -61,7 +61,12 @@ export type { HookBroadcastBody } from "./session-mapping.js";
 
 // ── Audit ──
 export { buildHookAuditRecord, buildHookAuditEntry } from "./audit.js";
-export type { AuditRecordBody, HookAuditEntry, NacpRefLike } from "./audit.js";
+export type {
+  AuditRecordBody,
+  HookAuditEntry,
+  HookTraceContext,
+  NacpRefLike,
+} from "./audit.js";
 
 // ── Snapshot ──
 export { snapshotRegistry, restoreRegistry } from "./snapshot.js";
