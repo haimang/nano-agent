@@ -300,6 +300,49 @@ export class SessionOrchestrator {
     };
   }
 
+  // ── Pending-input drain (A4-A5 review R1) ────────────────────
+
+  /**
+   * Drain the next queued input (FIFO) and start it as a fresh turn.
+   *
+   * A4 P3-02 only put `session.start / session.followup_input` into
+   * `pendingInputs` when a turn was already running — it intentionally
+   * stopped short of popping the queue when that turn finished. The
+   * code review (GPT R1) flagged this as a half-closed loop: follow-up
+   * input looked legal at ingress but never actually executed.
+   *
+   * `drainNextPendingInput()` closes the loop by pulling the front of
+   * the queue and delegating straight back into `startTurn()`. It is
+   * the caller's responsibility (currently the DO) to invoke this
+   * after any phase transition that releases the `turn_running`
+   * claim: `turn.end`, `cancelTurn`, or a `runStepLoop` that returned
+   * via the step-budget branch.
+   *
+   * Returns the updated state if an input was drained; returns the
+   * input state unchanged if the queue is empty.
+   *
+   * Richer queue/replace/merge semantics stay out of v1 per A4 §2.2.
+   */
+  async drainNextPendingInput(
+    state: OrchestrationState,
+  ): Promise<OrchestrationState> {
+    const queue = state.actorState.pendingInputs;
+    if (queue.length === 0) return state;
+    if (state.actorState.phase === "turn_running") return state;
+
+    const [next, ...rest] = queue;
+    if (!next) return state;
+
+    const drainedState: OrchestrationState = {
+      ...state,
+      actorState: {
+        ...state.actorState,
+        pendingInputs: rest,
+      },
+    };
+    return this.startTurn(drainedState, next);
+  }
+
   // ── Cancel Turn ──────────────────────────────────────────────
 
   async cancelTurn(state: OrchestrationState): Promise<OrchestrationState> {

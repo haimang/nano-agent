@@ -35,6 +35,26 @@ import { transitionPhase as transitionPhaseImported } from "../actor-state.js";
 import { validateSessionCheckpoint } from "../checkpoint.js";
 import { createDefaultCompositionFactory } from "../composition.js";
 import type { CompositionFactory, SubsystemHandles } from "../composition.js";
+import { makeRemoteBindingsFactory } from "../remote-bindings.js";
+import type { SessionRuntimeEnv } from "../env.js";
+
+/**
+ * A4-A5 review R3 / Kimi R5: pick the right factory based on env
+ * bindings. If any of the three v1 service bindings is present,
+ * prefer `makeRemoteBindingsFactory()` so the deployed DO actually
+ * consumes the remote seam instead of silently staying all-local.
+ * Tests (which build a bare `{}` env) still fall back to the
+ * default local factory, preserving the existing no-op behaviour.
+ */
+function selectCompositionFactory(env: unknown): CompositionFactory {
+  const e = (env ?? {}) as Partial<SessionRuntimeEnv>;
+  const anyRemote = Boolean(
+    e.CAPABILITY_WORKER || e.HOOK_WORKER || e.FAKE_PROVIDER_WORKER,
+  );
+  return anyRemote
+    ? makeRemoteBindingsFactory()
+    : createDefaultCompositionFactory();
+}
 import { acceptIngress } from "../session-edge.js";
 import type { IngressEnvelope } from "../session-edge.js";
 import {
@@ -127,7 +147,7 @@ export class NanoSessionDO {
   constructor(
     doState: DurableObjectStateLike,
     env: unknown,
-    compositionFactory: CompositionFactory = createDefaultCompositionFactory(),
+    compositionFactory: CompositionFactory = selectCompositionFactory(env),
   ) {
     this.doState = doState;
     this.env = env;
@@ -191,6 +211,14 @@ export class NanoSessionDO {
             if (!helper) return [];
             const frames = helper.replay.replay(this.streamUuid, 0);
             return frames.map((f) => f.body as Record<string, unknown>);
+          },
+          // A4-A5 review R1 (Kimi): share the DO-minted trace identity
+          // so HTTP fallback client frames stay on the same trace as
+          // the WS path. Latch a traceUuid on first access so both
+          // transports converge even when HTTP fallback fires first.
+          getTraceUuid: () => {
+            if (!this.traceUuid) this.traceUuid = crypto.randomUUID();
+            return this.traceUuid;
           },
         });
 
@@ -332,6 +360,11 @@ export class NanoSessionDO {
               this.state,
               turnInput,
             );
+            // A4-A5 review R1: after a turn finishes the orchestrator
+            // may have left queued follow-up inputs behind. Drain them
+            // FIFO before returning control so the single-active-turn
+            // invariant is actually enforced end-to-end.
+            this.state = await this.drainPendingInputs(this.state);
           }
         }
         break;
@@ -339,6 +372,10 @@ export class NanoSessionDO {
 
       case "session.cancel": {
         this.state = await this.orchestrator.cancelTurn(this.state);
+        // A4-A5 review R1: a cancel releases `turn_running`, so any
+        // follow-up inputs queued while the now-cancelled turn was
+        // running should run next.
+        this.state = await this.drainPendingInputs(this.state);
         break;
       }
 
@@ -474,6 +511,29 @@ export class NanoSessionDO {
    * case there is no anchor to thread, so silently dropping is the
    * correct trace-first behaviour (the DO has nothing to anchor to).
    */
+  /**
+   * A4-A5 review R1: repeatedly drain the pending-input FIFO until
+   * either the queue is empty or the next input cannot be started
+   * (e.g. because `startTurn` re-entered `turn_running`). Cap the loop
+   * at `maxTurnSteps` so a misbehaving drain cannot infinite-loop.
+   */
+  private async drainPendingInputs(
+    state: OrchestrationState,
+  ): Promise<OrchestrationState> {
+    let current = state;
+    // The queue is bounded by wire-level acceptance, but we belt-and-
+    // braces the loop at the same runtime cap used for step-budget.
+    const safetyCap = Math.max(1, this.config.maxTurnSteps);
+    for (let i = 0; i < safetyCap; i++) {
+      if (current.actorState.pendingInputs.length === 0) return current;
+      if (current.actorState.phase === "turn_running") return current;
+      const next = await this.orchestrator.drainNextPendingInput(current);
+      if (next === current) return current;
+      current = next;
+    }
+    return current;
+  }
+
   private async emitEdgeTrace(
     eventKind: string,
     extra: Record<string, unknown> = {},
@@ -623,6 +683,29 @@ export class NanoSessionDO {
       },
       traceContext: this.buildTraceContext(),
       pushStreamEvent: (_kind, body) => {
+        // A4-A5 review R2: the outbound `session.stream.event` surface
+        // MUST go through `SessionWebSocketHelper.pushEvent()` so the
+        // replay buffer, ack window, and attached socket all see the
+        // same truth. The body already embeds `{ kind, ... }` per the
+        // discriminated `SessionStreamEventBodySchema`; we forward it
+        // verbatim and let the helper validate. If the helper has not
+        // yet been assembled (tests without a sessionUuid) we fall
+        // back to whatever raw kernel hook the composition provided —
+        // that path is only hit in pure-unit harnesses.
+        const helper = this.ensureWsHelper();
+        if (helper) {
+          try {
+            helper.pushEvent(
+              this.streamUuid,
+              body as unknown as Parameters<typeof helper.pushEvent>[1],
+            );
+          } catch {
+            // A pushEvent failure (e.g. ack backpressure) MUST NOT
+            // wedge the orchestrator; the replay buffer will report
+            // the lost seq via the ack window next tick.
+          }
+          return;
+        }
         const stream = handles.kernel as
           | { pushStreamEvent?: (body: Record<string, unknown>) => void }
           | undefined;
@@ -773,7 +856,12 @@ export class NanoSessionDO {
         const pair = new (globalThis as unknown as {
           WebSocketPair?: new () => { 0: unknown; 1: unknown };
         }).WebSocketPair!();
-        this.doState.acceptWebSocket!((pair as { 1: unknown })[1]);
+        const serverSocket = (pair as { 1: unknown })[1];
+        this.doState.acceptWebSocket!(serverSocket);
+        // A4-A5 review R2: attach the server-side socket to the
+        // helper so outbound `pushEvent()` calls actually reach the
+        // client instead of only populating the replay buffer.
+        this.attachHelperToSocket(serverSocket);
         return new Response(null, {
           status: 101,
           statusText: "Switching Protocols",
@@ -790,6 +878,33 @@ export class NanoSessionDO {
       return new Response(null, { status: 101, statusText: "Switching Protocols" });
     } catch {
       return new Response(null, { status: 200, statusText: "Switching Protocols" });
+    }
+  }
+
+  /**
+   * A4-A5 review R2: narrow the Cloudflare-side WebSocket to the
+   * structural `SessionSocketLike` the nacp-session helper expects and
+   * wire it as the helper's live outbound transport. Silently bails
+   * out when the runtime does not expose a `send` method — that would
+   * be a test harness without a real socket pair.
+   */
+  private attachHelperToSocket(rawSocket: unknown): void {
+    const helper = this.ensureWsHelper();
+    if (!helper) return;
+    const s = rawSocket as Partial<{
+      send: (data: unknown) => void;
+      close: (code?: number, reason?: string) => void;
+    }>;
+    if (typeof s.send !== "function") return;
+    try {
+      helper.attach({
+        send: (data: string) => s.send!(data),
+        close: (code?: number, reason?: string) => s.close?.(code, reason),
+      });
+    } catch {
+      // `attach()` throws if a socket is already attached; that is a
+      // legitimate state during reconnect. The resume path will take
+      // over from there.
     }
   }
 

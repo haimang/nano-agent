@@ -407,6 +407,87 @@ describe("SessionOrchestrator", () => {
     });
   });
 
+  // ── drainNextPendingInput (A4-A5 review R1) ────────────────
+
+  describe("drainNextPendingInput", () => {
+    it("is a no-op when the queue is empty", async () => {
+      const deps = createMockDeps();
+      const orchestrator = new SessionOrchestrator(deps, DEFAULT_RUNTIME_CONFIG);
+      const initial = orchestrator.createInitialState();
+      const result = await orchestrator.drainNextPendingInput(initial);
+      expect(result).toBe(initial);
+      expect(deps.advanceStep).not.toHaveBeenCalled();
+    });
+
+    it("is a no-op while turn_running (another turn is already active)", async () => {
+      const deps = createMockDeps();
+      const orchestrator = new SessionOrchestrator(deps, DEFAULT_RUNTIME_CONFIG);
+      const initial = orchestrator.createInitialState();
+      const busy: OrchestrationState = {
+        ...initial,
+        actorState: {
+          ...initial.actorState,
+          phase: "turn_running" as const,
+          attachedAt: "2026-04-16T12:00:00.000Z",
+          activeTurnId: "turn-current",
+          pendingInputs: [
+            {
+              kind: "session-followup-input",
+              content: "queued",
+              turnId: "turn-pending",
+              receivedAt: "2026-04-16T12:00:00.000Z",
+            },
+          ],
+        },
+      };
+      const result = await orchestrator.drainNextPendingInput(busy);
+      expect(result).toBe(busy);
+      expect(deps.advanceStep).not.toHaveBeenCalled();
+    });
+
+    it("pops the head of the queue and starts it as the next turn (FIFO)", async () => {
+      const deps = createMockDeps();
+      const orchestrator = new SessionOrchestrator(deps, DEFAULT_RUNTIME_CONFIG);
+      const initial = orchestrator.createInitialState();
+      const attachedWithQueue: OrchestrationState = {
+        ...initial,
+        actorState: {
+          ...initial.actorState,
+          phase: "attached" as const,
+          attachedAt: "2026-04-16T12:00:00.000Z",
+          pendingInputs: [
+            {
+              kind: "session-followup-input",
+              content: "first-queued",
+              turnId: "turn-q1",
+              receivedAt: "2026-04-16T12:00:00.000Z",
+            },
+            {
+              kind: "session-followup-input",
+              content: "second-queued",
+              turnId: "turn-q2",
+              receivedAt: "2026-04-16T12:00:00.000Z",
+            },
+          ],
+        },
+      };
+
+      const result = await orchestrator.drainNextPendingInput(attachedWithQueue);
+
+      // The first queued input should have been started; the second
+      // remains in the queue for the next drain tick.
+      expect(result.actorState.pendingInputs).toHaveLength(1);
+      expect(result.actorState.pendingInputs[0]!.turnId).toBe("turn-q2");
+      expect(result.turnCount).toBe(1);
+      // pushStreamEvent was called with `turn.begin` referencing the
+      // popped input's turnId — proves the drained input is what ran.
+      expect(deps.pushStreamEvent).toHaveBeenCalledWith(
+        "turn.begin",
+        expect.objectContaining({ kind: "turn.begin", turn_uuid: "turn-q1" }),
+      );
+    });
+  });
+
   // ── cancelTurn ─────────────────────────────────────────────
 
   describe("cancelTurn", () => {

@@ -364,14 +364,11 @@ describe("NanoSessionDO", () => {
     });
 
     it("session.followup_input during turn_running queues the input (single-active-turn)", async () => {
-      // Force the orchestrator to stay in turn_running by using a factory
-      // where advanceStep returns done=false repeatedly up to maxTurnSteps.
-      // Simpler: start a turn, then send followup_input right after —
-      // because our default advanceStep resolves immediately, the turn
-      // ends before the follow-up arrives. So we assert the queued input
-      // path via the public pendingInputs on actor state when we drive it
-      // synchronously through a paused promise. A lighter check: the
-      // follow-up either increases turnCount OR lands on pendingInputs.
+      // A4-A5 review R1: when the default advanceStep resolves immediately,
+      // the follow-up arriving after start actually fires as a fresh turn
+      // rather than queuing. Assert the stronger invariant: the sum of
+      // executed turns + residual queue must equal the number of accepted
+      // inputs — no input can be lost.
       await doInstance.webSocketMessage(
         null,
         makeFrame("session.start", { initial_input: "a" }),
@@ -383,8 +380,9 @@ describe("NanoSessionDO", () => {
       const s = doInstance.getState();
       const totalAccepted =
         s.turnCount + s.actorState.pendingInputs.length;
-      expect(totalAccepted).toBeGreaterThanOrEqual(2);
+      expect(totalAccepted).toBe(2);
     });
+
   });
 
   // ── webSocketClose ─────────────────────────────────────────

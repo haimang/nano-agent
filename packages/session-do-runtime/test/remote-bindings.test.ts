@@ -196,3 +196,107 @@ describe("makeRemoteBindingsFactory", () => {
     expect(handles.hooks).toBeUndefined();
   });
 });
+
+describe("callBindingJson + cross-seam anchor propagation (A4-A5 review R4)", () => {
+  const baseEnv: SessionRuntimeEnv = {
+    SESSION_DO: {},
+    R2_ARTIFACTS: {},
+    KV_CONFIG: {},
+  };
+
+  it("stamps x-nacp-* headers on every outbound request when anchor is supplied", async () => {
+    const captured: Request[] = [];
+    const binding = {
+      fetch: async (req: Request) => {
+        captured.push(req);
+        return new Response("{}", { status: 200 });
+      },
+    };
+    await callBindingJson(
+      binding,
+      "/any",
+      { hello: "world" },
+      undefined,
+      {
+        traceUuid: "trace-1",
+        sessionUuid: "sess-1",
+        teamUuid: "team-1",
+        requestUuid: "req-1",
+        sourceRole: "session",
+        sourceKey: "nano-agent.session.do@v1",
+      },
+    );
+    expect(captured).toHaveLength(1);
+    const h = captured[0]!.headers;
+    expect(h.get("x-nacp-trace-uuid")).toBe("trace-1");
+    expect(h.get("x-nacp-session-uuid")).toBe("sess-1");
+    expect(h.get("x-nacp-team-uuid")).toBe("team-1");
+    expect(h.get("x-nacp-request-uuid")).toBe("req-1");
+    expect(h.get("x-nacp-source-role")).toBe("session");
+    expect(h.get("x-nacp-source-key")).toBe("nano-agent.session.do@v1");
+  });
+
+  it("omits x-nacp-* headers when no anchor is supplied (backwards-compatible)", async () => {
+    const captured: Request[] = [];
+    const binding = {
+      fetch: async (req: Request) => {
+        captured.push(req);
+        return new Response("{}", { status: 200 });
+      },
+    };
+    await callBindingJson(binding, "/any", {});
+    expect(captured[0]!.headers.get("x-nacp-trace-uuid")).toBeNull();
+  });
+
+  it("threads anchor through the hooks handle .emit() wrapper", async () => {
+    const captured: Request[] = [];
+    const binding = {
+      fetch: async (req: Request) => {
+        captured.push(req);
+        return new Response(
+          JSON.stringify({ kind: "continue", reason: "ok" }),
+          { status: 200 },
+        );
+      },
+    };
+    const factory = makeRemoteBindingsFactory();
+    const handles = factory.create(
+      { ...baseEnv, HOOK_WORKER: binding },
+      DEFAULT_RUNTIME_CONFIG,
+    );
+    const hooks = handles.hooks as {
+      emit: (e: string, p: unknown, c: unknown) => Promise<unknown>;
+    };
+    await hooks.emit(
+      "UserPromptSubmit",
+      { text: "hi" },
+      {
+        traceUuid: "trace-2",
+        sessionUuid: "sess-2",
+        teamUuid: "team-2",
+        requestUuid: "req-2",
+      },
+    );
+    expect(captured).toHaveLength(1);
+    expect(captured[0]!.headers.get("x-nacp-trace-uuid")).toBe("trace-2");
+  });
+
+  it("provider fetcher stamps anchor from the provider-supplied getter", async () => {
+    const captured: Request[] = [];
+    const binding = {
+      fetch: async (req: Request) => {
+        captured.push(req);
+        return new Response("{}", { status: 200 });
+      },
+    };
+    const fetcher = makeProviderFetcher(binding, () => ({
+      traceUuid: "trace-3",
+      sessionUuid: "sess-3",
+      teamUuid: "team-3",
+      requestUuid: "req-3",
+    }));
+    expect(fetcher).toBeDefined();
+    await fetcher!(new Request("https://api.example.com/chat/completions"));
+    expect(captured[0]!.headers.get("x-nacp-trace-uuid")).toBe("trace-3");
+  });
+});

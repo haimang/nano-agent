@@ -32,6 +32,7 @@ import type {
   ServiceBindingLike,
   SessionRuntimeEnv,
 } from "./env.js";
+import { buildCrossSeamHeaders, type CrossSeamAnchor } from "./cross-seam.js";
 
 // ─────────────────────────────────────────────────────────────────────
 // Shared fetch wrapper
@@ -41,21 +42,35 @@ import type {
  * Call a service-binding `fetch()` with a JSON body and parse the
  * response as JSON. Throws on non-2xx so callers can map to their
  * taxonomy.
+ *
+ * A4-A5 review R2 (Kimi): the Request URL uses a synthetic
+ * `https://binding.local` host as a placeholder. Cloudflare Workers'
+ * service-binding `fetch()` routes on the Worker's binding table, not
+ * DNS — the host portion is ignored by the platform. We keep a stable
+ * host string so request logging / debugging has a predictable origin.
+ *
+ * A4-A5 review R4 (GPT): when a `CrossSeamAnchor` is supplied,
+ * `buildCrossSeamHeaders()` stamps the trace / session / team /
+ * request identity on every outbound request, keeping
+ * trace-first observability continuous across the boundary.
  */
 export async function callBindingJson(
   binding: ServiceBindingLike,
   path: string,
   body: unknown,
   signal?: AbortSignal,
+  anchor?: CrossSeamAnchor,
 ): Promise<unknown> {
   if (!binding.fetch) {
     throw new Error(
       "service-binding has no fetch() surface — wire a fetch-capable worker",
     );
   }
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  if (anchor) Object.assign(headers, buildCrossSeamHeaders(anchor));
   const req = new Request(`https://binding.local${path}`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers,
     body: JSON.stringify(body),
     signal,
   });
@@ -76,6 +91,42 @@ export async function callBindingJson(
       }`,
     );
   }
+}
+
+/**
+ * Best-effort structural narrow: pull a `CrossSeamAnchor` out of an
+ * `unknown` context if every required field is a string. Returns
+ * `undefined` when any required field is missing so the caller falls
+ * back to a header-less request (which still succeeds, but will fail
+ * the server-side `validateCrossSeamAnchor` check). This lets callers
+ * pass the DO's trace context through `emit(event, payload, context)`
+ * without us adding a typed argument.
+ */
+function pickAnchor(context: unknown): CrossSeamAnchor | undefined {
+  if (!context || typeof context !== "object") return undefined;
+  const c = context as Record<string, unknown>;
+  const trace = c.traceUuid;
+  const session = c.sessionUuid;
+  const team = c.teamUuid;
+  const request = c.requestUuid;
+  if (
+    typeof trace !== "string" ||
+    typeof session !== "string" ||
+    typeof team !== "string" ||
+    typeof request !== "string"
+  ) {
+    return undefined;
+  }
+  const anchor: CrossSeamAnchor = {
+    traceUuid: trace,
+    sessionUuid: session,
+    teamUuid: team,
+    requestUuid: request,
+    ...(typeof c.sourceRole === "string" ? { sourceRole: c.sourceRole } : {}),
+    ...(typeof c.sourceKey === "string" ? { sourceKey: c.sourceKey } : {}),
+    ...(typeof c.deadlineMs === "number" ? { deadlineMs: c.deadlineMs } : {}),
+  };
+  return anchor;
 }
 
 async function safeText(res: Response): Promise<string> {
@@ -106,6 +157,7 @@ export function makeHookTransport(
         emitBody: unknown;
         context: unknown;
         signal?: AbortSignal;
+        anchor?: CrossSeamAnchor;
       };
       const body = await callBindingJson(
         binding,
@@ -117,6 +169,7 @@ export function makeHookTransport(
           context: payload.context,
         },
         payload.signal,
+        payload.anchor,
       );
       return { body };
     },
@@ -147,6 +200,7 @@ export function makeCapabilityTransport(
         body: unknown;
         signal?: AbortSignal;
         onProgress?: (frame: unknown) => void;
+        anchor?: CrossSeamAnchor;
       };
       return callBindingJson(
         binding,
@@ -157,11 +211,22 @@ export function makeCapabilityTransport(
           body: payload.body,
         },
         payload.signal,
+        payload.anchor,
       );
     },
     async cancel(input: unknown): Promise<void> {
-      const payload = input as { requestId: string; body: unknown };
-      await callBindingJson(binding, "/capability/cancel", payload);
+      const payload = input as {
+        requestId: string;
+        body: unknown;
+        anchor?: CrossSeamAnchor;
+      };
+      await callBindingJson(
+        binding,
+        "/capability/cancel",
+        { requestId: payload.requestId, body: payload.body },
+        undefined,
+        payload.anchor,
+      );
     },
   };
 }
@@ -178,8 +243,21 @@ export function makeCapabilityTransport(
  * fake. The binding is expected to mirror OpenAI-compatible Chat
  * Completions output.
  */
+/**
+ * A4-A5 review R2 (Kimi): the Request URL uses a synthetic
+ * `https://fake-provider.local` host. Cloudflare service-binding
+ * `fetch()` routes by binding table (not DNS); the host is a
+ * placeholder for request logging.
+ *
+ * A4-A5 review R4 (GPT): when `anchorProvider` is supplied, every
+ * outbound request is stamped with the current `CrossSeamAnchor` via
+ * `buildCrossSeamHeaders()`. Deployed builds wire this to a
+ * per-request anchor derived from the DO state so trace / session /
+ * team / request identity stay continuous across the provider edge.
+ */
 export function makeProviderFetcher(
   binding: ServiceBindingLike | undefined,
+  anchorProvider?: () => CrossSeamAnchor | undefined,
 ): typeof fetch | undefined {
   if (!binding?.fetch) return undefined;
   return (async (input, init) => {
@@ -190,7 +268,17 @@ export function makeProviderFetcher(
           ? input.toString()
           : input.url;
     const path = extractPath(url) ?? "/chat/completions";
-    const request = new Request(`https://fake-provider.local${path}`, init);
+    const headers = new Headers(init?.headers);
+    const anchor = anchorProvider?.();
+    if (anchor) {
+      for (const [k, v] of Object.entries(buildCrossSeamHeaders(anchor))) {
+        headers.set(k, v);
+      }
+    }
+    const request = new Request(`https://fake-provider.local${path}`, {
+      ...init,
+      headers,
+    });
     return binding.fetch!(request);
   }) as typeof fetch;
 }
@@ -238,6 +326,44 @@ export function makeRemoteBindingsFactory(): CompositionFactory {
           ? makeProviderFetcher(env.FAKE_PROVIDER_WORKER)
           : undefined;
 
+      // A4-A5 review R3: bridge `HookTransport` into a minimal
+      // `.emit(event, payload, context)` surface so the DO's
+      // `emitHook` wrapper actually uses the remote transport
+      // instead of dropping the event. We keep the raw
+      // `serviceBindingTransport` alongside so a future full
+      // dispatcher (driven by handler registry) can still pick the
+      // underlying transport.
+      const hooksHandle = hookTransport
+        ? {
+            serviceBindingTransport: hookTransport,
+            emit: async (event: string, payload: unknown, context: unknown) => {
+              try {
+                // A4-A5 review R4: if the caller's `context` carries a
+                // CrossSeamAnchor (shape-matched on the required
+                // fields) thread it into the transport so the outbound
+                // request is stamped. Context is `unknown` at this
+                // boundary, so we narrow by structural check rather
+                // than importing a type.
+                const anchor = pickAnchor(context);
+                const result = await hookTransport.call({
+                  handler: { id: `session.${event}`, event },
+                  emitBody: payload,
+                  context,
+                  anchor,
+                });
+                return (result as { body?: unknown }).body;
+              } catch {
+                // Remote hook failure must not kill a session turn; the
+                // session layer's error path converts to a continue
+                // outcome. Swallow here so the orchestrator keeps
+                // progressing (A5 §2.2 "local reference path stays
+                // authoritative").
+                return undefined;
+              }
+            },
+          }
+        : undefined;
+
       return {
         kernel: undefined,
         llm: providerFetcher ? { fetcher: providerFetcher } : undefined,
@@ -245,9 +371,7 @@ export function makeRemoteBindingsFactory(): CompositionFactory {
           ? { serviceBindingTransport: capabilityTransport }
           : undefined,
         workspace: undefined,
-        hooks: hookTransport
-          ? { serviceBindingTransport: hookTransport }
-          : undefined,
+        hooks: hooksHandle,
         eval: undefined,
         storage: undefined,
         profile,

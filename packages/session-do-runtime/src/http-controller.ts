@@ -41,6 +41,15 @@ export interface HttpDispatchHost {
   readonly getPhase?: () => string;
   /** Read the replay timeline — returns session stream event bodies. */
   readonly readTimeline?: () => readonly Record<string, unknown>[];
+  /**
+   * A4-A5 review (Kimi R1): expose the DO's session-scoped `traceUuid`
+   * so `HttpController.buildClientFrame()` can reuse it instead of
+   * minting a fresh one per HTTP fallback call. Without this, a
+   * session that uses WS for start and HTTP for follow-up inputs
+   * would split into two trace identities, breaking cross-transport
+   * trace correlation.
+   */
+  readonly getTraceUuid?: () => string | null;
 }
 
 /** Outcome of an HTTP action, before it is serialised into a Response. */
@@ -118,6 +127,15 @@ export class HttpController {
     messageType: string,
     body: Record<string, unknown>,
   ): string {
+    // A4-A5 review R1 (Kimi): when the DO has already latched a
+    // `traceUuid`, reuse it so HTTP fallback frames share the same
+    // trace identity as the WS path. Only fall back to a fresh UUID
+    // when no DO host is wired — that branch only fires in pure
+    // controller tests that do not represent real runtime paths.
+    const hostTrace = this.host.getTraceUuid?.() ?? null;
+    const traceUuid = hostTrace && hostTrace.length > 0
+      ? hostTrace
+      : crypto.randomUUID();
     return JSON.stringify({
       header: {
         schema_version: "1.1.0",
@@ -130,7 +148,7 @@ export class HttpController {
         priority: "normal",
       },
       trace: {
-        trace_uuid: crypto.randomUUID(),
+        trace_uuid: traceUuid,
         session_uuid: sessionId,
       },
       body,
