@@ -248,7 +248,7 @@
 | `rg` | search | `local-ts` | allow | **Supported** | E2 | A8 P3-01 已实现 namespace-backed 真实搜索 + bounded output；canonical search baseline（AX-QNA Q15） |
 | `curl` | network | `local-ts` | ask | **Partial (ask-gated)** | E2 | A9 P2 收口为 restricted baseline：scheme allow-list (http/https)、host deny-list (localhost/RFC1918/link-local/CGNAT/IPv6 ULA/cloud-metadata)、`timeoutMs`/`maxOutputBytes` 双 cap、`fetchImpl` 注入注接，bash path 仅承诺 `curl <url>`，richer `{ url, method, headers, body, timeoutMs }` 只走 structured tool call（AX-QNA Q17） |
 | `ts-exec` | exec | `local-ts` | ask | **Partial (ask-gated)** | E2 | A9 P3 按 Q22 冻结为 honest partial：syntax validation (`new Function`) + length ack + 固定 `ts-exec-partial-no-execution` marker；不执行 code，升级口保留为 future remote tool-runner via `ServiceBindingTarget` |
-| `git` | vcs | `local-ts` | allow | **Partial** | E1 | 只承诺 `status/diff/log`，且仍是 stub |
+| `git` | vcs | `local-ts` | allow | **Partial** | E2 | A10 P2-01 冻结为 `status/diff/log` 只读 subset（AX-QNA Q18）：`status` 接入 `WorkspaceFsLike.listDir` 真实列出 workspace entries（跳过 `/_platform/**`）；`diff` / `log` 走 honest-partial markers (`git-partial-no-baseline` / `git-partial-no-history`)；mutating subcommand 触发 `git-subcommand-blocked`；planner 与 handler 共享 `GIT_SUPPORTED_SUBCOMMANDS` 验证 |
 
 ### 7.2 Target Inventory
 
@@ -278,7 +278,7 @@
 | richer `curl` flags via bash argv | **Frozen Out (A9 Q17)** | bash path 仅 `curl <url>`；planner 拦截 `-X / -H / --data / extra-token` 并提示 `curl-bash-narrow-use-structured` —— richer 必须走 structured `{ url, method, headers, body, timeoutMs, maxOutputBytes }` |
 | file-based / argv-based `ts-exec` | Deferred | 当前 v1 仅 honest partial，inline code only；upgrade path 保留给 future remote tool-runner via service-binding |
 | host interpreter / nested shell (`python` / `python3` / `node` / `nodejs` / `bash` / `sh` / `zsh` / `deno` / `bun`) | **Unsupported (A9 P1-02)** | Workers-native runtime 无宿主 shell；详见 §7.5 |
-| `git add/commit/restore/branch/...` | Deferred | 当前无 virtual index/ref model |
+| `git add/commit/restore/branch/checkout/merge/rebase/reset/push/pull/fetch/clone/tag/stash` | **Frozen Out (A10 Q18)** | planner 层在 bash 路径直接抛 `git-subcommand-blocked`；handler 层同样拦截；virtual index/ref/history 属 Phase 8+ 设计，本次不提前承诺 |
 
 ### 7.5 Unsupported / Risk-Blocked Surface
 
@@ -343,3 +343,4 @@
 | v0.1 | `2026-04-17` | `GPT-5.4` | 初稿 |
 | v0.2 | `2026-04-18` | `GPT-5.4` | A8 收口：`mkdir` 升级为 Partial(ask-gated)+disclosure（Q21）；`rg` 升级为 Supported E2 +namespace-backed（Q15）；Deferred 表移除 `grep -> rg` 行并新增 Landed(A8 P3-02) 记录（Q16）；`egrep/fgrep` 单列 Deferred |
 | v0.3 | `2026-04-18` | `GPT-5.4` | A9 收口：`curl` 升级为 Partial(ask-gated) E2 + restricted baseline / egress guard（Q17）；`ts-exec` 升级为 Partial(ask-gated) E2 honest partial（Q22）；Deferred 表把 richer `curl` flags 重标 Frozen Out + 新增 host interpreter Unsupported 行；Unsupported 表新增 `python/node/bash/sh/...` 与 egress guard 对齐 |
+| v0.4 | `2026-04-18` | `GPT-5.4` | A10 收口：`git` 升级为 Partial E2，namespace-backed status + honest-partial diff/log + subcommand validator（Q18）；Deferred 表的 mutating git 行重标 Frozen Out 并枚举常见子命令；新增 drift guard 测试把 12-pack / policy / unsupported taxonomy / oom-risk taxonomy / git subset 锁入回归（Q19） |

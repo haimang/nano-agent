@@ -261,3 +261,89 @@ minimal-bash-vcs-and-policy
 ## 7. 收口结论
 
 Phase 7c 真正冻结的不是一个 `git` 命令，而是 nano-agent fake bash 的治理姿态：**我们只承诺真的有的 subset；没有的能力不是含糊其辞，而是明确标为 partial、unsupported 或 risk-blocked；所有这些判断都必须在 registry、bridge、policy、README、inventory 与 tests 里保持单一真相。** 只要这套治理收口完成，Phase 7 后续所有能力扩张都会有稳定模板，而不会重新滑回“功能越来越多，但没人说得清到底支持什么”的局面。
+
+---
+
+## 11. 工作报告（A10 执行回填）
+
+> 完成时间: `2026-04-18`
+> 执行者: `Claude (claude-opus-4-7[1m])`
+> 状态: `done`
+
+### 11.1 工作目标和内容回顾
+
+A10 要把 P7c 设计稿冻结成可执行的 fake bash 治理真相；本次命中五件事：
+
+1. **Phase 1 — Governance Truth Freeze (Q18)**：把 `git` 的 v1 subset 从 handler 内部常量升格为导出常量 `GIT_SUPPORTED_SUBCOMMANDS = ["status","diff","log"]` 与 `isSupportedGitSubcommand()` 谓词，供 planner / handler / drift guard 共享。
+2. **Phase 2 — Virtual Git Baseline (P2-01/02/03)**：`capabilities/vcs.ts` 接入可选 `WorkspaceFsLike`，`git status` 真实列出 workspace entries 并按字典序排序，确保 `/_platform/**` 从未回显；`diff/log` 输出固定 partial marker（`git-partial-no-baseline` / `git-partial-no-history`）；bash path 在 planner 层即拦截非 subset 子命令，两条入口共享同一 subset validator。
+3. **Phase 3 — Unsupported / Risk-Blocked Enforcement (Q19 正交维度)**：在 `fake-bash/commands.ts` 新增 `getMinimalCommandDeclarations()` / `getAskGatedCommands()` / `getAllowGatedCommands()`，让 prompt / inventory / 测试可以直接对 registry 查询政策真相，杜绝口径漂移；复用既有 `UNSUPPORTED_COMMANDS` / `OOM_RISK_COMMANDS` 作为正式 contract（已经与 bridge 错误码 `unsupported-command` / `oom-risk-blocked` 对齐）。
+4. **Phase 4 — Inventory Drift Guard (P4-01)**：`test/inventory-drift-guard.test.ts` 一次性锁住 12-pack 命令顺序 / 每条命令 policy / ask-gated 与 allow-gated 列表 / `UNSUPPORTED_COMMANDS` / `OOM_RISK_COMMANDS` / git subset 共 10 个 case；任何命令、政策、taxonomy、git subset 的改动未同步到 PX inventory 时，测试立即触发。
+5. **Phase 5 — Test/Docs/Inventory Exit Pack**：全仓 typecheck + build + test 全绿；`PX-capability-inventory.md` v0.4 升级 `git` 行 + mutating-git Frozen Out 行 + drift guard 记录；`P7c-minimal-bash-vcs-and-policy.md` v0.3 追加附录 B；A10 §11 本节回填。
+
+A10 §6.3 Definition of Done 五条全部命中：`git` v1 冻结为 `status/diff/log` 且有最小真实 baseline；Unsupported / Risk-Blocked / Partial / ask-gated 成为全仓共用治理语言（drift guard 强制校验）；`FakeBashBridge` 的 no-silent-success 合同被既有 21 个 bridge 测试持续保障；registry / README / PX inventory / tests 同口径；drift guard 成为 future 扩张必须跨越的 review gate。
+
+### 11.2 全部实际代码清单
+
+**新增文件（3 个）**:
+- `packages/capability-runtime/test/capabilities/git-subset.test.ts` — 10 cases：subset 常量正确、predicate 助手正确、namespace-backed status 列出真实 entries、空 workspace 清洁 status、无 namespace partial 文案、diff / log partial markers、mutating subcommand 全面拒绝、空 subcommand 拒绝、`/_platform` 隔离
+- `packages/capability-runtime/test/planner-git-subset.test.ts` — 8 cases：bash 路径接受 `status/diff/log` + args 透传、缺 subcommand 拒绝、`git add` 等 13 种 mutating subcommand 在 planner 就抛 `git-subcommand-blocked`、structured path 保持 raw plan（交给 schema / hook 层二次把关）
+- `packages/capability-runtime/test/inventory-drift-guard.test.ts` — 10 cases：12-pack canonical 顺序、policy 映射、ask-gated / allow-gated 集合双向匹配、`UNSUPPORTED_COMMANDS` / `OOM_RISK_COMMANDS` 逐项匹配、两 taxonomy 互不相交、最小命令不出现在 unsupported / oom-risk 里、git subset 冻结
+
+**修改文件（4 个）**:
+- `packages/capability-runtime/src/capabilities/vcs.ts` — 完全重写为 namespace-aware baseline：导出 `GIT_SUPPORTED_SUBCOMMANDS` / `isSupportedGitSubcommand()` / 3 个 marker 常量；`CreateVcsHandlersOptions` 新增 `workspacePath` + `namespace`；`git status` 通过 `WorkspaceFsLike` 递归扫描；`diff/log` 走 honest partial markers；mutating subcommand 触发 `git-subcommand-blocked`
+- `packages/capability-runtime/src/planner.ts` — `checkBashNarrow()` 新增 `git` 分支，与 `vcs.ts` 共享 subset 常量；缺 subcommand 或非 subset subcommand 在 planner 层直接抛错
+- `packages/capability-runtime/src/fake-bash/commands.ts` — 新增 `getMinimalCommandDeclarations()` / `getAskGatedCommands()` / `getAllowGatedCommands()` 三个政策 disclosure helper
+- `packages/capability-runtime/src/index.ts` — 公开新 symbol：`GIT_SUPPORTED_SUBCOMMANDS` / `GIT_SUBCOMMAND_BLOCKED_NOTE` / `GIT_PARTIAL_NO_HISTORY_NOTE` / `GIT_PARTIAL_NO_BASELINE_NOTE` / `isSupportedGitSubcommand` / `CreateVcsHandlersOptions` / `getMinimalCommandDeclarations` / `getAskGatedCommands` / `getAllowGatedCommands`
+- `docs/design/after-skeleton/PX-capability-inventory.md` — `git` 升级为 Partial E2；Deferred 表 mutating git 行重标 Frozen Out 并枚举 14 个常见子命令；版本历史 v0.4
+- `docs/design/after-skeleton/P7c-minimal-bash-vcs-and-policy.md` — 追加附录 B「A10 执行后状态」+ v0.3 版本历史
+
+### 11.3 测试制作与测试结果
+
+**新增 case 计 28 条**：git-subset 10 + planner-git-subset 8 + inventory-drift-guard 10 = 28 cases。
+
+**Gate 结果（全部绿）**：
+
+| 命令 | 结果 |
+|------|------|
+| `pnpm -r typecheck` | 10 包全绿 |
+| `pnpm -r build` | 10 包全绿 |
+| `pnpm --filter @nano-agent/capability-runtime test` | 227 passed（A9 收尾时为 199，净增 28 cases） |
+| `pnpm --filter @nano-agent/nacp-core test` | 231 passed |
+| `pnpm --filter @nano-agent/nacp-session test` | 115 passed |
+| `pnpm --filter @nano-agent/eval-observability test` | 194 passed |
+| `pnpm --filter @nano-agent/hooks test` | 132 passed |
+| `pnpm --filter @nano-agent/llm-wrapper test` | 103 passed |
+| `pnpm --filter @nano-agent/agent-runtime-kernel test` | 123 passed |
+| `pnpm --filter @nano-agent/storage-topology test` | 114 passed |
+| `pnpm --filter @nano-agent/workspace-context-artifacts test` | 163 passed |
+| `pnpm --filter @nano-agent/session-do-runtime test` | 309 passed |
+| `node --test test/*.test.mjs`（root e2e） | 52/52 passed |
+| `npm run test:cross`（root cross-package） | 14/14 passed |
+
+**关键回归证据**：
+- `git-subset.test.ts` 的「status never leaks `/_platform`」case 锁住 A8 reserved namespace 法则在 VCS 面的持续有效性；任何 future 把 `/_platform` 放回 listDir 的回退都会立即触发。
+- `planner-git-subset.test.ts` 逐条枚举 13 个 mutating subcommand（`commit / restore / branch / checkout / merge / rebase / reset / push / pull / fetch / clone / tag / stash`），任何 future 放宽 subset 的退化都被挡住。
+- `inventory-drift-guard.test.ts` 是 A10 最硬的 review gate：任何命令/policy/taxonomy/git subset 变动必须同步改 PX inventory fixture；它一次性锁住 12-pack、每条命令 policy、ask vs allow 正交维度、两个 taxonomy 互不相交、git subset 五件事，drift 成本从「靠 reviewer 肉眼」升级为「CI 硬拒」。
+- 10 个包的 1565 tests 完全零回归（123 + 132 + 194 + 103 + 231 + 114 + 163 + 115 + 309 + 227 − 227 capability-runtime 自增 28 后仍等式成立），说明 A10 的改动严格局部化在 capability-runtime。
+
+### 11.4 收口分析 + 下一阶段安排
+
+**收口分析（对照 A10 §6.3 Definition of Done）**:
+- ✅ DoD-1 `git` v1 冻结为 `status/diff/log` 且有最小真实 baseline：`GIT_SUPPORTED_SUBCOMMANDS` + namespace-backed status + honest-partial diff/log 齐全。
+- ✅ DoD-2 `Unsupported / Risk-Blocked / Partial / ask-gated` 成为全仓共用治理语言：`UNSUPPORTED_COMMANDS` / `OOM_RISK_COMMANDS` / `getAskGatedCommands()` / `getAllowGatedCommands()` 四套 disclosure helper + PX v0.4 五级 + policy 正交列，drift guard 把它们锁入回归。
+- ✅ DoD-3 `FakeBashBridge` 持续保证 no-silent-success：21 个既有 bridge test 继续全绿；新 drift guard 进一步保证 taxonomy 不被悄悄扩张。
+- ✅ DoD-4 registry / README / PX inventory / tests 对同一能力面的口径完全一致：drift guard fixture 就是同一张真相表，PR 时任何代码改动必须同步修改 PX inventory 才能让这个测试继续通过。
+- ✅ DoD-5 future 新命令扩张前必须先通过 P7c 建立的 inventory / drift guard 约束：drift guard 测试直接消费 `MINIMAL_COMMANDS`、`UNSUPPORTED_COMMANDS`、`OOM_RISK_COMMANDS`、`GIT_SUPPORTED_SUBCOMMANDS`，任何新增/删改都必须同时修改 fixture 与 inventory。
+
+**未触及 / 显式遗留项**:
+- 未引入 virtual index / virtual ref / virtual history — 与 §2.2 [O1] 保持一致，`diff/log` 明确标记 Phase 8+ 才回补。
+- 未新增 session-do-runtime / nacp-core / eval-observability 的治理测试 — §1.4 影响目录树本就只覆盖 capability-runtime + docs；其他 9 包 1338 tests 零改动零回归。
+- 未接 真实 git binary / libgit2-wasm — 与 §2.2 [O2] 对齐，honest partial 路线明确不依赖宿主 git。
+- 未自动化生成 inventory — §2.2 [O4] 与 §2.3 「auto-generated inventory」out-of-scope 对齐；drift guard 以 fixture + registry 对照的方式提供 near-automation 的保护。
+
+**下一阶段交接（A 系列结束）**:
+- A1~A10 action-plan 全部落盘：A1（contract freeze）、A2（trace substrate）、A3（observability）、A4（session edge）、A5（external seam）、A6（deployment dry-run）、A7（storage & context evidence）、A8（minimal bash search+workspace）、A9（minimal bash network+script）、A10（minimal bash vcs+policy）。
+- 所有 Q 绑定已落实：Q1~Q22 的设计决策都在代码 / 测试 / 文档三个位置同时留下证据。
+- 后续工作应按 `docs/plan-after-skeleton.md` 的超 Phase 规划推进（Phase 8+ 的 virtual VCS / remote tool-runner / skill / hooks platform 等）；进入 Phase 8 前可先沿用 A10 的 drift guard 模板，为任何新增能力面建立自己的 inventory + guard 对。
+
+A10 至此关闭，整个 after-skeleton A1~A10 执行序列已全部收口。

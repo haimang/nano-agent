@@ -425,8 +425,27 @@
 
 ## 附录
 
+### B. A10 执行后状态（2026-04-18）
+
+A10 action-plan 已落盘，本节记录 P7c 在执行阶段被冻结成的真相：
+
+- **Git subset freeze (Q18)**：`packages/capability-runtime/src/capabilities/vcs.ts` 导出 `GIT_SUPPORTED_SUBCOMMANDS = ["status","diff","log"]` 与 `isSupportedGitSubcommand()`；planner 与 handler 共同消费这一常量，bash 路径任何非 subset 子命令都抛 `git-subcommand-blocked` marker，同样语言出现在 handler error 中。
+- **Virtual git baseline (P2-01)**：`git status` 接入可选的 `WorkspaceFsLike`，递归列出 workspace 下的文件并按字典序排序；`/_platform/**` 永不出现在 status 输出中；无 namespace 注入时继续给出 `workspace not wired` 的诚实 partial 文案。`git diff` / `git log` 返回 deterministic 的 `git-partial-no-baseline` / `git-partial-no-history` marker，说明 virtual index / ref / history 在 v1 仍是 Phase 8+ 范畴。
+- **Shared subset validator (P2-02)**：`planner.ts` 在 `checkBashNarrow()` 中新增 `git` 分支，缺 subcommand 抛「subcommand required」、mutating subcommand 抛 `git-subcommand-blocked`；structured path 仍保留 raw plan（便于 schema / hook 在 execute 前 inspect），但 handler 会再次拒绝同一批 subcommand——这给 bash 与 structured 两个入口提供同一张 subset 真相表。
+- **Taxonomy disclosure helpers (Q19)**：`fake-bash/commands.ts` 新增 `getMinimalCommandDeclarations()` / `getAskGatedCommands()` / `getAllowGatedCommands()`，让 prompt / drift guard / inventory 直接向 registry 查询 ask-gated vs allow-gated 列表，杜绝文档文案漂移。
+- **Inventory drift guard (P4-01)**：`packages/capability-runtime/test/inventory-drift-guard.test.ts` 把以下五条真相锁入回归——
+  1. 12-pack 命令在 canonical 顺序下完全匹配；
+  2. 每条命令的 policy (`allow` / `ask`) 与 PX inventory 完全对齐；
+  3. `ask-gated` / `allow-gated` 集合与 PX truth table 双向一致；
+  4. `UNSUPPORTED_COMMANDS` / `OOM_RISK_COMMANDS` 两个 taxonomy 分别逐项匹配，且集合互不相交；
+  5. `GIT_SUPPORTED_SUBCOMMANDS` 严格等于 `[status, diff, log]`。任何命令、政策、taxonomy、git subset 的改动如果不同步改 PX inventory，这条测试立即触发，强制 review gate。
+- **Inventory 同步**：`PX-capability-inventory.md` v0.4 升级 `git` 行 + mutating-git Frozen Out 行 + drift guard 记录；版本历史记录 A10 收口。
+
+§9.3 下一步行动条目已在 A10 阶段闭合，可在执行复盘时直接对照本节核对。
+
 ### C. 版本历史
 
 | 版本 | 日期 | 修改者 | 主要变更 |
 |------|------|--------|----------|
 | v0.1 | `2026-04-17` | `GPT-5.4` | 初稿 |
+| v0.3 | `2026-04-18` | `GPT-5.4` | 追加附录 B「A10 执行后状态」；冻结 git subset + virtual baseline + inventory drift guard + taxonomy disclosure helpers |
