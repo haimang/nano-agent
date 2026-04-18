@@ -16,7 +16,7 @@
 
 ## 0. 背景与前置约束
 
-当前 `nano-agent` 已完成 skeleton 与第一轮 runtime 骨架，但协议层仍存在一个明确断口：**代码里已经有一套 `nacp-core` / `nacp-session` reality，业主又已经给出了新的 Phase 0 约束（`trace_uuid` canonical、UUID-only internal identity law、多轮 input family 延后）**。如果现在不先做一次 Contract & Identifier Freeze，后续 Phase 1-7 的 observability、session runtime、hooks、LLM wrapper、storage topology 都会在不稳定边界上继续生长，造成成倍返工。
+当前 `nano-agent` 已完成 skeleton 与第一轮 runtime 骨架，但协议层仍存在一个明确断口：**代码里已经有一套 `nacp-core` / `nacp-session` reality，业主又已经给出了新的 Phase 0 约束（`trace_uuid` canonical、UUID-only internal identity law、formal multi-round input family 必须纳入 Phase 0 contract freeze）**。如果现在不先做一次 Contract & Identifier Freeze，后续 Phase 1-7 的 observability、session runtime、hooks、LLM wrapper、storage topology 都会在不稳定边界上继续生长，造成成倍返工。
 
 - **项目定位回顾**：nano-agent 是一个吸收 mini-agent / codex / claude-code 长处、供我们自己使用的极精简 agent runtime；未来重点深耕 **上下文管理 / Skill / 稳定性**。
 - **本次讨论的前置共识**：
@@ -24,7 +24,9 @@
   - `nacp-core` 是内部 envelope truth，`nacp-session` 是 client-visible session profile truth。
   - `trace_uuid` 是后续唯一 canonical trace identity；任何内部请求链路都不应再引入新的 `trace_id` 事实。
   - 所有 internal identity-bearing 字段应收敛到 `*_uuid`；非 UUID 的稳定句柄必须显式标注为 `*_key` / `*_name`，不能继续混在 `*_id` 里。
-  - 多轮 input family、完整 fake bash 扩展、完整 context compression 架构都已经被业主明确延后到下一阶段。
+  - multi-round input family 不再属于 deferred bucket；它必须在 `nacp-session` 层被纳入 Phase 0 的 formal contract freeze，而不是留给 `session-do-runtime` 私造消息。
+  - 完整 fake bash 扩展、完整 context compression 架构仍延后到下一阶段。
+  - `P0-contract-freeze-matrix.md` 是 Phase 0 状态判定的**唯一权威 matrix**；本文件负责解释 freeze rationale、migration scope 与治理 handoff，而不是维护第二份 competing matrix。
 - **显式排除的讨论范围**：
   - 不讨论 public API / frontend API 的最终产品接口
   - 不讨论业务 DDL / registry schema / analytics warehouse 设计
@@ -48,7 +50,7 @@
 | **Freeze Cut** | Phase 0 完成后产生的第一版 owner-aligned frozen baseline | 是后续 action-plan 与 review 的判定基线 |
 | **Identifier Law** | 对 `*_uuid` / `*_key` / `*_name` / `*_ref` 等命名后缀的强约束 | 见 `identifier-law.md` |
 | **Translation Zone** | 允许保留外部系统原生命名的边界层 | 例如 OpenAI `tool_call_id` 只能存在于 adapter 内 |
-| **Deferred Surface** | 明知将来会做，但本阶段刻意不冻结的功能面 | 例如 multi-round input family |
+| **Deferred Surface** | 明知将来会做，但本阶段刻意不冻结的功能面 | 例如 public API / business DDL |
 | **Contract Matrix** | 用来标明“现在冻结 / 只冻结方向 / 明确延后”的矩阵 | 见 `contract-freeze-matrix.md` |
 
 ### 1.2 参考调查报告
@@ -208,12 +210,13 @@
 - **[S2] 冻结 identifier law**：所有新包如果继续在 `trace_id` / `producer_id` / `stream_id` 上扩展，会把后续成本放大。
 - **[S3] 明确 frozen / deferred matrix**：避免“大家都以为这个要做 / 不做”的灰区。
 - **[S4] 给出 versioning handoff**：否则 Phase 0 的 rename batch 完成后，未来仍不知道什么变化算 breaking。
+- **[S5] 把 formal follow-up input family 从 deferred bucket 移入 `nacp-session` contract freeze**：Q8 已确认 v1 contract surface 不能把 multi-round 继续留给下一阶段。
 
 ### 5.2 Out-of-Scope（nano-agent 第一版不做）
 
 - **[O1] Public API / frontend adaptation contract**：这是下一阶段的第一工作流，不是 Phase 0 的任务。
 - **[O2] Business DDL / registry persistence**：当前更重要的是 runtime truth，而不是把未来数据库提前拍死。
-- **[O3] Follow-up input family / multi-round chat**：业主已明确延后。
+- **[O3] multi-round turn scheduling / queue semantics beyond protocol freeze**：本阶段先冻结 input family，不在这里把完整调度语义一起拍死。
 - **[O4] Full fake bash / full context compression**：本阶段只冻结边界，不扩张功能面。
 
 ### 5.3 边界清单（容易混淆的灰色地带）
@@ -221,7 +224,7 @@
 | 项目 | 判定 | 理由 |
 |------|------|------|
 | `session.start` / `session.resume` 当前 shape | in-scope | 已经在代码中存在，必须冻结 |
-| follow-up user input family | out-of-scope | README 与 plan 已明确延后 |
+| formal follow-up user input family | in-scope | Q8 已确认必须纳入 Phase 0，避免 API v1 → v2 断层 |
 | `trace_uuid` 命名迁移 | in-scope | 属于 owner 直接决策，不是未来探索项 |
 | provider raw response IDs | out-of-scope | 仅允许在 translation zone 存在 |
 | observability trace anchor 的字段命名 | in-scope | 与 `trace_uuid` law 强耦合 |
@@ -282,9 +285,10 @@
 - **输出**：一份明确的 frozen surface 列表与一份 deferred surface 列表
 - **主要调用者**：Phase 0 owner review、后续 action-plan
 - **核心逻辑**：先以代码 reality 为准，再用 owner 决策修正命名与 phase boundary，最后写成 matrix。
+- **实现约束**：状态判定以 `P0-contract-freeze-matrix.md` 为唯一 truth；本文件只解释为什么这些 surface 应被纳入、为什么某些 surface 必须延后。
 - **边界情况**：
   - 文档里提到但代码里还没落地的内容，不得直接标记 frozen
-  - 代码里存在但 owner 已决定延后的内容，只能冻结为“当前 reality + deferred expansion”
+  - `follow-up input family` 已不再属于 deferred expansion；它必须作为本阶段必须补齐的 `nacp-session` contract surface 被单独追踪
 - **一句话收口目标**：✅ **`所有当前要继续依赖的 internal contract，都能在 matrix 里被准确找到`**
 
 #### F2: `Identifier Normalization`
@@ -293,6 +297,7 @@
 - **输出**：canonical internal naming law 与 translation zone 边界
 - **主要调用者**：`nacp-core` / `nacp-session` / `llm-wrapper` / observability
 - **核心逻辑**：UUID 身份统一进 `*_uuid`，非 UUID 机器句柄统一进 `*_key`，provider raw IDs 不得穿透 canonical layer。
+- **迁移约束**：这是一轮显式 breaking normalization batch，必须通过 `P0-nacp-versioning-policy.md` 中定义的 compat/migration chain 落地，而不是假装当前代码 reality 已天然符合新 law。
 - **边界情况**：
   - provider adapter 可保留 raw `tool_call_id`
   - observability 的非请求级平台警报可临时允许没有 `trace_uuid`
@@ -303,7 +308,7 @@
 - **输入**：业主的 out-of-scope 决策与现有 README / plan 口径
 - **输出**：被明确延后的 surface 名录
 - **主要调用者**：Phase 1-7 规划与代码审查
-- **核心逻辑**：把“将来会做，但现在不做”的东西单列出来，减少争论空间。
+- **核心逻辑**：把“将来会做，但现在不做”的东西单列出来，减少争论空间；同时把已经被业主从 deferred bucket 中移出的 surface（尤其是 formal follow-up input family）显式排除在该名录之外。
 - **边界情况**：
   - “当前 reality 已存在”不等于“当前要扩展”
   - “下一阶段第一工作流”不等于“本阶段 freeze”
@@ -405,4 +410,5 @@
 
 | 版本 | 日期 | 修改者 | 主要变更 |
 |------|------|--------|----------|
+| v0.2 | `2026-04-18` | `GPT-5.4` | 根据 PX-QNA Q8 业主决策，将 formal follow-up input family 从 deferred 调整为 Phase 0 in-scope contract surface |
 | v0.1 | `2026-04-17` | `GPT-5.4` | 初稿 |

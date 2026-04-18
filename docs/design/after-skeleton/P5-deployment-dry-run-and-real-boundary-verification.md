@@ -36,6 +36,7 @@
   - dry-run 必须以真实 Wrangler / Worker / DO 形态为核心，而不是只重复 node 侧 E2E。
   - fake provider / fake capability / fake hook worker 仍是重要资产，因为它们可以先把 boundary 验真。
   - real smoke 只追求最小、可信、可重复，不追求 provider / browser / region 全矩阵。
+  - Phase 5 是一个 **verification gate**，不是独立于 P3/P4 向前推进的实现流；若 session edge 或 external seam 尚未闭合，本阶段就没有值得验证的真实边界。
 - **显式排除的讨论范围**：
   - 不讨论正式 CI/CD 流水线
   - 不讨论负载压测与容量规划
@@ -297,7 +298,7 @@
 - **主要调用者**：本阶段所有实施与 review
 - **核心逻辑**：
   1. **L0 — In-process**：继续跑 root contract + E2E fake harness。
-  2. **L1 — Deploy-shaped dry-run**：使用 wrangler dev，接真 Worker/DO/WebSocket/service-binding，但外部 worker 可为 fake。
+  2. **L1 — Deploy-shaped dry-run**：优先使用 `wrangler dev --remote`；若当前账号/环境不适合 remote dev，则改用 `wrangler deploy + workers.dev smoke`，但仍要求真 Worker/DO/WebSocket/service-binding 参与，外部 worker 可为 fake。
   3. **L2 — Real smoke**：在最小 golden path 中接入真实 R2/KV 与一个真实 provider smoke。
 - **边界情况**：
   - 任何高层验证失败，都必须能回落到下一层定位，不允许直接“再试一次”。
@@ -312,6 +313,7 @@
   1. 在当前 `SESSION_DO` 之外，为 dry-run profile 增加 fake capability worker、fake hook worker、fake provider worker、R2、KV 等 bindings。
   2. session runtime 根据 profile 选择 composition factory。
   3. 所有 fake workers 必须使用真实 transport / real binding，不允许重新回退成内存函数调用。
+  4. dry-run profile 必须同时记录“走 remote dev 还是 deploy-smoke”的执行模式，避免把 wrangler 本地限制误读成 runtime bug。
 - **边界情况**：
   - 当前仓库只有一个 `wrangler.jsonc` skeleton，Phase 5 必须承认并扩充这一现实，而不是假设已经有多 profile 基础设施。
 - **一句话收口目标**：✅ **`wrangler dev 已能启动 deploy-shaped nano-agent，而不是只有单 DO skeleton`**
@@ -353,7 +355,95 @@
 - **核心逻辑**：
   1. 至少执行一条真实 golden path：client → WS → DO → LLM → stream → artifact/storage。
   2. 输出 trace timeline、placement evidence、session result summary、失败点位说明。
-  3. 给出明确 verdict：`green / yellow / red`，以及阻塞项。
+  3. L2 启动前必须先有一条明确 provider decision record；推荐沿用 `llm-wrapper` 的 OpenAI-compatible golden path，避免 fake provider 与 real provider 走两套 schema 世界。
+  4. 给出明确 verdict：`green / yellow / red`，以及阻塞项。
 - **边界情况**：
   - 真实 provider smoke 失败时，不应反向否定 dry-run 的结构价值；两者结论要分层表述。
 - **一句话收口目标**：✅ **`阶段性收口不再靠口头判断，而是有可审阅的 boundary evidence bundle`**
+
+### 7.3 非功能性要求
+
+- **性能目标**：real smoke 只允许最小 golden path，不承担容量或压测职责。
+- **可观测性要求**：每次 L1/L2 运行都必须产出完整 verdict bundle（trace/timeline/placement/summary），并记录使用的是 `remote-dev` 还是 `deploy-smoke` profile。
+- **稳定性要求**：L1/L2 只有在 P3/P4 最小 closure 具备后才允许启动；否则必须回退到 lower rung，而不是继续追加 smoke case。
+- **运行环境要求**：真实 provider secret 与 Wrangler 登录态可以先采用 owner-local/manual 注入，不把正式 CI secret orchestration 当作本 phase 前置条件。
+- **Verdict 阈值**：
+  - `green`：L0/L1 通过，L2 主 golden path 通过，verdict bundle 完整且无 blocking drift
+  - `yellow`：L0/L1 通过，但 L2 仅部分通过，或存在明确可定位、未阻断主结构的边界缺口
+  - `red`：L1 无法建立 deploy-shaped reality，或主 golden path 失败且 bundle/trace 不完整
+- **测试覆盖要求**：至少需要 WS upgrade、resume/replay、HTTP fallback、remote capability/hook/provider、R2/KV placement、real-provider smoke 六类验证。
+
+---
+
+## 8. 可借鉴的代码位置清单
+
+### 8.1 来自 nano-agent 当前代码
+
+| 文件:行 | 内容 | 借鉴点 | 备注 |
+|---------|------|--------|------|
+| `packages/session-do-runtime/wrangler.jsonc:1-16` | 当前只有 `SESSION_DO` binding | 说明 dry-run/profile 基础设施仍需补齐 | 是本 phase 的直接改造入口 |
+| `packages/session-do-runtime/src/worker.ts:15-71` | deploy-oriented worker entry skeleton | Worker 宿主已具雏形 | 但不等于 dry-run 已闭合 |
+| `packages/session-do-runtime/src/ws-controller.ts:1-56` | WebSocket controller stub | phase gate 必须诚实承认 controller reality | 这是 L1 前置缺口 |
+| `packages/capability-runtime/src/targets/service-binding.ts:40-191` | remote capability transport seam | fake worker dry-run 可先复用这条 contract | 很适合 L1/L2 smoke |
+| `packages/eval-observability/src/sinks/do-storage.ts:49-194` | durable trace sink | verdict bundle 的 trace/timeline 证据锚点 | 与 P6 强耦合 |
+
+### 8.2 来自 claude-code
+
+| 文件:行 | 内容 | 借鉴点 | 备注 |
+|---------|------|--------|------|
+| `context/claude-code/services/analytics/index.ts:80-164` | sink attach 前的 queued-events | startup / attach 期间的 early events 不能丢 | 很适合 smoke 期验证 |
+| `context/claude-code/services/compact/compact.ts:122-200` | lifecycle-boundary verification thinking | 真实边界验证不应只停留在 happy path 单测 | 对 Phase 5 很有帮助 |
+
+### 8.3 来自 codex
+
+| 文件:行 | 内容 | 借鉴点 | 备注 |
+|---------|------|--------|------|
+| `context/codex/codex-rs/otel/src/trace_context.rs:19-88` | trace continuation discipline | real smoke 不只是“通了”，而是“trace 没断” | 适合作为 verdict bundle 基线 |
+
+### 8.4 需要避开的“反例”位置
+
+| 文件:行 | 问题 | 我们为什么避开 |
+|---------|------|----------------|
+| `test/e2e/e2e-01-full-turn.test.mjs:1-197` | in-process happy path 绿色并不等于 Worker boundary 已成立 | L0 只能证明 contract/harness，不证明 deploy reality |
+| `packages/session-do-runtime/src/http-controller.ts:1-102` | fallback 仍是 stub 时，L1/L2 结论会被高估 | 说明 verification gate 不能早于 runtime closure |
+
+---
+
+## 9. 综述总结与 Value Verdict
+
+### 9.1 功能簇画像
+
+`Deployment Dry-Run and Real Boundary Verification` 的职责，是把“代码里看起来已经差不多了”转换成“我们真的在 Worker/DO/WS/service-binding 边界上见过它工作”。它不是上线计划，而是一个带证据的 phase gate：L0 证明 contract，L1 证明 deploy-shaped reality，L2 证明最小真实边界。没有这道 gate，after-skeleton 的很多 closure 都会停留在 node-harness 幻觉里。
+
+### 9.2 Value Verdict
+
+| 评估维度 | 评级 (1-5) | 一句话说明 |
+|----------|------------|------------|
+| 对 nano-agent 核心定位的贴合度 | 5 | Cloudflare-native runtime 没有真实边界验证就谈不上可信 |
+| 第一版实现的性价比 | 4 | 需要额外 wrangler/binding/profile 工程，但收益极高 |
+| 对未来“上下文管理 / Skill / 稳定性”演进的杠杆 | 4 | 所有后续扩张都会复用这条验证阶梯 |
+| 对开发者自己的日用友好度 | 4 | 前期门槛更高，但能显著减少“假完成” |
+| 风险可控程度 | 4 | 关键在于明确 phase gate 与 verdict 阈值，不把 smoke 做成黑盒 ritual |
+| **综合价值** | **4** | **应作为 Phase 5 的正式 verification gate 保留，而不是独立于 P3/P4 的实现 phase** |
+
+### 9.3 下一步行动
+
+- [ ] **决策确认**：确认 Phase 5 的定位是 verification gate，且 L2 需要单独 provider decision record。
+- [ ] **关联 Issue / PR**：补 dry-run binding manifest、wrangler profile、verdict bundle 输出与 green/yellow/red 判定实现。
+- [ ] **待深入调查的子问题**：
+  - [ ] owner 是否更偏好 `wrangler dev --remote` 还是 `deploy + workers.dev smoke` 作为默认 L1/L2 profile
+  - [ ] real provider smoke 选择哪个 OpenAI-compatible provider/model 作为最小 golden path
+- [ ] **需要更新的其他设计文档**：
+  - `P4-external-seam-closure.md`
+  - `P6-storage-and-context-evidence-closure.md`
+
+---
+
+## 附录
+
+### C. 版本历史
+
+| 版本 | 日期 | 修改者 | 主要变更 |
+|------|------|--------|----------|
+| v0.2 | `2026-04-18` | `GPT-5.4` | 补齐尾部章节；明确 verification gate、wrangler profile 分支、provider decision 与 verdict thresholds |
+| v0.1 | `2026-04-17` | `GPT-5.4` | 初稿 |

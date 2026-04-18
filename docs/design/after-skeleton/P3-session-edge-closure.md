@@ -26,18 +26,19 @@
 - `NanoSessionDO.webSocketMessage()` 仍然直接 `JSON.parse()` 后按 `message_type` 分发（`packages/session-do-runtime/src/do/nano-session-do.ts:194-258`）
 - `WsController` / `HttpController` 仍是明显 stub（`packages/session-do-runtime/src/ws-controller.ts:18-56`, `http-controller.ts:32-102`）
 - `turn-ingress.ts` 明确表明 **当前只有 `session.start.body.initial_input` 是已冻结 turn ingress reality**（`packages/session-do-runtime/src/turn-ingress.ts:26-104`）
-- multi-round follow-up input family 仍被 owner 明确延后
+- Q8 之后，formal follow-up input family 已被 owner 提升为 **Phase 0 必须补齐的 `nacp-session` contract surface**，但 runtime 仍不能在它冻结前私造 wire truth
 
 所以 Phase 3 的任务不是“发明新的 session edge”，而是把已经存在的 `nacp-session` truth 变成真正唯一的 session edge truth。
 
 - **项目定位回顾**：nano-agent 是 WebSocket-first、DO-centered、single-active-turn 的 runtime，不是 REST-first 聊天 API。
 - **本次讨论的前置共识**：
   - `nacp-session` 是 session edge legality 的 source of truth。
-  - multi-round input family 明确不在本阶段闭合；当前只收口最小 turn ingress reality。
+  - formal follow-up input family 已不再属于“下一阶段再说”；它必须先在 `nacp-session` / Phase 0 层冻结，再由 Phase 3 消费该 truth。
   - Session edge 必须同时服务 live WS、resume/replay、caller-managed health、HTTP fallback。
   - `trace_uuid` law 已经是上位约束，session edge 不能继续产生无 trace 的 accepted internal work。
+  - Phase 3 的 trace wiring 依赖 P0 rename/compat 与 P2 foundation 升级先落地；在那之前，本设计讨论的是 owner-aligned target edge，而不是宣称当前代码已满足新 trace law。
 - **显式排除的讨论范围**：
-  - 不讨论 multi-round prompt family 的具体协议设计
+  - 不负责发明 multi-round prompt family 的 contract shape；该 shape 必须由 P0 / `nacp-session` 先冻结
   - 不讨论多客户端 attach / observer mode
   - 不讨论 sub-agent / cross-DO federation
   - 不讨论完整 public SDK 形态
@@ -50,7 +51,7 @@
 
 - **名称**：`Session Edge Closure`
 - **一句话定义**：它负责把 Worker entry、WS/HTTP ingress、authority stamping、session frame validation、replay/ack/heartbeat、single-active-turn orchestration 这条边界真正闭合成一条唯一主路径。
-- **边界描述**：**包含** routing、upgrade、normalized ingress、helper assembly、replay/resume/health、HTTP fallback semantics、edge-side trace emission；**不包含** follow-up prompt family、前端 SDK、复杂 observer 模式。
+- **边界描述**：**包含** routing、upgrade、normalized ingress、helper assembly、replay/resume/health、HTTP fallback semantics、edge-side trace emission，以及对 upstream frozen follow-up family 的接线约束；**不包含** follow-up queue/replace policy 的完整产品化设计、前端 SDK、复杂 observer 模式。
 - **关键术语对齐**：
 
 | 术语 | 定义 | 备注 |
@@ -111,7 +112,7 @@
 
 | 被砍项 | 参考实现来源 | 砍的理由 | 未来是否可能回补 |
 |--------|--------------|----------|------------------|
-| follow-up prompt family 在本阶段闭合 | 聊天产品自然冲动 | owner 已明确延后 | 可能 |
+| 在 `session-do-runtime` 私自发明 follow-up wire | 交付压力 + runtime 便利性 | 会制造 protocol/runtime 双真相 | 高 |
 | 多客户端 attach / observer mode | 复杂 session 系统 | 会显著放大 replay/ack/state 复杂度 | 可能 |
 | REST-first 替代 WS-first | 传统 API 风格 | 与 nano-agent 定位冲突 | 否 |
 | 在 `session-do-runtime` 内继续手写平行 legality | 当前 stub 实现残留 | 会与 `nacp-session` 漂移 | 否 |
@@ -120,7 +121,7 @@
 
 | 扩展点 | 表现形式 (函数签名 / 目录 / 配置字段) | 第一版行为 | 未来可能的演进方向 |
 |--------|---------------------------------------|------------|---------------------|
-| Turn ingress seam | `extractTurnInput()` / future prompt family adapter | 只支持 `session.start.initial_input` | future `session.prompt` family |
+| Turn ingress seam | `extractTurnInput()` / future prompt family adapter | 先消费 `session.start.initial_input`，并为 upstream frozen follow-up family 预留正规接线点 | future queue / replace / approval-aware prompt policies |
 | HTTP fallback | `HttpController` + timeline/status route | 与 WS 共享同一 session model | richer polling / resumable fetch |
 | Replay control | `last_seen_seq` + helper resume path | reconnect 后 replay | future observer catch-up |
 | Health gate | caller-managed `checkHeartbeatHealth/checkAckHealth` | 由 DO alarm/lifecycle 驱动 | richer backpressure policies |
@@ -198,12 +199,12 @@
 - **[S2] `nacp-session` legality 真正接入 session-do-runtime 主路径**
 - **[S3] `SessionWebSocketHelper` 真正装配到 Session DO**
 - **[S4] replay/ack/heartbeat/caller-managed health 闭合**
-- **[S5] single-active-turn invariants 与最小 turn ingress reality 对齐**
+- **[S5] single-active-turn invariants 与 widened session ingress contract 对齐**
 - **[S6] edge-side trace emission 对齐 Phase 2 foundation**
 
 ### 5.2 Out-of-Scope（nano-agent 第一版不做）
 
-- **[O1] follow-up prompt family / multi-round user reply protocol**
+- **[O1] multi-turn queue / replace / merge policy 的完整产品语义**
 - **[O2] multi-client attach / observer mode**
 - **[O3] complex public SDK / frontend protocol**
 - **[O4] sub-agent or cross-DO federation**
@@ -214,7 +215,8 @@
 |------|------|------|
 | `session.start.body.initial_input` | in-scope | 当前唯一已冻结 turn ingress reality |
 | `session.resume.body.last_seen_seq` | in-scope | replay/resume 主路径必须真实接线 |
-| future `session.prompt` family | out-of-scope | owner 已明确延后 |
+| formal follow-up / multi-round input family | in-scope（依赖 P0） | Q8 已确认必须进入 `nacp-session` frozen surface，P3 不能再把它视为下一阶段事务 |
+| follow-up queue / replace policy | out-of-scope | 需要独立的 turn scheduling / product semantics 设计 |
 | HTTP fallback timeline/status | in-scope | 是 session edge 的一部分，不是下一阶段才有 |
 
 ---
@@ -234,9 +236,9 @@
    - **未来重评条件**：只有当产品交互模型发生根本变化，才可能改写。
 
 3. **取舍 3**：我们选择 **single-active-turn**，而不是 **并发 turn / queue-first**
-   - **为什么**：当前 multi-round input family 未冻结，single-active-turn 是最清晰、最易验证的正确性模型。
-   - **我们接受的代价**：后续 follow-up 体验会被延后。
-   - **未来重评条件**：当 prompt family 与 queue semantics 被正式设计后，再评估扩展。
+   - **为什么**：即使 formal follow-up input family 被纳入 Phase 0，P3 仍需要一个最清晰、最易验证的执行基线；single-active-turn 能保证 widened input surface 不会直接把 runtime 推进到并发调度泥潭里。
+   - **我们接受的代价**：follow-up family 的协议冻结会先于完整 queue / replace UX 落地。
+   - **未来重评条件**：当 follow-up queue semantics 与 kernel turn policy 被正式设计后，再评估扩展。
 
 ### 6.2 风险与缓解
 
@@ -244,7 +246,7 @@
 |------|----------|------|----------|
 | session-do-runtime 继续保留平行主路径 | 改动不彻底 | legality 漂移 | 强制所有 ingress 都经 `nacp-session` helper |
 | HTTP fallback 变成另一套业务协议 | controller 自由发挥 | public seam 漂移 | 规定 HTTP 只是 transport fallback，不是新业务模型 |
-| 只有 `session.start.initial_input` 导致体验受限 | multi-round 延后 | 功能感知不足 | 在设计中明确这是 deliberate defer，不是假完成 |
+| follow-up family 先完成协议冻结，但 runtime queue 语义仍未闭合 | Q8 要求 widened v1 surface | 用户预期可能先于执行语义成熟 | 明确区分“上游协议已冻结”和“下游调度语义仍待独立设计” |
 
 ### 6.3 本次 tradeoff 能带来的价值
 
@@ -262,7 +264,7 @@
 |------|--------|------|---------------------|
 | F1 | Normalized Ingress Path | route + parse + authority + legality + dispatch | 不再存在绕开 `nacp-session` 的平行 ingress |
 | F2 | WebSocket Helper Assembly | 真正装配 replay/ack/heartbeat/checkpoint/restore | Session DO 的 WS 边界由 helper 承担 |
-| F3 | Single-active-turn Edge Model | 当前只支持最小 turn ingress reality | edge 与 turn reality 不再互相说谎 |
+| F3 | Single-active-turn Edge Model | 在 widened input contract 上维持单活跃执行基线 | edge 与 upstream contract / runtime policy 不再互相说谎 |
 | F4 | HTTP Fallback Closure | 与 WS 共享同一 session model | fallback 不再只是静态 stub |
 | F5 | Edge Trace Wiring | attach/resume/replay/health 都 emit trace evidence | Phase 2 foundation 真正进入 edge |
 
@@ -294,16 +296,18 @@
 
 #### F3: `Single-active-turn Edge Model`
 
-- **输入**：最小 turn ingress reality
+- **输入**：当前首轮 reality + upstream frozen follow-up input family
 - **输出**：清晰的 edge invariant
 - **主要调用者**：session edge、kernel host
 - **核心逻辑**：
-  - 当前只支持 `session.start.body.initial_input`
-  - 当前时刻最多一个 active turn
+  - `session.start.body.initial_input` 仍是首个 turn 的 canonical 入口
+  - formal follow-up / multi-round input family 必须由 `nacp-session` 先冻结，P3 只消费这条上游 truth，而不是继续把它推迟到下一阶段
+  - 无论输入来自首轮还是 follow-up family，当前时刻最多一个 active turn
   - cancel/end/resume 均围绕此 invariant 设计
 - **边界情况**：
-  - future prompt family 只保留 seam，不进入本阶段实现闭环
-- **一句话收口目标**：✅ **`session edge 的能力边界与当前 turn ingress reality 完全一致`**
+  - 若 upstream frozen follow-up family 尚未在 runtime 中完全接线，Phase 3 也不得 silently coerce 到 `session.start` 或改用 DO 私有消息兜底
+  - 具体 queue / replace / merge 结果必须由后续 turn policy 设计明确，而不是在 edge 层临时发挥
+- **一句话收口目标**：✅ **`session edge 的执行边界与 upstream frozen contract 保持一致，同时不在 runtime 层偷造第二套语义`**
 
 #### F4: `HTTP Fallback Closure`
 
@@ -332,7 +336,8 @@
 - **性能目标**：edge legalization 必须薄且集中，不能引入多次重复 parse。
 - **可观测性要求**：attach/resume/replay/health 全部有固定 evidence 位置。
 - **稳定性要求**：不允许 WS 与 HTTP fallback 漂移成两套 reality。
-- **测试覆盖要求**：至少覆盖 normalize path、phase/role gate、replay/ack/heartbeat、HTTP fallback 与 trace emission。
+- **测试覆盖要求**：至少覆盖 normalize path、phase/role gate、首轮 + formal follow-up family 的 ingress 路径、replay/ack/heartbeat、HTTP fallback 与 trace emission。
+- **阶段门禁要求**：Phase 3 的 edge trace wiring 只能建立在 P2 升级后的 canonical trace carrier 上；若 `nacp-session` / `session-do-runtime` 仍停留在 retired trace fields，本阶段不得假装 trace closure 已经完成。
 
 ---
 
@@ -371,7 +376,7 @@
 
 ### 9.1 功能簇画像
 
-`Session Edge Closure` 是 post-skeleton 阶段把“协议包已经存在”转化为“真实运行时边界已经成立”的关键一步。它不是去设计更多消息类型，而是把已存在的 `nacp-session` reality 变成唯一主路径：统一合法化、统一 replay/health、统一 WS/HTTP fallback 语义、统一 trace evidence。这个 closure 一旦完成，session edge 才真正从 skeleton 过渡到 runtime。
+`Session Edge Closure` 是 post-skeleton 阶段把“协议包已经存在”转化为“真实运行时边界已经成立”的关键一步。它不是去在 runtime 层发明更多消息类型，而是把 `nacp-session` 的现有 reality 与即将由 Phase 0 冻结的 formal follow-up family 一起变成唯一主路径：统一合法化、统一 replay/health、统一 WS/HTTP fallback 语义、统一 trace evidence。这个 closure 一旦完成，session edge 才真正从 skeleton 过渡到 runtime。
 
 ### 9.2 Value Verdict
 
@@ -386,7 +391,7 @@
 
 ### 9.3 下一步行动
 
-- [ ] **决策确认**：确认 Phase 3 不扩展 follow-up prompt family，只收口当前最小 ingress reality。
+- [ ] **决策确认**：确认 Phase 3 必须消费 P0 冻结后的 formal follow-up family，而不是继续把它声明为下一阶段事务。
 - [ ] **关联 Issue / PR**：优先把 `NanoSessionDO` / `WsController` / `HttpController` 接到 `nacp-session` reality。
 - [ ] **待深入调查的子问题**：
   - [ ] HTTP fallback 的最小返回体是否直接复用 timeline/status reader seam
@@ -403,10 +408,11 @@
 - **分歧 1**：是先扩多轮输入，还是先把现有 edge 真正闭合
   - **A 方观点**：先补用户最直观的 follow-up 能力
   - **B 方观点**：当前更关键的是不再让 session edge 漂移
-  - **最终共识**：按 owner 决策，先闭合当前 edge，再在下一阶段做 richer input family
+  - **最终共识**：按 owner Q8 决策，formal follow-up family 必须先进入 Phase 0 的 `nacp-session` contract freeze；Phase 3 负责消费这条 truth，而不是继续 defer 或在 runtime 私造消息
 
 ### C. 版本历史
 
 | 版本 | 日期 | 修改者 | 主要变更 |
 |------|------|--------|----------|
+| v0.2 | `2026-04-18` | `GPT-5.4` | 根据 PX-QNA Q8 改写 follow-up family 口径：不再 defer 到下一阶段，改为由 Phase 0 冻结并由 Phase 3 消费 |
 | v0.1 | `2026-04-17` | `GPT-5.4` | 初稿 |

@@ -22,6 +22,7 @@
   - internal identity-bearing fields 统一收敛到 `*_uuid`。
   - 非 UUID 的稳定句柄必须显式标注为 `*_key`；人类可读标签使用 `*_name`。
   - foreign/provider-native 字段只允许存在于 translation zone。
+  - 这套 law 同时约束 **wire snake_case** 与 **TypeScript camelCase** 两种表面；允许 `trace_uuid <-> traceUuid` 的 casing 差异，但不允许 suffix 语义漂移。
 - **显式排除的讨论范围**：
   - 不讨论数据库主键是否用 UUIDv4 / UUIDv7
   - 不讨论最终 public API 命名
@@ -46,6 +47,7 @@
 | **Reference** | 指向外部存储对象的结构化引用 | 使用 `*_ref` 或 `refs` |
 | **Sequence** | 顺序号/偏移量 | 使用 `*_seq` |
 | **Foreign ID** | 外部 provider/raw wire 原生字段 | 只能活在 translation zone |
+| **Casing Surface** | snake_case wire 字段与 camelCase TypeScript 字段的呈现差异 | 只允许 casing 变换，不允许 suffix 语义变化 |
 
 ### 1.2 参考调查报告
 
@@ -260,6 +262,7 @@
   - `*_name`：人类可读名称
   - `*_ref`：结构化引用
   - `*_seq`：顺序号
+  - wire schema 继续使用 snake_case；TypeScript/对象属性可使用 camelCase，但必须保持同一 suffix 语义（如 `message_uuid <-> messageUuid`，`producer_key <-> producerKey`）
 - **边界情况**：
   - bare `id` 一律禁用
   - 非 suffix 化字段只有极少数枚举/tag 可保留（如 `message_type`）
@@ -279,6 +282,7 @@
   - `stamped_by -> stamped_by_key`
   - `reply_to -> reply_to_message_uuid`
   - canonical internal `tool_call_id -> tool_call_uuid`，provider raw 保留在 adapter
+  - camelCase mirror 同步遵守相同映射（如 `traceId -> traceUuid`、`replyTo -> replyToMessageUuid`）
 - **边界情况**：
   - 若某字段语义不是 identity，而是 label，则应改 `*_name` 而不是 `*_key`
 - **一句话收口目标**：✅ **`当前主要漂移字段全部有目标命名，不留灰区`**

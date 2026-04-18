@@ -36,6 +36,8 @@
   - `nacp-session` 已是 session edge legality 的 source of truth；本阶段不重开 client-facing 协议。
   - fake bash 只是 compatibility surface；真正执行面是 typed capability runtime。
   - v1 仍以 `local-ts / local-fetch` 作为 reference execution path；remote seam 的价值是 **闭合边界** 与 **deploy-shaped verification**，而不是把一切都远端化。
+  - 当前 external seam readiness 明显不对称：capability transport 已接近真实，hooks remote runtime 仍是 stub，fake provider worker 还未存在；本 design 冻结的是 closure 目标与 gate，不是宣称这些 seam 今天已经同成熟度。
+  - `SKILL_WORKERS` 目前只是 `session-do-runtime` env 里的 legacy placeholder；skill composition 不在本 phase 闭合，只保留 reserved seam，不纳入 v1 binding catalog。
 - **显式排除的讨论范围**：
   - 不讨论真正的 inference gateway 商业/流量策略
   - 不讨论 queue fan-out / observer queue / async workflow engine
@@ -245,6 +247,7 @@
 | `LLMExecutor` local-fetch | in-scope | 这是当前真实 provider path，不应被 Phase 4 推翻 |
 | fake provider worker | in-scope | 它是 deploy-shaped boundary proof，不是产品主路径 |
 | `hooks` local-ts runtime | in-scope | 必须继续存在，作为 reference path |
+| skill worker runtime | defer | 当前仅有 legacy env slot，缺少独立 skill design 与 runtime truth |
 | browser-rendering target 真接 Cloudflare Browser Rendering | out-of-scope | 仅保留 seam，不在本 phase 真接 |
 | compact worker binding | defer | 先冻结 capability / hook / fake provider 三条主 seam |
 
@@ -309,6 +312,7 @@
   1. `SessionRuntimeEnv` 必须从“只有 `SKILL_WORKERS` 的模糊 env”升级到可表达 `CAPABILITY_WORKER / HOOK_WORKER / FAKE_PROVIDER_WORKER` 的 profile。
   2. `CompositionFactory` 根据 profile 决定某条 seam 走 local 还是 service-binding。
   3. 这些 profile 必须是 deploy artifact 的一部分，而不是测试私有常量。
+  4. 既有 `SKILL_WORKERS` slot 只保留为 reserved placeholder；在 dedicated skill design 出现前，不进入本 phase binding catalog truth。
 - **边界情况**：
   - 缺 binding 时可以退回 local reference path，但不能 silently pretend remote connected。
 - **一句话收口目标**：✅ **`session-do-runtime` 能显式说清楚“这条能力今天走本地还是走外部 worker”`**
@@ -346,8 +350,8 @@
 - **主要调用者**：`llm-wrapper`、Phase 5 dry-run
 - **核心逻辑**：
   1. 保持 `LLMExecutor + OpenAIChatAdapter` 作为主 reference path。
-  2. 增加 fake provider worker，仅用于 remote seam verification：它输出与 Chat Completions-compatible provider 等价的成功/错误/stream 场景。
-  3. worker 侧不直接把 raw provider SSE 透给 session；仍必须回到 `StreamNormalizer` / session stream mapping。
+  2. 增加 fake provider worker，仅用于 remote seam verification：它接收最小 OpenAI-compatible request shape（如 `model / messages / stream? / tools?`），并输出成功、错误、stream chunk 三类 fixture。
+  3. fake worker 的 stream fixture 只模拟 provider wire family，不把 raw provider SSE 直接透给 session；所有输出仍必须回到 `llm-wrapper` 的 normalizer/session mapping。
 - **边界情况**：
   - 真实 provider smoke 不在 Phase 4 完成；fake provider worker 只证明 boundary，不证明商务/性能。
 - **一句话收口目标**：✅ **`provider seam 已具备“可跨 worker 验证”的 deploy reality，但仍不强迫主路径脱离 local-fetch`**
@@ -361,6 +365,91 @@
   1. 每次跨 worker 调用至少携带 `team_uuid`、`trace_uuid`、`request_uuid`、timeout/deadline、audience/redaction context。
   2. 所有 remote 调用都必须先经过 `validateEnvelope → verifyTenantBoundary → checkAdmissibility`。
   3. response / progress / error 也必须能回到同一 trace 上。
+  4. 这条 propagation law 只有在 P0 rename/compat 与 P2 trace carrier 升级完成后才可 enforcement；在此之前只允许作为 target law 被引用。
 - **边界情况**：
   - 允许平台级 alert 无 request trace，但不允许 request-scoped remote work 无 trace。
 - **一句话收口目标**：✅ **`跨 worker 调用从 tenant、trace、timeout 到错误语义都不再依赖调用点自觉`**
+
+### 7.3 非功能性要求
+
+- **性能目标**：remote seam 不能引入无限等待；deadline/timeout 必须是每条 external call 的必带字段。
+- **可观测性要求**：local path 与 remote path 都必须留下可对比的 trace/audit 证据，便于发现 drift。
+- **稳定性要求**：early events queue 只允许存在于 `session-do-runtime` 装配层/dispatcher 前缓冲区，不允许每个 remote worker 各自发明私有队列语义。
+- **测试覆盖要求**：至少需要 capability remote smoke、hook remote smoke、fake provider request/success/error/stream smoke、以及 local/remote parity smoke。
+
+---
+
+## 8. 可借鉴的代码位置清单
+
+### 8.1 来自 nano-agent 当前代码
+
+| 文件:行 | 内容 | 借鉴点 | 备注 |
+|---------|------|--------|------|
+| `packages/session-do-runtime/src/env.ts:14-34` | `SessionRuntimeEnv` 当前只有 `SKILL_WORKERS` placeholder | 说明 binding catalog 仍需显式收敛 | skill slot 目前仍是 reserved |
+| `packages/hooks/src/runtimes/service-binding.ts:17-23` | remote hook runtime 仍直接抛错 | hooks seam 还未进入 deploy reality | Phase 4 必须补齐 |
+| `packages/capability-runtime/src/targets/service-binding.ts:40-191` | capability remote transport seam | request/progress/cancel/response contract 已有强基础 | 是最成熟的 external seam |
+| `packages/llm-wrapper/src/gateway.ts:12-14` | `InferenceGateway` interface | fake/real provider worker 的自然接线点 | 仍待具体实现 |
+| `packages/llm-wrapper/src/session-stream-adapter.ts:10-83` | normalized LLM event → session body mapping | fake provider output不能跳过 normalizer 直透 client | 这是 remote provider seam 的回流锚点 |
+
+### 8.2 来自 codex
+
+| 文件:行 | 内容 | 借鉴点 | 备注 |
+|---------|------|--------|------|
+| `context/codex/codex-rs/tools/src/tool_registry_plan.rs:67-260` | registry-first tool/delegate planning | remote seam 应先冻结 contract，再谈 deploy glue | 很适合 capability/hook seams |
+| `context/codex/codex-rs/otel/src/trace_context.rs:19-88` | trace continuation discipline | cross-seam propagation law 不能后补 | 与 P2 强耦合 |
+
+### 8.3 来自 claude-code
+
+| 文件:行 | 内容 | 借鉴点 | 备注 |
+|---------|------|--------|------|
+| `context/claude-code/services/tools/toolExecution.ts:173-245` | tool execution + permission + telemetry woven chain | remote delegate 不只是 transport，还有 governance | 很适合 hook/capability seam |
+| `context/claude-code/services/analytics/index.ts:70-164` | sink 未 attach 时的 queued-events | early-events queue 应归装配层，而非分散在各 worker | 适合作为 startup 过渡态参考 |
+
+### 8.4 需要避开的“反例”位置
+
+| 文件:行 | 问题 | 我们为什么避开 |
+|---------|------|----------------|
+| `packages/session-do-runtime/src/composition.ts:32-75` | 默认只返回 `undefined` handle bag | 这会让 external seam 看起来“有接口、无现实” |
+| `packages/session-do-runtime/src/env.ts:23-31` | 只有 `SKILL_WORKERS` placeholder、没有明确 capability/hook/provider bindings | 说明不能继续用模糊 env 口径 |
+| `packages/capability-runtime/src/targets/browser-rendering.ts:17-49` | target slot 存在但完全未接入 | reserved slot 不等于 external seam 已闭合 |
+
+---
+
+## 9. 综述总结与 Value Verdict
+
+### 9.1 功能簇画像
+
+`External Seam Closure` 的关键价值，不是“远端 worker 越多越好”，而是把 nano-agent 从 in-process 自洽状态推进到 deploy-shaped 的多 worker reality。它要冻结的是 binding catalog、cross-seam propagation law、fake provider verification shape，以及 local/remote 双路径在 contract 上的统一性。这样一来，Phase 5 才有真实边界可验，未来 skill/compactor/provider 也才有统一接线方式。
+
+### 9.2 Value Verdict
+
+| 评估维度 | 评级 (1-5) | 一句话说明 |
+|----------|------------|------------|
+| 对 nano-agent 核心定位的贴合度 | 5 | Cloudflare-native runtime 必须认真对待 worker-to-worker seam |
+| 第一版实现的性价比 | 4 | 要补齐真实 binding/glue，但能直接降低后续 boundary drift |
+| 对未来“上下文管理 / Skill / 稳定性”演进的杠杆 | 5 | 三条主线都会消费统一 external seam |
+| 对开发者自己的日用友好度 | 4 | 双路径时期会稍复杂，但诊断会清楚很多 |
+| 风险可控程度 | 4 | 关键风险在 hooks/provider seam 仍偏 stub，必须诚实 gate |
+| **综合价值** | **4** | **应作为 Phase 4 的正式 charter 保留，但必须以 binding catalog 与 fake provider schema 补齐为前提** |
+
+### 9.3 下一步行动
+
+- [ ] **决策确认**：确认 v1 binding catalog 只覆盖 `CAPABILITY_WORKER / HOOK_WORKER / FAKE_PROVIDER_WORKER`，skill worker 继续保留为 reserved seam。
+- [ ] **关联 Issue / PR**：补 `SessionRuntimeEnv` / `CompositionFactory` 的显式 binding profile，并为 fake provider 定义最小 request/response fixture schema。
+- [ ] **待深入调查的子问题**：
+  - [ ] early-events queue 是否复用 `session-do-runtime` 自有缓冲，还是抽为 shared emission buffer
+  - [ ] hooks remote runtime 失败时，哪些 outcome 可降级为 diagnostics，哪些必须 hard-fail
+- [ ] **需要更新的其他设计文档**：
+  - `P5-deployment-dry-run-and-real-boundary-verification.md`
+  - `PX-capability-inventory.md`
+
+---
+
+## 附录
+
+### C. 版本历史
+
+| 版本 | 日期 | 修改者 | 主要变更 |
+|------|------|--------|----------|
+| v0.2 | `2026-04-18` | `GPT-5.4` | 补齐尾部章节；增加 binding catalog/skill reserved/early-events queue/fake provider schema 口径 |
+| v0.1 | `2026-04-17` | `GPT-5.4` | 初稿 |

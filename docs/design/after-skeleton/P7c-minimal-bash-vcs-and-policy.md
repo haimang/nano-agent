@@ -74,6 +74,11 @@
 - `context/claude-code/services/tools/toolExecution.ts` — 说明高风险工具不只是 declaration，还要受 permission/hook/telemetry 约束（`126-131`, `173-245`）
 - `docs/eval/vpa-fake-bash-by-GPT.md` — 已明确建议 nano-agent 对 git 只保留 subset，并明确 unsupported/deferred/risky inventory
 
+**与 just-bash 的对齐结论**
+
+- **明确吸收**：command surface 必须中心化枚举，unsupported/risk taxonomy 必须成为 registry truth 的一部分。
+- **明确拒绝**：把 just-bash 的广泛 shell surface 当作近期 parity 目标、把“命令可见”误写成“实现已完整”。
+
 ---
 
 ## 2. 在 nano-agent 中的定位
@@ -303,6 +308,7 @@
 - **核心逻辑**：
   - 只承诺 `status/diff/log`
   - bash string 与 structured input 都映射到同一 `git` capability
+  - structured input 最小形状固定为 `{ subcommand: "status" | "diff" | "log", args?: string[] }`
   - mutating git 全部 defer
 - **一句话收口目标**：✅ **`v1 git 只是一组可解释的 introspection capabilities，而不是完整仓库控制台`**
 
@@ -335,6 +341,7 @@
   - registry 是命令 truth
   - prompt 解释 truth，不新增 truth
   - tests 防止 drift
+  - drift guard 的最小实现应比较三处：`registerMinimalCommands()`、capability inventory、以及 prompt/tool docs 的 capability block；任何一处新增/删减都必须同步触发 review
 - **一句话收口目标**：✅ **`命令口径不会在代码、提示词、文档三处各说各话`**
 
 #### F5: `Inventory Closure`
@@ -353,6 +360,7 @@
 - **可观测性要求**：拒绝路径也应可挂 trace 和 audit。
 - **稳定性要求**：registry truth 优先于 prompt 文案。
 - **测试覆盖要求**：至少需要 unsupported、oom-risk、git subset、inventory drift 四类 smoke。
+- **兼容性要求**：`git` 的 bash path 与 structured path 必须共享同一 subset truth，不能在一个入口说 `status/diff/log`，另一个入口偷偷扩张。
 
 ---
 
@@ -397,11 +405,11 @@
 | 评估维度 | 评级 (1-5) | 一句话说明 |
 |----------|------------|------------|
 | 对 nano-agent 核心定位的贴合度 | 5 | fake bash 若无治理，很快会失控 |
-| 第一版实现的性价比 | 5 | 主要是治理收敛，收益非常高 |
+| 第一版实现的性价比 | 4 | 需要补 drift guard，且 git handler reality 仍是 stub |
 | 对未来“上下文管理 / Skill / 稳定性”演进的杠杆 | 4 | 尤其提升稳定性与 review 可控性 |
 | 对开发者自己的日用友好度 | 5 | 新命令是否该进系统会更清楚 |
 | 风险可控程度 | 5 | 方向明确，且已部分有代码锚点 |
-| **综合价值** | **5** | **应作为 Phase 7 的治理收口文稿保留** |
+| **综合价值** | **4** | **应作为 Phase 7 的治理收口文稿保留，但必须持续承认 `git` 仍是 partial/stub reality** |
 
 ### 9.3 下一步行动
 

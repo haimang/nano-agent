@@ -48,6 +48,8 @@ Phase 1-5 做完之后，nano-agent 会拥有：
   - context assembly、artifact promotion、compact boundary、snapshot/restore 都必须进入 trace/evidence 面。
   - live stream 不等于 durable evidence；transcript 也不等于 storage/context evidence。
   - 所有 evidence 仍需服从 `trace_uuid`、tenant namespace、audience/redaction law。
+  - Phase 6 的主任务其实是 **instrumentation + evidence closure**：当前类型与 vocabulary 已出现，但大量 runtime emitters 仍需真正接入主路径。
+  - P6 的 calibration verdict 用来判断 **hypothesis status**；它不是 PX 里 E0-E3 那种 **capability maturity** 分级，这两套词不能混用。
 - **显式排除的讨论范围**：
   - 不讨论 D1 query schema
   - 不讨论 semantic retrieval / embedding index
@@ -316,6 +318,7 @@ Phase 1-5 做完之后，nano-agent 会拥有：
   1. 每次关键 I/O 行为都记录 `dataItem / storageLayer / key / op / sizeBytes / timestamp`。
   2. 这些 entry 再被转换为 `size / read-frequency / write-frequency / access-pattern / placement-observation` evidence signals。
   3. evidence 不只在测试里生成，也要在真实 runtime 中持续生成。
+  4. `eval-observability` 提供 `StoragePlacementLog` 类型与 sink vocabulary；live emission owner 仍是 `storage-topology` / `workspace-context-artifacts` / `session-do-runtime` 这些实际执行 I/O 的包。
 - **边界情况**：
   - `_platform/` 例外路径必须也被明确标注为 platform-scoped，不得混入 tenant evidence。
 - **一句话收口目标**：✅ **`placement hypothesis 不再只是表格，而是有持续产生的运行证据`**
@@ -327,7 +330,7 @@ Phase 1-5 做完之后，nano-agent 会拥有：
 - **主要调用者**：`llm-wrapper`、`agent-runtime-kernel`
 - **核心逻辑**：
   1. 记录 `orderApplied`、`assembled kinds`、`totalTokens`、`truncated`。
-  2. 记录哪些 optional layers 被丢弃，以及原因（预算/allowlist/政策）。
+  2. 记录哪些 optional layers 被丢弃，以及原因（预算/allowlist/政策），至少包含 `dropped_optional_layers`、`drop_reason`、`required_layer_budget_violation?` 三类字段。
   3. 若 assembly 使用了 prepared artifacts，也要记录其 sourceRef 与 preparedKind。
 - **边界情况**：
   - required layers 超预算不是“没事”，而是高价值 evidence；必须被明确记录。
@@ -344,6 +347,7 @@ Phase 1-5 做完之后，nano-agent 会拥有：
   3. 记录 reinjected boundary marker 与 `turnRange`，让 restore/replay 可以解释“哪些 turn 被折叠了”。
 - **边界情况**：
   - compact error 也是一等 evidence，不能只记录成功路径。
+  - early compact / early evidence queue 只允许由 `session-do-runtime` 的装配层/emit buffer 承担；compact manager 自身不发明第二套队列语义。
 - **一句话收口目标**：✅ **`compact 的输入、决策、输出、边界都能在 trace/evidence 中被重建`**
 
 #### F4: `Artifact & Snapshot Evidence`
@@ -370,6 +374,91 @@ Phase 1-5 做完之后，nano-agent 会拥有：
   2. 对 placement 使用 `evaluateEvidence()` 之类 seam 做推荐。
   3. 对 context/compact 也建立等价 verdict：例如某条 context policy 是否稳定、某个 compact threshold 是否过激。
   4. 只有 evidence-backed 的条目，才允许在后续文档里被当作 frozen baseline。
+  5. 这组 verdict 明确只描述 hypothesis status；PX 的 E0-E3 继续描述 capability maturity，两者必须并列说明、不得互相替代。
 - **边界情况**：
   - evidence 不足时，结论应保持 provisional，而不是勉强给出肯定 verdict。
 - **一句话收口目标**：✅ **`Phase 6 结束后，我们能说清楚哪些 storage/context 决策已被证据支撑，哪些仍只是暂定假设`**
+
+### 7.3 非功能性要求
+
+- **性能目标**：evidence emission 必须是增量、轻量、可采集的；不得为了“留证据”而引入大对象同步写放大。
+- **可观测性要求**：placement/context/compact/artifact/snapshot 五类 evidence 都必须能挂回 `trace_uuid` 与 tenant scope。
+- **稳定性要求**：runtime emitters 的 owner 必须清楚——`eval-observability` 提供 vocabulary/sink，实际业务包负责在关键动作发生时 emit evidence。
+- **术语要求**：P6 verdict 一律称为 **calibration verdict / hypothesis status**；PX 的 E0-E3 一律称为 **capability maturity grade**。
+- **测试覆盖要求**：至少需要 placement runtime emission、assembly drop/truncation evidence、compact success/error evidence、artifact lifecycle evidence、snapshot restore evidence 五类验证。
+
+---
+
+## 8. 可借鉴的代码位置清单
+
+### 8.1 来自 nano-agent 当前代码
+
+| 文件:行 | 内容 | 借鉴点 | 备注 |
+|---------|------|--------|------|
+| `packages/eval-observability/src/placement-log.ts:33-79` | `StoragePlacementLog` | placement evidence vocabulary 已具备 | 但 live emission owner 仍待接线 |
+| `packages/workspace-context-artifacts/src/context-assembler.ts:37-119` | `ContextAssembler` 的 `truncated / orderApplied / totalTokens` | context evidence 已有天然输出面 | 仍需补 dropped-layer fields |
+| `packages/workspace-context-artifacts/src/compact-boundary.ts:81-159` | `CompactBoundaryManager` request/response + boundary record | compact 已有可升级的 lifecycle seam | 仍需正式 evidence emission |
+| `packages/workspace-context-artifacts/src/snapshot.ts:67-121` | `WorkspaceSnapshotBuilder.buildFragment()` | snapshot 已能携带 mounts/fileIndex/contextLayers | 很适合进入 evidence closure |
+| `packages/eval-observability/src/sinks/do-storage.ts:49-194` | durable JSONL trace sink | evidence 的 durable landing zone 已存在 | 与 P1/P2 直接衔接 |
+
+### 8.2 来自 claude-code
+
+| 文件:行 | 内容 | 借鉴点 | 备注 |
+|---------|------|--------|------|
+| `context/claude-code/services/compact/compact.ts:133-260` | compact strip/reinject lifecycle | compact 必须可解释、可回放 | 很适合 P6 作为 boundary evidence |
+| `context/claude-code/services/analytics/index.ts:80-164` | queued-events startup buffering | early evidence 不能因为 sink 未 attach 而丢失 | 但队列应归装配层持有 |
+| `context/claude-code/utils/toolResultStorage.ts:130-199` | large result persistence | artifact lifecycle 需要正式 evidence，而不是隐式 side effect | 对 promotion evidence 很有参考价值 |
+
+### 8.3 来自 codex
+
+| 文件:行 | 内容 | 借鉴点 | 备注 |
+|---------|------|--------|------|
+| `context/codex/codex-rs/otel/src/trace_context.rs:19-88` | trace continuation discipline | 所有 storage/context evidence 仍应挂回 trace continuation | 不应变成孤立 debug blob |
+
+### 8.4 需要避开的“反例”位置
+
+| 文件:行 | 问题 | 我们为什么避开 |
+|---------|------|----------------|
+| `packages/storage-topology/src/placement.ts:98-208` | placement hypotheses 仍是 provisional | 说明没有 runtime evidence 就不能提前冻结 policy |
+| `packages/workspace-context-artifacts/src/compact-boundary.ts:81-159` | 目前只是 request/response mirror，不等于 evidence 已自动落盘 | 说明 P6 需要补 instrumentation，而不是只靠对象模型自洽 |
+
+---
+
+## 9. 综述总结与 Value Verdict
+
+### 9.1 功能簇画像
+
+`Storage and Context Evidence Closure` 是 after-skeleton 阶段把“我们自认为 context/storage 设计得不错”变成“我们真的能拿出证据解释这些行为”的那一层。它要收口的不是某个单一算法，而是五条证据流：放置、装配、压缩、artifact 生命周期、snapshot/restore。只有这些 evidence 持续进入 runtime，context management 才会从理念变成可校准、可复盘、可裁决的工程系统。
+
+### 9.2 Value Verdict
+
+| 评估维度 | 评级 (1-5) | 一句话说明 |
+|----------|------------|------------|
+| 对 nano-agent 核心定位的贴合度 | 5 | context management 是长期差异化主线，证据闭环是其地基 |
+| 第一版实现的性价比 | 4 | 需要补 instrumentation owner 与 runtime emitters，但收益巨大 |
+| 对未来“上下文管理 / Skill / 稳定性”演进的杠杆 | 5 | 三条主线都会直接消费这些证据流 |
+| 对开发者自己的日用友好度 | 4 | 早期会更啰嗦，但能显著减少“为什么变成这样”的黑盒感 |
+| 风险可控程度 | 4 | 关键风险是 emitters 分散；通过 vocabulary + owner 分工可控 |
+| **综合价值** | **4** | **应作为 Phase 6 的正式 charter 保留，但要把 instrumentation owner 与术语边界写死** |
+
+### 9.3 下一步行动
+
+- [ ] **决策确认**：确认 P6 verdict 采用 `provisional / evidence-backed / needs-revisit / contradicted-by-evidence`，并与 PX 的 capability maturity grade 明确分开。
+- [ ] **关联 Issue / PR**：补 placement/context/compact/artifact/snapshot 五类 runtime emitter，把 `StoragePlacementLog` 与 durable sink 接入真实主路径。
+- [ ] **待深入调查的子问题**：
+  - [ ] `dropped_optional_layers` / `drop_reason` / `required_layer_budget_violation` 是否统一进入 assembly evidence schema
+  - [ ] early evidence queue 是否与 Phase 4/P5 的 startup queue 共享同一装配层缓冲
+- [ ] **需要更新的其他设计文档**：
+  - `P2-trace-first-observability-foundation.md`
+  - `PX-capability-inventory.md`
+
+---
+
+## 附录
+
+### C. 版本历史
+
+| 版本 | 日期 | 修改者 | 主要变更 |
+|------|------|--------|----------|
+| v0.2 | `2026-04-18` | `GPT-5.4` | 补齐尾部章节；增加 instrumentation owner、术语边界与 evidence schema 细节 |
+| v0.1 | `2026-04-17` | `GPT-5.4` | 初稿 |

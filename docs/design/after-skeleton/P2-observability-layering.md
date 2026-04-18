@@ -35,6 +35,7 @@
   - Anchor 层首先服务 trace survival 与 recovery。
   - Durable 层首先服务 audit / transcript / replay / storage evidence。
   - Diagnostic 层首先服务 live debug、噪声隔离与问题定位。
+  - 这份 memo **不替代** 当前 `TraceLayer` enum / classification reality；它只提供上位解释，并要求实现层保持映射清晰、集合互斥。
 - **显式排除的讨论范围**：
   - 不讨论具体 dashboard
   - 不讨论 analytics query model
@@ -272,6 +273,7 @@
   - current `live` 主要落在 **Diagnostic**
   - current `durable-audit` 同时覆盖 **Anchor + Durable**
   - current `durable-transcript` 是 **Durable** 的用户可见子集
+  - conceptual layering 不能被拿来为实现层 overlap 漂移辩护；`classification` 与 `DurablePromotionRegistry` 仍应保持集合互斥、职责单一
 - **一句话收口目标**：✅ **`现有代码 reality 与 conceptual layering 能互相解释`**
 
 #### F3: `Promotion Rules`
@@ -292,6 +294,7 @@
 - **可观测性要求**：Anchor/Durable/Diagnostic 的边界必须可被解释。
 - **稳定性要求**：layering 一旦冻结，不随单个包 convenience 轻易改变。
 - **测试覆盖要求**：至少需要 layer drift guard 与 promotion drift guard。
+- **实现纪律要求**：若 `durable-audit` / `durable-transcript` / `live` 的实现集合发生重叠或歧义，应先修实现与 mapping，再调整 memo，不允许靠 prose 把 bug 解释成 feature。
 
 ---
 

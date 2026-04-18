@@ -31,6 +31,7 @@
   - accepted internal request 若没有 trace_uuid，必须在 ingress/anchor 层被补齐并建立锚点，而不是让后续 runtime 在半失联状态下继续执行。
   - observability 需要区分 anchor、durable evidence、diagnostic 三层。
   - 当前 Phase 不追求完整 analytics 平台，而追求 **正确的 trace law + 正确的 recovery law + 正确的 instrumentation seam**。
+  - 当前代码 reality 仍处在 pre-migration 状态；Phase 2 只能在 P0 rename/compat chain 与 event-kind convergence 启动后，才把 `trace_uuid` law 从 owner target 变成跨包 enforcement reality。
 - **显式排除的讨论范围**：
   - 不讨论 public observability API
   - 不讨论 D1 analytics schema
@@ -285,9 +286,15 @@
 - **主要调用者**：session edge、checkpoint/restore、failure replay
 - **核心逻辑**：
   - trace_uuid 不是“可有可无的标签”，而是可通过 anchor 查回的 runtime 主索引
-  - 当局部链路缺 trace_uuid 时，允许通过 session/turn/message anchor recover；recover 失败时显式报错，不允许 silent continue
+  - recovery lookup priority 固定为：`trace_uuid` 直达 > `message_uuid` 锚点 > `turn_uuid + session_uuid` 锚点 > 当前 checkpoint / replay window 中的最近 durable anchor
+  - recovery 只允许使用 **已知锚点** 与 compat-decoded durable evidence；不允许靠模糊字符串或 best-effort 猜测拼一个 trace_uuid
+  - 跨 worker / remote seam 若返回了 request-scoped payload 但丢失 `trace_uuid`，必须进入 `cross-seam-trace-loss` 显式失败或 quarantine path，不能继续向下游扩散
+  - replay / restore 读取旧数据时，必须先经 compat layer 补齐 retired fields，再尝试 recovery；compat 失败与 anchor 缺失是两种不同错误类别
+  - recovery 错误至少区分：`anchor-missing`、`anchor-ambiguous`、`compat-unrecoverable`、`cross-seam-trace-loss`
+  - 热路径 recovery 必须是局部、可界定成本的：默认只允许读当前 actor state、最近 replay buffer、checkpoint 或本 session durable window，不允许为修一个 trace 做全量历史扫描
+  - Phase 2 implementation 至少要覆盖 6 类场景：ingress 无 trace 需生成锚点、remote worker response 丢 trace、alarm/restore 缺当前 turn trace、旧 audit body 仅有 retired trace fields、compact/replay 后重建 trace、message/session 级锚点冲突
 - **边界情况**：
-  - replay 读取旧数据时可经 compat layer 做结构补齐
+  - 平台级 alert 不是 recovery 来源；只有 request/session/turn-scoped anchor 才能参与 recovery
 - **一句话收口目标**：✅ **`trace 丢了也能明确恢复或明确失败，不再半死不活`**
 
 #### F3: `TraceEvent Upgrade`
@@ -317,6 +324,8 @@
   6. tool.call.request / result / summarized progress
   7. compact.start / compact.end / compact.notify
   8. checkpoint / restore / alarm health
+  9. context.assembly / optional-layer-drop / truncation
+  10. storage.placement / artifact promotion / archive flush
 - **边界情况**：
   - 高频 diagnostic event 可不全量 durable
 - **一句话收口目标**：✅ **`所有关键 runtime 边界都有固定 trace 证据出口`**
@@ -328,7 +337,7 @@
 - **主要调用者**：core observability envelope、platform diagnostics
 - **核心逻辑**：
   - request/session/turn 级 alert 必须带 trace_uuid
-  - 只有 truly platform-level / worker-level alert 才允许无 trace_uuid
+  - 只有 truly platform-level / worker-level alert 才允许无 trace_uuid，例如 worker cold-start anomaly、binding unavailable、queue overflow、archive backpressure 这类不归属单个 request 的事件
 - **边界情况**：
   - 若 alert 关联 session_uuid 但无 trace_uuid，属于不合法状态，应走 recovery
 - **一句话收口目标**：✅ **`trace_uuid optional 不再成为偷懒口子，只保留受控例外`**
@@ -339,6 +348,7 @@
 - **可观测性要求**：事件既要能解释“发生了什么”，也要能解释“为什么发生”。
 - **稳定性要求**：foundation 规则优先于任何单个 package 的方便实现。
 - **测试覆盖要求**：必须覆盖 trace generation、anchor recover、alert exception、audit round-trip、timeline reconstruction。
+- **阶段门禁要求**：P2 enforcement 以前必须完成至少两件事：`trace_id -> trace_uuid` 的 canonical migration 进入 compat chain，以及跨包 event-kind strings 的集中收敛；P3/P4/P6 只能消费这套升级后的 foundation，不得再发明平行 trace carrier。
 
 ---
 
@@ -393,6 +403,7 @@
 
 - [ ] **决策确认**：确认 TraceEvent base contract 必须增补 `traceUuid`。
 - [ ] **关联 Issue / PR**：收敛 `session-do-runtime` builders 与 `eval-observability` base types。
+- [ ] **关联 Issue / PR**：建立集中 event-kind registry，并让 edge/runtime/observability 共享它。
 - [ ] **待深入调查的子问题**：
   - [ ] `messageUuid` 是否进入所有 TraceEvent base fields
   - [ ] alert exception 是否需要单独 schema 类型区分

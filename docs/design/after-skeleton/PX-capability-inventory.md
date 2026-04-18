@@ -64,9 +64,9 @@
 | **Deferred** | 本期明确不做，但未来可回到议程 | 不在 registry truth 中 |
 | **Unsupported** | 主动拒绝的命令/能力 | 直接 hard-fail |
 | **Risk-Blocked** | 因 isolate budget / security risk 主动阻断 | 不是“以后自然支持” |
-| **Evidence Grade** | 当前支持判断背后的证据强度 | E0-E3 |
+| **Capability Maturity Grade** | 当前支持判断背后的实现/验证成熟度 | E0-E3；不同于 P6 的 calibration verdict |
 
-### 1.2 Evidence Grade 定义
+### 1.2 Capability Maturity Grade 定义
 
 | 等级 | 含义 | 典型例子 |
 |------|------|----------|
@@ -74,6 +74,8 @@
 | **E1** | 有 handler/bridge 但明显 stub 或 degraded | `curl` / `ts-exec` / `git` 当前 local-ts handlers |
 | **E2** | 有 package-level tests / integration evidence | `FakeBashBridge` rejection、workspace package tests |
 | **E3** | 有跨包 E2E evidence | workspace file ops / snapshot promotion 等 |
+
+> **术语边界**：PX 的 E0-E3 只回答“能力成熟度到哪了”；P6 的 `provisional / evidence-backed / needs-revisit / contradicted-by-evidence` 只回答“某条 storage/context 假设是否被证据支撑”。两者并列存在，但不互相替代。
 
 ---
 
@@ -126,9 +128,9 @@
 
 | 扩展点 | 第一版行为 | 未来可能的演进方向 |
 |--------|------------|---------------------|
-| Evidence grade | E0-E3 | finer-grained runtime evidence |
+| Capability maturity grade | E0-E3 | finer-grained runtime evidence |
 | Capability groups | command/target/substrate 三层 | future hook/skill/provider capability inventory |
-| Drift guard | 人工维护 | generated docs/tests |
+| Drift guard | 人工维护 + review smoke | generated docs/tests |
 
 ### 3.3 完全解耦点（哪里必须独立）
 
@@ -238,14 +240,14 @@
 | `pwd` | filesystem | `local-ts` | allow | **Supported** | E2 | 有 planner + local target + package tests |
 | `ls` | filesystem | `local-ts` | allow | **Supported** | E3 | 已有 workspace-backed E2E evidence |
 | `cat` | filesystem | `local-ts` | allow | **Supported** | E3 | 已有 workspace-backed E2E evidence |
-| `write` | filesystem | `local-ts` | ask | **Supported** | E3 | namespace-backed；需 policy allow 才执行 |
-| `rm` | filesystem | `local-ts` | ask | **Supported** | E2 | namespace-backed delete 已存在 |
-| `mv` | filesystem | `local-ts` | ask | **Supported** | E2 | 通过 read+write+delete 组合实现 |
-| `cp` | filesystem | `local-ts` | ask | **Supported** | E2 | 通过 read+write 组合实现 |
-| `mkdir` | filesystem | `local-ts` | ask | **Partial** | E1 | handler 只返回 ack，backend 无真实 dir primitive |
+| `write` | filesystem | `local-ts` | ask | **Supported (ask-gated)** | E3 | handler 真实存在；默认非交互路径需 policy allow 才执行 |
+| `rm` | filesystem | `local-ts` | ask | **Supported (ask-gated)** | E2 | handler 真实存在；默认非交互路径需 policy allow 才执行 |
+| `mv` | filesystem | `local-ts` | ask | **Supported (ask-gated)** | E2 | handler 真实存在；默认非交互路径需 policy allow 才执行 |
+| `cp` | filesystem | `local-ts` | ask | **Supported (ask-gated)** | E2 | handler 真实存在；默认非交互路径需 policy allow 才执行 |
+| `mkdir` | filesystem | `local-ts` | ask | **Partial (ask-gated)** | E1 | handler 只返回 ack，backend 无真实 dir primitive |
 | `rg` | search | `local-ts` | allow | **Partial** | E1 | declaration 存在，但当前仅 degraded TS scan stub |
-| `curl` | network | `local-ts` | ask | **Partial** | E1 | URL 校验后返回 not-connected 风格 stub |
-| `ts-exec` | exec | `local-ts` | ask | **Partial** | E1 | 只确认代码长度，未接真实 sandbox |
+| `curl` | network | `local-ts` | ask | **Partial (ask-gated)** | E1 | URL 校验后返回 not-connected 风格 stub |
+| `ts-exec` | exec | `local-ts` | ask | **Partial (ask-gated)** | E1 | 只确认代码长度，未接真实 sandbox |
 | `git` | vcs | `local-ts` | allow | **Partial** | E1 | 只承诺 `status/diff/log`，且仍是 stub |
 
 ### 7.2 Target Inventory
@@ -272,6 +274,7 @@
 |---------|----------|------|
 | `grep/egrep/fgrep` | Deferred | 当前完全未注册 |
 | `find/head/tail/touch/tee` | Deferred | fake bash 专项分析里建议过，但当前仓内未落地 |
+| `grep -> rg` compatibility alias | Deferred | 推荐作为最小兼容回补，但当前尚未注册 |
 | richer `curl` flags | Deferred | 未来优先走 structured path |
 | file-based / argv-based `ts-exec` | Deferred | 当前只适合 inline code |
 | `git add/commit/restore/branch/...` | Deferred | 当前无 virtual index/ref model |
@@ -285,6 +288,8 @@
 | `docker/docker-compose/podman` | Unsupported | container host assumptions |
 | `systemctl/service/journalctl/reboot/shutdown/poweroff` | Unsupported | system lifecycle control |
 | `ssh/scp/rsync/wget` | Unsupported | remote shell / unrestricted network shape |
+| `curl localhost` / private-address destinations | Unsupported | policy-blocked behavior，不属于 v1 verification capability |
+| `install-then-run` / background server loops | Unsupported | Worker-native fake bash 明确拒绝本地机器幻觉 |
 | `tar/gzip/gunzip/zcat/zip/unzip/bzip2/xz` | Risk-Blocked | isolate memory risk，需 streaming capability 才能回补 |
 
 ---
@@ -311,16 +316,16 @@
 | 评估维度 | 评级 (1-5) | 一句话说明 |
 |----------|------------|------------|
 | 对 nano-agent 核心定位的贴合度 | 5 | 能力真相若不集中，fake bash 很快会失控 |
-| 第一版实现的性价比 | 5 | 主要是归档整理，但收益极高 |
+| 第一版实现的性价比 | 4 | 仍需补 drift guard 与 ask-gated 语境说明 |
 | 对未来“上下文管理 / Skill / 稳定性”演进的杠杆 | 4 | 稳定性与 review 收益最显著 |
 | 对开发者自己的日用友好度 | 5 | 查表即可，不必反复猜测 |
 | 风险可控程度 | 5 | 风险主要是文档漂移，可通过 review gate 控制 |
-| **综合价值** | **5** | **应作为 fake bash surface 的单一真相 memo 保留** |
+| **综合价值** | **4** | **应作为 fake bash surface 的单一真相 memo 保留，并继续把 maturity 与 policy context 一并写清楚** |
 
 ### 9.3 下一步行动
 
-- [ ] **决策确认**：确认 inventory 里的 `Supported / Partial / Deferred / Unsupported / Risk-Blocked` 五级口径。
-- [ ] **关联 Issue / PR**：补 inventory drift guard，并让 prompt/tool docs 对齐本表。
+- [ ] **决策确认**：确认 inventory 里的 `Supported / Partial / Deferred / Unsupported / Risk-Blocked` 五级口径，以及 ask-gated command 的披露方式。
+- [ ] **关联 Issue / PR**：补 inventory drift guard，并让 prompt/tool docs 明确区分 bash-path truth、structured-path truth 与 policy context。
 - [ ] **待深入调查的子问题**：
   - [ ] 是否将来把 hooks/skills/provider 也纳入同一 inventory 体系
   - [ ] 是否把 evidence grade 做成 generated artifact

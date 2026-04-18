@@ -74,6 +74,11 @@
 - `context/codex/codex-rs/tools/src/tool_registry_plan.rs` — richer structured tool path 应由 registry plan 控制，而不是临时放权（`67-184`）
 - `context/claude-code/services/tools/toolExecution.ts` — network/script 这类高风险工具必须受 permission + hooks + telemetry 统筹（`126-131`, `173-245`）
 
+**与 just-bash 的对齐结论**
+
+- **明确吸收**：`curl`/script 走 opt-in/policy-first 思路，高风险能力必须进入治理主链。
+- **明确拒绝**：沿用 just-bash 的 Node-heavy `js-exec` 心智、把 rich curl flags 直接等同于当前 Worker-first baseline、把“已注册命令”误写成“已具完整 handler”。
+
 ---
 
 ## 2. 在 nano-agent 中的定位
@@ -320,6 +325,8 @@
   - 先支持 inline code
   - 不承诺 Node built-ins / child_process / external install
   - 结果统一走 capability result / artifact promotion
+  - sandbox 最低约束必须包括：默认无网络、无 Node built-ins、无 child process、明确 CPU/timeout/output 上限、workspace 访问只通过显式输入/bridge
+  - 若 in-process 无法可靠执行这些限制，remote tool-runner worker 应成为默认实现路径，而不是继续宣称 local stub 足够
 - **一句话收口目标**：✅ **`模型能运行受控分析脚本，但不会误以为自己拥有完整本地运行时`**
 
 #### F3: `Network & Script Policy Guard`
@@ -331,6 +338,7 @@
   - `ask` 默认保留给 network/script
   - block localhost / private destinations / unsafe schemes
   - enforce timeout / output size / audit logging
+  - approval/policy 通过不等于能力已成熟；在真实 fetch/sandbox handler 接上之前，`curl` / `ts-exec` 仍必须在 inventory 中保持 Partial
 - **一句话收口目标**：✅ **`高风险命令不是“跑了再说”，而是先有护栏再执行`**
 
 #### F4: `Structured Upgrade Seam`
@@ -342,6 +350,7 @@
   - bash string 负责 LLM 兼容
   - structured input 负责 richer semantics
   - 二者都必须映射到同一个 capability name/result family
+  - system prompt / tool docs 必须显式告知模型：bash path 只接受 `curl <url>` 与 `ts-exec <inline code>` 这类最小形态；method/headers/body/file-input 等 richer 语义一律走 structured path
 - **一句话收口目标**：✅ **`未来扩张不需要通过“补更多 shell 语法”这条最脆弱的路`**
 
 #### F5: `Remote Implementation Seam`
@@ -361,6 +370,7 @@
 - **可观测性要求**：network/script 执行必须可挂 trace，且能进入 evidence/inventory。
 - **稳定性要求**：不允许 localhost、Node host、Python 等幻觉重新混进 prompt。
 - **测试覆盖要求**：至少需要 restricted curl、restricted ts-exec、policy block、large-output promotion 四类 smoke。
+- **兼容性要求**：bash string path 与 structured path 的差异必须出现在 inventory 与 prompt 中，不能靠模型自己猜 planner 边界。
 
 ---
 
@@ -411,7 +421,7 @@
 | 对未来“上下文管理 / Skill / 稳定性”演进的杠杆 | 4 | 尤其提升稳定性与可治理性 |
 | 对开发者自己的日用友好度 | 4 | 不是最自由，但最诚实 |
 | 风险可控程度 | 4 | 关键在于别把 stub 讲成 fully supported |
-| **综合价值** | **5** | **应作为 Phase 7 的第二份高风险能力收敛文稿** |
+| **综合价值** | **4** | **应作为 Phase 7 的第二份高风险能力收敛文稿，但必须持续承认 `curl/ts-exec` 仍处于 Partial reality** |
 
 ### 9.3 下一步行动
 

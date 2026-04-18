@@ -58,10 +58,10 @@
 
 ### 1.2 多轮输入的阶段归属
 
-4. **多轮 input family / richer session message family 明确延后**
-   - 本阶段不做
-   - 明确转为下一阶段 in-scope
-5. 根 README 以及其他当前有效文档，必须改口并与该决策保持一致
+4. **多轮 input family / formal follow-up session message family 纳入本阶段的 Phase 0 contract freeze**
+   - 必须在 `nacp-session` 层正式扩协议
+   - 不允许 `session-do-runtime` 以私有 wire message 先行兜底
+5. README 以及其他当前有效文档，必须改口并与该决策保持一致
 
 ### 1.3 Trace substrate 处理方式
 
@@ -206,8 +206,8 @@
 
 ### C. Richer Product Capabilities
 
-8. multi-round input family
-9. richer session message family v2
+8. advanced multi-turn queue / replace / merge semantics
+9. richer session message family v2（formal follow-up family 之外的进一步扩展）
 10. full fake bash / `just-bash` port
 11. full context architecture
 12. automatic compression / budget management / external compression worker
@@ -768,8 +768,8 @@ Phase 7a / 7b / 7c
 
 ### 12.2 下一阶段应吸收的主题
 
-1. multi-round input family
-2. richer session message family v2
+1. advanced multi-turn queue / replace / merge semantics
+2. richer session message family v2（formal follow-up family 之外）
 3. broader fake bash / `just-bash` port
 4. full context architecture
 5. compression / budget management

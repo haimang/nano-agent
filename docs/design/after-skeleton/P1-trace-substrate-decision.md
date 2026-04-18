@@ -34,6 +34,7 @@
   - 任何 accepted internal request 都必须最终落到 trace anchor 上；不能因为缺 trace 而让 runtime 崩溃。
   - 本阶段首先要保证 **热写入可靠、恢复可靠、session-local causal chain 清晰**。
   - `D1`、`R2`、`KV` 都可以是 future topology 的一部分，但它们承担的职责不必相同。
+  - 本 memo 当前只冻结 **DO storage hot anchor + R2 cold archive + D1 deferred query substrate**；若未来有人想把 D1 提前拉回热路径，必须先提供单独 benchmark/investigation artifact，而不是重新口头讨论。
 - **显式排除的讨论范围**：
   - 不讨论 billing / analytics warehouse
   - 不讨论跨租户 trace 查询 API
@@ -293,6 +294,7 @@
 - **输出**：D1 作为 future query/index substrate 的定位
 - **主要调用者**：下一阶段 API/data model 设计
 - **核心逻辑**：不否定 D1，而是把它从 v1 热路径里拿出来，避免 foundation 被 query 目标绑架。
+- **进入条件**：若未来要提升 D1 地位，必须先提交一份专门 investigation/benchmark memo，对比 DO append/restore 与 D1 write/query 在 nano-agent trace 负载下的成本与恢复特性。
 - **边界情况**：
   - 若 owner 明确要求更早做 D1，也应只做二级索引/镜像，不替代 DO hot anchor
 - **一句话收口目标**：✅ **`D1 的角色从“模糊的可能底座”变成“明确的 future query seam”`**
@@ -313,6 +315,7 @@
 - **可观测性要求**：每个 substrate 决策都要映射到清晰职责，而不是“都能用”。
 - **稳定性要求**：hot path 必须优先支持 hibernation-safe restore。
 - **测试覆盖要求**：后续至少要验证 DO storage new-instance timeline reconstruction、R2 archive seam、D1 未进入热路径的边界。
+- **验证门槛**：任何试图把 D1 从 deferred query seam 升格为主路径的提案，都必须附带独立 benchmark artifact；没有该 artifact，当前结论保持不变。
 
 ---
 
@@ -369,6 +372,7 @@
 - [ ] **待深入调查的子问题**：
   - [ ] R2 archive 的 flush/compaction 触发条件
   - [ ] future D1 index 的最小 schema 何时进入议程
+  - [ ] 是否需要单独产出 `trace-substrate-benchmark.md` 作为 future D1 promotion 的 gate artifact
 - [ ] **需要更新的其他设计文档**：
   - `trace-first-observability-foundation.md`
   - `observability-layering.md`

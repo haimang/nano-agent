@@ -69,6 +69,11 @@
 - `context/codex/codex-rs/tools/src/tool_registry_plan.rs` — 工具 surface 应先 registry-first 冻结，再逐步填充 handler（`67-184`）
 - `context/claude-code/services/tools/toolExecution.ts` — tool execution 不只是“能跑”，还包含 permission、hooks、telemetry 的一体化治理（`126-131`）
 
+**与 just-bash 的对齐结论**
+
+- **明确吸收**：mount-based namespace、显式 command registry、partial support 必须诚实标注。
+- **明确拒绝**：把 just-bash 的 80+ commands 当作当前 phase 的 parity 目标、把 rich `rg` flags 当作 v1 既成事实、把 bash 外形误当作 workspace truth。
+
 ---
 
 ## 2. 在 nano-agent 中的定位
@@ -127,7 +132,7 @@
 |--------|---------------------------------------|------------|---------------------|
 | Search capability | `rg` declaration + handler | minimal pattern/path contract | richer flags / indexed worker |
 | Directory primitive | workspace backend interface | 暂不提供 | `mkdir/statDir/deleteDir` |
-| Grep alias family | command registry | 不注册 | `grep -> rg subset` alias layer |
+| Grep alias family | command registry | 当前 baseline 不注册；优先保留为后续 `grep -> rg subset` 兼容 alias | `grep -> rg subset` alias layer |
 | Remote search | `service-binding` target | slot 存在但未接入 | remote indexed search worker |
 | Search result promotion | artifact promotion + evidence | 大结果可 promoted | cross-turn searchable result refs |
 
@@ -252,9 +257,9 @@
    - **未来重评条件**：无；这是 Worker-native 架构的基本盘。
 
 2. **取舍 2**：我们选择 **先冻结 `rg` 一个 canonical search command** 而不是 **一口气承诺 `grep + rg + sed + awk`**
-   - **为什么**：当前只有 `rg` declaration，且实现仍 degraded；过早承诺只会失真。
-   - **我们接受的代价**：LLM 某些习惯性 `grep` 用法需要 prompt 引导或 alias 未来再补。
-   - **未来重评条件**：当 search contract、parser、tests 都成熟时，可再讨论 `grep` alias。
+    - **为什么**：当前只有 `rg` declaration，且实现仍 degraded；过早承诺只会失真。
+    - **我们接受的代价**：LLM 某些习惯性 `grep` 用法需要 prompt 引导或 alias 未来再补。
+    - **未来重评条件**：当 search contract、parser、tests 都成熟时，可优先补一个窄口 `grep -> rg` alias，而不是直接扩成完整 grep family。
 
 3. **取舍 3**：我们选择 **deterministic, bounded output** 而不是 **完整 ripgrep parity**
    - **为什么**：Worker/V8 isolate 下，确定性与资源边界比 CLI 花样更重要。
@@ -328,6 +333,7 @@
   - bash string 形态固定为 `rg <pattern> [path]`
   - richer flags 先不承诺
   - structured tool call 可作为未来 richer input 的升级口
+  - 若要降低 LLM 对 `grep` 的误用成本，第一优先级兼容回补应该是把 `grep <pattern> [path]` alias 到同一 minimal search capability，而不是引入独立 grep runtime
 - **一句话收口目标**：✅ **`search command 有唯一正式名字和唯一最小 argv 入口`**
 
 #### F4: `File/Search Consistency Guard`
@@ -357,7 +363,7 @@
 - **性能目标**：搜索输出必须有 deterministic/bounded 策略，不能无界扫描后全量 inline。
 - **可观测性要求**：workspace/search 行为要能挂回 trace/evidence。
 - **稳定性要求**：不得把 partial support 写成 fully supported。
-- **测试覆盖要求**：至少需要 workspace file ops、reserved namespace、search contract smoke 三类证据。
+- **测试覆盖要求**：至少需要 workspace file ops、reserved namespace、search contract smoke、以及 file/list/search consistency 四类证据。
 
 ---
 
@@ -404,15 +410,15 @@
 | 评估维度 | 评级 (1-5) | 一句话说明 |
 |----------|------------|------------|
 | 对 nano-agent 核心定位的贴合度 | 5 | fake bash 若没有 workspace truth，会立刻失真 |
-| 第一版实现的性价比 | 5 | 主要是收敛与诚实标注，收益很高 |
+| 第一版实现的性价比 | 4 | search 与 mkdir 仍偏 partial，文档必须比实现更诚实 |
 | 对未来“上下文管理 / Skill / 稳定性”演进的杠杆 | 5 | workspace truth 是这三条线的共用地基 |
 | 对开发者自己的日用友好度 | 4 | 会更保守，但更可靠 |
 | 风险可控程度 | 4 | 风险主要在 partial support 被误读，可通过 inventory 缓解 |
-| **综合价值** | **5** | **应作为 Phase 7 的第一份能力面冻结文稿** |
+| **综合价值** | **4** | **应作为 Phase 7 的第一份能力面冻结文稿，但必须持续提醒 `mkdir/rg` 仍是 partial reality** |
 
 ### 9.3 下一步行动
 
-- [ ] **决策确认**：确认 v1 canonical search command 是否明确只保留 `rg`。
+- [ ] **决策确认**：确认 v1 canonical search command 仍只保留 `rg`，以及后续是否优先补窄口 `grep -> rg` alias。
 - [ ] **关联 Issue / PR**：补一条真正的 search smoke，避免 `rg` 继续只有 declaration 没有质量证据。
 - [ ] **待深入调查的子问题**：
   - [ ] `mkdir` 是否要在下一步补成真实 backend primitive，还是继续保持 compatibility alias

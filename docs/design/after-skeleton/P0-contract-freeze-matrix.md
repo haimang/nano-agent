@@ -18,13 +18,14 @@ Phase 0 最大的风险不是“没人写 design”，而是**不同人对“现
 
 1. 已经在代码里成立的 `nacp-core` / `nacp-session` reality；
 2. owner 已明确要替换的 legacy naming；
-3. README / plan 中已明确延后的 multi-round input、full fake bash、full context compression；
+3. README 中对 multi-round follow-up family 有明确承诺，但旧版 design 曾错误将其放入 deferred；full fake bash、full context compression 仍是 deferred；
 4. 后续仍需继续探索的 trace substrate / DDL / public API。
 
 因此必须有一份单独的 freeze matrix，把 “**frozen / frozen with rename / directional only / deferred**” 四种状态写死。
 
 - **项目定位回顾**：nano-agent 当前最需要的是“边界清晰”，而不是“表面上做了很多功能”。
 - **本次讨论的前置共识**：
+  - 这份 matrix 是 **Phase 0 状态判定的唯一权威来源**；其他 P0 文档解释理由、迁移和 versioning，但不覆盖本表状态。
   - 这份 matrix 只服务 internal runtime truth。
   - 未进入 matrix 的 surface，不得被默认为已冻结。
   - `trace_uuid` 与 UUID-only naming law 必须被显式纳入 matrix。
@@ -50,7 +51,7 @@ Phase 0 最大的风险不是“没人写 design”，而是**不同人对“现
 | **Frozen** | 当前 shape 可继续作为稳定真相使用 | 后续变更必须走 versioning policy |
 | **Frozen with Rename** | 语义与边界已冻结，但字段命名需先完成 owner-aligned rename | Phase 0 迁移后即进入 Frozen |
 | **Directional Only** | 方向已定，但具体实现/物理落点未定 | 例如 observability substrate |
-| **Deferred** | 明确不在本阶段闭合 | 例如 multi-round input family |
+| **Deferred** | 明确不在本阶段闭合 | 例如 public API / business DDL |
 
 ### 1.2 参考调查报告
 
@@ -272,9 +273,9 @@ Phase 0 最大的风险不是“没人写 design”，而是**不同人对“现
   - 当前 7 个 session message types：Frozen
   - `session_frame`: Frozen with Rename（`stream_id -> stream_uuid`）
   - `SessionContext`: Frozen with Rename（`trace_id` / `producer_id`）
-  - follow-up / multi-round family：Deferred
+  - formal follow-up / multi-round family：Directional Only（Q8 已确认必须纳入 Phase 0，并在本阶段结束前升级为 Frozen）
 - **边界情况**：
-  - 当前 reality 被冻住，不代表未来不能新增 v2 family
+  - 当前 reality 被冻住，不代表 future v2 family 可以跳过 Phase 0 直接在 runtime 私造
 - **一句话收口目标**：✅ **`session 现在到底冻了哪些消息与字段，一眼可见`**
 
 #### F3: `Runtime Seam Matrix`
@@ -317,14 +318,19 @@ Phase 0 最大的风险不是“没人写 design”，而是**不同人对“现
 | `core.control` | 已稳定，`reply_to` 语义过宽 | Frozen with Rename | 推荐显式关联对象 |
 | `core.refs` | 已稳定 | Frozen | `tenants/{team_uuid}/` 规则已明确 |
 | `core.extra` | safety valve | Frozen | 不扩张语义 |
-| `session message family v1` | 当前 7 kinds 已存在 | Frozen | 只冻结 reality |
+| `session message family v1` | 当前 7 kinds 已存在，但 formal follow-up family 缺席 | Frozen | 当前 reality 先冻结，且必须为 widened v1 surface 预留正式补位 |
 | `session frame` | 已存在 `stream_id` 等字段 | Frozen with Rename | 命名需对齐 law |
 | `session stream event current catalog` | 当前 reality 已存在 | Frozen | 不在本阶段扩展事件面 |
-| `multi-round input family` | 尚未实现 | Deferred | 下一阶段 in-scope |
+| `formal follow-up / multi-round input family` | 尚未实现，且不得由 runtime 私造 | Directional Only | Q8 已确认纳入 Phase 0；需由 `nacp-session` 正式扩协议并在 P0 结束前冻结 |
 | `observability trace naming` | 仍有 optional `trace_uuid` 漂移 | Directional Only | 先定 law，再定 substrate |
 | `provider raw IDs` | adapter 内部已有 `tool_call_id` | Deferred to translation zone | 不能进 canonical model |
 | `public API / frontend contract` | 未定 | Deferred | 下一阶段首个工作流 |
 | `business DDL / registry schema` | 未定 | Deferred | 等 runtime evidence 后再做 |
+
+**Gate note**
+
+- 任何依赖 **canonical `trace_uuid` 已经跨包成立** 的 phase（尤其是 P2 / P3 / P4 / P6）都必须等待 `core.trace`、`session frame`、`SessionContext` 这些 `Frozen with Rename` 项真正完成 migration。
+- 在这些 rename 落地之前，后续 phase 只能把 `trace_uuid` 当作 owner-aligned target law，不能把它误写成“当前代码 reality 已成立”。
 
 ---
 
@@ -352,7 +358,7 @@ Phase 0 最大的风险不是“没人写 design”，而是**不同人对“现
 
 | 文件:行 | 问题 | 我们为什么避开 |
 |---------|------|----------------|
-| `packages/nacp-session/src/messages.ts:10-84` | 当前 reality 明确，但若没有 matrix，未来很容易被误扩展成“v1 立即支持 follow-up” | 需要明确写成 Frozen + Deferred 扩展 |
+| `packages/nacp-session/src/messages.ts:10-84` | 当前 reality 明确，但若没有 matrix，未来很容易继续在 runtime 层私造 follow-up wire | 需要明确写成“当前 reality Frozen + formal follow-up family 必须由 Phase 0 协议扩展补位” |
 | `packages/nacp-core/src/observability/envelope.ts:12-20` | naming law 与 observability 口径尚未完全收敛 | 说明有些面只能先标 Directional Only |
 
 ---
@@ -400,4 +406,5 @@ Phase 0 最大的风险不是“没人写 design”，而是**不同人对“现
 
 | 版本 | 日期 | 修改者 | 主要变更 |
 |------|------|--------|----------|
+| v0.2 | `2026-04-18` | `GPT-5.4` | 根据 PX-QNA Q8 将 formal follow-up input family 从 Deferred 调整为 Directional Only，并要求其在 Phase 0 结束前被冻结 |
 | v0.1 | `2026-04-17` | `GPT-5.4` | 初稿 |

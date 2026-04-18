@@ -14,7 +14,7 @@
 
 ## 0. 背景与前置约束
 
-当前 `packages/nacp-core/src/version.ts` 已经写入 `NACP_VERSION = "1.0.0"` 与 `NACP_VERSION_COMPAT = "1.0.0"`，但 `packages/nacp-core/src/compat/migrations.ts` 仍只是 placeholder，而且 owner 已经明确要求进行一轮带 breaking 性质的命名收敛（`trace_uuid` / `*_uuid` / 取消 `*_id`）。这意味着 **nano-agent 现在最缺的不是再加一个版本常量，而是先把“什么变化算 breaking、何时允许迁移、alias 可以活多久”讲清楚。**
+当前 `packages/nacp-core/src/version.ts` 已经写入 `NACP_VERSION = "1.0.0"` 与 `NACP_VERSION_COMPAT = "1.0.0"`，但 `packages/nacp-core/src/compat/migrations.ts` 仍只是 placeholder，而且 owner 已经明确要求进行一轮带 breaking 性质的命名收敛（`trace_uuid` / `*_uuid` / 取消 `*_id`），并把 formal follow-up input family 纳入 Phase 0 contract freeze。 这意味着 **nano-agent 现在最缺的不是再加一个版本常量，而是先把“什么变化算 breaking、何时允许迁移、alias 可以活多久、哪些 widened session surfaces 应直接进入 frozen baseline”讲清楚。**
 
 - **项目定位回顾**：nano-agent 不是一个本地 CLI 里“差不多能跑就行”的临时协议；它后面要承载 DO hibernation、WebSocket replay、context assembly、service-binding tools。
 - **本次讨论的前置共识**：
@@ -22,6 +22,8 @@
   - canonical schema 不应长期接受 retired field aliases。
   - migration 必须发生在 raw-to-raw translation 层，而不是在业务代码里到处写双字段兼容。
   - Session profile 与 Core profile 属于同一 NACP family，应共享版本治理原则。
+  - Phase 0 的第一条真实 migration 就是 `trace_id / stream_id / span_id -> *_uuid` 与相关 `*_id -> *_key` 收敛；formal follow-up input family 则属于同一 frozen-baseline cut 中必须明确写入的 session contract widening。
+  - 在 rename migration 真正进入 compat chain 之前，后续 phase 一律不得把 rename target 误写成既成事实；在 follow-up family 真正被 `nacp-session` 冻结之前，也不得把它继续当成下一阶段事务。
 - **显式排除的讨论范围**：
   - 不讨论 npm package semver 与 monorepo release 流程
   - 不讨论 public REST/WebSocket API 的版本策略
@@ -197,6 +199,7 @@
 | 项目 | 判定 | 理由 |
 |------|------|------|
 | `trace_id -> trace_uuid` 重命名 | in-scope | Phase 0 的核心 breaking migration |
+| formal follow-up input family 扩展 | in-scope | Q8 已确认其属于 widened v1 contract surface，而不是下一阶段 v2 才补 |
 | provider `tool_call_id` 保留 | out-of-scope | 仅属于 adapter raw wire |
 | `session.stream.event` kind 扩展 | out-of-scope（本阶段） | 当前只冻结 reality，不扩展事件面 |
 | current `1.0.0` 的语义澄清 | in-scope | 当前代码已写死 version，必须解释其地位 |
@@ -215,7 +218,7 @@
 2. **取舍 2**：我们选择 **把 current `1.0.0` 视为 pre-freeze provisional baseline** 而不是 **假装它已经是最终 frozen truth**
    - **为什么**：当前代码显然还未符合 owner 的 naming law，继续把它当 frozen truth 会制造更多混乱。
    - **我们接受的代价**：需要在文档里明确说明“1.0.0 先前只是内部前基线”。
-   - **未来重评条件**：Phase 0 rename batch 落地后，再切 owner-aligned frozen baseline。
+   - **未来重评条件**：Phase 0 rename batch 与 formal follow-up family freeze 落地后，再切 owner-aligned frozen baseline。
 
 3. **取舍 3**：我们选择 **alias 只活在 compat/adapter** 而不是 **让 canonical schema 永久双读**
    - **为什么**：长期双读会使 contract 永远无法真正收敛。
@@ -258,8 +261,9 @@
 - **主要调用者**：core/session runtime、docs、review
 - **核心逻辑**：
   1. 当前代码中的 `1.0.0` 视为 **pre-freeze provisional baseline**
-  2. Phase 0 normalization batch 落地后，切出第一版 **owner-aligned frozen baseline**
-  3. 建议该 frozen baseline 记为 `1.1.0`，并在文档中注明 `1.0.0` 为 pre-freeze internal line
+  2. Phase 0 的 owner-aligned frozen baseline 必须同时吸纳 naming law 收敛与 formal follow-up input family freeze
+  3. 在上述 Phase 0 cut 落地后，切出第一版 **owner-aligned frozen baseline**
+  4. 建议该 frozen baseline 记为 `1.1.0`，并在文档中注明 `1.0.0` 为 pre-freeze internal line
 - **边界情况**：
   - 若业主更偏好重新声明 `1.0.0`，也必须同步 rewrite 全部 compatibility 口径
 - **一句话收口目标**：✅ **`当前版本号的语义不再模糊`**
@@ -381,4 +385,5 @@
 
 | 版本 | 日期 | 修改者 | 主要变更 |
 |------|------|--------|----------|
+| v0.2 | `2026-04-18` | `GPT-5.4` | 根据 PX-QNA Q8 补充 Phase 0 frozen baseline 需吸纳 formal follow-up input family widening 的版本治理口径 |
 | v0.1 | `2026-04-17` | `GPT-5.4` | 初稿 |
