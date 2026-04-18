@@ -38,6 +38,15 @@ interface SearchInput {
   /** Override the default 200-line / 32 KB cap for tests. */
   maxMatches?: number;
   maxBytes?: number;
+  /**
+   * A8-A10 review GPT R1: map the Q16 narrow alias flags into
+   * structured input so the handler honours `grep -i` (case-insensitive)
+   * and `grep -n` (line numbers). Defaults are the historical
+   * behaviour: case-sensitive + line numbers always on (the handler
+   * has always emitted `path:line:content`).
+   */
+  caseInsensitive?: boolean;
+  lineNumbers?: boolean;
 }
 
 interface SearchHandlersConfig {
@@ -78,13 +87,22 @@ export function createSearchHandlers(
       throw new Error(`rg: path '${startPath}' escapes the workspace root`);
     }
 
+    // A8-A10 review GPT R1: `caseInsensitive` comes from the Q16 grep
+    // alias `-i` flag (or a future structured caller). It propagates
+    // into the regex construction and the substring fallback.
+    const caseInsensitive = Boolean(opts.caseInsensitive);
+    const lineNumbers = opts.lineNumbers !== false; // default on
     let matcher: (line: string) => boolean;
     try {
-      const re = new RegExp(pattern);
+      const re = new RegExp(pattern, caseInsensitive ? "i" : "");
       matcher = (line: string) => re.test(line);
     } catch {
       // Fall back to plain substring on invalid regex; mirrors `rg -F`.
-      matcher = (line: string) => line.includes(pattern);
+      const needle = caseInsensitive ? pattern.toLowerCase() : pattern;
+      matcher = (line: string) =>
+        caseInsensitive
+          ? line.toLowerCase().includes(needle)
+          : line.includes(needle);
     }
 
     const maxMatches = opts.maxMatches ?? DEFAULT_RG_MAX_MATCHES;
@@ -106,52 +124,66 @@ export function createSearchHandlers(
     let totalMatches = 0;
     let truncated = false;
 
+    // A8-A10 review GPT R2 / Kimi R1 / Kimi R2: replace the old
+    // `!candidate.includes(".")` dir/file heuristic with a probe
+    // based on `listDir()` output. Dot-containing directory names
+    // (`.config`, `foo.bar`) now recurse correctly; extensionless
+    // files (`LICENSE`, `Makefile`) no longer trigger a spurious
+    // listDir. An empty directory (listDir returned `[]`) falls
+    // through to `readFile` which returns null and is skipped
+    // silently — the same visible behaviour we always had, just
+    // without the false-positive directory recursion.
     while (queue.length > 0) {
       const next = queue.shift()!;
       if (visited.has(next)) continue;
       visited.add(next);
       if (isReservedNamespacePath(next)) continue;
 
-      let entries: Array<{ path: string; size: number }>;
+      let children: Array<{ path: string; size: number }> = [];
+      let listFailed = false;
       try {
-        entries = await workspace.listDir(next);
+        children = await workspace.listDir(next);
       } catch {
-        entries = [{ path: next, size: 0 }];
+        listFailed = true;
       }
-      const treatAsFile = entries.length === 0;
-      const candidates = treatAsFile ? [next] : entries.map((e) => e.path);
 
-      candidates.sort((a, b) => a.localeCompare(b));
-      for (const candidate of candidates) {
-        if (isReservedNamespacePath(candidate)) continue;
-        // Recurse into directories: heuristic = path without an
-        // extension and not the same as the parent we just listed.
-        const looksDirectory =
-          !treatAsFile && !candidate.includes(".") && candidate !== next;
-        if (looksDirectory) {
-          queue.push(candidate);
+      if (!listFailed && children.length > 0) {
+        // Directory: recurse into sorted children.
+        children.sort((a, b) => a.path.localeCompare(b.path));
+        for (const child of children) {
+          if (isReservedNamespacePath(child.path)) continue;
+          queue.push(child.path);
+        }
+        continue;
+      }
+
+      // Leaf (or directory we couldn't list): try to read as a file.
+      const candidate = next;
+      const content = await workspace.readFile(candidate).catch(() => null);
+      if (content === null) continue;
+      const lines = content.split("\n");
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i]!;
+        if (!matcher(line)) continue;
+        totalMatches += 1;
+        if (matches.length >= maxMatches || bytesEmitted >= maxBytes) {
+          truncated = true;
           continue;
         }
-        const content = await workspace.readFile(candidate).catch(() => null);
-        if (content === null) continue;
-        const lines = content.split("\n");
-        for (let i = 0; i < lines.length; i++) {
-          const line = lines[i]!;
-          if (!matcher(line)) continue;
-          totalMatches += 1;
-          if (matches.length >= maxMatches || bytesEmitted >= maxBytes) {
-            truncated = true;
-            continue;
-          }
-          const formatted = `${candidate}:${i + 1}:${line}`;
-          const formattedBytes = utf8ByteLength(formatted) + 1;
-          if (bytesEmitted + formattedBytes > maxBytes) {
-            truncated = true;
-            continue;
-          }
-          bytesEmitted += formattedBytes;
-          matches.push(formatted);
+        // A8-A10 review GPT R1: honour `-n` (lineNumbers). Default
+        // keeps the historical `path:line:content` shape; when the
+        // caller explicitly turns line numbers off via the Q16
+        // alias, we drop the middle field.
+        const formatted = lineNumbers
+          ? `${candidate}:${i + 1}:${line}`
+          : `${candidate}:${line}`;
+        const formattedBytes = utf8ByteLength(formatted) + 1;
+        if (bytesEmitted + formattedBytes > maxBytes) {
+          truncated = true;
+          continue;
         }
+        bytesEmitted += formattedBytes;
+        matches.push(formatted);
       }
     }
 

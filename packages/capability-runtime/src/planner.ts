@@ -81,24 +81,48 @@ type AliasRewrite =
   | { ok: true; canonical: string; args: string[] }
   | { ok: false; reason: string };
 
+/** AX-QNA Q16 narrow-alias flag allowlist. */
+const GREP_ALIAS_ACCEPTED_FLAGS: ReadonlySet<string> = new Set(["-i", "-n"]);
+
 function parseAliasArgs(cmd: string, args: string[]): AliasRewrite {
   const canonical = COMMAND_ALIASES[cmd];
   if (!canonical) return { ok: true, canonical: cmd, args };
   if (cmd === "grep") {
-    if (args.length === 0) {
+    // A8-A10 review GPT R1: AX-QNA Q16 owner-final answer accepts
+    // `-i` (case-insensitive) and `-n` (line numbers) in addition to
+    // the bare `grep <pattern> [path]` shape. The previous
+    // implementation rejected every `-flag`, which was stricter than
+    // what Q16 owner-aligned — LLMs hitting `grep -i foo` paid the
+    // "not supported" turn cost.
+    const positional: string[] = [];
+    const flags: string[] = [];
+    for (const token of args) {
+      if (token.startsWith("-")) {
+        if (!GREP_ALIAS_ACCEPTED_FLAGS.has(token)) {
+          return {
+            ok: false,
+            reason:
+              `grep alias is intentionally narrow (Q16). The alias accepts only -i / -n; drop '${token}' and call \`rg\` directly for richer options.`,
+          };
+        }
+        flags.push(token);
+      } else {
+        positional.push(token);
+      }
+    }
+    if (positional.length === 0) {
       return {
         ok: false,
         reason:
-          "grep: pattern required; alias rewrites to `rg <pattern> [path]`",
+          "grep: pattern required; alias rewrites to `rg [-i] [-n] <pattern> [path]`",
       };
     }
-    if (args[0]!.startsWith("-")) {
-      return {
-        ok: false,
-        reason: `grep alias is intentionally narrow (Q16). Drop the '${args[0]}' flag and call \`rg\` directly for richer options.`,
-      };
-    }
-    return { ok: true, canonical, args };
+    // Emit the flags in a stable order so planner output stays
+    // deterministic regardless of user input order.
+    const orderedFlags: string[] = [];
+    if (flags.includes("-i")) orderedFlags.push("-i");
+    if (flags.includes("-n")) orderedFlags.push("-n");
+    return { ok: true, canonical, args: [...orderedFlags, ...positional] };
   }
   return { ok: true, canonical, args };
 }
@@ -270,8 +294,27 @@ function buildInputFromArgs(
       return { source: args[0] ?? "", destination: args[1] ?? "" };
     case "pwd":
       return {};
-    case "rg":
-      return { pattern: args[0] ?? "", path: args[1] ?? "." };
+    case "rg": {
+      // A8-A10 review GPT R1: accept optional `-i` / `-n` flags (Q16
+      // narrow alias) and pass them through as structured input so the
+      // handler can honour case-insensitive matching and line-number
+      // output. Unknown flags have already been filtered by
+      // `parseAliasArgs()`.
+      const positional: string[] = [];
+      let caseInsensitive = false;
+      let lineNumbers = false;
+      for (const token of args) {
+        if (token === "-i") caseInsensitive = true;
+        else if (token === "-n") lineNumbers = true;
+        else positional.push(token);
+      }
+      return {
+        pattern: positional[0] ?? "",
+        path: positional[1] ?? ".",
+        caseInsensitive,
+        lineNumbers,
+      };
+    }
     case "curl":
       return { url: args[0] ?? "" };
     case "ts-exec":

@@ -66,20 +66,32 @@ async function listWorkspace(
   namespace: WorkspaceFsLike,
   root: string,
 ): Promise<string[]> {
+  // A8-A10 review Kimi R2 + GPT R2: the previous implementation
+  // pushed every `listDir(entry).length === 0` child to the output,
+  // which meant empty directories got reported as if they were files
+  // in `git status`. Disambiguate by attempting `readFile(entry)` —
+  // if the entry yields content it is a file; if it yields null it
+  // is an empty directory and we silently skip it (consistent with
+  // how `search.ts` treats empty directories after the same review
+  // fix). This keeps search/vcs on a single traversal semantics.
   const out: string[] = [];
   async function walk(path: string): Promise<void> {
     if (isReservedNamespacePath(path)) return;
     const entries = await namespace.listDir(path);
     for (const entry of entries) {
       if (isReservedNamespacePath(entry.path)) continue;
-      // `listDir` returns child paths; recurse into "directories" by
-      // checking whether the child has its own children.
       const children = await namespace.listDir(entry.path);
       if (children.length > 0) {
         await walk(entry.path);
-      } else {
-        out.push(entry.path);
+        continue;
       }
+      // Leaf: probe with readFile to distinguish files from empty
+      // directories.
+      const content = await namespace
+        .readFile(entry.path)
+        .catch(() => null);
+      if (content === null) continue;
+      out.push(entry.path);
     }
   }
   await walk(root);

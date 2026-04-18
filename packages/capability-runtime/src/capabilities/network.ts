@@ -143,9 +143,38 @@ function clampBytes(requested: number | undefined, cap: number): number {
   return Math.min(requested, cap);
 }
 
-function truncateBody(body: string, cap: number): { body: string; truncated: boolean } {
-  if (body.length <= cap) return { body, truncated: false };
-  return { body: body.slice(0, cap), truncated: true };
+const TEXT_ENCODER = new TextEncoder();
+const TEXT_DECODER = new TextDecoder("utf-8");
+
+/**
+ * A8-A10 review GPT R3 / Kimi R4: `curl` advertises its output cap
+ * in **bytes** (see `DEFAULT_CURL_MAX_BYTES = 64 KiB` and the
+ * `body truncated at N bytes` disclosure string). The previous
+ * implementation measured `body.length` (UTF-16 code units), so a
+ * 5-char CJK response would claim `truncated at 4 bytes` while
+ * actually emitting 12 bytes.
+ *
+ * The correct behaviour is to truncate on a UTF-8 **code-point
+ * boundary** with the resulting byte length ≤ cap, so that the
+ * returned string is valid UTF-8 AND re-encodes within the declared
+ * cap (no replacement-character inflation).
+ */
+function truncateBody(
+  body: string,
+  cap: number,
+): { body: string; truncated: boolean } {
+  const encoded = TEXT_ENCODER.encode(body);
+  if (encoded.byteLength <= cap) return { body, truncated: false };
+  // Walk backwards from `cap` to find the nearest UTF-8 start byte.
+  // A UTF-8 start byte is anything that is NOT a continuation byte
+  // (continuation bytes match `0b10xx_xxxx`, i.e. `(byte & 0xC0) ===
+  // 0x80`). This guarantees the slice ends on a complete code point.
+  let end = cap;
+  while (end > 0 && (encoded[end]! & 0xC0) === 0x80) {
+    end -= 1;
+  }
+  const clipped = encoded.slice(0, end);
+  return { body: TEXT_DECODER.decode(clipped), truncated: true };
 }
 
 /**
