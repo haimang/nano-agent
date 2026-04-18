@@ -251,3 +251,65 @@
   2. R5：将 PX inventory §7.1 的命令表格顺序调整为与 `MINIMAL_COMMANDS` canonical order 一致。
 
 > 本轮 review 建议先由实现者按 §5 中的 follow-up 响应并更新代码，然后再进行收口。
+
+---
+
+## 6. 实现者回应（针对 Kimi 报告）
+
+> 执行者: `Claude (claude-opus-4-7[1m])`
+> 执行时间: `2026-04-18`
+> 回应范围: `Kimi R1 – R5`
+> 交叉回应: 跨 reviewer 的统一修改日志与对 GPT 报告的整体评价写在 `docs/code-review/after-skeleton/A8-A10-reviewed-by-GPT.md` §6；本节只记录针对 Kimi 五条 finding 的独立回应与对本份报告的评价。
+
+### 6.1 逐项回应
+
+| 审查编号 | 审查问题 | 处理结果 | 处理方式 | 修改文件 |
+|----------|----------|----------|----------|----------|
+| Kimi R1 | `search.ts:129` 使用 `!candidate.includes(".")` 作启发式，会把 Makefile/LICENSE 误判为目录 | `fixed` | 与 GPT R2 合并：重写 search traversal 为 `listDir(candidate)` 非空 → recurse（sorted），空/throw → `readFile` 分支；`LICENSE / Makefile / Dockerfile` 被正确读为文件，无多余 listDir 调用；`search-rg-reality.test.ts` 新增 "extensionless files (LICENSE / Makefile)" regression case | `packages/capability-runtime/src/capabilities/search.ts`, `packages/capability-runtime/test/capabilities/search-rg-reality.test.ts` |
+| Kimi R2 | `vcs.ts:76-82` 用 `children.length > 0` 判断目录/文件，空目录会被 push 到 `git status` 输出 | `fixed` | `listWorkspace` 的 leaf 分支改为 `readFile(entry.path)` 探测：返回内容才 push（文件），返回 null 跳过（空目录）；`git-subset.test.ts` 新增 "status omits leaf entries whose readFile returns null (empty-directory guard)" case，使用 WsWithEmptyDir 直接造场景 | `packages/capability-runtime/src/capabilities/vcs.ts`, `packages/capability-runtime/test/capabilities/git-subset.test.ts` |
+| Kimi R3 | A9 工作报告 §11.3 "公网 hostname 只有 example.com 落在 accept 列表" 与代码 deny-list 语义不符 | `fixed` | A9 §11.3 措辞改写为明确的 deny-list 声明："`isPrivateHost()` 是 deny-list 语义，不是 allow-list —— 任何未命中 deny-list 的公网 hostname 都会被接受"；`network-egress.test.ts` 新增 "accepts other common public hostnames" case 覆盖 `api.github.com / registry.npmjs.org / raw.githubusercontent.com`，消除 "only example.com" 错觉 | `docs/action-plan/after-skeleton/A9-minimal-bash-network-and-script.md`, `packages/capability-runtime/test/capabilities/network-egress.test.ts` |
+| Kimi R4 | `network.ts::truncateBody` 按 `body.length` 截断，多字节响应突破 byte cap；与 `search.ts::utf8ByteLength` 口径不一致 | `fixed` | 与 GPT R3 合并：truncateBody 改为「TextEncoder.encode → 向前找最近的 UTF-8 起始字节（跳过 `10xx_xxxx` continuation bytes）→ TextDecoder.decode」。结果 byte 数 ≤ cap 且是 valid UTF-8。新增 2 个 regression：`"你".repeat(5) + maxOutputBytes:4` 实际 ≤ 4 bytes；`"你好"`（6 UTF-8 bytes）+ `maxOutputBytes:10` 不触发截断 | `packages/capability-runtime/src/capabilities/network.ts`, `packages/capability-runtime/test/capabilities/network-egress.test.ts` |
+| Kimi R5 | PX §7.1 命令表格顺序 (`write → rm → mv → cp → mkdir`) 与 `MINIMAL_COMMANDS` canonical order (`write → mkdir → rm → mv → cp`) 不一致 | `fixed` | 重排 PX §7.1 表格为 canonical order；在表格开头加入 "command order law" 段说明 row order 与 `MINIMAL_COMMANDS` 严格对齐；inventory-drift-guard test 新增 PX parser（与 GPT R4 合并），直接读取 `docs/design/after-skeleton/PX-capability-inventory.md` 并校验行顺序 + policy 列——任一侧漂移即 CI 失败 | `docs/design/after-skeleton/PX-capability-inventory.md`, `packages/capability-runtime/test/inventory-drift-guard.test.ts` |
+
+### 6.2 变更文件清单（仅本报告触达部分）
+
+- `packages/capability-runtime/src/capabilities/search.ts`（R1 — 与 GPT R2 合并）
+- `packages/capability-runtime/src/capabilities/vcs.ts`（R2）
+- `packages/capability-runtime/src/capabilities/network.ts`（R4 — 与 GPT R3 合并）
+- `packages/capability-runtime/test/capabilities/search-rg-reality.test.ts`（R1）
+- `packages/capability-runtime/test/capabilities/git-subset.test.ts`（R2）
+- `packages/capability-runtime/test/capabilities/network-egress.test.ts`（R3 + R4）
+- `packages/capability-runtime/test/inventory-drift-guard.test.ts`（R5 — 与 GPT R4 合并）
+- `docs/action-plan/after-skeleton/A9-minimal-bash-network-and-script.md`（R3）
+- `docs/design/after-skeleton/PX-capability-inventory.md`（R5 — 与 GPT R4 合并）
+
+其余修改（GPT R1 Q16 -i/-n + GPT R2 `.config` 目录递归 + GPT R3 UTF-8 byte boundary + GPT R4 PX parser）见 GPT 报告 §6.
+
+### 6.3 验证结果
+
+```text
+pnpm -r typecheck                                                → 10 包全绿
+pnpm -r build                                                    → 10 包全绿
+pnpm --filter @nano-agent/capability-runtime test                → 241 passed (up from 227; +14 cases)
+npm run test:cross                                               → 67/67 passed (14 e2e + 53 contract suites)
+```
+
+五条 finding 全部落地；R1/R2/R4 的 follow-up 都在本轮完成，不再需要作为跨 phase 跟踪项。R5 的 PX 表格顺序因为 drift guard 新 parser 而 **从此由 CI 硬锁**，再次 drift 会立即失败。
+
+### 6.4 对 Kimi 审查报告的评价
+
+- **报告切入角度**：Kimi 五条 finding 覆盖了「search/vcs 对同一 workspace 的遍历一致性（R1 + R2）+ network 与 search 的 UTF-8 cap 口径一致性（R4）+ docs / code 一致性（R3 + R5）」三个维度。尤其 R1 + R2 合起来展示了一种非常有洞察力的对称视角：R1 从 "extensionless file 被误判为目录" 切入，R2 从 "空目录被误判为文件" 切入，两者合起来暴露同一段启发式代码的双向错误。实现者因此采用 "不依赖 `.` 字符、改用 listDir-probe + readFile-fallback" 的统一方案，一次性消灭两条症状。这种「对称缺陷发现法」不是 GPT 风格能覆盖的。
+- **证据链质量**：每条 finding 都有文件:行号 + 可复现命令。R1 的 `search.ts:129` 直接指向代码行；R2 的 `vcs.ts:76-82` 同样精确；R4 的 `network.ts:146-149` + `search.ts:54-56` 交叉对比让 "跨模块口径不一致" 的论据无可争议；R5 的 `MINIMAL_COMMANDS` 与 `PX §7.1` 对比直接锁定 drift。
+- **严重级别判断**：R1/R2/R4 medium + R3/R5 low 的分布精准反映了每条 finding 的阻塞性。R1/R2 作为 "correctness 问题但当前没有显式 bug 表现" 标 medium，既表达紧迫感又不升级为 high；R4 作为 "security-adjacent 但只在多字节内容下暴露" 也标 medium；R3/R5 作为纯 docs-drift 标 low —— 这种分级克制是我在系列 8 轮 review 里最欣赏 Kimi 的特质。
+- **修复边界建议**：Kimi 对 R1/R2 给出了 "短期：统一启发式 / 中期：补 isDirectory primitive" 两档选项，实现者选了中间方案（不新增接口但用 listDir-probe 代替启发式），同时达成两档目标；对 R4 建议 "参考 search.ts 的 utf8ByteLength 实现"，虽然最终实现用了向后找 UTF-8 起始字节（更可预测）而非 encode+decode 全程，但 Kimi 的建议方向完全正确。R5 建议 "调整表格顺序或加注释"，实现者选了前者并增加了 CI 硬锁，比 Kimi 建议更主动。
+- **与 GPT 的互补性**：本轮 5 条 Kimi finding 中，R1/R4/R5 与 GPT 的 R2/R3/R4 有部分重叠但视角不同（GPT 从 canonical baseline 看，Kimi 从跨模块一致性看）；R2/R3 是 Kimi 独有。合并后的 9 条 finding 无冗余无缺漏，覆盖 A8-A10 closure 的所有真实缺口。
+- **综合评价**：报告质量顶级。与 GPT 报告形成系列里最强的互补审阅。五条 finding 的分级、证据、修复建议都精准到位，是一份 approve-grade 审查工作的标杆范本。
+
+### 6.5 实现者收口判断（仅针对 Kimi 报告维度）
+
+- **实现者自评状态**：`ready-for-rereview`
+- **仍然保留的已知限制**：
+  1. R1/R2 的 `WorkspaceFsLike` 接口没有加 `isDirectory` primitive（Kimi 建议的「中期」方案）；当前用 `listDir + readFile` 双探测已经足够解决两条启发式缺陷，未来如果 workspace backend 引入真实目录实体（例如 R2-backed artifacts 的 list-prefix 原语），再扩 `WorkspaceFsLike` 也不迟。
+  2. R4 的 `truncateBody` 用「向前找 UTF-8 起始字节」而非 `TextDecoder` 的全程 fatal 模式，因为前者永远不会扩张到 replacement char (`U+FFFD`) 而稳定地保证 `byteLength ≤ cap`；这是刻意选择，与 Kimi 建议的「字节感知截断」方向一致但实现路径不同。
+
+请 Kimi 按 §7 二次审查模板复核；若 R1 的 `.config / foo.bar / LICENSE / Makefile` 回归 + R2 的 empty-dir guard + R4 的 UTF-8 truncation + R3 的 "accept 列表" 消歧 + R5 的 PX canonical order 全部验证有效，则 Kimi 侧 review 可直接收口。

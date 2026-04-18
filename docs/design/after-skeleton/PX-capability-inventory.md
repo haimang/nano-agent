@@ -237,14 +237,21 @@
 
 | Capability | Kind | Target | Policy | 等级 | Evidence | 备注 |
 |------------|------|--------|--------|------|----------|------|
+> **Command order law (A8-A10 review GPT R4 / Kimi R5)**: the rows
+> below are listed in the same **canonical order** as
+> `MINIMAL_COMMANDS` in `packages/capability-runtime/src/fake-bash/commands.ts`.
+> `packages/capability-runtime/test/inventory-drift-guard.test.ts` parses
+> this table and fails CI if the row order, policy column, or command
+> set diverges from the code.
+
 | `pwd` | filesystem | `local-ts` | allow | **Supported** | E2 | 有 planner + local target + package tests |
 | `ls` | filesystem | `local-ts` | allow | **Supported** | E3 | 已有 workspace-backed E2E evidence |
 | `cat` | filesystem | `local-ts` | allow | **Supported** | E3 | 已有 workspace-backed E2E evidence |
 | `write` | filesystem | `local-ts` | ask | **Supported (ask-gated)** | E3 | handler 真实存在；默认非交互路径需 policy allow 才执行 |
+| `mkdir` | filesystem | `local-ts` | ask | **Partial (ask-gated)** | E2 | A8 收口为 partial-with-disclosure：handler 只 ack-create prefix，每次输出携带 `mkdir-partial-no-directory-entity` 标识（AX-QNA Q21） |
 | `rm` | filesystem | `local-ts` | ask | **Supported (ask-gated)** | E2 | handler 真实存在；默认非交互路径需 policy allow 才执行 |
 | `mv` | filesystem | `local-ts` | ask | **Supported (ask-gated)** | E2 | handler 真实存在；默认非交互路径需 policy allow 才执行 |
 | `cp` | filesystem | `local-ts` | ask | **Supported (ask-gated)** | E2 | handler 真实存在；默认非交互路径需 policy allow 才执行 |
-| `mkdir` | filesystem | `local-ts` | ask | **Partial (ask-gated)** | E2 | A8 收口为 partial-with-disclosure：handler 只 ack-create prefix，每次输出携带 `mkdir-partial-no-directory-entity` 标识（AX-QNA Q21） |
 | `rg` | search | `local-ts` | allow | **Supported** | E2 | A8 P3-01 已实现 namespace-backed 真实搜索 + bounded output；canonical search baseline（AX-QNA Q15） |
 | `curl` | network | `local-ts` | ask | **Partial (ask-gated)** | E2 | A9 P2 收口为 restricted baseline：scheme allow-list (http/https)、host deny-list (localhost/RFC1918/link-local/CGNAT/IPv6 ULA/cloud-metadata)、`timeoutMs`/`maxOutputBytes` 双 cap、`fetchImpl` 注入注接，bash path 仅承诺 `curl <url>`，richer `{ url, method, headers, body, timeoutMs }` 只走 structured tool call（AX-QNA Q17） |
 | `ts-exec` | exec | `local-ts` | ask | **Partial (ask-gated)** | E2 | A9 P3 按 Q22 冻结为 honest partial：syntax validation (`new Function`) + length ack + 固定 `ts-exec-partial-no-execution` marker；不执行 code，升级口保留为 future remote tool-runner via `ServiceBindingTarget` |

@@ -206,3 +206,80 @@
   2. 在 capability inventory / prompt docs 里更明确区分 `registry truth`、`docs truth` 与 `fixture guard`，减少后续评审误读。
 
 本轮 review 不收口，等待实现者按 §6 响应并再次更新代码。
+
+---
+
+## 6. 实现者回应
+
+### 6.1 对本轮审查的回应
+
+> 执行者: `Claude (claude-opus-4-7[1m])`
+> 执行时间: `2026-04-18`
+> 回应范围: `GPT R1–R4 + Kimi R1–R5`（合并处理；Kimi 独立回应见 `A8-A10-reviewed-by-kimi.md` §6）
+
+- **总体回应**：`GPT 的 4 条 finding 全部属实（R1-R3 为 high/security 级 correctness gap，R4 为 medium 级 docs-gap）。Kimi 的 R1/R2 与 GPT R2 锁定的目录启发式问题同根；Kimi R4 与 GPT R3 是同一 UTF-8 问题的两种观察角度；Kimi R3/R5 是独立的文档一致性问题。全部 9 条 finding 已在本轮 fix 落地并有显式回归测试守护。`
+- **本轮修改策略**：`先按 Q16 owner-final answer 补齐 grep alias -i/-n（GPT R1），再把 search + vcs 的目录/文件启发式统一为 listDir-probe + readFile-fallback（GPT R2 / Kimi R1/R2），接着把 curl 的 truncate 改为 UTF-8 code-point boundary 截断（GPT R3 / Kimi R4），最后升级 drift guard 让它真正读取 PX inventory 文档（GPT R4）并同步修正 PX §7.1 的行序与 A9 §11.3 的 deny-list 措辞（Kimi R3/R5）。capability-runtime 新增 14 个回归 case（227 → 241），全仓 10 包 1948 tests 零回归。`
+
+### 6.2 逐项回应表
+
+| 审查编号 | 审查问题 | 处理结果 | 处理方式 | 修改文件 |
+|----------|----------|----------|----------|----------|
+| GPT R1 | `grep -> rg` alias 拒绝 `-i`/`-n`，违背 Q16 owner-final 冻结 | `fixed` | `parseAliasArgs()` 新增 `GREP_ALIAS_ACCEPTED_FLAGS = new Set(["-i","-n"])`；分离 positional / flag tokens，未知 flag 继续拒绝；flag 按 stable order 注入；`buildInputFromArgs()::case "rg"` 抽取 `-i → caseInsensitive` / `-n → lineNumbers` 并写入 structured input；`search.ts` 在 regex 构造时传 `i` flag，输出路径用 `lineNumbers` 决定 `path:line:content` vs `path:content`；`planner-grep-alias.test.ts` 从 7 cases 升级为 10 cases，`search-rg-reality.test.ts` 追加 2 case 证明 `-i` 匹配大小写 + `lineNumbers=false` 去除行号列 | `packages/capability-runtime/src/planner.ts`, `packages/capability-runtime/src/capabilities/search.ts`, `packages/capability-runtime/test/planner-grep-alias.test.ts`, `packages/capability-runtime/test/capabilities/search-rg-reality.test.ts` |
+| GPT R2 / Kimi R1 / Kimi R2 | `rg` 按 `!candidate.includes(".")` 判定目录，漏扫 `.config`/`foo.bar`；`LICENSE`/`Makefile` 被错判；vcs 把空目录当文件 | `fixed` | 重写 `search.ts` 的 traversal：先 `listDir(candidate)` —— 返回非空就 recurse（sorted）；返回空/抛错就走 `readFile` 分支；空目录的 `readFile` 返回 null 自然 skip。`vcs.ts::listWorkspace` 用同一模式：`listDir` 返回非空 → recurse；空 → 用 `readFile` 探测（非 null 才 push，空目录自动跳过）。新增 regression：`search-rg-reality.test.ts` 的 `.config`/`foo.bar` 递归 + `LICENSE`/`Makefile` 无误判；`git-subset.test.ts` 的 empty-directory guard | `packages/capability-runtime/src/capabilities/search.ts`, `packages/capability-runtime/src/capabilities/vcs.ts`, `packages/capability-runtime/test/capabilities/search-rg-reality.test.ts`, `packages/capability-runtime/test/capabilities/git-subset.test.ts` |
+| GPT R3 / Kimi R4 | `curl` 的 `truncateBody` 按字符长度截断，多字节响应下宣称 `truncated at 4 bytes` 却实际输出 12 bytes | `fixed`（security correctness） | 新 `truncateBody` 先 `TextEncoder.encode()` 得到字节数组；若 ≤ cap 直接返回；否则从 `cap` 向前寻找最近的 UTF-8 **起始字节**（非 `10xx_xxxx` 延续字节），切片后 `TextDecoder.decode()`。保证：(a) 结果是有效 UTF-8；(b) 重新 encode 后 byteLength ≤ cap。新增 2 个 regression：`"你".repeat(5)` 带 `maxOutputBytes: 4` 实际 ≤ 4 bytes；`"你好"` 带 `maxOutputBytes: 10`（6 UTF-8 bytes）不触发截断 | `packages/capability-runtime/src/capabilities/network.ts`, `packages/capability-runtime/test/capabilities/network-egress.test.ts` |
+| GPT R4 | `inventory-drift-guard` 只对拍 code 常量，没读 PX inventory 文档；A10 却声称 "改代码不改 docs 会被 CI 挡住" | `fixed` | drift guard test 新增 `parsePxCommandInventory()`：读取 `docs/design/after-skeleton/PX-capability-inventory.md`，匹配 `### 7.1` 下的表格 row，抽取 `(name, policy)` 对。新增 3 个 cases：(1) 表格 12 行按 canonical 顺序、(2) 每行 policy 列匹配 code 的 `EXPECTED_POLICY`、(3) 不能有 registry 未声明的"幽灵行"。同时 PX §7.1 表格开头追加 "command order law" 说明段 | `packages/capability-runtime/test/inventory-drift-guard.test.ts`, `docs/design/after-skeleton/PX-capability-inventory.md` |
+| Kimi R3 | A9 §11.3 声称 "公网 hostname 只有 example.com 落在 accept 列表"，与 deny-list 代码不符 | `fixed` | A9 §11.3 措辞改写为明确的 deny-list 语义声明；`network-egress.test.ts` 新增 "accepts other common public hostnames" case 覆盖 `api.github.com / registry.npmjs.org / raw.githubusercontent.com`，消除 "only example.com" 误读 | `docs/action-plan/after-skeleton/A9-minimal-bash-network-and-script.md`, `packages/capability-runtime/test/capabilities/network-egress.test.ts` |
+| Kimi R5 | PX §7.1 命令顺序（write → rm → mv → cp → mkdir）与 `MINIMAL_COMMANDS` canonical order（write → mkdir → rm → mv → cp）不一致 | `fixed` | PX §7.1 表格顺序调整为 canonical order；表格开头增加说明段 "rows are listed in the same canonical order as `MINIMAL_COMMANDS`"；drift guard test 的新 PX parser 会持续 pin 住这一顺序 | `docs/design/after-skeleton/PX-capability-inventory.md` |
+
+### 6.3 变更文件清单
+
+**源码（4 个）**:
+- `packages/capability-runtime/src/planner.ts`（GPT R1）
+- `packages/capability-runtime/src/capabilities/search.ts`（GPT R1 + R2 + Kimi R1）
+- `packages/capability-runtime/src/capabilities/vcs.ts`（GPT R2 + Kimi R2）
+- `packages/capability-runtime/src/capabilities/network.ts`（GPT R3 + Kimi R4）
+
+**测试（5 个）**:
+- `packages/capability-runtime/test/planner-grep-alias.test.ts`（GPT R1：新增 3 cases，共 10）
+- `packages/capability-runtime/test/capabilities/search-rg-reality.test.ts`（GPT R1/R2 + Kimi R1：新增 4 cases）
+- `packages/capability-runtime/test/capabilities/git-subset.test.ts`（Kimi R2：新增 1 case）
+- `packages/capability-runtime/test/capabilities/network-egress.test.ts`（GPT R3 + Kimi R3/R4：新增 3 cases）
+- `packages/capability-runtime/test/inventory-drift-guard.test.ts`（GPT R4：新增 3 cases + PX parser）
+
+**文档（2 个）**:
+- `docs/design/after-skeleton/PX-capability-inventory.md`（GPT R4 + Kimi R5：§7.1 表格顺序 + "command order law" 段）
+- `docs/action-plan/after-skeleton/A9-minimal-bash-network-and-script.md`（Kimi R3：§11.3 deny-list 措辞修正）
+
+### 6.4 验证结果
+
+```text
+pnpm -r typecheck                                                → 10 包全绿
+pnpm -r build                                                    → 10 包全绿
+pnpm --filter @nano-agent/capability-runtime test                → 241 passed (up from 227; +14 cases)
+pnpm --filter @nano-agent/workspace-context-artifacts test       → 170 passed
+pnpm --filter @nano-agent/session-do-runtime test                → 323 passed
+pnpm --filter @nano-agent/nacp-core test                         → 231 passed
+pnpm --filter @nano-agent/nacp-session test                      → 115 passed
+pnpm --filter @nano-agent/eval-observability test                → 196 passed
+pnpm --filter @nano-agent/hooks test                             → 132 passed
+pnpm --filter @nano-agent/llm-wrapper test                       → 103 passed
+pnpm --filter @nano-agent/agent-runtime-kernel test              → 123 passed
+pnpm --filter @nano-agent/storage-topology test                  → 114 passed
+npm run test:cross                                               → 67/67 passed (14 e2e + 53 contract suites)
+```
+
+跨 10 包 1948 tests + root 67 全部绿色。R1-R4 的每条 fix 都有显式 regression：Q16 `-i/-n` 由 10 个 planner-grep-alias cases + 2 个 rg-reality cases 锁定；`.config`/`foo.bar` 目录递归 + `LICENSE`/`Makefile` 文件读取 + 空目录 skip 由 5 个 cases 锁定；UTF-8 byte truncation 由 2 个 multi-byte cases 锁定；PX §7.1 docs-backed drift guard 由 3 个新 cases 锁定。
+
+### 6.5 实现者收口判断
+
+- **实现者自评状态**：`ready-for-rereview`
+- **仍然保留的已知限制**：
+  1. **GPT R2 的 vcs 遗留约束**：`vcs.ts::listWorkspace` 现在对空目录正确 skip，但这仍是 "read-only status" 语义（git status 不枚举空目录，与原意一致）。未来若 git 提供 `--include-empty-dirs` 等扩展，需要先决定是否加入 v1 subset。
+  2. **GPT R4 drift guard 覆盖范围**：PX §7.1 的 `policy` + `command order` 现已 CI 硬锁。`等级 / Evidence / 备注` 三列仍未 parse — 这三列的措辞演进属「描述性 metadata」，没有单一 canonical truth（`等级` 会随 evidence 积累而演进），强行 CI-pin 会带来更多摩擦而非收益。
+  3. **GPT R3 truncateBody UTF-8 实现**：用「向前找 UTF-8 起始字节」而非使用 `TextDecoder` 的 `{fatal: true}` 选项。两者都 correct，前者更可预测（永远不会扩张到 replacement char）；这是刻意选择。
+
+### 6.6 对两位 reviewer 报告的整体评价
+
+- **GPT 报告评价**：GPT 的切入角度在这一轮再次展现系列最强的 "读代码 + 读 QNA + 读测试 + 读注释" 四路交叉审阅能力。R1 对 Q16 最惊艳——reviewer 明确把 `AX-QNA.md:394-418` 的 owner-final answer 作为真相来源，直接指出 A8 action-plan §285-286 与 planner 实现都收得比 owner 允许的更窄，这是一条几乎不可能反驳的 finding（实现者只能接受并 fix）。R2 用 `!candidate.includes(".")` 作为证据点直接指向 correctness bug，然后以 dist 层 reproduce（`.config / foo.bar` 漏扫）提供了最硬的证据；R3 同样用 `"你".repeat(5) + maxOutputBytes: 4` 的一行实证把 "byte cap 不是 byte" 的 security-adjacent 问题钉死；R4 则是 reviewer 难得能发现的 "测试 + docs 互测的空洞"——声称 CI 会 enforce docs 同步，但测试只对拍 fixture。4 条 finding 严重级别判断精准（3 high/security + 1 medium）、修复路径清晰。**这份报告质量顶级，是系列 8 轮 review 里对 Q&A 与 action-plan 互测质量最高的一次。**
+- **Kimi 报告评价**：Kimi 五条 finding 更细粒度，且 R1/R2 的 "search 把 Makefile 误判为目录 + vcs 把空目录误判为文件" 是 GPT R2 没有覆盖的对称面：GPT 关注 "dot directory 被漏扫"，Kimi 关注 "extensionless file 被误判"。两者合起来暴露了同一段启发式在两条传播链上的不同症状——我因此采用了不依赖 `.` 字符的统一 listDir-probe 方案，两条症状一次性消灭。R4 `truncateBody` 字符 vs 字节口径一致性 与 GPT R3 的 security 角度重叠，但 Kimi 从 "A8 search 已用 UTF-8 byte cap 作为 best practice" 的 **一致性** 角度切入，给实现者多一层 "这也是跨包风格统一的问题" 的论据。R3/R5 两条 low 级 docs-gap 是 GPT 未覆盖的独立发现：R3 的 "accept 列表" 措辞是我在 A9 执行时的笔误，R5 的 "PX §7.1 表格顺序" 是长期存在的文档 drift。Kimi 的分级克制（R1/R2 medium、R4 medium、R3/R5 low）再次体现其一贯风格。**这份报告质量高，与 GPT 报告形成对称互补。**
+- **综合结论**：两份报告的分工继续在系列里保持稳定——GPT 关注 owner-aligned 契约与 exit pack over-claim，Kimi 关注 code 一致性与 docs drift。合并后 9 条 finding 对 A8-A10 closure 有决定性价值：没有 GPT R1 的 Q16 修正，LLM `grep -i` / `grep -n` 会继续浪费 turn 预算；没有 R2 的统一 listDir-probe，真实 repo 的 `.config / foo.bar / LICENSE / Makefile` 都会被 search/vcs 误处理；没有 R3 的 UTF-8 byte truncation，多字节响应的 egress cap 就是纸面承诺；没有 R4 的 docs-backed drift guard，"改代码不改 docs 会被 CI 挡住" 就是口头保证。两份都是 approve-grade 审查工作。
