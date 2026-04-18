@@ -99,6 +99,69 @@ function parseAliasArgs(cmd: string, args: string[]): AliasRewrite {
 }
 
 /**
+ * A9 Phase 1 — bash-path narrow surface for high-risk commands (Q17).
+ *
+ * `curl` on the bash path is frozen to `curl <url>`. Any additional
+ * positional arg or `-flag` indicates the caller is trying to smuggle
+ * richer method / header / body / timeout semantics through bash
+ * argv, which Q17 forbids. Redirect those callers to the structured
+ * tool call with the `{ url, method, headers, body, timeoutMs }`
+ * schema.
+ *
+ * `ts-exec` on the bash path collapses every trailing token into the
+ * `code` field (per existing behaviour) but rejects leading `-flags`
+ * so the surface stays predictable.
+ */
+export const CURL_BASH_NARROW_NOTE = "curl-bash-narrow-use-structured";
+export const TS_EXEC_BASH_NARROW_NOTE = "ts-exec-bash-narrow-no-flags";
+
+type BashNarrowCheck = { ok: true } | { ok: false; reason: string };
+
+function checkBashNarrow(cmd: string, args: string[]): BashNarrowCheck {
+  if (cmd === "curl") {
+    if (args.length === 0) {
+      return {
+        ok: false,
+        reason:
+          "curl: URL required. Bash path is intentionally narrow (Q17); use `curl <url>`.",
+      };
+    }
+    if (args[0]!.startsWith("-")) {
+      return {
+        ok: false,
+        reason:
+          `curl: bash path is intentionally narrow (Q17). Drop '${args[0]}' and use the structured tool call with { url, method, headers, body, timeoutMs } (${CURL_BASH_NARROW_NOTE}).`,
+      };
+    }
+    if (args.length > 1) {
+      return {
+        ok: false,
+        reason:
+          `curl: bash path only supports \`curl <url>\` (Q17). Use the structured tool call with { url, method, headers, body, timeoutMs } for richer options (${CURL_BASH_NARROW_NOTE}).`,
+      };
+    }
+    return { ok: true };
+  }
+  if (cmd === "ts-exec") {
+    if (args.length === 0) {
+      return {
+        ok: false,
+        reason: "ts-exec: code required. Use `ts-exec <inline code>`.",
+      };
+    }
+    if (args[0]!.startsWith("-")) {
+      return {
+        ok: false,
+        reason:
+          `ts-exec: bash path accepts only an inline code string (${TS_EXEC_BASH_NARROW_NOTE}). Drop '${args[0]}' and call the structured tool call if richer options are ever added.`,
+      };
+    }
+    return { ok: true };
+  }
+  return { ok: true };
+}
+
+/**
  * Plan a capability execution from a bash-shaped command string.
  *
  * Returns null if the command is not recognized in the registry, and
@@ -119,6 +182,11 @@ export function planFromBashCommand(
 
   const canonical = rewrite.canonical;
   if (!registry.has(canonical)) return null;
+
+  const narrow = checkBashNarrow(canonical, rewrite.args);
+  if (!narrow.ok) {
+    throw new Error(narrow.reason);
+  }
 
   const decl = registry.get(canonical)!;
   const input = buildInputFromArgs(canonical, rewrite.args);

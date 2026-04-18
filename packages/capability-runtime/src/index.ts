@@ -39,6 +39,9 @@ export {
   planFromBashCommand,
   planFromToolCall,
   parseSimpleCommand,
+  COMMAND_ALIASES,
+  CURL_BASH_NARROW_NOTE,
+  TS_EXEC_BASH_NARROW_NOTE,
 } from "./planner.js";
 
 // ── Policy ──
@@ -87,8 +90,26 @@ export type { PromotionDecision } from "./artifact-promotion.js";
 // ── Capabilities ──
 export { createFilesystemHandlers } from "./capabilities/filesystem.js";
 export { createSearchHandlers } from "./capabilities/search.js";
-export { createNetworkHandlers } from "./capabilities/network.js";
-export { createExecHandlers } from "./capabilities/exec.js";
+export {
+  createNetworkHandlers,
+  CURL_NOT_CONNECTED_NOTE,
+  CURL_SCHEME_BLOCKED_NOTE,
+  CURL_PRIVATE_ADDRESS_BLOCKED_NOTE,
+  CURL_TIMEOUT_NOTE,
+  CURL_OUTPUT_TRUNCATED_NOTE,
+  DEFAULT_CURL_TIMEOUT_MS,
+  DEFAULT_CURL_MAX_BYTES,
+} from "./capabilities/network.js";
+export type {
+  CurlStructuredInput,
+  CreateNetworkHandlersOptions,
+} from "./capabilities/network.js";
+export {
+  createExecHandlers,
+  TS_EXEC_PARTIAL_NOTE,
+  TS_EXEC_SYNTAX_ERROR_NOTE,
+  TS_EXEC_MAX_CODE_BYTES,
+} from "./capabilities/exec.js";
 export { createVcsHandlers } from "./capabilities/vcs.js";
 
 // ── A8 Phase 1 — workspace truth + path law ──

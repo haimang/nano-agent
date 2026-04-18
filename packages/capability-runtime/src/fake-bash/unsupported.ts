@@ -53,6 +53,19 @@ export const UNSUPPORTED_COMMANDS: ReadonlySet<string> = new Set([
   "userdel",
   "passwd",
   "groupadd",
+  // A9 Phase 1 — host interpreter / shell hallucinations. Workers-native
+  // fake bash rejects any attempt to spawn `python`, `node`, or a nested
+  // shell — `ts-exec` is the only sanctioned script seam and must go
+  // through the capability handler, not an interpreter invocation.
+  "python",
+  "python3",
+  "node",
+  "nodejs",
+  "bash",
+  "sh",
+  "zsh",
+  "deno",
+  "bun",
 ]);
 
 /**
