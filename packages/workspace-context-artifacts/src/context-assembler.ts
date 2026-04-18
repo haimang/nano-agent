@@ -26,6 +26,11 @@ import {
   CANONICAL_LAYER_RANK,
 } from "./context-layers.js";
 import type { ContextAssemblyConfig, ContextLayer, ContextLayerKind } from "./context-layers.js";
+import {
+  buildAssemblyEvidence,
+  type EvidenceAnchorLike,
+  type EvidenceSinkLike,
+} from "./evidence-emitters.js";
 
 // ═══════════════════════════════════════════════════════════════════
 // §1 — Assembly Result
@@ -47,8 +52,31 @@ export interface AssemblyResult {
 // §2 — ContextAssembler
 // ═══════════════════════════════════════════════════════════════════
 
+/**
+ * A6-A7 review GPT R4 / Kimi R3: optional injection points so the
+ * assembler can emit an `assembly` evidence record every time it
+ * returns. Both fields are optional to preserve existing call sites
+ * that don't supply evidence wiring.
+ */
+export interface ContextAssemblerOptions {
+  readonly evidenceSink?: EvidenceSinkLike;
+  readonly evidenceAnchor?: () => EvidenceAnchorLike | undefined;
+}
+
 export class ContextAssembler {
-  constructor(private config: ContextAssemblyConfig) {}
+  constructor(
+    private config: ContextAssemblyConfig,
+    private evidenceOpts: ContextAssemblerOptions = {},
+  ) {}
+
+  /**
+   * A6-A7 review GPT R4: late-bind evidence wiring so callers that
+   * already held a ContextAssembler reference (session runtime,
+   * tests) can enable emission without constructing a fresh instance.
+   */
+  setEvidenceWiring(opts: ContextAssemblerOptions): void {
+    this.evidenceOpts = { ...this.evidenceOpts, ...opts };
+  }
 
   /**
    * Assemble layered context for an LLM request. See the module
@@ -116,6 +144,25 @@ export class ContextAssembler {
       }
     }
 
-    return { assembled, totalTokens, truncated, orderApplied };
+    const result: AssemblyResult = { assembled, totalTokens, truncated, orderApplied };
+
+    // A6-A7 review GPT R4 / Kimi R3: when the caller has supplied
+    // `evidenceSink + evidenceAnchor`, publish an `assembly` evidence
+    // record for this assemble() call. `consideredKinds` is the
+    // allowlist (what the assembler considered); `buildAssemblyEvidence`
+    // then computes `dropped = considered − assembled`. When the anchor
+    // provider returns undefined (no trace identity latched yet), emit
+    // is skipped so we never publish a partial anchor.
+    const anchor = this.evidenceOpts.evidenceAnchor?.();
+    if (this.evidenceOpts.evidenceSink && anchor) {
+      void this.evidenceOpts.evidenceSink.emit(
+        buildAssemblyEvidence(anchor, {
+          result,
+          consideredKinds: orderApplied,
+        }),
+      );
+    }
+
+    return result;
   }
 }

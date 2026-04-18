@@ -17,6 +17,11 @@ import type { ContextLayer } from "./context-layers.js";
 import type { WorkspaceNamespace } from "./namespace.js";
 import type { ArtifactStore } from "./artifacts.js";
 import { WORKSPACE_VERSION } from "./version.js";
+import {
+  buildSnapshotEvidence,
+  type EvidenceAnchorLike,
+  type EvidenceSinkLike,
+} from "./evidence-emitters.js";
 
 // ═══════════════════════════════════════════════════════════════════
 // §1 — Workspace Snapshot Fragment
@@ -64,11 +69,55 @@ export interface BuildFragmentOptions {
   readonly maxFileIndexSize?: number;
 }
 
+/**
+ * A6-A7 review GPT R4: optional evidence wiring for snapshot-side
+ * events. `buildFragment()` publishes a `snapshot.capture` record and
+ * the static `restoreFragment()` path is mirrored by an instance-level
+ * `emitRestoreEvidence()` helper so callers can record restore
+ * coverage without leaking evidence types into their signature.
+ */
+export interface WorkspaceSnapshotBuilderOptions {
+  readonly evidenceSink?: EvidenceSinkLike;
+  readonly evidenceAnchor?: () => EvidenceAnchorLike | undefined;
+}
+
 export class WorkspaceSnapshotBuilder {
+  private evidenceOpts: WorkspaceSnapshotBuilderOptions;
+
   constructor(
     private namespace: WorkspaceNamespace,
     private artifactStore: ArtifactStore,
-  ) {}
+    options: WorkspaceSnapshotBuilderOptions = {},
+  ) {
+    this.evidenceOpts = options;
+  }
+
+  setEvidenceWiring(opts: WorkspaceSnapshotBuilderOptions): void {
+    this.evidenceOpts = { ...this.evidenceOpts, ...opts };
+  }
+
+  /**
+   * Mirror of the static `restoreFragment()` call that emits a
+   * `snapshot.restore` record. Instance-level so the builder already
+   * holds the evidence wiring; callers pass the restore coverage they
+   * computed from re-applying fragment data.
+   */
+  emitRestoreEvidence(
+    fragment: WorkspaceSnapshotFragment,
+    restoreCoverage: number,
+    missingFragments: readonly string[] = [],
+  ): void {
+    const anchor = this.evidenceOpts.evidenceAnchor?.();
+    if (!this.evidenceOpts.evidenceSink || !anchor) return;
+    void this.evidenceOpts.evidenceSink.emit(
+      buildSnapshotEvidence(anchor, {
+        phase: "restore",
+        fragment,
+        restoreCoverage,
+        missingFragments,
+      }),
+    );
+  }
 
   /**
    * Build a snapshot fragment from the current workspace state.
@@ -92,7 +141,7 @@ export class WorkspaceSnapshotBuilder {
       if (parsed.success) artifactRefs.push(parsed.data);
     }
 
-    return {
+    const fragment: WorkspaceSnapshotFragment = {
       version: WORKSPACE_VERSION,
       mountConfigs,
       fileIndex,
@@ -100,6 +149,18 @@ export class WorkspaceSnapshotBuilder {
       contextLayers: [...(options.contextLayers ?? [])],
       createdAt: new Date().toISOString(),
     };
+
+    // A6-A7 review GPT R4 / Kimi R3: emit a `snapshot.capture` record
+    // every time a real fragment is built. Skipped silently when the
+    // anchor provider returns undefined (no trace identity latched).
+    const anchor = this.evidenceOpts.evidenceAnchor?.();
+    if (this.evidenceOpts.evidenceSink && anchor) {
+      void this.evidenceOpts.evidenceSink.emit(
+        buildSnapshotEvidence(anchor, { phase: "capture", fragment }),
+      );
+    }
+
+    return fragment;
   }
 
   /**
