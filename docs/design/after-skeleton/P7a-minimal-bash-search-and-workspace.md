@@ -431,8 +431,24 @@
 
 ## 附录
 
+### B. A8 执行后状态（2026-04-18）
+
+A8 action-plan 已落盘，本节用最短篇幅记录 P7a 在执行阶段被冻结成的真相，避免 design 与 reality 漂移：
+
+- **Workspace truth 单一源**：新增 `packages/capability-runtime/src/capabilities/workspace-truth.ts`，导出 `DEFAULT_WORKSPACE_ROOT = "/workspace"`、`RESERVED_NAMESPACE_PREFIX = "/_platform"`、`resolveWorkspacePath()`、`resolveWorkspacePathOrThrow()`、`isReservedNamespacePath()` 与 `WorkspaceFsLike` 接口；`filesystem.ts` 与 `search.ts` 全部走这一条 path law。
+- **Canonical `rg` (Q15)**：`packages/capability-runtime/src/capabilities/search.ts` 已重写为 namespace-backed 真实实现，递归遍历 `WorkspaceFsLike.listDir()`，输出 `path:lineNumber:line` 排序确定，默认 cap `DEFAULT_RG_MAX_MATCHES=200` / `DEFAULT_RG_MAX_BYTES=32 KiB`，超界 emit `[rg] truncated: N matches over the cap of M lines / B bytes; rerun with a narrower path or pattern`，同时静默跳过 `/_platform/**`；UTF-8 字节计数走 `TextEncoder` 而非 `Buffer`，保持 Worker 兼容。
+- **Narrow `grep -> rg` alias (Q16)**：`packages/capability-runtime/src/planner.ts` 增加 `COMMAND_ALIASES = { grep: "rg" }` 与 `parseAliasArgs()`；alias 仅接 `grep <pattern> [path]`，任何 `-flag` 直接抛 "grep alias is intentionally narrow (Q16)"；`grep` 不进入 registry，`r.has("grep") === false` 是冻结约束。
+- **`mkdir` partial-with-disclosure (Q21)**：`mkdir` handler 不再装作创建目录，输出固定字符串 `[mkdir] partial: ack-only prefix ${resolved} (mkdir-partial-no-directory-entity; ...)`，并 export `MKDIR_PARTIAL_NOTE = "mkdir-partial-no-directory-entity"`，prompt/inventory/tests 都可 grep 该 marker。
+- **Path law in capability-runtime/src/index.ts**：新增导出 `DEFAULT_WORKSPACE_ROOT / RESERVED_NAMESPACE_PREFIX / isReservedNamespacePath / resolveWorkspacePath / resolveWorkspacePathOrThrow` 与类型 `WorkspacePathError / WorkspacePathResult / WorkspaceFsLike`。
+- **Inventory 同步**：`PX-capability-inventory.md` v0.2 已把 `mkdir` 升级为 **Partial (ask-gated) E2 + disclosure**、`rg` 升级为 **Supported E2** 并标注 namespace-backed；Deferred 表移除 `grep -> rg`，新增 Landed(A8 P3-02) 行；`egrep/fgrep` 单列 Deferred。
+- **Phase 1 §1.4 影响目录树兑现**：实际落地在 `capabilities/workspace-truth.ts`、`capabilities/filesystem.ts`、`capabilities/search.ts`、`planner.ts` 与配套 4 套 test suites（workspace-truth 14 / search-rg-reality 9 / planner-grep-alias 7 / file-search-consistency 6）；workspace-context-artifacts 端没有需要改动的 substrate。
+- **测试证据**：capability-runtime 156 cases 全绿（较 A7 收尾的 134 净增 22），10 个包 `pnpm -r typecheck && pnpm -r build` 全绿；root `node --test test/*.test.mjs` 52/52 通过；root `npm run test:cross` 14/14 通过。
+
+§9.3 下一步行动条目已在 A8 阶段闭合，可在执行复盘时直接对照本节核对。
+
 ### C. 版本历史
 
 | 版本 | 日期 | 修改者 | 主要变更 |
 |------|------|--------|----------|
 | v0.1 | `2026-04-17` | `GPT-5.4` | 初稿 |
+| v0.3 | `2026-04-18` | `GPT-5.4` | 追加附录 B「A8 执行后状态」；冻结 workspace-truth path law、canonical `rg`、`grep -> rg` 最窄 alias、`mkdir` partial-with-disclosure 落地真相 |

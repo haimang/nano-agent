@@ -267,3 +267,89 @@ minimal-bash-search-and-workspace
 ## 7. 收口结论
 
 Phase 7a 的执行重点不是“再多给几个 bash 命令”，而是把 fake bash 的 **工作目录宇宙** 先定住。只要 workspace truth、canonical `rg`、`grep` 最窄兼容、`mkdir` partial disclosure、以及 file/search consistency 被真正收口，后续 `curl`、`ts-exec`、`git` 这些更高风险 surface 才不会继续建立在漂浮地基之上。这也是为什么 P7a 必须作为最后三份 minimal-bash action-plan 里的第一份先落盘：它决定了 fake bash 后面所有能力究竟是在同一个 workspace 世界里生长，还是重新滑回“像 shell，但不知真相在哪”的老问题。
+
+---
+
+## 11. 工作报告（A8 执行回填）
+
+> 完成时间: `2026-04-18`
+> 执行者: `Claude (claude-opus-4-7[1m])`
+> 状态: `done`
+
+### 11.1 工作目标和内容回顾
+
+A8 的任务是把 P7a 设计文稿冻结成可执行的 fake bash workspace+search 真相，五个 Phase 实际命中以下五件事:
+
+1. **Phase 1 — Workspace Truth Freeze**：把 workspace 的路径法则从 `MountRouter + WorkspaceNamespace` 抽象成 capability-runtime 自己的 `workspace-truth.ts` 模块（`DEFAULT_WORKSPACE_ROOT="/workspace"`、`RESERVED_NAMESPACE_PREFIX="/_platform"`、`resolveWorkspacePath()`、`isReservedNamespacePath()`、`WorkspaceFsLike` 接口），让 filesystem/search 共用一条 path law，不再让 `..` traversal 或 `/_platform` 进入 bash 视图。
+2. **Phase 2 — Filesystem Contract Hardening**：让 `ls/cat/write/rm/mv/cp/mkdir` 全部走 `resolveOrThrow()`；`mkdir` 落地为 partial-with-disclosure，按 Q21 输出固定 marker `mkdir-partial-no-directory-entity`，杜绝把 ack 装成 directory 创建的语义滑坡。
+3. **Phase 3 — Canonical `rg` Reality + Narrow `grep` Alias**：按 Q15 把 `rg` 升级为 namespace-backed 真实搜索（递归 `WorkspaceFsLike.listDir`、确定性排序、行/字节双 cap、`[rg] truncated:` marker、自动跳过 `/_platform/**`、UTF-8 字节用 `TextEncoder` 而非 `Buffer`）；按 Q16 在 planner 加最窄 `grep -> rg` alias，任何 `-flag` 抛 "grep alias is intentionally narrow (Q16)"，`grep` 不进入 registry。
+4. **Phase 4 — File/Search Consistency & Evidence Wiring**：新增 `file-search-consistency.test.ts`，证明 `ls/cat/rg` 对同一 workspace 视角共用同一路径宇宙，`/_platform` 拒绝词汇在三处一致，`mkdir` partial marker 在每次输出携带，`grep` alias 与直接 `rg` 产出完全相同的 plan input。
+5. **Phase 5 — Tests/Docs/Inventory Exit Pack**：执行 monorepo 全部 typecheck + build + test gate；同步 `PX-capability-inventory.md` v0.2（mkdir/rg 升级、Deferred 表移除 `grep -> rg` 并新增 Landed 行、`egrep/fgrep` 单列）；把 P7a v0.3 追加附录 B「A8 执行后状态」固化真相。
+
+A8 §6.3 Definition of Done 五条全部命中：`rg` 有最小真实行为与测试证据；`grep -> rg` 兼容存在但 inventory/registry 仍以 `rg` 为唯一 canonical；`mkdir` capability grade 与实现 reality 不再冲突（partial-with-disclosure）；file/list/search/path law 在 capability-runtime/PX inventory/P7a design 中一致；root E2E + package tests 都给出运行证据。
+
+### 11.2 全部实际代码清单
+
+**新增文件（4 个）**:
+- `packages/capability-runtime/src/capabilities/workspace-truth.ts` — workspace path law 单一源，导出 `DEFAULT_WORKSPACE_ROOT`、`RESERVED_NAMESPACE_PREFIX`、`resolveWorkspacePath`、`resolveWorkspacePathOrThrow`、`isReservedNamespacePath` 与 `WorkspaceFsLike / WorkspacePathError / WorkspacePathResult` 类型
+- `packages/capability-runtime/test/capabilities/workspace-truth.test.ts` — 14 cases 覆盖 happy path、`..` 越界、绝对/相对一致、`/_platform/**` 保留命名空间
+- `packages/capability-runtime/test/capabilities/search-rg-reality.test.ts` — 9 cases 覆盖嵌套扫描、单文件 path、regex fallback、`/_platform` 拒绝、跨 namespace 静默跳过、truncation marker、no-match marker、默认常量、无 workspace fallback
+- `packages/capability-runtime/test/planner-grep-alias.test.ts` — 7 cases 覆盖 `COMMAND_ALIASES` 仅 grep、`grep needle` 改写、path 参数、缺 pattern 抛错、拒绝 `-i` 与 `-r` flag、registry 不暴露 `grep`
+- `packages/capability-runtime/test/integration/file-search-consistency.test.ts` — 6 cases 覆盖 ls/cat/rg 同视角、`/_platform` 三处一致拒绝、tree walk 静默跳过、`mkdir` partial marker、grep alias plan 等价、相对/绝对路径归一
+
+**修改文件（6 个）**:
+- `packages/capability-runtime/src/capabilities/filesystem.ts` — 重写 7 个 handler 全部走 `resolveOrThrow()`；export `MKDIR_PARTIAL_NOTE` 与固定 marker 文案
+- `packages/capability-runtime/src/capabilities/search.ts` — 完整重写 namespace-backed `rg`：`utf8ByteLength()`(TextEncoder)、`DEFAULT_RG_MAX_MATCHES=200`、`DEFAULT_RG_MAX_BYTES=32*1024`、确定性排序、`[rg] truncated:` marker、`/_platform/**` 静默跳过
+- `packages/capability-runtime/src/planner.ts` — 新增 `COMMAND_ALIASES = { grep: "rg" }`、`parseAliasArgs()` 拒绝 `-flag`；`planFromBashCommand()` alias 改写早于 registry 查找
+- `packages/capability-runtime/src/index.ts` — 追加导出 path law 5 个 symbol + 3 个 type
+- `docs/design/after-skeleton/PX-capability-inventory.md` — `mkdir` 升级 Partial(ask-gated)+disclosure、`rg` 升级 Supported E2、Deferred 表重排、附录追加 v0.2 历史
+- `docs/design/after-skeleton/P7a-minimal-bash-search-and-workspace.md` — 追加附录 B「A8 执行后状态」+ v0.3 版本
+
+### 11.3 测试制作与测试结果
+
+**新增 case 计 36 条（实际新增源文件计数）**：workspace-truth 14 + search-rg-reality 9 + planner-grep-alias 7 + file-search-consistency 6 = 36 cases。
+
+**Gate 结果（全部绿）**：
+
+| 命令 | 结果 |
+|------|------|
+| `pnpm -r typecheck` | 10 包全绿 |
+| `pnpm -r build` | 10 包全绿 |
+| `pnpm --filter @nano-agent/capability-runtime test` | 156 passed（A7 收尾时为 134，净增 22 cases，源差异 36 含部分整合） |
+| `pnpm --filter @nano-agent/nacp-core test` | 231 passed |
+| `pnpm --filter @nano-agent/nacp-session test` | 115 passed |
+| `pnpm --filter @nano-agent/eval-observability test` | 194 passed |
+| `pnpm --filter @nano-agent/hooks test` | 132 passed |
+| `pnpm --filter @nano-agent/llm-wrapper test` | 103 passed |
+| `pnpm --filter @nano-agent/agent-runtime-kernel test` | 123 passed |
+| `pnpm --filter @nano-agent/storage-topology test` | 114 passed |
+| `pnpm --filter @nano-agent/workspace-context-artifacts test` | 163 passed |
+| `pnpm --filter @nano-agent/session-do-runtime test` | 309 passed |
+| `node --test test/*.test.mjs`（root e2e） | 52/52 passed |
+| `npm run test:cross`（root cross-package） | 14/14 passed |
+
+**关键回归证据**：
+- `file-search-consistency.test.ts` 把 `ls`、`cat`、`rg` 与 `grep` alias 放在同一 fixture 下证明四者共享 path universe — 任意 future 改动让 search 重新长出第二条路径宇宙都会立即触发该测试。
+- `search-rg-reality.test.ts` 的 `silent skip` case 证明 cross-namespace tree walk 不会泄漏 `/_platform`，配合 `workspace-truth.test.ts` 对 `isReservedNamespacePath()` 的直接校验，构成 reserved namespace 双层防线。
+- `planner-grep-alias.test.ts` 的 `r.has("grep") === false` 校验冻结 Q16 narrow alias 边界 — `grep` 永远不会成为 canonical capability。
+
+### 11.4 收口分析 + 下一阶段安排
+
+**收口分析（对照 A8 §6.3 Definition of Done）**:
+- ✅ DoD-1 `rg` 真实行为 + 测试：`search.ts` namespace-backed 实现 + `search-rg-reality.test.ts` 9 cases 落地。
+- ✅ DoD-2 `grep -> rg` 兼容存在但 canonical 不变：planner alias + registry `r.has("grep") === false` + inventory Deferred 表 Landed 行。
+- ✅ DoD-3 `mkdir` capability grade 与实现一致：handler 输出 marker、PX inventory v0.2 标注 Partial(ask-gated) E2 + disclosure、AX-QNA Q21 引用。
+- ✅ DoD-4 file/list/search/path law 跨四处口径一致：capability-runtime（workspace-truth.ts）、PX inventory v0.2、P7a v0.3 附录 B 同口径；workspace-context-artifacts 端无需改动（沿用 `MountRouter + WorkspaceNamespace`）。
+- ✅ DoD-5 root E2E + package tests 双层证据：156 capability-runtime + 52 root e2e + 14 cross 全绿。
+
+**未触及 / 显式遗留项**:
+- `egrep/fgrep` 仍 Deferred — 与 §2.3 一致，需要时再开新 action-plan。
+- `mkdir` 后端 directory primitive 未补 — 与 §2.2 [O3] 一致，partial-with-disclosure 是冻结决定。
+- `WorkspaceSnapshotBuilder` 与 `rg` 的 evidence 联动只走现有 placement evidence 通路，未额外加 search-specific evidence stream — 与 P4-02「让 search 结果与 workspace snapshot/Phase 6 evidence 口径对齐」一致，所有运行时记录都通过 `EvidenceRecorder` 统一栈即可。
+
+**下一阶段交接（A9 / A10）**:
+- A9（`A9-minimal-bash-network-and-script.md`）：`curl` partial(ask-gated) E1 + `ts-exec` partial(ask-gated) E1 是当前最薄层，下一步把 `curl` URL 校验/`localhost` 拦截/`structured fetch` 三件事冻结成 contract，并决定是否升级 `ts-exec` 沙箱接入。
+- A10（`A10-minimal-bash-vcs-and-policy.md`）：`git` 仍是 partial E1（仅 status/diff/log），需要把 unsupported / risk-blocked taxonomy（apt/sudo/docker/...）的拒绝路径与 policy gating 作为 single source of truth 收口。
+- A8 留下的 workspace-truth.ts 与 path law 是 A9/A10 的共享基座 — A9 的 `curl` 不会触碰 workspace path law，但 A10 的 `git status/diff/log` 必须在 namespace 视角下消费 workspace 文件，避免再次绕过 mount router。
+
+A8 至此关闭，等待用户确认进入 A9。

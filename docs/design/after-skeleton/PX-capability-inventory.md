@@ -244,8 +244,8 @@
 | `rm` | filesystem | `local-ts` | ask | **Supported (ask-gated)** | E2 | handler 真实存在；默认非交互路径需 policy allow 才执行 |
 | `mv` | filesystem | `local-ts` | ask | **Supported (ask-gated)** | E2 | handler 真实存在；默认非交互路径需 policy allow 才执行 |
 | `cp` | filesystem | `local-ts` | ask | **Supported (ask-gated)** | E2 | handler 真实存在；默认非交互路径需 policy allow 才执行 |
-| `mkdir` | filesystem | `local-ts` | ask | **Partial (ask-gated)** | E1 | handler 只返回 ack，backend 无真实 dir primitive |
-| `rg` | search | `local-ts` | allow | **Partial** | E1 | declaration 存在，但当前仅 degraded TS scan stub |
+| `mkdir` | filesystem | `local-ts` | ask | **Partial (ask-gated)** | E2 | A8 收口为 partial-with-disclosure：handler 只 ack-create prefix，每次输出携带 `mkdir-partial-no-directory-entity` 标识（AX-QNA Q21） |
+| `rg` | search | `local-ts` | allow | **Supported** | E2 | A8 P3-01 已实现 namespace-backed 真实搜索 + bounded output；canonical search baseline（AX-QNA Q15） |
 | `curl` | network | `local-ts` | ask | **Partial (ask-gated)** | E1 | URL 校验后返回 not-connected 风格 stub |
 | `ts-exec` | exec | `local-ts` | ask | **Partial (ask-gated)** | E1 | 只确认代码长度，未接真实 sandbox |
 | `git` | vcs | `local-ts` | allow | **Partial** | E1 | 只承诺 `status/diff/log`，且仍是 stub |
@@ -272,9 +272,9 @@
 
 | Surface | 当前判定 | 备注 |
 |---------|----------|------|
-| `grep/egrep/fgrep` | Deferred | 当前完全未注册 |
+| `grep -> rg` 最窄兼容 alias | **Landed (A8 P3-02)** | planner 层最窄改写，仅接 `grep <pattern> [path]`；任何 `-flag` 拒绝并提示 "grep alias is intentionally narrow (Q16)"；不进入 registry，`r.has("grep") === false` |
+| `egrep/fgrep` | Deferred | 当前完全未注册；扩张需重新评估 parser/semantics 复杂度（A8 §2.3） |
 | `find/head/tail/touch/tee` | Deferred | fake bash 专项分析里建议过，但当前仓内未落地 |
-| `grep -> rg` compatibility alias | Deferred | 推荐作为最小兼容回补，但当前尚未注册 |
 | richer `curl` flags | Deferred | 未来优先走 structured path |
 | file-based / argv-based `ts-exec` | Deferred | 当前只适合 inline code |
 | `git add/commit/restore/branch/...` | Deferred | 当前无 virtual index/ref model |
@@ -339,3 +339,4 @@
 | 版本 | 日期 | 修改者 | 主要变更 |
 |------|------|--------|----------|
 | v0.1 | `2026-04-17` | `GPT-5.4` | 初稿 |
+| v0.2 | `2026-04-18` | `GPT-5.4` | A8 收口：`mkdir` 升级为 Partial(ask-gated)+disclosure（Q21）；`rg` 升级为 Supported E2 +namespace-backed（Q15）；Deferred 表移除 `grep -> rg` 行并新增 Landed(A8 P3-02) 记录（Q16）；`egrep/fgrep` 单列 Deferred |
