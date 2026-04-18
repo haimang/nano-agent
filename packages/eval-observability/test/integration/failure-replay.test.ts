@@ -25,10 +25,15 @@ class FakeDoStorage implements DoStorageLike {
   }
 }
 
-function ev(overrides: Partial<TraceEvent> & { eventKind: string; timestamp: string }): TraceEvent {
+const TRACE_REP = "11111111-1111-4111-8111-111111111111";
+function ev(
+  overrides: Partial<TraceEvent> & { eventKind: string; timestamp: string },
+): TraceEvent {
   return {
+    traceUuid: TRACE_REP,
     sessionUuid: "sess-rep",
     teamUuid: "team-rep",
+    sourceRole: "session",
     audience: "internal",
     layer: "durable-audit",
     ...overrides,

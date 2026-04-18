@@ -9,14 +9,23 @@
  * "What do we persist, why, and at what fidelity?"
  */
 
-import type { TraceLayer } from "./types.js";
+import type { ConceptualTraceLayer, TraceLayer } from "./types.js";
 
 /** A single durable promotion rule. */
 export interface DurablePromotionEntry {
   /** The event kind this rule applies to (e.g. "turn.begin"). */
   readonly eventKind: string;
-  /** Target durable layer. */
+  /** Target durable layer (implementation enum). */
   readonly layer: TraceLayer;
+  /**
+   * Conceptual layer (A3 / P2 / AX-QNA Q7). This is the review / governance
+   * vocabulary: `anchor` events are trace-recovery load-bearing, `durable`
+   * events must survive replay, `diagnostic` events may be dropped. The
+   * conceptual layer is chosen by the registry author; it is NOT derived
+   * from {@link TraceLayer}. `turn.begin` is `durable-audit` at the
+   * implementation level but `anchor` at the conceptual level.
+   */
+  readonly conceptualLayer: ConceptualTraceLayer;
   /** How much detail is persisted. */
   readonly granularity: "full" | "summary" | "sample";
   /** Whether this event should be visible during session replay. */
@@ -55,6 +64,15 @@ export class DurablePromotionRegistry {
   listByLayer(layer: TraceLayer): readonly DurablePromotionEntry[] {
     return [...this.entries.values()].filter((e) => e.layer === layer);
   }
+
+  /** Return all rules at a given conceptual layer (anchor / durable / diagnostic). */
+  listByConceptualLayer(
+    conceptualLayer: ConceptualTraceLayer,
+  ): readonly DurablePromotionEntry[] {
+    return [...this.entries.values()].filter(
+      (e) => e.conceptualLayer === conceptualLayer,
+    );
+  }
 }
 
 /**
@@ -71,6 +89,7 @@ export function createDefaultRegistry(): DurablePromotionRegistry {
   registry.register({
     eventKind: "user.message",
     layer: "durable-transcript",
+    conceptualLayer: "durable",
     granularity: "full",
     replayVisible: true,
     revisitCondition: "PII policy change",
@@ -79,6 +98,7 @@ export function createDefaultRegistry(): DurablePromotionRegistry {
   registry.register({
     eventKind: "assistant.message",
     layer: "durable-transcript",
+    conceptualLayer: "durable",
     granularity: "full",
     replayVisible: true,
     revisitCondition: "PII policy change",
@@ -87,6 +107,7 @@ export function createDefaultRegistry(): DurablePromotionRegistry {
   registry.register({
     eventKind: "tool.call.request",
     layer: "durable-transcript",
+    conceptualLayer: "durable",
     granularity: "full",
     replayVisible: true,
     revisitCondition: "Output size grows beyond truncation budget",
@@ -95,32 +116,56 @@ export function createDefaultRegistry(): DurablePromotionRegistry {
   registry.register({
     eventKind: "tool.call.result",
     layer: "durable-transcript",
+    conceptualLayer: "durable",
     granularity: "summary",
     replayVisible: true,
     revisitCondition: "Output size grows beyond truncation budget",
     description: "Tool results are truncated to summary for storage efficiency.",
   });
 
-  // ── Durable audit events ──
+  // ── Anchor events (load-bearing for trace recovery) ──
   registry.register({
     eventKind: "turn.begin",
     layer: "durable-audit",
+    conceptualLayer: "anchor",
     granularity: "full",
     replayVisible: true,
     revisitCondition: "None — structural event",
-    description: "Turn boundaries enable replay segmentation.",
+    description: "Turn boundaries anchor trace recovery and enable replay segmentation.",
   });
   registry.register({
     eventKind: "turn.end",
     layer: "durable-audit",
+    conceptualLayer: "anchor",
     granularity: "full",
     replayVisible: true,
     revisitCondition: "None — structural event",
-    description: "Turn boundaries enable replay segmentation.",
+    description: "Turn boundaries anchor trace recovery and enable replay segmentation.",
   });
+  registry.register({
+    eventKind: "session.start",
+    layer: "durable-audit",
+    conceptualLayer: "anchor",
+    granularity: "full",
+    replayVisible: true,
+    revisitCondition: "None — structural event",
+    description: "Session lifecycle anchor for trace recovery + audit trail.",
+  });
+  registry.register({
+    eventKind: "session.end",
+    layer: "durable-audit",
+    conceptualLayer: "anchor",
+    granularity: "full",
+    replayVisible: true,
+    revisitCondition: "None — structural event",
+    description: "Session lifecycle anchor for trace recovery + audit trail.",
+  });
+
+  // ── Durable audit events (non-anchor) ──
   registry.register({
     eventKind: "hook.outcome",
     layer: "durable-audit",
+    conceptualLayer: "durable",
     granularity: "full",
     replayVisible: false,
     revisitCondition: "Hook payload schema change",
@@ -129,6 +174,7 @@ export function createDefaultRegistry(): DurablePromotionRegistry {
   registry.register({
     eventKind: "hook.broadcast",
     layer: "durable-audit",
+    conceptualLayer: "durable",
     granularity: "summary",
     replayVisible: true,
     revisitCondition: "Hook broadcast payload schema change",
@@ -137,6 +183,7 @@ export function createDefaultRegistry(): DurablePromotionRegistry {
   registry.register({
     eventKind: "compact.start",
     layer: "durable-audit",
+    conceptualLayer: "durable",
     granularity: "summary",
     replayVisible: false,
     revisitCondition: "Compaction strategy change",
@@ -145,6 +192,7 @@ export function createDefaultRegistry(): DurablePromotionRegistry {
   registry.register({
     eventKind: "compact.end",
     layer: "durable-audit",
+    conceptualLayer: "durable",
     granularity: "summary",
     replayVisible: false,
     revisitCondition: "Compaction strategy change",
@@ -153,30 +201,16 @@ export function createDefaultRegistry(): DurablePromotionRegistry {
   registry.register({
     eventKind: "compact.notify",
     layer: "durable-audit",
+    conceptualLayer: "durable",
     granularity: "summary",
     replayVisible: true,
     revisitCondition: "Compaction notification schema change",
     description: "Compact notifications are durably kept so replay can explain context-window changes.",
   });
   registry.register({
-    eventKind: "session.start",
-    layer: "durable-audit",
-    granularity: "full",
-    replayVisible: true,
-    revisitCondition: "None — structural event",
-    description: "Session lifecycle boundaries for audit trail.",
-  });
-  registry.register({
-    eventKind: "session.end",
-    layer: "durable-audit",
-    granularity: "full",
-    replayVisible: true,
-    revisitCondition: "None — structural event",
-    description: "Session lifecycle boundaries for audit trail.",
-  });
-  registry.register({
     eventKind: "api.request",
     layer: "durable-audit",
+    conceptualLayer: "durable",
     granularity: "summary",
     replayVisible: false,
     revisitCondition: "Token cost attribution change",
@@ -185,6 +219,7 @@ export function createDefaultRegistry(): DurablePromotionRegistry {
   registry.register({
     eventKind: "api.response",
     layer: "durable-audit",
+    conceptualLayer: "durable",
     granularity: "summary",
     replayVisible: false,
     revisitCondition: "Token cost attribution change",
@@ -193,6 +228,7 @@ export function createDefaultRegistry(): DurablePromotionRegistry {
   registry.register({
     eventKind: "api.error",
     layer: "durable-audit",
+    conceptualLayer: "durable",
     granularity: "full",
     replayVisible: false,
     revisitCondition: "Error taxonomy change",

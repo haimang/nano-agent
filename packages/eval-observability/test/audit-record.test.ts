@@ -6,12 +6,16 @@ import { describe, it, expect } from "vitest";
 import { traceEventToAuditBody, auditBodyToTraceEvent } from "../src/audit-record.js";
 import type { TraceEvent } from "../src/trace-event.js";
 
+const TRACE_UUID = "11111111-1111-4111-8111-111111111111";
+
 function makeDurableEvent(overrides: Partial<TraceEvent> = {}): TraceEvent {
   return {
     eventKind: "turn.begin",
     timestamp: "2026-04-16T10:00:00.000Z",
+    traceUuid: TRACE_UUID,
     sessionUuid: "sess-001",
     teamUuid: "team-001",
+    sourceRole: "session",
     audience: "internal",
     layer: "durable-audit",
     ...overrides,
@@ -117,6 +121,8 @@ describe("auditBodyToTraceEvent", () => {
     sessionUuid: "sess-001",
     teamUuid: "team-001",
     timestamp: "2026-04-16T10:00:00.000Z",
+    traceUuid: TRACE_UUID,
+    sourceRole: "session" as const,
   };
 
   it("reconstructs a TraceEvent from body and meta", () => {
@@ -135,10 +141,25 @@ describe("auditBodyToTraceEvent", () => {
     expect(event.timestamp).toBe("2026-04-16T10:00:00.000Z");
     expect(event.sessionUuid).toBe("sess-001");
     expect(event.teamUuid).toBe("team-001");
+    expect(event.traceUuid).toBe(TRACE_UUID);
+    expect(event.sourceRole).toBe("session");
     expect(event.turnUuid).toBe("turn-001");
     expect(event.stepIndex).toBe(3);
     expect(event.audience).toBe("internal");
     expect(event.layer).toBe("durable-audit");
+  });
+
+  it("prefers traceUuid / sourceRole in detail over meta", () => {
+    const body = {
+      event_kind: "turn.begin",
+      detail: {
+        traceUuid: "22222222-2222-4222-8222-222222222222",
+        sourceRole: "capability",
+      },
+    };
+    const event = auditBodyToTraceEvent(body, meta);
+    expect(event.traceUuid).toBe("22222222-2222-4222-8222-222222222222");
+    expect(event.sourceRole).toBe("capability");
   });
 
   it("defaults audience and layer when missing from detail", () => {
@@ -149,12 +170,40 @@ describe("auditBodyToTraceEvent", () => {
     expect(event.layer).toBe("durable-audit");
   });
 
-  it("handles empty detail", () => {
+  it("handles empty detail (trace carriers come from meta)", () => {
     const body = { event_kind: "session.end", detail: {} };
     const event = auditBodyToTraceEvent(body, meta);
 
     expect(event.eventKind).toBe("session.end");
+    expect(event.traceUuid).toBe(TRACE_UUID);
+    expect(event.sourceRole).toBe("session");
     expect(event.audience).toBe("internal");
+  });
+
+  it("throws when trace law cannot be satisfied (no traceUuid anywhere)", () => {
+    const body = { event_kind: "turn.begin", detail: {} };
+    const partialMeta = {
+      sessionUuid: "sess-001",
+      teamUuid: "team-001",
+      timestamp: "2026-04-16T10:00:00.000Z",
+      sourceRole: "session" as const,
+    };
+    expect(() => auditBodyToTraceEvent(body, partialMeta)).toThrow(
+      /trace law violation/,
+    );
+  });
+
+  it("throws when sourceRole cannot be satisfied", () => {
+    const body = { event_kind: "turn.begin", detail: {} };
+    const partialMeta = {
+      sessionUuid: "sess-001",
+      teamUuid: "team-001",
+      timestamp: "2026-04-16T10:00:00.000Z",
+      traceUuid: TRACE_UUID,
+    };
+    expect(() => auditBodyToTraceEvent(body, partialMeta)).toThrow(
+      /trace law violation/,
+    );
   });
 });
 
@@ -181,6 +230,8 @@ describe("roundtrip: encode then decode", () => {
     expect(decoded.timestamp).toBe(original.timestamp);
     expect(decoded.sessionUuid).toBe(original.sessionUuid);
     expect(decoded.teamUuid).toBe(original.teamUuid);
+    expect(decoded.traceUuid).toBe(original.traceUuid);
+    expect(decoded.sourceRole).toBe(original.sourceRole);
     expect(decoded.turnUuid).toBe(original.turnUuid);
     expect(decoded.stepIndex).toBe(original.stepIndex);
     expect(decoded.durationMs).toBe(original.durationMs);

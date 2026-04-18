@@ -8,7 +8,13 @@
 export { EVAL_VERSION } from "./version.js";
 
 // ── Base types ──
-export type { TraceLayer, EventAudience } from "./types.js";
+export type {
+  TraceLayer,
+  EventAudience,
+  ConceptualTraceLayer,
+  TraceSourceRole,
+} from "./types.js";
+export { CONCEPTUAL_LAYER_OF_TRACE_LAYER } from "./types.js";
 
 // ── Trace events ──
 export type {
@@ -17,6 +23,13 @@ export type {
   ToolEvidenceExtension,
   StorageEvidenceExtension,
   TraceEvent,
+  TraceLawReason,
+  TraceLawViolation,
+} from "./trace-event.js";
+export {
+  validateTraceEvent,
+  isTraceLawCompliant,
+  assertTraceLaw,
 } from "./trace-event.js";
 
 // ── Classification ──
@@ -83,6 +96,20 @@ export type { ScenarioSession } from "./runner.js";
 
 // ── Failure replay ──
 export { FailureReplayHelper } from "./replay.js";
+
+// ── Anchor + recovery (A3 Phase 3) ──
+export {
+  TraceRecoveryError,
+  TRACE_RECOVERY_REASONS,
+  attemptTraceRecovery,
+  traceRecoveryError,
+} from "./anchor-recovery.js";
+export type {
+  TraceAnchor,
+  TraceCandidate,
+  TraceRecoveryOptions,
+  TraceRecoveryReason,
+} from "./anchor-recovery.js";
 
 // ── Attribution ──
 export { buildLlmAttribution, buildToolAttribution } from "./attribution.js";
