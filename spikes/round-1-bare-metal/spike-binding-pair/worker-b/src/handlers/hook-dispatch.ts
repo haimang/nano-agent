@@ -46,6 +46,15 @@ export async function handleHookDispatch(request: Request): Promise<Response> {
     await new Promise((r) => setTimeout(r, body.slowMs ?? 1500));
   }
 
+  // R2 code fix (B1-code-reviewed-by-GPT §R2): anchor traversal on
+  // hook-dispatch path MUST echo received headers so the probe can
+  // verify anchor propagation on the real hook dispatch route (not on
+  // the unrelated /handle/header-dump route).
+  const receivedHeaders: Record<string, string> = {};
+  for (const [name, value] of request.headers.entries()) {
+    receivedHeaders[name] = value;
+  }
+
   // Default ok response — emulates a hook that returns an outcome.
   return Response.json(
     {
@@ -55,6 +64,9 @@ export async function handleHookDispatch(request: Request): Promise<Response> {
       hookEvent: body.hookEvent ?? "(none)",
       outcome: { ok: true, additionalContext: "stub-from-spike" },
       latencyMs: Date.now() - t0,
+      // R2 code fix: anchor probe consumes this field to verify headers
+      // on the hook-dispatch path specifically.
+      receivedHeaders,
     },
     { headers: { "x-spike-handler": "hook-dispatch" } },
   );

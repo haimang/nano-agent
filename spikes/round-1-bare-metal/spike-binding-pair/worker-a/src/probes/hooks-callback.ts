@@ -116,8 +116,11 @@ export async function probeHooksCallback(
     });
   }
 
-  // (4) Anchor traversal: send anchors, dispatch hook, then dump headers via
-  // header-dump to confirm worker-b sees them on hook path too.
+  // (4) Anchor traversal on HOOK-DISPATCH path (R2 code fix per
+  // B1-code-reviewed-by-GPT §R2): POST to /handle/hook-dispatch so the
+  // anchor propagation claim is verified on the real hook path, not on
+  // the unrelated /handle/header-dump route. worker-b hook-dispatch
+  // handler echoes `receivedHeaders` in its response body for this purpose.
   try {
     const headers = new Headers({
       "x-nacp-trace-uuid": "abcdef00-0000-4000-8000-000000000001",
@@ -125,18 +128,33 @@ export async function probeHooksCallback(
       "content-type": "application/json",
     });
     const res = await workerB.fetch(
-      new Request("https://worker-b.spike/handle/header-dump", {
+      new Request("https://worker-b.spike/handle/hook-dispatch", {
         method: "POST",
-        body: JSON.stringify({ hookEvent: "anchor-traversal-test" }),
+        body: JSON.stringify({
+          hookEvent: "anchor-traversal-test",
+          mode: "ok",
+        }),
         headers,
       }),
     );
-    const body = (await res.json()) as { receivedHeaders: Record<string, string> };
+    const body = (await res.json()) as {
+      receivedHeaders?: Record<string, string>;
+      mode?: string;
+    };
+    const receivedHeaders = body.receivedHeaders ?? {};
     observations.push({
-      label: "anchor_on_hook_path",
+      label: "anchor_on_hook_dispatch_path",
       value: {
-        traceSurvived: body.receivedHeaders["x-nacp-trace-uuid"] !== undefined,
-        sessionSurvived: body.receivedHeaders["x-nacp-session-uuid"] !== undefined,
+        route: "/handle/hook-dispatch",
+        mode: body.mode,
+        traceSurvived: receivedHeaders["x-nacp-trace-uuid"] !== undefined,
+        sessionSurvived: receivedHeaders["x-nacp-session-uuid"] !== undefined,
+        traceMatches:
+          receivedHeaders["x-nacp-trace-uuid"] ===
+          "abcdef00-0000-4000-8000-000000000001",
+        sessionMatches:
+          receivedHeaders["x-nacp-session-uuid"] ===
+          "abcdef00-0000-4000-8000-000000000002",
       },
     });
   } catch (err) {
