@@ -1,9 +1,13 @@
 # Plan After Foundations — Spike-Driven Code Hardening, Async Context Engine, and Worker-Matrix Pre-Convergence
 
 > 文档对象：`nano-agent / after-foundations phase charter`
-> 刷新日期：`2026-04-19`
+> 刷新日期：`2026-04-19 (r2, post-GPT-review revision)`
 > 作者：`Opus 4.7 (1M context)`
 > 文档性质：`phase charter / execution plan / scope freeze / spike discipline / worker-matrix handoff`
+>
+> **修订历史：**
+> - **r1 (2026-04-19)**：初版
+> - **r2 (2026-04-19)**：基于 `docs/plan-after-foundations-reviewed-by-GPT.md` 的 8 项 findings 全面收紧。修订涉及 §2.1（runtime readiness 表述去乐观化）、§2.3（inspector "无" → "缺 context-specific facade"）、§4.1 D（context-management 包边界收窄到 3 子模块）、§4.1 E（hooks 8→18 → event classes 先冻结+exact count 待 Phase 3 reality）、§4.1 F + §7.6（NACP 1.2.0 具体 family 取消预冻结，改为反推自 Phase 3）、§4.1 H（binding catalog 与 future worker naming 解耦）、§5.1（Round 1 spike 隔离纪律软化为"不绑架运行时但回写对齐"）、§7.4（Phase 3 子模块详情同步收窄）、§7.5（Phase 4 同步改为 event class freeze）、§11（exit criteria 把 semver bump 降为 secondary outcome）。所有修订都以代码事实为依据（详见 §15 traceability matrix）。
 > 输入依据：
 > - `docs/plan-after-nacp.md`
 > - `docs/plan-after-skeleton.md`（A1-A10 全部已 land、2nd/3rd round review 已闭合）
@@ -110,19 +114,35 @@
 
 今天的仓库现实，不再是"协议 + 8 包 skeleton + closure"，而是：
 
-### 2.1 已经具备的 foundations
+### 2.1 当前 readiness 真相：Typed seams ready, live assembly partial
+
+> **修订说明（2026-04-19, GPT review §2.1 反馈）**：v1 版本把当前状态写成 "8 个 skeleton packages 已 closure"，这容易被误读成 "runtime 组装已成熟"。以代码事实为准，更准确的概括是：**foundations 的 typed seams 全部已存在并通过包内/跨包 contract test，但 default runtime assembly 仍是 partial**。
+
+#### 2.1.1 已成立的 typed seams
 
 1. **协议地基已冻结**
    - `nacp-core` 1.1.0 frozen baseline + 1.0.0 compat shim
    - `nacp-session` 1.1.0 frozen，8 message kinds（含 `session.followup_input`）
-2. **8 个 skeleton packages 已 closure**
+2. **8 个 foundations packages 的接口、对象模型、包内测试、跨包 contract test 全部成立**
    - `agent-runtime-kernel`、`capability-runtime`、`workspace-context-artifacts`、`session-do-runtime`、`llm-wrapper`、`hooks`、`eval-observability`、`storage-topology`
 3. **跨包基础证据已建立**
    - root contract tests、cross-package E2E、deploy-shaped verification（A6 验收）
 4. **A1-A10 闭合产物**
    - 包含 capability runtime 12-pack、grep alias、UTF-8 truncation、listDir-probe、git read-only subset、CrossSeamAnchor、`composeWorkspaceWithEvidence`、defaultEvalRecords sink fallback
-5. **`KernelRunner` 类完整**（agent-runtime-kernel）
-   - 但**从未在 session-do-runtime 实例化**（`composition.ts:95` 与 `remote-bindings.ts:386` 均 `kernel: undefined`）
+
+#### 2.1.2 default runtime assembly 仍 partial 的 3 处证据
+
+| 事实 | 文件 | 现状 |
+|---|---|---|
+| 默认 composition factory 全部 handle 仍为 `undefined` | `packages/session-do-runtime/src/composition.ts:90-105` | `kernel / llm / capability / workspace / hooks / eval / storage` 均 undefined |
+| 远程 composition factory 只覆盖 3 条 seam | `packages/session-do-runtime/src/remote-bindings.ts:386-392` | 只装配 `llm / capability / hooks`；`kernel / workspace` 仍 undefined |
+| `session-do-runtime/package.json` 真实 runtime deps 只有 2 个 | `packages/session-do-runtime/package.json:21-24` | 只有 `nacp-session` + `workspace-context-artifacts`；**hooks / storage-topology / llm-wrapper / capability-runtime / eval-observability 全部不是 runtime dep** |
+
+**结论：** `KernelRunner` 类已完整但从未在 production 实例化；4 类 foundations package（hooks / storage-topology / llm-wrapper / capability-runtime）甚至**还没有被 session-do-runtime 作为正式 runtime 依赖收进来**。也就是说：
+
+> **当前 nano-agent 的 foundations seam 已经存在；但 assembly host 还没有真正长成。**
+
+如果不把这一点写清，后续就很容易把 after-foundations 执行成"在一个其实还没组装起来的 runtime 上继续叠大 scope"。
 
 ### 2.2 Cloudflare-runtime 真实事实尚未验证的 gap（spike 必须暴露的 12 项）
 
@@ -150,7 +170,7 @@
 | Layer 类型 | `ContextLayerKind` 6 个：system/session/workspace_summary/artifact_summary/recent_transcript/injected | 缺 memory / messages / tool_result tag |
 | Compact 协议 | `nacp-core/messages/context.ts` 仅 `compact.request/response` 2 message | 缺 prepare/commit 双阶段 message |
 | Hook | `packages/hooks/src/catalog.ts` 仅 8 events，含 PreCompact/PostCompact | 缺 ContextPressure / ContextCompactArmed / ContextCompactPrepareStarted / ContextCompactCommitted |
-| Inspector | 无 | 缺 HTTP/WS endpoint + claude-code `get_context_usage` 同款 schema |
+| Inspector | **`SessionInspector` 已存在** at `packages/eval-observability/src/inspector.ts:78`，消费 9 canonical `session.stream.event` kinds，提供 filterable chronological 访问 | 缺 **context-specific** inspection facade（context-usage / context-layers / context-policy / snapshot-oriented），不是从零做 inspector |
 | Buffer policy | 无显式 | 缺 soft (~70-80%) + hard fallback (~95%) 双阈值 |
 
 因此，本阶段的起点不是"继续做包内 integration"，而是：
@@ -176,8 +196,10 @@
 1. `spike-do-storage` 单 worker 部署到真实 Cloudflare 环境
 2. `spike-binding-pair` 双 worker 部署，service-binding 真实通讯
 3. 跑过 §2.2 的 12 个待验证事实
-4. 输出 3 份 findings doc：`docs/spikes/storage-findings.md` / `binding-findings.md` / `fake-bash-platform-findings.md`
-5. 每个 finding 必须包含：现象 / 根因 / 对 packages/ 的影响 / 对 worker matrix 的影响
+4. **Two-tier deliverable**（GPT review §2.5 修订）：
+   - **Tier 1 Per-finding docs**（细颗粒度）：`docs/spikes/{spike-namespace}/{NN}-{slug}.md`，每条 finding 独立成文，使用 `docs/templates/_TEMPLATE-spike-finding.md` 模板
+   - **Tier 2 Rollup index docs**（charter 交付物，3 份）：`docs/spikes/storage-findings.md` / `binding-findings.md` / `fake-bash-platform-findings.md`，每份只做 finding index + severity summary + writeback destination map + unresolved-dismissed summary + per-finding doc links（详见 P0-spike-discipline §4.6）
+5. 每个 per-finding doc 必须包含：现象 / 根因 / 对 packages/ 的影响 / 对 worker matrix 的影响 / writeback action
 
 #### B. Storage Adapter Hardening
 
@@ -195,27 +217,47 @@
 
 #### D. Context-Management 新包（含异步压缩核心）
 
+> **修订说明（2026-04-19, GPT review §2.3 反馈）**：v1 把 `context-management` 包边界写得过宽，会与已有的 `workspace-context-artifacts`（mount/router/artifact/context-assembly/compact-boundary/snapshot 全部已存在）、`storage-topology`（物理 tier adapter）、`eval-observability`（已有 `SessionInspector`）发生职责重叠。修订原则：**新包只承担 budget policy + async compact lifecycle + context inspection facade**，不重新发明已有 primitives。
+
 14. 新建 `packages/context-management/` 包
-15. 子模块：`budget/` / `strategy/` / `async-compact/` / `storage/` / `lifecycle/` / `inspector/`
+15. 子模块**收窄到 3 个**：
+    - `budget/` — buffer policy（soft ~70-80% + hard fallback ~95% + 3 env override）
+    - `async-compact/` — scheduler + planner + prepare-job + committer + version-history + fallback（**消费** `workspace-context-artifacts` 的 `CompactBoundaryManager / WorkspaceSnapshotBuilder`，不重写）
+    - `inspector-facade/` — context-specific HTTP/WS endpoint + usage report schema（**消费** `eval-observability/src/inspector.ts:78` 的 `SessionInspector`，不重写）
 16. **`async-compact/` 是核心**：armed → prepare → commit 三阶段 + CoW context fork + atomic swap on turn boundary + hard-threshold sync fallback
-17. `inspector/` 提供 HTTP `/inspect/sessions/:id/context/{usage,layers,policy,snapshots}` + WS `/inspect/sessions/:id/context/stream`
+17. `inspector-facade/` 提供 HTTP `/inspect/sessions/:id/context/{usage,layers,policy,snapshots}` + WS `/inspect/sessions/:id/context/stream`，这些路由**包装** SessionInspector 的 9 stream-event kinds + context-specific aggregation
 18. Buffer policy 含 soft (~70-80%) + hard fallback (~95%) 双阈值，借鉴 claude-code `AUTOCOMPACT_BUFFER_TOKENS = 13_000` 等数字
+19. **明确 NOT in scope of new package**（保留在原包）：
+    - 物理 tier 路由 (KV/DO/R2 routing) → 留在 `storage-topology` 的 adapter consumer
+    - workspace primitives → 保留在 `workspace-context-artifacts`
+    - SessionInspector live stream observation → 保留在 `eval-observability`
+    - prepared-artifact lifecycle → 保留在 `workspace-context-artifacts/src/prepared-artifacts.ts` 升级路径
+    - file-cache dedup → 保留在 `capability-runtime` 的 file capability 内置行为
 
-#### E. Hooks Catalog Expansion (8 → 18)
+#### E. Hooks Catalog Expansion (event classes 先冻结，exact count 待 Phase 3 producer reality 确定)
 
-19. 保留 8：SessionStart / SessionEnd / UserPromptSubmit / PreToolUse / PostToolUse / PostToolUseFailure / PreCompact / PostCompact
-20. 新增 6（claude-code 借鉴）：Setup / Notification / Stop / StopFailure / PermissionRequest / PermissionDenied
-21. 新增 2（环境）：FileChanged / CwdChanged
-22. 新增 4（异步 compact lifecycle）：ContextPressure / ContextCompactArmed / ContextCompactPrepareStarted / ContextCompactCommitted
-23. `hooks` 包升级到 1.0.0（catalog 扩张是该包最 load-bearing 的契约）
+> **修订说明（2026-04-19, GPT review §2.5 反馈）**：v1 写"8→18"含算术错误（保留 8 + 新增 6+2+4=12 实际是 20，不是 18），且把 Phase 4 写成可在 Phase 3 之前冻结，违反 spike-first-iteration 原则。修订原则：**先冻结 4 类 event classes（保留类 / claude-code 借鉴类 / 环境类 / async compact lifecycle 类），exact catalog 与每类的数量在 Phase 3 producer reality 跑通后再 freeze**。
 
-#### F. NACP Protocol Upgrade
+19. **冻结 4 类 event classes**（不冻结具体数量）：
+    - **Class A（保留）**：当前 8 个 event 全部保留 — SessionStart / SessionEnd / UserPromptSubmit / PreToolUse / PostToolUse / PostToolUseFailure / PreCompact / PostCompact
+    - **Class B（claude-code 借鉴的 platform-agnostic 子集）**：候选包括 Setup / Notification / Stop / StopFailure / PermissionRequest / PermissionDenied — 但**逐个评估**是否在 nano-agent worker runtime 下有真实 producer
+    - **Class C（环境事件）**：候选包括 FileChanged / CwdChanged — **必须经过 Phase 0 / Phase 6 spike 验证**它们在 Worker + fake filesystem 世界是否有 runtime truth；否则不引入
+    - **Class D（async compact lifecycle）**：候选包括 ContextPressure / ContextCompactArmed / ContextCompactPrepareStarted / ContextCompactCommitted — 但**只有在 Phase 3 真实 lifecycle 稳定后**才能 freeze 成 catalog truth
+20. **不在 charter 中预先写死 8→18 / 8→20 的具体数字**；最终总数可能落在 12 / 14 / 16 / 18 / 20 区间，由 Phase 3-6 真实 producer reality 决定
+21. `hooks` 包版本 bump 不在本阶段作为价值锚点（详见 §11 修订），但 catalog 扩张本身是 load-bearing 的契约
 
-24. `nacp-core` 1.1.0 → 1.2.0：扩展 `context.compact.prepare/commit.*`、新增 `context.budget.exceeded`
-25. `nacp-session` 1.1.0 → 1.2.0：新增 `session.context.usage.snapshot`（inspector 走 NACP envelope schema 但走独立 HTTP/WS 路由）
+#### F. NACP Protocol Upgrade（升级时机本阶段，具体 family 待 Phase 3 reality 确定）
+
+> **修订说明（2026-04-19, GPT review §2.6 反馈）**：v1 把 NACP 1.2.0 的具体 message family 写死成 charter truth（context.compact.prepare/commit、context.budget.exceeded、session.context.usage.snapshot），但 Phase 3 的 producer/consumer reality 还没跑通，过早冻结协议会导致 Phase 5 被迫重写。修订原则：**升级时机仍在本阶段，但具体 family 必须从 Phase 3 真实 producer/consumer 反推得到**。
+
+24. **升级时机冻结**：`nacp-core` 1.1.0 → 1.2.0、`nacp-session` 1.1.0 → 1.2.0 在本阶段（Phase 5）完成
+25. **升级目标冻结**：基于 Phase 3 producer/consumer reality + Phase 6 integrated spike findings，**最小化扩展** NACP 以承载 async compact lifecycle 与 context inspection 所需的稳定协议面
 26. 1.0.0 / 1.1.0 compat shim 全部保留
-27. **不**新增 `storage.*` 单独 family（storage 内部状态不应穿透到协议层）
-28. **不**新增 `context.assemble.*` 等 layer-level message（装配在 worker 内部）
+27. **冻结的边界判断（取消具体 family 列表）**：
+    - 不新增 `storage.*` 单独 family（storage 内部状态不应穿透到协议层）
+    - 不新增 `context.assemble.*` 等 layer-level message（装配在 worker 内部）
+    - 不为每个 async compact lifecycle 阶段都强行设计 NACP message（如果某 lifecycle stage 只需要 hook event + inspector facade 即可，就不要塞进 NACP）
+28. **不预冻结**：具体 message kind 名字与字段（charter 不再列出 `context.compact.prepare/commit.*` 等具体名字；这些由 Phase 3 真实 producer/consumer 反推得到）
 
 #### G. Spike Round 2 — Integrated Validation
 
@@ -225,9 +267,13 @@
 
 #### H. Worker-Matrix Pre-Convergence
 
-32. 在 service-binding 目录中**预留** `agent.core / bash.core / filesystem.core / context.core` 4 个 first-wave worker 的 binding 名额（**注意 context.core 升格**）
-33. 在 service-binding 目录中**预留** `skill.core` 名额，但不立项
-34. 输出 `docs/handoff/after-foundations-to-worker-matrix.md`：列出所有已 ship、已冻结、已验证的组件
+> **修订说明（2026-04-19, GPT review §2.2 反馈）**：v1 把"future worker 命名"与"current v1 binding catalog"混层。代码事实是：`packages/session-do-runtime/src/env.ts:73-77` 冻结的 `V1_BINDING_CATALOG` 只有 3 个 slot（`CAPABILITY_WORKER / HOOK_WORKER / FAKE_PROVIDER_WORKER`），`RESERVED_BINDINGS` 只有 1 个（`SKILL_WORKERS`）；`packages/session-do-runtime/wrangler.jsonc` 也只声明这 3 条 services binding。当前根本没有"context.core / filesystem.core" 这类 binding slot。这两层不是同一个抽象层：v1 binding 是 "agent session runtime 消费的 remote seam"；future worker naming 是 "下一阶段产品级 worker 拆分"。本阶段只输出 proposal，不修改 v1 catalog。
+
+32. **不修改** `env.ts` 的 `V1_BINDING_CATALOG` 与 `wrangler.jsonc` 的现有 3 binding；除非 spike Round 2 真的暴露 v1 catalog 的不可用 gap
+33. **输出**（不冻结）`docs/handoff/next-phase-worker-naming-proposal.md`：列出 worker matrix 阶段的拟议 worker 命名（agent.core / bash.core / filesystem.core / context.core / 保留 skill.core），但**明确标注为 proposal**
+34. 输出 `docs/handoff/after-foundations-to-worker-matrix.md`：列出所有已 ship、已冻结、已验证的组件，并明确：
+    - **agent.core 不是 binding 名额**（它是 host worker，session DO 本身的下一形态，不是被 host 消费的 remote binding）
+    - **context.core / bash.core / filesystem.core 是潜在的下一阶段 worker shells**，是否真的需要拆分由 worker matrix 阶段基于本阶段 spike findings 决定
 
 #### I. 收口与下阶段交接
 
@@ -298,7 +344,7 @@
 4. spike 的发现必须落到 design doc，**不能只在代码注释里**
 5. spike 不接生产数据 / 不持有业务数据 / 不实现新业务能力
 6. 两轮 spike 分目录：`spikes/round-1-bare-metal/` 与 `spikes/round-2-integrated/`，互不污染
-7. **轮 1 spike 不依赖任何 packages/ 代码** —— 它是 platform reality 探针，必须独立
+7. **轮 1 spike 不依赖 packages/ 的运行时实现，但验证目标、finding 模板、回写任务必须显式对齐 packages/ 的 seam 与 contract**（GPT review §2.7 反馈：不是"完全不依赖 packages/"，而是"不绑架 packages/ 的现有 seam 实现，但所有 finding 必须可被 packages/ 消化"——避免 spike truth 与 package truth 双轨漂移）
 
 ### 5.2 Sequencing 方法论：Spike-First-Iteration
 
@@ -425,7 +471,7 @@ Phase 6 → 轮 2 spike, full integration
 3. `docs/spikes/storage-findings.md`
 4. `docs/spikes/binding-findings.md`
 5. `docs/spikes/fake-bash-platform-findings.md`
-6. `docs/spikes/_TEMPLATE-finding.md`（finding 模板）
+6. `docs/templates/_TEMPLATE-spike-finding.md`（finding 模板）
 
 #### 收口标准
 
@@ -498,17 +544,30 @@ Phase 6 → 轮 2 spike, full integration
 
 #### 实现目标
 
-新建 `packages/context-management/` 包，**核心是异步全量上下文压缩**（owner decision §1.3）。
+新建 `packages/context-management/` 包，**核心是异步全量上下文压缩**（owner decision §1.3）。**包边界已收窄为 3 个子模块**（详见 §4.1 D 修订）。
 
-#### In-Scope
+#### In-Scope（修订后收窄版）
 
 1. 新建 `packages/context-management/` 包骨架
-2. `budget/`：BufferPolicy + soft (~70-80%) + hard fallback (~95%) + 3 env override
-3. `strategy/`：tagged-message + compaction-policy + microcompact-planner + api-context-edit + full-compact (sync fallback)
-4. **`async-compact/`（核心）**：scheduler + candidate (CoW fork) + planner + prepare-job + committer + version-history + fallback
-5. `storage/`：tier-router + kv-tier + do-storage-tier + r2-ref-tier
-6. `lifecycle/`：session-memory-extractor (后台 forked agent) + session-memory-loader + prepared-artifact-promoter + file-cache-dedup
-7. `inspector/`：http-route + ws-route + usage-report (claude-code `get_context_usage` 同款 schema) + inspector-auth + inspector-redact
+2. **子模块 1 — `budget/`**：BufferPolicy + soft (~70-80%) + hard fallback (~95%) + 3 env override
+3. **子模块 2 — `async-compact/`**：scheduler + planner + prepare-job + committer + version-history + fallback；**消费** `workspace-context-artifacts/src/compact-boundary.ts` 与 `snapshot.ts`，不重写
+4. **子模块 3 — `inspector-facade/`**：context-specific HTTP/WS endpoint + usage report schema；**包装** `eval-observability/src/inspector.ts:78` 的 `SessionInspector`，不重写
+
+#### 明确不在本包 scope（保留在原包）
+
+- 物理 tier 路由（KV/DO/R2 routing） → 留在 `storage-topology` 的 adapter consumer
+- workspace primitives → 保留在 `workspace-context-artifacts`
+- SessionInspector live stream observation → 保留在 `eval-observability`
+- prepared-artifact lifecycle → 保留在 `workspace-context-artifacts/src/prepared-artifacts.ts` 升级路径
+- file-cache dedup → 保留在 `capability-runtime` 的 file capability 内置行为
+
+#### Tagged conversation 与 hybrid storage 的实现位置
+
+> **修订说明**：v1 把 `strategy/`（tagged-message / compaction-policy / microcompact-planner）和 `storage/`（tier-router / kv-tier / do-storage-tier）都塞进 context-management 包。修订后：
+> - `tagged-message` / `contextTag` enum → 加在 `workspace-context-artifacts/src/context-layers.ts`（作为 `ContextLayerKind` 的扩展）
+> - tier-router → 加在 `storage-topology` 的 placement 模块
+> - microcompact-planner → 留在 `workspace-context-artifacts/src/compact-boundary.ts` 旁边作为 sibling
+> - context-management 只持有 `async-compact/` 与上述 primitives 的 orchestration 关系
 
 #### 交付物
 
@@ -527,18 +586,27 @@ Phase 6 → 轮 2 spike, full integration
 5. 全部 18 hook events 中 4 个 async lifecycle hook 已 wire
 6. 通过 Phase 0 spike 确定的 storage tier 路由真实可用
 
-### 7.5 Phase 4 — Hooks Catalog Expansion (8 → 18)
+### 7.5 Phase 4 — Hooks Catalog Expansion (event classes 先冻结，exact count 待 Phase 3 producer reality)
 
 #### 实现目标
 
-把 `packages/hooks/src/catalog.ts` 从 8 events 扩到 18 events，bump 到 1.0.0。
+基于 Phase 3 真实 producer reality + Phase 0/6 spike findings，扩展 `packages/hooks/src/catalog.ts`。**不预冻结具体数量**（详见 §4.1 E 修订）。
 
-#### In-Scope
+#### In-Scope（修订后版本）
 
-1. catalog 新增 10 events：Setup / Notification / Stop / StopFailure / PermissionRequest / PermissionDenied / FileChanged / CwdChanged / ContextPressure / ContextCompactArmed / ContextCompactPrepareStarted / ContextCompactCommitted（实际 +10 个，去重后 18 总）
-2. 每个新 event 的 `allowedOutcomes` / `payloadSchema` / `redactionHints` / `blocking` 显式定义
-3. outcome reducer 与 session mapper 跟随更新
-4. `core-mapping.ts` / `session-mapping.ts` / `audit.ts` 跟随更新
+1. **Step 1 — 冻结 4 类 event classes**（不冻结具体数量）：
+   - Class A（保留）：当前 8 个 event 全部保留
+   - Class B（claude-code 借鉴的 platform-agnostic 子集）：候选包括 Setup / Notification / Stop / StopFailure / PermissionRequest / PermissionDenied —— **逐个评估**是否在 nano-agent worker runtime 下有真实 producer
+   - Class C（环境事件）：候选包括 FileChanged / CwdChanged —— **必须经过 Phase 0/6 spike 验证**才引入
+   - Class D（async compact lifecycle）：候选包括 ContextPressure / ContextCompactArmed / ContextCompactPrepareStarted / ContextCompactCommitted —— **必须等 Phase 3 真实 lifecycle 稳定后**才能 freeze 成 catalog truth
+2. **Step 2 — 基于 reality 选择具体 events**：每个 candidate event 必须有显式的 producer 与 consumer，否则不引入（避免死代码 events）
+3. **Step 3 — 为入选 event freeze metadata**：每个新 event 的 `allowedOutcomes` / `payloadSchema` / `redactionHints` / `blocking` 显式定义
+4. outcome reducer 与 session mapper 跟随更新
+5. `core-mapping.ts` / `session-mapping.ts` / `audit.ts` 跟随更新
+
+#### 最终 catalog 总数预期范围
+
+> **不预先承诺具体数字。** 最终总数可能在 **12 / 14 / 16 / 18 / 20** 区间，由 Phase 3 真实 producer reality 决定。本阶段成功的标准不是"扩到 N 个 events"，而是"4 类 event classes 各自找到了真实 producer + consumer，并把 metadata 冻结"。
 
 #### 交付物
 
@@ -555,32 +623,43 @@ Phase 6 → 轮 2 spike, full integration
 4. FileChanged / CwdChanged 与 fake-bash 的 filesystem capability 真实 wire
 5. `hooks` 1.0.0 ship，0.x compat note
 
-### 7.6 Phase 5 — NACP Protocol Upgrade (1.2.0)
+### 7.6 Phase 5 — NACP Protocol Upgrade (升级时机本阶段, 具体 family 反推自 Phase 3)
 
 #### 实现目标
 
-`nacp-core` 1.1.0 → 1.2.0、`nacp-session` 1.1.0 → 1.2.0。
+基于 Phase 3 真实 producer/consumer reality + Phase 6 integrated spike findings，**最小化扩展** `nacp-core` 与 `nacp-session` 协议面。**不预先承诺具体 family 名字与字段**（详见 §4.1 F 修订）。
 
-#### In-Scope
+#### In-Scope（修订后版本）
 
-1. `nacp-core/messages/context.ts` 扩展：`context.compact.prepare.request/response`、`context.compact.commit.request/response`、`context.budget.exceeded`
-2. `nacp-session/messages.ts` 新增：`session.context.usage.snapshot`
-3. 1.0.0 / 1.1.0 compat shim 全部保留
-4. 协议升级 RFC
+1. **Step 1 — 反推**：从 Phase 3 ship 后的 `packages/context-management/async-compact/` 真实 producer/consumer，反推**哪些**消息真的需要走跨 worker 协议，**哪些**只需要 hook event + inspector facade 即可
+2. **Step 2 — 最小化扩展**：只为真正需要跨 worker 通讯的状态新增 message kind；如果某 lifecycle stage 不需要跨 worker 协议，**不**为它强行设计 NACP message
+3. **Step 3 — RFC 与冻结**：为入选的 message family 写正式 RFC，定义 schema、producer role、consumer role
+4. 1.0.0 / 1.1.0 compat shim 全部保留
 
-#### 交付物
+#### 不在 charter 预先冻结的内容
 
-1. `nacp-core` 1.2.0 with 扩展的 context message family
-2. `nacp-session` 1.2.0 with 新增的 inspect message
-3. `docs/rfc/nacp-core-1.2.0.md` + `docs/rfc/nacp-session-1.2.0.md`
-4. compat shim 测试
+- 不预先承诺 `nacp-core` 一定 bump 到 1.2.0（如果 Phase 3 reality 显示无需扩展协议，留在 1.1.0 也是合法退出）
+- 不预先承诺具体 message kind 名字与字段
+- 不预先承诺 `nacp-session` 一定要新增 `session.context.usage.*` 类 message（如果 inspector facade 走独立 HTTP/WS 路由 + 包装 SessionInspector 已足够，可能不需要新增 NACP message）
 
-#### 收口标准
+#### 冻结的边界判断（保留）
 
-1. 1.2.0 协议在 Phase 0 spike worker 跑通 e2e
+- **不**新增 `storage.*` 单独 family（storage 内部状态不应穿透到协议层）
+- **不**新增 `context.assemble.*` 等 layer-level message（装配在 worker 内部）
+- **不**为每个 async compact lifecycle 阶段都强行设计 NACP message
+
+#### 交付物（修订后）
+
+1. `docs/rfc/nacp-protocol-upgrade-after-foundations.md`：从 Phase 3 producer/consumer reality 反推得到的最小协议扩展集
+2. 实际 ship 的 nacp-core / nacp-session 版本（可能是 1.2.0、1.1.1、或保持 1.1.0）
+3. compat shim 测试（如果实际 ship 了新版本）
+
+#### 收口标准（修订后）
+
+1. 协议升级集与 Phase 3 真实 producer/consumer reality 一一对应（无未使用的新 message kind）
 2. 1.0.0 / 1.1.0 用户全部不 break（compat test 全绿）
-3. 协议 schema 与 Phase 3 / Phase 4 的实现一一对应
-4. **不**新增 `storage.*` 单独 family、**不**新增 `context.assemble.*` 等 layer message
+3. 在 Phase 6 integrated spike 中跑通新协议 e2e（如果有新协议）
+4. RFC 文档完整记录"为什么这些 message 需要新增"与"为什么其他候选不需要"
 
 ### 7.7 Phase 6 — Spike Round 2: Integrated Validation
 
@@ -794,19 +873,33 @@ Phase 6
 
 ## 11. 本阶段的退出条件（Exit Criteria）
 
+> **修订说明（2026-04-19, GPT review §2.8 反馈）**：v1 把 semver bump（storage-topology 2.0.0 / hooks 1.0.0 / nacp 1.2.0）写成 exit criteria，容易把"语义成熟度"简化成"version 号变更"。修订原则：**真正的退出条件是 platform truth 被消化、package law 被收窄、runtime 与 protocol 对齐；版本号是这些事的副产物，不是价值本身**。
+
+### 11.1 Primary Exit Criteria（语义成熟度）
+
 只有当下面条件全部成立时，本阶段才可关闭：
 
-1. Phase 0 轮 1 spike 真实部署 + 3 份 findings doc 已 ship
-2. `storage-topology` 2.0.0 ship with 4 真实 adapter
-3. `capability-runtime` fake-bash 扩展 ship with 高频 just-bash 子集
-4. `packages/context-management/` 0.1.0 ship with async compact 核心
-5. `hooks` 1.0.0 ship with 18 events
-6. `nacp-core` / `nacp-session` 1.2.0 ship with compat shim
-7. Phase 6 轮 2 spike 真实部署 + integrated findings doc 已 ship
-8. handoff memo 已写完，列出所有已验证 / 已冻结组件
-9. service binding 名额（4 + 1）已预留
-10. 每个 Phase 的 closure note 已完成
-11. 5 类 ship code 全部经过 spike 双向 traceability 验证
+1. **Spike 真相已闭合**：Phase 0 轮 1 spike 真实部署 + 3 份 findings doc 已 ship；Phase 6 轮 2 spike 真实部署 + integrated findings doc 已 ship；每个 finding 都被显式回写到 packages/ 或被显式 dismissed
+2. **Storage truth 已消化**：`storage-topology` 真实 D1 / R2 / KV / DO adapter 全部经过 spike 验证；`ReferenceBackend` 在真实 cloud binding 上 read/write/list 跑通
+3. **Fake-bash 扩展已落地**：高频 just-bash 子集 port 完成 + curl 接通 + ts-exec/python 等 not-connected 边界**保持显式标记**（不偷偷"让它连"）
+4. **Async compact lifecycle 真相已成立**：`packages/context-management/` ship；armed → prepare → commit + CoW + atomic swap 在真实 Cloudflare 环境跑通至少一轮完整 lifecycle；hard-threshold sync fallback 在压缩超时时能自动接管
+5. **Hooks event classes 已冻结**：4 类 event classes（保留 / claude-code 借鉴 / 环境 / async compact lifecycle）已冻结，**exact catalog 与具体数量**也已冻结（基于 Phase 3 真实 producer reality）
+6. **NACP 协议升级已发生**：nacp-core / nacp-session 升级到承载 Phase 3-4 真实 producer/consumer reality 所需的最小协议面，1.0.0 / 1.1.0 compat shim 全部保留
+7. **Inspection facade 已落地**：context-specific HTTP/WS endpoint 真实可访问，**包装** `eval-observability/src/inspector.ts:78` 的 `SessionInspector`（不重写 inspector primitives）
+8. **Worker matrix 阶段输入已就绪**：handoff memo + worker naming proposal 已写完
+9. **Closure ritual 已完成**：每个 Phase 的 closure note 已完成；5 类 ship code 全部经过 spike 双向 traceability 验证
+
+### 11.2 Secondary outcomes（这些是结果而非锚点）
+
+下面这些是上述 primary criteria 落地的**副产物**，**不**作为本阶段的价值锚点：
+
+- `storage-topology` 0.1.0 → 2.0.0（major bump，因为接口 breaking）
+- `hooks` 0.1.0 → 1.0.0（catalog 扩张是 load-bearing 契约）
+- `nacp-core` 1.1.0 → 1.2.0
+- `nacp-session` 1.1.0 → 1.2.0
+- `packages/context-management/` 0.1.0 首发
+
+> **判断标准**：如果 5 类 ship code 全部经过 spike 验证 + producer/consumer reality 对齐，但 semver 数字与上面不完全一致（比如 hooks 留在 0.x 不 bump 到 1.0、或 nacp 因发现协议无需扩展而留在 1.1.0），**仍然算本阶段成功退出**。反之，如果 semver 数字全部 bump 到位但 spike findings 没被消化，**本阶段 NOT 成功退出**。
 
 ---
 
@@ -925,7 +1018,7 @@ Phase 6
 1. `docs/design/after-foundations/P0-spike-discipline-and-validation-matrix.md`
 2. `docs/design/after-foundations/P0-spike-do-storage-design.md`
 3. `docs/design/after-foundations/P0-spike-binding-pair-design.md`
-4. `docs/spikes/_TEMPLATE-finding.md`
+4. `docs/templates/_TEMPLATE-spike-finding.md`
 
 #### 第二批：在 Phase 0 spike 跑出 finding 之后写
 
@@ -1011,6 +1104,21 @@ Phase 6
 | §12.2 | skill.core reserved | `worker-matrix-eval-with-Opus.md` | §2.4 + §6 |
 
 每一条决策都可以从本 charter 反向追溯到原始 eval 讨论，确保**没有未经辩证的设计选择被悄悄塞进 charter**。
+
+### 15.1 r2 修订追踪表（基于 GPT review）
+
+| 修订点 | 触发来源 | r1 表述 | r2 修订 | 代码事实依据 |
+|---|---|---|---|---|
+| §2.1 | GPT review §2.1 | "8 个 skeleton packages 已 closure" | "typed seams ready, live assembly partial" + 3 处 evidence | `composition.ts:90-105` 全 undefined / `remote-bindings.ts:386-392` 只 3 seam / `package.json:21-24` 只 2 runtime dep |
+| §2.3 inspector | GPT review §2.4 | "Inspector 无" | "缺 context-specific facade；SessionInspector 已存在" | `eval-observability/src/inspector.ts:78` 已有 `class SessionInspector` |
+| §4.1 D + §7.4 | GPT review §2.3 | context-management 6 子模块 | 收窄到 3 子模块（budget / async-compact / inspector-facade） | `workspace-context-artifacts/src/{compact-boundary,snapshot}.ts` + `eval-observability/src/inspector.ts:78` 已有 primitives |
+| §4.1 E + §7.5 | GPT review §2.5 | "8 → 18 events" (含 8+12=20 算术错误) | "4 类 event classes 先冻结，exact count 待 Phase 3 reality" | `packages/hooks/src/catalog.ts:43-98` 当前 8 events |
+| §4.1 F + §7.6 | GPT review §2.6 | NACP 1.2.0 + 4 个 family 名字 | 升级时机不变，具体 family 反推自 Phase 3 | `packages/nacp-core/src/messages/context.ts` 仅 2 message |
+| §4.1 H | GPT review §2.2 | "预留 4 first-wave + 1 reserved binding" | binding catalog 不动；只输出 worker naming proposal | `packages/session-do-runtime/src/env.ts:73-77` `V1_BINDING_CATALOG` 只 3 slot；`wrangler.jsonc` 只 3 services |
+| §5.1 第 7 条 | GPT review §2.7 | "Round 1 spike 不依赖任何 packages/ 代码" | "不依赖运行时实现，但回写任务必须对齐 packages/ seam" | — |
+| §11 | GPT review §2.8 | semver bump 是 exit criteria | semver bump 降为 secondary outcome；primary criteria 是 spike 真相消化 + package law 收窄 | — |
+
+> **r2 的核心修正方向**：r1 把"package hardening / protocol freeze / future worker taxonomy" 三层捆绑得过紧；r2 把它们解耦为 "本阶段必须冻结" / "本阶段只做 proposal" / "明确延后到 worker matrix 阶段" 三类（详见 GPT review §4.2）。
 
 ---
 
