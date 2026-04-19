@@ -1,0 +1,31 @@
+// spike-binding-pair worker-b (callee) — Round 1 bare-metal binding probe.
+//
+// Deployed FIRST (worker-a binds to this by name).
+//
+// Transport scope: only fetch-based seam (binding.fetch(new Request(...))).
+// NOT validating nacp-core handleNacp RPC transport (out of scope per
+// docs/design/after-foundations/P0-spike-binding-pair-design.md §0).
+//
+// 7 disciplines: see ../../README.md
+//
+// Owner: sean.z@haimangtech.cn (CF Account 8b611460403095bdb99b6e3448d1f363)
+{
+  "name": "nano-agent-spike-binding-pair-b",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-04-19",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+
+  "vars": {
+    "ENVIRONMENT": "spike-r1-bare-metal",
+    "SPIKE_NAMESPACE": "spike-binding-pair",
+    "ROLE": "callee",
+    "EXPIRATION_DATE": "2026-08-01",
+    "OWNER_TAG": "nano-agent",
+    "STAGE_TAG": "spike"
+  },
+
+  "observability": {
+    "enabled": true
+  }
+}

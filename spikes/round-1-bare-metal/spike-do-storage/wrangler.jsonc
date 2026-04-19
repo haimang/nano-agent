@@ -1,0 +1,70 @@
+// spike-do-storage — Round 1 bare-metal probe wrangler config.
+//
+// 7 spike disciplines (see docs/design/after-foundations/P0-spike-discipline-and-validation-matrix.md §3):
+//   - 纪律 1: lives under spikes/ top-level dir, NOT packages/
+//   - 纪律 2: EXPIRATION_DATE=2026-08-01
+//   - 纪律 3: NOT in CI main pipeline
+//   - 纪律 4: findings → docs/spikes/spike-do-storage/*.md (template: docs/templates/_TEMPLATE-spike-finding.md)
+//   - 纪律 5: no production data; no business logic; no LLM API key
+//   - 纪律 6: round-1-bare-metal/ separate from round-2-integrated/
+//   - 纪律 7: NOT importing packages/ runtime; only loose contract alignment
+//
+// Resource naming (per owner B1 Q1: nano-agent + spike dual-tag isolation):
+//   - Worker:        nano-agent-spike-do-storage
+//   - DO class:      ProbeDO
+//   - R2 bucket:     nano-agent-spike-do-storage-probe
+//   - KV namespace:  nano-agent-spike-do-storage-kv (id provisioned at deploy time)
+//   - D1 database:   nano_agent_spike_do_storage_d1 (id provisioned at deploy time)
+//
+// Owner: sean.z@haimangtech.cn (CF Account 8b611460403095bdb99b6e3448d1f363)
+{
+  "name": "nano-agent-spike-do-storage",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-04-19",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+
+  "vars": {
+    "ENVIRONMENT": "spike-r1-bare-metal",
+    "SPIKE_NAMESPACE": "spike-do-storage",
+    "EXPIRATION_DATE": "2026-08-01",
+    "OWNER_TAG": "nano-agent",
+    "STAGE_TAG": "spike"
+  },
+
+  "durable_objects": {
+    "bindings": [
+      { "name": "DO_PROBE", "class_name": "ProbeDO" }
+    ]
+  },
+
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["ProbeDO"] }
+  ],
+
+  "kv_namespaces": [
+    // Real id must be provisioned via:
+    //   npx wrangler kv namespace create nano-agent-spike-do-storage-kv
+    // Then replace the placeholder below.
+    { "binding": "KV_PROBE", "id": "PLACEHOLDER_KV_ID" }
+  ],
+
+  "r2_buckets": [
+    { "binding": "R2_PROBE", "bucket_name": "nano-agent-spike-do-storage-probe" }
+  ],
+
+  "d1_databases": [
+    // Real database_id must be provisioned via:
+    //   npx wrangler d1 create nano_agent_spike_do_storage_d1
+    // Then replace the placeholder below.
+    {
+      "binding": "D1_PROBE",
+      "database_name": "nano_agent_spike_do_storage_d1",
+      "database_id": "PLACEHOLDER_D1_ID"
+    }
+  ],
+
+  "observability": {
+    "enabled": true
+  }
+}

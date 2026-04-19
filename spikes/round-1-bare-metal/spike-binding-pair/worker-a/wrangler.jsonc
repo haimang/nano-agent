@@ -1,0 +1,35 @@
+// spike-binding-pair worker-a (caller) — Round 1 bare-metal binding probe.
+//
+// Deployed SECOND (after worker-b). The `services` binding below
+// references worker-b by deployed name `nano-agent-spike-binding-pair-b`,
+// so worker-b MUST exist in the same CF account before this deploys.
+//
+// Transport scope: only fetch-based seam.
+// NOT validating nacp-core handleNacp RPC transport (out of scope per
+// docs/design/after-foundations/P0-spike-binding-pair-design.md §0).
+//
+// 7 disciplines: see ../../README.md
+{
+  "name": "nano-agent-spike-binding-pair-a",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-04-19",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+
+  "vars": {
+    "ENVIRONMENT": "spike-r1-bare-metal",
+    "SPIKE_NAMESPACE": "spike-binding-pair",
+    "ROLE": "caller",
+    "EXPIRATION_DATE": "2026-08-01",
+    "OWNER_TAG": "nano-agent",
+    "STAGE_TAG": "spike"
+  },
+
+  "services": [
+    { "binding": "WORKER_B", "service": "nano-agent-spike-binding-pair-b" }
+  ],
+
+  "observability": {
+    "enabled": true
+  }
+}
