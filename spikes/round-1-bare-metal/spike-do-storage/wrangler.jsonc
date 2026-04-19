@@ -43,24 +43,21 @@
   ],
 
   "kv_namespaces": [
-    // Real id must be provisioned via:
-    //   npx wrangler kv namespace create nano-agent-spike-do-storage-kv
-    // Then replace the placeholder below.
-    { "binding": "KV_PROBE", "id": "PLACEHOLDER_KV_ID" }
+    // Provisioned 2026-04-19 via: npx wrangler kv namespace create nano-agent-spike-do-storage-kv
+    { "binding": "KV_PROBE", "id": "f5de37a4139a480683368d39ca4bbb62" }
   ],
 
   "r2_buckets": [
+    // Provisioned 2026-04-19 via: npx wrangler r2 bucket create nano-agent-spike-do-storage-probe
     { "binding": "R2_PROBE", "bucket_name": "nano-agent-spike-do-storage-probe" }
   ],
 
   "d1_databases": [
-    // Real database_id must be provisioned via:
-    //   npx wrangler d1 create nano_agent_spike_do_storage_d1
-    // Then replace the placeholder below.
+    // Provisioned 2026-04-19 via: npx wrangler d1 create nano_agent_spike_do_storage_d1 (region APAC)
     {
       "binding": "D1_PROBE",
       "database_name": "nano_agent_spike_do_storage_d1",
-      "database_id": "PLACEHOLDER_D1_ID"
+      "database_id": "e9adb012-4896-473e-bf3b-c9e1f4890842"
     }
   ],
 
