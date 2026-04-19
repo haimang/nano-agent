@@ -467,7 +467,7 @@ GPT 的方案是：**5 个 worker 都建成 real worker，但厚薄不同**（3 
 
 1. 创建目录：`spikes/spike-do-storage/` 和 `spikes/spike-binding-pair/`
 2. 创建文档：`docs/plan-pre-matrix-probing.md`（参考 `docs/plan-after-skeleton.md` 的格式），列出 Phase 7.5 的 in-scope / out-of-scope / 验收信号
-3. 创建 spike findings 模板：`docs/spikes/_TEMPLATE-finding.md`
+3. 创建 spike findings 模板：~~`docs/spikes/_TEMPLATE-finding.md`~~ → **已落到 `docs/templates/_TEMPLATE-spike-finding.md`**（业主决策，2026-04-19）
 4. 把本文 §3 的"缺口评估汇总表"作为 Phase 7.5 立项的 baseline checklist
 5. 把本文 §6.2 的 12 个验证项（6 storage + 6 binding）作为 spike 跑通后必须有 finding 的清单
 
@@ -879,7 +879,7 @@ packages/storage-topology/src/adapters/
 2. 创建 `spikes/round-1-bare-metal/spike-do-storage/` 与 `spikes/round-1-bare-metal/spike-binding-pair/`
 3. 创建 `spikes/round-2-integrated/`（暂留空，第三波 ship 完后填入）
 4. 创建 `packages/context-management/`（package skeleton + package.json + 4 个子模块目录）
-5. 创建 `docs/spikes/_TEMPLATE-finding.md` 与三个 finding 文档骨架
+5. 创建 ~~`docs/spikes/_TEMPLATE-finding.md`~~ → **已落到 `docs/templates/_TEMPLATE-spike-finding.md`**（业主决策，2026-04-19）与三个 finding 文档骨架
 6. 创建 RFC 模板 `docs/rfc/_TEMPLATE-protocol-extension.md`，作为 nacp-core 1.2.0 / nacp-session 1.2.0 / hooks 1.0.0 升级的设计输入
 
 ## 附 D：基于 §8 新增的代码事实快照
