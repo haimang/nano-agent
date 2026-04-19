@@ -144,14 +144,18 @@ P7 是 after-foundations 阶段的 **handoff phase** —— 不修改 packages/ 
 
 每条 handoff finding 必须含：finding ID + 1-line summary + Round 2 verdict + worker matrix phase 用途.
 
-| Finding | Summary | Round 2 verdict | Worker matrix usage |
-|---|---|---|---|
-| F01 | R2 single-part covers ≤ 10 MiB | (filled by P6 Round 2) | filesystem.core artifact upload path |
-| F04 | DO storage transaction validated | (filled by P6) | context.core async-compact committer; agent.core session checkpoint |
-| F05 | MemoryBackend basic K/V parity | (filled by P6) | bash.core local dev可信 vs production |
-| F07 | 12-pack capability contract holds | (filled by P6) | bash.core safe to ship with current 12-pack as starting point |
-| binding-F01 | Service binding p50=5ms / p99=7ms / 10 concurrent in 12ms | (filled by P6) | cross-worker call latency budget for all 4 worker dispatches |
-| binding-F03 | Cross-worker hook dispatch p50=4ms / structured 500 body | (filled by P6) | cross-worker hook events viability (P4 catalog 18 events) |
+| Finding | Summary | Round 2 verdict | Worker matrix usage | Caveats |
+|---|---|---|---|---|
+| F01 | R2 single-part covers ≤ 10 MiB | (filled by P6 Round 2) | filesystem.core artifact upload path | — |
+| F04 | DO storage transaction validated | (filled by P6) | context.core async-compact committer; agent.core session checkpoint | — |
+| F05 | MemoryBackend basic K/V parity | (filled by P6) | bash.core local dev可信 vs production | — |
+| F07 | 12-pack capability contract holds | (filled by P6) | bash.core safe to ship with current 12-pack as starting point | — |
+| binding-F01 | Service binding p50=5ms / p99=7ms / 10 concurrent in 12ms | (filled by P6) | cross-worker call latency budget for all 4 worker dispatches | — |
+| binding-F03 | Cross-worker hook dispatch p50=4ms / structured 500 body | (filled by P6) | cross-worker hook events viability (P4 catalog 18 events) | ⚠️ **anchor-on-hook-path** originally测到 `/handle/header-dump`；2026-04-19 r2 修复后重测 `/handle/hook-dispatch` real path confirmed (per B1-final-closure §Caveats C2 fix) |
+
+> **Additional caveats from B1-final-closure §Caveats (MUST cite when handoff memo ships)**:
+> - **C1 (binding-F04 scope)**: V3-binding-eval-fanin 是 response-batch simulation; 真 cross-worker sink callback semantics 由 B7 P6 §4.4a 复现
+> - **C3 (F03 weak evidence)**: V1-storage-KV-stale-read 只是 same-colo 40-sample reconnaissance baseline; cacheTtl 变体 + 100-sample + cross-colo 由 B7 P6 §4.1 + §4.4b 复现
 
 ### 3.2 `docs/handoff/next-phase-worker-naming-proposal.md`（worker naming proposal）
 
@@ -489,3 +493,4 @@ If P6 Round 2 closure reveals that v1 `CAPABILITY_WORKER` / `HOOK_WORKER` / `FAK
 | Date | Author | Change |
 |---|---|---|
 | 2026-04-19 | Opus 4.7 | Initial draft; 4 deliverables (handoff memo + naming proposal + 2 templates); 4 first-wave workers proposal with context.core upgrade per charter §1.4; agent.core ≠ binding distinction (GPT §2.2); binding catalog do-not-modify policy (charter §4.1 H); 10 决策 each cite B1 finding / charter / eval thread |
+| 2026-04-19 (r2) | Opus 4.7 | §3.1.2 handoff findings 表加 Caveats 列；binding-F03 标注 anchor path 已 r2 修复；新增 C1/C3 caveat pointer pointing to B1-final-closure §Caveats (per B1-docs-reviewed-by-GPT §R3 alignment) |

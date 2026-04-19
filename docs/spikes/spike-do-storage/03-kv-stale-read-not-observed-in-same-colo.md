@@ -14,6 +14,8 @@
 
 > 单 colo + 单 worker → 单 KV namespace 写后立即读，**40/40 reads 全 fresh**（含 delay=0ms），与 Cloudflare 公开文档"60s eventual consistency"叙述不一致；样本小（同 colo），不能直接驱动 packages/ 假设变更，但应在 `packages/storage-topology/src/adapters/scoped-io.ts:99-107` 显式标注"freshness depends on read locality"，并在 Round 2 用 cross-region / multiple-colo probe 复现。
 
+> **⚠️ Evidence weakness (B1-code-reviewed-by-GPT §R3 downgrade, 2026-04-19)**: 本 finding 是 **Round 1 reconnaissance-level weak evidence only**，不是 KV freshness contract closure。实际 probe 只覆盖 4 delays × 10 samples = 40 reads；P0 design §4.3 原意要求的 "100 次 spread / `cacheTtl: 0` 变体 / strong-read option 验证" **均未实现**。因此本 finding **不能**被 B2 / B4 / downstream 直接读成 "KV read-after-write 已全面证明 no stale"。唯一成立的结论是："在 same-colo / same-worker / default cacheTtl / 40-sample 规模下未观察到 stale"。真 freshness contract validation 必须在 B7 round 2 配合 cacheTtl 变体 + 更高样本 + cross-colo locality 复现（见 P6 §4.1）。
+
 ---
 
 ## 1. 现象（Phenomenon）
@@ -123,9 +125,9 @@ KV write 路径在同 colo 内的 read-through cache 行为可能比公开文档
 
 ### 5.2 写回完成的判定
 
-- [ ] 对应 packages/ 文件已 ship（仅 JSDoc）
+- [ ] 对应 packages/ 文件已 ship（B2 future work — 仅 JSDoc）
 - [ ] 对应 contract test 已新增（不需要——同 colo 测试是充分的）
-- [x] **Round 2 cross-colo probe 必须跑** —— 这是确认本 finding 有效边界的硬要求
+- [ ] **Round 2 cross-colo probe 必须跑** (B7 future work — P6 §4.1) —— 这是确认本 finding 有效边界的硬要求
 
 ### 5.3 dismissed-with-rationale 的判定
 
@@ -179,3 +181,5 @@ KV write 路径在同 colo 内的 read-through cache 行为可能比公开文档
 | 日期 | 作者 | 变更 |
 |---|---|---|
 | 2026-04-19 | Opus 4.7 | 初版；保守结论 + 强调 Round 2 复现是硬要求 |
+| 2026-04-19 (r2) | Opus 4.7 | R3 downgrade per B1-code-reviewed-by-GPT §R3: 显式标注本 finding 为 reconnaissance-level weak evidence；P0 design §4.3 原意的 cacheTtl 变体 / 100-sample spread / strong-read option 均未实现；严禁被下游读成 freshness contract closure；真 validation 留 B7 round 2 |
+| 2026-04-19 (r2) | Opus 4.7 | R2 docs fix per B1-docs-reviewed-by-GPT §R2: 回收 §5.2 "Round 2 cross-colo probe 必须跑" `[x]` → `[ ]` (B7 future work) |

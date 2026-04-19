@@ -126,7 +126,9 @@ If a B2-B6 ship item has **no** finding reference, it must be justified in the a
 | `spike-do-storage-F05` | "MemoryBackend ≈ DO storage for basic K/V" |
 | `spike-do-storage-F07` | "12-pack capability contract holds in real worker runtime" |
 | `spike-binding-pair-F01` | "Service binding latency baseline: p50=5ms, p99=7ms (1KiB), 1MiB p50=13ms; 10 concurrent in 12ms wallclock" |
-| `spike-binding-pair-F03` | "Cross-worker hook dispatch latency: p50=4ms; blocking 1.5s viable; throwing hook returns structured 500 body" |
+| `spike-binding-pair-F03` | "Cross-worker hook dispatch latency: p50=4ms; blocking 1.5s viable; throwing hook returns structured 500 body" — **caveat (2026-04-19 r2 per B1-final-closure §Caveats C2)**: anchor-on-hook-path claim originally tested via `/handle/header-dump`; r2 fix re-verified via true `/handle/hook-dispatch` route; new `.out/2026-04-19T13-02-31Z.json` evidence |
+| `spike-binding-pair-F04` | **⚠️ Scope caveat C1**: probe flow 是 response-batch simulation (worker-a pull)，不是 cross-worker sink callback (worker-b push); 真 callback 验证推迟 B7 P6 §4.4a |
+| `spike-do-storage-F03` | **⚠️ Weak evidence caveat C3**: 40-sample same-colo baseline only; cacheTtl/100-sample/cross-colo 留 B7 P6 §4.1 + §4.4b |
 
 ---
 

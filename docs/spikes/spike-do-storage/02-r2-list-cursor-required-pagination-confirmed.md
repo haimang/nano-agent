@@ -130,10 +130,10 @@ async r2List(prefix: string): Promise<{ objects: Array<...> }> {
 
 ### 5.2 写回完成的判定
 
-- [ ] 对应 packages/ 文件已 ship
-- [x] **对应 contract test 已新增**（验证 cursor walk 不漏 key + truncated/cursor 字段存在）
-- [x] **对应 spike Round 2 integrated test 已跑通**（用 ship 后的 R2Adapter 重跑 V1-storage-R2-list-cursor）
-- [x] **修订 design doc** —— `P1-storage-adapter-hardening.md` 引用本 finding ID
+- [ ] 对应 packages/ 文件已 ship (B2 future work)
+- [ ] **对应 contract test 已新增**（B2 future work — 验证 cursor walk 不漏 key + truncated/cursor 字段存在）
+- [ ] **对应 spike Round 2 integrated test 已跑通**（B7 future work — 用 ship 后的 R2Adapter 重跑 V1-storage-R2-list-cursor）
+- [x] **修订 design doc** —— `P1-storage-adapter-hardening.md` 引用本 finding ID (confirmed 2026-04-19)
 
 ### 5.3 dismissed-with-rationale 的判定
 
@@ -189,3 +189,4 @@ async r2List(prefix: string): Promise<{ objects: Array<...> }> {
 | 日期 | 作者 | 变更 |
 |---|---|---|
 | 2026-04-19 | Opus 4.7 | 初版；真实证据 + r2List 接口 v2 修订需求确定 |
+| 2026-04-19 (r2) | Opus 4.7 | R2 docs fix per B1-docs-reviewed-by-GPT §R2: 回收 §5.2 2 处 premature `[x]` → `[ ]` (contract test + Round 2 test 都是 B2/B7 future work) |

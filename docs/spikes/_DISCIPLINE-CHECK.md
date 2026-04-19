@@ -10,9 +10,11 @@
 
 ## Verdict
 
-✅ **PASSED — 7/7 disciplines satisfied**
+⚠️ **READY-WITH-FIXES — 7/7 disciplines satisfied + 6 closure caveats** (downgraded 2026-04-19 r2)
 
-All 7 spike disciplines have been observed throughout B1 Phase 1-5. No exceptions, no overrides.
+原始 verdict 是 "PASSED 7/7"；但 `B1-code-reviewed-by-GPT.md` + `B1-docs-reviewed-by-GPT.md` 识别了 6 项 closure caveats (C1-C6，见 `B1-final-closure.md` §Caveats 表)。7 条纪律仍然 hold（详见 §1-§7 per-discipline evidence），但 "B1 closure authorized" 本身已降级为 "ready-with-fixes"：结构完整 + 纪律成立，但 per-finding 声明需 scope 降级 / raw evidence 回填 / future-work checkbox 回收。
+
+**4/6 caveats 已修复**（R2 code / R1 docs / R2 docs / R3 docs），**2/6 留 B7**（C1 真 callback path / C3 KV cacheTtl 真 probe）。
 
 ---
 
@@ -196,11 +198,13 @@ Confirmed **none** of the spike code violated the explicit anti-patterns listed 
 
 ---
 
-## Approved for B1 closure
+## Approved for B1 "ready-with-fixes" closure
 
-This discipline check authorizes B1 final closure issue and handoff to B2/B3/B4 ship phases.
+This discipline check authorizes B1 handoff to B2/B3/B4 ship phases **with caveats** (see `B1-final-closure.md` §Caveats). 7 disciplines hold; 4/6 GPT-identified closure issues already fixed; 2/6 carried to B7.
 
-**Next checkpoint**: When Round 2 integrated spike (B7) starts, run a fresh `_DISCIPLINE-CHECK-round-2.md` with the same 7 disciplines.
+**Downstream obligation**: B2-B8 designs and implementations MUST read `B1-final-closure.md` §Caveats before citing B1 findings. C1 (eval-fanin response-batch scope) and C3 (KV weak evidence) are the two load-bearing caveats for downstream traceability.
+
+**Next checkpoint**: When Round 2 integrated spike (B7) starts, run a fresh `_DISCIPLINE-CHECK-round-2.md` with the same 7 disciplines + explicit closure of C1 and C3.
 
 ---
 

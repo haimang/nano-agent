@@ -1,18 +1,33 @@
-# [B1 / FINAL closure] Round 1 bare-metal spike phase complete; ready for B2
+# [B1 / FINAL closure] Round 1 bare-metal spike phase complete-with-followups; ready-with-fixes for B2
 
 > **Issue ID**: `B1-final-closure`
 > **Action plan**: `docs/action-plan/after-foundations/B1-spike-round-1-bare-metal.md`
 > **Phase**: B1 (all 6 sub-phases)
-> **Status**: ✅ closed (PASSED)
+> **Status**: ⚠️ **ready-with-fixes** (downgraded 2026-04-19 per B1-code-reviewed-by-GPT + B1-docs-reviewed-by-GPT; see §Caveats below)
 > **Created**: 2026-04-19
-> **Closed**: 2026-04-19
+> **Last updated**: 2026-04-19 (r2 post-GPT-review downgrade)
 > **Owner**: sean.z@haimangtech.cn
+
+---
+
+## ⚠️ Caveats (post-GPT-review, 2026-04-19 r2)
+
+GPT 的双轨审查（`B1-code-reviewed-by-GPT.md` + `B1-docs-reviewed-by-GPT.md`）识别 6 项需要下调或回填的 findings。**在全部 6 项 closure 完成前，B1 不应被视为 "fully audited"**；当前状态是 "ready-with-fixes"：结构完整、evidence 基本可用，但若干 per-finding 声明需要降级、raw evidence 已补入库、闭合口径已调整。
+
+| # | Caveat | 处理状态 |
+|---|---|---|
+| C1 | `V3-binding-eval-fanin` probe 实际是 response-batch simulation 而非真 cross-worker sink callback | binding-F04 finding + binding-findings rollup 加 scope caveat; 真 callback 验证推迟到 B7 round 2 (P6 §4 新增 follow-up) |
+| C2 | `V3-binding-hooks-callback` 的 anchor 检查原本 POST 到 `/handle/header-dump` 绕开 hook path | ✅ **R2 code fixed 2026-04-19**: probe 改为 POST `/handle/hook-dispatch`；worker-b hook-dispatch handler echo receivedHeaders；新 `.out/2026-04-19T13-02-31Z.json` 证据显示 `traceMatches/sessionMatches: true` |
+| C3 | `V1-storage-KV-stale-read` 仅 40 samples same-colo baseline; P0 §4.3 要求的 cacheTtl 变体 / 100-sample / strong-read 未实现 | F03 finding 加 weak-evidence caveat; B7 round 2 补 P6 §4.1 真 probe |
+| C4 | `.out/*.json` 曾被 `.gitignore` 排除但 rollup 引用 | ✅ **R1 docs fixed 2026-04-19**: .gitignore 修订；`.out` JSON 入库可 audit |
+| C5 | F02 + F03 等 per-finding §5.2 的 future-work checkbox `[x]` 提前勾选 | ✅ **R2 docs fixed 2026-04-19**: 回收 3 处 premature `[x]` → `[ ]` |
+| C6 | final-closure + discipline-check 强 "PASSED" 口径 | ✅ **R3 docs fixed 2026-04-19** (本次): status 降级到 `ready-with-fixes`；header + headline 调整 |
 
 ---
 
 ## Headline
 
-✅ **B1 — Spike Round 1 Bare-metal Cloudflare Truth Probe — COMPLETE**
+⚠️ **B1 — Spike Round 1 Bare-metal Cloudflare Truth Probe — STRUCTURAL CLOSURE with followups**
 
 - 2 disposable Cloudflare workers真实部署 (live)
 - 13 platform validation items 全部跑通 (9 storage/bash + 4 binding) — `success: true`

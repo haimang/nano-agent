@@ -71,6 +71,17 @@
 
 ---
 
+## §3.1 Known Caveats (post-GPT-review, 2026-04-19 r2)
+
+Per `B1-final-closure.md` §Caveats + GPT code/docs review:
+
+| Caveat ID | Scope impact | Status |
+|---|---|---|
+| **C1** | `spike-binding-pair-F04` eval-fanin probe is **response-batch simulation** (worker-a pulls records via `fetch`), NOT true cross-worker sink-callback (worker-b push → worker-a sink). Dedup + ordering + overflow disclosures observed apply to response-batch semantics only. True callback-sink semantics (ordering / backpressure / reentrance) deferred to B7 P6 §4.4a. | open; deferred to B7 |
+| **C2** | `spike-binding-pair-F03` anchor-on-hook-path claim originally tested via `/handle/header-dump` (not the actual hook path). **Fixed 2026-04-19 (r2)**: probe re-routed through `/handle/hook-dispatch`; worker-b echoes receivedHeaders; new `.out/2026-04-19T13-02-31Z.json` confirms `traceMatches/sessionMatches: true` on real hook path. | ✅ closed r2 |
+
+Downstream consumers (B2-B8) MUST read caveat C1 before citing F04 as "cross-worker sink-callback validated".
+
 ## §4 Unresolved / Dismissed Summary
 
 **Unresolved (open，等 writeback)**: 4/4 findings 状态都是 `open`。

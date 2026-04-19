@@ -232,6 +232,34 @@ Round 2 uses **separate** KV namespace / R2 bucket / D1 database from Round 1 to
 - If `[slow] abort observed` appears in worker-b log within 300ms of caller abort → binding-F01 verdict = `writeback-shipped` (callee-side abort propagation confirmed; documents in handoff memo)
 - If callee continues running full 5000ms despite caller abort → binding-F01 verdict = `still-open` + raise as worker-matrix-phase concern (cross-worker cancellation timeout design needs adjustment)
 
+### 4.4a (NEW per B1-code-reviewed-by-GPT §R1) binding-F04 — true cross-worker sink callback path
+
+**B1 finding source**: `docs/spikes/spike-binding-pair/04-eval-fanin-app-layer-dedup-required.md` (r2 scope caveat) + `B1-final-closure.md` §Caveats C1.
+
+**Round-1 closure status**: `response-batch simulation scope only`; true cross-worker sink-callback semantics deferred here.
+
+**Round-2 strategy**:
+- Expose a sink endpoint on worker-a: `POST /sink/eval-records` (accepts batch of EvidenceRecord)
+- worker-b's `/handle/eval-emit` route refactored: instead of returning records in response body, it **`env.WORKER_A.fetch(POST /sink/eval-records)`** to push records to worker-a
+- worker-a probe asserts: ordering preserved + dedup behavior when duplicate messageUuid pushed + sink overflow disclosure emitted
+- Additional: back-pressure behavior when sink capacity hit (worker-b sees error response → retry semantics)
+
+**Acceptance criteria for binding-F04 Round 2 verdict**:
+- If ordering preserved + dedup requires app layer (same as Round 1) + overflow disclosure works → binding-F04 verdict = `writeback-shipped` (B6 SessionInspector dedup already addresses this; no new packages/ change beyond B6)
+- If true-callback reveals different ordering / backpressure behavior than response-batch simulation → document diff + raise as B7 new finding in `integrated-F*` namespace
+
+### 4.4b (NEW per B1-code-reviewed-by-GPT §R3) V1-storage-KV-stale-read — cacheTtl + 100-sample spread
+
+**B1 finding source**: `docs/spikes/spike-do-storage/03-kv-stale-read-not-observed-in-same-colo.md` (r2 weak-evidence caveat) + `B1-final-closure.md` §Caveats C3. Combines with §4.1 F03 cross-colo follow-up.
+
+**Round-2 strategy (extends §4.1 F03 probe)**:
+- 100 samples per delay bucket (10× Round 1)
+- Additional `cacheTtl: 0` variant: `kv.get(KEY, { cacheTtl: 0 })` forced fresh read
+- Strong-read option: if Cloudflare adds strong-read API by Round 2 time, probe it
+- Combined with cross-colo probe from §4.1
+
+**Acceptance criteria**: F03 Round-2 verdict absorbs §4.1 + §4.4b both; only close when 100-sample × cross-colo × default-cacheTtl + `cacheTtl: 0` variant all covered.
+
 ### 4.5 unexpected-F01 — R2 concurrent put
 
 **B1 finding source**: `docs/spikes/unexpected/F01-r2-put-273ms-per-key-during-preseed.md` §5 — Round 2 concurrent put 50/100/200 probe.
@@ -417,3 +445,4 @@ Round 2 closure (B7 final) requires:
 | Date | Author | Change |
 |---|---|---|
 | 2026-04-19 | Opus 4.7 | Initial draft; 5 follow-ups (F03/F08/F09/binding-F01/unexpected-F01) per-finding strategy + acceptance; 13+2 re-validation 路由表; PX-discipline §3.7 round-2 example; verdict transition rules; B7 closure issues 系列 |
+| 2026-04-19 (r2) | Opus 4.7 | 加 §4.4a (binding-F04 真 cross-worker sink callback 验证) + §4.4b (F03 cacheTtl + 100-sample 变体) per B1-code-reviewed-by-GPT §R1 + §R3 closure caveats C1 + C3. Round 2 follow-ups 从 5 项扩到 **7 项**。 |

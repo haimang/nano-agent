@@ -70,6 +70,14 @@
 
 ---
 
+## §3.1 Known Caveats (post-GPT-review, 2026-04-19 r2)
+
+Per `B1-final-closure.md` §Caveats: this rollup's 3 findings (F07 / F08 / F09) are **not directly affected** by the 6 GPT-identified closure issues (C1-C6). However:
+- F09 curl quota high-volume follow-up (owner Q2 URL) is a Round-2 (B7) obligation already tracked in §3 Writeback destination map
+- F08 DO-cap binary-search follow-up is a Round-2 (B7) obligation already tracked in §3
+
+No C1-C6 caveat applies directly to fake-bash-platform findings; the only caveat is the standard "Round 2 follow-ups pending" for F08 + F09 (per P6 §4.2 + §4.3).
+
 ## §4 Unresolved / Dismissed Summary
 
 **Unresolved (open，等 writeback)**: 3/3 findings 状态都是 `open`。

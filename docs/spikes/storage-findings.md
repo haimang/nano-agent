@@ -61,6 +61,18 @@
 
 ---
 
+## §3.1 Known Caveats (post-GPT-review, 2026-04-19 r2)
+
+Per `B1-final-closure.md` §Caveats + GPT code/docs review:
+
+| Caveat ID | Scope impact | Status |
+|---|---|---|
+| **C3** | `spike-do-storage-F03` is **reconnaissance-level weak evidence only** (40 samples × 4 delays, same-colo, default cacheTtl). P0 design §4.3 原意的 `cacheTtl: 0` 变体 / 100-sample spread / strong-read option / cross-colo locality **均未实现**。下游消费者**严禁**把本 finding 读成 "KV read-after-write 已全面证明 no stale"。真 freshness contract validation 留 B7 P6 §4.1 + §4.4b. | open; deferred to B7 |
+| **C4** | Raw evidence `.out/*.json` was previously `.gitignore`-d. **Fixed 2026-04-19 (r2)**: `.gitignore` revised; existing + new `.out` JSON committed as auditable artifacts. | ✅ closed r2 |
+| **C5** | F02 per-finding doc had premature `[x]` in §5.2 for "contract test 已新增" + "Round 2 integrated test 已跑通" (both are B2/B7 future work). **Fixed 2026-04-19 (r2)**: checkboxes revert to `[ ]` with "(B2/B7 future work)" annotations. | ✅ closed r2 |
+
+Downstream consumers (B2-B8) MUST read caveat C3 before citing F03 as "KV read-after-write strong".
+
 ## §4 Unresolved / Dismissed Summary
 
 **Unresolved (open，等 writeback)**: 6/6 findings 状态都是 `open`。

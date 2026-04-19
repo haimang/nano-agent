@@ -15,9 +15,19 @@
 
 > Fan-in 100-record 单 batch order 完整保留；3 round × 20 records w/ shared dedupSeed → **60 records 但 40 重复**（unique=20，**`applicationLevelDedupRequired: true`**）；overflow drop graceful (50/100 dropped at capacity 50)。**这是对 `packages/eval-observability/src/inspector.ts` 的 `SessionInspector` 与 `defaultEvalRecords` sink 的硬 contract requirement**：任何跨 worker fan-in 设计必须显式 messageUuid dedup，**不能依赖 transport 提供 dedup**。
 
+> **⚠️ Scope caveat (B1-code-reviewed-by-GPT §R1 downgrade, 2026-04-19)**: probe 的实际 flow 是 **worker-a 主动 `fetch("/handle/eval-emit")` 拉回 records 后本地 ingest**，不是 worker-b 通过 service-binding callback 把 records push 到 worker-a 暴露的 sink endpoint。因此本 finding 验证的是 **response-batch simulation semantics**（fetch 响应体的顺序/去重特征），**不是** cross-worker sink-callback semantics（worker-b push → worker-a sink 的交付顺序/重入/回压）。两种语义的 dedup 结论在本 finding 的 context 下一致（transport 不去重；应用层必须去重），但 callback 方向的 ordering / backpressure / fan-out 回压行为**尚未验证**。真 callback sink path 的验证**推迟到 B7 round 2 integrated spike**（见 P6 §4）。
+
 ---
 
 ## 1. 现象（Phenomenon）
+
+### 1.0 Probe semantics clarification (R1 downgrade)
+
+当前 probe 实现 flow：worker-a → `workerB.fetch("/handle/eval-emit", { body: { count, dedupSeed, ... } })` → worker-b 同步生成 N 条 `EvidenceRecord` → worker-a 从 **response body** 拿回 records 后 `ingest(sink, body.records)`。
+
+**不是** (design §4.4 最初意图 + B7 round 2 目标)：worker-b 通过 **反向 service binding** 把 evidence push 到 worker-a 暴露的 sink endpoint.
+
+因此本 finding 所有观察适用于 **response-batch 语义**；真 callback sink 语义留 B7 复现.
 
 ### 1.1 复现步骤
 
@@ -222,3 +232,4 @@ Service binding fetch-based seam 是无状态的 RPC——transport 层没有任
 | 日期 | 作者 | 变更 |
 |---|---|---|
 | 2026-04-19 | Opus 4.7 | 初版；app-layer dedup is mandatory；overflow disclosure event needed |
+| 2026-04-19 (r2) | Opus 4.7 | R1 downgrade per B1-code-reviewed-by-GPT §R1: add scope caveat 说明 probe flow 是 response-batch simulation 而非真 cross-worker sink callback；真 callback 验证推迟到 B7 round 2 (P6 §4 新增 follow-up) |
