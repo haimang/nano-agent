@@ -213,7 +213,7 @@ nano-agent/
 | P5-02 | Phase 5 | 撰写 `docs/spikes/binding-findings.md` rollup（显式 transport scope = fetch-only） | add | `docs/spikes/binding-findings.md` | 同上 + 显式声明 RPC transport not covered | medium |
 | P5-03 | Phase 5 | 撰写 `docs/spikes/fake-bash-platform-findings.md` rollup | add | `docs/spikes/fake-bash-platform-findings.md` | 同 P5-01 + 区分 V2A capability-parity 与 V2B platform-stress 的 writeback 目标 | medium |
 | P6-01 | Phase 6 | 7 条 spike 纪律 self-check 报告 | add | `docs/spikes/_DISCIPLINE-CHECK.md` | 7 条全部 ✅ 或带 explanation | low |
-| P6-02 | Phase 6 | 为至少 1 条 finding 创建 packages/ writeback issue | add | GitHub issue / TODO list；reference 在 rollup 中 | forward traceability evidence | low |
+| P6-02 | Phase 6 | 为至少 1 条 finding 创建 packages/ writeback issue | add | `docs/issue/after-foundations/{slug}.md` markdown SOT（业主决策：不用 GitHub Issue）；reference 在 rollup 中 | forward traceability evidence | low |
 | P6-03 | Phase 6 | B2/B3/B4 输入交接 | doc | 在 rollup 中明确指向 B2/B3 等 action plan | 下游 action plan 起草时不再追问 finding | low |
 
 ---
@@ -270,7 +270,7 @@ nano-agent/
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
 | P6-01 | 7 条 spike 纪律 self-check | 按 P0-spike-discipline §3.1-3.7 逐条检查；填表说明每条是否满足 + evidence | `docs/spikes/_DISCIPLINE-CHECK.md` | 7 条 ✅ | self-review | 7 条全部 ✅ 或带显式 explanation |
-| P6-02 | packages/ writeback issue 创建 | 至少为 1 条 finding 创建 issue（forward traceability evidence）；issue 链接 back to per-finding doc | GitHub issue / project todo | 1+ issue 创建 | issue tracker check | issue 含 finding ID + 目标 packages/ 文件 + 目标 phase (B2/B3/B4) |
+| P6-02 | packages/ writeback issue 创建 | 至少为 1 条 finding 创建 issue（forward traceability evidence）；issue 链接 back to per-finding doc | **`docs/issue/after-foundations/{slug}.md`** markdown SOT（业主决策：不用 GitHub Issue） | 1+ issue 文件创建 | check `docs/issue/after-foundations/` 内文件 | issue 含 finding ID + 目标 packages/ 文件 + 目标 phase (B2/B3/B4) |
 | P6-03 | B2/B3/B4 输入交接 | 在 rollup 中显式标注 "writeback to B2 / B3 / B4 / B5 / B6"；交接给 B2 起草 | rollup docs + B2 起草 | B2 起草不再追问 finding | review B2 草稿 | B2 起草引用至少 1 个 finding ID |
 
 ---
@@ -420,7 +420,7 @@ nano-agent/
 - **本 Phase 修改文件**：3 份 rollup（增加 "next phase handoff" 段）；GitHub issue / TODO list
 - **具体功能预期**：
   1. _DISCIPLINE-CHECK.md 含 7 条纪律的逐条 ✅/❌ 与 evidence
-  2. 至少 1 条 finding 已创建 packages/ writeback issue（forward traceability evidence）
+  2. 至少 1 条 finding 已创建 packages/ writeback issue（forward traceability evidence）；issue 写入 **`docs/issue/after-foundations/{slug}.md`**（不用 GitHub Issue tracker）
   3. B2 起草时能直接引用本 action plan 的 finding ID
 - **具体测试安排**：
   - **手动验证**：_DISCIPLINE-CHECK.md 7 条逐项 review
@@ -469,6 +469,7 @@ nano-agent/
 - **当前建议 / 倾向**：用 repo 内的 GitHub issue（与 nano-agent repo 一致）；如业主有其他 tracker 偏好，调整即可
 - **Q**：writeback issue 创建在哪个 tracker？
 - **A**：如果 Issue 可以在 CLI 中直接提交，则同意你的建议。如果不能在 CLI 中直接执行，则在本地 docs/ 下建立 issue/ 文件夹，并使用 markdown 文件进行跟踪
+- **A (业主补充 2026-04-19)**：**最终决策——不使用 GitHub Issue tracker**。理由：避免双真相层（GitHub UI vs repo docs）。所有 issue 改为 `docs/issue/{phase}/{slug}.md` markdown 文件。policy 见 `docs/issue/README.md`。已创建过的 GitHub issue（#1）已 close 并指向 docs。
 
 #### Q5
 
