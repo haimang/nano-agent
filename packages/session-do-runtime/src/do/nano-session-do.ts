@@ -36,7 +36,18 @@ import { validateSessionCheckpoint } from "../checkpoint.js";
 import { createDefaultCompositionFactory } from "../composition.js";
 import type { CompositionFactory, SubsystemHandles } from "../composition.js";
 import { makeRemoteBindingsFactory } from "../remote-bindings.js";
+import type { CrossSeamAnchor } from "../cross-seam.js";
 import type { SessionRuntimeEnv } from "../env.js";
+import {
+  composeWorkspaceWithEvidence,
+  type WorkspaceCompositionHandle,
+} from "../workspace-runtime.js";
+import {
+  InMemoryArtifactStore,
+  MountRouter,
+  WorkspaceNamespace,
+  type EvidenceAnchorLike,
+} from "@nano-agent/workspace-context-artifacts";
 
 /**
  * A4-A5 review R3 / Kimi R5: pick the right factory based on env
@@ -45,14 +56,22 @@ import type { SessionRuntimeEnv } from "../env.js";
  * consumes the remote seam instead of silently staying all-local.
  * Tests (which build a bare `{}` env) still fall back to the
  * default local factory, preserving the existing no-op behaviour.
+ *
+ * 2nd-round R1: when the caller passes an `anchorProvider`, thread
+ * it into `makeRemoteBindingsFactory()` so live remote requests
+ * carry `x-nacp-trace/session/team/request/...` headers without the
+ * caller having to reach into adapter internals.
  */
-function selectCompositionFactory(env: unknown): CompositionFactory {
+function selectCompositionFactory(
+  env: unknown,
+  anchorProvider?: () => CrossSeamAnchor | undefined,
+): CompositionFactory {
   const e = (env ?? {}) as Partial<SessionRuntimeEnv>;
   const anyRemote = Boolean(
     e.CAPABILITY_WORKER || e.HOOK_WORKER || e.FAKE_PROVIDER_WORKER,
   );
   return anyRemote
-    ? makeRemoteBindingsFactory()
+    ? makeRemoteBindingsFactory({ anchorProvider })
     : createDefaultCompositionFactory();
 }
 import { acceptIngress } from "../session-edge.js";
@@ -103,6 +122,32 @@ export class NanoSessionDO {
   private readonly httpController: HttpController;
   private readonly config: RuntimeConfig;
   private readonly subsystems: SubsystemHandles;
+  /**
+   * 2nd-round R2: live workspace handle that owns the
+   * `ContextAssembler / CompactBoundaryManager / WorkspaceSnapshotBuilder`
+   * trio. The DO calls `captureSnapshot()` from `persistCheckpoint()`
+   * so every checkpoint write produces a `snapshot.capture` evidence
+   * record into the eval sink — that is the non-test runtime use-site
+   * GPT R2 asked for.
+   */
+  private readonly workspaceComposition: WorkspaceCompositionHandle;
+
+  /**
+   * 3rd-round R2: bounded in-memory default eval/evidence sink. When
+   * the composition factory does NOT supply an `eval` handle (which
+   * is true for both `createDefaultCompositionFactory` and
+   * `makeRemoteBindingsFactory` today), the DO installs this sink so
+   * the default deploy assembly STILL emits evidence — instead of
+   * silently dropping records. Production deployments override
+   * `subsystems.eval` with `DoStorageTraceSink` (or equivalent), in
+   * which case this default sink is bypassed.
+   *
+   * The buffer is intentionally bounded (`DEFAULT_SINK_MAX = 1024`)
+   * so a long-running DO without an external sink doesn't grow
+   * unbounded. Records past the cap are dropped FIFO.
+   */
+  private readonly defaultEvalRecords: unknown[] = [];
+  private static readonly DEFAULT_SINK_MAX = 1024;
 
   // Health tracking — minimal in-memory trackers.
   private readonly heartbeatTracker: HeartbeatTracker & { lastHeartbeatAt: string | null };
@@ -147,7 +192,7 @@ export class NanoSessionDO {
   constructor(
     doState: DurableObjectStateLike,
     env: unknown,
-    compositionFactory: CompositionFactory = selectCompositionFactory(env),
+    compositionFactory?: CompositionFactory,
   ) {
     this.doState = doState;
     this.env = env;
@@ -167,15 +212,118 @@ export class NanoSessionDO {
     this.heartbeatTracker = { lastHeartbeatAt: null };
     this.ackWindow = { pendingCount: 0 };
 
-    // Build the subsystem composition from the injected factory.
-    this.subsystems = compositionFactory.create(
+    // 2nd-round R1: when the DO selects the remote factory by
+    // default, pass an anchorProvider closure that captures `this`
+    // so the factory can stamp every outbound remote-seam request
+    // with the live `CrossSeamAnchor` derived from DO state. Tests
+    // that pass an explicit factory keep the old constructor
+    // behaviour (no anchor injection — they handle seam wiring
+    // directly).
+    const factory =
+      compositionFactory ?? selectCompositionFactory(env, () => this.buildCrossSeamAnchor());
+
+    // Build the subsystem composition from the (possibly anchored)
+    // factory.
+    const baseSubsystems = factory.create(
       (env ?? {}) as unknown as import("../env.js").SessionRuntimeEnv,
       this.config,
     );
 
+    // 3rd-round R2: when the composition factory did not supply an
+    // `eval` handle, install the DO's bounded in-memory default
+    // sink. This guarantees the default deploy assembly produces
+    // evidence records instead of silently dropping them — the
+    // failure mode GPT's third-round review pinned at the "default
+    // sink still missing" boundary. Production override remains
+    // possible by supplying a richer factory.
+    const baseEvalSink = baseSubsystems.eval as
+      | { emit?: (e: unknown) => void | Promise<void> }
+      | undefined;
+    const effectiveEvalSink =
+      baseEvalSink?.emit !== undefined
+        ? baseEvalSink
+        : {
+            emit: (record: unknown): void => {
+              this.defaultEvalRecords.push(record);
+              const overflow =
+                this.defaultEvalRecords.length - NanoSessionDO.DEFAULT_SINK_MAX;
+              if (overflow > 0) this.defaultEvalRecords.splice(0, overflow);
+            },
+          };
+
+    // 2nd-round R2: when the composition factory did not supply a
+    // `workspace` handle, wire one with live evidence emission. This
+    // is the runtime use-site GPT R2 asked for — without it,
+    // `ContextAssembler / CompactBoundaryManager / WorkspaceSnapshotBuilder`
+    // were only ever instantiated by tests. The eval sink doubles
+    // as the evidence sink so a single emit() reference receives
+    // both trace events and evidence records.
+    let workspaceHandle: WorkspaceCompositionHandle | undefined =
+      baseSubsystems.workspace as WorkspaceCompositionHandle | undefined;
+    if (!workspaceHandle) {
+      const evidenceSink = effectiveEvalSink.emit
+        ? { emit: (record: unknown) => effectiveEvalSink.emit!(record) }
+        : undefined;
+      workspaceHandle = composeWorkspaceWithEvidence({
+        namespace: new WorkspaceNamespace(new MountRouter()),
+        artifactStore: new InMemoryArtifactStore(),
+        evidenceSink,
+        evidenceAnchor: () => this.buildEvidenceAnchor(),
+      });
+    }
+    this.subsystems = {
+      ...baseSubsystems,
+      eval: effectiveEvalSink,
+      workspace: workspaceHandle,
+    };
+    this.workspaceComposition = workspaceHandle;
+
     const deps = this.buildOrchestrationDeps();
     this.orchestrator = new SessionOrchestrator(deps, this.config);
     this.state = this.orchestrator.createInitialState();
+  }
+
+  /**
+   * 2nd-round R2: build the live `EvidenceAnchor` shape that the
+   * workspace evidence emitters expect. Mirrors the trace context
+   * but adds an explicit `timestamp` per call so each emission lands
+   * with the wall-clock time it was produced. Returns `undefined`
+   * before identity is latched so the helpers gracefully suppress.
+   */
+  private buildEvidenceAnchor(): EvidenceAnchorLike | undefined {
+    const trace = this.buildTraceContext();
+    if (!trace) return undefined;
+    return {
+      traceUuid: trace.traceUuid,
+      sessionUuid: trace.sessionUuid,
+      teamUuid: trace.teamUuid,
+      sourceRole: trace.sourceRole,
+      sourceKey: trace.sourceKey,
+      timestamp: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * 2nd-round R1: derive the per-request `CrossSeamAnchor` from
+   * current DO state. Returns `undefined` when the DO has not yet
+   * latched a sessionUuid / teamUuid — callers MUST treat that as
+   * "no anchor available" rather than fall back to a synthetic one.
+   * `requestUuid` is minted fresh per call so each outbound
+   * request is independently correlatable on the receiving Worker.
+   */
+  private buildCrossSeamAnchor(): CrossSeamAnchor | undefined {
+    const teamUuid = (this.env as { TEAM_UUID?: unknown } | undefined)?.TEAM_UUID;
+    if (typeof teamUuid !== "string" || teamUuid.length === 0) return undefined;
+    if (!this.sessionUuid) return undefined;
+    if (!this.traceUuid) this.traceUuid = crypto.randomUUID();
+    return {
+      traceUuid: this.traceUuid,
+      sessionUuid: this.sessionUuid,
+      teamUuid,
+      requestUuid: crypto.randomUUID(),
+      sourceRole: "session",
+      sourceKey: "nano-agent.session.do@v1",
+    };
   }
 
   // ── fetch ──────────────────────────────────────────────────
@@ -662,10 +810,24 @@ export class NanoSessionDO {
         interruptReason: null,
       }),
       emitHook: async (event, payload, context) => {
+        // 2nd-round R1: the orchestrator-supplied `context` is just
+        // the call-site bag (turnId / sessionId / etc.). To make
+        // sure every live `hooks.emit` carries cross-seam identity,
+        // we MERGE in the current `CrossSeamAnchor` so the remote
+        // hook handle's `pickAnchor(context)` succeeds. The factory
+        // also has an anchor fallback, so this merge is belt-and-
+        // braces: callers that already include a richer anchor
+        // (future Skill seam, etc.) keep their values intact.
+        const anchor = this.buildCrossSeamAnchor();
+        const merged = anchor
+          ? typeof context === "object" && context !== null
+            ? { ...anchor, ...(context as Record<string, unknown>) }
+            : { ...anchor, payloadContext: context }
+          : context;
         const hooks = handles.hooks as
           | { emit?: (e: string, p: unknown, c?: unknown) => Promise<unknown> }
           | undefined;
-        if (hooks?.emit) return hooks.emit(event, payload, context);
+        if (hooks?.emit) return hooks.emit(event, payload, merged);
         return undefined;
       },
       emitTrace: async (event) => {
@@ -762,6 +924,19 @@ export class NanoSessionDO {
   private async persistCheckpoint(): Promise<void> {
     const storage = this.doState.storage;
     if (!storage) return;
+
+    // 2nd-round R2: capture a workspace snapshot fragment via the
+    // live composition handle. The fragment itself is discarded
+    // (the DO owns its own checkpoint shape), but `buildFragment()`
+    // emits a `snapshot.capture` evidence record into the eval sink
+    // — that is what makes evidence flow at deploy time, not just in
+    // unit tests. Errors are swallowed on purpose: a failing
+    // snapshot must not block a successful checkpoint write.
+    try {
+      await this.workspaceComposition.captureSnapshot();
+    } catch {
+      // Evidence emission is best-effort by design.
+    }
 
     // A4 P2-03: persist the WS helper's replay + stream seq state so a
     // fresh DO instance can reconstruct the buffer after hibernation.
@@ -923,5 +1098,17 @@ export class NanoSessionDO {
   /** Expose the composed subsystem handles for testing. */
   getSubsystems(): SubsystemHandles {
     return this.subsystems;
+  }
+
+  /**
+   * 3rd-round R2: snapshot of the bounded in-memory default eval
+   * sink. Production deployments that wire `subsystems.eval` to a
+   * real `DoStorageTraceSink` (or equivalent) will see this list
+   * stay empty — that is intentional. The accessor exists so
+   * deploy-shaped smoke tests can observe the default-path
+   * emission without poking at private state.
+   */
+  getDefaultEvalRecords(): readonly unknown[] {
+    return [...this.defaultEvalRecords];
   }
 }

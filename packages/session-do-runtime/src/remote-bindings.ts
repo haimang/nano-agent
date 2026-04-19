@@ -309,7 +309,22 @@ function extractPath(urlLike: string): string | undefined {
  * reference path. Consumers must NOT infer the profile from handle
  * presence — they should always read `handles.profile` instead.
  */
-export function makeRemoteBindingsFactory(): CompositionFactory {
+/**
+ * A4-A5 2nd-round R1: optional `anchorProvider` so the factory can
+ * thread a CrossSeamAnchor into every remote-seam request without
+ * the consumer having to reach into adapter internals. When omitted
+ * (e.g. in unit tests), live remote requests will go without
+ * anchor headers — the deny-list of valid anchors lives at the
+ * receiving Worker, not in the adapter.
+ */
+export interface MakeRemoteBindingsFactoryOptions {
+  readonly anchorProvider?: () => CrossSeamAnchor | undefined;
+}
+
+export function makeRemoteBindingsFactory(
+  options: MakeRemoteBindingsFactoryOptions = {},
+): CompositionFactory {
+  const { anchorProvider } = options;
   return {
     create(env: SessionRuntimeEnv, config: RuntimeConfig): SubsystemHandles {
       const profile = resolveCompositionProfile(env, config);
@@ -323,7 +338,7 @@ export function makeRemoteBindingsFactory(): CompositionFactory {
           : undefined;
       const providerFetcher =
         profile.provider === "remote"
-          ? makeProviderFetcher(env.FAKE_PROVIDER_WORKER)
+          ? makeProviderFetcher(env.FAKE_PROVIDER_WORKER, anchorProvider)
           : undefined;
 
       // A4-A5 review R3: bridge `HookTransport` into a minimal
@@ -338,13 +353,16 @@ export function makeRemoteBindingsFactory(): CompositionFactory {
             serviceBindingTransport: hookTransport,
             emit: async (event: string, payload: unknown, context: unknown) => {
               try {
-                // A4-A5 review R4: if the caller's `context` carries a
-                // CrossSeamAnchor (shape-matched on the required
-                // fields) thread it into the transport so the outbound
-                // request is stamped. Context is `unknown` at this
-                // boundary, so we narrow by structural check rather
-                // than importing a type.
-                const anchor = pickAnchor(context);
+                // A4-A5 review R4: prefer the anchor that the caller
+                // explicitly threaded through `context`; fall back to
+                // the factory's `anchorProvider` (DO-side state) so
+                // the live runtime path stamps headers even when the
+                // hook caller didn't bother building the anchor
+                // itself. 2nd-round R1 makes this fallback the
+                // load-bearing path for production DOs — without it
+                // every `emitHook` call would land at the remote
+                // worker without `x-nacp-*` headers.
+                const anchor = pickAnchor(context) ?? anchorProvider?.();
                 const result = await hookTransport.call({
                   handler: { id: `session.${event}`, event },
                   emitBody: payload,

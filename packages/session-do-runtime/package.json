@@ -19,7 +19,8 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@nano-agent/nacp-session": "workspace:*"
+    "@nano-agent/nacp-session": "workspace:*",
+    "@nano-agent/workspace-context-artifacts": "workspace:*"
   },
   "peerDependencies": {
     "zod": ">=3.22.0"

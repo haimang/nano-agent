@@ -122,6 +122,9 @@ importers:
       '@nano-agent/nacp-session':
         specifier: workspace:*
         version: link:../nacp-session
+      '@nano-agent/workspace-context-artifacts':
+        specifier: workspace:*
+        version: link:../workspace-context-artifacts
     devDependencies:
       '@nano-agent/eval-observability':
         specifier: workspace:*
