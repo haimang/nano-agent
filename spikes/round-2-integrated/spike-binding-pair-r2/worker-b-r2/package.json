@@ -1,0 +1,17 @@
+{
+  "name": "@nano-agent-spike/binding-pair-r2-worker-b",
+  "version": "0.0.0-spike-r2",
+  "private": true,
+  "type": "module",
+  "description": "Round-2 integrated binding-pair callee — owns eval-sink for binding-F04 true callback path. Expiration: 2026-08-01.",
+  "scripts": {
+    "deploy:dry-run": "wrangler deploy --dry-run",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20251101.0",
+    "typescript": "^5.6.0",
+    "wrangler": "^4.83.0"
+  }
+}

@@ -1,0 +1,81 @@
+// spike-do-storage-r2 — Round 2 integrated probe wrangler config.
+//
+// Round 2 disciplines (see docs/spikes/_DISCIPLINE-CHECK-round-2.md):
+//   - 纪律 1-6: unchanged from Round 1
+//   - 纪律 7 (modified): Round 2 IS ALLOWED to `import "@nano-agent/*"`,
+//     because validating shipped packages is the entire point.
+//
+// Isolation from Round 1 baseline (per B7 action-plan §2.3 naming freeze):
+//   - Worker:        nano-agent-spike-do-storage-r2          (was: …-do-storage)
+//   - DO class:      IntegratedProbeDO                       (was: ProbeDO)
+//   - R2 bucket:     nano-agent-spike-do-storage-probe-r2    (was: …-probe)
+//   - KV namespace:  nano-agent-spike-do-storage-kv-r2       (was: …-kv)
+//   - D1 database:   nano_agent_spike_do_storage_d1_r2       (was: …-d1)
+//
+// Resource IDs are populated by the owner at deploy time — the spike
+// skeleton ships with placeholder IDs so `deploy:dry-run` can validate
+// the binding shape without the resources existing yet.
+//
+// Owner: sean.z@haimangtech.cn (CF Account 8b611460403095bdb99b6e3448d1f363)
+{
+  "name": "nano-agent-spike-do-storage-r2",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-04-20",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+
+  "vars": {
+    "ENVIRONMENT": "spike-r2-integrated",
+    "SPIKE_NAMESPACE": "spike-do-storage-r2",
+    "EXPIRATION_DATE": "2026-08-01",
+    "OWNER_TAG": "nano-agent",
+    "STAGE_TAG": "spike-r2",
+    // Gates surfaced via env so run-all-probes can honor them without
+    // the probe code hardcoding owner artefacts.
+    "F09_OWNER_URL": "",
+    "F03_CROSS_COLO_ENABLED": "false"
+  },
+
+  "durable_objects": {
+    "bindings": [
+      { "name": "DO_PROBE", "class_name": "IntegratedProbeDO" }
+    ]
+  },
+
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["IntegratedProbeDO"] }
+  ],
+
+  "kv_namespaces": [
+    // Provisioned 2026-04-20 via: npx wrangler kv namespace create nano-agent-spike-do-storage-kv-r2
+    { "binding": "KV_PROBE", "id": "d4bd18a7baf44e68ba2cd0901fae8f4e" }
+  ],
+
+  "r2_buckets": [
+    // Provisioned 2026-04-20 via: npx wrangler r2 bucket create nano-agent-spike-do-storage-probe-r2
+    { "binding": "R2_PROBE", "bucket_name": "nano-agent-spike-do-storage-probe-r2" }
+  ],
+
+  "d1_databases": [
+    // Provisioned 2026-04-20 via: npx wrangler d1 create nano_agent_spike_do_storage_d1_r2 (region APAC)
+    {
+      "binding": "D1_PROBE",
+      "database_name": "nano_agent_spike_do_storage_d1_r2",
+      "database_id": "702a9160-a3f3-453f-bde4-aa65d5f2bd30"
+    }
+  ],
+
+  "observability": {
+    "enabled": true
+  },
+
+  // Alias shipped @nano-agent/* package imports to their built dist/.
+  // Round-2 discipline §7 modified exception allows this; the round-2
+  // spike is outside pnpm-workspace (packages: "packages/*" only), so
+  // wrangler's bundler needs explicit resolution.
+  "alias": {
+    "@nano-agent/storage-topology": "../../../packages/storage-topology/dist/index.js",
+    "@nano-agent/capability-runtime": "../../../packages/capability-runtime/dist/index.js",
+    "@nano-agent/context-management": "../../../packages/context-management/dist/index.js"
+  }
+}

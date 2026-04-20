@@ -1,0 +1,6 @@
+node_modules/
+.wrangler/
+.dev.vars
+dist/
+
+# .out/ is tracked so round-2 closure sections can cite raw evidence.
