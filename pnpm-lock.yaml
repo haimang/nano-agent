@@ -32,6 +32,28 @@ importers:
         specifier: ^3.24.0
         version: 3.25.76
 
+  packages/context-management:
+    dependencies:
+      '@nano-agent/eval-observability':
+        specifier: workspace:*
+        version: link:../eval-observability
+      '@nano-agent/storage-topology':
+        specifier: workspace:*
+        version: link:../storage-topology
+      '@nano-agent/workspace-context-artifacts':
+        specifier: workspace:*
+        version: link:../workspace-context-artifacts
+    devDependencies:
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9
+      zod:
+        specifier: ^3.24.0
+        version: 3.25.76
+
   packages/eval-observability:
     devDependencies:
       tsx:
