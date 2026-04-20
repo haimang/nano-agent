@@ -76,6 +76,68 @@ describe("BoundedEvalSink — dedup", () => {
   });
 });
 
+describe("BoundedEvalSink — eviction bookkeeping (B5-B6 review R1)", () => {
+  it("capacity=1 A→B→A: after A is evicted, re-emitting A is accepted, not dedup-dropped", () => {
+    // Regression for the bug GPT flagged in round 2 review:
+    // the `seen` set used to grow unbounded — evicted uuids lived
+    // forever, so the sink's dedup horizon was lifetime-history
+    // instead of bounded-FIFO window. After the fix, eviction prunes
+    // `seen`, so re-appearance of an evicted uuid is a fresh record.
+    const sink = new BoundedEvalSink({ capacity: 1 });
+    const A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+
+    expect(sink.emit({ record: "a1", messageUuid: A })).toBe(true);
+    expect(sink.emit({ record: "b1", messageUuid: B })).toBe(true);
+    // A has now been FIFO-evicted; its uuid must no longer be in `seen`.
+    expect(sink.emit({ record: "a2", messageUuid: A })).toBe(true);
+
+    // Final window holds only the newest entry (capacity=1).
+    expect(sink.getRecords()).toEqual(["a2"]);
+
+    const stats = sink.getStats();
+    // No duplicate drops — all three emits were fresh.
+    expect(stats.duplicateDropCount).toBe(0);
+    expect(stats.dedupEligible).toBe(3);
+    // Two capacity-driven FIFO evictions (a1 → b1 and b1 → a2).
+    expect(stats.capacityOverflowCount).toBe(2);
+  });
+
+  it("dedup state size never exceeds capacity", () => {
+    // Probe via duplicate-drop semantics: after `capacity` distinct
+    // uuids plus one more, the first uuid should be accepted again
+    // (because it was evicted). If `seen` were unbounded, it would
+    // still be considered a duplicate and rejected.
+    const capacity = 8;
+    const sink = new BoundedEvalSink({ capacity });
+    const uuids = Array.from({ length: capacity + 1 }, (_, i) =>
+      `${String(i).padStart(8, "0")}-0000-4000-8000-000000000000`,
+    );
+    for (let i = 0; i < capacity + 1; i++) {
+      expect(sink.emit({ record: i, messageUuid: uuids[i] })).toBe(true);
+    }
+    // uuids[0] has been evicted; re-emitting it should be accepted.
+    expect(
+      sink.emit({ record: "reappear", messageUuid: uuids[0] }),
+    ).toBe(true);
+    expect(sink.getStats().duplicateDropCount).toBe(0);
+  });
+
+  it("still rejects duplicates that are within the held FIFO window", () => {
+    // Complement to the re-appearance test: uuid that is still held
+    // must remain a duplicate.
+    const sink = new BoundedEvalSink({ capacity: 4 });
+    const A = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+
+    sink.emit({ record: "a1", messageUuid: A });
+    sink.emit({ record: "fill-1" });
+    sink.emit({ record: "fill-2" });
+    sink.emit({ record: "a-dup", messageUuid: A }); // still in window
+    expect(sink.getStats().duplicateDropCount).toBe(1);
+    expect(sink.getRecords()).toEqual(["a1", "fill-1", "fill-2"]);
+  });
+});
+
 describe("BoundedEvalSink — capacity + overflow disclosure", () => {
   it("enforces capacity with FIFO eviction (no silent drop)", () => {
     const disclosures: EvalSinkOverflowDisclosure[] = [];

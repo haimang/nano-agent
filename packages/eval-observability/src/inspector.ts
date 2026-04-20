@@ -142,6 +142,17 @@ export interface InspectorLikeSessionFrame {
  * When `meta.messageUuid` is absent (or the frame header lacks it),
  * the inspector **does not dedup** — this preserves backward
  * compatibility and avoids the false-positive risk of hashing bodies.
+ *
+ * **Contract divergence from `BoundedEvalSink` (2026-04-20)** — per
+ * `B5-B6-reviewed-by-GPT.md` §7 #2. The sink is a **bounded FIFO**
+ * window; its dedup horizon is pruned on eviction so `seen` never
+ * outgrows the held window. The inspector is **append-only / lifetime
+ * timeline**; its `seenMessageUuids` intentionally matches the same
+ * lifetime horizon as its `events` array. These are two different
+ * shapes of truth — sink = near-window operational dedup, inspector =
+ * full-session observability timeline — and they are NOT unified by
+ * design. A future bounded-timeline mode (if ever needed) would be a
+ * new class / configuration, not an in-place contract flip here.
  */
 export class SessionInspector {
   private events: InspectorEvent[] = [];

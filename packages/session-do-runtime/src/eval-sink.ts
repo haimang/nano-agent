@@ -103,9 +103,22 @@ const DEFAULT_DISCLOSURE_BUFFER = 32;
  * B6 — bounded FIFO eval sink with messageUuid dedup and overflow
  * disclosure. Used as the default `subsystems.eval` when the
  * composition factory leaves the handle unwired.
+ *
+ * **Bounded FIFO dedup window (B5-B6 review R1 fix, 2026-04-20)**:
+ * the dedup horizon matches the currently-held FIFO window, not the
+ * lifetime history. Each entry carries its `messageUuid` alongside
+ * the record so capacity eviction can prune the corresponding `seen`
+ * entry. Without this, `seen` grew unboundedly — evicted-then-seen-
+ * again uuids were wrongly rejected and the Set held the entire
+ * session's uuid history in Worker memory.
  */
+interface SinkEntry {
+  readonly record: unknown;
+  readonly messageUuid?: string;
+}
+
 export class BoundedEvalSink {
-  private readonly records: unknown[] = [];
+  private readonly entries: SinkEntry[] = [];
   private readonly disclosures: EvalSinkOverflowDisclosure[] = [];
   private readonly seen = new Set<string>();
   private readonly capacity: number;
@@ -134,10 +147,13 @@ export class BoundedEvalSink {
    * record is dropped and disclosed).
    */
   emit(args: EvalSinkEmitArgs): boolean {
-    const messageUuid = args.messageUuid;
+    const messageUuid =
+      args.messageUuid !== undefined && args.messageUuid.length > 0
+        ? args.messageUuid
+        : undefined;
 
     // ── §1 duplicate check (only when a uuid is provided) ──
-    if (messageUuid !== undefined && messageUuid.length > 0) {
+    if (messageUuid !== undefined) {
       if (this.seen.has(messageUuid)) {
         this.duplicateDropCount += 1;
         this.recordDisclosure({
@@ -155,13 +171,18 @@ export class BoundedEvalSink {
       this.missingMessageUuidCount += 1;
     }
 
-    // ── §2 append ──
-    this.records.push(args.record);
+    // ── §2 append entry (carries its uuid so eviction can prune `seen`) ──
+    this.entries.push({ record: args.record, messageUuid });
 
     // ── §3 capacity eviction ──
-    if (this.records.length > this.capacity) {
-      const evictionCount = this.records.length - this.capacity;
-      this.records.splice(0, evictionCount);
+    if (this.entries.length > this.capacity) {
+      const evictionCount = this.entries.length - this.capacity;
+      const evicted = this.entries.splice(0, evictionCount);
+      for (const entry of evicted) {
+        if (entry.messageUuid !== undefined) {
+          this.seen.delete(entry.messageUuid);
+        }
+      }
       this.capacityOverflowCount += evictionCount;
       this.recordDisclosure({
         at: this.now(),
@@ -176,7 +197,7 @@ export class BoundedEvalSink {
 
   /** Snapshot of currently-held records (copy, not live reference). */
   getRecords(): readonly unknown[] {
-    return [...this.records];
+    return this.entries.map((entry) => entry.record);
   }
 
   /** Snapshot of the overflow-disclosure ring buffer. */
@@ -187,7 +208,7 @@ export class BoundedEvalSink {
   /** Observability counters. */
   getStats(): EvalSinkStats {
     return {
-      recordCount: this.records.length,
+      recordCount: this.entries.length,
       capacity: this.capacity,
       capacityOverflowCount: this.capacityOverflowCount,
       duplicateDropCount: this.duplicateDropCount,

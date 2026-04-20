@@ -139,6 +139,18 @@ export class SessionOrchestrator {
     return this.deps.traceContext ?? ZERO_TRACE_CONTEXT;
   }
 
+  /**
+   * B5-B6 review R1 — return the **real** session UUID if the host has
+   * threaded a trace context, or `null` if the orchestrator is running
+   * without one (pure unit tests, harnesses that don't construct the
+   * session edge). Callers that need session identity on a hook
+   * payload MUST honest-degrade to `null` here rather than leaking the
+   * `ZERO_TRACE_CONTEXT` zero-UUID as if it were a real session.
+   */
+  private realSessionUuid(): string | null {
+    return this.deps.traceContext?.sessionUuid ?? null;
+  }
+
   // ── Initial state ────────────────────────────────────────────
 
   /**
@@ -169,14 +181,27 @@ export class SessionOrchestrator {
     // `unattached`, giving platform-policy handlers a seam to inject
     // pre-loaded secrets / environment shims BEFORE the first
     // `SessionStart`.
+    //
+    // **B5-B6 review R1 fix (2026-04-20)** — identity threading. The
+    // original implementation passed `sessionId: input.turnId`, which
+    // mislabelled turn identity as session identity and broke
+    // session-level bootstrap correlation. The payload now carries
+    // the real `sessionUuid` from the trace context (when attached)
+    // and `turnId` as a separate field; when identity is unattached
+    // (pure unit tests with no `traceContext`) we honestly surface
+    // `sessionUuid: null` so downstream consumers know the producer
+    // had no identity yet, rather than being lied to.
+    const sessionUuid = this.realSessionUuid();
     if (state.actorState.phase === "unattached") {
       await this.deps.emitHook("Setup", {
-        sessionId: input.turnId,
+        sessionUuid,
+        turnId: input.turnId,
       });
     }
     if (state.turnCount === 0) {
       await this.deps.emitHook("SessionStart", {
-        sessionId: input.turnId,
+        sessionUuid,
+        turnId: input.turnId,
         content: input.content,
       });
     }

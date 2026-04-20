@@ -137,6 +137,83 @@ describe("CapabilityExecutor — PermissionAuthorizer seam (B5)", () => {
     expect(target.calls).toBe(0);
   });
 
+  describe("permission carriers (B5-B6 review R2)", () => {
+    it("threads sessionUuid/turnUuid/traceUuid from the context provider into authorize()", async () => {
+      registry.register(makeDecl("write", "ask"));
+      const authorizer = new ScriptedAuthorizer({ verdict: "allow", handlerCount: 1 });
+      const sessionUuid = "77777777-7777-4777-8777-777777777777";
+      const turnUuid = "88888888-8888-4888-8888-888888888888";
+      const traceUuid = "99999999-9999-4999-8999-999999999999";
+      const executor = new CapabilityExecutor(targets, gate, {
+        permissionAuthorizer: authorizer,
+        permissionContextProvider: () => ({ sessionUuid, turnUuid, traceUuid }),
+      });
+
+      await executor.execute(makePlan("write"));
+
+      expect(authorizer.calls).toHaveLength(1);
+      const ctx = authorizer.calls[0]!;
+      expect(ctx.sessionUuid).toBe(sessionUuid);
+      expect(ctx.turnUuid).toBe(turnUuid);
+      expect(ctx.traceUuid).toBe(traceUuid);
+    });
+
+    it("drops undefined / empty carriers so the authorizer sees only real values", async () => {
+      registry.register(makeDecl("write", "ask"));
+      const authorizer = new ScriptedAuthorizer({ verdict: "allow", handlerCount: 1 });
+      const executor = new CapabilityExecutor(targets, gate, {
+        permissionAuthorizer: authorizer,
+        // Only sessionUuid is latched — turnUuid / traceUuid absent.
+        permissionContextProvider: () => ({
+          sessionUuid: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          turnUuid: undefined,
+          traceUuid: "",
+        }),
+      });
+
+      await executor.execute(makePlan("write"));
+
+      const ctx = authorizer.calls[0]!;
+      expect(ctx.sessionUuid).toBe("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+      expect(ctx.turnUuid).toBeUndefined();
+      expect(ctx.traceUuid).toBeUndefined();
+    });
+
+    it("provider throw is swallowed — carriers degrade to none, authorize still runs", async () => {
+      registry.register(makeDecl("write", "ask"));
+      const authorizer = new ScriptedAuthorizer({ verdict: "allow", handlerCount: 1 });
+      const executor = new CapabilityExecutor(targets, gate, {
+        permissionAuthorizer: authorizer,
+        permissionContextProvider: () => {
+          throw new Error("carrier-source unavailable");
+        },
+      });
+      const result = await executor.execute(makePlan("write"));
+      expect(result.kind).toBe("inline");
+      expect(authorizer.calls).toHaveLength(1);
+      const ctx = authorizer.calls[0]!;
+      expect(ctx.sessionUuid).toBeUndefined();
+      expect(ctx.turnUuid).toBeUndefined();
+      expect(ctx.traceUuid).toBeUndefined();
+    });
+
+    it("executeStream path also threads carriers", async () => {
+      registry.register(makeDecl("write", "ask"));
+      const authorizer = new ScriptedAuthorizer({ verdict: "allow", handlerCount: 1 });
+      const sessionUuid = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+      const executor = new CapabilityExecutor(targets, gate, {
+        permissionAuthorizer: authorizer,
+        permissionContextProvider: () => ({ sessionUuid }),
+      });
+      // Drain the stream; just care about the authorizer observation.
+      for await (const _ of executor.executeStream(makePlan("write"))) {
+        // no-op
+      }
+      expect(authorizer.calls).toHaveLength(1);
+      expect(authorizer.calls[0]!.sessionUuid).toBe(sessionUuid);
+    });
+  });
+
   it("static deny still bypasses the authorizer", async () => {
     registry.register(makeDecl("danger", "deny"));
     const authorizer = new ScriptedAuthorizer({ verdict: "allow", handlerCount: 1 });

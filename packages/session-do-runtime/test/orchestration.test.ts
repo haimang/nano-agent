@@ -195,6 +195,55 @@ describe("SessionOrchestrator", () => {
       expect(names.indexOf("Setup")).toBeLessThan(names.indexOf("SessionStart"));
     });
 
+    // B5-B6 review R1 (2026-04-20) — Setup payload identity regression.
+    // The pre-fix version passed `sessionId: input.turnId`, which
+    // mislabelled turn identity as session identity. The fix threads
+    // the real `sessionUuid` from the trace context.
+    it("Setup carries the real sessionUuid from traceContext, NOT turnId", async () => {
+      const realSessionUuid = "44444444-4444-4444-8444-444444444444";
+      const deps = createMockDeps({
+        traceContext: {
+          sessionUuid: realSessionUuid,
+          teamUuid: "55555555-5555-4555-8555-555555555555",
+          traceUuid: "66666666-6666-4666-8666-666666666666",
+          sourceRole: "session",
+          sourceKey: "nano-agent.session.do@v1",
+        },
+      });
+      const orchestrator = new SessionOrchestrator(deps, DEFAULT_RUNTIME_CONFIG);
+      const initial = orchestrator.createInitialState();
+      const input = createTurnInput();
+
+      await orchestrator.startTurn(initial, input);
+
+      const hookCalls = (deps.emitHook as ReturnType<typeof vi.fn>).mock.calls;
+      const setupCall = hookCalls.find((c: unknown[]) => c[0] === "Setup");
+      expect(setupCall).toBeDefined();
+      const payload = setupCall![1] as Record<string, unknown>;
+      expect(payload.sessionUuid).toBe(realSessionUuid);
+      expect(payload.turnId).toBe(input.turnId);
+      // Explicit contract: `sessionUuid` is NOT the turnId.
+      expect(payload.sessionUuid).not.toBe(input.turnId);
+      // No legacy `sessionId` key that carried the mislabel.
+      expect(payload.sessionId).toBeUndefined();
+    });
+
+    it("Setup honestly degrades to `sessionUuid: null` when no traceContext is threaded", async () => {
+      const deps = createMockDeps(); // no traceContext
+      const orchestrator = new SessionOrchestrator(deps, DEFAULT_RUNTIME_CONFIG);
+      const initial = orchestrator.createInitialState();
+      const input = createTurnInput();
+
+      await orchestrator.startTurn(initial, input);
+
+      const hookCalls = (deps.emitHook as ReturnType<typeof vi.fn>).mock.calls;
+      const setupCall = hookCalls.find((c: unknown[]) => c[0] === "Setup");
+      const payload = setupCall![1] as Record<string, unknown>;
+      // Null — NOT the zero-UUID fallback sentinel, and NOT turnId.
+      expect(payload.sessionUuid).toBeNull();
+      expect(payload.turnId).toBe(input.turnId);
+    });
+
     it("does NOT emit Setup on subsequent turns (state already attached)", async () => {
       const deps = createMockDeps();
       const orchestrator = new SessionOrchestrator(deps, DEFAULT_RUNTIME_CONFIG);

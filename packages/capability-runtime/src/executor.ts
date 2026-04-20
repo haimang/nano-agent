@@ -79,6 +79,26 @@ export interface ExecutorOptions {
    * still behave deterministically.
    */
   permissionAuthorizer?: CapabilityPermissionAuthorizer;
+  /**
+   * B5-B6 review R2 — cross-seam observability carriers. When the host
+   * (typically `NanoSessionDO`) supplies this provider, the executor
+   * snapshots the live `{ sessionUuid, turnUuid, traceUuid }` at the
+   * moment of each ask-gated policy decision and threads them into
+   * `PermissionRequestContext`. That closes the gap between the
+   * interface's carrier fields and what the authorizer actually
+   * receives — without it, remote permission workers cannot stitch
+   * `PermissionRequest` / `PermissionDenied` events onto the right
+   * session trace.
+   *
+   * Returns `undefined` for any carrier the host has not yet latched
+   * (e.g. before the first client frame); the executor only threads
+   * the fields the provider actually populates.
+   */
+  permissionContextProvider?: () => {
+    readonly sessionUuid?: string;
+    readonly turnUuid?: string;
+    readonly traceUuid?: string;
+  };
 }
 
 /**
@@ -137,7 +157,11 @@ export class CapabilityExecutor {
       }
       let verdict: PermissionDecision;
       try {
-        verdict = await authorizer.authorize({ plan, requestId });
+        verdict = await authorizer.authorize({
+          plan,
+          requestId,
+          ...this.snapshotPermissionCarriers(),
+        });
       } catch (err) {
         return {
           kind: "error",
@@ -280,7 +304,11 @@ export class CapabilityExecutor {
           }
           let verdict: PermissionDecision;
           try {
-            verdict = await authorizer.authorize({ plan, requestId });
+            verdict = await authorizer.authorize({
+              plan,
+              requestId,
+              ...self.snapshotPermissionCarriers(),
+            });
           } catch (err) {
             // Fail-closed on authorizer errors.
             yield {
@@ -425,6 +453,44 @@ export class CapabilityExecutor {
         }
       },
     };
+  }
+
+  /**
+   * B5-B6 review R2 — resolve the permission-request carriers from the
+   * host-supplied provider, filtering out undefined fields so the
+   * object spread into `authorize()` only contains keys the host
+   * actually knows about. Kept private so the executor stays the
+   * single caller site.
+   */
+  private snapshotPermissionCarriers(): {
+    sessionUuid?: string;
+    turnUuid?: string;
+    traceUuid?: string;
+  } {
+    const provider = this.options?.permissionContextProvider;
+    if (!provider) return {};
+    let carriers: {
+      sessionUuid?: string;
+      turnUuid?: string;
+      traceUuid?: string;
+    };
+    try {
+      carriers = provider() ?? {};
+    } catch {
+      // Carrier threading must never break the permission path.
+      return {};
+    }
+    const out: { sessionUuid?: string; turnUuid?: string; traceUuid?: string } = {};
+    if (typeof carriers.sessionUuid === "string" && carriers.sessionUuid.length > 0) {
+      out.sessionUuid = carriers.sessionUuid;
+    }
+    if (typeof carriers.turnUuid === "string" && carriers.turnUuid.length > 0) {
+      out.turnUuid = carriers.turnUuid;
+    }
+    if (typeof carriers.traceUuid === "string" && carriers.traceUuid.length > 0) {
+      out.traceUuid = carriers.traceUuid;
+    }
+    return out;
   }
 
   /**
