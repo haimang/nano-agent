@@ -125,6 +125,15 @@ export type { TraceContext, TraceDeps, TraceEvent, TraceSourceRole } from "./tra
 export { NanoSessionDO } from "./do/nano-session-do.js";
 export type { DurableObjectStateLike } from "./do/nano-session-do.js";
 
+// ── B6 bounded eval sink (dedup + overflow disclosure) ──
+export { BoundedEvalSink, extractMessageUuid } from "./eval-sink.js";
+export type {
+  EvalSinkEmitArgs,
+  EvalSinkOverflowDisclosure,
+  EvalSinkStats,
+  BoundedEvalSinkOptions,
+} from "./eval-sink.js";
+
 // ── Worker entry ──
 export { default as workerEntry } from "./worker.js";
 export type { WorkerEnv, DurableObjectNamespaceLike } from "./worker.js";

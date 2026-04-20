@@ -43,6 +43,12 @@ import {
   type WorkspaceCompositionHandle,
 } from "../workspace-runtime.js";
 import {
+  BoundedEvalSink,
+  extractMessageUuid,
+  type EvalSinkOverflowDisclosure,
+  type EvalSinkStats,
+} from "../eval-sink.js";
+import {
   InMemoryArtifactStore,
   MountRouter,
   WorkspaceNamespace,
@@ -142,12 +148,23 @@ export class NanoSessionDO {
    * `subsystems.eval` with `DoStorageTraceSink` (or equivalent), in
    * which case this default sink is bypassed.
    *
-   * The buffer is intentionally bounded (`DEFAULT_SINK_MAX = 1024`)
-   * so a long-running DO without an external sink doesn't grow
-   * unbounded. Records past the cap are dropped FIFO.
+   * **B6 upgrade (per `docs/rfc/nacp-core-1-2-0.md` §4.2 dedup
+   * contract)**: the raw append-then-splice array is replaced by a
+   * `BoundedEvalSink` that
+   *
+   *   - dedups on envelope `messageUuid` (when records carry one)
+   *   - surfaces an explicit `overflowCount` counter
+   *   - keeps a ring buffer of recent overflow disclosures
+   *
+   * The sink's capacity remains 1024 for parity with pre-B6
+   * behaviour. Capacity-driven FIFO eviction is still the default
+   * overflow mode, but it is no longer silent — every eviction
+   * produces a disclosure observable via `getDefaultEvalDisclosure()`.
    */
-  private readonly defaultEvalRecords: unknown[] = [];
   private static readonly DEFAULT_SINK_MAX = 1024;
+  private readonly defaultEvalSink: BoundedEvalSink = new BoundedEvalSink({
+    capacity: NanoSessionDO.DEFAULT_SINK_MAX,
+  });
 
   // Health tracking — minimal in-memory trackers.
   private readonly heartbeatTracker: HeartbeatTracker & { lastHeartbeatAt: string | null };
@@ -243,11 +260,15 @@ export class NanoSessionDO {
       baseEvalSink?.emit !== undefined
         ? baseEvalSink
         : {
+            // B6 — route into the bounded sink with dedup + overflow
+            // disclosure. `extractMessageUuid` is best-effort: it
+            // finds the uuid if the record carries an envelope-shaped
+            // `header.message_uuid`, `{ envelope: { header: ... } }`,
+            // or a direct `messageUuid` field. Records without a uuid
+            // are recorded unconditionally (backward compat).
             emit: (record: unknown): void => {
-              this.defaultEvalRecords.push(record);
-              const overflow =
-                this.defaultEvalRecords.length - NanoSessionDO.DEFAULT_SINK_MAX;
-              if (overflow > 0) this.defaultEvalRecords.splice(0, overflow);
+              const messageUuid = extractMessageUuid(record);
+              this.defaultEvalSink.emit({ record, messageUuid });
             },
           };
 
@@ -1107,8 +1128,29 @@ export class NanoSessionDO {
    * stay empty — that is intentional. The accessor exists so
    * deploy-shaped smoke tests can observe the default-path
    * emission without poking at private state.
+   *
+   * **B6**: delegates to the new `BoundedEvalSink` for dedup +
+   * overflow disclosure; records held remain stable across calls.
    */
   getDefaultEvalRecords(): readonly unknown[] {
-    return [...this.defaultEvalRecords];
+    return this.defaultEvalSink.getRecords();
+  }
+
+  /**
+   * B6 — overflow disclosure for the default eval sink. Satisfies
+   * `binding-F04` "sink overflow MUST emit explicit disclosure; silent
+   * drop is non-conformant". Returns the ring buffer of recent
+   * disclosure records (most recent last).
+   */
+  getDefaultEvalDisclosure(): readonly EvalSinkOverflowDisclosure[] {
+    return this.defaultEvalSink.getDisclosure();
+  }
+
+  /**
+   * B6 — counter snapshot for the default eval sink. Primary
+   * consumers: deploy smoke tests and the B7 integrated spike.
+   */
+  getDefaultEvalStats(): EvalSinkStats {
+    return this.defaultEvalSink.getStats();
   }
 }
