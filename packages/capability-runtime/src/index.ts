@@ -49,6 +49,14 @@ export {
 export { CapabilityPolicyGate } from "./policy.js";
 export type { PolicyContext } from "./policy.js";
 
+// ── Permission authorizer seam (B5) ──
+export type {
+  CapabilityPermissionAuthorizer,
+  PermissionDecision,
+  PermissionRequestContext,
+  PermissionVerdict,
+} from "./permission.js";
+
 // ── Executor ──
 export { CapabilityExecutor } from "./executor.js";
 export type { TargetHandler, ExecutorOptions } from "./executor.js";

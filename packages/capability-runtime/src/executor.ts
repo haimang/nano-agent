@@ -14,6 +14,10 @@ import type { CapabilityPlan, ExecutionTarget } from "./types.js";
 import type { CapabilityResult } from "./result.js";
 import type { CapabilityPolicyGate } from "./policy.js";
 import type { CapabilityEvent } from "./events.js";
+import type {
+  CapabilityPermissionAuthorizer,
+  PermissionDecision,
+} from "./permission.js";
 
 /** Handler interface for a specific execution target. */
 export interface TargetHandler {
@@ -66,6 +70,15 @@ export function isStreamingHandler(
 /** Options for the executor. */
 export interface ExecutorOptions {
   timeoutMs?: number;
+  /**
+   * Optional B5 hook producer seam. When supplied, ask-gated policy
+   * decisions are routed to the authorizer (which in turn dispatches
+   * the `PermissionRequest` / `PermissionDenied` hook events). When
+   * absent, the executor falls back to the legacy behaviour of
+   * returning a `policy-ask` error so hosts that don't wire hooks
+   * still behave deterministically.
+   */
+  permissionAuthorizer?: CapabilityPermissionAuthorizer;
 }
 
 /**
@@ -105,16 +118,52 @@ export class CapabilityExecutor {
     }
 
     if (decision === "ask") {
-      return {
-        kind: "error",
-        capabilityName: plan.capabilityName,
-        requestId,
-        error: {
-          code: "policy-ask",
-          message: `Capability "${plan.capabilityName}" requires user approval`,
-        },
-        durationMs: Date.now() - start,
-      };
+      // B5 — delegate to the optional PermissionAuthorizer seam, which
+      // fronts the `PermissionRequest` / `PermissionDenied` hook events.
+      // Without an authorizer, fall back to the legacy `policy-ask`
+      // error so existing hosts stay deterministic.
+      const authorizer = this.options?.permissionAuthorizer;
+      if (!authorizer) {
+        return {
+          kind: "error",
+          capabilityName: plan.capabilityName,
+          requestId,
+          error: {
+            code: "policy-ask",
+            message: `Capability "${plan.capabilityName}" requires user approval`,
+          },
+          durationMs: Date.now() - start,
+        };
+      }
+      let verdict: PermissionDecision;
+      try {
+        verdict = await authorizer.authorize({ plan, requestId });
+      } catch (err) {
+        return {
+          kind: "error",
+          capabilityName: plan.capabilityName,
+          requestId,
+          error: {
+            code: "policy-denied",
+            message: err instanceof Error ? err.message : String(err),
+          },
+          durationMs: Date.now() - start,
+        };
+      }
+      if (verdict.verdict === "deny") {
+        return {
+          kind: "error",
+          capabilityName: plan.capabilityName,
+          requestId,
+          error: {
+            code: "policy-denied",
+            message:
+              verdict.reason ?? `Capability "${plan.capabilityName}" was denied by permission handlers`,
+          },
+          durationMs: Date.now() - start,
+        };
+      }
+      // fall-through: verdict === "allow" → continue executing
     }
 
     // 2. Find target handler
@@ -201,18 +250,67 @@ export class CapabilityExecutor {
 
         // 1. Policy
         const decision = await self.policy.check(plan);
-        if (decision === "deny" || decision === "ask") {
+        if (decision === "deny") {
           yield {
             kind: "error",
             capabilityName: plan.capabilityName,
             requestId,
             timestamp: new Date().toISOString(),
             detail: {
-              code: decision === "deny" ? "policy-denied" : "policy-ask",
+              code: "policy-denied",
               durationMs: Date.now() - start,
             },
           };
           return;
+        }
+        if (decision === "ask") {
+          const authorizer = self.options?.permissionAuthorizer;
+          if (!authorizer) {
+            yield {
+              kind: "error",
+              capabilityName: plan.capabilityName,
+              requestId,
+              timestamp: new Date().toISOString(),
+              detail: {
+                code: "policy-ask",
+                durationMs: Date.now() - start,
+              },
+            };
+            return;
+          }
+          let verdict: PermissionDecision;
+          try {
+            verdict = await authorizer.authorize({ plan, requestId });
+          } catch (err) {
+            // Fail-closed on authorizer errors.
+            yield {
+              kind: "error",
+              capabilityName: plan.capabilityName,
+              requestId,
+              timestamp: new Date().toISOString(),
+              detail: {
+                code: "policy-denied",
+                message: err instanceof Error ? err.message : String(err),
+                durationMs: Date.now() - start,
+              },
+            };
+            return;
+          }
+          if (verdict.verdict === "deny") {
+            yield {
+              kind: "error",
+              capabilityName: plan.capabilityName,
+              requestId,
+              timestamp: new Date().toISOString(),
+              detail: {
+                code: "policy-denied",
+                message: verdict.reason,
+                durationMs: Date.now() - start,
+              },
+            };
+            return;
+          }
+          // verdict === "allow" → continue
         }
 
         const handler = self.targets.get(plan.executionTarget);
