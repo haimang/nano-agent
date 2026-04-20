@@ -1,0 +1,52 @@
+{
+  "name": "@nano-agent/context-management",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Context-Management — budget policy, async compact lifecycle, inspector facade",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./budget": {
+      "types": "./dist/budget/index.d.ts",
+      "import": "./dist/budget/index.js"
+    },
+    "./async-compact": {
+      "types": "./dist/async-compact/index.d.ts",
+      "import": "./dist/async-compact/index.js"
+    },
+    "./inspector-facade": {
+      "types": "./dist/inspector-facade/index.d.ts",
+      "import": "./dist/inspector-facade/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
+  },
+  "dependencies": {
+    "@nano-agent/storage-topology": "workspace:*",
+    "@nano-agent/workspace-context-artifacts": "workspace:*",
+    "@nano-agent/eval-observability": "workspace:*"
+  },
+  "peerDependencies": {
+    "zod": ">=3.22.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0",
+    "zod": "^3.24.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nano-agent/nano-agent.git",
+    "directory": "packages/context-management"
+  },
+  "license": "UNLICENSED"
+}
