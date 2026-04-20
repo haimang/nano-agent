@@ -405,7 +405,7 @@ nano-agent/
 | 预算治理 | `budget/` surface 已冻结并可被 async-compact / inspector 共用 | ✅ 完成（`BufferPolicy` + `CompactPolicy` + `applyEnvOverride`；与 `ContextAssemblyConfig` 现实对齐） |
 | 异步压缩 | `async-compact/` 4 阶段 + fallback + version-history 已有真实实现与 fake-provider 测试 | ✅ 完成（6 内部 unit + Orchestrator + 25 个相关 test cases） |
 | 检查面 | `inspector-facade/` 已提供 context-specific HTTP/WS surface，并 wrap `SessionInspector` | ✅ 完成（5 GET + 3 POST + subscribe + mount helper；`InspectorDataProviders` seam 替代直接 import） |
-| 集成 | kernel / session edge / workspace bridge 至少完成最小接线 | ✅ 完成（`createKernelCompactDelegate` 已 ship；`mountInspectorFacade` 已 ship；session-do-runtime 实际 mount 留 worker entry 自行 wiring） |
+| 集成 | kernel / session edge / workspace bridge 至少完成最小接线 | ⚠️ **helper-only seam**（`createKernelCompactDelegate` + `mountInspectorFacade` 已 ship 并通过 `test/context-management-contract.test.mjs` 锁定；**session-do-runtime worker entry 真正 import + 调用 mount 仍是 deployment-time wiring 任务，B4 内未完成**——详见 `B2-B4-code-reviewed-by-GPT.md` 中 GPT 的 R3 finding 与本文档 §12 fix-up log） |
 | 文档 | package README / changelog / P3 design drift 已收口 | ✅ 完成（README / CHANGELOG ship；P3 design drift 见 §11.2） |
 | handoff | B5/B6/B7/B8 follow-up 已明确 | ✅ 完成（§11.4.4） |
 
@@ -421,7 +421,7 @@ nano-agent/
 | 4 | `committer.ts` 只通过 B2 DO storage seam 完成 atomic swap，并在 tx 外完成 size preflight / promotion decision，不使用 D1 tx | F04/F06/F08 writeback 完成 | ✅（`prepareSerialized` 在 tx 外；R2 cleanup-on-rollback test passes） |
 | 5 | `inspector-facade/` 已 wrap `SessionInspector` 并提供 conditional `/inspect/...` mount | inspection surface 成立 | ✅（27 facade cases；`mountInspectorFacade` default disabled） |
 | 6 | B4 已对 hooks strict union 与 inspector dedup 依赖给出显式解决方式 | 顺序依赖不再隐藏 | ✅（`bridgeToHookDispatcher` + `INSPECTOR_DEDUP_CAVEAT`） |
-| 7 | `workspace-context-artifacts` / `agent-runtime-kernel` / `session-do-runtime` companion seam 已闭合 | B4 不是孤立 package | ✅（`createKernelCompactDelegate` ship + integration test；workspace + session 不需要 source change，B4 通过 protocol seam 接入） |
+| 7 | `workspace-context-artifacts` / `agent-runtime-kernel` / `session-do-runtime` companion seam 已闭合 | B4 不是孤立 package | ⚠️ **partial — kernel adapter ✅；session-do-runtime 仍未在自己的 worker entry 调用 `mountInspectorFacade`**（GPT R3）。B4 ship 了 helper + root contract test 锁定 helper 可用；真正的 `/inspect/...` route mount 留给 deployment-time / B7 worker matrix wiring。 |
 | 8 | 所有受影响 package 的现有验证命令全通过 | package-level 闭合 | ✅ 2003/2003 全 11 package |
 | 9 | B5/B6/B7/B8 downstream input 已写清楚 | 后续 phase 可直接消费 | ✅（§11.4.4） |
 
@@ -653,8 +653,46 @@ B4 严格遵循 "scope freeze → package skeleton → budget → async core →
 - B6 NACP 1.2.0 reverse-derivation 时：B4 inspector facade **不**需要 NACP message family（per `P3-context-management-inspector.md §6.3`）；只有当 worker matrix 阶段把 `context.core` 拆为独立 worker 时，cross-worker compact request/response 才需要 NACP message。
 - B7 round-2 必须复测的两条特别关键：(a) `committer.ts` 在真实 DO 上的 atomic swap rollback 行为；(b) `inspector-facade` 的 `/inspect/...` 在真实 wrangler WebSocket 上的 subscribe + redact 行为。前者验证 F04 在 packages/ ship 后仍然成立；后者验证 binding-F02 lowercase + redact 在真实 fetch transport 上不漏。
 
-**verdict**: ✅ B4 closed-with-evidence；ready for B5 + B6 起草。
+**verdict (initial 2026-04-20)**: ✅ B4 closed-with-evidence；ready for B5 + B6 起草。
+
+**verdict revision (post-GPT review fix-up, 2026-04-20)**: ⚠️ **partial — B4 主体代码可 ship，但需要等 §12 fix-up log 的 6 个 R-finding 全部修完后才能正式 closure**。详见 `docs/code-review/after-foundations/B2-B4-code-reviewed-by-GPT.md` §6 实现者回应 + 本文档 §12 fix-up log。
+
+**verdict r3 (post-GPT 2nd review, 2026-04-20)**: ✅ **B4 主干 contract 已闭环；可推进 B5（带 4 条 deferred caveat）**。R8 retry-symmetry + R9 TOCTOU drift 检测 + §D 两条 honesty drift 全部修复。详见 `B2-B4-code-reviewed-by-GPT.md` §6.6 + 本文档 §12.r2。
 
 | Date | Author | Change |
 |---|---|---|
 | 2026-04-20 | Opus 4.7 (1M context) | 初版 §11 工作日志；记录 6 phase 全 walk + 4 处偏移原因 + 全部新增/修改文件清单 + DoD 全 ✅ + downstream handoff input |
+| 2026-04-20 | Opus 4.7 (1M context) | r2 — 接受 GPT B2-B4 code review；§7 集成行 + §8 #7 + verdict 全部下调为 partial / helper-only；6 个 R-finding 修复落到 `B2-B4-code-reviewed-by-GPT.md` §6 |
+| 2026-04-20 | Opus 4.7 (1M context) | r3 — 接受 GPT 二次审查；R8 + R9 + §D drift 全部修复；workspace total 2024 → 2026；verdict 升回 ✅ "可推进 B5（带 4 条 deferred caveat）" |
+
+---
+
+## 12. Post-review fix-up log（指向 code-review §6）
+
+> 本节是 GPT B2-B4 code review (2026-04-20) 之后的修复指针。  
+> 完整的 R1-R8 修复证据请见  
+> `docs/code-review/after-foundations/B2-B4-code-reviewed-by-GPT.md` §6。  
+>
+> 本 action-plan 的 §11 work log 保持原状（append-only 纪律），  
+> 本 §12 只 surface 修复后哪些 §11.1 / §11.4 的结论需要被读者重新理解：
+
+- **§11.4.1 全 ✅** → 在 R3 修复前实际是 partial；§7 / §8 已下调
+- **§11.4.2 F04/F06/F08 消化** → R5 + R6 修复后才真正闭合（in-tx version truth + snapshot R2 cleanup on rollback）
+- **§11.4.3 caveats** → 新增第 8 条 caveat："session-edge mount 是 helper-only seam，需要在 worker entry deployment-time wire"
+- **§11.4.4 B5/B6/B7 handoff** → 新增 R1（compact-state 真持久化）/ R2（retry 真闭合）/ R4（generation token 防 race）作为 B5 / B7 可消费的新 contract
+
+### §12.r2 GPT 二次审查后的追加修复（2026-04-20）
+
+GPT 二次审查（见 review doc §C / §D）发现两条新 blocker 与两条 honesty drift，已在 `B2-B4-code-reviewed-by-GPT.md` §6.6 完整回应：
+
+- **R8 (= §C.1)** ✅ fixed — `recordFailure` 与 `hydrate()` 都路由到同一个 `isTerminalRetries(retriesUsed): retriesUsed > cap` 谓词；eviction 后语义与 live 一致
+- **R9 (= §C.2)** ✅ fixed — `committer.commit()` tx 内检测 `currentVersion !== preTxVersion`，drift 时 throw 触发 rollback；outer catch 已有的 R2 cleanup 顺势清掉两个 promoted blob；fixture 加 `onGetSideEffect` hook 模拟并发 commit
+- **§D.1** ✅ fixed (docs-only) — `persistState()` JSDoc + orchestrator file header 校正：单 key DO put 自带原子性，不需要 `state.storage.transaction()` 包装
+- **§D.2** ✅ fixed (docs-only) — `persistState()` JSDoc 列出 armed / preparing / failed 三种 state 在 persist 失败时的逐个 degradation analysis；明确 "durable best-effort, not hard guarantee"
+
+**B5 implementer 必读 caveat**：见 `B2-B4-code-reviewed-by-GPT.md` §6.6.6 末尾 4 条。
+- `COMPACT_LIFECYCLE_EVENT_NAMES` 是 single source-of-truth，必须 import
+- B4 source 不需要再改，wire-up 由 worker entry 完成
+- session-do-runtime 真 mount / restoreVersion / real-fallback race 三条 deferred caveat 不阻塞 B5
+
+**最终 workspace total**：2003（B4 ship 时）→ 2024（首轮 R-fix）→ **2026**（二轮 R-fix）。
