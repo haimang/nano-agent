@@ -1,10 +1,12 @@
 # RFC: `ScopedStorageAdapter` v2 — Breaking Interface Change
 
 > **RFC ID**: `scoped-storage-adapter-v2`
-> **Status**: `draft` (becomes `frozen` on B2 ship)
+> **Status**: `frozen` (B2 shipped 2026-04-20; r2 reflects shipped surface)
 > **Author**: Opus 4.7 (1M context)
-> **Date**: 2026-04-19
+> **Date**: 2026-04-19 (initial draft) / 2026-04-20 (frozen-to-ship r2)
 > **Sibling design**: `docs/design/after-foundations/P1-storage-adapter-hardening.md`
+> **Action plan**: `docs/action-plan/after-foundations/B2-storage-adapter-hardening.md`
+> **Implementer**: Opus 4.7 (1M context) — see B2 action-plan §11 work log
 >
 > **B1 finding sources (backward traceability)**:
 > - `docs/spikes/spike-do-storage/02-r2-list-cursor-required-pagination-confirmed.md` (**F02 — primary breaking driver**)
@@ -62,60 +64,99 @@ If we keep current interface, F02 cursor walking and F08 size pre-check both mus
 
 ### 3.1 `scoped-io.ts` — `ScopedStorageAdapter` interface
 
+> **r2 freeze note (2026-04-20)**: the interface as actually shipped
+> **retains the v1 `teamUuid` positional argument** on every method
+> (instead of dropping it as an earlier draft proposed). Reasoning:
+>
+>   - The existing v1 contract (per `scoped-io-alignment.test.ts` test
+>     "ScopedStorageAdapter surface expects teamUuid on every method")
+>     was added explicitly as a "v1 correctness fix for GPT R1" — the
+>     facade IS supposed to be the single point that enforces tenant
+>     prefixing.
+>   - `nacp-core`'s `tenant{R2,Kv,DoStorage}*` helpers all take
+>     `teamUuid` per call; dropping it from this facade would force
+>     callers to re-establish per-tenant scoping in another layer,
+>     duplicating the convention.
+>   - The 4 NEW per-binding adapter classes (`R2Adapter` / `KvAdapter`
+>     / `D1Adapter` / `DOStorageAdapter` — see §3.3-§3.6) are
+>     **orthogonal** to `ScopedStorageAdapter`: they take just the
+>     binding, expose primitive-specific APIs, and are the right place
+>     for `maxValueBytes` (different primitives → different caps).
+>     They do NOT implement `ScopedStorageAdapter`.
+>
+> Net effect: only the **return shape** of `r2List` is breaking
+> (matches F02). `maxValueBytes` is exposed on adapter classes, not on
+> the facade interface. JSDoc additions for F01/F03/F08/unexpected-F01
+> /unexpected-F02 are non-breaking.
+
 ```ts
 // CURRENT (v1, 0.1.0):
 export interface ScopedStorageAdapter {
-  doGet(key: string): Promise<unknown>;
-  doPut(key: string, value: unknown): Promise<void>;
-  doDelete(key: string): Promise<void>;
+  doGet(teamUuid: string, key: string): Promise<unknown>;
+  doPut(teamUuid: string, key: string, value: unknown): Promise<void>;
+  doDelete(teamUuid: string, key: string): Promise<boolean>;
 
-  kvGet(key: string): Promise<string | null>;
-  kvPut(key: string, value: string): Promise<void>;
-  kvDelete(key: string): Promise<void>;
+  kvGet(teamUuid: string, key: string): Promise<unknown>;
+  kvPut(teamUuid: string, key: string, value: unknown): Promise<void>;
+  kvDelete(teamUuid: string, key: string): Promise<void>;
 
-  r2Get(key: string): Promise<R2Object | null>;
-  r2Put(key: string, body: unknown): Promise<void>;
-  r2Delete(key: string): Promise<void>;
-  r2List(prefix: string): Promise<{ objects: Array<R2Object> }>;
+  r2Get(teamUuid: string, key: string): Promise<unknown>;
+  r2Put(teamUuid: string, key: string, value: unknown): Promise<void>;
+  r2Delete(teamUuid: string, key: string): Promise<void>;
+  r2List(
+    teamUuid: string,
+    prefix?: string,
+    limit?: number,
+  ): Promise<{ keys: string[]; truncated: boolean }>;
 }
 
-// PROPOSED (v2, 2.0.0):
+// SHIPPED (v2, 2.0.0):
 export interface ScopedStorageAdapter {
-  /** DO state.storage K/V; throws ValueTooLargeError if value bytes > maxValueBytes. */
-  doGet(key: string): Promise<unknown>;
-  doPut(key: string, value: ArrayBuffer | string): Promise<void>;
-  doDelete(key: string): Promise<void>;
+  // ── Durable Object transactional storage ──
+  /** Per spike-do-storage-F04: throw → rollback semantics hold. */
+  doGet(teamUuid: string, key: string): Promise<unknown>;
+  /** Production impls SHOULD throw ValueTooLargeError for bytes > cap (F08). */
+  doPut(teamUuid: string, key: string, value: unknown): Promise<void>;
+  doDelete(teamUuid: string, key: string): Promise<boolean>;
+
+  // ── Workers KV ──
+  /** Same-colo strong (F03 weak evidence); cross-colo NOT validated (B7). */
+  kvGet(teamUuid: string, key: string): Promise<unknown>;
+  /** ~520 ms latency (unexpected-F02); use KvAdapter.putAsync for hot path. */
+  kvPut(teamUuid: string, key: string, value: unknown): Promise<void>;
+  kvDelete(teamUuid: string, key: string): Promise<void>;
+
+  // ── R2 ──
+  r2Get(teamUuid: string, key: string): Promise<unknown>;
+  /** ≤ 10 MiB single-call (F01); use R2Adapter.putParallel for bulk (uF01). */
+  r2Put(teamUuid: string, key: string, value: unknown): Promise<void>;
+  r2Delete(teamUuid: string, key: string): Promise<void>;
 
   /**
-   * KV: read latency ~3ms; write latency ~500ms (see unexpected-F02).
-   * Freshness depends on read locality — same-colo confirmed strong
-   * (spike-do-storage-F03); cross-colo NOT yet validated (B7 follow-up).
-   */
-  kvGet(key: string): Promise<string | null>;
-  kvPut(key: string, value: string): Promise<void>;  // sync write; consider putAsync helper for hot path
-  kvDelete(key: string): Promise<void>;
-
-  /** R2: single-call put covers ≤ 10 MiB (see spike-do-storage-F01). */
-  r2Get(key: string): Promise<R2Object | null>;
-  r2Put(key: string, body: ArrayBuffer | string | ReadableStream): Promise<void>;
-  r2Delete(key: string): Promise<void>;
-
-  /**
-   * R2 list with cursor pagination (BREAKING — see spike-do-storage-F02).
-   * `truncated: true` indicates more pages; pass returned `cursor` to next call.
-   * If caller wants all keys, use the helper `R2Adapter.listAll(prefix)` which walks cursors automatically.
+   * R2 list with cursor pagination — BREAKING shape change per F02.
+   * Returns { objects, truncated, cursor? }. Caller MUST pass returned
+   * cursor to next call when truncated=true, else enumeration silently
+   * loses keys. See R2Adapter.listAll(prefix) for an auto-walk helper.
    */
   r2List(
-    prefix: string,
+    teamUuid: string,
+    prefix?: string,
     opts?: { limit?: number; cursor?: string },
   ): Promise<{
-    objects: Array<R2Object>;
+    objects: R2ObjectLike[];
     truncated: boolean;
     cursor?: string;
   }>;
+}
 
-  /** Adapter-specific size cap; consumers can read this to size-route writes. */
-  readonly maxValueBytes: number;
+// R2ObjectLike — minimal R2 object descriptor; structurally compatible
+// with Cloudflare's R2Object. Decoupled from @cloudflare/workers-types
+// (same pattern as nacp-core's R2BucketLike).
+export interface R2ObjectLike {
+  readonly key: string;
+  readonly size: number;
+  readonly etag?: string;
+  readonly uploaded?: Date;
 }
 ```
 
@@ -475,20 +516,24 @@ Audit `packages/workspace-context-artifacts/src/refs.ts` and `promotion.ts` to e
 
 ## 6. Acceptance criteria
 
-- [ ] `scoped-io.ts` v2 interface shipped (BREAKING)
-- [ ] `errors.ts` typed error hierarchy shipped
-- [ ] 4 adapter files shipped under `adapters/{d1,r2,kv,do-storage}-adapter.ts`
-- [ ] `NullStorageAdapter` updated for v2 contract (still throws but typed)
-- [ ] `ReferenceBackend` no longer throws `not connected` (routes to adapters)
-- [ ] `MemoryBackend` adds `maxValueBytes` config (default 1 MiB)
-- [ ] `storage-topology` major bump 0.1.0 → 2.0.0
-- [ ] CHANGELOG entry written
-- [ ] Contract tests added:
-  - `r2List` cursor walking (F02)
-  - `D1Adapter.batch` atomicity (F06)
-  - `DOStorageAdapter.put` ValueTooLargeError (F08)
-  - `MemoryBackend.put` mirrors DO size cap (F05 + F08)
-- [ ] Round 2 integrated spike re-runs V1-storage-* with new adapters
+- [x] `scoped-io.ts` v2 interface shipped (BREAKING — `r2List` return shape)
+- [x] `errors.ts` typed error hierarchy shipped (`StorageError`, `ValueTooLargeError`, `CursorRequiredError`, `StorageNotConnectedError`)
+- [x] 4 adapter files shipped under `adapters/{r2,kv,d1,do-storage}-adapter.ts`
+- [x] `NullStorageAdapter` updated for v2 contract (throws typed `StorageNotConnectedError`; v2 `r2List` return shape)
+- [x] `ReferenceBackend` no longer throws `not connected` when supplied with adapters; placeholder mode preserved when constructed with no config
+- [x] `MemoryBackend` adds `maxValueBytes` config (default 1 MiB)
+- [x] `storage-topology` major bump 0.1.0 → 2.0.0
+- [x] CHANGELOG entry written (see `packages/storage-topology/CHANGELOG.md`)
+- [x] Contract tests added:
+  - `r2List` cursor walking + `listAll` auto-walk (F02) → `test/adapters/r2-adapter.test.ts`
+  - `D1Adapter.batch` atomicity + negative-API surface (F06) → `test/adapters/d1-adapter.test.ts`
+  - `DOStorageAdapter.put` ValueTooLargeError (F08) → `test/adapters/do-storage-adapter.test.ts`
+  - `KvAdapter.putAsync` fire-and-forget (uF02) → `test/adapters/kv-adapter.test.ts`
+  - `R2Adapter.putParallel` (uF01) → `test/adapters/r2-adapter.test.ts`
+  - `MemoryBackend.write` mirrors DO size cap with `adapter='memory'` (F05 + F08) → `test/backends/memory.test.ts`
+  - `ReferenceBackend` connected/promotion/placeholder modes → `test/backends/reference.test.ts`
+  - `DEFAULT_PROMOTION_POLICY.coldTierSizeBytes` aligned with DO cap (F08) → `test/promotion.test.ts`
+- [ ] Round 2 integrated spike re-runs V1-storage-* with new adapters (deferred to B7 per P6 §4.4b)
 
 ---
 
@@ -508,3 +553,4 @@ Audit `packages/workspace-context-artifacts/src/refs.ts` and `promotion.ts` to e
 | Date | Author | Change |
 |---|---|---|
 | 2026-04-19 | Opus 4.7 | Initial draft; 6 changes (3 breaking + 2 helpers + 1 jsdoc); migration path for NullStorageAdapter / ReferenceBackend / MemoryBackend |
+| 2026-04-20 | Opus 4.7 | r2 — frozen to shipped surface. §3.1 retains `teamUuid` on `ScopedStorageAdapter` (only `r2List` return shape is breaking). 4 adapter classes are orthogonal per-binding wrappers; `maxValueBytes` lives on adapter classes, not the facade. `ReferenceBackend` connected mode supports DO-only and DO+R2-promotion topologies. All §6 acceptance criteria except B7 round-2 re-run are now `[x]`. |

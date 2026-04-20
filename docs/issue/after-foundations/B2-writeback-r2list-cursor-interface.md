@@ -1,11 +1,12 @@
 # [B2 / writeback] `ScopedStorageAdapter.r2List` interface must be v2 (breaking)
 
 > **Issue ID**: `B2-writeback-r2list-cursor-interface`
-> **Action plan**: `docs/action-plan/after-foundations/B2-storage-adapter-hardening.md` (待写)
+> **Action plan**: `docs/action-plan/after-foundations/B2-storage-adapter-hardening.md`
 > **Phase**: B2 (Storage Adapter Hardening)
-> **Status**: open
+> **Status**: ✅ closed (2026-04-20 — shipped in `@nano-agent/storage-topology` 2.0.0)
 > **Created**: 2026-04-19
-> **Owner**: TBD (B2 implementer)
+> **Closed**: 2026-04-20
+> **Owner**: Opus 4.7 (1M context)
 > **Type**: writeback (forward-traceability evidence per discipline 7 / charter §10.3)
 > **Source finding**: `docs/spikes/spike-do-storage/02-r2-list-cursor-required-pagination-confirmed.md` (`spike-do-storage-F02`)
 
@@ -69,13 +70,13 @@ Add test that:
 
 ## Acceptance criteria
 
-- [ ] `scoped-io.ts:127` interface v2 shipped
-- [ ] `r2-adapter.ts` real implementation shipped
-- [ ] `ReferenceBackend.list*` methods consume new interface
-- [ ] `docs/rfc/scoped-storage-adapter-v2.md` RFC merged
-- [ ] Contract test for cursor walking added
-- [ ] `storage-topology` semver bump (recommended major to 2.0.0)
-- [ ] Round 2 integrated spike re-runs V1-storage-R2-list-cursor against the new R2Adapter and confirms cursor walking from packages/
+- [x] `scoped-io.ts` interface v2 shipped — `r2List(teamUuid, prefix?, opts?)` returns `{ objects: R2ObjectLike[]; truncated; cursor? }` (note: `teamUuid` retained on the facade per RFC r2 freeze; only the return shape is breaking).
+- [x] `r2-adapter.ts` real implementation shipped — `R2Adapter` per-binding wrapper with `list()` (v2 cursor shape), `listAll()` (auto-walk with `maxPages` guard), `putParallel()` helper, size pre-check, decoupled `R2BucketBinding` type.
+- [x] `ReferenceBackend` is now functional in connected mode (DO-only and DO + R2-promotion topologies); `list()` reads from the underlying `DOStorageAdapter` (which has its own native list API); see `packages/workspace-context-artifacts/src/backends/reference.ts`.
+- [x] `docs/rfc/scoped-storage-adapter-v2.md` r2 frozen — status `frozen`, §3.1 reflects shipped surface, §6 acceptance criteria all `[x]` except B7 round-2 re-run.
+- [x] Contract test for cursor walking added — `packages/storage-topology/test/adapters/r2-adapter.test.ts` reproduces the F02 50-keys-+-limit-20-=-3-pages scenario; asserts `truncated`/`cursor`; asserts `listAll` walks 3 pages with the right cursors.
+- [x] `storage-topology` major bump 0.1.0 → 2.0.0 — `package.json` + `STORAGE_TOPOLOGY_VERSION` + CHANGELOG `2.0.0 — 2026-04-20` entry.
+- [ ] Round 2 integrated spike re-runs V1-storage-R2-list-cursor against the new `R2Adapter` and confirms cursor walking from `packages/` — **deferred to B7 per `P6-spike-round-2-integration-plan.md` §4.1**.
 
 ## Related findings (potentially co-shipped)
 
