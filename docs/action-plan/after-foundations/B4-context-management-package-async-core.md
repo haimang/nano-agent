@@ -62,6 +62,10 @@
     - `SessionInspector` 目前没有 dedup by `messageUuid`，而 inspector facade 设计明确把 dedup 责任放在 B6
     - `session-do-runtime` 当前只识别 `/sessions/:sessionId/...` 路由，尚无 `/inspect/...` mount surface
   - **P5**：B4 还必须吸收 B1 findings：F04/F06/F08、binding-F02/F04、unexpected-F02，不能把 async compact / inspection 做成脱离 platform truth 的“本地 CLI 版心智”
+  - **P6**：B2 虽已 ship，但它提供的是 **honest substrate**，不是“自动安全的黑盒”：
+    - `DOStorageAdapter.transaction()` callback 内 **不会**自动执行 `maxValueBytes` pre-check
+    - `KvAdapter.putAsync()` 是 warn-and-swallow 的 best-effort helper，不是 durable ack
+    - `ReferenceBackend({ doStorage, r2 })` 是可复用 promotion substrate，但当前 promoted→inline overwrite 不清旧 R2 blob，且 promotion 失败没有补偿 cleanup
 - **本次计划的直接产出**：
   - **D1**：创建 `@nano-agent/context-management` 新包骨架与 3 个子模块
   - **D2**：在 `budget/` 中冻结 `BufferPolicy + CompactPolicy + env override` 的最小 contract，并与现有 assembler 的 `maxTokens - reserveForResponse` reality 对齐
@@ -121,6 +125,7 @@
 - **职责保护原则**：B4 只新增 **context-management runtime**；不重写 `workspace-context-artifacts` / `eval-observability` / `storage-topology`
 - **source-of-truth 原则**：charter r2 的 B4 scope 高于 P3-hybrid-storage 的旧落点；后者的 mapping / evidence 被消费，但实现位置必须服从新 charter
 - **依赖显式原则**：凡是当前代码不能直接承接的设计假设（例如 unknown hook event names、SessionInspector dedup），都必须在计划里显式写成 gate / caveat
+- **B2 substrate 诚实原则**：`transaction()` != tx 内 size guard，`putAsync()` != durable ack，`ReferenceBackend({ doStorage, r2 })` != orphan-free 最终 router；B4 若复用这些 primitives，必须把 caveat 写进实现与测试
 - **companion-change 最小化原则**：外包修改只做为了承接 B4，不顺手做 B5/B6/worker-matrix 的工作
 
 ### 1.5 本次 action-plan 影响目录树
@@ -254,7 +259,7 @@ nano-agent/
 |------|--------|----------|------------------|----------|----------|----------|
 | P1-01 | 输入对齐核查 | 把 `plan-after-foundations` r2、GPT review §2.3/§2.4/§2.5、P3 family、B1 handoff、现有 packages reality 对成唯一执行清单 | `docs/**`, `packages/**` | B4 不再存在“包边界到底归谁”的歧义 | 人工核对 + grep | 所有 B4 代码目标都能映射到真实现有包 |
 | P1-02 | `budget/` 最小 surface 冻结 | 基于 charter §7.4、`context-management-eval-by-GPT.md` §3.1 与 `ContextAssemblyConfig.reserveForResponse` reality，冻结 `BufferPolicy` / `CompactPolicy` / env override / usage calc surface | `budget/*`, eval docs, `workspace-context-artifacts/src/context-layers.ts` | B4 有明确 budget API，而不是“实现时再想” | 设计/计划核对 | `budget/` 不再依赖缺失 design 文稿 |
-| P1-03 | hybrid-storage 落点统一 | 采用 current charter r2：`context-management` 不拥有 `storage/`；消费 `P3-hybrid-storage` 的 tag→tier / F08 / unexpected-F02 结论，但真正的 placement writeback 落在 `storage-topology` / `workspace-context-artifacts` companion seam | P3-hybrid-storage doc + `storage-topology` | B4 scope 不扩张 | 设计/计划核对 | action-plan 明确“消费 mapping，不在新包内重建 router” |
+| P1-03 | hybrid-storage 落点统一 | 采用 current charter r2：`context-management` 不拥有 `storage/`；消费 `P3-hybrid-storage` 的 tag→tier / F08 / unexpected-F02 结论，并显式决定 B4 对 `ReferenceBackend({ doStorage, r2 })` 的消费方式——它是可复用 substrate，但不能默认当作已闭环的最终 router（当前 overwrite / compensation cleanup 仍有 caveat） | P3-hybrid-storage doc + `storage-topology` + `workspace-context-artifacts/src/backends/reference.ts` | B4 scope 不扩张，且不误把 B2 substrate 当成完整 router | 设计/计划核对 | action-plan 明确“消费 mapping，不在新包内重建 router”；ReferenceBackend reuse strategy 被说清 |
 | P1-04 | B4↔B5↔B6 seam 冻结 | 明确：现有 `HookDispatcher.emit()` 不能接受未知 `Context*` event name；B4 不直接完成 B5 catalog work。另明确 inspector facade 在 B6 dedup 前的 duplicate caveat | `packages/hooks/src/{catalog,dispatcher}.ts`, `eval-observability/src/inspector.ts` | 顺序依赖 honest 可执行 | 代码事实核对 | B4 不再假设“先 emit 再补 catalog” |
 
 ### 4.2 Phase 2 — New package skeleton + budget core
@@ -271,7 +276,7 @@ nano-agent/
 |------|--------|----------|------------------|----------|----------|----------|
 | P3-01 | orchestrator + threshold + scheduler | 实现 `AsyncCompactOrchestrator` 入口、threshold 计算、scheduler ARMED/PREPARE 判定 | `src/async-compact/{index,types,threshold,scheduler}.ts` | lifecycle 入口成立 | unit tests | policy/threshold 行为稳定、无未定义状态 |
 | P3-02 | planner + prepare-job | 实现 CoW fork / candidate build / background LLM summarize seam；复用 `CompactBoundaryManager` 与 `llm-wrapper` `LLMExecutor`/gateway interface，而不是自造 provider API | `src/async-compact/{planner,prepare-job}.ts`, companion `workspace-context-artifacts` exports | prepare path 可被 fake provider 驱动 | unit tests | current turn 不被 destructive mutate；fake provider 可覆盖 timeout / error |
-| P3-03 | committer + version-history + fallback | 实现 DO transaction commit、snapshot 保存、hard-threshold sync fallback；严格消费 B2 `DOStorageAdapter` truth，不碰 D1 tx | `src/async-compact/{committer,version-history,fallback}.ts` | COMMIT / rollback / fallback 成立 | unit + integration tests | F04/F06/F08 均有对应自动测试 |
+| P3-03 | committer + version-history + fallback | 实现 DO transaction commit、snapshot 保存、hard-threshold sync fallback；严格消费 B2 `DOStorageAdapter` truth，不碰 D1 tx，并在进入 `transaction()` 前完成 summary size preflight / promotion decision（因为 tx callback 内不自动执行 `maxValueBytes` guard） | `src/async-compact/{committer,version-history,fallback}.ts` | COMMIT / rollback / fallback 成立，且大 summary 不会在 tx 内撞 raw DO cap | unit + integration tests | F04/F06/F08 均有对应自动测试 |
 | P3-04 | lifecycle event seam | 实现 `events.ts`，先提供内部 lifecycle event builder / adapter seam；若 B5 catalog 尚未落地，则不直接依赖未知 `HookEventName` | `src/async-compact/events.ts` | B4 不被 B5 阻塞，但保留可接 catalog 的明确 seam | unit tests | 不在 B4 内偷改 hooks catalog；B5 可直接接入 |
 
 ### 4.4 Phase 4 — `inspector-facade/` + session edge mount
@@ -287,7 +292,7 @@ nano-agent/
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
 | P5-01 | kernel compact seam | 在 kernel scheduler/runner/types 中补最小 compact orchestration seam：turn boundary 检查 `shouldArm/tryArm/tryCommit/forceSyncCompact`；不把 context-management 逻辑塞回 kernel reducer | `packages/agent-runtime-kernel/src/{types,scheduler,runner,index}.ts` | async-compact 真进入 turn loop | integration tests | kernel 只接 decision seam，不吸收 B4 业务逻辑 |
-| P5-02 | workspace / snapshot bridge | 若 B4 需要 context tag / snapshot reason / compact boundary export，补最窄 companion change；继续复用现有 builder/manager | `packages/workspace-context-artifacts/src/{context-layers,compact-boundary,snapshot,index}.ts` | B4 能无 duplication 地消费 foundations | package tests | `workspace-context-artifacts` 职责不被重写 |
+| P5-02 | workspace / snapshot bridge | 若 B4 需要 context tag / snapshot reason / compact boundary export，补最窄 companion change；继续复用现有 builder/manager。若 B4 选择复用 `ReferenceBackend({ doStorage, r2 })` 作为 promotion substrate，则同时补齐明确的 overwrite / orphan cleanup policy，而不是把 caveat 留给调用方默默承担 | `packages/workspace-context-artifacts/src/{context-layers,compact-boundary,snapshot,index,backends/reference}.ts` | B4 能无 duplication 地消费 foundations，且 reuse 边界诚实 | package tests | `workspace-context-artifacts` 职责不被重写；ReferenceBackend reuse 不制造 silent orphan |
 | P5-03 | placement companion writeback | 若 `async-compact` / `inspector-facade` 需要 tag-aware placement truth，优先复用 `storage-topology` 现有 `placement.ts` / `promotion-plan.ts`；若 generic table 无法表达，再做最窄 context-specific helper，而不是把 router 搬回新包 | `packages/storage-topology/src/{placement,promotion-plan,index}.ts` | B4 可消费 placement truth 且不回退到包内 router | package tests | charter r2 的边界保持成立 |
 | P5-04 | package / integration tests | 新增 `budget` / `async-compact` / `inspector-facade` / integration tests，并补必要 companion package tests | `packages/context-management/test/**` + affected packages | B4 不是纸面 package | package tests + cross-package smoke | fake provider 生命周期、route mount、kernel seam 至少各有 1 条自动测试 |
 
@@ -375,18 +380,20 @@ nano-agent/
 | `budget/` 无 design 导致实现临场发明 | high | async-compact 与 inspector 会围绕它反复返工 | 用 Phase 1 明确冻结最小 surface |
 | hooks 顺序依赖被忽略 | high | 现有 `HookEventName` 是 strict union，B4 无法假装 B5 已完成 | 将 B5 依赖写成 explicit gate / seam |
 | inspector dedup 被误报已完成 | high | 当前 `SessionInspector` 无 dedup；facade 若默认 dedup 会产生错误承诺 | B4 明确 duplicate caveat，B6 再完成真正 writeback |
+| 过度相信 B2 substrate 的“自动安全” | high | `transaction()` 无 tx 内 size guard、`putAsync()` 会 swallow failure、`ReferenceBackend` reuse 仍有 orphan caveat | 把 B2 primitive caveat 写入 Phase 1 freeze + integration tests |
 | new package only-green-in-isolation | high | B4 是 orchestration package，若不接 kernel/session/workspace，价值为零 | 强制 integration + companion package tests |
 | 过度修改 `workspace-context-artifacts` / `storage-topology` | medium | 容易顺手把 B5/B6/worker-matrix 工作提前做掉 | companion changes 只做最小承接 |
 
-### 6.2 B4 特别注意的 7 个约束
+### 6.2 B4 特别注意的 8 个约束
 
 1. **charter r2 高于旧落点**：`P3-context-management-hybrid-storage.md` 的 mapping 值得保留，但其实现位置不能覆盖当前 charter
 2. **`budget/` 必须从现有 assembler reality 长出来**：不要另起一套脱离 `reserveForResponse` 的 token 心智
-3. **F04/F06/F08 是 async-compact 的硬约束**：commit 只能走 DO tx，summary 必须 size-aware
-4. **`SessionInspector` 是 wrap seam，不是待重写对象**
-5. **B4 不能偷做 B5/B6**：hook catalog 扩展、dedup、NACP 都不是这个 phase 的 code ownership
-6. **route mount 必须 default disabled**：inspection surface 是 dev/staging seam，不是默认对外端口
-7. **如果 `storage-topology` 现有 placement 表达不了 B4 所需 truth，优先加 narrow helper，不要把 router 搬回新包**
+3. **F04/F06/F08 是 async-compact 的硬约束**：commit 只能走 DO tx；但 `DOStorageAdapter.transaction()` 不会自动做 tx 内 size pre-check，所以大 summary 必须先 size-aware / 先决定 promote
+4. **`KvAdapter.putAsync()` 只能承载可重建的 advisory state**：它会 warn-and-swallow failure，不能成为唯一 commit truth
+5. **`SessionInspector` 是 wrap seam，不是待重写对象**
+6. **B4 不能偷做 B5/B6**：hook catalog 扩展、dedup、NACP 都不是这个 phase 的 code ownership
+7. **route mount 必须 default disabled**：inspection surface 是 dev/staging seam，不是默认对外端口
+8. **如果复用 `ReferenceBackend({ doStorage, r2 })`，必须补清 overwrite / orphan cleanup 策略**；如果 `storage-topology` 现有 placement 表达不了 B4 所需 truth，优先加 narrow helper，不要把 router 搬回新包
 
 ---
 
@@ -411,7 +418,7 @@ nano-agent/
 | 1 | `packages/context-management/` 已存在且能 build/typecheck/test | 新包完成最小成立 |
 | 2 | `budget/` 已冻结 `BufferPolicy` / `CompactPolicy` / override surface | 缺失 design 被补成现实 contract |
 | 3 | `async-compact/` 已 conform `PX-async-compact-lifecycle-spec.md` 的 state machine | B4 主体行为成立 |
-| 4 | `committer.ts` 只通过 B2 DO storage seam 完成 atomic swap，不使用 D1 tx | F04/F06 writeback 完成 |
+| 4 | `committer.ts` 只通过 B2 DO storage seam 完成 atomic swap，并在 tx 外完成 size preflight / promotion decision，不使用 D1 tx | F04/F06/F08 writeback 完成 |
 | 5 | `inspector-facade/` 已 wrap `SessionInspector` 并提供 conditional `/inspect/...` mount | inspection surface 成立 |
 | 6 | B4 已对 hooks strict union 与 inspector dedup 依赖给出显式解决方式 | 顺序依赖不再隐藏 |
 | 7 | `workspace-context-artifacts` / `agent-runtime-kernel` / `session-do-runtime` companion seam 已闭合 | B4 不是孤立 package |
@@ -436,5 +443,5 @@ nano-agent/
 - B4 的真正目标是 **新建一个 context runtime package**，不是重新切 foundations 包边界
 - `budget/` 缺 design 不是理由去跳过它；相反，这正是 B4 Phase 1 必须先做 contract freeze 的原因
 - `P3-context-management-hybrid-storage.md` 仍然重要，但它在 B4 中应被理解为 **mapping/evidence 输入**，而不是“把 router 放回新包”的许可
+- B2 已 ship 不等于 B4 可以把 `DOStorageAdapter.transaction()` / `KvAdapter.putAsync()` / `ReferenceBackend({ doStorage, r2 })` 当作无 caveat 黑盒；这些 primitives 的 atomicity / durability / cleanup 边界必须在 B4 内被显式消费
 - 如果实现中发现必须修改 hooks catalog 才能让 B4 站住脚，说明顺序依赖已经碰到边界，应显式转成 B5 前置，而不是在 B4 内顺手吞掉
-

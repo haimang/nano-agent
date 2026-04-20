@@ -256,6 +256,15 @@
 | `curl` | network | `local-ts` | ask | **Partial (ask-gated)** | E2 | A9 P2 收口为 restricted baseline：scheme allow-list (http/https)、host deny-list (localhost/RFC1918/link-local/CGNAT/IPv6 ULA/cloud-metadata)、`timeoutMs`/`maxOutputBytes` 双 cap、`fetchImpl` 注入注接，bash path 仅承诺 `curl <url>`，richer `{ url, method, headers, body, timeoutMs }` 只走 structured tool call（AX-QNA Q17） |
 | `ts-exec` | exec | `local-ts` | ask | **Partial (ask-gated)** | E2 | A9 P3 按 Q22 冻结为 honest partial：syntax validation (`new Function`) + length ack + 固定 `ts-exec-partial-no-execution` marker；不执行 code，升级口保留为 future remote tool-runner via `ServiceBindingTarget` |
 | `git` | vcs | `local-ts` | allow | **Partial** | E2 | A10 P2-01 冻结为 `status/diff/log` 只读 subset（AX-QNA Q18）：`status` 接入 `WorkspaceFsLike.listDir` 真实列出 workspace entries（跳过 `/_platform/**`）；`diff` / `log` 走 honest-partial markers (`git-partial-no-baseline` / `git-partial-no-history`)；mutating subcommand 触发 `git-subcommand-blocked`；planner 与 handler 共享 `GIT_SUPPORTED_SUBCOMMANDS` 验证 |
+| `wc` | filesystem | `local-ts` | allow | **Supported** | E2 | B3 wave 1 (after-foundations Phase 2)：file/path-first；POSIX 形状 `lines words bytes path`；UTF-8 byte counting；64 KiB output cap with `text-output-truncated` marker；F07 reserved-namespace + path-law 复用 |
+| `head` | filesystem | `local-ts` | allow | **Supported** | E2 | B3 wave 1：file/path-first；structured input 支持 `{ path, lines?, bytes? }`；UTF-8 boundary-safe `bytes` truncation；bash path 默认 10 行 |
+| `tail` | filesystem | `local-ts` | allow | **Supported** | E2 | B3 wave 1：与 `head` 对称；最后 N 行 / 最后 N 字节；trailing-newline 行为保持 POSIX 默认 |
+| `jq` | filesystem | `local-ts` | allow | **Partial (worker-safe subset)** | E2 | B3 wave 1：仅 `. / .field / .a[N] / .a[] / keys / length`；其他查询形式抛 `jq-unsupported-query-form`；`jq <query> <path>` bash form |
+| `sed` | filesystem | `local-ts` | allow | **Partial (worker-safe subset)** | E2 | B3 wave 1：仅单条 `s/PATTERN/REPLACEMENT/[gi]`；地址 / 范围 / `d/p/q/n/a/i/c/y/=` 全部抛 `sed-unsupported-script-form` |
+| `awk` | filesystem | `local-ts` | allow | **Partial (worker-safe subset)** | E2 | B3 wave 1：仅 `{ print $N }` / `NR == K { print [...] }` / `/PATTERN/ { print [...] }`；BEGIN/END / 多语句 / 用户函数 / `getline/gsub/printf` 抛 `awk-unsupported-program-form` |
+| `sort` | filesystem | `local-ts` | allow | **Supported** | E2 | B3 wave 2：默认 lexicographic；structured `{ reverse?, numeric?, unique? }`；output cap |
+| `uniq` | filesystem | `local-ts` | allow | **Supported** | E2 | B3 wave 2：相邻去重 (POSIX semantics)；`{ count? }` 右对齐计数列；output cap |
+| `diff` | filesystem | `local-ts` | allow | **Supported** | E2 | B3 wave 2：deterministic unified-style minimal-context diff；LCS-based；output cap；两侧 path 都受 F07 path-law 约束 |
 
 ### 7.2 Target Inventory
 

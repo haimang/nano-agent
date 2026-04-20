@@ -108,7 +108,7 @@
 | 来源 | B6 必须消费的事实 | 对计划的直接影响 |
 |---|---|---|
 | **B1 / `binding-F02`** | anchor headers MUST be lowercase | B6 以 spec freeze + regression guard 为主，不重造 header truth |
-| **B1 / `binding-F04`** | transport 不 dedup；sink overflow 不能 silent drop | B6 必须真的改 `SessionInspector` + `defaultEvalRecords` |
+| **B1 / `binding-F04`** | transport 不 dedup；sink overflow 不能 silent drop；Round 1 证据仍是 **response-batch simulation**，不是真 cross-worker sink callback | B6 必须真的改 `SessionInspector` + `defaultEvalRecords`，并把 true callback push-path 的复验 checklist 交给 B7 |
 | **B4 输出** | inspector facade 是 independent HTTP/WS，且 dedup / lowercase / non-NACP route 是 B6 需要收口的现实消费点 | B6 不应把 inspector 再塞回 `nacp-session` 新 family |
 | **B5 输出** | `EvalSinkOverflow` metadata 已冻结；PermissionRequest wire semantics note 已明确不要凭空发明新字段 | B6 不能默认把 `allow/deny` 写进 `hook.outcome` |
 
@@ -375,7 +375,7 @@
 
 | 下游 phase | B6 输出 | 为什么重要 |
 |---|---|---|
-| **B7** | real protocol delta list、dedup/disclosure ship truth、需要在 spike 复验的 items | B7 才能验证“哪些协议变化真的被平台消化” |
+| **B7** | real protocol delta list、dedup/disclosure ship truth、true callback push-path re-probe checklist、需要在 spike 复验的 items | B7 才能验证“哪些协议变化真的被平台消化”，而不是继续停留在 response-batch simulation |
 | **B8 / worker-matrix** | final cross-worker compact message surface、lowercase header law、sink dedup law | worker matrix 不能再靠 draft RFC 猜协议面 |
 
 ---
@@ -386,4 +386,5 @@
 - `hook.emit.event_name` 现在已经是 generic string；如果要把 hooks catalog harden 成 protocol enum，必须先证明这是必要而且不破坏兼容
 - `SessionInspector` 的 dedup key 来自 **session frame header.message_uuid**，**不是** `session.stream.event` body
 - `nacp-session` 保持 `1.1.0` 是 charter 明确允许的合法退出，不是“没做完”
+- `binding-F04` 的 Round 1 证据仍是 response-batch simulation；因此 **B6 收口 != true cross-worker sink callback 已证明**，B7 仍必须在 push path 上复验 ordering / dedup / overflow disclosure
 - 如果 B4/B5 实施后发现 `context.compact.prepare.*` / `commit.notification` 的真实 producer/consumer 与 draft RFC 不一致，**先修 RFC / action-plan，再改代码**
