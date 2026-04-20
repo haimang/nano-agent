@@ -183,3 +183,36 @@ KV write 路径在同 colo 内的 read-through cache 行为可能比公开文档
 | 2026-04-19 | Opus 4.7 | 初版；保守结论 + 强调 Round 2 复现是硬要求 |
 | 2026-04-19 (r2) | Opus 4.7 | R3 downgrade per B1-code-reviewed-by-GPT §R3: 显式标注本 finding 为 reconnaissance-level weak evidence；P0 design §4.3 原意的 cacheTtl 变体 / 100-sample spread / strong-read option 均未实现；严禁被下游读成 freshness contract closure；真 validation 留 B7 round 2 |
 | 2026-04-19 (r2) | Opus 4.7 | R2 docs fix per B1-docs-reviewed-by-GPT §R2: 回收 §5.2 "Round 2 cross-colo probe 必须跑" `[x]` → `[ ]` (B7 future work) |
+
+---
+
+## 9. Round-2 closure (B7 integrated spike)
+
+> **Round-2 status**: `still-open` (gated on owner/platform capability)
+> **Writeback date**: 2026-04-20
+> **Gate**: `F03-CROSS-COLO-DISABLED`
+> **Driver**: `spikes/round-2-integrated/spike-do-storage-r2/src/follow-ups/kv-cross-colo-stale.ts`
+
+### Round-2 evidence summary
+
+- **used seam**: native `KVNamespace` (probe is a raw follow-up;
+  re-validation layer does NOT test cross-colo because KvAdapter does
+  not introduce new staleness semantics beyond the platform)
+- **probe parameters**: 4 delay buckets (0 / 100 / 500 / 2000 ms),
+  100 samples per bucket, both default read AND `cacheTtl: 0` variant
+- **explicit gate**: the probe **refuses to run** without
+  `env.F03_CROSS_COLO_ENABLED === "true"`. Same-colo substitute is
+  explicitly rejected (per B7 §6.2 #3).
+
+### Round-2 verdict
+
+Finding remains `still-open` — the closure rubric requires
+cross-colo capability which is an owner/platform property. The probe
+itself is ready to run; only the gate is missing.
+
+### Residual still-open
+
+- `F03-CROSS-COLO-DISABLED` — owner must enable an account profile
+  with 2+ colos and re-run `probe/follow-ups/kv-cross-colo-stale`.
+  Without this, B8 worker-matrix should NOT rely on read-after-write
+  semantics across colos.

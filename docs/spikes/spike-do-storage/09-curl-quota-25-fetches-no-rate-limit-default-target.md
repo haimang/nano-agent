@@ -179,3 +179,41 @@ Cloudflare Workers paid plan 的 outbound subrequest cap 远高于 25。example.
 | 日期 | 作者 | 变更 |
 |---|---|---|
 | 2026-04-19 | Opus 4.7 | 初版；low-volume baseline；high-volume follow-up 是 closure 必要项 |
+
+---
+
+## 9. Round-2 closure (B7 integrated spike)
+
+> **Round-2 status**: `still-open` (gated on owner URL)
+> **Writeback date**: 2026-04-20
+> **Gate**: `F09-OWNER-URL-MISSING`
+> **Drivers**:
+>   - follow-up: `spikes/round-2-integrated/spike-do-storage-r2/src/follow-ups/curl-high-volume.ts`
+>   - re-validation (conservative path only): `spikes/round-2-integrated/spike-do-storage-r2/src/re-validation/bash.ts`
+
+### Round-2 evidence summary
+
+- **follow-up gate**: the probe **refuses to run** without
+  `env.F09_OWNER_URL`. Substituting the default target from Round 1
+  would poison the closure verdict (per B7 §6.2 #4).
+- **re-validation path**: confirms B3's conservative curl budget
+  flows through `CapabilityExecutor` end-to-end (no policy-denied
+  under allow, correct output marker). This covers F09 **only** at
+  the "shipped surface still reachable" layer, not at the
+  high-volume cap layer.
+- **probe volumes when enabled**: 50 / 100 / 200 / 500 / 1000 with
+  early-stop at 50%+ 429; 5-second per-request timeout
+
+### Round-2 verdict
+
+**Conservative-path re-validation**: `writeback-shipped`.
+**High-volume cap**: remains `still-open` pending owner URL.
+The B3 conservative budget is safe to keep; the exact widening point
+for B8 worker-matrix requires the owner-URL probe.
+
+### Residual still-open
+
+- `F09-OWNER-URL-MISSING` — without an owner-supplied URL that
+  tolerates 1000+ fetches in a short window, the high-volume cap
+  cannot be measured. B8 worker-matrix should keep B3's
+  conservative budget until this gate is cleared.

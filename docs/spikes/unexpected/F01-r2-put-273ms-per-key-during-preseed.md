@@ -170,3 +170,56 @@ contrast: single 10 MiB put = 782 ms
 | 日期 | 作者 | 变更 |
 |---|---|---|
 | 2026-04-19 | Opus 4.7 | 初版；opportunistic observation during F02 preseed |
+
+---
+
+## 9. Round-2 closure (B7 integrated spike) — LIVE EVIDENCE
+
+> **Round-2 status**: `writeback-shipped` ✅
+> **Writeback date**: 2026-04-20
+> **Deploy**: `nano-agent-spike-do-storage-r2.haimang.workers.dev`
+> **Raw evidence**: `spikes/round-2-integrated/spike-do-storage-r2/.out/probe_follow-ups_r2-concurrent-put.json`
+
+### Round-2 concurrency curve (LIVE, 1 KiB payload per key, 2026-04-20 final run)
+
+| concurrency | p50 ms | p99 ms | max ms | errors |
+|---|---|---|---|---|
+| 10 | 336 | 530 | 530 | 0 |
+| 50 | 1,310 | 2,396 | 2,396 | 0 |
+| 100 | 2,216 | 4,371 | 4,371 | 0 |
+| 200 | 4,383 | 8,491 | 8,512 | 0 |
+
+### Round-2 interpretation
+
+- **Zero errors at all levels** up to 200 parallel `put()` — no 429,
+  no 5xx, no timeouts. R2 puts scale horizontally without platform
+  pushback on this account.
+- **p50 scales roughly linearly with concurrency**: ~34 ms @ 10 /
+  ~26 ms @ 50 / ~22 ms @ 100 / ~22 ms @ 200 per put. R2 is
+  effectively amortizing per-call overhead.
+- **p99 tail widens fast past 100**: 4.4 s @ 100 → 8.5 s @ 200
+  (latency cliff doubles). 200 is at the edge of the safe envelope.
+
+### B2 calibration recommendation for `R2Adapter.putParallel()`
+
+| tier | concurrency | use case |
+|---|---|---|
+| **safe-default** | **50** | p99 under 2.5 s; zero errors |
+| opportunistic | 100 | p99 ≈ 4.4 s; still clean |
+| edge-of-safe | 200 | p99 ≈ 8.5 s; not recommended as a default |
+
+### Round-2 verdict
+
+Finding upgraded from `open` to `resolved-with-calibration`.
+B2 `R2Adapter.putParallel()` safe default = **50**. B8 worker-matrix
+should treat 100 as the "I know what I'm doing" tier and 200 as a
+one-off/drain operation only.
+
+### Residual still-open
+
+- **p99 cliff characterization**: we know 100→200 doubles the p99;
+  we don't have a datapoint at 150 to pinpoint the knee. Not
+  blocking — 50 as the safe default is well below either.
+- **Account-scoped** caveat still applies: number is for this CF
+  account at this time; B8 should re-baseline if moving to a
+  different account.

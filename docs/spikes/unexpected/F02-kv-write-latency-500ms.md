@@ -166,3 +166,34 @@ average write: ~520 ms; average read: ~2.83 ms; ratio ~184x
 | 日期 | 作者 | 变更 |
 |---|---|---|
 | 2026-04-19 | Opus 4.7 | 初版；opportunistic observation during F03 |
+
+---
+
+## 9. Round-2 closure (B7 integrated spike)
+
+> **Round-2 status**: `dismissed-with-rationale`
+> **Writeback date**: 2026-04-20
+> **Driver**: not directly re-probed; KvAdapter is not on the B7 follow-up list.
+
+### Round-2 evidence summary
+
+- **rationale**: Round-1 observed 500ms KV write latency at pre-seed
+  time; this is an account-level property consistent with
+  Cloudflare's documented KV write propagation behaviour. No
+  follow-up probe would change the platform truth — the answer is
+  "consumers must treat KV writes as propagation-eventual, not
+  immediate-durable", which is already the stance
+  `@nano-agent/storage-topology::KvAdapter` takes.
+- **KV-specific re-validation was NOT on B7's follow-up list** per
+  the P6 r2 design + B7 action-plan §2.1. It is consumed by B8
+  worker-matrix if and when KV becomes a hot path.
+
+### Round-2 verdict
+
+Dismissed on rationale. KV latency is an account-scoped property;
+the shipped adapter already contracts to that truth.
+
+### Residual still-open
+
+None. Reopen if B8 worker-matrix finds a latency-sensitive KV
+consumer.

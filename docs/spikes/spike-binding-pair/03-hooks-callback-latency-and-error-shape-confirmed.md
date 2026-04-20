@@ -199,3 +199,31 @@ HTTP 500 + 结构化 JSON body 完整透传——caller 可解析失败原因。
 |---|---|---|
 | 2026-04-19 | Opus 4.7 | 初版；3 modes (ok/slow/throw) + anchor 都 confirmed |
 | 2026-04-19 (r2) | Opus 4.7 | R2 code fix per B1-code-reviewed-by-GPT §R2: probe 的 anchor 检查从 `/handle/header-dump` 改为 `/handle/hook-dispatch`；worker-b hook-dispatch handler echo receivedHeaders；真 hook 路径上 anchor 透传与值完整性已独立验证。新 `.out/2026-04-19T13-02-31Z.json` 证据 |
+
+---
+
+## 9. Round-2 closure (B7 integrated spike)
+
+> **Round-2 status**: `writeback-shipped` ✅ LIVE (2026-04-20)
+> **Writeback date**: 2026-04-20
+> **Driver**: `spikes/round-2-integrated/spike-binding-pair-r2/worker-a-r2/src/re-validation/binding.ts` via `/hooks/dispatch` on worker-b-r2
+
+### Round-2 evidence summary
+
+- **used seam**: `@nano-agent/hooks` dispatcher (B5 ship) with
+  `@nano-agent/nacp-core` envelope transport
+- **probe**: 5 round-trips of a hook event, each with
+  `latencyMs: 10` (artificial) — captures real cross-worker latency
+  on top of the injected floor so the caller can distinguish
+  binding overhead from handler processing
+
+### Round-2 verdict
+
+Hook callback latency + error-shape baseline holds on the true
+push path through the shipped dispatcher. Full percentile
+distribution is deferred to B8 worker-matrix.
+
+### Residual still-open
+
+None beyond the B8 percentile distribution item already on that
+phase's agenda.

@@ -190,3 +190,32 @@ async r2List(prefix: string): Promise<{ objects: Array<...> }> {
 |---|---|---|
 | 2026-04-19 | Opus 4.7 | 初版；真实证据 + r2List 接口 v2 修订需求确定 |
 | 2026-04-19 (r2) | Opus 4.7 | R2 docs fix per B1-docs-reviewed-by-GPT §R2: 回收 §5.2 2 处 premature `[x]` → `[ ]` (contract test + Round 2 test 都是 B2/B7 future work) |
+
+---
+
+## 9. Round-2 closure (B7 integrated spike)
+
+> **Round-2 status**: `writeback-shipped` ✅ LIVE (2026-04-20)
+> **Writeback date**: 2026-04-20
+> **Driver**: `spikes/round-2-integrated/spike-do-storage-r2/src/re-validation/storage.ts` via `R2Adapter.listAll({ prefix })`
+
+### Round-2 evidence summary
+
+- **used seam**: `@nano-agent/storage-topology::R2Adapter.listAll`
+- **local simulation**: seed 3 keys → `listAll` returns all 3 → cleanup
+- **caveats carried forward**: `listAll` is **bounded best-effort**
+  (B2 carry-forward caveat per `packages/storage-topology` docs);
+  callers that need all keys beyond the adapter's internal cap still
+  must honour the cursor themselves. This caveat is preserved in the
+  probe's `caveats` array.
+
+### Round-2 verdict
+
+`listAll` pagination path is valid for small inventories. Large
+catalog sweeps still require cursor-aware iteration at the caller.
+The B2 `listAll` bounded-sweep caveat is **not collapsed** by B7.
+
+### Residual still-open
+
+None at adapter level. The `ReferenceBackend` orphan-sweep concern
+remains a B2 calibration item tracked separately.

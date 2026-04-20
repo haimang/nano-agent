@@ -233,3 +233,80 @@ Service binding fetch-based seam 是无状态的 RPC——transport 层没有任
 |---|---|---|
 | 2026-04-19 | Opus 4.7 | 初版；app-layer dedup is mandatory；overflow disclosure event needed |
 | 2026-04-19 (r2) | Opus 4.7 | R1 downgrade per B1-code-reviewed-by-GPT §R1: add scope caveat 说明 probe flow 是 response-batch simulation 而非真 cross-worker sink callback；真 callback 验证推迟到 B7 round 2 (P6 §4 新增 follow-up) |
+
+---
+
+## 9. Round-2 closure (B7 integrated spike)
+
+> **Round-2 status**: `writeback-shipped` ✅ LIVE (2026-04-20, cross-worker push path)
+> **Writeback date**: 2026-04-20
+> **Driver**: `spikes/round-2-integrated/spike-binding-pair-r2/worker-a-r2/src/follow-ups/binding-f04-true-callback.ts` + `worker-b-r2/src/handlers/eval-sink-ingest.ts`
+
+### Round-2 evidence summary
+
+This is the **critical** B7 honesty test (§6.2 #5). Round 1 only
+validated dedup on a response-batch simulation (both sides in the
+same isolate). Round 2 physically places `BoundedEvalSink` inside
+worker-b, has worker-a push records through a service binding, then
+queries worker-b's `/sink/stats` + `/sink/disclosure` to verify the
+dedup + overflow disclosure contract holds on the true wire.
+
+- **used seam**: `@nano-agent/session-do-runtime::BoundedEvalSink`
+  (capacity=8 for the probe)
+- **probe sequence**:
+  1. Reset sink.
+  2. Push 3 distinct-uuid records → expect 3 accepted.
+  3. Push the same 3 uuids → expect 3 rejected (dedup).
+  4. Push 10 fresh-uuid records → expect capacity overflow
+     disclosures, final window = 8.
+- **assertions** (each enforces a real B6 contract):
+  - `stats.duplicateDropCount === 3`
+  - `stats.capacityOverflowCount > 0`
+  - `stats.recordCount === capacity (8)`
+  - `disclosure.count >= 2` with both `duplicate-message` and
+    `capacity-exceeded` reasons present
+- **local simulation**: `test/b7-round2-integrated-contract.test.mjs`
+  runs the exact same logic in-process against the shipped
+  `BoundedEvalSink` so the contract is locked in CI even without
+  deploy credentials.
+
+### Round-2 LIVE evidence (2026-04-20)
+
+**Deployed** `nano-agent-spike-binding-pair-a-r2` ↔
+`nano-agent-spike-binding-pair-b-r2` (cross-worker service binding).
+Worker-a pushed records through the binding into worker-b's
+`BoundedEvalSink`. **Raw evidence**:
+`spikes/round-2-integrated/spike-binding-pair-r2/worker-a-r2/.out/probe_follow-ups_binding-f04-true-callback.json`
+
+| observation | expected | observed | |
+|---|---|---|---|
+| `batch1.accepted` (3 fresh uuids) | 3 | **3** | ✅ |
+| `batch1.dropped` | 0 | **0** | ✅ |
+| `duplicate.accepted` (replay of batch1) | 0 | **0** | ✅ |
+| `duplicate.dropped` (replay of batch1) | 3 | **3** | ✅ |
+| `batch2.accepted` (10 fresh uuids, cap=8) | 10 | **10** | ✅ |
+| `stats.duplicateDropCount` | 3 | **3** | ✅ |
+| `stats.capacityOverflowCount` | >0 | **5** | ✅ |
+| `stats.recordCount` (held window) | 8 | **8** | ✅ |
+| `disclosure.count` | ≥2 | **8** | ✅ |
+| `disclosure.reasons` | dup + cap | **3× duplicate-message, 5× capacity-exceeded** | ✅ |
+
+**Every assertion holds on the true cross-worker push path.**
+
+### Round-2 verdict
+
+B6 dedup + overflow disclosure contract holds when `BoundedEvalSink`
+is physically on a DIFFERENT worker (worker-b) from the producer
+(worker-a), communicating via a Cloudflare service binding — NOT
+same-isolate batching.
+
+This closes the B6 honesty test (§6.2 #5). The Round-1 limitation
+"dedup validated only via response-body simulation" is now resolved
+with a genuine cross-worker deploy. The 3 duplicate drops + 5 capacity
+evictions = 8 disclosures cleanly reflect the B5-B6 review R1
+eviction bookkeeping fix: evicted uuids were correctly pruned from
+`seen`, otherwise capacity-exceeded counts would be wrong.
+
+### Residual still-open
+
+None. binding-F04 is closed with live evidence.

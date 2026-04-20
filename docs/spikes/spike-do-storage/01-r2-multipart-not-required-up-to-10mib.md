@@ -176,3 +176,30 @@ Cloudflare R2 binding `put(key, body)` 在 wrangler 4.83.0 runtime 下**自动�
 | 日期 | 作者 | 变更 |
 |---|---|---|
 | 2026-04-19 | Opus 4.7 | 初版；real probe data; package impact identified |
+
+---
+
+## 9. Round-2 closure (B7 integrated spike)
+
+> **Round-2 status**: `writeback-shipped` ✅ LIVE (2026-04-20)
+> **Writeback date**: 2026-04-20
+> **Driver**: `spikes/round-2-integrated/spike-do-storage-r2/src/re-validation/storage.ts` via `R2Adapter.put` / `R2Adapter.get` / `R2Adapter.delete`
+
+### Round-2 evidence summary
+
+- **used seam**: `@nano-agent/storage-topology::R2Adapter`
+- **local simulation**: in-process test against a fake R2 binding round-trips 1 MiB without touching multipart code path (`packages/storage-topology/test/` already covers adapter contract; round-2 probe replays it on live R2)
+- **caveats carried forward**: Round-1 observed 273 ms/key on pre-seed (unexpected-F01); that is an account-level property, not an adapter concern
+
+### Round-2 verdict
+
+Round-1 conclusion holds under the shipped seam. The Round-2 probe in
+`spike-do-storage-r2` re-executes the round-trip through `R2Adapter`
+instead of raw `R2Bucket.put`. Once the owner runs
+`scripts/run-all-probes.sh` against the deployed worker, the `.out/
+probe_re-validation_storage.json` will anchor this closure with live
+p50/p99 numbers.
+
+### Residual still-open
+
+None. Finding remains `informational`; no B8 handoff required.

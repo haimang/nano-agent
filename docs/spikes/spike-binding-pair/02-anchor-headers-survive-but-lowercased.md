@@ -210,3 +210,31 @@ HTTP header names 在标准上 case-insensitive，但 Cloudflare Workers runtime
 | 日期 | 作者 | 变更 |
 |---|---|---|
 | 2026-04-19 | Opus 4.7 | 初版；anchor 透传 ✅；强 contract requirement: header name lowercase |
+
+---
+
+## 9. Round-2 closure (B7 integrated spike)
+
+> **Round-2 status**: `writeback-shipped` ✅ LIVE (2026-04-20)
+> **Writeback date**: 2026-04-20
+> **Driver**: `spikes/round-2-integrated/spike-binding-pair-r2/worker-a-r2/src/re-validation/binding.ts` via `/headers/dump` on worker-b-r2
+
+### Round-2 evidence summary
+
+- **used seam**: `@nano-agent/nacp-core` (the envelope authority +
+  header stamping law sits on top of this platform behaviour)
+- **test**: worker-a sends 4 `X-NACP-*-Uuid` headers with TitleCase,
+  worker-b observes them all lowercased — `x-nacp-trace-uuid` /
+  `x-nacp-session-uuid` / `x-nacp-team-uuid` / `x-nacp-request-uuid`
+- **binding-F02 lowercase law (§binding-F02 in `binding-findings.md`)**
+  holds on the true push path
+
+### Round-2 verdict
+
+Lowercase header law is validated end-to-end through the shipped
+`@nano-agent/nacp-core` stamping pipeline + service-binding
+transport.
+
+### Residual still-open
+
+None.

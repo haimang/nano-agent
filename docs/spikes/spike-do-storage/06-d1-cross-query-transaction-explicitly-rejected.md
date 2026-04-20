@@ -202,3 +202,31 @@ Cloudflare D1 是 SQLite-based serverless DB；client-driven `BEGIN/COMMIT` 在 
 | 日期 | 作者 | 变更 |
 |---|---|---|
 | 2026-04-19 | Opus 4.7 | 初版；3 scenarios + Cloudflare 平台错误消息显式 redirect 是关键证据 |
+
+---
+
+## 9. Round-2 closure (B7 integrated spike)
+
+> **Round-2 status**: `dismissed-with-rationale`
+> **Writeback date**: 2026-04-20
+> **Driver**: `spikes/round-2-integrated/spike-do-storage-r2/src/re-validation/storage.ts` via `D1Adapter.run("SELECT 1")`
+
+### Round-2 evidence summary
+
+- **used seam**: `@nano-agent/storage-topology::D1Adapter`
+- **probe intent**: touch the adapter code path; do NOT attempt a
+  cross-query transaction (the platform explicitly rejects those per
+  Round 1)
+- **dismissal rationale**: cross-query transactions are a documented
+  platform limitation; the shipped `D1Adapter` API shape does not
+  expose a multi-query commit surface, so callers cannot accidentally
+  rely on an unsupported feature.
+
+### Round-2 verdict
+
+Round-1 dismissal stands. D1 adapter surface enforces the platform
+constraint at the API level.
+
+### Residual still-open
+
+None.

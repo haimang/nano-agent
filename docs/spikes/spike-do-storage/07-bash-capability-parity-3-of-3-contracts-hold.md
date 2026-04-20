@@ -176,3 +176,33 @@ curl -sS -X POST "https://nano-agent-spike-do-storage.haimang.workers.dev/probe/
 | 日期 | 作者 | 变更 |
 |---|---|---|
 | 2026-04-19 | Opus 4.7 | 初版；3/3 hold；B3 不需修订 12-pack contract |
+
+---
+
+## 9. Round-2 closure (B7 integrated spike)
+
+> **Round-2 status**: `writeback-shipped` ✅ LIVE (2026-04-20)
+> **Writeback date**: 2026-04-20
+> **Driver**: `spikes/round-2-integrated/spike-do-storage-r2/src/re-validation/bash.ts` via `CapabilityExecutor` + `InMemoryCapabilityRegistry` + `CapabilityPolicyGate` + `LocalTsTarget`
+
+### Round-2 evidence summary
+
+- **used seam**: `@nano-agent/capability-runtime` (full chain)
+- **parity check**:
+  - `rg` resolves to `allow`, executes, returns inline
+  - `mkdir` resolves to `allow`, executes, returns inline
+  - `reserved-platform` (simulating `/_platform/**`) resolves to
+    `deny` at the `CapabilityPolicyGate` boundary — the B3 deny
+    policy still bites end-to-end
+- **control-case importance**: the `deny` test confirms B3's static
+  policy path was not accidentally removed during B5 hook integration
+
+### Round-2 verdict
+
+All 3 Round-1 bash capability contracts hold through the shipped
+executor. B3 surface is not silently degraded by the B5 permission
+authorizer seam.
+
+### Residual still-open
+
+None.

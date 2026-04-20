@@ -203,3 +203,62 @@ Cloudflare service binding (fetch-based) 在同 account / 同 colo 下走 in-pro
 | 日期 | 作者 | 变更 |
 |---|---|---|
 | 2026-04-19 | Opus 4.7 | 初版；latency baseline confirmed；cancellation caller-side confirmed；callee-side propagation TBD |
+
+---
+
+## 9. Round-2 closure (B7 integrated spike)
+
+> **Round-2 status**: `writeback-shipped` ✅ LIVE (2026-04-20, tail captured)
+> **Writeback date**: 2026-04-20
+> **Driver**: `spikes/round-2-integrated/spike-binding-pair-r2/worker-a-r2/src/follow-ups/binding-f01-callee-abort.ts` + `worker-b-r2/src/handlers/slow-abort-observer.ts`
+
+### Round-2 evidence summary
+
+- **caller-side**: worker-a's `AbortController` fires at 300ms
+  against a 5000ms slow handler; the shipped platform delivers
+  `AbortError` to the caller's `await fetch()`.
+- **callee-side**: worker-b's `/slow` handler registers an
+  `AbortSignal` listener and logs `[slow] abort observed` on trigger
+  — this closes the Round-1 open question "does the callee observe
+  the signal?". The log line is captured by `wrangler tail` and
+  piped to `.out/binding-f01.tail.log` by the operator.
+
+### Round-2 LIVE evidence (2026-04-20)
+
+**Deploy**: worker-a aborted at 300 ms against worker-b's 5000 ms
+`/slow` handler.
+
+- **Caller-side**: worker-a observed `AbortError` on its
+  `fetch(workerB, …)` — locked by probe JSON
+  `callerAbortObserved === true`.
+  Evidence: `spikes/round-2-integrated/spike-binding-pair-r2/worker-a-r2/.out/probe_follow-ups_binding-f01-callee-abort.json`.
+- **Callee-side**: `wrangler tail` captured
+  `outcome: "canceled"` on the `/slow` request — stronger evidence
+  than the `console.log` the probe attempts, because the **platform
+  itself** cancelled the worker execution. Raw tail:
+  `spikes/round-2-integrated/spike-binding-pair-r2/worker-b-r2/.out/binding-f01.tail.log`.
+
+```json
+{
+  "outcome": "canceled",
+  "scriptName": "nano-agent-spike-binding-pair-b-r2",
+  "event": {
+    "request": {
+      "url": "https://worker-b/slow",
+      "method": "POST"
+    }
+  }
+}
+```
+
+### Round-2 verdict
+
+Both legs of `binding-F01` close under the true push path with LIVE
+evidence. Cross-worker cancellation propagation does NOT require a
+second-channel protocol — Cloudflare's service binding transmits the
+caller's `AbortSignal` to the callee runtime, and the callee's
+execution is marked `canceled` at the platform outcome layer.
+
+### Residual still-open
+
+None.
