@@ -140,9 +140,18 @@ function parseAliasArgs(cmd: string, args: string[]): AliasRewrite {
  * `ts-exec` on the bash path collapses every trailing token into the
  * `code` field (per existing behaviour) but rejects leading `-flags`
  * so the surface stays predictable.
+ *
+ * B3 Phase 1 freeze (After-Foundations Phase 2): the 9 newly-ported
+ * text-processing commands are file/path-first on the bash surface.
+ * `-flag` arguments are honest-rejected with a marker that points
+ * callers at the structured tool call shape — same Q17 spirit applied
+ * to the new wave so LLMs cannot quietly drift into POSIX feature
+ * expansion through argv.
  */
 export const CURL_BASH_NARROW_NOTE = "curl-bash-narrow-use-structured";
 export const TS_EXEC_BASH_NARROW_NOTE = "ts-exec-bash-narrow-no-flags";
+export const TEXT_PROCESSING_BASH_NARROW_NOTE =
+  "text-processing-bash-narrow-use-structured";
 
 type BashNarrowCheck = { ok: true } | { ok: false; reason: string };
 
@@ -204,8 +213,39 @@ function checkBashNarrow(cmd: string, args: string[]): BashNarrowCheck {
     }
     return { ok: true };
   }
+  if (TEXT_PROCESSING_BASH_NARROW_REQUIRED.has(cmd)) {
+    if (args.length === 0) {
+      return {
+        ok: false,
+        reason:
+          `${cmd}: argument required (text-processing bash path is intentionally narrow; ${TEXT_PROCESSING_BASH_NARROW_NOTE}).`,
+      };
+    }
+    const flagged = args.find((token) => token.startsWith("-"));
+    if (flagged !== undefined) {
+      return {
+        ok: false,
+        reason:
+          `${cmd}: bash path is file/path-first (B3 Phase 1; ${TEXT_PROCESSING_BASH_NARROW_NOTE}). Drop '${flagged}' and use the structured tool call for richer options (e.g. { lines, bytes, reverse, numeric, unique, count }).`,
+      };
+    }
+    return { ok: true };
+  }
   return { ok: true };
 }
+
+/** Commands subject to the B3 file/path-first bash-narrow rule. */
+const TEXT_PROCESSING_BASH_NARROW_REQUIRED: ReadonlySet<string> = new Set([
+  "wc",
+  "head",
+  "tail",
+  "jq",
+  "sed",
+  "awk",
+  "sort",
+  "uniq",
+  "diff",
+]);
 
 /**
  * Plan a capability execution from a bash-shaped command string.
@@ -321,6 +361,42 @@ function buildInputFromArgs(
       return { code: args.join(" ") };
     case "git":
       return { subcommand: args[0] ?? "", args: args.slice(1) };
+    // ── B3 wave 1 — text-processing core ──
+    case "wc":
+      return { path: args[0] ?? "" };
+    case "head":
+      return { path: args[0] ?? "" };
+    case "tail":
+      return { path: args[0] ?? "" };
+    case "jq":
+      // Bash form: `jq <query> <path>`. Caller may supply `<path>` only
+      // (defaults to current dir-style); empty fields propagate to the
+      // handler which then returns a deterministic "no query/path"
+      // error.
+      return { query: args[0] ?? "", path: args[1] ?? "" };
+    case "sed":
+      return { expression: args[0] ?? "", path: args[1] ?? "" };
+    case "awk":
+      // Awk programs may legitimately contain spaces; bash quoting
+      // already collapsed them into a single token, so we mirror the
+      // ts-exec convention and join trailing tokens for the program
+      // body when the user forgot to quote — but we still treat the
+      // last token as the file path so `awk '{ print $1 }' file.txt`
+      // parses correctly even without quoting.
+      if (args.length <= 2) {
+        return { program: args[0] ?? "", path: args[1] ?? "" };
+      }
+      return {
+        program: args.slice(0, -1).join(" "),
+        path: args[args.length - 1] ?? "",
+      };
+    // ── B3 wave 2 — text-processing aux ──
+    case "sort":
+      return { path: args[0] ?? "" };
+    case "uniq":
+      return { path: args[0] ?? "" };
+    case "diff":
+      return { left: args[0] ?? "", right: args[1] ?? "" };
     default:
       return { args };
   }

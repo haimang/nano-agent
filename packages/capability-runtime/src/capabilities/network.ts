@@ -41,6 +41,15 @@ export const CURL_PRIVATE_ADDRESS_BLOCKED_NOTE = "curl-private-address-blocked";
 export const CURL_TIMEOUT_NOTE = "curl-timeout-exceeded";
 export const CURL_OUTPUT_TRUNCATED_NOTE = "curl-output-truncated";
 
+/**
+ * Disclosure marker for B3 Phase 4 — F09 subrequest / response-byte
+ * budget exhaustion. Source: spike-do-storage-F09 (Round 1 25-fetch
+ * baseline; high-volume probe deferred to B7). Surfaced via the
+ * existing `error` capability event — per B3 Phase 1 P1-03 freeze we
+ * deliberately did NOT invent a new `CapabilityEventKind`.
+ */
+export const CURL_BUDGET_EXHAUSTED_NOTE = "curl-budget-exhausted";
+
 /** Hard upper bound for any caller-requested timeout. */
 export const DEFAULT_CURL_TIMEOUT_MS = 30_000;
 /** Hard upper bound for inline response bytes. */
@@ -70,6 +79,111 @@ export interface CreateNetworkHandlersOptions {
   maxTimeoutMs?: number;
   /** Override output cap (still hard-capped at `DEFAULT_CURL_MAX_BYTES`). */
   maxOutputBytes?: number;
+  /**
+   * B3 Phase 4 / F09 — optional per-turn subrequest + response-byte
+   * budget. When supplied, every curl invocation that goes through
+   * this handler accounts against the same `SubrequestBudget` so the
+   * caller can enforce a per-turn ceiling without threading counters
+   * through every plan. Omit to retain the pre-B3 unbounded behaviour
+   * (default contract is OPT-IN to preserve back-compat).
+   *
+   * Construct with `createSubrequestBudget({ subrequests, responseBytes })`.
+   */
+  budget?: SubrequestBudget;
+}
+
+/**
+ * Mutable per-turn budget shared across `curl` invocations. Tracking
+ * is opt-in: when `subrequests`/`responseBytes` are `Infinity` (the
+ * default) the budget never throws.
+ *
+ * The interface is shaped so future capability handlers (e.g. a
+ * future `wget`, `curl-stream`, etc.) can share the same primitive
+ * without invention.
+ */
+export interface SubrequestBudget {
+  /**
+   * Account for one outbound subrequest BEFORE issuing it. Throws
+   * `Error` with `CURL_BUDGET_EXHAUSTED_NOTE` when the budget is
+   * already exhausted.
+   */
+  reserveSubrequest(capability: string): void;
+  /**
+   * Account for response body bytes after the body has been read.
+   * Throws when the cumulative response byte count would exceed the
+   * cap. Pass the post-cap (already-truncated) byte count so the
+   * accounting reflects what the caller actually received.
+   */
+  recordResponseBytes(capability: string, bytes: number): void;
+  /** Snapshot of the current accounting (read-only). */
+  readonly snapshot: () => {
+    subrequestsUsed: number;
+    subrequestsLimit: number;
+    responseBytesUsed: number;
+    responseBytesLimit: number;
+  };
+}
+
+export interface SubrequestBudgetConfig {
+  /**
+   * Maximum number of outbound subrequests in this turn. Default
+   * `Infinity` (no cap). Per spike-do-storage-F09: Round-1 saw a
+   * 25-fetch low-volume baseline with no rate-limit; conservative
+   * production turns SHOULD pass a finite value here.
+   */
+  readonly subrequests?: number;
+  /**
+   * Cumulative response-body byte budget across this turn. Default
+   * `Infinity`. Independent of the per-call `maxOutputBytes` cap;
+   * `maxOutputBytes` truncates a single response, this caps the
+   * sum across all responses.
+   */
+  readonly responseBytes?: number;
+}
+
+/**
+ * Construct a fresh per-turn subrequest budget.
+ *
+ * Implementation note (per the GPT-reviewed B2 caveat): the budget
+ * never silently swallows a violation — it always throws. Callers
+ * that prefer "warn-and-continue" semantics must wrap the throw
+ * themselves; the primitive's job is honest disclosure, not policy
+ * choice.
+ */
+export function createSubrequestBudget(
+  config: SubrequestBudgetConfig = {},
+): SubrequestBudget {
+  const subrequestsLimit = config.subrequests ?? Number.POSITIVE_INFINITY;
+  const responseBytesLimit = config.responseBytes ?? Number.POSITIVE_INFINITY;
+  let subrequestsUsed = 0;
+  let responseBytesUsed = 0;
+  return {
+    reserveSubrequest(capability: string) {
+      if (subrequestsUsed >= subrequestsLimit) {
+        throw new Error(
+          `${capability}: per-turn subrequest budget exhausted (${subrequestsUsed}/${subrequestsLimit}; ${CURL_BUDGET_EXHAUSTED_NOTE}).`,
+        );
+      }
+      subrequestsUsed += 1;
+    },
+    recordResponseBytes(capability: string, bytes: number) {
+      const next = responseBytesUsed + Math.max(0, bytes);
+      if (next > responseBytesLimit) {
+        throw new Error(
+          `${capability}: per-turn response-byte budget exhausted (${responseBytesUsed} + ${bytes} > ${responseBytesLimit}; ${CURL_BUDGET_EXHAUSTED_NOTE}).`,
+        );
+      }
+      responseBytesUsed = next;
+    },
+    snapshot() {
+      return {
+        subrequestsUsed,
+        subrequestsLimit,
+        responseBytesUsed,
+        responseBytesLimit,
+      };
+    },
+  };
 }
 
 type EgressCheck =
@@ -211,6 +325,11 @@ export function createNetworkHandlers(
       ? raw.method.toUpperCase()
       : "GET";
 
+    // F09 budget reservation must happen BEFORE the egress fires,
+    // both in connected and unconnected mode — even the stub path
+    // counts as a tool-call attempt for prompt accounting purposes.
+    options.budget?.reserveSubrequest("curl");
+
     if (!options.fetchImpl) {
       return {
         output: `[curl] ${method} ${egress.target.toString()} (${CURL_NOT_CONNECTED_NOTE}: network not yet connected; supply fetchImpl or wait for the remote tool-runner)`,
@@ -242,6 +361,8 @@ export function createNetworkHandlers(
 
     const text = await response.text();
     const { body, truncated } = truncateBody(text, outputCap);
+    const responseBytes = TEXT_ENCODER.encode(body).byteLength;
+    options.budget?.recordResponseBytes("curl", responseBytes);
     const status = `${response.status} ${response.statusText}`.trim();
     const suffix = truncated
       ? ` (${CURL_OUTPUT_TRUNCATED_NOTE}: body truncated at ${outputCap} bytes)`

@@ -140,6 +140,138 @@ const MINIMAL_COMMANDS: readonly CapabilityDeclaration[] = [
     executionTarget: "local-ts",
     policy: "allow",
   },
+  // ── B3 wave 1 — text processing core (After-Foundations Phase 2) ──
+  {
+    name: "wc",
+    kind: "filesystem",
+    description: "Print line, word, and byte counts for a file",
+    inputSchema: {
+      type: "object",
+      properties: { path: { type: "string" } },
+    },
+    executionTarget: "local-ts",
+    policy: "allow",
+  },
+  {
+    name: "head",
+    kind: "filesystem",
+    description: "Print the first lines of a file (default 10)",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: { type: "string" },
+        lines: { type: "integer" },
+        bytes: { type: "integer" },
+      },
+    },
+    executionTarget: "local-ts",
+    policy: "allow",
+  },
+  {
+    name: "tail",
+    kind: "filesystem",
+    description: "Print the last lines of a file (default 10)",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: { type: "string" },
+        lines: { type: "integer" },
+        bytes: { type: "integer" },
+      },
+    },
+    executionTarget: "local-ts",
+    policy: "allow",
+  },
+  {
+    name: "jq",
+    kind: "filesystem",
+    description:
+      "Worker-safe JSON query subset: ., .field, .a[N], .a[], keys, length",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string" },
+        path: { type: "string" },
+      },
+    },
+    executionTarget: "local-ts",
+    policy: "allow",
+  },
+  {
+    name: "sed",
+    kind: "filesystem",
+    description:
+      "Worker-safe sed subset: single 's/PATTERN/REPLACEMENT/[gi]' substitution",
+    inputSchema: {
+      type: "object",
+      properties: {
+        expression: { type: "string" },
+        path: { type: "string" },
+      },
+    },
+    executionTarget: "local-ts",
+    policy: "allow",
+  },
+  {
+    name: "awk",
+    kind: "filesystem",
+    description:
+      "Worker-safe awk subset: { print $N }, NR == K { print [...] }, /PATTERN/ { print [...] }",
+    inputSchema: {
+      type: "object",
+      properties: {
+        program: { type: "string" },
+        path: { type: "string" },
+      },
+    },
+    executionTarget: "local-ts",
+    policy: "allow",
+  },
+  // ── B3 wave 2 — text processing aux ──
+  {
+    name: "sort",
+    kind: "filesystem",
+    description: "Sort lines of a file (lexicographic by default)",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: { type: "string" },
+        reverse: { type: "boolean" },
+        numeric: { type: "boolean" },
+        unique: { type: "boolean" },
+      },
+    },
+    executionTarget: "local-ts",
+    policy: "allow",
+  },
+  {
+    name: "uniq",
+    kind: "filesystem",
+    description: "Collapse adjacent duplicate lines",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: { type: "string" },
+        count: { type: "boolean" },
+      },
+    },
+    executionTarget: "local-ts",
+    policy: "allow",
+  },
+  {
+    name: "diff",
+    kind: "filesystem",
+    description: "Unified-style diff between two workspace files",
+    inputSchema: {
+      type: "object",
+      properties: {
+        left: { type: "string" },
+        right: { type: "string" },
+      },
+    },
+    executionTarget: "local-ts",
+    policy: "allow",
+  },
 ];
 
 /**

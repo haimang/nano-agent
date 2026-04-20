@@ -17,24 +17,63 @@ Design goals:
 - Protocol-agnostic result objects that map cleanly onto the NACP
   `tool.call.*` message schemas from `@nano-agent/nacp-core`.
 
-## Supported commands (v1, 12 total)
+## Supported commands (B3, 21 total)
 
-The minimal command pack registered by `registerMinimalCommands`:
+The minimal command pack registered by `registerMinimalCommands`. The
+`local-ts` target is shared by every entry; `Target` is omitted from
+the table for brevity.
 
-| Command   | Kind       | Target    | Policy |
-| --------- | ---------- | --------- | ------ |
-| `pwd`     | filesystem | local-ts  | allow  |
-| `ls`      | filesystem | local-ts  | allow  |
-| `cat`     | filesystem | local-ts  | allow  |
-| `write`   | filesystem | local-ts  | ask    |
-| `mkdir`   | filesystem | local-ts  | ask    |
-| `rm`      | filesystem | local-ts  | ask    |
-| `mv`      | filesystem | local-ts  | ask    |
-| `cp`      | filesystem | local-ts  | ask    |
-| `rg`      | search     | local-ts  | allow  |
-| `curl`    | network    | local-ts  | ask    |
-| `ts-exec` | exec       | local-ts  | ask    |
-| `git`     | vcs        | local-ts  | allow  |
+**12-pack baseline (A8 / A9 / A10 — pre-B3):**
+
+| Command   | Kind       | Policy |
+| --------- | ---------- | ------ |
+| `pwd`     | filesystem | allow  |
+| `ls`      | filesystem | allow  |
+| `cat`     | filesystem | allow  |
+| `write`   | filesystem | ask    |
+| `mkdir`   | filesystem | ask    |
+| `rm`      | filesystem | ask    |
+| `mv`      | filesystem | ask    |
+| `cp`      | filesystem | ask    |
+| `rg`      | search     | allow  |
+| `curl`    | network    | ask    |
+| `ts-exec` | exec       | ask    |
+| `git`     | vcs        | allow  |
+
+**B3 wave 1 — text-processing core (after-foundations Phase 2):**
+
+| Command | Kind       | Policy | Bash form              | Subset                                     |
+| ------- | ---------- | ------ | ---------------------- | ------------------------------------------ |
+| `wc`    | filesystem | allow  | `wc <path>`            | POSIX `lines words bytes path`             |
+| `head`  | filesystem | allow  | `head <path>`          | First 10 lines (default); `{ lines, bytes }` via structured tool call |
+| `tail`  | filesystem | allow  | `tail <path>`          | Last 10 lines (default); `{ lines, bytes }` via structured tool call  |
+| `jq`    | filesystem | allow  | `jq <query> <path>`    | `. / .field / .a[N] / .a[] / keys / length` |
+| `sed`   | filesystem | allow  | `sed <expr> <path>`    | Single `s/PATTERN/REPLACEMENT/[gi]`         |
+| `awk`   | filesystem | allow  | `awk <program> <path>` | `{ print $N }`, `NR == K { … }`, `/PAT/ { … }` |
+
+**B3 wave 2 — text-processing aux:**
+
+| Command | Kind       | Policy | Bash form              | Notes |
+| ------- | ---------- | ------ | ---------------------- | ----- |
+| `sort`  | filesystem | allow  | `sort <path>`          | Default lexicographic; structured `{ reverse, numeric, unique }` |
+| `uniq`  | filesystem | allow  | `uniq <path>`          | POSIX adjacent-dedup; structured `{ count }`                     |
+| `diff`  | filesystem | allow  | `diff <left> <right>`  | LCS-based unified-style minimal-context output                   |
+
+The 9 text-processing commands share a 64 KiB UTF-8 output cap with a
+deterministic `text-output-truncated` marker (`TEXT_OUTPUT_MAX_BYTES` /
+`TEXT_OUTPUT_TRUNCATED_NOTE`). The bash path for these commands is
+intentionally **file/path-first** — any leading `-flag` is rejected
+with `text-processing-bash-narrow-use-structured` (B3 Phase 1 freeze;
+mirrors the Q17 `curl <url>` narrow surface). Richer options travel
+through the structured tool call only.
+
+`write` consumes the B2 typed `ValueTooLargeError` shape **structurally**
+(no `@nano-agent/storage-topology` import) and emits a
+`write-oversize-rejected` disclosure. `curl` accepts an optional
+per-turn `SubrequestBudget` (`createSubrequestBudget({ subrequests,
+responseBytes })`) — exhausting it raises a typed error with
+`curl-budget-exhausted` (no new `CapabilityEventKind`; surfaced via
+existing error path per Phase 1 P1-03 freeze).
 
 Everything outside this list is rejected. Dangerous or OS-bound
 commands (e.g. `sudo`, `docker`, `npm`, `ssh`) are in

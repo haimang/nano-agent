@@ -42,6 +42,7 @@ export {
   COMMAND_ALIASES,
   CURL_BASH_NARROW_NOTE,
   TS_EXEC_BASH_NARROW_NOTE,
+  TEXT_PROCESSING_BASH_NARROW_NOTE,
 } from "./planner.js";
 
 // ── Policy ──
@@ -93,8 +94,20 @@ export { shouldPromote } from "./artifact-promotion.js";
 export type { PromotionDecision } from "./artifact-promotion.js";
 
 // ── Capabilities ──
-export { createFilesystemHandlers } from "./capabilities/filesystem.js";
+export {
+  createFilesystemHandlers,
+  MKDIR_PARTIAL_NOTE,
+  WRITE_OVERSIZE_REJECTED_NOTE,
+} from "./capabilities/filesystem.js";
 export { createSearchHandlers } from "./capabilities/search.js";
+export {
+  createTextProcessingHandlers,
+  TEXT_OUTPUT_MAX_BYTES,
+  TEXT_OUTPUT_TRUNCATED_NOTE,
+  SED_UNSUPPORTED_NOTE,
+  AWK_UNSUPPORTED_NOTE,
+  JQ_UNSUPPORTED_NOTE,
+} from "./capabilities/text-processing.js";
 export {
   createNetworkHandlers,
   CURL_NOT_CONNECTED_NOTE,
@@ -102,12 +115,15 @@ export {
   CURL_PRIVATE_ADDRESS_BLOCKED_NOTE,
   CURL_TIMEOUT_NOTE,
   CURL_OUTPUT_TRUNCATED_NOTE,
+  CURL_BUDGET_EXHAUSTED_NOTE,
   DEFAULT_CURL_TIMEOUT_MS,
   DEFAULT_CURL_MAX_BYTES,
+  createSubrequestBudget,
 } from "./capabilities/network.js";
 export type {
   CurlStructuredInput,
   CreateNetworkHandlersOptions,
+  SubrequestBudget,
 } from "./capabilities/network.js";
 export {
   createExecHandlers,

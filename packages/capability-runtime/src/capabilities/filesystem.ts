@@ -53,6 +53,47 @@ interface FilesystemHandlersConfig {
 export const MKDIR_PARTIAL_NOTE = "mkdir-partial-no-directory-entity";
 
 /**
+ * The literal note emitted by the `write` handler when the underlying
+ * `WorkspaceFsLike.writeFile()` rejects with a typed
+ * `ValueTooLargeError`-shaped error (see B1 spike-do-storage-F08
+ * `docs/spikes/spike-do-storage/08-…` and the B2 typed error hierarchy
+ * shipped in `@nano-agent/storage-topology` 2.0.0).
+ *
+ * The capability runtime intentionally does NOT import the error class
+ * from `storage-topology` — it consumes the error STRUCTURALLY so the
+ * package layering stays clean (capability-runtime depends on
+ * `WorkspaceFsLike`, not on a specific storage adapter implementation).
+ * A consumer that ships a different `WorkspaceFsLike` is welcome to
+ * throw any object that satisfies `ValueTooLargeShape` to surface the
+ * same disclosure.
+ */
+export const WRITE_OVERSIZE_REJECTED_NOTE = "write-oversize-rejected";
+
+/**
+ * Structural shape the write handler treats as "value-too-large".
+ * Matches `@nano-agent/storage-topology`'s `ValueTooLargeError` (B2
+ * 2.0.0) without importing it directly.
+ */
+interface ValueTooLargeShape {
+  name: string;
+  bytes: number;
+  cap: number;
+  adapter: string;
+  message?: string;
+}
+
+function isValueTooLarge(err: unknown): err is ValueTooLargeShape {
+  if (!err || typeof err !== "object") return false;
+  const e = err as Record<string, unknown>;
+  if (e.name !== "ValueTooLargeError") return false;
+  return (
+    typeof e.bytes === "number" &&
+    typeof e.cap === "number" &&
+    typeof e.adapter === "string"
+  );
+}
+
+/**
  * Create filesystem capability handlers scoped to a workspace.
  *
  * @param namespace Configuration for the workspace. Currently accepts
@@ -113,7 +154,22 @@ export function createFilesystemHandlers(
     const { path = "", content = "" } = (input ?? {}) as WriteInput;
     if (!path) throw new Error("write: no file path provided");
     const resolved = resolveOrThrow("write", path);
-    if (workspace) await workspace.writeFile(resolved, content);
+    if (workspace) {
+      try {
+        await workspace.writeFile(resolved, content);
+      } catch (err) {
+        if (isValueTooLarge(err)) {
+          // Map the B2 typed truth to a deterministic capability-layer
+          // disclosure. We never expose raw storage error strings (e.g.
+          // SQLITE_TOOBIG) to the model — instead we restate the
+          // contract with the marker so prompts / reviewers can grep.
+          throw new Error(
+            `write: oversize rejected — ${err.bytes} bytes exceeds the ${err.cap}-byte cap on the ${err.adapter} adapter (${WRITE_OVERSIZE_REJECTED_NOTE}; promote to a colder tier such as R2 before retrying, or split the payload).`,
+          );
+        }
+        throw err;
+      }
+    }
     return { output: `[write] wrote ${content.length} bytes to ${resolved}` };
   });
 
