@@ -175,6 +175,51 @@ describe("SessionOrchestrator", () => {
       expect(sessionStartCalls).toHaveLength(0);
     });
 
+    // B5 — Setup is the actor-runtime startup seam (distinct from
+    // SessionStart). Fires ONLY when the actor transitions out of
+    // `unattached` — i.e. once per actor attachment.
+    it("emits Setup on first attach BEFORE SessionStart (B5)", async () => {
+      const deps = createMockDeps();
+      const orchestrator = new SessionOrchestrator(deps, DEFAULT_RUNTIME_CONFIG);
+      const initial = orchestrator.createInitialState();
+      const input = createTurnInput();
+
+      await orchestrator.startTurn(initial, input);
+
+      const hookCalls = (deps.emitHook as ReturnType<typeof vi.fn>).mock.calls;
+      const names = hookCalls.map((call: unknown[]) => call[0]);
+      expect(names).toContain("Setup");
+      expect(names).toContain("SessionStart");
+      // Setup must precede SessionStart so platform-policy handlers
+      // can prime the env before the first session-start notification.
+      expect(names.indexOf("Setup")).toBeLessThan(names.indexOf("SessionStart"));
+    });
+
+    it("does NOT emit Setup on subsequent turns (state already attached)", async () => {
+      const deps = createMockDeps();
+      const orchestrator = new SessionOrchestrator(deps, DEFAULT_RUNTIME_CONFIG);
+      const initial = orchestrator.createInitialState();
+
+      const afterFirstTurn: OrchestrationState = {
+        ...initial,
+        actorState: {
+          ...initial.actorState,
+          phase: "attached",
+          attachedAt: "2026-04-16T12:00:00.000Z",
+        },
+        turnCount: 1,
+      };
+
+      const input = createTurnInput();
+      await orchestrator.startTurn(afterFirstTurn, input);
+
+      const hookCalls = (deps.emitHook as ReturnType<typeof vi.fn>).mock.calls;
+      const setupCalls = hookCalls.filter(
+        (call: unknown[]) => call[0] === "Setup",
+      );
+      expect(setupCalls).toHaveLength(0);
+    });
+
     it("pushes a canonical turn.begin stream event with the turn UUID", async () => {
       const deps = createMockDeps();
       const orchestrator = new SessionOrchestrator(deps, DEFAULT_RUNTIME_CONFIG);
@@ -749,8 +794,11 @@ describe("SessionOrchestrator", () => {
 
       await orchestrator.startTurn(initial, input);
 
-      expect(hookCalls[0]).toBe("SessionStart");
-      expect(hookCalls[1]).toBe("UserPromptSubmit");
+      // B5 — Setup is emitted first on the initial attachment,
+      // followed by SessionStart (first-turn only) and UserPromptSubmit.
+      expect(hookCalls[0]).toBe("Setup");
+      expect(hookCalls[1]).toBe("SessionStart");
+      expect(hookCalls[2]).toBe("UserPromptSubmit");
     });
   });
 });

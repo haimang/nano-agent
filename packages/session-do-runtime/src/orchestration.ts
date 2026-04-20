@@ -160,7 +160,20 @@ export class SessionOrchestrator {
     state: OrchestrationState,
     input: TurnInput,
   ): Promise<OrchestrationState> {
-    // 1. Emit hooks — SessionStart for the first turn, UserPromptSubmit always.
+    // 1. Emit hooks — `Setup` once per actor attachment, `SessionStart` for
+    //    the first turn, `UserPromptSubmit` always.
+    //
+    // **B5 expansion** — `Setup` is the actor/runtime startup seam,
+    // distinct from `SessionStart` (which is session-turn lifecycle).
+    // `Setup` fires when the actor first transitions out of
+    // `unattached`, giving platform-policy handlers a seam to inject
+    // pre-loaded secrets / environment shims BEFORE the first
+    // `SessionStart`.
+    if (state.actorState.phase === "unattached") {
+      await this.deps.emitHook("Setup", {
+        sessionId: input.turnId,
+      });
+    }
     if (state.turnCount === 0) {
       await this.deps.emitHook("SessionStart", {
         sessionId: input.turnId,

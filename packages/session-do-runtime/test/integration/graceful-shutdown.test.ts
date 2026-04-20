@@ -118,8 +118,10 @@ describe("graceful shutdown integration", () => {
 
       await gracefulShutdown("session_end", shutdownDeps);
 
-      // Verify call order
+      // Verify call order — B5 adds a Stop hook emitHook before
+      // the SessionEnd emitHook.
       expect(callOrder).toEqual([
+        "emitHook",
         "emitHook",
         "buildCheckpoint",
         "saveCheckpoint",

@@ -83,11 +83,22 @@ export function closeCodeForReason(reason: ShutdownReason): number {
  * Errors during hook emission or trace flushing are caught and
  * logged but do not prevent the checkpoint from being saved or
  * the WebSocket from being closed.
+ *
+ * **B5 expansion** — `Stop` is emitted BEFORE `SessionEnd`. `Stop` is
+ * the machine-shutdown seam (reason-aware); `SessionEnd` is the
+ * session-bookkeeping seam. They coexist; neither replaces the other.
  */
 export async function gracefulShutdown(
   reason: ShutdownReason,
   deps: ShutdownDeps,
 ): Promise<void> {
+  // Step 0 — Emit Stop hook (B5 — machine-shutdown seam, best-effort)
+  try {
+    await deps.emitHook("Stop", { reason });
+  } catch {
+    // Hook failure is non-fatal during shutdown.
+  }
+
   // Step 1 — Emit SessionEnd hook (best-effort)
   try {
     await deps.emitHook("SessionEnd", { reason });

@@ -62,6 +62,26 @@ describe("closeCodeForReason", () => {
 
 describe("gracefulShutdown", () => {
   describe("session_end reason", () => {
+    it("emits Stop hook BEFORE SessionEnd (B5)", async () => {
+      const deps = makeDeps();
+      await gracefulShutdown("session_end", deps);
+
+      const calls = (deps.emitHook as ReturnType<typeof vi.fn>).mock.calls;
+      const names = calls.map((c: unknown[]) => c[0]);
+      expect(names).toContain("Stop");
+      expect(names).toContain("SessionEnd");
+      expect(names.indexOf("Stop")).toBeLessThan(names.indexOf("SessionEnd"));
+    });
+
+    it("emits Stop hook with the shutdown reason (B5)", async () => {
+      const deps = makeDeps();
+      await gracefulShutdown("session_end", deps);
+
+      expect(deps.emitHook).toHaveBeenCalledWith("Stop", {
+        reason: "session_end",
+      });
+    });
+
     it("emits SessionEnd hook", async () => {
       const deps = makeDeps();
       await gracefulShutdown("session_end", deps);
@@ -154,7 +174,10 @@ describe("gracefulShutdown", () => {
 
       await gracefulShutdown("session_end", deps);
 
+      // B5 — two emitHook calls (Stop then SessionEnd) before
+      // checkpoint work begins.
       expect(callOrder).toEqual([
+        "emitHook",
         "emitHook",
         "buildCheckpoint",
         "saveCheckpoint",
