@@ -65,7 +65,32 @@ export type {
 
 // ── Adapters ──
 export { NullStorageAdapter } from "./adapters/scoped-io.js";
-export type { ScopedStorageAdapter } from "./adapters/scoped-io.js";
+export type { ScopedStorageAdapter, R2ObjectLike } from "./adapters/scoped-io.js";
+export { R2Adapter } from "./adapters/r2-adapter.js";
+export type { R2BucketBinding, R2ListResult, R2ObjectBodyLike } from "./adapters/r2-adapter.js";
+export { KvAdapter } from "./adapters/kv-adapter.js";
+export type { KVNamespaceBinding, KvPutAsyncContext } from "./adapters/kv-adapter.js";
+export { D1Adapter } from "./adapters/d1-adapter.js";
+export type {
+  D1DatabaseBinding,
+  D1PreparedStatementLike,
+  D1ResultLike,
+} from "./adapters/d1-adapter.js";
+export { DOStorageAdapter } from "./adapters/do-storage-adapter.js";
+export type {
+  DurableObjectStorageBinding,
+  DurableObjectTransactionLike,
+  DOListOptions,
+} from "./adapters/do-storage-adapter.js";
+
+// ── Errors ──
+export {
+  StorageError,
+  ValueTooLargeError,
+  CursorRequiredError,
+  StorageNotConnectedError,
+} from "./errors.js";
+export type { SizeCappedAdapterKind } from "./errors.js";
 
 // ── Placement hypotheses ──
 export {

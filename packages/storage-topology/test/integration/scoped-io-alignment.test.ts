@@ -139,4 +139,19 @@ describe("integration: storage-topology ↔ nacp-core tenant-scoped I/O", () => 
     }
     expect(spy).not.toHaveBeenCalled();
   });
+
+  it("r2List v2 return shape exposes objects/truncated/cursor (per spike-do-storage-F02)", () => {
+    // Compile-time assertion: the TypeScript return shape of r2List
+    // must satisfy v2 `{ objects, truncated, cursor? }`. If the shape
+    // regresses to v1 `{ keys, truncated }`, this block fails to
+    // typecheck.
+    type R2ListReturn = Awaited<ReturnType<ScopedStorageAdapter["r2List"]>>;
+    const sample: R2ListReturn = {
+      objects: [{ key: "tenants/t/foo", size: 10 }],
+      truncated: false,
+    };
+    expect(sample.objects).toHaveLength(1);
+    expect(sample.objects[0].key).toBe("tenants/t/foo");
+    expect(sample.truncated).toBe(false);
+  });
 });
