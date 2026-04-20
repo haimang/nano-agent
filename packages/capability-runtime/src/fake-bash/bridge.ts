@@ -49,13 +49,27 @@ export class FakeBashBridge {
    *
    * Unsupported and OOM-risk commands return `null` (plan-level rejection).
    * Use execute() to get structured error results for those.
+   *
+   * **B3-R1 fix (2026-04-20)**: planner-side bash-narrow violations
+   * (e.g. `curl -X POST …`, `head -n 5 file.txt`) used to leak as raw
+   * `Error` throws because `plan()` invoked `this.planner(...)`
+   * unwrapped. The bridge contract is that `plan()` returns `null` on
+   * any plan-level rejection — we now catch the planner throw and
+   * surface `null`. Callers that need a structured reason should use
+   * `execute()` (which maps the same throw to an error result).
    */
   plan(commandLine: string): CapabilityPlan | null {
     const { command } = parseSimpleCommand(commandLine);
     if (!command) return null;
     if (isUnsupported(command)) return null;
     if (isOomRisk(command)) return null;
-    return this.planner(commandLine, this.registry);
+    try {
+      return this.planner(commandLine, this.registry);
+    } catch {
+      // Bash-narrow violation or other planner reject — bridge
+      // contract is "null on failure".
+      return null;
+    }
   }
 
   /**
@@ -88,7 +102,19 @@ export class FakeBashBridge {
       );
     }
 
-    const plan = this.planner(commandLine, this.registry);
+    let plan: CapabilityPlan | null;
+    try {
+      plan = this.planner(commandLine, this.registry);
+    } catch (err) {
+      // B3-R1 fix — bash-narrow violations (e.g. `curl -X POST`,
+      // `head -n 5 file.txt`) used to escape as raw Error throws.
+      // Bridge contract is "structured error result on failure".
+      return this.errorResult(
+        command,
+        "bash-narrow-rejected",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
     if (!plan) {
       return this.errorResult(
         command,

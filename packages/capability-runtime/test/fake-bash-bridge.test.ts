@@ -194,6 +194,39 @@ describe("FakeBashBridge", () => {
     });
   });
 
+  describe("B3-R1 — bash-narrow violation surfaces (no raw throws)", () => {
+    it("plan() returns null instead of throwing on bash-narrow violation", () => {
+      const bridge = new FakeBashBridge(registry, planFromBashCommand);
+      // `head -n 5 file.txt` violates B3 file/path-first narrow rule
+      expect(() => bridge.plan("head -n 5 file.txt")).not.toThrow();
+      expect(bridge.plan("head -n 5 file.txt")).toBeNull();
+      // `curl -X POST …` violates Q17 narrow rule
+      expect(() => bridge.plan("curl -X POST https://example.com")).not.toThrow();
+      expect(bridge.plan("curl -X POST https://example.com")).toBeNull();
+    });
+
+    it("execute() returns structured error result instead of throwing", async () => {
+      const executor = makeExecutor(registry);
+      const bridge = new FakeBashBridge(registry, planFromBashCommand, executor);
+      const result = await bridge.execute("head -n 5 file.txt");
+      expect(result.kind).toBe("error");
+      expect(result.error?.code).toBe("bash-narrow-rejected");
+      // Marker from text-processing-bash-narrow contract
+      expect(result.error?.message).toContain(
+        "text-processing-bash-narrow-use-structured",
+      );
+    });
+
+    it("execute() bash-narrow error result preserves capability name", async () => {
+      const executor = makeExecutor(registry);
+      const bridge = new FakeBashBridge(registry, planFromBashCommand, executor);
+      const result = await bridge.execute("curl -X POST https://example.com");
+      expect(result.kind).toBe("error");
+      expect(result.capabilityName).toBe("curl");
+      expect(result.error?.code).toBe("bash-narrow-rejected");
+    });
+  });
+
   describe("listCommands", () => {
     it("lists all 21 registered command names (B3: 12 minimal + 9 text-processing)", () => {
       const bridge = new FakeBashBridge(registry, planFromBashCommand);

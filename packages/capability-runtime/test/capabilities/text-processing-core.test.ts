@@ -253,6 +253,30 @@ describe("text-processing — sed", () => {
       handlers.get("sed")!({ expression: "s/a/b/x", path: "x.txt" }),
     ).rejects.toThrow(SED_UNSUPPORTED_NOTE);
   });
+
+  // B3-R2 — sed `s/foo/bar/` is per-line first match, not whole-string
+  it("non-g substitution applies per LINE (not whole-string) on multi-line input", async () => {
+    const { handlers } = build({
+      "/workspace/multi.txt": "foo bar foo\nfoo baz foo\nfoo qux foo\n",
+    });
+    const out = await handlers.get("sed")!({
+      expression: "s/foo/HI/",
+      path: "multi.txt",
+    });
+    // Each line gets ONE match replaced; trailing newline preserved.
+    expect(out.output).toBe("HI bar foo\nHI baz foo\nHI qux foo\n");
+  });
+
+  it("g flag still replaces every match within each line", async () => {
+    const { handlers } = build({
+      "/workspace/multi.txt": "foo foo\nfoo foo\n",
+    });
+    const out = await handlers.get("sed")!({
+      expression: "s/foo/HI/g",
+      path: "multi.txt",
+    });
+    expect(out.output).toBe("HI HI\nHI HI\n");
+  });
 });
 
 describe("text-processing — awk", () => {

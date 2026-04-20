@@ -498,6 +498,10 @@ function applySedExpression(expression: string, content: string): string {
       );
     }
   }
+  // B3-R2 fix (2026-04-20) — sed `s/foo/bar/` is **per-line** first
+  // match, not whole-string first match. Apply the replace on each
+  // line individually so a multi-line file gets every line touched.
+  // The `g` flag still means "all matches within a line".
   let regex: RegExp;
   try {
     regex = new RegExp(pattern!, flags.includes("g")
@@ -508,7 +512,11 @@ function applySedExpression(expression: string, content: string): string {
       `sed: invalid pattern '${pattern}': ${err instanceof Error ? err.message : String(err)}`,
     );
   }
-  return content.replace(regex, replacement!);
+  const hasTrailingNewline = content.endsWith("\n");
+  const lines = content.split("\n");
+  const usable = hasTrailingNewline ? lines.slice(0, -1) : lines;
+  const replaced = usable.map((line) => line.replace(regex, replacement!));
+  return replaced.join("\n") + (hasTrailingNewline ? "\n" : "");
 }
 
 /**
