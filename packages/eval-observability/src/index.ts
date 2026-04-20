@@ -78,7 +78,10 @@ export {
 } from "./inspector.js";
 export type {
   InspectorEvent,
+  InspectorEventMeta,
   InspectorRejection,
+  InspectorDedupStats,
+  InspectorLikeSessionFrame,
   SessionStreamEventKind,
 } from "./inspector.js";
 

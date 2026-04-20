@@ -47,12 +47,32 @@ export function isSessionStreamEventKind(
   return KIND_SET.has(kind);
 }
 
+/**
+ * Optional per-event metadata carried from the NACP envelope.
+ *
+ * B6 (§4.2 of `docs/rfc/nacp-core-1-2-0.md`) dedup contract: the
+ * authoritative `messageUuid` lives on the NACP envelope **header**
+ * (`session_frame.header.message_uuid` per
+ * `packages/nacp-session/src/websocket.ts`). It does NOT live in the
+ * `session.stream.event` body. Callers that have the frame available
+ * pass the extracted value here so the inspector can hard-dedup.
+ */
+export interface InspectorEventMeta {
+  readonly messageUuid?: string;
+}
+
 /** A single event observed by the inspector. */
 export interface InspectorEvent {
   readonly kind: SessionStreamEventKind;
   readonly seq: number;
   readonly timestamp: string;
   readonly body: unknown;
+  /**
+   * B6: the envelope-level `messageUuid` for the frame that produced
+   * this event, when supplied by the caller. Undefined on events that
+   * were fed via `onStreamEvent(...)` without `meta`.
+   */
+  readonly messageUuid?: string;
 }
 
 /** Diagnostic record for an event that failed validation. */
@@ -60,8 +80,40 @@ export interface InspectorRejection {
   readonly kind: string;
   readonly seq: number;
   readonly timestamp: string;
-  readonly reason: "unknown-kind" | "invalid-body";
+  readonly reason: "unknown-kind" | "invalid-body" | "duplicate-message";
   readonly body: unknown;
+  readonly messageUuid?: string;
+}
+
+/**
+ * Dedup statistics exposed for inspector health checks / B7 validation.
+ */
+export interface InspectorDedupStats {
+  /** Events that passed validation AND had a `messageUuid`. */
+  readonly dedupEligible: number;
+  /** Events dropped because their `messageUuid` was already seen. */
+  readonly duplicatesDropped: number;
+  /** Events without a `messageUuid` (opted out of dedup). */
+  readonly missingMessageUuid: number;
+}
+
+/**
+ * Loose NACP session frame shape used by `onSessionFrame()`.
+ *
+ * Intentionally structural (not a hard import from nacp-session) so
+ * `eval-observability` does not reverse-depend on Session profile
+ * code. Mirrors the envelope / frame shape emitted by
+ * `packages/nacp-session/src/websocket.ts`.
+ */
+export interface InspectorLikeSessionFrame {
+  readonly header?: { readonly message_uuid?: string } | undefined;
+  readonly body?: unknown;
+  readonly session_frame?:
+    | {
+        readonly stream_uuid?: string;
+        readonly stream_seq?: number;
+      }
+    | undefined;
 }
 
 /**
@@ -74,10 +126,30 @@ export interface InspectorRejection {
  * validation is delegated via `bodyValidator`, letting callers plug
  * in `SessionStreamEventBodySchema.safeParse` without this package
  * importing Session profile code.
+ *
+ * **B6 additions**:
+ *
+ * - Optional `meta.messageUuid` on `onStreamEvent()`. When present,
+ *   the inspector performs **hard dedup**: a repeat `messageUuid` is
+ *   dropped and recorded in `getRejections()` with
+ *   `reason: "duplicate-message"`.
+ * - `onSessionFrame(frame)` convenience: extracts
+ *   `header.message_uuid` + `body` + `session_frame.stream_seq`
+ *   automatically so the caller doesn't have to destructure.
+ * - `getDedupStats()` exposes the counters B7 integrated spike uses
+ *   to verify `binding-F04` conformance.
+ *
+ * When `meta.messageUuid` is absent (or the frame header lacks it),
+ * the inspector **does not dedup** — this preserves backward
+ * compatibility and avoids the false-positive risk of hashing bodies.
  */
 export class SessionInspector {
   private events: InspectorEvent[] = [];
   private rejections: InspectorRejection[] = [];
+  private readonly seenMessageUuids = new Set<string>();
+  private dedupEligibleCount = 0;
+  private duplicatesDroppedCount = 0;
+  private missingMessageUuidCount = 0;
 
   constructor(
     /**
@@ -91,15 +163,34 @@ export class SessionInspector {
   ) {}
 
   /**
-   * Record a stream event. If `kind` is not one of the 9 canonical kinds,
-   * the event is rejected and recorded in `getRejections()`. Automatically
-   * stamps the event at recording time.
+   * Record a stream event. If `kind` is not one of the 9 canonical
+   * kinds, the event is rejected and recorded in `getRejections()`.
+   *
+   * B6: when `meta.messageUuid` is supplied and the same uuid was
+   * previously accepted, the event is **dropped** and recorded in
+   * `getRejections()` with `reason: "duplicate-message"`. When the
+   * field is absent, no dedup is performed.
+   *
+   * Automatically stamps the event at recording time.
    */
-  onStreamEvent(kind: string, seq: number, body: unknown): void {
+  onStreamEvent(
+    kind: string,
+    seq: number,
+    body: unknown,
+    meta?: InspectorEventMeta,
+  ): void {
     const timestamp = new Date().toISOString();
+    const messageUuid = meta?.messageUuid;
 
     if (!isSessionStreamEventKind(kind)) {
-      this.rejections.push({ kind, seq, timestamp, reason: "unknown-kind", body });
+      this.rejections.push({
+        kind,
+        seq,
+        timestamp,
+        reason: "unknown-kind",
+        body,
+        messageUuid,
+      });
       return;
     }
 
@@ -110,12 +201,66 @@ export class SessionInspector {
           : { kind };
       const result = this.bodyValidator(candidate);
       if (!result.ok) {
-        this.rejections.push({ kind, seq, timestamp, reason: "invalid-body", body });
+        this.rejections.push({
+          kind,
+          seq,
+          timestamp,
+          reason: "invalid-body",
+          body,
+          messageUuid,
+        });
         return;
       }
     }
 
-    this.events.push({ kind, seq, timestamp, body });
+    // B6 — §4.2 dedup contract. Only honoured when the caller hands us
+    // a messageUuid; without it the inspector keeps 1.1.0 semantics.
+    if (messageUuid !== undefined && messageUuid.length > 0) {
+      if (this.seenMessageUuids.has(messageUuid)) {
+        this.duplicatesDroppedCount += 1;
+        this.rejections.push({
+          kind,
+          seq,
+          timestamp,
+          reason: "duplicate-message",
+          body,
+          messageUuid,
+        });
+        return;
+      }
+      this.seenMessageUuids.add(messageUuid);
+      this.dedupEligibleCount += 1;
+    } else {
+      this.missingMessageUuidCount += 1;
+    }
+
+    this.events.push({ kind, seq, timestamp, body, messageUuid });
+  }
+
+  /**
+   * B6 — feed a whole NACP session frame. Convenience wrapper around
+   * `onStreamEvent()` that extracts `header.message_uuid`, `body`, and
+   * `session_frame.stream_seq` automatically.
+   *
+   * `body.kind` must be present (every `session.stream.event` body has
+   * a `kind` discriminator); callers that know they have a frame in
+   * hand should prefer this over `onStreamEvent()` to guarantee they
+   * pass the dedup key.
+   */
+  onSessionFrame(frame: InspectorLikeSessionFrame): void {
+    const body = frame.body;
+    const kind =
+      body !== null && typeof body === "object" && "kind" in (body as object)
+        ? String((body as { kind: unknown }).kind)
+        : "";
+    const seq = frame.session_frame?.stream_seq ?? 0;
+    const messageUuid = frame.header?.message_uuid;
+    this.onStreamEvent(
+      kind,
+      seq,
+      body,
+      messageUuid !== undefined ? { messageUuid } : undefined,
+    );
   }
 
   /** Return all recorded events in arrival order. */
@@ -140,8 +285,20 @@ export class SessionInspector {
     return this.events.slice(start);
   }
 
-  /** Return all rejections (unknown kind or invalid body). */
+  /** Return all rejections (unknown kind, invalid body, or duplicate). */
   getRejections(): InspectorRejection[] {
     return [...this.rejections];
+  }
+
+  /**
+   * B6 — counters exposed for health checks and the B7 integrated
+   * spike which verifies `binding-F04` dedup conformance.
+   */
+  getDedupStats(): InspectorDedupStats {
+    return {
+      dedupEligible: this.dedupEligibleCount,
+      duplicatesDropped: this.duplicatesDroppedCount,
+      missingMessageUuid: this.missingMessageUuidCount,
+    };
   }
 }
