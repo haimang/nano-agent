@@ -128,12 +128,15 @@ export class InspectorFacade {
    * returned `StreamSubscription` to its actual WebSocket transport.
    */
   subscribeStream(filter: SubscribeFilter = {}): StreamSubscription {
+    const subscriptions = this.subscriptions;
     const sub: InternalSubscription = {
       filter,
       sink: [],
       cancelled: false,
       cancel() {
+        if (this.cancelled) return;
         this.cancelled = true;
+        subscriptions.delete(this);
       },
       push(event) {
         if (this.cancelled) return false;
@@ -345,16 +348,24 @@ export async function mountInspectorFacade(
   const prefix = options.prefix ?? "/inspect/";
   if (!url.pathname.startsWith(prefix)) return null;
 
-  // Extract sessionUuid from `/inspect/sessions/:sessionUuid/...`
-  const segs = url.pathname.split("/").filter(Boolean);
-  if (segs.length < 3 || segs[0] !== "inspect" || segs[1] !== "sessions") {
+  const canonicalPrefix = "/inspect/";
+  const relativePath = url.pathname.slice(prefix.length);
+  const segs = relativePath.split("/").filter(Boolean);
+  if (segs.length < 2 || segs[0] !== "sessions") {
     return new Response(JSON.stringify({ error: "not-found" }), {
       status: 404,
       headers: { "content-type": "application/json" },
     });
   }
-  const sessionUuid = segs[2]!;
+  const sessionUuid = segs[1]!;
 
   const facade = options.facadeFactory(sessionUuid);
-  return facade.handle(options.request, { remoteIp: options.remoteIp });
+  if (prefix === canonicalPrefix) {
+    return facade.handle(options.request, { remoteIp: options.remoteIp });
+  }
+
+  const rewrittenUrl = new URL(options.request.url);
+  rewrittenUrl.pathname = `${canonicalPrefix}${relativePath}`;
+  const rewrittenRequest = new Request(rewrittenUrl, options.request);
+  return facade.handle(rewrittenRequest, { remoteIp: options.remoteIp });
 }

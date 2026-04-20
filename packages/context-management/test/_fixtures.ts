@@ -14,16 +14,36 @@ import {
   type R2ObjectBodyLike,
 } from "@nano-agent/storage-topology";
 
-export function fakeDoStorage(opts: { failTransaction?: boolean } = {}) {
+export function fakeDoStorage(
+  opts: {
+    failTransaction?: boolean;
+    /**
+     * R9 drift fixture (GPT 2nd review §C.2). One-shot hook fired
+     * AFTER the next `binding.get(...)` call computes its result but
+     * BEFORE it returns. Lets a test simulate a concurrent commit
+     * that lands between the committer's pre-tx read and its in-tx
+     * read.
+     */
+    onGetSideEffect?: (key: string | string[]) => void;
+  } = {},
+) {
   const store = new Map<string, unknown>();
+  let getSideEffect = opts.onGetSideEffect;
   const binding: DurableObjectStorageBinding = {
     async get<T = unknown>(arg: string | string[]) {
-      if (Array.isArray(arg)) {
-        const m = new Map<string, T>();
-        for (const k of arg) if (store.has(k)) m.set(k, store.get(k) as T);
-        return m;
+      const result: T | undefined | Map<string, T> = Array.isArray(arg)
+        ? (() => {
+            const m = new Map<string, T>();
+            for (const k of arg) if (store.has(k)) m.set(k, store.get(k) as T);
+            return m;
+          })()
+        : (store.get(arg) as T | undefined);
+      if (getSideEffect) {
+        const fn = getSideEffect;
+        getSideEffect = undefined; // one-shot
+        fn(arg);
       }
-      return store.get(arg) as T | undefined;
+      return result;
     },
     async put<T>(arg: string | Record<string, T>, val?: T) {
       if (typeof arg === "string") store.set(arg, val);

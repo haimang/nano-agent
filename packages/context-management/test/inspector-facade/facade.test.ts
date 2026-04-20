@@ -306,6 +306,7 @@ describe("inspector-facade — subscribe filter", () => {
     const sub = facade.subscribeStream();
     sub.cancel();
     expect(sub.push({ kind: "anything", body: 1 })).toBe(false);
+    expect(facade.listSubscriptions()).toHaveLength(0);
   });
 });
 
@@ -358,6 +359,17 @@ describe("inspector-facade — mount helper", () => {
     const res = await mountInspectorFacade({
       env: { INSPECTOR_FACADE_ENABLED: "true" },
       request: new Request("https://x/inspect/sessions/sess-1/context/usage"),
+      facadeFactory: (id) => makeFacade({ sessionUuid: id }),
+    });
+    expect(res).not.toBeNull();
+    expect(res!.status).toBe(200);
+  });
+
+  it("rewrites custom prefixes onto the canonical /inspect surface", async () => {
+    const res = await mountInspectorFacade({
+      env: { INSPECTOR_FACADE_ENABLED: "true" },
+      prefix: "/ops/inspect/",
+      request: new Request("https://x/ops/inspect/sessions/sess-1/context/usage"),
       facadeFactory: (id) => makeFacade({ sessionUuid: id }),
     });
     expect(res).not.toBeNull();

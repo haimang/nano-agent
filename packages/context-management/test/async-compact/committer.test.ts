@@ -161,6 +161,165 @@ describe("committer — tx failure rollback + R2 cleanup", () => {
   });
 });
 
+describe("committer — B4-R5 version truth on mid-prepare drift", () => {
+  it("CommitOutcome reports the version actually replaced (in-tx truth), not the candidate's pre-tx estimate", async () => {
+    const { adapter, store } = fakeDoStorage();
+    // Pre-seed a context already at version 7 (drift since the
+    // candidate snapshot was taken at version 0).
+    await adapter.put("context:s-1", {
+      version: 7,
+      committedAt: "2026-04-20T00:00:00.000Z",
+      layers: [
+        { kind: "system", priority: 0, content: "old", tokenEstimate: 5, required: true },
+      ],
+      summary: { storage: "do", storageKey: "context-snapshot:s-1:v0", sizeBytes: 0 },
+    });
+    const committer = new CompactionCommitter({
+      sessionUuid: "s-1",
+      doStorage: adapter,
+    });
+    const outcome = await committer.commit({
+      candidate: candidate(0), // candidate thinks the world is at v0
+      prepared: prepared("summary"),
+    });
+    expect(outcome.kind).toBe("committed");
+    if (outcome.kind === "committed") {
+      // B4-R5 — outcome reflects in-tx live version, not the
+      // stale candidate.snapshotVersion.
+      expect(outcome.oldVersion).toBe(7);
+      expect(outcome.newVersion).toBe(8);
+    }
+    const persisted = store.get("context:s-1") as { version: number };
+    expect(persisted.version).toBe(8);
+  });
+});
+
+describe("R9 — TOCTOU drift detection (GPT 2nd review §C.2)", () => {
+  it("aborts the tx (and cleans R2) when pre-tx version drifts from in-tx version", async () => {
+    const store = new Map<string, unknown>();
+    // Prime the store with v=5
+    store.set("context:s-1", {
+      version: 5,
+      committedAt: "2026-04-20T00:00:00.000Z",
+      layers: [
+        { kind: "system", priority: 0, content: "old-sys", tokenEstimate: 5, required: true },
+      ],
+      summary: { storage: "do", storageKey: "context-snapshot:s-1:v0", sizeBytes: 0 },
+    });
+    // Custom binding with a one-shot drift hook on the FIRST get
+    let driftFired = false;
+    const binding = {
+      async get(key: unknown) {
+        const result = store.get(String(key));
+        if (!driftFired && key === "context:s-1") {
+          driftFired = true;
+          // Simulate a concurrent commit landing — bump version to 7
+          store.set("context:s-1", {
+            version: 7,
+            committedAt: "2026-04-20T00:00:01.000Z",
+            layers: [],
+            summary: { storage: "do", storageKey: "context-snapshot:s-1:v0", sizeBytes: 0 },
+          });
+        }
+        return result;
+      },
+      async put(key: unknown, value: unknown) {
+        store.set(String(key), value);
+      },
+      async delete(key: unknown) {
+        return store.delete(String(key));
+      },
+      async list() {
+        return new Map();
+      },
+      async transaction<T>(callback: (tx: unknown) => Promise<T>): Promise<T> {
+        const snapshot = new Map(store);
+        const tx = {
+          async get(key: unknown) {
+            return store.get(String(key));
+          },
+          async put(key: unknown, value: unknown) {
+            store.set(String(key), value);
+          },
+          async delete(key: unknown) {
+            return store.delete(String(key));
+          },
+          async list() {
+            return new Map(store);
+          },
+        };
+        try {
+          return await callback(tx);
+        } catch (err) {
+          store.clear();
+          for (const [k, v] of snapshot) store.set(k, v);
+          throw err;
+        }
+      },
+    } as unknown as ConstructorParameters<typeof DOStorageAdapter>[0];
+    const doAdapter = new DOStorageAdapter(binding);
+    const { adapter: r2Adapter, store: r2Store } = fakeR2();
+    const committer = new CompactionCommitter({
+      sessionUuid: "s-1",
+      doStorage: doAdapter,
+      r2: r2Adapter,
+    });
+    const outcome = await committer.commit({
+      candidate: candidate(5),
+      prepared: prepared("summary text"),
+    });
+    // R9 — drift detection aborts the commit honestly
+    expect(outcome.kind).toBe("failed");
+    if (outcome.kind === "failed") {
+      expect(outcome.error).toContain("drifted");
+    }
+    // Snapshot key uses preTx version (v5) — that key must NOT exist
+    // post-rollback (rollback restored the snapshot map state)
+    expect(store.has("context-snapshot:s-1:v5")).toBe(false);
+    // The bumped v=7 write that "landed concurrently" stays — we
+    // never overwrote it with stale content
+    const live = store.get("context:s-1") as { version: number };
+    expect(live.version).toBe(7);
+    // R2 promotion (if any) cleaned up
+    expect(r2Store.size).toBe(0);
+  });
+});
+
+describe("committer — B4-R6 snapshot R2 cleanup on tx rollback", () => {
+  it("oversize pre-existing snapshot promoted to R2 BEFORE tx is cleaned up on rollback", async () => {
+    const { binding } = fakeDoStorage({ failTransaction: true });
+    const doAdapter = new DOStorageAdapter(binding, { maxValueBytes: 50 });
+    const { adapter: r2Adapter, store: r2Store } = fakeR2();
+    // Pre-seed an oversize context using the underlying binding so the
+    // adapter cap doesn't refuse the seed itself.
+    const heavyContext = {
+      version: 5,
+      committedAt: "2026-04-20T00:00:00.000Z",
+      layers: Array.from({ length: 10 }, (_, i) => ({
+        kind: "recent_transcript",
+        priority: i,
+        content: `turn-${i}`.repeat(20),
+        tokenEstimate: 100,
+        required: false,
+      })),
+      summary: { storage: "do", storageKey: "context-snapshot:s-1:v0", sizeBytes: 0 },
+    };
+    await binding.put("context:s-1", heavyContext);
+    const committer = new CompactionCommitter({
+      sessionUuid: "s-1",
+      doStorage: doAdapter,
+      r2: r2Adapter,
+    });
+    const outcome = await committer.commit({
+      candidate: candidate(5),
+      prepared: prepared("x".repeat(500)),
+    });
+    expect(outcome.kind).toBe("failed");
+    // Both summary AND snapshot R2 blobs cleaned up
+    expect(r2Store.size).toBe(0);
+  });
+});
+
 // Helpers ──
 
 function withSmallCap(opts: { failTransaction?: boolean } = {}) {

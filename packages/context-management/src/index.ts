@@ -59,6 +59,7 @@ export {
 // ── Inspector facade submodule ──
 export {
   InspectorFacade,
+  mountInspectorFacade,
   buildUsageReport,
   redactSecrets,
   parseBearer,
@@ -75,4 +76,5 @@ export {
   type CompactStateInspectorView,
   type SubscribeFilter,
   type StreamSubscription,
+  type MountInspectorOptions,
 } from "./inspector-facade/index.js";

@@ -110,13 +110,26 @@ export class CompactionCommitter {
   }): Promise<CommitOutcome> {
     const { candidate, prepared } = args;
 
-    // Step 1 — size-route the summary OUTSIDE the tx
+    // Step 1 — read live context BEFORE the tx so we can size-route
+    // both the new summary AND the snapshot of the pre-swap context
+    // entirely outside the transaction. Closes B4-R5 (returned
+    // `oldVersion` matches the version actually being replaced) AND
+    // B4-R6 (snapshot R2 promotion happens out-of-tx so the rollback
+    // path can clean it up). A narrow TOCTOU window between this read
+    // and the tx's read is handled by re-reading inside the tx and
+    // committing the in-tx version pair to the outcome.
+    const preTxCurrent = await this.doStorage.get<PersistedContext>(
+      this.contextKey,
+    );
+    const preTxVersion = preTxCurrent?.version ?? 0;
+
+    // Step 2a — size-route the new summary OUTSIDE the tx
     let summarySerialized: Awaited<
       ReturnType<VersionHistory["prepareSerialized"]>
     >;
     try {
       summarySerialized = await this.versionHistory.prepareSerialized({
-        version: candidate.snapshotVersion + 1,
+        version: preTxVersion + 1,
         payload: prepared.text,
       });
     } catch (err) {
@@ -126,26 +139,74 @@ export class CompactionCommitter {
       };
     }
 
+    // Step 2b — size-route the SNAPSHOT of the pre-swap context (only
+    // if there is one) OUTSIDE the tx. This closes B4-R6: snapshot R2
+    // promotion now happens before the tx opens, and the rollback
+    // cleanup path tracks the promoted key.
+    let snapshotSerialized:
+      | Awaited<ReturnType<VersionHistory["prepareSerialized"]>>
+      | undefined;
+    if (preTxCurrent) {
+      try {
+        snapshotSerialized = await this.versionHistory.prepareSerialized({
+          version: preTxVersion,
+          payload: JSON.stringify(preTxCurrent),
+        });
+      } catch (err) {
+        // If the snapshot's R2 promotion fails we abort honestly —
+        // better than committing a context whose pre-swap version is
+        // unrecoverable. Cleanup the summary R2 blob already pushed.
+        await this.cleanupR2Best(summarySerialized);
+        return {
+          kind: "failed",
+          error: `committer: snapshot preflight failed: ${describeError(err)}`,
+        };
+      }
+    }
+
+    // Captured inside the tx for the outcome — closes B4-R5.
+    let committedOldVersion = preTxVersion;
+    let committedNewVersion = preTxVersion + 1;
+
     try {
       await this.doStorage.transaction(async (tx) => {
-        // Step 3 — read current context inside tx
+        // Step 3 — read current context inside tx (TOCTOU pin)
         const current =
           (await tx.get<PersistedContext>(this.contextKey)) ?? null;
         const currentVersion = current?.version ?? 0;
 
-        // Step 5 — snapshot the pre-swap context (only when one exists)
-        if (current) {
-          const snapshotPayload = JSON.stringify(current);
-          // Size-route the snapshot too — but inside the tx we only
-          // know how to write the inline pointer; R2 promotion would
-          // need to happen out-of-tx. The committer's contract is:
-          // **callers MUST configure R2 when their summaries / past
-          // contexts can exceed the DO cap**. If R2 is missing AND the
-          // payload exceeds the cap, prepareSerialized throws.
-          const snapshotSerialized = await this.versionHistory.prepareSerialized({
-            version: currentVersion,
-            payload: snapshotPayload,
-          });
+        // R9 / GPT 2nd review §C.2 — TOCTOU drift detection.
+        //
+        // The summary R2 promotion (Step 2a) and the snapshot R2
+        // promotion (Step 2b) BOTH used `preTxVersion` to derive
+        // their target keys. If the live context advanced between
+        // pre-tx read and tx open (a concurrent commit landed), the
+        // pre-promoted keys would be wrong:
+        //
+        //   - `summarySerialized.storageKey = context-snapshot:s/v{preTx+1}`
+        //     would point at v(preTx+1) but the actual new context
+        //     would be v(currentVersion+1) ≠ v(preTx+1).
+        //   - `snapshotSerialized` was the v(preTxVersion) payload
+        //     but `versionHistory.doKey(currentVersion)` would write
+        //     it under v(currentVersion), corrupting that snapshot.
+        //
+        // The cleanest fix: throw to abort the tx; the outer catch
+        // already cleans up both R2 blobs; the orchestrator's
+        // `recordFailure()` will mark the attempt as failed and let
+        // the retry budget decide whether to re-arm. This swaps a
+        // silent corruption for an honest transient failure.
+        if (currentVersion !== preTxVersion) {
+          throw new Error(
+            `committer: pre-tx version (${preTxVersion}) drifted from in-tx version (${currentVersion}); aborting to prevent snapshot/summary key corruption (R9)`,
+          );
+        }
+        committedOldVersion = currentVersion;
+        committedNewVersion = currentVersion + 1;
+
+        // Step 5 — write the snapshot inline pointer (heavy R2 payload
+        // was already promoted in Step 2b). Now safe because
+        // currentVersion === preTxVersion.
+        if (snapshotSerialized && current) {
           const inlineRecord =
             this.versionHistory.buildInlineRecord(snapshotSerialized);
           await tx.put(
@@ -206,19 +267,10 @@ export class CompactionCommitter {
         await tx.delete(this.compactStateKey);
       });
     } catch (err) {
-      // The DO tx rolled back. Best-effort R2 cleanup for any blob we
-      // pushed out-of-tx — orphan R2 objects are non-fatal but we
-      // should not silently leak them when we know the swap aborted.
-      if (summarySerialized.storage === "r2" && summarySerialized.r2Key && this.r2) {
-        try {
-          await this.r2.delete(summarySerialized.r2Key);
-        } catch (cleanupErr) {
-          console.warn(
-            `committer: R2 cleanup of ${summarySerialized.r2Key} failed after tx rollback:`,
-            cleanupErr,
-          );
-        }
-      }
+      // B4-R6 cleanup — both summary AND snapshot R2 blobs may have
+      // been pushed out-of-tx; clean both on rollback.
+      await this.cleanupR2Best(summarySerialized);
+      await this.cleanupR2Best(snapshotSerialized);
       return {
         kind: "failed",
         error: `committer: tx aborted: ${describeError(err)}`,
@@ -227,14 +279,33 @@ export class CompactionCommitter {
 
     return {
       kind: "committed",
-      oldVersion: candidate.snapshotVersion,
-      newVersion: candidate.snapshotVersion + 1,
+      // B4-R5 — versions reflect the in-tx truth.
+      oldVersion: committedOldVersion,
+      newVersion: committedNewVersion,
       summary: {
         storage: summarySerialized.storage,
         storageKey: summarySerialized.storageKey,
         sizeBytes: summarySerialized.sizeBytes,
       },
     };
+  }
+
+  /** Best-effort R2 cleanup for tx-rollback paths (B4-R6). */
+  private async cleanupR2Best(
+    serialized:
+      | Awaited<ReturnType<VersionHistory["prepareSerialized"]>>
+      | undefined,
+  ): Promise<void> {
+    if (!serialized || serialized.storage !== "r2" || !serialized.r2Key) return;
+    if (!this.r2) return;
+    try {
+      await this.r2.delete(serialized.r2Key);
+    } catch (cleanupErr) {
+      console.warn(
+        `committer: R2 cleanup of ${serialized.r2Key} failed after tx rollback:`,
+        cleanupErr,
+      );
+    }
   }
 
   /** Read the current persisted context (e.g. for inspector queries). */
