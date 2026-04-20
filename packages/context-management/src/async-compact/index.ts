@@ -401,10 +401,14 @@ export class AsyncCompactOrchestrator {
     if (this.terminalFailed) return;
     if (this.state.kind === "idle") {
       if (!this.shouldArm(usage)) return;
+      // B5 — `ContextPressure` early-signal hooks fire before the
+      // state-machine transition so observers see "we're about to
+      // arm because usage is at X%" separately from the actual
+      // arming transition.
+      const usagePct = usage.totalTokens / Math.max(1, usage.maxTokens);
+      this.emit("ContextPressure", { usagePct, nextAction: "arm" });
       await this.transitionTo({ kind: "armed", retriesUsed: 0 });
-      this.emit("ContextCompactArmed", {
-        usagePct: usage.totalTokens / Math.max(1, usage.maxTokens),
-      });
+      this.emit("ContextCompactArmed", { usagePct });
       return;
     }
     if (this.state.kind === "failed") {
@@ -413,12 +417,18 @@ export class AsyncCompactOrchestrator {
       // already, so this is usually true). The retry counter is
       // preserved so a second failure exhausts the budget honestly.
       if (!this.shouldArm(usage)) return;
+      const usagePct = usage.totalTokens / Math.max(1, usage.maxTokens);
+      this.emit("ContextPressure", {
+        usagePct,
+        nextAction: "arm",
+        retry: true,
+      });
       await this.transitionTo({
         kind: "armed",
         retriesUsed: this.state.retriesUsed,
       });
       this.emit("ContextCompactArmed", {
-        usagePct: usage.totalTokens / Math.max(1, usage.maxTokens),
+        usagePct,
         retry: true,
         retriesUsed: this.state.retriesUsed,
       });

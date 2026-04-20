@@ -72,9 +72,11 @@ describe("AsyncCompactOrchestrator — happy lifecycle", () => {
     }
     expect(orchestrator.getCurrentState().state.kind).toBe("idle");
 
-    // Lifecycle events emitted in canonical order
+    // Lifecycle events emitted in canonical order (B5 — ContextPressure
+    // fires as an early-signal immediately before the ARM transition).
     const eventNames = emitter.events.map((e) => e.name);
     expect(eventNames).toEqual([
+      "ContextPressure",
       "ContextCompactArmed",
       "ContextCompactPrepareStarted",
       "ContextCompactCommitted",

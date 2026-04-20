@@ -7,7 +7,13 @@ import {
   parseHookOutcomeBody,
   hookEventToSessionBroadcast,
   buildHookAuditRecord,
+  HOOK_EVENT_CATALOG,
+  ASYNC_COMPACT_HOOK_EVENTS,
+  CLASS_B_HOOK_EVENTS,
+  verdictOf,
+  aggregateOutcomes,
 } from "../packages/hooks/dist/index.js";
+import { COMPACT_LIFECYCLE_EVENT_NAMES } from "../packages/context-management/dist/index.js";
 import {
   HookEmitBodySchema,
   HookOutcomeBodySchema,
@@ -108,4 +114,97 @@ test("hook audit records carry trace-first fields when a trace context is thread
   assert.equal(recovered.traceUuid, TRACE_UUID);
   assert.equal(recovered.sourceRole, "hook");
   assert.deepEqual(validateTraceEvent(recovered), []);
+});
+
+test("B5 v2 catalog registers 18 events across Class A/B/D", () => {
+  const names = Object.keys(HOOK_EVENT_CATALOG).sort();
+  assert.equal(names.length, 18);
+  const classA = [
+    "SessionStart",
+    "SessionEnd",
+    "UserPromptSubmit",
+    "PreToolUse",
+    "PostToolUse",
+    "PostToolUseFailure",
+    "PreCompact",
+    "PostCompact",
+  ];
+  const classB = ["Setup", "Stop", "PermissionRequest", "PermissionDenied"];
+  const classD = [
+    "ContextPressure",
+    "ContextCompactArmed",
+    "ContextCompactPrepareStarted",
+    "ContextCompactCommitted",
+    "ContextCompactFailed",
+    "EvalSinkOverflow",
+  ];
+  for (const n of [...classA, ...classB, ...classD]) {
+    assert.ok(
+      HOOK_EVENT_CATALOG[n],
+      `expected catalog to register event ${n}`,
+    );
+  }
+});
+
+test("B5 — hooks ASYNC_COMPACT_HOOK_EVENTS matches context-management COMPACT_LIFECYCLE_EVENT_NAMES", () => {
+  const a = [...ASYNC_COMPACT_HOOK_EVENTS].sort();
+  const b = [...COMPACT_LIFECYCLE_EVENT_NAMES].sort();
+  assert.deepEqual(a, b, "B5 hook catalog must mirror B4 lifecycle names");
+});
+
+test("B5 — Class B event inventory is exported and stable", () => {
+  assert.deepEqual(
+    [...CLASS_B_HOOK_EVENTS].sort(),
+    ["PermissionDenied", "PermissionRequest", "Setup", "Stop"],
+  );
+});
+
+test("B5 — every v2 event still produces a valid hook.emit body", () => {
+  for (const eventName of Object.keys(HOOK_EVENT_CATALOG)) {
+    const body = buildHookEmitBody(eventName, { v2Probe: true });
+    assert.equal(
+      HookEmitBodySchema.safeParse(body).success,
+      true,
+      `event ${eventName} must pass HookEmitBodySchema`,
+    );
+  }
+});
+
+test("B5 — every v2 event can round-trip through SessionStreamEventBodySchema", () => {
+  const agg = { finalAction: "continue", outcomes: [], blocked: false };
+  for (const eventName of Object.keys(HOOK_EVENT_CATALOG)) {
+    const body = hookEventToSessionBroadcast(eventName, { v2: true }, agg);
+    assert.equal(
+      SessionStreamEventBodySchema.safeParse(body).success,
+      true,
+      `event ${eventName} must pass SessionStreamEventBodySchema`,
+    );
+  }
+});
+
+test("B5 — PermissionRequest verdictOf translates wire truth to allow/deny", () => {
+  // continue == allow
+  const allowAgg = aggregateOutcomes(
+    [{ action: "continue", handlerId: "h", durationMs: 1 }],
+    "PermissionRequest",
+  );
+  assert.equal(verdictOf(allowAgg, "PermissionRequest"), "allow");
+
+  // block == deny
+  const denyAgg = aggregateOutcomes(
+    [
+      {
+        action: "block",
+        handlerId: "h",
+        durationMs: 1,
+        additionalContext: "no",
+      },
+    ],
+    "PermissionRequest",
+  );
+  assert.equal(verdictOf(denyAgg, "PermissionRequest"), "deny");
+
+  // zero handlers == fail-closed deny
+  const emptyAgg = aggregateOutcomes([], "PermissionRequest");
+  assert.equal(verdictOf(emptyAgg, "PermissionRequest"), "deny");
 });
