@@ -195,9 +195,10 @@ describe("FakeBashBridge", () => {
   });
 
   describe("listCommands", () => {
-    it("lists all registered command names including git", () => {
+    it("lists all 21 registered command names (B3: 12 minimal + 9 text-processing)", () => {
       const bridge = new FakeBashBridge(registry, planFromBashCommand);
       const commands = bridge.listCommands();
+      // 12 minimal pack
       expect(commands).toContain("ls");
       expect(commands).toContain("cat");
       expect(commands).toContain("pwd");
@@ -206,7 +207,17 @@ describe("FakeBashBridge", () => {
       expect(commands).toContain("curl");
       expect(commands).toContain("ts-exec");
       expect(commands).toContain("git");
-      expect(commands.length).toBe(12);
+      // 9 text-processing wave (B3)
+      expect(commands).toContain("wc");
+      expect(commands).toContain("head");
+      expect(commands).toContain("tail");
+      expect(commands).toContain("jq");
+      expect(commands).toContain("sed");
+      expect(commands).toContain("awk");
+      expect(commands).toContain("sort");
+      expect(commands).toContain("uniq");
+      expect(commands).toContain("diff");
+      expect(commands.length).toBe(21);
     });
   });
 });

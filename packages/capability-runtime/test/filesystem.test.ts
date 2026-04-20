@@ -1,6 +1,9 @@
 import { describe, it, expect } from "vitest";
 
-import { createFilesystemHandlers } from "../src/capabilities/filesystem.js";
+import {
+  createFilesystemHandlers,
+  WRITE_OVERSIZE_REJECTED_NOTE,
+} from "../src/capabilities/filesystem.js";
 
 function createNamespace() {
   const files = new Map<string, string>();
@@ -90,5 +93,115 @@ describe("createFilesystemHandlers", () => {
 
     const ls = await handlers.get("ls")?.({ path: "." });
     expect(ls?.output).toContain("[ls] listing: /workspace");
+  });
+
+  describe("write oversize disclosure (B3 P4 / F08)", () => {
+    /**
+     * Build a namespace whose `writeFile` throws a duck-typed
+     * `ValueTooLargeError`. We do NOT import the real class from
+     * `@nano-agent/storage-topology` — the capability runtime consumes
+     * it structurally, so any object with the right shape suffices
+     * (this is the seam-decoupling property the test is locking in).
+     */
+    function namespaceThatRejects(bytes: number, cap: number, adapter: string) {
+      const files = new Map<string, string>();
+      return {
+        files,
+        namespace: {
+          async readFile(path: unknown) {
+            return files.get(String(path)) ?? null;
+          },
+          async writeFile(_path: unknown, _content: string) {
+            const err = new Error(
+              `Value too large: ${bytes} bytes > ${cap} cap on ${adapter} adapter`,
+            );
+            (err as unknown as Record<string, unknown>).name = "ValueTooLargeError";
+            (err as unknown as Record<string, unknown>).bytes = bytes;
+            (err as unknown as Record<string, unknown>).cap = cap;
+            (err as unknown as Record<string, unknown>).adapter = adapter;
+            throw err;
+          },
+          async listDir() {
+            return [];
+          },
+          async deleteFile() {
+            return false;
+          },
+        },
+      };
+    }
+
+    it("maps a typed ValueTooLargeError to a deterministic disclosure with marker", async () => {
+      const { namespace } = namespaceThatRejects(2_000_000, 1_048_576, "do");
+      const handlers = createFilesystemHandlers({
+        workspacePath: "/workspace",
+        namespace,
+      });
+      try {
+        await handlers.get("write")!({ path: "big.txt", content: "x".repeat(10) });
+        expect.unreachable("should have thrown");
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        expect(msg).toContain(WRITE_OVERSIZE_REJECTED_NOTE);
+        expect(msg).toContain("2000000");
+        expect(msg).toContain("1048576");
+        expect(msg).toContain("do");
+        // Must NOT leak raw storage-layer text (e.g. SQLITE_TOOBIG).
+        expect(msg).not.toContain("SQLITE_TOOBIG");
+        // Must NOT hardcode a 1 MiB literal in the disclosure
+        // (B3 §6.2 約束 #2: cap is data, not literal).
+        expect(msg).not.toContain("1 MiB");
+      }
+    });
+
+    it("propagates non-ValueTooLargeError errors unchanged", async () => {
+      const files = new Map<string, string>();
+      const handlers = createFilesystemHandlers({
+        workspacePath: "/workspace",
+        namespace: {
+          async readFile() {
+            return null;
+          },
+          async writeFile() {
+            throw new Error("disk on fire");
+          },
+          async listDir() {
+            return [];
+          },
+          async deleteFile() {
+            return false;
+          },
+        },
+      });
+      void files;
+      await expect(
+        handlers.get("write")!({ path: "x.txt", content: "y" }),
+      ).rejects.toThrow("disk on fire");
+    });
+
+    it("does not invoke writeFile when the path is /_platform/** (F07 still gates)", async () => {
+      const calls: string[] = [];
+      const handlers = createFilesystemHandlers({
+        workspacePath: "/workspace",
+        namespace: {
+          async readFile() {
+            return null;
+          },
+          async writeFile(p: unknown) {
+            calls.push(String(p));
+          },
+          async listDir() {
+            return [];
+          },
+          async deleteFile() {
+            return false;
+          },
+        },
+      });
+      await expect(
+        handlers.get("write")!({ path: "/_platform/secret", content: "x" }),
+      ).rejects.toThrow("/_platform");
+      expect(calls).toHaveLength(0);
+    });
   });
 });

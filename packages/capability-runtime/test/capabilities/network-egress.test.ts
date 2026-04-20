@@ -15,11 +15,13 @@
 import { describe, it, expect } from "vitest";
 import {
   createNetworkHandlers,
+  createSubrequestBudget,
   CURL_NOT_CONNECTED_NOTE,
   CURL_SCHEME_BLOCKED_NOTE,
   CURL_PRIVATE_ADDRESS_BLOCKED_NOTE,
   CURL_TIMEOUT_NOTE,
   CURL_OUTPUT_TRUNCATED_NOTE,
+  CURL_BUDGET_EXHAUSTED_NOTE,
 } from "../../src/capabilities/network.js";
 
 describe("curl — no fetchImpl (default stub)", () => {
@@ -214,5 +216,79 @@ describe("curl — fetchImpl injection path (structured schema)", () => {
         timeoutMs: 10,
       }),
     ).rejects.toThrow(new RegExp(CURL_TIMEOUT_NOTE));
+  });
+});
+
+// ════════════════════════════════════════════════════════════════════
+// B3 P4 / F09 — per-turn subrequest + response-byte budget
+// ════════════════════════════════════════════════════════════════════
+
+describe("curl — subrequest budget (per spike-do-storage-F09)", () => {
+  it("default behaviour without budget is unbounded (back-compat)", async () => {
+    const fetchImpl = (async () => new Response("ok")) as typeof fetch;
+    const handlers = createNetworkHandlers({ fetchImpl });
+    for (let i = 0; i < 50; i++) {
+      const res = (await handlers.get("curl")!({
+        url: `https://example.com/${i}`,
+      })) as { output: string };
+      expect(res.output).toContain("200");
+    }
+  });
+
+  it("rejects the (N+1)-th subrequest when subrequests=N is configured", async () => {
+    const fetchImpl = (async () => new Response("ok")) as typeof fetch;
+    const budget = createSubrequestBudget({ subrequests: 3 });
+    const handlers = createNetworkHandlers({ fetchImpl, budget });
+    for (let i = 0; i < 3; i++) {
+      await handlers.get("curl")!({ url: `https://example.com/${i}` });
+    }
+    await expect(
+      handlers.get("curl")!({ url: "https://example.com/over" }),
+    ).rejects.toThrow(new RegExp(CURL_BUDGET_EXHAUSTED_NOTE));
+    expect(budget.snapshot().subrequestsUsed).toBe(3);
+  });
+
+  it("rejects when cumulative response bytes exceed responseBytes", async () => {
+    const fetchImpl = (async () => new Response("x".repeat(40))) as typeof fetch;
+    const budget = createSubrequestBudget({ responseBytes: 50 });
+    const handlers = createNetworkHandlers({ fetchImpl, budget });
+    await handlers.get("curl")!({ url: "https://example.com/a" });
+    await expect(
+      handlers.get("curl")!({ url: "https://example.com/b" }),
+    ).rejects.toThrow(new RegExp(CURL_BUDGET_EXHAUSTED_NOTE));
+    expect(budget.snapshot().responseBytesUsed).toBe(40);
+  });
+
+  it("counts the not-connected stub against subrequest budget too (prompt accounting parity)", async () => {
+    const budget = createSubrequestBudget({ subrequests: 1 });
+    const handlers = createNetworkHandlers({ budget });
+    const res = (await handlers.get("curl")!({
+      url: "https://example.com/x",
+    })) as { output: string };
+    expect(res.output).toContain(CURL_NOT_CONNECTED_NOTE);
+    await expect(
+      handlers.get("curl")!({ url: "https://example.com/y" }),
+    ).rejects.toThrow(new RegExp(CURL_BUDGET_EXHAUSTED_NOTE));
+  });
+
+  it("snapshot reports the configured limits and current usage", () => {
+    const budget = createSubrequestBudget({ subrequests: 5, responseBytes: 1_000 });
+    const snap = budget.snapshot();
+    expect(snap.subrequestsUsed).toBe(0);
+    expect(snap.subrequestsLimit).toBe(5);
+    expect(snap.responseBytesUsed).toBe(0);
+    expect(snap.responseBytesLimit).toBe(1_000);
+  });
+
+  it("a shared budget can be passed across multiple createNetworkHandlers calls", async () => {
+    const fetchImpl = (async () => new Response("x")) as typeof fetch;
+    const budget = createSubrequestBudget({ subrequests: 2 });
+    const h1 = createNetworkHandlers({ fetchImpl, budget });
+    const h2 = createNetworkHandlers({ fetchImpl, budget });
+    await h1.get("curl")!({ url: "https://example.com/a" });
+    await h2.get("curl")!({ url: "https://example.com/b" });
+    await expect(
+      h1.get("curl")!({ url: "https://example.com/c" }),
+    ).rejects.toThrow(new RegExp(CURL_BUDGET_EXHAUSTED_NOTE));
   });
 });

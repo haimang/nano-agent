@@ -1,13 +1,14 @@
 /**
  * A10 Phase 4 P4-01 — inventory / registry / taxonomy drift guard.
  *
- * The 12-command minimal pack, the `UNSUPPORTED_COMMANDS` taxonomy,
- * the `OOM_RISK_COMMANDS` taxonomy, the `ask-gated` policy set, and
- * the `git` subset are the five pieces of capability truth that MUST
- * stay pinned. Any drift — adding a command, flipping a policy,
- * demoting a surface — must force an explicit update to this fixture
- * (and therefore to `docs/design/after-skeleton/PX-capability-inventory.md`
- * in the same PR).
+ * The minimal command pack (B3 expansion: 12 → 21), the
+ * `UNSUPPORTED_COMMANDS` taxonomy, the `OOM_RISK_COMMANDS` taxonomy,
+ * the `ask-gated` policy set, and the `git` subset are the five
+ * pieces of capability truth that MUST stay pinned. Any drift —
+ * adding a command, flipping a policy, demoting a surface — must
+ * force an explicit update to this fixture (and therefore to
+ * `docs/design/after-skeleton/PX-capability-inventory.md` in the
+ * same PR).
  *
  * A8-A10 review GPT R4 upgrade: the test now ALSO parses PX §7.1 from
  * the real `PX-capability-inventory.md` file and asserts that the
@@ -15,6 +16,11 @@
  * order and policy map. This is what closes the GPT R4 loop: "code
  * changed without docs updated" and "docs changed without code
  * updated" now BOTH fail CI.
+ *
+ * B3 (After-Foundations Phase 2) extension: the canonical order
+ * grows by 9 — `wc / head / tail / jq / sed / awk / sort / uniq /
+ * diff` are appended after `git` to keep the existing
+ * 12-pack section unchanged.
  *
  * This is the single enforcement point Q19 refers to when it asks
  * that "prompt / registry / inventory never diverge". If this test
@@ -47,8 +53,13 @@ const PX_INVENTORY_PATH = resolve(
 );
 
 const EXPECTED_COMMAND_ORDER: readonly string[] = [
+  // Original 12-pack (A8/A9/A10 baseline)
   "pwd", "ls", "cat", "write", "mkdir", "rm", "mv", "cp",
   "rg", "curl", "ts-exec", "git",
+  // B3 wave 1 — text-processing core
+  "wc", "head", "tail", "jq", "sed", "awk",
+  // B3 wave 2 — text-processing aux
+  "sort", "uniq", "diff",
 ];
 
 const EXPECTED_POLICY: Record<string, "allow" | "ask" | "deny"> = {
@@ -64,6 +75,17 @@ const EXPECTED_POLICY: Record<string, "allow" | "ask" | "deny"> = {
   curl: "ask",
   "ts-exec": "ask",
   git: "allow",
+  // B3 wave 1 + 2: all 9 are pure-function read-only over workspace
+  // files, no writes, no network → policy: allow.
+  wc: "allow",
+  head: "allow",
+  tail: "allow",
+  jq: "allow",
+  sed: "allow",
+  awk: "allow",
+  sort: "allow",
+  uniq: "allow",
+  diff: "allow",
 };
 
 const EXPECTED_UNSUPPORTED: readonly string[] = [
@@ -89,8 +111,8 @@ const EXPECTED_OOM_RISK: readonly string[] = [
   "tar", "gzip", "gunzip", "zcat", "zip", "unzip", "bzip2", "xz",
 ];
 
-describe("capability inventory drift guard (A10 Q19)", () => {
-  it("minimal command registry holds exactly the frozen 12-pack in the canonical order", () => {
+describe("capability inventory drift guard (A10 Q19 + B3 expansion)", () => {
+  it("minimal command registry holds exactly the frozen 21-pack in the canonical order (B3)", () => {
     const decls = getMinimalCommandDeclarations();
     expect(decls.map((d) => d.name)).toEqual(EXPECTED_COMMAND_ORDER);
   });
@@ -199,7 +221,7 @@ describe("PX-capability-inventory §7.1 docs guard (A8-A10 review GPT R4)", () =
   const markdown = readFileSync(PX_INVENTORY_PATH, "utf-8");
   const pxRows = parsePxCommandInventory(markdown);
 
-  it("§7.1 contains exactly the 12 canonical commands in the canonical order", () => {
+  it("§7.1 contains exactly the 21 canonical commands in the canonical order (B3 expansion)", () => {
     expect(pxRows.map((r) => r.name)).toEqual(EXPECTED_COMMAND_ORDER);
   });
 

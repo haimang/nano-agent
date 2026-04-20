@@ -39,4 +39,16 @@ describe("registerMinimalCommands", () => {
     expect(relaxed.get("write")?.policy).toBe("allow");
     expect(fresh.get("write")?.policy).toBe("ask");
   });
+
+  it("registers the B3 text-processing surface (9 commands, all `allow`)", () => {
+    const registry = new InMemoryCapabilityRegistry();
+    registerMinimalCommands(registry);
+    const textCmds = ["wc", "head", "tail", "jq", "sed", "awk", "sort", "uniq", "diff"];
+    for (const name of textCmds) {
+      const decl = registry.get(name);
+      expect(decl, `${name} must be registered`).toBeDefined();
+      expect(decl!.policy).toBe("allow");
+      expect(decl!.executionTarget).toBe("local-ts");
+    }
+  });
 });
