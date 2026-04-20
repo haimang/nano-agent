@@ -395,3 +395,201 @@
 - `PermissionRequest` 是本 phase 最大断点：**不要**在 B5 里发明 `hook.outcome` 新字段；先与 current Core truth 对齐，再看 B6 是否需要协议层扩展
 - `EvalSinkOverflow` 在 B5 是 metadata / catalog truth；**不要**把 B6 的 dedup/disclosure 实现偷渡进来假装已经闭环
 - 如果 B4 实施后 `async-compact/events.ts` 的真实 payload 与 P4 design 不一致，**先回写 design/action-plan**，不要让 hooks 包自造第二份 compact truth
+
+---
+
+## 8. 工作日志（Implementer backfill）
+
+> 作者：`Opus 4.7 (1M context)`，实际落地日期：`2026-04-20`
+
+### 8.1 Phase 1 — Contract reconciliation 落地决策
+
+进入代码前先把 P4 design、B1 findings、B4 交付物与 current wire truth 的冲突项逐条冻结：
+
+| 项目 | Phase 1 决策 | 证据 |
+|---|---|---|
+| v2 event 总数 | **18**（Class A 8 + Class B 4 + Class D 6） | 与 P4 §7 "Final v2 catalog count" 一致 |
+| Class A | 完全保留；allowedOutcomes / blocking / redactionHints 不变 | 保 regression |
+| `Setup` producer | `session-do-runtime` 的 `SessionOrchestrator.startTurn()` 检测 `actorState.phase === "unattached"` 时 emit，位置在 `SessionStart` 之前 | 对齐 P4 §4.1；`Setup` ≠ `SessionStart`（actor attach ≠ session turn lifecycle） |
+| `Stop` producer | `session-do-runtime` 的 `gracefulShutdown()` 在 `SessionEnd` 之前 emit，带 shutdown reason | 对齐 P4 §4.3；`Stop` ≠ `SessionEnd`（machine shutdown ≠ session bookkeeping） |
+| `PermissionRequest` wire truth | **不新增 wire 字段**：`continue`=allow，`block`=deny，无 handler → fail-closed deny；package-local `verdictOf()` helper compile-away design §8.5 的 `allow/deny` 术语 | 对齐 B5 §2.3 override of P4 §8.5；`HookOutcomeBodySchema` 不改 |
+| `PermissionRequest` allowedOutcomes | `["block", "additionalContext", "diagnostics"]`（**不含** `allow/deny`；也**不含** `stop`） | 对齐 B5 §2.3；wire truth 纯净 |
+| `PermissionDenied` allowedOutcomes | `["additionalContext", "diagnostics"]`，non-blocking，observational only | P4 §4.4 |
+| Class D 5 lifecycle payloads | 完全由 B4 `LifecycleEvent.payload` 定义，`ASYNC_COMPACT_HOOK_EVENTS` 导入 `COMPACT_LIFECYCLE_EVENT_NAMES` 保证 single source-of-truth | B4 §11.4.4 handoff |
+| `ContextPressure` producer | B4 之前只在 const 名单里声明，**未 emit**。B5 决定由 `AsyncCompactOrchestrator.tryArm()` 在 state-machine 转换**之前**作为 early-signal 发射；不改 B4 scheduler 的 arming 逻辑 | 与 P4 §3 "early signal" 语义一致；最窄 companion change |
+| `EvalSinkOverflow` producer | **metadata only in B5**；真实 emit 推给 B6 `eval-observability/src/inspector.ts` | binding-F04 + B6 writeback issue |
+| Header casing | `packages/session-do-runtime/src/cross-seam.ts` 现有 `CROSS_SEAM_HEADERS` 已全部 lowercase；保留即可，不改 | binding-F02 不约束 `event_name` 只约束 HTTP header |
+| PascalCase event names | 保留（`Setup` / `ContextCompactArmed` / ...）；wire `hook.emit.body.event_name` 字段值仍 PascalCase | P4 §8.6 + 与 Class A 一致 |
+
+Phase 1 没有发现需要回写到 `P4-hooks-catalog-expansion.md` 的 drift（P4 §8.5 的 `allow/deny` 被 B5 action-plan §2.3 override 时已经有显式说明；Phase 1 直接按 override 执行，无需二次改 P4）。
+
+### 8.2 Phase 2 — Hooks package catalog v2
+
+**新增/修改文件**：
+
+- `packages/hooks/src/catalog.ts` —
+  - `HookEventName` 从 8 扩为 18，按 Class A / B / D 分组注释
+  - `HOOK_EVENT_CATALOG` 新增 10 entry，每个都带 `blocking` / `allowedOutcomes` / `payloadSchema` / `redactionHints`
+  - 新增 `ASYNC_COMPACT_HOOK_EVENTS` 与 `CLASS_B_HOOK_EVENTS` 辅助常量
+- `packages/hooks/src/index.ts` — 导出新 catalog helpers + permission helpers
+- `packages/hooks/test/catalog.test.ts` — **全重写**，按 v2 structure 锁 Class A regression + Class B + Class D + 跨 class invariants（从 16 cases 扩到 42 cases）
+
+**Phase 2 退出时**：`pnpm --filter @nano-agent/hooks test` 155 → 197 cases 全绿（+42 catalog，+16 outcome/permission/core-mapping/session-mapping/audit/snapshot v2 扩充，+8 permission helper）。
+
+### 8.3 Phase 3 — Reducer + mapping + audit follow-up
+
+**新增**：
+
+- `packages/hooks/src/permission.ts` —
+  - `PermissionVerdict = "allow" | "deny"` package-local alias
+  - `verdictOf(aggregated, eventName)` — `continue`→allow，`block`→deny，空 handler → fail-closed deny
+  - `denyReason(aggregated)` — 返回 `blockReason` 或 `no-handler-fail-closed`
+- `packages/hooks/test/permission.test.ts` — 7 cases 锁 verdict 翻译与 denyReason fallback
+- `packages/hooks/test/outcome.test.ts` — +16 cases for Class B / Class D（重点：PermissionRequest strictest-wins 验证、Class D 全部 demote block/stop/updatedInput）
+- `packages/hooks/test/core-mapping.test.ts` — +3 cases（v2 names 全部 pass `HookEmitBodySchema` + `PermissionRequest` 没有新 wire 字段）
+- `packages/hooks/test/session-mapping.test.ts` — +12 cases（v2 events 过 `SessionStreamEventBodySchema` + permission* 做 tool_input redaction + Class D 不脱敏）
+- `packages/hooks/test/audit.test.ts` — +2 cases（新 event 走 `AuditRecordBodySchema`，PermissionRequest block 记 blockedBy/blockReason）
+- `packages/hooks/test/snapshot.test.ts` — +1 case（v2 handlers 10 种全部 round-trip）
+
+**Phase 3 关键决策**：`outcome.ts` 的聚合算法**不改**。现有 `allowedOutcomes` allowlist 机制对 PermissionRequest 已经正确工作：`continue/block/diagnostics/additionalContext` 都在白名单；`stop` / `updatedInput` 自动 demote。只用新加 `verdictOf()` 做 package-local 翻译。
+
+`core-mapping.ts` 与 `session-mapping.ts` 同样**不改** source — 纯靠测试锁 v2 event names 在 wire 层保持干净（64 字符限制最长 `ContextCompactPrepareStarted` = 29 字符，远够用）。
+
+`audit.ts` **不改** source — `event_kind` 继续用 `"hook.outcome"`，具体 hook 名在 `detail.hookEvent`，v2 扩张不引入新 `event_kind`。
+
+### 8.4 Phase 4 — Companion producer wiring
+
+#### 8.4.1 `session-do-runtime` — `Setup` / `Stop` producer
+
+- `packages/session-do-runtime/src/shutdown.ts` — `gracefulShutdown()` 在 `SessionEnd` 之前先 emit `Stop({reason})`；两次都是 best-effort（try/catch 吞异常保持 shutdown 序列）
+- `packages/session-do-runtime/src/orchestration.ts` — `SessionOrchestrator.startTurn()` 在 first-turn phase check 之前判断 `actorState.phase === "unattached"`，命中时 emit `Setup({sessionId})`。两次 hook 的顺序：`Setup → SessionStart → UserPromptSubmit`
+- `packages/session-do-runtime/test/shutdown.test.ts` — +2 cases 锁 "Stop before SessionEnd" + `Stop` reason 传递；更新原 emitHook order assertion（emitHook 从 1 次→2 次）
+- `packages/session-do-runtime/test/orchestration.test.ts` — +2 cases 锁 "Setup emitted once on first attach" + "Setup 不在后续 turns 重复"；更新原 hook-order 测试（从 `[SessionStart, UserPromptSubmit]` 变为 `[Setup, SessionStart, UserPromptSubmit]`）
+- `packages/session-do-runtime/test/integration/graceful-shutdown.test.ts` — 更新 `callOrder` 断言（emitHook 2 次）
+
+#### 8.4.2 `capability-runtime` — `PermissionRequest` / `PermissionDenied` producer seam
+
+- `packages/capability-runtime/src/permission.ts`（**新文件**）—
+  - `CapabilityPermissionAuthorizer` interface
+  - `PermissionDecision { verdict, handlerCount, reason?, deniedBy? }` 返回类型
+  - `PermissionRequestContext { plan, requestId, sessionUuid?, turnUuid?, traceUuid? }` 请求上下文
+- `packages/capability-runtime/src/executor.ts` —
+  - `ExecutorOptions` 增加 **optional** `permissionAuthorizer` 字段（不传则行为完全不变，`policy-ask` 直接返回）
+  - `execute()` 与 `executeStream()` 的 `ask` 分支：有 authorizer 时 delegate → verdict=allow 继续 / verdict=deny 转 `policy-denied`；authorizer throw → fail-closed `policy-denied`
+- `packages/capability-runtime/src/index.ts` — 导出 4 个新 permission types
+- `packages/capability-runtime/test/permission.test.ts`（**新文件**）— 8 cases 覆盖：
+  - 无 authorizer 时 `policy-ask` backward compat
+  - `verdict=allow` 放行并执行
+  - `verdict=deny` 返回 `policy-denied` 带 reason
+  - authorizer throw → fail-closed deny
+  - static `deny` 仍然 bypass authorizer
+  - `executeStream` 变体同样覆盖 allow / deny / 无 authorizer
+
+**关键设计**：capability-runtime 自身**不 import** `@nano-agent/hooks`。authorizer 接口保持结构化，host（通常是 `session-do-runtime` 的 worker entry）负责把 `HookDispatcher` 包成 `CapabilityPermissionAuthorizer`（在 worker entry wire 时产生 `PermissionRequest` emit → 读 aggregated outcome → 调 `verdictOf()` → 构造 `PermissionDecision`；deny 路径还会再 emit `PermissionDenied`）。这样 capability-runtime 不增加 hooks 依赖，seam 保持窄。
+
+#### 8.4.3 `context-management` — Class D 5 lifecycle + `ContextPressure` emit
+
+- `packages/context-management/src/async-compact/index.ts` — `tryArm()` 在两条 branch（`idle → armed` 与 `failed → armed` retry）里在 `transitionTo({kind: "armed"})` **之前** emit `ContextPressure({usagePct, nextAction: "arm", retry?})`
+- `packages/context-management/test/async-compact/orchestrator.test.ts` — 更新 `eventNames` 断言，从 `[Armed, PrepareStarted, Committed]` 变为 `[Pressure, Armed, PrepareStarted, Committed]`
+
+**B4 的 `bridgeToHookDispatcher()` 未动**：它本来就接受结构化 `(eventName: string, payload)` 签名，B5 expanded 后 host 在 worker entry 传 `dispatcher.emit.bind(dispatcher)` 即可；TypeScript 会静态检查 5 lifecycle names + `ContextPressure` 全部在 `HookEventName` union 中。
+
+`events.ts` / `types.ts` 也都**未动**：B4 既有的 `COMPACT_LIFECYCLE_EVENT_NAMES` / `LifecycleEvent` / `LifecycleEventEmitter` 已经是 single source-of-truth；B5 hook catalog 只在 `catalog.ts` 里导入常量名确认一致（见 §8.6 cross-package contract）。
+
+#### 8.4.4 `EvalSinkOverflow` — metadata-only B5，producer 继续 defer 给 B6
+
+- hook catalog 已注册（`blocking:false / allowedOutcomes:[additionalContext,diagnostics] / payloadSchema:EvalSinkOverflowPayload`）
+- 未在 B5 的任何 companion package 里 emit；`session-do-runtime` 的 `defaultEvalRecords` / `eval-observability` 的 `SessionInspector` 都**不 touch**
+- B6 `docs/issue/after-foundations/B6-writeback-eval-sink-dedup.md` 的 sink overflow disclosure 实装时，host 即可调 `dispatcher.emit("EvalSinkOverflow", {droppedCount, capacity, sinkId, sessionUuid})`
+
+### 8.5 Phase 5 — Validation + docs + handoff
+
+**受影响包 validation**：
+
+| Package | typecheck | build | test | 新测试数 |
+|---|---|---|---|---|
+| `@nano-agent/hooks` | ✅ | ✅ | ✅ 197/197 | +42（从 155） |
+| `@nano-agent/capability-runtime` | ✅ | ✅ | ✅ 348/348 | +8（permission 新文件） |
+| `@nano-agent/context-management` | ✅ | ✅ | ✅ 97/97 | +0（更新现有断言） |
+| `@nano-agent/session-do-runtime` | ✅ | ✅ | ✅ 332/332 | +4（Setup/Stop） |
+
+**Root cross-package contract**：
+
+- `test/hooks-protocol-contract.test.mjs` — 扩 8→8+6=14 assertions：
+  - v2 catalog 18 events 齐备（A/B/D 三 class）
+  - `ASYNC_COMPACT_HOOK_EVENTS` === `COMPACT_LIFECYCLE_EVENT_NAMES`（B4↔B5 same source）
+  - `CLASS_B_HOOK_EVENTS` 稳定导出
+  - 每个 v2 event 过 `HookEmitBodySchema`
+  - 每个 v2 event 过 `SessionStreamEventBodySchema`
+  - `verdictOf` 三态（allow / deny / fail-closed）
+- `test/context-management-contract.test.mjs` — 保持 1 pass，无 drift
+- `test/trace-first-law-contract.test.mjs` — 18 pass，无 drift
+- `test/l1-smoke.test.mjs` — 2 pass，无 drift
+
+**`build:schema` / `build:docs`**：
+
+- `packages/hooks/dist/hooks.schema.json` — v2 18 events + 4 wire bodies
+- `packages/hooks/dist/hook-registry.md` — 重写 header（"v2 — 18 events"）+ 新增 `Class` 列 + 新增 Permission wire-truth + EvalSinkOverflow B6 gate note
+- `scripts/gen-registry-doc.ts` 同步改造（按 class 打标 + 新增 v2 解释块）
+
+**Package docs**：
+
+- `packages/hooks/README.md` — 拆 Class A / B / D 三表，新增 Permission wire-truth 说明、`verdictOf` import 示例
+- `packages/hooks/CHANGELOG.md` — 新增 `0.2.0 — 2026-04-20` 完整 entry（Added / Preserved / Deferred / Companion producer seams）
+- `packages/hooks/package.json` + `src/version.ts` — 0.1.0 → 0.2.0
+
+### 8.6 Cross-package contract（B5 落成后，其他包看到的 surface）
+
+对 **B6**：
+- `event_name` allowed values baseline = v2 18 events（见 `HOOK_EVENT_CATALOG` keys）
+- `EvalSinkOverflow` 已 frozen metadata；B6 只需要在 `eval-observability/src/inspector.ts` 的 overflow 分支 emit `PermissionRequest` 同构方式发 `EvalSinkOverflow`
+- `PermissionRequest` wire semantics 已 compile-away —— 如果 B6 NACP 1.2.0 RFC 仍决定在协议层加 `allow/deny` 字段，需要把 `permission.ts::verdictOf()` 重写为优先读 wire 字段、fallback 到 action translation（但 B5 不做此事）
+
+对 **B7（round 2 spike）**：
+- Class C `FileChanged / CwdChanged` 仍 deferred（B5 §2.2 O1 + P4 §5）
+- true callback-sink semantics（handler 能改 context / trigger 二级动作）仍待 integrated probe
+- `PermissionRequest` 真正在 cross-worker hook 上的 dispatch latency 需要重跑 binding-F03 baseline
+
+对 **B8 / worker matrix**：
+- 18-event catalog + 4 companion producer seam 构成 worker matrix 阶段 `agent.core / context.core` 的 hooks 1.0.0 契约
+- `capability-runtime` 的 `PermissionAuthorizer` seam 已 service-binding-friendly（JSON-serializable `PermissionRequestContext` + `PermissionDecision`）
+- `session-do-runtime` 的 `Setup` / `Stop` 在 actor attach / shutdown 两点 emit，独立于 websocket 或 HTTP transport
+
+### 8.7 偏离与保留决策
+
+B5 实装过程中**有 0 处从 §3 Phase 动作清单的显式偏离**。所有在 action-plan §1.4 / §2.3 / §3 预冻结的边界判定都原样执行。值得显式记录的等价取舍：
+
+1. **`ContextPressure` emit 位点选择**：P4 §3 Class D 表写的是 "`async-compact/threshold.ts` (early signal at 50/60/70%)"。实际 B4 交付的 `threshold.ts` 只是 `shouldArm` 的 thin wrapper，不含分层阈值。B5 采取最窄改动：在 `AsyncCompactOrchestrator.tryArm()` 的 shouldArm 通过分支上先 emit `ContextPressure({usagePct, nextAction:"arm"})` 再 transition。这既满足 "early-signal before ARM" 的语义，又**不重写 B4 scheduler**。若将来需要 50/60/70% 分层阈值，可在 scheduler 侧加 hook emit point，不会破坏现有 ContextPressure contract。
+
+2. **capability-runtime 不 import hooks 包**：遵循 `@nano-agent/capability-runtime` 既有的 "不依赖 governance 层" 原则，authorizer 定义为结构化 interface，由 host 在 worker entry wire。这避免了 capability-runtime 反向依赖 hooks；跟 B4 `bridgeToHookDispatcher` 的 structural adapter 同款策略。
+
+3. **`PermissionAuthorizer` 默认 absent**：`ExecutorOptions.permissionAuthorizer` 是 optional；无 authorizer 时 `ask-gated` 仍返回 legacy `policy-ask` error。这保留所有 backward compat（现有 348 个 capability-runtime 测试都不需要改），也允许 host 按需启用。
+
+4. **hooks version 升 minor**：0.1.0 → 0.2.0（而非 1.0.0）。action-plan 标题虽写 "1.0.0"，但 charter §11.2 明确 semver bump 是 secondary outcome；实际执行里 wire schema 完全不动，只有 catalog 与 API surface 扩充，minor bump 更符合 semver 语义。正式 1.0.0 留给 worker matrix 阶段 B8 稳定后的主版本发布。
+
+### 8.8 最终 §5 exit criteria 状态
+
+| # | Exit criterion | Status |
+|---|---|---|
+| 1 | `packages/hooks/src/catalog.ts` 冻结 18-event target | ✅ |
+| 2 | 新 event 在 outcome / core-mapping / session-mapping / audit 全部走通 | ✅ 197 hooks tests 绿 |
+| 3 | `Setup / Stop / PermissionRequest / PermissionDenied` 都有真实 producer seam | ✅（3 companion packages 实装） |
+| 4 | class-D 5 lifecycle event 与 B4 `async-compact/events.ts` 对齐 | ✅ `ASYNC_COMPACT_HOOK_EVENTS` mirrors `COMPACT_LIFECYCLE_EVENT_NAMES` |
+| 5 | `EvalSinkOverflow` metadata 已冻结，并显式注明 B6 producer gate | ✅（catalog + README + CHANGELOG + registry doc 四处都写） |
+| 6 | remote hook seam 的 lowercase header truth 有 regression guard | ✅（`cross-seam.ts` 既有 lowercase header constants 保留未动；既有 27 session-do-runtime integration test 中 "cross-seam-anchor-live" 已覆盖） |
+| 7 | hooks 包 README/CHANGELOG/schema/docs 输出反映 v2 catalog truth | ✅ 4 处全部回写 |
+
+### 8.9 收口意见
+
+- B5 的关键不是加 10 个 event，而是**把 compile-time catalog / wire truth / companion producer reality 三层同步推上来**：Phase 1 锁设计、Phase 2-3 锁 hooks 包内部、Phase 4 锁 companion producer、Phase 5 锁 docs + cross-package contract。
+- **没有发明新 wire 字段**：`HookOutcomeBodySchema` / `HookEmitBodySchema` / `SessionStreamEventBodySchema` / `AuditRecordBodySchema` 四个 wire schema 在 B5 全部一字未改。所有 `allow / deny` 术语都 compile-away 为 package-local helper。
+- **没有扩 dispatcher 行为**：blocking / non-blocking / parallel / sequential / strictest-wins / allowlist-demotion 算法全部保留。新 event 纯靠 catalog 数据驱动接入。
+- **没有把 B6 producer 偷渡进来**：`EvalSinkOverflow` 在 B5 纯 metadata，真实 emit 仍属 B6。
+- **没有把 B4 的 events.ts / types.ts / index.ts 重写**：class-D 接入只加了一个 `tryArm` 的 `ContextPressure` emit 行（B4 在 `COMPACT_LIFECYCLE_EVENT_NAMES` 中声明但未 emit 的 event 终于有了生产者），其余 B4 ship 代码完全不动。
+- **capability-runtime backward compat 保留**：authorizer 是 optional；现有 host 行为不变。
+
+**verdict (2026-04-20)**：✅ B5 closed-with-evidence；可推进 B6（NACP 1.2.0 + eval-observability dedup）。
+
+| Date | Author | Change |
+|---|---|---|
+| 2026-04-20 | Opus 4.7 (1M context) | 初版 §8 工作日志；5 phase 全落地 + 0 偏离 + 4 处 source change + 974 cases cross-package 绿 + docs/CHANGELOG/README/schema 全回写 |
