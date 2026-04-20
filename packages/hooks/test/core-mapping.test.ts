@@ -181,3 +181,93 @@ describe("buildHookOutcomeBody (inverse)", () => {
     expect(parsed.additionalContext).toBe("ran");
   });
 });
+
+// ────────────────────────────────────────────────────────────────────
+// §B5 — v2 catalog names all parse under current wire schemas
+// ────────────────────────────────────────────────────────────────────
+
+describe("buildHookEmitBody — B5 v2 event names", () => {
+  const V2_NAMES = [
+    // Class B
+    "Setup",
+    "Stop",
+    "PermissionRequest",
+    "PermissionDenied",
+    // Class D
+    "ContextPressure",
+    "ContextCompactArmed",
+    "ContextCompactPrepareStarted",
+    "ContextCompactCommitted",
+    "ContextCompactFailed",
+    "EvalSinkOverflow",
+  ] as const;
+
+  it("every v2 name still fits the 1-64 char event_name constraint", () => {
+    for (const name of V2_NAMES) {
+      expect(name.length).toBeGreaterThanOrEqual(1);
+      expect(name.length).toBeLessThanOrEqual(64);
+    }
+  });
+
+  it("every v2 name produces a body that parses under HookEmitBodySchema", () => {
+    const payloads: Record<string, Record<string, unknown>> = {
+      Setup: { sessionUuid: "s-1", env: { mode: "dev" } },
+      Stop: { reason: "session_end" },
+      PermissionRequest: { capabilityName: "curl", tool_input: "https://example" },
+      PermissionDenied: { capabilityName: "curl", reason: "workspace-escape" },
+      ContextPressure: { usagePct: 0.72 },
+      ContextCompactArmed: { usagePct: 0.8 },
+      ContextCompactPrepareStarted: {
+        prepareJobId: "p-1",
+        snapshotVersion: 2,
+        tokenEstimate: 120000,
+      },
+      ContextCompactCommitted: {
+        oldVersion: 2,
+        newVersion: 3,
+        summary: { storage: "do", storageKey: "k", sizeBytes: 1234 },
+      },
+      ContextCompactFailed: {
+        reason: "timeout-60000ms",
+        retriesUsed: 1,
+        retryBudget: 3,
+        terminal: false,
+      },
+      EvalSinkOverflow: {
+        droppedCount: 12,
+        capacity: 50,
+        sinkId: "session-inspector",
+      },
+    };
+    for (const name of V2_NAMES) {
+      const body = buildHookEmitBody(name, payloads[name]);
+      expect(HookEmitBodySchema.safeParse(body).success).toBe(true);
+      expect(body.event_name).toBe(name);
+    }
+  });
+});
+
+describe("parseHookOutcomeBody — PermissionRequest wire truth (B5 §2.3)", () => {
+  const ctx = { handlerId: "policy-handler", durationMs: 4 };
+
+  it("continue (ok=true) maps to `continue` — wire-level `allow` verdict", () => {
+    const outcome = parseHookOutcomeBody({ ok: true }, ctx);
+    expect(outcome.action).toBe("continue");
+  });
+
+  it("block { reason } maps to `block` — wire-level `deny` verdict", () => {
+    const outcome = parseHookOutcomeBody(
+      { ok: false, block: { reason: "outside workspace" } },
+      ctx,
+    );
+    expect(outcome.action).toBe("block");
+    expect(outcome.additionalContext).toBe("outside workspace");
+  });
+
+  it("does NOT recognise an `allow` / `deny` wire field (they are package-local aliases only)", () => {
+    const body = { ok: true, allow: true, deny: false } as unknown as Record<string, unknown>;
+    // The parser ignores unknown fields; the action falls back to `continue`.
+    const outcome = parseHookOutcomeBody(body, ctx);
+    expect(outcome.action).toBe("continue");
+  });
+});

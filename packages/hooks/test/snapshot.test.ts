@@ -128,6 +128,32 @@ describe("snapshot / restore roundtrip", () => {
     expect(restored.lookup("PostToolUse")).toHaveLength(1);
   });
 
+  it("B5 — v2 handlers (Setup / Stop / Permission* / Context*) round-trip", () => {
+    const original = new HookRegistry();
+    const v2Handlers: HookHandlerConfig[] = [
+      makeHandler({ id: "setup-1", event: "Setup", source: "platform-policy" }),
+      makeHandler({ id: "stop-1", event: "Stop", source: "platform-policy" }),
+      makeHandler({ id: "perm-req-1", event: "PermissionRequest" }),
+      makeHandler({ id: "perm-den-1", event: "PermissionDenied" }),
+      makeHandler({ id: "pressure-1", event: "ContextPressure" }),
+      makeHandler({ id: "armed-1", event: "ContextCompactArmed" }),
+      makeHandler({ id: "prep-1", event: "ContextCompactPrepareStarted" }),
+      makeHandler({ id: "commit-1", event: "ContextCompactCommitted" }),
+      makeHandler({ id: "fail-1", event: "ContextCompactFailed" }),
+      makeHandler({ id: "overflow-1", event: "EvalSinkOverflow" }),
+    ];
+    for (const h of v2Handlers) original.register(h);
+
+    const snapshot = snapshotRegistry(original);
+    const restored = restoreRegistry(snapshot);
+
+    expect(restored.listAll()).toHaveLength(v2Handlers.length);
+    for (const h of v2Handlers) {
+      expect(restored.lookup(h.event)).toHaveLength(1);
+      expect(restored.lookup(h.event)[0]?.id).toBe(h.id);
+    }
+  });
+
   it("source priority is preserved after restore", () => {
     const original = new HookRegistry();
     original.register(makeHandler({ id: "skill-1", source: "skill", event: "PreToolUse" }));

@@ -175,3 +175,167 @@ describe("aggregateOutcomes — blockReason derivation", () => {
     expect(agg.blockReason).toBe("Blocked by handler p");
   });
 });
+
+// ──────────────────────────────────────────────────────────────────────
+// §B5 — v2 catalog additions (Class B + Class D)
+// ──────────────────────────────────────────────────────────────────────
+
+describe("aggregateOutcomes — Class B new events", () => {
+  describe("Setup", () => {
+    it("allows additionalContext + diagnostics", () => {
+      const agg = aggregateOutcomes(
+        [
+          oc("continue", { additionalContext: "pre-warm cache", diagnostics: { ms: 3 } }),
+        ],
+        "Setup",
+      );
+      expect(agg.mergedContext).toBe("pre-warm cache");
+      expect(agg.mergedDiagnostics).toEqual({ ms: 3 });
+    });
+
+    it("demotes block to continue (not in allowlist)", () => {
+      const agg = aggregateOutcomes([oc("block")], "Setup");
+      expect(agg.finalAction).toBe("continue");
+    });
+  });
+
+  describe("Stop", () => {
+    it("permits diagnostics only; additionalContext is silently dropped", () => {
+      const agg = aggregateOutcomes(
+        [
+          oc("continue", { diagnostics: { flushed: true }, additionalContext: "dropped" }),
+        ],
+        "Stop",
+      );
+      expect(agg.mergedDiagnostics).toEqual({ flushed: true });
+      expect(agg.mergedContext).toBeUndefined();
+    });
+  });
+
+  describe("PermissionRequest — wire-level truth (B5 §2.3 override of P4 §8.5)", () => {
+    it("continue → allow verdict (via finalAction)", () => {
+      const agg = aggregateOutcomes(
+        [oc("continue", { handlerId: "policy", diagnostics: { approved: true } })],
+        "PermissionRequest",
+      );
+      expect(agg.finalAction).toBe("continue");
+      expect(agg.blocked).toBe(false);
+    });
+
+    it("block → deny verdict, with blockReason from handler additionalContext", () => {
+      const agg = aggregateOutcomes(
+        [
+          oc("block", {
+            handlerId: "policy",
+            additionalContext: "write outside workspace",
+          }),
+        ],
+        "PermissionRequest",
+      );
+      expect(agg.finalAction).toBe("block");
+      expect(agg.blocked).toBe(true);
+      expect(agg.blockReason).toBe("write outside workspace");
+    });
+
+    it("empty handler list aggregates to continue — caller is responsible for fail-closed", () => {
+      const agg = aggregateOutcomes([], "PermissionRequest");
+      expect(agg.finalAction).toBe("continue");
+      expect(agg.outcomes).toHaveLength(0);
+    });
+
+    it("strictest-wins: even a single deny among allows flips the verdict", () => {
+      const agg = aggregateOutcomes(
+        [
+          oc("continue", { handlerId: "ok-1" }),
+          oc("block", { handlerId: "no", additionalContext: "forbidden" }),
+          oc("continue", { handlerId: "ok-2" }),
+        ],
+        "PermissionRequest",
+      );
+      expect(agg.finalAction).toBe("block");
+      expect(agg.blockReason).toBe("forbidden");
+    });
+
+    it("stop is NOT allowed — demoted to continue (permission verdict cannot halt the agent loop)", () => {
+      const agg = aggregateOutcomes([oc("stop", { handlerId: "panic" })], "PermissionRequest");
+      expect(agg.finalAction).toBe("continue");
+    });
+  });
+
+  describe("PermissionDenied (observational)", () => {
+    it("is non-blocking: block in the outcomes is demoted to continue", () => {
+      const agg = aggregateOutcomes([oc("block")], "PermissionDenied");
+      expect(agg.finalAction).toBe("continue");
+    });
+
+    it("allows additionalContext + diagnostics", () => {
+      const agg = aggregateOutcomes(
+        [oc("continue", { additionalContext: "denied by policy", diagnostics: { rule: "W1" } })],
+        "PermissionDenied",
+      );
+      expect(agg.mergedContext).toBe("denied by policy");
+      expect(agg.mergedDiagnostics).toEqual({ rule: "W1" });
+    });
+  });
+});
+
+describe("aggregateOutcomes — Class D new events (async-compact + eval sink)", () => {
+  it("ContextPressure allows additionalContext + diagnostics", () => {
+    const agg = aggregateOutcomes(
+      [oc("continue", { additionalContext: "usage=0.72", diagnostics: { warn: true } })],
+      "ContextPressure",
+    );
+    expect(agg.mergedContext).toBe("usage=0.72");
+    expect(agg.mergedDiagnostics).toEqual({ warn: true });
+  });
+
+  it("ContextCompactArmed drops additionalContext (diagnostics-only)", () => {
+    const agg = aggregateOutcomes(
+      [oc("continue", { additionalContext: "dropped", diagnostics: { stateId: "s-1" } })],
+      "ContextCompactArmed",
+    );
+    expect(agg.mergedContext).toBeUndefined();
+    expect(agg.mergedDiagnostics).toEqual({ stateId: "s-1" });
+  });
+
+  it("ContextCompactCommitted preserves additionalContext (summary reference)", () => {
+    const agg = aggregateOutcomes(
+      [oc("continue", { additionalContext: "summary@v2" })],
+      "ContextCompactCommitted",
+    );
+    expect(agg.mergedContext).toBe("summary@v2");
+  });
+
+  it("ContextCompactFailed drops additionalContext (diagnostics-only)", () => {
+    const agg = aggregateOutcomes(
+      [oc("continue", { additionalContext: "dropped", diagnostics: { reason: "timeout" } })],
+      "ContextCompactFailed",
+    );
+    expect(agg.mergedContext).toBeUndefined();
+    expect(agg.mergedDiagnostics).toEqual({ reason: "timeout" });
+  });
+
+  it("EvalSinkOverflow allows additionalContext hint (flush-to-durable)", () => {
+    const agg = aggregateOutcomes(
+      [oc("continue", { additionalContext: "please flush eval sink" })],
+      "EvalSinkOverflow",
+    );
+    expect(agg.mergedContext).toBe("please flush eval sink");
+  });
+
+  it("No Class D event permits block/stop — demoted to continue", () => {
+    for (const name of [
+      "ContextPressure",
+      "ContextCompactArmed",
+      "ContextCompactPrepareStarted",
+      "ContextCompactCommitted",
+      "ContextCompactFailed",
+      "EvalSinkOverflow",
+    ] as const) {
+      const aggBlock = aggregateOutcomes([oc("block")], name);
+      const aggStop = aggregateOutcomes([oc("stop")], name);
+      expect(aggBlock.finalAction).toBe("continue");
+      expect(aggStop.finalAction).toBe("continue");
+    }
+  });
+});

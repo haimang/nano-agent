@@ -1,6 +1,6 @@
 {
   "name": "@nano-agent/hooks",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "description": "Hooks — lifecycle governance, event catalog, dispatcher, outcome reduction",
   "main": "./dist/index.js",

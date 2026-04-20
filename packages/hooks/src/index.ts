@@ -16,8 +16,17 @@ export type {
 } from "./types.js";
 
 // ── Event catalog ──
-export { HOOK_EVENT_CATALOG, isBlockingEvent } from "./catalog.js";
+export {
+  HOOK_EVENT_CATALOG,
+  isBlockingEvent,
+  ASYNC_COMPACT_HOOK_EVENTS,
+  CLASS_B_HOOK_EVENTS,
+} from "./catalog.js";
 export type { HookEventName, HookEventMeta } from "./catalog.js";
+
+// ── Permission verdict helpers (B5 — compile-away for design §8.5 allow/deny) ──
+export { verdictOf, denyReason } from "./permission.js";
+export type { PermissionVerdict } from "./permission.js";
 
 // ── Outcomes ──
 export { aggregateOutcomes } from "./outcome.js";

@@ -125,6 +125,51 @@ describe("buildHookAuditRecord → AuditRecordBody", () => {
   });
 });
 
+describe("buildHookAuditRecord — B5 v2 events", () => {
+  it("carries the new hookEvent name in detail; event_kind stays 'hook.outcome'", () => {
+    for (const name of [
+      "Setup",
+      "Stop",
+      "PermissionRequest",
+      "PermissionDenied",
+      "ContextPressure",
+      "ContextCompactArmed",
+      "ContextCompactPrepareStarted",
+      "ContextCompactCommitted",
+      "ContextCompactFailed",
+      "EvalSinkOverflow",
+    ] as const) {
+      const body = buildHookAuditRecord(name, makeOutcome(), 0);
+      expect(body.event_kind).toBe("hook.outcome");
+      expect(body.detail?.hookEvent).toBe(name);
+      const parsed = AuditRecordBodySchema.safeParse(body);
+      expect(parsed.success).toBe(true);
+    }
+  });
+
+  it("PermissionRequest with block outcome records blockedBy + blockReason", () => {
+    const body = buildHookAuditRecord(
+      "PermissionRequest",
+      makeOutcome({
+        finalAction: "block",
+        blocked: true,
+        outcomes: [
+          {
+            action: "block",
+            handlerId: "policy-guard",
+            durationMs: 2,
+            additionalContext: "workspace escape",
+          },
+        ],
+        blockReason: "workspace escape",
+      }),
+      2,
+    );
+    expect(body.detail?.blockedBy).toBe("policy-guard");
+    expect(body.detail?.blockReason).toBe("workspace escape");
+  });
+});
+
 describe("buildHookAuditEntry (internal lifecycle view)", () => {
   it("returns the flat lifecycle shape callers may still want", () => {
     const entry = buildHookAuditEntry(
