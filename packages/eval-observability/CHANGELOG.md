@@ -1,5 +1,44 @@
 # Changelog — @nano-agent/eval-observability
 
+## 0.2.0 — 2026-04-20
+
+B6 — SessionInspector dedup + overflow disclosure writeback. Per
+`docs/rfc/nacp-core-1-2-0.md` §4.2 (sink dedup contract) and
+`binding-F04`.
+
+### Added
+
+- `SessionInspector.onStreamEvent(kind, seq, body, meta?)` — optional
+  `meta.messageUuid` drives **hard dedup**. Repeat `messageUuid`s are
+  dropped and recorded in `getRejections()` with
+  `reason: "duplicate-message"`.
+- `SessionInspector.onSessionFrame(frame)` — convenience wrapper that
+  extracts `header.message_uuid`, `body`, and
+  `session_frame.stream_seq` from a NACP session frame.
+- `SessionInspector.getDedupStats()` — exposes
+  `{ dedupEligible, duplicatesDropped, missingMessageUuid }` counters.
+  Used by B7 integrated spike to verify `binding-F04` conformance.
+- `InspectorEvent.messageUuid` — optional field stored on accepted
+  events for debug / correlation.
+- `InspectorRejection.messageUuid` + new `reason: "duplicate-message"`
+  variant.
+- Types: `InspectorEventMeta`, `InspectorDedupStats`,
+  `InspectorLikeSessionFrame` exported from the package root.
+
+### Preserved
+
+- Existing `onStreamEvent(kind, seq, body)` signature — the `meta`
+  argument is optional. No caller break.
+- Unknown-kind / invalid-body rejection semantics.
+
+### Wire truth clarifications
+
+- **Dedup key source is the NACP envelope `header.message_uuid`**, not
+  any `session.stream.event` body field. See
+  `packages/nacp-session/src/websocket.ts::postStreamEvent` where the
+  uuid is stamped, and `docs/rfc/nacp-session-1-2-0.md` §6.2 (B6 drift
+  fix 2026-04-20).
+
 ## 0.1.0 — 2026-04-17
 
 Initial implementation of the eval-observability validation-infrastructure

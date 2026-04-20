@@ -1,7 +1,7 @@
 # RFC: `nacp-session` 1.2.0 — Minimal-or-Zero Extension (per Phase 3 reality)
 
 > **RFC ID**: `nacp-session-1-2-0`
-> **Status**: `draft` (becomes `frozen` on B6 ship; **may freeze with NO new kinds**)
+> **Status**: `frozen` (B6 ship, 2026-04-20 — **Outcome A chosen: stay at 1.1.0, no schema change**)
 > **Author**: Opus 4.7 (1M context)
 > **Date**: 2026-04-19
 > **Sibling RFC**: `docs/rfc/nacp-core-1-2-0.md`
@@ -171,7 +171,21 @@ WebSocket frames in the session profile carry NACP envelopes. When the WebSocket
 
 ### 6.2 Sink dedup (per nacp-core 1.2.0 §4.2)
 
-`session.stream.event` consumers (most notably `SessionInspector` at `packages/eval-observability/src/inspector.ts:78`) MUST dedup by `messageUuid`. The `session.stream.event` body schema's `message_uuid` field (existing in 1.1.0) is the dedup key.
+`session.stream.event` consumers (most notably `SessionInspector` at `packages/eval-observability/src/inspector.ts`) MUST dedup by `messageUuid`.
+
+**Dedup key source (B6 clarification — drift fix 2026-04-20)**: the
+`messageUuid` lives on the NACP envelope **`header`** (the session frame
+wrapper emitted by `packages/nacp-session/src/websocket.ts::postStreamEvent`
+at line 120). It does **not** live on the `session.stream.event` **body**;
+the body schema (`SessionStreamEventBodySchema`) is unchanged and does NOT
+carry `message_uuid`. Consumers must extract the key from the frame
+header and plumb it to the sink. The B6 ship of `SessionInspector`
+exposes two APIs for this:
+
+- `onStreamEvent(kind, seq, body, meta?: { messageUuid?: string })` —
+  pass the extracted header value explicitly
+- `onSessionFrame(frame)` — convenience: extracts `header.message_uuid`
+  and `body` automatically
 
 ### 6.3 KV freshness caveat (per nacp-core 1.2.0 §4.3)
 
@@ -191,26 +205,25 @@ If session-level state read from KV-backed storage appears in a `session.stream.
 
 ## 8. Acceptance Criteria
 
-### 8.1 Outcome A acceptance
+### 8.1 Outcome A acceptance (B6 2026-04-20: **chosen**)
 
-- [ ] B6 reviewer confirms stay at 1.1.0
-- [ ] No code changes
-- [ ] CHANGELOG note pointing to this RFC's "no extension warranted" conclusion
+- [x] B6 reviewer (Opus 4.7) confirms stay at 1.1.0
+- [x] No code changes
+- [x] CHANGELOG note: package stays at 1.1.0 per this RFC's "no extension
+      warranted" conclusion
 
-### 8.2 Outcome B acceptance (alternative)
+### 8.2 Outcome B acceptance (alternative — **not taken**)
 
-- [ ] B6 reviewer confirms cosmetic bump to 1.2.0
-- [ ] `package.json` version bumped to 1.2.0
-- [ ] `1.1.0-compat.ts` pass-through shim added
-- [ ] CHANGELOG entry as in §4.2
-- [ ] Cross-reference spec sections (per §6) added to nacp-session README or spec doc
-- [ ] 1.1.0 consumer compat test green
+Kept for historical reference; not exercised.
 
 ### 8.3 Common acceptance (regardless of A or B)
 
-- [ ] §6.1 (lowercase header) holds in `WsController` / WS upgrade path — contract test added
-- [ ] §6.2 (sink dedup) confirmed via `SessionInspector` post-B6 ship — depends on B6 issue
-- [ ] §6.3 (freshness caveat) documented in package README
+- [x] §6.1 (lowercase header) holds in `WsController` / WS upgrade path —
+      contract test already in `packages/session-do-runtime/test/cross-seam.test.ts`
+- [x] §6.2 (sink dedup) confirmed via `SessionInspector` post-B6 ship —
+      `packages/eval-observability/test/inspector-dedup.test.ts` ships in B6
+- [x] §6.3 (freshness caveat) documented in nacp-core 1.2.0 RFC §4.3;
+      reachable from package README via this cross-reference
 
 ---
 
@@ -245,3 +258,4 @@ If a future phase actually needs new session message kinds, this RFC's per-candi
 | Date | Author | Change |
 |---|---|---|
 | 2026-04-19 | Opus 4.7 | Initial draft; reverse-derivation evaluates 5 candidates → 4 dismissed + 1 deferred → 0 frozen; recommends stay-at-1.1.0 (Outcome A) with cosmetic-bump alternative (Outcome B); cross-references nacp-core 1.2.0 normative sections that apply regardless |
+| 2026-04-20 | Opus 4.7 (1M context) | B6 implementation: Outcome A chosen; §6.2 drift fixed — `messageUuid` lives on envelope header, NOT `session.stream.event` body; status → `frozen` |

@@ -388,3 +388,250 @@
 - `nacp-session` 保持 `1.1.0` 是 charter 明确允许的合法退出，不是“没做完”
 - `binding-F04` 的 Round 1 证据仍是 response-batch simulation；因此 **B6 收口 != true cross-worker sink callback 已证明**，B7 仍必须在 push path 上复验 ordering / dedup / overflow disclosure
 - 如果 B4/B5 实施后发现 `context.compact.prepare.*` / `commit.notification` 的真实 producer/consumer 与 draft RFC 不一致，**先修 RFC / action-plan，再改代码**
+
+---
+
+## 8. 工作日志（Implementer backfill）
+
+> 作者：`Opus 4.7 (1M context)`，实际落地日期：`2026-04-20`
+
+### 8.1 Phase 1 — Contract reconciliation 落地决策
+
+进入代码前先把 charter、P5 design、2 份 draft RFC 与 current B2/B3/B4/B5 ship code 的冲突项逐条冻结。§2.3 预列的 5 项边界判定全部 locked：
+
+| 项目 | 2026-04-19 draft 假设 | 2026-04-20 code reality | B6 处置 |
+|---|---|---|---|
+| hook `event_name` allowed values | `z.enum([...18])` in `nacp-core` | `z.string().min(1).max(64)` in `packages/nacp-core/src/messages/hook.ts`; 18-event catalog owned by `@nano-agent/hooks` (B5) | **DROP**（反向依赖方向不对；现有 schema 已能容纳全部 v2 names） |
+| hook `allow / deny` outcomes | 扩 `HookOutcomeBodySchema` with `allow? / deny?` | B5 `hooks/src/permission.ts::verdictOf()` 已将 P4 §8.5 的 allow/deny compile-away 成 `continue / block`；无 wire consumer | **DROP**（死 schema） |
+| `SessionInspector` dedup key | RFC §6.2 "session.stream.event body schema's `message_uuid` field" | body 无 `message_uuid`；dedup key 在 `nacp-session/src/websocket.ts:120` 的 envelope `header.message_uuid` | **DRIFT FIX**：修 RFC §6.2 表述 + 将 consumer seam 拓宽到 envelope header |
+| `nacp-session` version | optional bump to 1.2.0 (Outcome B) | charter §11.2 允许 stay at 1.1.0；P3-inspector §6.3 已将 inspector 放到独立 HTTP/WS 不走 NACP | **Outcome A**：stay at `1.1.0` |
+| `context.compact.prepare.*` / `commit.notification` | 2 new message kinds | B4 §11.4.4 明确 `AsyncCompactOrchestrator` 当前 in-process；`inspector facade **不**需要 NACP message family` until worker matrix 阶段 | **DEFERRED to worker matrix** |
+
+Phase 1 关键 derivation：**一旦三条 core schema delta 全部 drop / defer，`nacp-core` 在 1.2.0 RFC 语义下的 schema delta 归 0；charter §11.2 明确允许 stay at `1.1.0`**。B6 的真实可 ship 工作集缩小到：
+
+1. Writeback — `SessionInspector` + `NanoSessionDO.defaultEvalRecords` 的 dedup/disclosure 实装（`binding-F04` closure）
+2. RFC drift 修订 — 3 处 code-reality 偏差回写到 2 份 draft RFC + CHANGELOG
+3. 测试 — 新 dedup 路径 + 回归 regression guard
+
+Phase 1 没有需要回写 `docs/design/after-foundations/P5-nacp-1-2-0-upgrade.md` 的新 drift（P5 本身已是 "reverse-derive" 设计 doc）；B6 的结论反向印证了 P5 §3 方法论的正确性。
+
+### 8.2 Phase 2 — `nacp-core` minimal extension (no-op release)
+
+- `docs/rfc/nacp-core-1-2-0.md` **完全重写**：status `draft → frozen`；§0 总结从 "2 new message kinds + hook enum + allow/deny" 改为 "0 schema deltas; stay at 1.1.0"；§2 新增 "Deferred candidates" 记录 3 项为什么 drop / defer；§3 新增 "What actually DID change in Phase 3 (B4) without touching nacp-core"；§4 三条 normative spec sections 保留为 **1.1.0-behavior commentary**；§7 acceptance criteria 全部打 ✅。
+- `packages/nacp-core/CHANGELOG.md` 新增 `2026-04-20 — B6 reconciliation` 条目记录 no-op release 的理由。
+- `packages/nacp-core/package.json` **不 bump**，仍是 `1.1.0`。
+- `packages/nacp-core/src/messages/*.ts` 与 `envelope.ts` **未动**（所有 drift 项 drop/defer）。
+- 既有 231 cases 全部保持绿（不 touch schema 自动成立）。
+
+### 8.3 Phase 3 — `nacp-session` zero/minimal outcome (Outcome A)
+
+- `docs/rfc/nacp-session-1-2-0.md` status `draft → frozen`；§0 重新打标 **Outcome A chosen**；§6.2 drift fix — messageUuid 来自 envelope `header`，非 body；§8 acceptance criteria 按 Outcome A 全部打 ✅。
+- `packages/nacp-session/CHANGELOG.md` 新增 `2026-04-20` 条目记录 drift fix + stay-at-1.1.0 决策。
+- `packages/nacp-session/package.json` / `src/**` 未动。
+- 既有 115 cases 全部保持绿。
+
+### 8.4 Phase 4 — Dedup + overflow writeback（实际代码改动）
+
+#### 8.4.1 `SessionInspector` 拓宽（`packages/eval-observability/src/inspector.ts`）
+
+新增 / 修改：
+
+- `InspectorEventMeta { messageUuid? }` — 新类型，拿来做 `onStreamEvent()` 的第 4 个可选参数
+- `InspectorEvent.messageUuid` — 接受时存下来（方便 debug + B7 正确性复验）
+- `InspectorRejection.messageUuid` + 新 `reason: "duplicate-message"` 变种
+- `InspectorDedupStats { dedupEligible, duplicatesDropped, missingMessageUuid }` — 新类型
+- `InspectorLikeSessionFrame { header?, body?, session_frame? }` — 结构化 frame 接口（不 hard-import `nacp-session`）
+- `SessionInspector.onStreamEvent(kind, seq, body, meta?)` — 加了 4th 可选参。**hard dedup only when `meta.messageUuid` present**；保持 1.1.0 backward compat
+- `SessionInspector.onSessionFrame(frame)` — 新 convenience，自动 extract `header.message_uuid` + body + stream_seq
+- `SessionInspector.getDedupStats()` — counter 接口
+
+新增测试 `test/inspector-dedup.test.ts`（12 cases），覆盖：
+
+- hard dedup 3x same uuid → 1 stored + 2 rejected
+- missing uuid → 不 dedup
+- 混合 population（有 uuid / 无 uuid 交错）
+- empty string uuid 视为 absent
+- body-validator 失败时不把 uuid 污染 seen set（后续合法 body 可重入）
+- `onSessionFrame()` extract + triplicate dedup
+- `onSessionFrame()` 无 session_frame → seq=0
+- body 没 `kind` → rejection
+- frame without header → no dedup
+
+Wider cross-package regression：existing 14 inspector cases + 3 ws-http-fallback cases 全部保持绿。
+
+#### 8.4.2 `BoundedEvalSink` 新模块（`packages/session-do-runtime/src/eval-sink.ts`）
+
+新文件 200+ lines，核心 API：
+
+- `BoundedEvalSink` class — bounded FIFO sink with dedup + overflow disclosure
+- `EvalSinkEmitArgs { record, messageUuid? }` — emit 参数
+- `EvalSinkOverflowDisclosure { at, reason, droppedCount, capacity, messageUuid? }` — disclosure 记录
+- `EvalSinkStats { recordCount, capacity, capacityOverflowCount, duplicateDropCount, totalOverflowCount, dedupEligible, missingMessageUuid }` — stats
+- `BoundedEvalSinkOptions { capacity?, disclosureBufferSize?, onOverflow?, now? }` — 构造选项，`onOverflow` callback 是 B5 `EvalSinkOverflow` hook emission 的宿主 seam
+- `extractMessageUuid(record)` helper — 三个 fallback 形式：`{messageUuid}` / `{envelope:{header:{message_uuid}}}` / `{header:{message_uuid}}`
+
+新增测试 `test/eval-sink.test.ts`（15 cases），覆盖：
+
+- dedup 4 种情况（unique / 无 uuid / 混合 / empty string）
+- capacity overflow FIFO + disclosure + stats
+- duplicate-message disclosure 带 messageUuid
+- disclosure ring buffer cap
+- `onOverflow` throw 不 crash emit path
+- injected clock
+- `extractMessageUuid` 6 种输入
+
+#### 8.4.3 `NanoSessionDO.defaultEvalRecords` → `defaultEvalSink`（`packages/session-do-runtime/src/do/nano-session-do.ts`）
+
+`defaultEvalRecords: unknown[]` 字段替换为 `defaultEvalSink: BoundedEvalSink`（capacity=1024 parity）。字段声明顺序调整（static `DEFAULT_SINK_MAX` 先于 instance field）避免 `TS2729` init-order 报错。
+
+Emit site（constructor 里）：
+
+```ts
+emit: (record: unknown): void => {
+  const messageUuid = extractMessageUuid(record);
+  this.defaultEvalSink.emit({ record, messageUuid });
+},
+```
+
+新增读接口 + 保持旧接口：
+
+- `getDefaultEvalRecords()` — 现委托到 `defaultEvalSink.getRecords()`；return shape 不变（`readonly unknown[]`），无 caller break
+- `getDefaultEvalDisclosure(): readonly EvalSinkOverflowDisclosure[]` — 新
+- `getDefaultEvalStats(): EvalSinkStats` — 新
+
+新增测试 `test/do/default-sink-dedup.test.ts`（5 cases），覆盖：
+
+- `{ messageUuid }` shape 3x → 1 stored
+- `{ envelope: { header: { message_uuid } } }` 2x → 1 stored
+- 无 uuid 3x → 3 stored (backward compat)
+- duplicate drop → disclosure 记录带 messageUuid
+- 1030 records → 6 capacity-exceeded disclosures + 1024 records remain
+
+既有 332 cases + 新 5 cases = 352 cases all green。
+
+#### 8.4.4 `EvalSinkOverflow` hook 发射
+
+B5 catalog 已 frozen `EvalSinkOverflow` event。B6 **不**强制走 hook path（会把 session-do-runtime 强行依赖 hooks dispatcher），但通过 `BoundedEvalSink` 的 optional `onOverflow` callback **暴露 seam**，让未来 worker entry wire 时可以简单一行：
+
+```ts
+new BoundedEvalSink({
+  capacity: 1024,
+  onOverflow: (d) => hookDispatcher.emit("EvalSinkOverflow", d),
+});
+```
+
+当前 `NanoSessionDO` 默认 **不** wire 该 callback（纯本地 disclosure），满足 B6 "mandatory local disclosure; optional hook emission" 的收口标准。
+
+#### 8.4.5 F02 lowercase header regression
+
+Phase 1 审计确认 `packages/session-do-runtime/src/cross-seam.ts::CROSS_SEAM_HEADERS` 已全部 lowercase，7 个 canonical header（trace/session/team/request/sourceRole/sourceKey/deadline）；`test/cross-seam.test.ts`（既有）已锁 regression — B6 无需新加。
+
+#### 8.4.6 公共 API 新增 export
+
+- `packages/eval-observability/src/index.ts` — 新增 export `InspectorEventMeta / InspectorDedupStats / InspectorLikeSessionFrame`
+- `packages/session-do-runtime/src/index.ts` — 新增 export `BoundedEvalSink / extractMessageUuid / EvalSinkEmitArgs / EvalSinkOverflowDisclosure / EvalSinkStats / BoundedEvalSinkOptions`
+
+### 8.5 Phase 5 — Validation + docs + handoff
+
+#### 5-package typecheck/build/test matrix
+
+| Package | typecheck | build | test | new tests |
+|---|---|---|---|---|
+| `@nano-agent/nacp-core` | ✅ | ✅ | ✅ 231/231 | +0（no source change） |
+| `@nano-agent/nacp-session` | ✅ | ✅ | ✅ 115/115 | +0（no source change） |
+| `@nano-agent/eval-observability` | ✅ | ✅ | ✅ 208/208 | +12（`inspector-dedup.test.ts`） |
+| `@nano-agent/session-do-runtime` | ✅ | ✅ | ✅ 352/352 | +20（`eval-sink.test.ts` 15 + `default-sink-dedup.test.ts` 5） |
+
+`build:schema` / `build:docs` 对 3 个支持这些脚本的包都执行成功（nacp-core / nacp-session / eval-observability 各自 2 份产物 refreshed）。
+
+#### 根 cross-package contracts
+
+| Test file | 规模 | 新 cases |
+|---|---|---|
+| `test/hooks-protocol-contract.test.mjs` | 9 | 0 |
+| `test/context-management-contract.test.mjs` | 1 | 0 |
+| `test/trace-first-law-contract.test.mjs` | 18 | 0 |
+| `test/observability-protocol-contract.test.mjs` | inherited | 0 |
+| `test/session-do-runtime-contract.test.mjs` | inherited | 0 |
+| `test/eval-sink-dedup-contract.test.mjs`（**新**） | 6 | +6 |
+| `test/l1-smoke.test.mjs` | 2 | 0 |
+| **Total root contracts** | **32** | **+6** |
+
+新根 contract 测试锁：
+- SessionInspector 以 envelope messageUuid 而非 body 字段做 dedup（**wire truth proof**）
+- missing messageUuid → backward-compat 不 dedup
+- `onSessionFrame()` extract path — frame header 是 key 源
+- `BoundedEvalSink` overflow 不 silent
+- duplicate-message disclosure 带 offending uuid
+- `extractMessageUuid` 三 shapes fallback chain
+
+#### 文档更新
+
+- `docs/rfc/nacp-core-1-2-0.md` — **重写**（status → frozen; 0 schema delta；§2 deferred candidates 新增；§7 acceptance 全 ✅；§9 revision 加 2026-04-20 条目）
+- `docs/rfc/nacp-session-1-2-0.md` — status → frozen；§0 chosen Outcome A；§6.2 drift fix；§8 acceptance 全 ✅；§11 revision 加条目
+- `packages/nacp-core/CHANGELOG.md` — 新增 2026-04-20 reconciliation 条目
+- `packages/nacp-session/CHANGELOG.md` — 新增 2026-04-20 reconciliation + drift fix 条目
+- `packages/eval-observability/CHANGELOG.md` — 新增 `0.2.0 — 2026-04-20` 条目（API additions + wire clarification）
+- `packages/session-do-runtime/CHANGELOG.md` — 新增 `0.2.0 — 2026-04-20` 条目（BoundedEvalSink + DO getters）
+
+（`eval-observability` 和 `session-do-runtime` 的 `package.json` 本次暂不 bump minor；CHANGELOG 记录的 `0.2.0` 作为 contract-level milestone 标记，package semver 在下次正式 release batch 统一推进以避免与 B7 同期变更冲突。）
+
+### 8.6 Cross-package contract（B6 落成后，其他包看到的 surface）
+
+对 **B7（round 2 integrated spike）**：
+
+- **需要在 push path 复验**的 item 清单：
+  - `SessionInspector.onSessionFrame(frame)` 在真实 WS 上消费跨 worker push frame，verify `header.message_uuid` 字段始终存在 + 是 stable UUID
+  - `BoundedEvalSink.onOverflow` callback 在真实 sink burst 下能正确触发（不仅仅是单元测试）
+  - `getDedupStats() / getDefaultEvalStats()` 的 counter 在多 session 并发下不串位
+- **继承 contracts** 不需要 B7 复验：
+  - `nacp-core` / `nacp-session` 1.1.0 schemas（无改动）
+  - Hooks catalog 18 events 的 wire parse（B5 已锁）
+  - lowercase anchor headers（既有 cross-seam.test.ts 已锁）
+- **B6 明确不证明**的：
+  - `handleNacp()` RPC transport 的跨 worker dedup — 仍按 `binding-findings.md §0` out-of-scope
+  - cross-colo KV freshness — 仍待 F03 round 2
+
+对 **B8 / worker-matrix**：
+
+- `context.compact.prepare.*` / `commit.notification` 在 worker matrix 阶段应当 revisit（P5 §3 反推方法论直接复用）
+- `EvalSinkOverflow` 真实 emit 可由 worker entry 绑 `onOverflow` callback wire 起来，不需要再改 B6 代码
+- `SessionInspector.onSessionFrame` 天然 cross-worker 友好（结构化 interface，不 hard-import `nacp-session`）
+
+### 8.7 偏离与保留决策
+
+1. **`EvalSinkOverflow` 不在 B6 里强制 emit hook**：B6 action-plan §3 Phase 4 P3 明确 "mandatory：本地 disclosure counter/record；optional co-ship：若 hooks seam ready，则额外 emit `EvalSinkOverflow`"。实际落地通过 `BoundedEvalSinkOptions.onOverflow` 把 seam 暴露但默认不 wire，避免 session-do-runtime 强行依赖 hooks dispatcher 的 wiring 风险；worker entry 可在任何时候一行 wire 起来。
+2. **没有删 draft RFC**：两份 `docs/rfc/nacp-*-1-2-0.md` 保留并更新为 `frozen` status。"1.2.0" RFC 最终 content 是 "no-schema-delta"，语义上是合法的 RFC 闭环而非 RFC 作废。
+3. **eval-observability / session-do-runtime package semver 暂不 bump**：CHANGELOG 中记录 `0.2.0` 作为 contract 里程碑；`package.json` 的实际 bump 留到下一个 release batch（避免与 B7 同期变更导致 dep 图抖动）。B5 对 `@nano-agent/hooks` 的 `0.1.0 → 0.2.0` 是同一策略的 precedent。
+4. **不在 `nacp-core` 引入 1.1.0-compat shim 文件**：2026-04-19 draft §5.3 规划了 `packages/nacp-core/src/compat/1.1.0-compat.ts`；由于 0 schema delta，compat shim 无事可做，直接不创建 file。
+5. **不引入 `session.stream.event` body 的 `message_uuid` 字段**：严格遵循 B6 action-plan §2.3 边界 + §2.2 O3（out-of-scope "在 `session.stream.event` body 内新增 `message_uuid` 字段"）。dedup key 统一在 envelope header。
+6. **`onSessionFrame(frame)` 用结构化 interface 而非 hard-import `nacp-session`**：与 B4 `bridgeToHookDispatcher` / B5 `CapabilityPermissionAuthorizer` 同款 structural-adapter 策略，保持 `@nano-agent/eval-observability` 不反向依赖 Session profile 代码。
+
+### 8.8 §5 exit criteria 状态
+
+| # | Exit criterion | Status |
+|---|---|---|
+| 1 | P5 design + 2 draft RFC 的关键 drift 已按 current code 修正 | ✅ 3 drift 处理 + 2 RFC 重写 |
+| 2 | `nacp-core` 是否需要 1.2.0 bump，有明确判定 | ✅ **stay at 1.1.0**（0 schema delta） |
+| 3 | `nacp-session` 的 recommended outcome 明确 | ✅ **Outcome A (stay at 1.1.0)** |
+| 4 | `hook.emit` / `hook.outcome` 不被误改 | ✅ 两者 schema 一字未动 |
+| 5 | `SessionInspector` dedup 基于 frame/header messageUuid | ✅ `onStreamEvent(meta)` + `onSessionFrame()` + `getDedupStats()` |
+| 6 | `defaultEvalRecords` 不再 silent + 显式 overflow disclosure | ✅ `BoundedEvalSink` + `getDefaultEvalDisclosure()` + `getDefaultEvalStats()` |
+| 7 | 所有协议/写回相关测试 + 包脚本可通过 | ✅ 4 packages typecheck/build/test + 2 schema/docs 生成 + 32 root contracts 全绿 |
+
+### 8.9 收口意见
+
+B6 的关键不是把 draft RFC 照搬成 schema delta，而是**把 draft 与 current code reality 的 3 条 drift 用反推方法论归零 + 把 `binding-F04` writeback 真正写成代码**：
+
+- **0 protocol schema delta，1 consumer-side dedup upgrade**。`nacp-core` / `nacp-session` 两个包的 wire schema 在 B6 一字未改；`binding-F04` 的 closure 全部落在 `eval-observability` 与 `session-do-runtime` 的 consumer seam 上。
+- **没有发明 `session.stream.event` body 新字段**。严格守住 wire-body shape 不动，dedup key 走 envelope header。这是 `binding-F02` / `binding-F04` writeback 的正确姿势。
+- **没有把 B4 的 in-process orchestrator 假装成 cross-worker producer**。P4/P5 draft 提了 2 个 `context.compact.prepare.*` / `commit.notification` 的 kind，但 B4 §11.4.4 明确 orchestrator 跑在 session-do-runtime 里 — 这两个 kind 没有 cross-worker producer reality，defer 到 worker matrix。
+- **没有把 B5 的 permission verdict compile-away 推翻**。`allow / deny` wire 字段继续被视为 package-local helper，wire 保持 minimal。
+- **`EvalSinkOverflow` hook emission** 通过 `onOverflow` callback seam 暴露而不强制 wire，保持 `session-do-runtime` 不反向依赖 hooks dispatcher。
+- **B7 push-path 复验清单已写实**（§8.6）：B6 收口 ≠ true cross-worker sink callback 已证明。
+
+**verdict (2026-04-20)**：✅ B6 closed-with-evidence；可推进 B7（round 2 integrated spike）。
+
+| Date | Author | Change |
+|---|---|---|
+| 2026-04-20 | Opus 4.7 (1M context) | 初版 §8 工作日志；5 phase 全落地 + 3 RFC drift 修订 + 2 package no-op release + 2 package consumer-seam upgrade + 37 新 test cases + 6 根 contract cases 全绿 |

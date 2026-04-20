@@ -1,5 +1,41 @@
 # Changelog — @nano-agent/session-do-runtime
 
+## 0.2.0 — 2026-04-20
+
+B6 — default eval sink upgrade. Per `binding-F04` / `docs/rfc/nacp-core-1-2-0.md` §4.2.
+
+### Added
+
+- `BoundedEvalSink` (`src/eval-sink.ts`) — bounded FIFO sink with:
+  - Hard dedup on envelope `messageUuid` when records carry one.
+  - Explicit `overflowCount` counters + ring buffer of recent
+    `EvalSinkOverflowDisclosure` records.
+  - Optional `onOverflow` callback for host-driven `EvalSinkOverflow`
+    hook emission.
+- `extractMessageUuid(record)` helper — walks the record shapes
+  `defaultEvalRecords` callers emit (`{ messageUuid }` /
+  `{ envelope: { header: { message_uuid } } }` / loose
+  `{ header: { message_uuid } }`).
+- `NanoSessionDO.getDefaultEvalDisclosure()` — new read accessor for
+  the overflow-disclosure ring buffer. Satisfies `binding-F04` "silent
+  drop is non-conformant".
+- `NanoSessionDO.getDefaultEvalStats()` — counters snapshot.
+
+### Changed
+
+- `NanoSessionDO.defaultEvalRecords` replaced by `defaultEvalSink:
+  BoundedEvalSink`. Capacity unchanged (1024); overflow semantics are
+  now observable instead of silent.
+- `NanoSessionDO.getDefaultEvalRecords()` now delegates to the bounded
+  sink. Return shape (`readonly unknown[]`) unchanged — no caller
+  break.
+
+### Preserved
+
+- B5 `Setup` / `Stop` hook emission, orchestrator hook order, and all
+  332 existing tests. Shutdown order remains Stop → SessionEnd →
+  checkpoint → flush → close.
+
 ## 0.1.0 — 2026-04-17
 
 Initial v1 implementation + post-review corrections.

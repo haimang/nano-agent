@@ -1,5 +1,26 @@
 # Changelog — @nano-agent/nacp-session
 
+## 2026-04-20 — B6 reconciliation (Outcome A: stay at 1.1.0)
+
+Per `docs/rfc/nacp-session-1-2-0.md` (now frozen with status `frozen`),
+Outcome A is chosen — **no schema changes, no version bump**.
+
+### Drift fix
+
+- RFC §6.2 previously claimed `session.stream.event` body schema
+  carries `message_uuid`. That is **inaccurate**: the dedup key
+  `messageUuid` lives on the NACP envelope `header`, stamped by
+  `websocket.ts::postStreamEvent` at line 120. Body schema
+  (`SessionStreamEventBodySchema`) is unchanged and does NOT carry
+  `message_uuid`. RFC §6.2 reworded to call out the correct key
+  source and point at the B6 `SessionInspector` `onSessionFrame()` /
+  `onStreamEvent(..., meta)` consumer seams.
+
+### Preserved
+
+- All 9 `session.stream.event` kinds, 8 session message kinds.
+- Frame / websocket / replay / ack / heartbeat behaviour unchanged.
+
 ## v1.0.0 (2026-04-16)
 
 Initial release of the NACP-Session package.

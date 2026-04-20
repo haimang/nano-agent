@@ -1,5 +1,31 @@
 # Changelog — @nano-agent/nacp-core
 
+## 2026-04-20 — B6 reconciliation (stay at 1.1.0; "1.2.0" RFC closes as no-schema-delta)
+
+Per `docs/rfc/nacp-core-1-2-0.md` (B6-reconciled 2026-04-20), every
+schema delta originally proposed in the 2026-04-19 draft fails the
+4-condition reverse-derivation decision tree when re-checked against
+B2 / B3 / B4 / B5 ship code:
+
+- `context.compact.prepare.*` / `commit.notification` — B4 ships the
+  orchestrator in-process; no cross-worker producer exists until
+  worker matrix phase. **Deferred.**
+- Hook `event_name` enum hoist — `@nano-agent/hooks` owns the v2
+  18-event catalog; hoisting would reverse the dep direction.
+  **Dropped.**
+- `allow? / deny?` on `hook.outcome` — B5 `hooks/src/permission.ts`
+  compiles the vocabulary away via `verdictOf()`; wire stays minimal.
+  **Dropped.**
+
+**Net result**: 0 schema deltas, 0 new message kinds. Package version
+remains `1.1.0`. Per charter §11.2, this is a legitimate B6 exit state
+(semver bump is secondary outcome, not primary success marker).
+
+The three normative spec sections surfaced by the RFC — lowercase
+anchor headers (binding-F02), eval sink dedup contract (binding-F04),
+and KV freshness caveat (F03) — describe behavior already exhibited by
+1.1.0 and are documented there for B7 integrated spike verification.
+
 ## v1.0.0 (2026-04-16)
 
 Initial release of the NACP-Core package — the internal envelope layer of the Nano-Agent Communication Protocol family.

@@ -1,9 +1,9 @@
-# RFC: `nacp-core` 1.2.0 — Async-Compact Family + Hook Catalog Extension + Lowercase Header Spec
+# RFC: `nacp-core` 1.2.0 — No-Schema-Delta (stay at 1.1.0 per B6 reverse-derivation)
 
 > **RFC ID**: `nacp-core-1-2-0`
-> **Status**: `draft` (becomes `frozen` on B6 ship)
-> **Author**: Opus 4.7 (1M context)
-> **Date**: 2026-04-19
+> **Status**: `frozen` (B6 ship, 2026-04-20)
+> **Author**: Opus 4.7 (1M context) — initial draft by Opus 4.7, reconciled by Opus 4.7 during B6 implementation
+> **Date**: 2026-04-19 (initial draft) / 2026-04-20 (B6 reconciliation)
 > **Sibling RFCs**: `docs/rfc/nacp-session-1-2-0.md`
 > **Sibling design**: `docs/design/after-foundations/P5-nacp-1-2-0-upgrade.md`
 >
@@ -19,288 +19,234 @@
 > - `docs/design/after-foundations/PX-async-compact-lifecycle-spec.md` §8 (NACP-eligibility canonical)
 > - `docs/design/after-foundations/P3-context-management-async-compact.md` (producer reality)
 > - `docs/design/after-foundations/P4-hooks-catalog-expansion.md` §8.8 (hook event_name allowed values 18)
-> - `docs/design/after-foundations/P5-nacp-1-2-0-upgrade.md` §3 (反推 methodology + 2 frozen families)
+> - `docs/design/after-foundations/P5-nacp-1-2-0-upgrade.md` §3 (反推 methodology)
 
 ---
 
-## 0. Summary
+## 0. Summary (B6-reconciled)
 
-`nacp-core` 1.1.0 → 1.2.0 添加 **2 个 message families** (`context.compact.prepare.*` + `context.compact.commit.notification`)、**扩展 hook event_name allowed values 8→18 + 新增 allow/deny outcomes**、**3 个 normative spec sections** (lowercase header / sink dedup / KV freshness caveat). 1.0.0 / 1.1.0 compat shim **完整保留**.
+Per charter §4.1 F and P5 §3 reverse-derivation methodology, this RFC
+**recommends `nacp-core` stay at `1.1.0`** because every protocol delta
+originally proposed in the 2026-04-19 draft fails the 4-condition
+decision tree when re-checked against B2 / B3 / B4 / B5 ship code:
 
-Per charter §11.2, semver bump (1.1.0 → 1.2.0) 是 secondary outcome — 真正成功标准是 protocol surface 与 PX spec §8 + binding-F02/F04 evidence 严格对齐.
-
----
-
-## 1. Versioning
-
-| Aspect | 1.1.0 (current) | 1.2.0 (this RFC) |
+| Originally proposed | B6 reality check | Outcome |
 |---|---|---|
-| Frozen baseline | yes | yes |
-| 1.0.0 compat shim | yes | yes (preserved) |
-| 1.1.0 compat shim | (n/a; 1.1.0 IS the baseline) | yes (added; 1.1.0 users do not break) |
-| Message families | 5 (tool / hook / skill / context / system) | 5 (no new family group; **added kinds inside existing families**) |
-| Total message kinds | 12 (best estimate by current code) | 14 (12 + 2 new context.compact.* kinds) |
-| Hook event_name allowed values | 8 | 18 (extension only; 8 unchanged) |
-| Hook outcome fields | `ok`, `block?`, `updated_input?`, `additional_context?`, `stop?`, `diagnostics?` | + `allow?`, `deny?` (for PermissionRequest event only) |
+| Add `context.compact.prepare.request` / `.response` / `commit.notification` | B4 ships `AsyncCompactOrchestrator` **in-process** inside `session-do-runtime` (per B4 §11.4.4: "B4 inspector facade **不**需要 NACP message family"). No cross-worker producer / consumer exists until worker matrix phase. | **DEFERRED to worker matrix** |
+| Extend `hook.emit.event_name` to `z.enum([...18])` | `@nano-agent/hooks` is the source-of-truth for the 18-event catalog (B5 landed). Hoisting the enum into `nacp-core` would make `nacp-core` a reverse-dependency of `hooks` and would break the invariant that `event_name` is generic at the envelope layer. | **DROPPED** |
+| Add `allow? / deny?` to `hook.outcome` body | Per B5 §2.3 override of P4 §8.5: permission verdict rides on existing `continue` (= allow) / `block` (= deny) actions; zero handlers ⇒ fail-closed deny. `hooks/src/permission.ts::verdictOf()` compiles the P4 vocabulary away without touching the wire. | **DROPPED** |
+
+**Net result**: `nacp-core` carries **0 new message kinds** and **0 schema
+changes** in 1.2.0. Per charter §11.2, the package may legitimately stay
+at `1.1.0` — semver bump is a secondary outcome, not a primary success
+marker. The normative spec material this RFC surfaces (lowercase header /
+sink dedup contract / KV freshness caveat) is **behavior-of-current-baseline**
+commentary and does not require a version bump.
+
+**Recommended outcome**: **stay at `1.1.0`**. The 3 normative spec
+sections in §4 apply to 1.1.0 as already-observed behavior. They are
+documented here so B7 integrated spike has a single place to point at
+when verifying conformance.
 
 ---
 
-## 2. New Message Kinds (per P5 §3.4 reverse-derivation)
+## 1. Versioning Decision
 
-> Only families satisfying P5 §3.1 4-condition decision tree are added. Per PX spec §8 + P5 §3, only async-compact lifecycle's cross-worker prepare/commit warrants NACP message extension.
-
-### 2.1 `context.compact.prepare.request`
-
-**Producer**: `agent.core` worker (or in-process equivalent)
-**Consumer**: `context.core` worker (when context-management runs as separate worker per worker matrix)
-**Wire shape**:
-
-```ts
-import { z } from "zod";
-import { NacpRefSchema } from "../envelope.js";
-
-export const ContextCompactPrepareRequestBodySchema = z.object({
-  /** Reference to the conversation history range to summarize. */
-  history_ref: NacpRefSchema,
-  /** Caller's snapshot version at the time of request (for diff-aware merge per PX §5.2). */
-  snapshot_version: z.number().int().min(0),
-  /** Token budget the summary should target after compaction. */
-  target_token_budget: z.number().int().min(1),
-  /** Optional hint to compact only specific tags (per P3-hybrid-storage tag model). */
-  compact_tags: z.array(z.string()).optional(),
-  /** Caller-side correlation id for matching response. */
-  prepare_job_id: z.string().uuid(),
-});
-```
-
-Registration: `packages/nacp-core/src/messages/context.ts`
-```ts
-registerMessageType("context.compact.prepare.request", ContextCompactPrepareRequestBodySchema, {
-  bodyRequired: true,
-  allowedProducerRoles: ["session", "platform"],
-});
-```
-
-### 2.2 `context.compact.prepare.response`
-
-**Producer**: `context.core` (or in-process equivalent)
-**Consumer**: `agent.core`
-**Wire shape**:
-
-```ts
-export const ContextCompactPrepareResponseBodySchema = z.object({
-  /** Echoed for correlation. */
-  prepare_job_id: z.string().uuid(),
-  /** Outcome status. */
-  status: z.enum(["ok", "error", "cancelled", "timeout"]),
-  /** When ok: ref to the prepared summary blob. */
-  summary_ref: NacpRefSchema.optional(),
-  /** When ok: actual byte size of summary (drives F08 inline-vs-R2-promotion routing in committer). */
-  summary_bytes: z.number().int().min(0).optional(),
-  /** When ok: tokens consumed by summary (post-compact). */
-  tokens_after: z.number().int().min(0).optional(),
-  /** Tokens before compaction (informational). */
-  tokens_before: z.number().int().min(0).optional(),
-  /** Error info when status != ok. */
-  error: z.object({ code: z.string(), message: z.string() }).optional(),
-});
-```
-
-Registration:
-```ts
-registerMessageType("context.compact.prepare.response", ContextCompactPrepareResponseBodySchema, {
-  bodyRequired: true,
-  allowedProducerRoles: ["capability"],
-});
-```
-
-### 2.3 `context.compact.commit.notification`
-
-**Producer**: `context.core` (or in-process equivalent) — emitted when `committing → committed` transition completes
-**Consumer**: `agent.core` (and any inspector subscribed via independent HTTP)
-**Wire shape**:
-
-```ts
-export const ContextCompactCommitNotificationBodySchema = z.object({
-  /** Session this commit belongs to. */
-  session_uuid: z.string().uuid(),
-  /** Old context version (pre-swap). */
-  old_version: z.number().int().min(0),
-  /** New context version (post-swap). */
-  new_version: z.number().int().min(0),
-  /** Ref to the committed summary (may be inline-DO or R2-ref per F08 routing). */
-  summary_ref: NacpRefSchema,
-  /** Snapshot id for the pre-swap context (for user rollback per PX §4.3). */
-  pre_swap_snapshot_id: z.string(),
-  /** Reason; informational. */
-  reason: z.enum([
-    "scheduled-prepare-and-commit",
-    "hard-fallback-no-prepared-summary",
-    "user-explicit-trigger",
-    "background-llm-timeout-fallback",
-  ]),
-});
-```
-
-Registration:
-```ts
-registerMessageType("context.compact.commit.notification", ContextCompactCommitNotificationBodySchema, {
-  bodyRequired: true,
-  allowedProducerRoles: ["capability", "platform"],
-});
-```
-
-### 2.4 Existing `context.compact.request/response` — preserved unchanged
-
-Per 1.0.0 / 1.1.0 compat: existing `context.compact.request` + `context.compact.response` remain valid. They represent **synchronous compact** (the legacy / hard-fallback path) — NOT the prepare/commit lifecycle. Both can coexist.
+| Aspect | 1.1.0 (current & recommended) |
+|---|---|
+| Frozen baseline | yes |
+| 1.0.0 compat shim | yes (unchanged) |
+| Message families | 5 (tool / hook / skill / context / system) |
+| Total message kinds | 12 (unchanged) |
+| Hook event_name shape | `z.string().min(1).max(64)` (unchanged; catalog lives in `@nano-agent/hooks`) |
+| Hook outcome fields | `ok`, `block?`, `updated_input?`, `additional_context?`, `stop?`, `diagnostics?` (unchanged) |
+| Package version | `@nano-agent/nacp-core@1.1.0` — **no bump** |
 
 ---
 
-## 3. Hook Family Extension
+## 2. Deferred candidates (no-op in this RFC)
 
-### 3.1 `event_name` allowed values extended to 18
+### 2.1 `context.compact.prepare.*` / `context.compact.commit.notification` — DEFERRED
 
-`packages/nacp-core/src/messages/hook.ts` `hook.emit.event_name` field's enum allowed values:
+- **Why deferred**: B4 ships an in-process `AsyncCompactOrchestrator`.
+  `session-do-runtime` calls its methods directly through
+  `createKernelCompactDelegate`. There is no cross-worker boundary for
+  the prepare / commit path, so envelope-level validation is not needed.
+- **When to revisit**: worker matrix phase (post-B8). When `context.core`
+  is split into a separate worker that `agent.core` calls via
+  cross-worker binding, reverse-derive these kinds again; the
+  per-candidate decision tree in `P5-nacp-1-2-0-upgrade.md §3.4`
+  applies.
+- **Legacy path preserved**: `context.compact.request` /
+  `context.compact.response` (existing 1.0.0 baseline) remain
+  registered. They serve the synchronous / hard-fallback path and do
+  **not** need to be deprecated.
 
-```ts
-// 1.2.0 — 18 values (8 unchanged + 4 class-B + 6 class-D; per P4 design §7)
-export const HOOK_EVENT_NAMES_V1_2 = z.enum([
-  // Class A — preserved 8
-  "SessionStart",
-  "SessionEnd",
-  "UserPromptSubmit",
-  "PreToolUse",
-  "PostToolUse",
-  "PostToolUseFailure",
-  "PreCompact",
-  "PostCompact",
-  // Class B — claude-code 借鉴 4 (per P4 §4)
-  "Setup",
-  "Stop",
-  "PermissionRequest",
-  "PermissionDenied",
-  // Class D — async-compact lifecycle + binding-F04 (per P4 §6 + PX §7)
-  "ContextPressure",
-  "ContextCompactArmed",
-  "ContextCompactPrepareStarted",
-  "ContextCompactCommitted",
-  "ContextCompactFailed",
-  "EvalSinkOverflow",
-]);
-```
+### 2.2 Hook `event_name` enum hoist — DROPPED
 
-Wire-level shape of `hook.emit` and `hook.outcome` is unchanged from 1.1.0:
-```ts
-// hook.emit body — unchanged structure
-{ event_name: HOOK_EVENT_NAMES_V1_2, event_payload: z.unknown() }
+- **Why dropped**: hoisting would reverse the dependency direction
+  (`nacp-core` would need `@nano-agent/hooks` to know the 18-event
+  catalog). `@nano-agent/hooks` is the SOT; the envelope-layer
+  validation correctly treats `event_name` as an opaque string within
+  the 1-64 char bound.
+- **What this means for consumers**: the current schema
+  `z.string().min(1).max(64)` **already accepts all 18 v2 events**
+  (longest is `ContextCompactPrepareStarted` at 29 chars). No consumer
+  change needed.
 
-// hook.outcome body — extended with allow/deny
-export const HookOutcomeBodySchemaV1_2 = z.object({
-  ok: z.boolean(),
-  block: z.string().optional(),
-  updated_input: z.unknown().optional(),
-  additional_context: z.string().optional(),
-  stop: z.string().optional(),
-  diagnostics: z.array(z.unknown()).optional(),
-  // 1.2.0 additions for PermissionRequest event
-  allow: z.boolean().optional(),
-  deny: z.string().optional(),
-});
-```
+### 2.3 `allow / deny` hook outcome wire fields — DROPPED
 
-### 3.2 Compat shim for 1.0.0 / 1.1.0 consumers
-
-- 1.0.0 / 1.1.0 consumers receiving `hook.emit` with new event_name (e.g. `Setup` or `ContextCompactArmed`) MAY:
-  - Drop the message silently (forward-compat)
-  - Forward to a generic handler
-  - Log + ignore
-- 1.2.0 producers MUST NOT assume 1.0.0/1.1.0 consumer understands new events; design hook handlers to be optional listeners
-- `outcome` `allow` / `deny` fields are ignored by 1.0.0/1.1.0 consumers (which only know `ok` / `block` / `updated_input` / `additional_context` / `stop` / `diagnostics`)
+- **Why dropped**: per B5 action-plan §2.3, the B5 implementer
+  shipped `verdictOf()` / `denyReason()` as package-local helpers that
+  compile P4's `allow / deny` vocabulary down to existing wire fields.
+  There is no wire-level user of the new fields; adding them would be
+  dead schema.
+- **Migration path if ever needed**: if a future phase (e.g. a separate
+  permission-adjudication worker) needs to transport `allow / deny`
+  semantics distinctly from `continue / block`, a 1.3.0 RFC can revisit
+  this. The B5 `permission.ts` helper would be updated to read the new
+  fields first and fall back to the current action translation.
 
 ---
 
-## 4. Normative Spec Sections (per P5 §4 / §5 / §6)
+## 3. What actually DID change in Phase 3 (B4) without touching nacp-core
 
-### 4.1 §X — Anchor Header Naming (Mandatory; per binding-F02)
+Listed here so B6 readers can see the producer reality without being
+misled into thinking protocol-layer changes shipped:
 
-> All NACP cross-seam anchor headers MUST use lowercase ASCII names in all packages, documentation, and code. This conforms to RFC 7230 §3.2 case-insensitivity AND to the observed Cloudflare service binding lowercase normalization (validated in `spike-binding-pair-F02`).
->
-> The 6 canonical anchor header names are:
-> ```
-> x-nacp-trace-uuid
-> x-nacp-session-uuid
-> x-nacp-team-uuid
-> x-nacp-request-uuid
-> x-nacp-source-uuid
-> x-nacp-source-role
-> ```
->
-> Code constants in `packages/session-do-runtime/src/cross-seam.ts` and any consumer MUST use the lowercase form. Audit logs and inspector dumps MUST display lowercase form.
->
-> A contract test MUST exist that sends a header with mixed case and asserts the receiving side observes the value at the lowercase key only.
+1. `@nano-agent/context-management` (B4) shipped `AsyncCompactOrchestrator`
+   + `bridgeToHookDispatcher` + `COMPACT_LIFECYCLE_EVENT_NAMES`. All
+   intra-process; no envelope crossing.
+2. `@nano-agent/hooks` (B5) shipped the 18-event catalog, the permission
+   verdict helpers, and companion producer seams in
+   `session-do-runtime` / `capability-runtime` / `context-management`.
+   All catalog knowledge lives inside `@nano-agent/hooks`.
+3. `@nano-agent/eval-observability` (B6 — this phase) gains an optional
+   `messageUuid` meta on `SessionInspector.onStreamEvent()` + new
+   `onSessionFrame()` helper + `getDedupStats()`. This is a **consumer**
+   change, not a protocol change — the `messageUuid` comes from the
+   NACP envelope header, which has always carried it.
+4. `@nano-agent/session-do-runtime` (B6 — this phase) upgrades
+   `defaultEvalRecords` to a bounded sink with overflow disclosure. No
+   protocol change.
 
-### 4.2 §X — Eval Sink Dedup Contract (Mandatory; per binding-F04)
+---
 
-> NACP transport (whether fetch-based service binding, RPC handleNacp, or future transports) does NOT provide cross-message dedup. Receiving workers (sinks, inspectors, audit logs) MUST implement application-layer dedup keyed on `messageUuid` (NACP envelope field).
->
-> Sink overflow (when a sink reaches its capacity) MUST emit explicit disclosure (via hook event `EvalSinkOverflow` per P4 catalog OR via metric counter accessible to inspectors). Silent drop is non-conformant.
->
-> Reference implementation: `packages/eval-observability/src/inspector.ts` `SessionInspector` (post-B6 ship has dedup) and `packages/session-do-runtime/src/do/nano-session-do.ts` `defaultEvalRecords` (post-B6 ship has dedup + overflow disclosure).
->
-> A contract test MUST exist that emits 3× the same `messageUuid` and asserts sink contains exactly 1.
+## 4. Normative Spec Sections (behavior-of-1.1.0 commentary)
 
-### 4.3 §X — KV-Backed State Freshness Caveat (Informative; per F03)
+> The sections below are **clarifications**, not new normative
+> requirements. They describe behavior that 1.1.0 already exhibits but
+> that was under-documented. They are documented here so B7 integrated
+> spike can verify conformance without chasing source comments.
 
-> Any NACP message that conveys state read from KV-backed storage SHOULD be considered eventually consistent across colos. Same-colo read-after-write was observed strong in `spike-do-storage-F03`; cross-colo behavior is not yet validated. Until validated (B7 round 2), consumers SHOULD NOT assume strict cross-colo consistency for KV-derived state in NACP messages.
->
-> If B7 round 2 reveals cross-colo stale, a future minor version may add a `freshness` enum field to relevant message bodies. This RFC reserves that future change as non-breaking addition.
+### 4.1 §X — Anchor Header Naming (Normative, per binding-F02)
+
+All NACP cross-seam anchor headers MUST use lowercase ASCII names. This
+conforms to RFC 7230 §3.2 case-insensitivity AND to the observed
+Cloudflare service-binding lowercase normalization validated in
+`spike-binding-pair-F02`.
+
+Canonical anchor header names (defined by
+`packages/session-do-runtime/src/cross-seam.ts::CROSS_SEAM_HEADERS`):
+
+```
+x-nacp-trace-uuid
+x-nacp-session-uuid
+x-nacp-team-uuid
+x-nacp-request-uuid
+x-nacp-source-role
+x-nacp-source-key
+x-nacp-deadline-ms
+```
+
+Code constants and any downstream consumer MUST use the lowercase form.
+A contract test MUST exist that stamps a header with mixed case and
+asserts the receiving side reads the value at the lowercase key only.
+See `packages/session-do-runtime/test/cross-seam.test.ts`.
+
+### 4.2 §X — Eval Sink Dedup Contract (Normative, per binding-F04)
+
+NACP transport (whether fetch-based service binding, RPC `handleNacp()`,
+or future transports) does **not** provide cross-message dedup. Receiving
+workers (sinks, inspectors, audit logs) MUST implement application-layer
+dedup keyed on `messageUuid` from the NACP envelope `header` field.
+
+The **dedup key source is the envelope header**, not any message body.
+`session.stream.event` body schema is unchanged and does NOT carry
+`message_uuid`. Consumers extract the dedup key from the session frame
+header and pass it to the sink / inspector.
+
+Sink overflow (when a sink reaches its capacity) MUST emit explicit
+disclosure (via overflow counter accessible to inspectors, and
+OPTIONALLY via hook event `EvalSinkOverflow` per P4 catalog). Silent
+drop is non-conformant.
+
+Reference implementations shipped in B6:
+- `packages/eval-observability/src/inspector.ts::SessionInspector` —
+  optional `meta.messageUuid` on `onStreamEvent()` enables hard dedup;
+  `onSessionFrame(frame)` extracts the header automatically.
+- `packages/session-do-runtime/src/do/nano-session-do.ts::defaultEvalRecords`
+  — bounded FIFO sink with overflow counter, disclosure ring buffer, and
+  (optional) `EvalSinkOverflow` hook emission through an injected seam.
+
+A contract test MUST exist that emits 3× the same `messageUuid` and
+asserts the sink contains exactly 1.
+
+### 4.3 §X — KV-Backed State Freshness Caveat (Informative, per F03)
+
+Any NACP message that conveys state read from KV-backed storage SHOULD
+be considered eventually consistent across colos. Same-colo
+read-after-write was observed strong in `spike-do-storage-F03`;
+cross-colo behavior is not yet validated. Until validated (B7 round 2),
+consumers SHOULD NOT assume strict cross-colo consistency for
+KV-derived state in NACP messages.
+
+If B7 round 2 reveals cross-colo stale, a future minor version MAY add
+a `freshness` enum field to relevant message bodies. This RFC reserves
+that future change as non-breaking addition.
 
 ---
 
 ## 5. Migration Plan
 
-### 5.1 For producers wanting to use 1.2.0
+### 5.1 For producers and consumers
 
-1. Bump dependency to `nacp-core@^1.2.0`
-2. Use new message kinds: `context.compact.prepare.*` + `context.compact.commit.notification`
-3. May start emitting new hook events (`Setup` / `Stop` / `PermissionRequest` / `PermissionDenied` / `ContextCompactArmed` / etc.) once consumers are aware
-4. Audit code for any mixed-case `X-Nacp-*` header constants — convert to lowercase
+No migration required. `nacp-core@1.1.0` ships unchanged. All currently
+emitted messages — existing and new hook event names — already parse
+under 1.1.0 schemas.
 
-### 5.2 For consumers staying on 1.0.0 / 1.1.0
+### 5.2 Documentation migration
 
-- No code change required
-- New message kinds will be rejected by `validateEnvelope` since their kinds are not registered in 1.0.0/1.1.0
-- New hook event_name values will pass through `hook.emit` (since `event_name` is `string` at 1.0.0/1.1.0) but consumer may not have a registered handler — graceful no-op
-
-### 5.3 Compat shim implementation
-
-`packages/nacp-core/src/compat/` adds:
-- `1.0.0-compat.ts` — preserved (existing)
-- `1.1.0-compat.ts` — NEW (shim that strips 1.2.0-only fields when downgrading messages for 1.1.0 consumers)
+- `docs/design/after-foundations/P5-nacp-1-2-0-upgrade.md` — backfill
+  with the B6 reverse-derivation outcome (all candidates dismissed or
+  deferred) if / when that design doc is revisited.
+- `docs/rfc/nacp-session-1-2-0.md` — its Outcome A recommendation is
+  now the explicit choice (see §4.1 of that RFC).
 
 ---
 
 ## 6. Out of Scope
 
-- nacp-session 1.2.0 specific kinds → sibling `nacp-session-1-2-0.md` RFC
-- RPC handleNacp transport changes → out of B1 round 1 scope (per `binding-findings.md` §0)
+- Worker matrix cross-worker message families → revisit post-B8
+- RPC `handleNacp()` transport changes → deferred per
+  `binding-findings.md` §0
 - Cross-region message routing → after worker matrix
 - WebSocket sub-protocol → unchanged from 1.1.0
 
 ---
 
-## 7. Acceptance Criteria
+## 7. Acceptance Criteria (B6 closure)
 
-- [ ] 2 new context.compact.* kinds registered in `nacp-core/src/messages/context.ts`
-- [ ] `hook.emit` `event_name` enum extended to 18 values
-- [ ] `hook.outcome` extended with `allow?` / `deny?` fields
-- [ ] `1.0.0-compat.ts` test suite still passes
-- [ ] `1.1.0-compat.ts` shim shipped + test suite passes
-- [ ] §4.1 lowercase header contract test added (mandatory)
-- [ ] §4.2 dedup contract test added (depends on B6 SessionInspector ship)
-- [ ] CHANGELOG entry written
-- [ ] Round 2 integrated spike (B7) re-runs cross-worker NACP message exchange with new families
-- [ ] Audit `grep -rn "X-Nacp\\|X-NACP" packages/` returns 0 mixed-case usages
+- [x] P5 design's 2 proposed message families are re-evaluated against
+      B4 producer reality; conclusion recorded here
+- [x] `hook.emit` / `hook.outcome` remain unchanged
+- [x] §4.1 lowercase header contract observable in
+      `packages/session-do-runtime/test/cross-seam.test.ts`
+- [x] §4.2 dedup contract observable in
+      `packages/eval-observability/test/inspector-dedup.test.ts` (B6)
+      + `packages/session-do-runtime/test/do/nano-session-do.test.ts` (B6)
+- [x] `@nano-agent/nacp-core@1.1.0` test suite still passes (no
+      schema change → automatic)
 
 ---
 
@@ -312,8 +258,10 @@ export const HookOutcomeBodySchemaV1_2 = z.object({
 - PX spec §8: `docs/design/after-foundations/PX-async-compact-lifecycle-spec.md`
 - P3-async-compact (producer reality): `docs/design/after-foundations/P3-context-management-async-compact.md`
 - P3-inspector (independent HTTP confirmation): `docs/design/after-foundations/P3-context-management-inspector.md` §6.3
-- P4 hooks catalog (event_name allowed values 18): `docs/design/after-foundations/P4-hooks-catalog-expansion.md`
+- P4 hooks catalog: `docs/design/after-foundations/P4-hooks-catalog-expansion.md`
 - B1 binding rollup: `docs/spikes/binding-findings.md`
+- B4 action-plan (in-process AsyncCompactOrchestrator): `docs/action-plan/after-foundations/B4-context-management-package-async-core.md`
+- B5 action-plan (permission verdict compile-away + hook catalog SOT): `docs/action-plan/after-foundations/B5-hooks-catalog-expansion-1-0-0.md`
 - B6 writeback issue: `docs/issue/after-foundations/B6-writeback-eval-sink-dedup.md`
 - Tracking policy: `docs/issue/README.md`
 
@@ -323,4 +271,5 @@ export const HookOutcomeBodySchemaV1_2 = z.object({
 
 | Date | Author | Change |
 |---|---|---|
-| 2026-04-19 | Opus 4.7 | Initial draft; 2 frozen context.compact.* kinds (reverse-derived from PX §8 + P3-async-compact); hook event_name 8→18 + allow/deny; 3 normative spec sections (lowercase / dedup / freshness); 1.0.0 + 1.1.0 compat preserved |
+| 2026-04-19 | Opus 4.7 | Initial draft; proposed 2 `context.compact.*` kinds + hook enum hoist + `allow/deny` outcome additions |
+| 2026-04-20 | Opus 4.7 (1M context) | B6 reconciliation: reverse-derived every draft proposal against B4/B5 ship code → all dropped / deferred. Net: `nacp-core` stays at 1.1.0 (0 schema deltas). Normative §4 sections preserved as 1.1.0-behavior commentary |
