@@ -121,3 +121,27 @@ describe("promoteToArtifactRef", () => {
     expect(ref.key).toBe("tenants/team-1/artifacts/file/fixed-id");
   });
 });
+
+describe("DEFAULT_PROMOTION_POLICY F08 alignment", () => {
+  it("coldTierSizeBytes is 1 MiB — matches DOStorageAdapter.maxValueBytes default", () => {
+    // Per spike-do-storage-F08: DO storage rejects oversize values with
+    // SQLITE_TOOBIG somewhere in 1-10 MiB. The 1 MiB conservative
+    // default lives in two places that MUST stay aligned:
+    //   - DOStorageAdapter.maxValueBytes (storage-topology)
+    //   - DEFAULT_PROMOTION_POLICY.coldTierSizeBytes (this package)
+    // If you change one, change the other.
+    expect(DEFAULT_PROMOTION_POLICY.coldTierSizeBytes).toBe(1024 * 1024);
+  });
+
+  it("blob just over 1 MiB routes to R2 (matches DO cap promotion)", () => {
+    const justOverMiB = "x".repeat(1024 * 1024 + 1);
+    const ref = promoteToArtifactRef("team-1", justOverMiB, "text/plain", "file");
+    expect(ref.kind).toBe("r2");
+  });
+
+  it("blob exactly 1 MiB routes to do-storage (boundary is exclusive)", () => {
+    const exactMiB = "x".repeat(1024 * 1024);
+    const ref = promoteToArtifactRef("team-1", exactMiB, "text/plain", "file");
+    expect(ref.kind).toBe("do-storage");
+  });
+});

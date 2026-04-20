@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { ValueTooLargeError } from "@nano-agent/storage-topology";
 import { MemoryBackend } from "../../src/backends/memory.js";
 
 describe("MemoryBackend", () => {
@@ -189,6 +190,42 @@ describe("MemoryBackend", () => {
 
       expect(await backend.read("keep.txt")).toBe("keep me");
       expect(await backend.read("delete.txt")).toBeNull();
+    });
+  });
+
+  describe("size cap (per spike-do-storage-F08 mirror)", () => {
+    it("default maxValueBytes is 1 MiB (matches DOStorageAdapter)", () => {
+      const backend = new MemoryBackend();
+      expect(backend.maxValueBytes).toBe(1024 * 1024);
+    });
+
+    it("rejects oversize write with ValueTooLargeError of adapter='memory'", async () => {
+      const backend = new MemoryBackend({ maxValueBytes: 10 });
+      try {
+        await backend.write("big.txt", "this string is more than ten bytes");
+        expect.unreachable("should have thrown");
+      } catch (err) {
+        expect(err).toBeInstanceOf(ValueTooLargeError);
+        expect((err as ValueTooLargeError).adapter).toBe("memory");
+        expect((err as ValueTooLargeError).cap).toBe(10);
+      }
+    });
+
+    it("permits write at exactly the cap boundary", async () => {
+      const backend = new MemoryBackend({ maxValueBytes: 5 });
+      await expect(backend.write("k.txt", "12345")).resolves.toBeUndefined();
+    });
+
+    it("permits writes within cap (default 1 MiB)", async () => {
+      const backend = new MemoryBackend();
+      const halfMiB = "x".repeat(512 * 1024);
+      await expect(backend.write("mid.txt", halfMiB)).resolves.toBeUndefined();
+    });
+
+    it("custom maxValueBytes override is respected", async () => {
+      const backend = new MemoryBackend({ maxValueBytes: 2 * 1024 * 1024 });
+      const oneMiB = "x".repeat(1024 * 1024);
+      await expect(backend.write("one.txt", oneMiB)).resolves.toBeUndefined();
     });
   });
 

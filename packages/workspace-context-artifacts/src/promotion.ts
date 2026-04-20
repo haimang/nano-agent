@@ -23,9 +23,12 @@ export interface PromotionPolicy {
   readonly promotableMimeTypes: ReadonlySet<string>;
   /**
    * Size above which the promotion target moves from DO-storage
-   * (hot tier) to R2 (cold tier). PROVISIONAL — the actual frozen
-   * threshold is owned by `@nano-agent/storage-topology`'s calibration
-   * seam.
+   * (hot tier) to R2 (cold tier). Default **1 MiB** aligns with
+   * `DOStorageAdapter.maxValueBytes` (`@nano-agent/storage-topology`
+   * B2, per spike-do-storage-F08): any blob beyond the DO cap MUST
+   * promote to R2, otherwise the write fails with
+   * `ValueTooLargeError`. B7 Round 2 may tighten/loosen this once the
+   * binary-search probe pins the real SQLITE_TOOBIG boundary.
    */
   readonly coldTierSizeBytes: number;
 }

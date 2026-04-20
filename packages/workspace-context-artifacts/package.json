@@ -18,6 +18,9 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage"
   },
+  "dependencies": {
+    "@nano-agent/storage-topology": "workspace:*"
+  },
   "peerDependencies": {
     "zod": ">=3.22.0"
   },
