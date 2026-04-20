@@ -1,0 +1,73 @@
+# docs/templates/wrangler-worker.toml
+#
+# Evidence-backed notes carried from B1 + B7:
+# - B1 binding-F01 latency baseline on real service bindings was ~p50 5 ms / p99 7 ms
+#   for the small baseline path, and B7 later proved callee-side cancellation as a real
+#   platform outcome (`outcome: "canceled"`). Keep cross-worker request deadlines well above
+#   platform p99; use 100 ms as a floor, then size up for real payloads and fan-out.
+# - B7 binding-F02 re-validation showed `x-nacp-*` headers arrive lowercased across service
+#   bindings. Treat lowercase keys as the only stable binding-path contract.
+# - B7 F08 measured DO storage value cap at ~2.1 MiB (`last good = 2,199,424 bytes`,
+#   `first TOOBIG = 2,200,000 bytes`). The shipped package still defaults to 1 MiB; opt into
+#   2,097,152 bytes only by explicit worker-matrix decision.
+# - B7 unexpected-F01 measured R2 parallel write safety at `50` as the default tier;
+#   `100` is opportunistic and `200` is edge-only.
+#
+# This file is a starter for worker-matrix shells. It is not a frozen production config.
+
+name = "nano-agent-your-worker-name"
+main = "dist/worker.js"
+compatibility_date = "2026-04-20"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+ENVIRONMENT = "development"
+OWNER_TAG = "nano-agent"
+
+# Host workers (for example `agent.core`) keep a session DO binding.
+# Remote workers may delete this block entirely.
+[[durable_objects.bindings]]
+name = "SESSION_DO"
+class_name = "NanoSessionDO"
+
+# Host workers usually keep warm config in KV.
+# Remote workers can remove this when they are fully stateless.
+[[kv_namespaces]]
+binding = "KV_CONFIG"
+id = "replace-with-kv-id"
+
+# Artifact / cold storage binding. Keep it where large outputs or summaries
+# may spill to R2 instead of DO storage.
+[[r2_buckets]]
+binding = "R2_ARTIFACTS"
+bucket_name = "replace-with-r2-bucket"
+
+# Only add D1 when the worker really needs query/batch semantics.
+# Do not invent `BEGIN/COMMIT`; B2/B7 kept D1 intentionally narrow.
+[[d1_databases]]
+binding = "D1_PRIMARY"
+database_name = "replace-with-d1-name"
+database_id = "replace-with-d1-id"
+
+# First-wave worker-matrix proposal service names.
+# These are deployment names, not proof that B8 changed the current v1 binding catalog.
+[[services]]
+binding = "BASH_CORE"
+service = "nano-agent-bash-core"
+
+[[services]]
+binding = "FILESYSTEM_CORE"
+service = "nano-agent-filesystem-core"
+
+[[services]]
+binding = "CONTEXT_CORE"
+service = "nano-agent-context-core"
+
+# Reserved only. Do not instantiate in worker-matrix phase 1 unless the next
+# phase charter explicitly re-scope approves it.
+# [[services]]
+# binding = "SKILL_CORE"
+# service = "nano-agent-skill-core"
+
+[observability]
+enabled = true
