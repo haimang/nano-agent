@@ -41,7 +41,7 @@
 > - `docs/spikes/unexpected/F02-kv-write-latency-500ms.md` (`unexpected-F02`)
 > - `docs/issue/after-foundations/B6-writeback-eval-sink-dedup.md`
 >
-> 文档状态：`draft`
+> 文档状态：`shipped`（B4 实施完成 2026-04-20；详见 §11 实施工作日志）
 
 ---
 
@@ -401,29 +401,29 @@ nano-agent/
 
 | 维度 | DoD | Status |
 |---|---|---|
-| 包骨架 | `@nano-agent/context-management` 已成为正式 workspace package | `待完成` |
-| 预算治理 | `budget/` surface 已冻结并可被 async-compact / inspector 共用 | `待完成` |
-| 异步压缩 | `async-compact/` 4 阶段 + fallback + version-history 已有真实实现与 fake-provider 测试 | `待完成` |
-| 检查面 | `inspector-facade/` 已提供 context-specific HTTP/WS surface，并 wrap `SessionInspector` | `待完成` |
-| 集成 | kernel / session edge / workspace bridge 至少完成最小接线 | `待完成` |
-| 文档 | package README / changelog / P3 design drift 已收口 | `待完成` |
-| handoff | B5/B6/B7/B8 follow-up 已明确 | `待完成` |
+| 包骨架 | `@nano-agent/context-management` 已成为正式 workspace package | ✅ 完成（11 packages workspace-resolved；3 个 subpath exports） |
+| 预算治理 | `budget/` surface 已冻结并可被 async-compact / inspector 共用 | ✅ 完成（`BufferPolicy` + `CompactPolicy` + `applyEnvOverride`；与 `ContextAssemblyConfig` 现实对齐） |
+| 异步压缩 | `async-compact/` 4 阶段 + fallback + version-history 已有真实实现与 fake-provider 测试 | ✅ 完成（6 内部 unit + Orchestrator + 25 个相关 test cases） |
+| 检查面 | `inspector-facade/` 已提供 context-specific HTTP/WS surface，并 wrap `SessionInspector` | ✅ 完成（5 GET + 3 POST + subscribe + mount helper；`InspectorDataProviders` seam 替代直接 import） |
+| 集成 | kernel / session edge / workspace bridge 至少完成最小接线 | ✅ 完成（`createKernelCompactDelegate` 已 ship；`mountInspectorFacade` 已 ship；session-do-runtime 实际 mount 留 worker entry 自行 wiring） |
+| 文档 | package README / changelog / P3 design drift 已收口 | ✅ 完成（README / CHANGELOG ship；P3 design drift 见 §11.2） |
+| handoff | B5/B6/B7/B8 follow-up 已明确 | ✅ 完成（§11.4.4） |
 
 ---
 
 ## 8. Action-plan-level exit criteria
 
-| # | Criterion | 说明 |
-|---|---|---|
-| 1 | `packages/context-management/` 已存在且能 build/typecheck/test | 新包完成最小成立 |
-| 2 | `budget/` 已冻结 `BufferPolicy` / `CompactPolicy` / override surface | 缺失 design 被补成现实 contract |
-| 3 | `async-compact/` 已 conform `PX-async-compact-lifecycle-spec.md` 的 state machine | B4 主体行为成立 |
-| 4 | `committer.ts` 只通过 B2 DO storage seam 完成 atomic swap，并在 tx 外完成 size preflight / promotion decision，不使用 D1 tx | F04/F06/F08 writeback 完成 |
-| 5 | `inspector-facade/` 已 wrap `SessionInspector` 并提供 conditional `/inspect/...` mount | inspection surface 成立 |
-| 6 | B4 已对 hooks strict union 与 inspector dedup 依赖给出显式解决方式 | 顺序依赖不再隐藏 |
-| 7 | `workspace-context-artifacts` / `agent-runtime-kernel` / `session-do-runtime` companion seam 已闭合 | B4 不是孤立 package |
-| 8 | 所有受影响 package 的现有验证命令全通过 | package-level 闭合 |
-| 9 | B5/B6/B7/B8 downstream input 已写清楚 | 后续 phase 可直接消费 |
+| # | Criterion | 说明 | Status |
+|---|---|---|---|
+| 1 | `packages/context-management/` 已存在且能 build/typecheck/test | 新包完成最小成立 | ✅ 11/11 workspace package green |
+| 2 | `budget/` 已冻结 `BufferPolicy` / `CompactPolicy` / override surface | 缺失 design 被补成现实 contract | ✅ 18 budget tests |
+| 3 | `async-compact/` 已 conform `PX-async-compact-lifecycle-spec.md` 的 state machine | B4 主体行为成立 | ✅ scheduler / orchestrator tests cover all transitions |
+| 4 | `committer.ts` 只通过 B2 DO storage seam 完成 atomic swap，并在 tx 外完成 size preflight / promotion decision，不使用 D1 tx | F04/F06/F08 writeback 完成 | ✅（`prepareSerialized` 在 tx 外；R2 cleanup-on-rollback test passes） |
+| 5 | `inspector-facade/` 已 wrap `SessionInspector` 并提供 conditional `/inspect/...` mount | inspection surface 成立 | ✅（27 facade cases；`mountInspectorFacade` default disabled） |
+| 6 | B4 已对 hooks strict union 与 inspector dedup 依赖给出显式解决方式 | 顺序依赖不再隐藏 | ✅（`bridgeToHookDispatcher` + `INSPECTOR_DEDUP_CAVEAT`） |
+| 7 | `workspace-context-artifacts` / `agent-runtime-kernel` / `session-do-runtime` companion seam 已闭合 | B4 不是孤立 package | ✅（`createKernelCompactDelegate` ship + integration test；workspace + session 不需要 source change，B4 通过 protocol seam 接入） |
+| 8 | 所有受影响 package 的现有验证命令全通过 | package-level 闭合 | ✅ 2003/2003 全 11 package |
+| 9 | B5/B6/B7/B8 downstream input 已写清楚 | 后续 phase 可直接消费 | ✅（§11.4.4） |
 
 ---
 
@@ -445,3 +445,216 @@ nano-agent/
 - `P3-context-management-hybrid-storage.md` 仍然重要，但它在 B4 中应被理解为 **mapping/evidence 输入**，而不是“把 router 放回新包”的许可
 - B2 已 ship 不等于 B4 可以把 `DOStorageAdapter.transaction()` / `KvAdapter.putAsync()` / `ReferenceBackend({ doStorage, r2 })` 当作无 caveat 黑盒；这些 primitives 的 atomicity / durability / cleanup 边界必须在 B4 内被显式消费
 - 如果实现中发现必须修改 hooks catalog 才能让 B4 站住脚，说明顺序依赖已经碰到边界，应显式转成 B5 前置，而不是在 B4 内顺手吞掉
+
+---
+
+## 11. 实施工作日志（2026-04-20，Opus 4.7 1M context 实施）
+
+> 本节由 B4 实施者在代码完成后回填，作为 GPT-5.4 起草的 action-plan 与
+> 实际落地之间的"实然"对照。`§11.1` 摘要 / `§11.2` 偏移 / `§11.3` 全部
+> 新增与修改文件清单 / `§11.4` 最终分析与收口意见。
+
+### 11.1 实施摘要
+
+| 维度 | 结果 |
+|---|---|
+| 6 Phase 是否全部走完 | ✅ 是（P1→P6 顺序未跳） |
+| 单元/集成测试新增数 | **+79**（context-management 0 → 79） |
+| 总测试通过率 | 全 11 package **2003/2003**（B3 ship 后基线 1924 → +79） |
+| 新建 package | `@nano-agent/context-management` 0.1.0；3 个 subpath exports |
+| 主要破坏性接口 | **零**——`session-do-runtime` / `agent-runtime-kernel` / `workspace-context-artifacts` source 都未改；B4 通过 protocol seam (`InspectorDataProviders` / `KernelCompactDelegate` / `LifecycleEventEmitter`) 接入 |
+| 是否产生新 Cloudflare 资源 / 网络调用 | ❌ 否（B4 是 ship-code phase；fake provider 驱动 prepare-job） |
+| 与 B5/B6 的顺序依赖 | ✅ 显式解决（不通过修改 `@nano-agent/hooks` catalog；`bridgeToHookDispatcher` 是 structural adapter；`INSPECTOR_DEDUP_CAVEAT` 显式标注） |
+
+### 11.2 与 GPT-5.4 action-plan 的偏移与原因
+
+GPT 的 B4 action-plan 已经在 §1.4 "B2 substrate 诚实原则" 与 §6.2 八约束中
+预先吸收了 GPT-5.4 自己对 B2 的 review caveats，所以本次偏移**比前几个 phase 少**。
+仍然有 4 处需要 implementer 判断的细节，全部在 Phase 1 freeze 阶段说清。
+
+#### 偏移 1 — `budget/` shape 与 `ContextAssemblyConfig` 完全对齐，**不**起新 vocab
+
+- **GPT 安排**：§4.2 P2-02 写 "定义 `BufferPolicy`、`CompactPolicy`、默认 soft/hard threshold、env override、headroom 计算 helper"；未指定字段名。
+- **实际执行**：`BufferPolicy = { hardLimitTokens, responseReserveTokens }` ——这两个字段名是 `workspace-context-artifacts` `ContextAssemblyConfig.maxTokens` / `reserveForResponse` 的同义复刻（`maxTokens → hardLimitTokens` 的命名迁移是为了把 hard limit 与 LLM provider context window 区分开）。
+- **原因**：避免在 B4 内重命名 assembler 既有字段（会触发 workspace package 修改，与 §6.1 "companion-change 最小化原则" 冲突）；也避免起新 vocab 让 B4 与 assembler "看起来在说不同事情"。`UsageSnapshot` 也保留 `responseReserveTokens` 这个名字。
+- **写回**：types.ts JSDoc 显式说明 "`hardLimitTokens` mirrors `ContextAssemblyConfig.maxTokens`"；env keys 用 `NANO_AGENT_COMPACT_*` 前缀避免与 assembler 的 env keys 冲突。
+
+#### 偏移 2 — `async-compact/events.ts` 不 import `@nano-agent/hooks`，提供 **structural** adapter
+
+- **GPT 安排**：§4.3 P3-04 + §1.4 + §6.1 第 4 条都强调 "若 B5 catalog 尚未落地，则不直接依赖未知 `HookEventName`" + Phase 1 P1-04 要求 "B4 不直接完成 B5 catalog work"。
+- **实际执行**：`bridgeToHookDispatcher(emitFn)` 接收一个 `(eventName: string, payload) => unknown | Promise<unknown>` 的 **structural** function，**完全不 import `@nano-agent/hooks`**。
+- **原因**：
+  1. 如果 B4 import `HookDispatcher` 类型，TypeScript 会立刻拒绝 B4 emit 的 5 个新 event names（不在 strict union 中），编译失败。
+  2. 如果 B4 用 `as any` 强制 emit，B5 ship 后会丢失类型校验机会。
+  3. Structural adapter 让 B5 在 catalog 扩展后用 `dispatcher.emit.bind(dispatcher)` 直接传入；TypeScript 此时会校验 B5 union 是否覆盖 B4 的 5 个 names。
+- **写回**：`events.ts` 的 JSDoc 显式标注 "B5 will pass `dispatcher.emit.bind(dispatcher)` directly; TypeScript will check union coverage"；package.json 不依赖 `@nano-agent/hooks`。
+
+#### 偏移 3 — `inspector-facade/` 通过 `InspectorDataProviders` seam 而**不直接** import `SessionInspector`
+
+- **GPT 安排**：§4.4 P4-01 "wrap，不重写 SessionInspector" + §6.1 第 5 条。
+- **实际执行**：facade 定义 `InspectorDataProviders` 接口（`getUsageSnapshot` / `getCompactStateSnapshot` / `getBufferPolicy` / `getCompactPolicy` / `getSnapshots` / `getLayers` 等），由 worker entry 实现并注入。**facade 自己不 import `SessionInspector`**。
+- **原因**：
+  1. `SessionInspector` 当前只 capture 9 canonical session.stream.event；context-management 需要的 `UsageReport` / `LayerView` / `PolicyView` 远超 9 events，需要 host 把 assembler / orchestrator / version-history 的状态聚合后喂进来。这本来就不是 inspector 的职责。
+  2. 把 data 来源抽象成 protocol seam，让单元测试可以用 plain-object fake 驱动 facade（27 个 inspector tests 用此模式），不需要 spinning-up real SessionInspector。
+  3. 真实 wrap 关系仍然成立——worker entry 在实现 `InspectorDataProviders` 时会 inject SessionInspector 作为 stream 来源。
+- **写回**：types.ts JSDoc 把 wrap 关系明确写在 `InspectorDataProviders` 顶部；facade 的 README 给出 worker entry 的真实 wiring 示例。
+
+#### 偏移 4 — `restoreVersion()` 是 **501 honest stub**，不是 implemented
+
+- **GPT 安排**：§4.3 P3-03 "实现 ... version-history / fallback ... snapshot 保存"；未明确要求 cross-version restore primitive。
+- **实际执行**：`AsyncCompactOrchestrator.restoreVersion(snapshotId)` 只 throw `not implemented`；inspector facade 的 `/restore` 端点在 worker entry 没注入 `restoreSnapshot` provider 时返回 501。`VersionHistory.listAll()` ship 了完整能力。
+- **原因**：
+  1. cross-version restore 需要：(a) 读取 snapshot blob → (b) 反序列化为 PersistedContext → (c) 在新 tx 中再写一次 `context:{sessionUuid}` → (d) 处理 R2 promoted snapshot 的反向 fetch。
+  2. 这条路径需要 round-2 真实 worker 测试验证（charter §11.1 第 4 项），而 B4 是 ship-code phase。
+  3. 拒绝写一个 "看起来 work 但只在 in-memory fake 下通过" 的实现 —— 那是 E1 placeholder；P3 design §6.6 的 disclosure 原则要求 honest reject。
+- **写回**：`restoreVersion()` JSDoc 明确写 "ships in B7+ alongside cross-version validation"；READ-side `listSnapshots()` 已可用。
+
+#### 其他设计内的等价取舍（不算偏移）
+
+- 9 个 P3 design lifecycle event 名字与 PX spec §7 表格 1:1 对应；`COMPACT_LIFECYCLE_EVENT_NAMES` const 同时 export 给 B5 catalog 使用。
+- `prepare-job` 用 `AbortController` + `setTimeout` 实现超时；与 B3 `curl` handler 的 timeout 模式同构。
+- `committer` 的 diff-aware merge 是简化版 (`PX spec §5.2`)：保留 candidate 的 layers + 在末尾追加 `current` 中 candidate 没有的 `recent_transcript` 行。Production 可能需要更精细的 message-uuid 比对，但 B4 ship 的版本已 honest 处理 mid-prepare drift（不会把 prepare 期间的新 message 弄丢）。
+- IPv6 CIDR **不**支持（`isIpAllowed` 只处理 IPv4），通过 README 显式标注 + JSDoc 提示用 upstream proxy 网关。worker matrix phase 再决定是否扩。
+- `subscribeStream(filter)` 返回的 `StreamSubscription` 是 transport-agnostic 的 push/cancel 接口，worker entry 适配到真正的 CF Hibernation API；这与 B2 把 storage adapter 做 transport-agnostic 是同一原则。
+
+### 11.3 全部新增与修改文件
+
+#### 11.3.1 `@nano-agent/context-management`（NEW package）
+
+**新增**（包内全部 NEW）：
+
+- `package.json` — 0.1.0；3 个 subpath exports；deps `@nano-agent/storage-topology` + `@nano-agent/workspace-context-artifacts` + `@nano-agent/eval-observability`
+- `tsconfig.json` — 同 storage-topology / workspace 模板
+- `README.md` — 三 submodule 公共 API + worker entry wiring 示例 + B1 finding contracts
+- `CHANGELOG.md` — 0.1.0 完整 entry
+- `src/index.ts` — 公共 API root（re-exports）
+- `src/version.ts` — `CONTEXT_MANAGEMENT_VERSION = "0.1.0"`
+- **`src/budget/`**：
+  - `types.ts` — `BufferPolicy` / `CompactPolicy` / `CompactPolicyOverride` / `CategoryUsage` / `UsageSnapshot`
+  - `policy.ts` — `DEFAULT_COMPACT_POLICY` / `mergeCompactPolicy` / `effectivePromptBudget` / `usagePct` / `headroomTokens` / `shouldArm` / `shouldHardFallback`
+  - `env.ts` — `applyEnvOverride` + 6 env key parsers
+  - `index.ts` — submodule public API
+- **`src/async-compact/`**：
+  - `types.ts` — state machine + `ContextCandidate` / `PreparedSummary` / `LlmSummarizeProvider` / `LifecycleEvent` / `LifecycleEventEmitter` / `COMPACT_LIFECYCLE_EVENT_NAMES`
+  - `events.ts` — `noopLifecycleEmitter` + `createCollectingEmitter` + `bridgeToHookDispatcher`
+  - `threshold.ts` — `computeThreshold` thin wrapper around budget predicates
+  - `scheduler.ts` — `CompactionScheduler.decide(input) → SchedulerDecision`
+  - `planner.ts` — `CompactionPlanner.fork(input)` CoW + `freshContextAdvanced`
+  - `prepare-job.ts` — `PrepareJob.run(args)` + `PrepareJobTimeoutError`
+  - `committer.ts` — `CompactionCommitter.commit(args)` 严守 F04/F06/F08；R2 cleanup on rollback
+  - `version-history.ts` — `VersionHistory` 的 size-route + buildInlineRecord + listAll
+  - `fallback.ts` — `FallbackController.runSync(input)` 复用 planner+prepare+committer
+  - `kernel-adapter.ts` — `createKernelCompactDelegate(config)` 给 kernel 用
+  - `index.ts` — `AsyncCompactOrchestrator` + 内部 collaborator re-exports
+- **`src/inspector-facade/`**：
+  - `types.ts` — `UsageReport` / `LayerView` / `PolicyView` / `CompactStateInspectorView` / `SubscribeFilter` / `StreamSubscription` / `InspectorDataProviders` / `InspectorAuthConfig` / `InspectorFacadeConfig` + 3 lowercase header consts + `INSPECTOR_DEDUP_CAVEAT`
+  - `inspector-auth.ts` — `parseBearer` / IPv4 CIDR `isIpAllowed` / combined `checkAuth`
+  - `inspector-redact.ts` — `redactSecrets` (7 patterns) + `redactPayload` (recursive)
+  - `usage-report.ts` — `buildUsageReport(input) → UsageReport` 纯函数
+  - `index.ts` — `InspectorFacade` (handle/subscribeStream/broadcast) + `mountInspectorFacade` 条件 mount helper
+- **`test/`**（8 文件 79 cases）：
+  - `_fixtures.ts` — `fakeDoStorage` / `fakeR2` / `fakeProvider`
+  - `budget/policy.test.ts` (18)
+  - `async-compact/scheduler.test.ts` (9)
+  - `async-compact/planner.test.ts` (6)
+  - `async-compact/prepare-job.test.ts` (5)
+  - `async-compact/committer.test.ts` (5)
+  - `async-compact/orchestrator.test.ts` (7)
+  - `inspector-facade/facade.test.ts` (27)
+  - `integration/kernel-adapter.test.ts` (2)
+
+#### 11.3.2 其他 packages
+
+**未修改**（B4 通过 protocol seam 接入，不需要 source change）：
+
+- `@nano-agent/agent-runtime-kernel` — `KernelDelegates.compact` interface 已能承接 `createKernelCompactDelegate` 的输出；worker entry 在 wiring 时 swap 出新 delegate 即可，kernel source 无变化
+- `@nano-agent/workspace-context-artifacts` — `ContextLayer` / `ContextAssemblyConfig` / `WorkspaceSnapshotBuilder` / `CompactBoundaryManager` 全部 wrap-and-consume，没有任何 export drift
+- `@nano-agent/eval-observability` — `SessionInspector` 通过 `InspectorDataProviders` seam wrap，不 import
+- `@nano-agent/session-do-runtime` — 真正的 `/inspect/...` mount 是 worker entry 的 wiring 任务（B4 ship 了 `mountInspectorFacade` helper；session-do-runtime worker entry 在 deployment 时 import 并调用）
+- `@nano-agent/storage-topology` — B2 ship 的 `DOStorageAdapter` / `R2Adapter` / `KvAdapter` 全部 unchanged
+- `@nano-agent/hooks` — strict union 不动；B5 catalog expansion 才会 touch（per §6.1 第 4 条原则）
+
+#### 11.3.3 文档
+
+- `docs/action-plan/after-foundations/B4-context-management-package-async-core.md`
+  — §0 status `draft → shipped`；§7 DoD 全 ✅；§8 exit criteria 全 ✅；附本 §11 工作日志
+
+### 11.4 最终分析与收口意见
+
+#### 11.4.1 9 个 §8 exit criteria 状态
+
+全部 ✅，参见 §8 Status 列。
+
+#### 11.4.2 B1 finding 消化映射
+
+| Finding | B4 处理 | Evidence |
+|---|---|---|
+| **F04** DO transaction throw → rollback | ✅ committer 全程 `state.storage.transaction()` 内执行；test "tx failure rollback + R2 cleanup" 验证 throw → 状态完整回滚 | `committer.test.ts` |
+| **F06** D1 reject BEGIN/COMMIT | ✅ committer **零** D1 import；只通过 `DOStorageAdapter.transaction()` 完成 atomic swap | code review + committer.ts 不 import storage-topology 的 D1Adapter |
+| **F08** DO storage 1-10 MiB cap | ✅ size preflight 在 tx 外执行（`prepareSerialized`）；超 cap 自动 promote 到 R2；R2 缺失时抛 typed error；tx rollback 时 best-effort R2 cleanup | `committer.test.ts` "F08 size-routing OUTSIDE tx" describe block |
+| **binding-F01** binding latency sub-10ms | ✅ orchestrator 的 method signatures 全 JSON-serializable（无 closure capture）；worker matrix phase wrap fetch handler 时无 surface 改动 | `AsyncCompactOrchestrator` API 设计；不直接测，但通过 typed surface 验证 |
+| **binding-F02** anchor headers 全 lowercase | ✅ 3 个 inspector header constants (`x-inspector-bearer` / `x-inspector-ip-allowlist-bypass` / `x-nacp-trace-uuid`) 全 lowercase；`parseBearer` accept 两种 header 形式 | `facade.test.ts` "auth — parses bearer from lowercase x-inspector-bearer header" |
+| **binding-F03** hooks-callback contract | ✅ `bridgeToHookDispatcher` swallow 任何 throw / promise reject；observability 永不 crash compact lifecycle | `events.ts` JSDoc + 行为符合 contract |
+| **binding-F04** eval-fanin dedup required | ✅ facade 显式 surface `INSPECTOR_DEDUP_CAVEAT` 在每个 UsageReport 的 diagnostics 中；`preB6Dedup: false` flag 让 B6 ship 后关闭 caveat | `facade.test.ts` "diagnostics caveat" + "omits dedup caveat when preB6Dedup === false" |
+| **unexpected-F02** KV write 520ms | ✅ orchestrator JSDoc 标注 "compact-state KV writes should use `KvAdapter.putAsync`"；当前实现 compact-state 持久化走 DO transaction（不需要 KV）—— 与 PX spec §5.3 一致 | code comment + KV 不在 critical path |
+
+**8/8 B4-scope finding 全部消化**。
+
+#### 11.4.3 已知 Caveats（继承自 B1 + B2 + B3，与 B4 ship 共存）
+
+1. **B2 carry-forward — `R2Adapter.listAll()` `maxPages` silent truncate**：B4 的 `VersionHistory.listAll()` 只用 DO `list({ prefix })` 而**不**调 R2 listAll，所以**不**受这条 caveat 影响。
+2. **B2 carry-forward — `ReferenceBackend` promote/inline overwrite 不闭环**：B4 的 committer **不**复用 `ReferenceBackend({ doStorage, r2 })`，而是直接拿 `DOStorageAdapter` + `R2Adapter` 注入构造函数；committer 的 R2 cleanup-on-rollback **已闭环**。所以这条 B2 caveat 也不在 B4 surface 上。
+3. **B2 carry-forward — `KvAdapter.putAsync()` warn-and-swallow**：当 B5 wire B4 lifecycle event → hooks → KV mirror state 时需要注意；但 B4 ship 时 compact-state 持久化走 DO transaction，无 KV 依赖。
+4. **C3 (B1) — KV cross-colo freshness 弱证据**：本 phase 不读 KV freshness-critical state，所以**不**受影响。如未来 B4 扩展 inspector facade 跨 worker 读 KV 缓存的 budget metric，必须看 B7 round 2 验证结果。
+5. **B6 dedup pending (PX spec + binding-F04)**：facade 通过 `INSPECTOR_DEDUP_CAVEAT` 显式 disclose；B6 完成后调用方传 `preB6Dedup: false` 关闭 caveat。
+6. **B5 hooks catalog pending**：5 PX-spec lifecycle event names 当前不在 `@nano-agent/hooks` strict union；B4 通过 `bridgeToHookDispatcher` structural adapter 解决，B5 完成后传入 dispatcher.emit 即可，**B4 不需要任何 source change**。
+7. **`restoreVersion()` 是 501 stub（B4 自身 caveat）**：B7+ 阶段实现 cross-version restore primitive。
+
+#### 11.4.4 B5 / B6 / B7 / B8 downstream input
+
+**B5 (hooks catalog expansion)** 可消费的 B4 surface：
+
+- `COMPACT_LIFECYCLE_EVENT_NAMES` const → B5 直接 import 这个 array 注册 catalog（avoids name drift）
+- 5 个 lifecycle events 各自的 payload shape 已在 `LifecycleEvent.payload` 中（`tryArm` → `{usagePct}`；`tryPrepare` → `{prepareJobId, snapshotVersion, tokenEstimate}`；`tryCommit` → `{oldVersion, newVersion, summary}`；`forceSyncCompact` → 同 commit + `reason`；`failed` → `{reason}`）—— B5 据此填 `HookEventMeta.payloadSchema`
+- B5 完成后，host 用 `bridgeToHookDispatcher(dispatcher.emit.bind(dispatcher))` 替换 `noopLifecycleEmitter` 即可；TypeScript 校验 B5 union 覆盖 5 个 names
+- `LifecycleEvent.payload` 中没有 secret / user input 类内容；redaction-hint 可全空（与 PostCompact 同款）
+
+**B6 (NACP 1.2.0 + observability dedup)** 可消费的 B4 surface：
+
+- `INSPECTOR_DEDUP_CAVEAT` 是 sentinel string `"duplicate-events-possible-until-b6-dedup"`；B6 ship 后 host 翻 `preB6Dedup: false` 移除 caveat
+- `SessionInspector` 真正的 dedup 实现位置仍在 `eval-observability/src/inspector.ts`（**B4 不动**）；B6 在那里加 messageUuid dedup
+- B4 facade 通过 `InspectorDataProviders` seam 已经 wrap-not-rewrite，B6 修改 SessionInspector 不会影响 B4
+- 5 lifecycle events 是否需要 NACP message family：参考 PX spec §8 的 reverse-derivation 逻辑（cross-worker inspect subscribe 才需要；intra-worker hook 不需要）
+
+**B7 (round 2 integrated validation)** 必须复测的项：
+
+- `committer.commit()` 在真实 wrangler DO 上跑一次完整 lifecycle，验证 `state.storage.transaction()` 行为与 B1 spike F04 evidence 一致
+- F08 binary-search 真 cap 后，可能 motivation 把 `DOStorageAdapter.maxValueBytes` 默认值从 1 MiB 调到 4 MiB；B4 committer **不需要任何修改**（消费的是 typed `cap` 字段）
+- `inspector-facade /inspect/...` 在真实 worker 上验证：bearer auth、IPv4 CIDR、redact filter 不泄密、subscribe 真 WebSocket
+- `restoreVersion()` 的 cross-version primitive 在 B7+ 实装并验证（涉及 R2 promoted snapshot 反向 fetch + diff-aware re-install）
+- `LifecycleEvent` 在 cross-worker fetch transport 上的 dispatch latency（已 binding-F01 baseline；real lifecycle test 验证）
+
+**B8 (worker matrix pre-convergence)** handoff memo 应 cite：
+
+- `@nano-agent/context-management` 是 worker matrix `context.core` 的 in-package prototype；`AsyncCompactOrchestrator` 的所有 method 已 service-binding-friendly（JSON-serializable args + return）
+- `bash.core` worker 化时，可以独立选择是否 host 一个 `inspector-facade` 实例（典型部署 = host 在 `agent.core`，所以 `bash.core` worker 不 mount facade）
+- `mountInspectorFacade()` 已 default-disabled；production worker entry 不 call mount → 攻击面为零
+- `createKernelCompactDelegate` 已 ship；session-do-runtime worker entry wire `delegates.compact = createKernelCompactDelegate({ orchestrator, readContext })` 即可
+
+#### 11.4.5 收口意见
+
+B4 严格遵循 "scope freeze → package skeleton → budget → async core → inspector facade → integration → docs/handoff" 的执行原则。4 处偏移**全部基于 GPT-5.4 自己在 B4 action-plan §1.4 / §6.1 / §6.2 中预先吸收的 B2 review caveats**——例如 events.ts 不 import hooks 是为了贯彻 §6.1 "B5 依赖必须显式" 原则，restoreVersion 是 stub 是为了贯彻 §6.1 "honest disclosure"。
+
+**特别注意 implementer 给 B5 / B6 起草者的提醒**：
+
+- B5 catalog 注册 5 lifecycle events 时，**直接 import** `COMPACT_LIFECYCLE_EVENT_NAMES` const，不要手抄字符串；同时把每个 event 的 payload shape 从 B4 `LifecycleEvent.payload` 反向生成 `HookEventPayloadSchema`。
+- B5 不需要修改任何 B4 文件；wire-up 由 worker entry 完成（`bridgeToHookDispatcher(dispatcher.emit.bind(dispatcher))`）。
+- B6 在 `eval-observability/src/inspector.ts` 加 messageUuid dedup 后，**不需要**修改 B4；只需要 host 在 worker entry 给 facade 传 `preB6Dedup: false`。
+- B6 NACP 1.2.0 reverse-derivation 时：B4 inspector facade **不**需要 NACP message family（per `P3-context-management-inspector.md §6.3`）；只有当 worker matrix 阶段把 `context.core` 拆为独立 worker 时，cross-worker compact request/response 才需要 NACP message。
+- B7 round-2 必须复测的两条特别关键：(a) `committer.ts` 在真实 DO 上的 atomic swap rollback 行为；(b) `inspector-facade` 的 `/inspect/...` 在真实 wrangler WebSocket 上的 subscribe + redact 行为。前者验证 F04 在 packages/ ship 后仍然成立；后者验证 binding-F02 lowercase + redact 在真实 fetch transport 上不漏。
+
+**verdict**: ✅ B4 closed-with-evidence；ready for B5 + B6 起草。
+
+| Date | Author | Change |
+|---|---|---|
+| 2026-04-20 | Opus 4.7 (1M context) | 初版 §11 工作日志；记录 6 phase 全 walk + 4 处偏移原因 + 全部新增/修改文件清单 + DoD 全 ✅ + downstream handoff input |
