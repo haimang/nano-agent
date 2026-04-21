@@ -89,6 +89,13 @@ import {
   type SessionPhase,
   type SessionStorageLike,
 } from "@nano-agent/nacp-session";
+import {
+  verifyTenantBoundary,
+  tenantDoStorageGet,
+  tenantDoStoragePut,
+  tenantDoStorageDelete,
+  type DoStorageLike,
+} from "@nano-agent/nacp-core";
 
 // ═══════════════════════════════════════════════════════════════════
 // §1 — DurableObjectState subset
@@ -465,7 +472,7 @@ export class NanoSessionDO {
         ? message
         : new TextDecoder().decode(message);
 
-    const envelope = this.acceptClientFrame(raw);
+    const envelope = await this.acceptClientFrame(raw);
     if (!envelope.ok) return;
 
     await this.dispatchAdmissibleFrame(envelope.messageType, envelope.body);
@@ -476,8 +483,13 @@ export class NanoSessionDO {
    * The DO uses this for both WS and HTTP fallback so they share one
    * truth. Returns a typed envelope; rejections are recorded so callers
    * (and tests) can introspect them without exceptions.
+   *
+   * B9 GPT-review fix (B9-R1): this method is `async` and `await`s the
+   * tenant-boundary verification BEFORE declaring the frame admissible.
+   * A verification failure is converted into a typed rejection so the
+   * caller's `if (!envelope.ok) return;` gate actually prevents dispatch.
    */
-  acceptClientFrame(raw: string | unknown): IngressEnvelope {
+  async acceptClientFrame(raw: string | unknown): Promise<IngressEnvelope> {
     const result = acceptIngress({
       raw,
       authority: this.buildIngressContext(),
@@ -485,13 +497,107 @@ export class NanoSessionDO {
       streamUuid: this.streamUuid,
       phase: this.state.actorState.phase as SessionPhase,
     });
-    if (result.ok) {
-      this.streamSeq += 1;
-      this.lastIngressRejection = null;
-    } else {
+    if (!result.ok) {
       this.lastIngressRejection = result;
+      return result;
     }
+
+    // B9: explicit, `await`ed tenant boundary verification. If the
+    // validated frame carries `refs[*]` pointing at a foreign team, the
+    // `authority.team_uuid` fails to match `env.TEAM_UUID`, or any other
+    // boundary rule is violated, we convert the thrown error into a
+    // typed rejection so the caller's admissibility gate blocks dispatch.
+    try {
+      const doTeamUuid = this.tenantTeamUuid();
+      await verifyTenantBoundary(result.frame, {
+        serving_team_uuid: doTeamUuid,
+        do_team_uuid: doTeamUuid,
+        accept_delegation: false,
+      });
+    } catch (err) {
+      const rejection: IngressEnvelope = {
+        ok: false,
+        reason: "schema-invalid",
+        message: `tenant boundary verification failed: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+        messageType: result.messageType,
+      };
+      this.lastIngressRejection = rejection;
+      return rejection;
+    }
+
+    this.streamSeq += 1;
+    this.lastIngressRejection = null;
     return result;
+  }
+
+  /**
+   * B9: stable source-of-truth for the DO's tenant identity. Reads
+   * `env.TEAM_UUID`, falling back to `"_unknown"` when unset so the
+   * existing vitest harness (which constructs an empty env) keeps
+   * working. Wrapper storage helpers feed this into `tenantDoStorage*`.
+   */
+  private tenantTeamUuid(): string {
+    const envTeamUuid = (this.env as { TEAM_UUID?: unknown } | undefined)?.TEAM_UUID;
+    return typeof envTeamUuid === "string" && envTeamUuid.length > 0
+      ? envTeamUuid
+      : "_unknown";
+  }
+
+  /**
+   * B9: returns a `DoStorageLike`-shaped proxy whose every put/get/delete
+   * is prefixed with `tenants/<team_uuid>/` via the shipped
+   * `tenantDoStorage*` helpers. All non-wrapper call sites inside
+   * `NanoSessionDO` go through this proxy so tenant-scoped keys are the
+   * only shape that appears on the wire.
+   *
+   * When the DO was constructed without storage (test harness), returns
+   * null — callers already handle that.
+   */
+  private getTenantScopedStorage(): DoStorageLike | null {
+    const raw = this.doState.storage;
+    if (!raw) return null;
+    const team = this.tenantTeamUuid();
+    const base: DoStorageLike = {
+      async get<T = unknown>(key: string): Promise<T | undefined> {
+        return raw.get<T>(key);
+      },
+      async put<T>(key: string, value: T): Promise<void> {
+        await raw.put(key, value);
+      },
+      async delete(key: string | string[]): Promise<boolean> {
+        // The underlying DO storage API may not include delete in our
+        // minimal subset; when it is missing, return false rather than
+        // throwing. The wrapper nacp-core provides is also forgiving.
+        const anyStorage = raw as unknown as {
+          delete?: (k: string | string[]) => Promise<boolean>;
+        };
+        if (typeof anyStorage.delete === "function") {
+          return anyStorage.delete(key);
+        }
+        return false;
+      },
+    };
+    return {
+      async get<T = unknown>(key: string): Promise<T | undefined> {
+        return tenantDoStorageGet<T>(base, team, key);
+      },
+      async put<T>(key: string, value: T): Promise<void> {
+        await tenantDoStoragePut<T>(base, team, key, value);
+      },
+      async delete(key: string | string[]): Promise<boolean> {
+        if (Array.isArray(key)) {
+          let all = true;
+          for (const k of key) {
+            const r = await tenantDoStorageDelete(base, team, k);
+            all = all && r;
+          }
+          return all;
+        }
+        return tenantDoStorageDelete(base, team, key);
+      },
+    };
   }
 
   /**
@@ -556,7 +662,9 @@ export class NanoSessionDO {
       case "session.resume": {
         const lastSeenSeq = body?.["last_seen_seq"];
         if (typeof lastSeenSeq === "number" && Number.isFinite(lastSeenSeq)) {
-          await this.doState.storage?.put(LAST_SEEN_SEQ_KEY, lastSeenSeq);
+          // B9: tenant-scoped write (LAST_SEEN_SEQ_KEY).
+          const scoped = this.getTenantScopedStorage();
+          if (scoped) await scoped.put(LAST_SEEN_SEQ_KEY, lastSeenSeq);
           // Ask the helper to replay the gap, if it exists. The helper
           // is the single source of truth for per-stream seq + replay
           // buffer state (A4 P2-02 / P2-03).
@@ -932,18 +1040,22 @@ export class NanoSessionDO {
    * runs in isolate-memory-only mode.
    */
   private wsHelperStorage(): SessionStorageLike | null {
-    const storage = this.doState.storage;
-    if (!storage) return null;
+    // B9: helper storage goes through the tenant-scoped wrapper so
+    // every key the helper writes is namespaced under `tenants/<team>/`.
+    const scoped = this.getTenantScopedStorage();
+    if (!scoped) return null;
     return {
-      get: async <T,>(k: string) => storage.get<T>(k),
+      get: async <T,>(k: string) => scoped.get<T>(k),
       put: async <T,>(k: string, v: T) => {
-        await storage.put(k, v);
+        await scoped.put(k, v);
       },
     };
   }
 
   private async persistCheckpoint(): Promise<void> {
-    const storage = this.doState.storage;
+    // B9: checkpoint persistence uses the tenant-scoped wrapper so
+    // CHECKPOINT_STORAGE_KEY lives under `tenants/<team>/` on disk.
+    const storage = this.getTenantScopedStorage();
     if (!storage) return;
 
     // 2nd-round R2: capture a workspace snapshot fragment via the
@@ -1000,7 +1112,9 @@ export class NanoSessionDO {
   }
 
   private async restoreFromStorage(): Promise<void> {
-    const storage = this.doState.storage;
+    // B9: checkpoint read goes through the tenant-scoped wrapper so
+    // we only restore our own `tenants/<team>/` namespace.
+    const storage = this.getTenantScopedStorage();
     if (!storage) return;
 
     const raw = await storage.get(CHECKPOINT_STORAGE_KEY);

@@ -21,6 +21,10 @@ import { validateSessionCheckpoint } from "../../src/checkpoint.js";
 
 const VALID_UUID = "11111111-1111-4111-8111-111111111111";
 const TEAM_UUID = "team-aaa";
+// B9: DO storage is now tenant-scoped under `tenants/<team>/...` via
+// nacp-core's tenantDoStorage* wrapper. Checkpoint/resume tests must
+// inspect the prefixed key.
+const CHECKPOINT_KEY = `tenants/${TEAM_UUID}/session:checkpoint`;
 
 function makeStorage(): {
   state: DurableObjectStateLike;
@@ -46,7 +50,7 @@ describe("integration: NanoSessionDO persistCheckpoint roundtrip", () => {
     const instance = new NanoSessionDO(state, { SESSION_UUID: VALID_UUID, TEAM_UUID });
 
     await instance.webSocketClose(null); // triggers persistCheckpoint()
-    const persisted = store.get("session:checkpoint");
+    const persisted = store.get(CHECKPOINT_KEY);
     expect(persisted).toBeDefined();
     expect(validateSessionCheckpoint(persisted)).toBe(true);
   });
@@ -63,7 +67,7 @@ describe("integration: NanoSessionDO persistCheckpoint roundtrip", () => {
     await instance.fetch(req);
     await instance.webSocketClose(null);
 
-    const persisted = store.get("session:checkpoint");
+    const persisted = store.get(CHECKPOINT_KEY);
     expect(persisted).toBeDefined();
     expect(validateSessionCheckpoint(persisted)).toBe(true);
     expect((persisted as { sessionUuid: string }).sessionUuid).toBe(VALID_UUID);
@@ -77,7 +81,7 @@ describe("integration: NanoSessionDO persistCheckpoint roundtrip", () => {
     // webSocketClose() directly.
     await instance.webSocketClose(null);
 
-    expect(store.has("session:checkpoint")).toBe(false);
+    expect(store.has(CHECKPOINT_KEY)).toBe(false);
   });
 
   it("ignores an off-spec sessionId that is not a UUID (no accidental 'default' persisted)", async () => {
@@ -90,7 +94,7 @@ describe("integration: NanoSessionDO persistCheckpoint roundtrip", () => {
     await instance.fetch(req);
     await instance.webSocketClose(null);
 
-    expect(store.has("session:checkpoint")).toBe(false);
+    expect(store.has(CHECKPOINT_KEY)).toBe(false);
   });
 
   it("round-trips through restoreFromStorage after a valid persist", async () => {
@@ -106,6 +110,6 @@ describe("integration: NanoSessionDO persistCheckpoint roundtrip", () => {
     });
     await fresh.webSocketMessage(null, msg);
     // Validator must still accept the stored checkpoint.
-    expect(validateSessionCheckpoint(store.get("session:checkpoint"))).toBe(true);
+    expect(validateSessionCheckpoint(store.get(CHECKPOINT_KEY))).toBe(true);
   });
 });

@@ -12,6 +12,8 @@
  * envelope shape without needing a full DO.
  */
 
+import { NACP_VERSION } from "@nano-agent/nacp-core";
+
 /** Set of supported HTTP fallback actions. */
 const SUPPORTED_ACTIONS = new Set([
   "start",
@@ -138,7 +140,7 @@ export class HttpController {
       : crypto.randomUUID();
     return JSON.stringify({
       header: {
-        schema_version: "1.1.0",
+        schema_version: NACP_VERSION,
         message_uuid: crypto.randomUUID(),
         message_type: messageType,
         delivery_kind: "command",

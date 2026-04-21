@@ -1,6 +1,6 @@
 {
   "name": "@nano-agent/session-do-runtime",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "type": "module",
   "description": "Session DO Runtime — Worker/DO assembly, WebSocket/HTTP dual ingress, actor lifecycle",
   "main": "./dist/index.js",
@@ -19,6 +19,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@nano-agent/nacp-core": "workspace:*",
     "@nano-agent/nacp-session": "workspace:*",
     "@nano-agent/workspace-context-artifacts": "workspace:*"
   },

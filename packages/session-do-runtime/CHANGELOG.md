@@ -1,5 +1,29 @@
 # Changelog — @nano-agent/session-do-runtime
 
+## 0.3.0 — 2026-04-21 (B9 — tenant plumbing + NACP 1.3 consumer)
+
+> Version baseline note: the previous `0.2.0` CHANGELOG entry existed as a B6 historical record for the `BoundedEvalSink` shipment, but `package.json` remained at `0.1.0` (the `0.2.0` tag was never actually published). B9 jumps `0.1.0 → 0.3.0` and lets the historical `0.2.0` section below stand as the record of B6 work. Per B9 GPT review R4.
+
+### Added
+
+- Explicit dependency on `@nano-agent/nacp-core` (previously transitive via `@nano-agent/nacp-session`). B9 imports `verifyTenantBoundary`, `tenantDoStorageGet`, `tenantDoStoragePut`, `tenantDoStorageDelete` directly from nacp-core.
+- `NanoSessionDO.tenantTeamUuid()` — single source-of-truth for the DO's tenant identity (reads `env.TEAM_UUID`, falls back to `"_unknown"` for the test harness).
+- `NanoSessionDO.getTenantScopedStorage()` — returns a `DoStorageLike`-shaped proxy whose every put/get/delete goes through nacp-core's `tenantDoStorage*` helpers. All non-wrapper DO storage accesses now go through this proxy.
+- `acceptClientFrame()` is now `async` and explicitly `await`s `verifyTenantBoundary()` on the validated session frame. A boundary violation is converted into a typed `IngressEnvelope` rejection so that the caller's `if (!envelope.ok) return;` gate actually blocks `dispatchAdmissibleFrame()` from running. Materializes B6's shipped tenant contract at the DO ingress edge. (Second-round GPT review B9-R1 integration — fire-and-forget bug fixed.)
+
+### Changed
+
+- `wsHelperStorage()` — backing store switched from raw `this.doState.storage` to `getTenantScopedStorage()`. WS helper replay-buffer keys are now namespaced under `tenants/<team>/`.
+- `persistCheckpoint()` / `restoreFromStorage()` — `CHECKPOINT_STORAGE_KEY` is now written/read through the tenant-scoped wrapper.
+- `session.resume` handling (line 559) — `LAST_SEEN_SEQ_KEY` put now goes through the tenant-scoped wrapper.
+- `http-controller.ts` — hardcoded `"1.1.0"` replaced by `NACP_VERSION` import from `@nano-agent/nacp-core`. Addresses B9 GPT review R4 baseline-drift finding.
+
+### Not changed
+
+- `DurableObjectStateLike` surface (API compat preserved).
+- `idFromName(sessionId)` per-session DO identity (learnings §10.4 — remains correct for nano-agent runtime).
+- `V1_BINDING_CATALOG` (charter §4.1 H rule 32).
+
 ## 0.2.0 — 2026-04-20
 
 B6 — default eval sink upgrade. Per `binding-F04` / `docs/rfc/nacp-core-1-2-0.md` §4.2.

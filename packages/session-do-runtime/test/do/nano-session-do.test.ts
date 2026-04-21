@@ -39,13 +39,14 @@ function nextMessageUuid(): string {
 function makeFrame(
   messageType: string,
   body?: Record<string, unknown>,
+  deliveryKind: string = "command",
 ): string {
   return JSON.stringify({
     header: {
       schema_version: "1.1.0",
       message_uuid: nextMessageUuid(),
       message_type: messageType,
-      delivery_kind: "command",
+      delivery_kind: deliveryKind,
       sent_at: new Date().toISOString(),
       producer_role: "client",
       producer_key: "nano-agent.client.cli@v1",
@@ -231,9 +232,13 @@ describe("NanoSessionDO", () => {
         makeFrame("session.start", { initial_input: "Hello" }),
       );
 
+      // B9 / 1.3: session.end's matrix-legal delivery_kind is `event`.
+      // We send the matrix-legal kind so the role gate (producer_role
+      // "client" not allowed to produce server-emitted session.end) is
+      // what catches the frame, not the matrix layer.
       await doInstance.webSocketMessage(
         null,
-        makeFrame("session.end", { reason: "user" }),
+        makeFrame("session.end", { reason: "user" }, "event"),
       );
 
       const rej = doInstance.getLastIngressRejection();
@@ -305,7 +310,9 @@ describe("NanoSessionDO", () => {
         makeFrame("session.resume", { last_seen_seq: 42 }),
       );
 
-      expect(store.get("session:lastSeenSeq")).toBe(42);
+      // B9: LAST_SEEN_SEQ_KEY now writes through tenantDoStorage* so
+      // the actual key lives under `tenants/<team>/session:lastSeenSeq`.
+      expect(store.get("tenants/team-xyz/session:lastSeenSeq")).toBe(42);
     });
 
     it("session.resume ignores invented `checkpoint` fields", async () => {
@@ -326,7 +333,9 @@ describe("NanoSessionDO", () => {
       // gate rejects it and the body is never touched.
       await instance.webSocketMessage(null, makeFrame("session.resume", {}));
 
+      // B9: neither the un-prefixed nor the tenant-scoped key should exist.
       expect(store.has("session:lastSeenSeq")).toBe(false);
+      expect(store.has("tenants/team-xyz/session:lastSeenSeq")).toBe(false);
     });
 
     it("ignores malformed JSON", async () => {
