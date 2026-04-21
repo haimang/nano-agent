@@ -727,3 +727,897 @@ ContextRebalanceCommitted        ← 新 L1/L2 落盘
 | **远期可选** | ~1 000 行（Writer 多路采购 / Director 编排 / Intent 预制） |
 
 **总结**：smind 可参考的代码量约 **1 600-2 000 行 TypeScript**，分两轮消化——worker matrix 首 phase 吸收 **~360 行**（纯 `context.core` 内部 + hook 事件定义），post-worker-matrix 吸收 **~300 行**（独立 reranker worker）。这两轮都是**"组装已验证组件"** 而不是"边写边验证"，大幅降低 worker matrix 首 phase 的 scope 风险。
+
+---
+
+## 9. 辩证分析：CICP `msg_type × msg_intent` 双轴 vs NACP 现有 message_type 设计
+
+> **讨论起点（owner 提出 2026-04-20）**：CICP 的 `msg_type + msg_intent` 看起来可拓展空间更大；我们 NACP 似乎是在"一个平面上的 message 类型"，没有"type 路由"的概念。
+>
+> **本节目标**：辩证地拆解这两种协议设计的真实差异，核对 NACP 代码事实（而不是凭印象），给出可吸收回 NACP 的具体 proposal 与**时机约束**。
+
+---
+
+### 9.1 核对 NACP 当前设计的代码事实（不能凭印象）
+
+读 `packages/nacp-core/src/envelope.ts` 的真实结构（v1.1.0 shipped）：
+
+```ts
+// envelope.ts:49-54
+export const NacpDeliveryKindSchema = z.enum([
+  "command",
+  "response",
+  "event",
+  "error",
+]);
+
+// envelope.ts:84-94 (NacpHeaderSchema)
+{
+  schema_version: NacpSemverSchema,
+  message_uuid: z.string().uuid(),
+  message_type: z.string().min(1).max(128),   // ← 自由字符串 + 运行时 registry 校验
+  delivery_kind: NacpDeliveryKindSchema,      // ← enum: command / response / event / error
+  sent_at: ...,
+  producer_role: NacpProducerRoleSchema,      // ← 8 种 role 枚举
+  producer_key: NacpProducerKeySchema,
+  consumer_key: NacpProducerKeySchema.optional(),
+  priority: NacpPrioritySchema,
+}
+
+// envelope.ts:167 (Control segment)
+reply_to_message_uuid: z.string().uuid().optional(),
+
+// envelope.ts:176 (Control segment)
+audience: NacpAudienceSchema,  // enum: internal / audit-only / client-visible
+```
+
+**关键事实 🔴**：**NACP 已经有 `delivery_kind` 枚举，值是 `command / response / event / error`**，这和 CICP 的 `msg_type`（`COMMAND / REPORT / EVENT / ERROR`）**几乎一一对应**。换言之，**我们协议里已经存在一条和 CICP msg_type 等价的轴**——只是我们在日常讨论中把它忽略了。
+
+NACP 实际上至少有 **5 条正交轴**：
+
+| 轴 | 位置 | 基数 | 对应 CICP 概念 |
+|---|---|---|---|
+| `message_type` | header | 19+ (字符串 registry) | ≈ `msg_intent`（业务动词） |
+| `delivery_kind` | header | 4 (enum) | **= `msg_type`**（交互模式） |
+| `producer_role` | header | 8 (enum) | CICP 的 `source` 模块名 |
+| `audience` | control | 3 (enum) | CICP 无等价（nano-agent 特有） |
+| `reply_to_message_uuid` | control | uuid | CICP 用 `trace_uuid` + intent 配对隐式承载 |
+
+所以 **"NACP 是单平面" 的判断是不准确的**——真实问题是**这些轴彼此不正交，存在信息冗余**。
+
+---
+
+### 9.2 NACP 当前设计的真实痛点：信息冗余而非维度不足
+
+看 `message_type` 字符串的实际形态（摘自 `nacp-core/src/messages.ts` 与 `nacp-session/src/messages.ts`）：
+
+```
+tool.call.request       ← "verb=tool.call" + 方向="request"
+tool.call.response      ← "verb=tool.call" + 方向="response"
+tool.call.result        ← "verb=tool.call" + 方向="result"  (interim/final progress)
+hook.broadcast          ← "verb=hook" + 方向="broadcast"
+hook.return             ← "verb=hook" + 方向="return"
+context.compact.request ← "verb=context.compact" + 方向="request"
+context.compact.response
+session.stream.event    ← 复合：profile=session + verb=stream.event
+session.stream.ack
+session.heartbeat
+...
+```
+
+**痛点诊断**：
+
+1. **方向信息双重编码** 🔴
+   - `tool.call.request` 后缀 `.request` 已经说明方向
+   - 同一 envelope 里 `delivery_kind: "command"` 又说一遍
+   - 如果两者不一致（比如 `tool.call.request` + `delivery_kind: event`），**校验器会不会报错？** 实际上现在 `validateEnvelope()` 里没有交叉检查——这是潜在 bug
+
+2. **业务动词分布不均**
+   - `tool.call` / `hook` / `context.compact` — 动词格式各异，`tool.call` 是 `.` 分层，`hook` 是平名，`context.compact` 又是 `.` 分层
+   - 方向名约定也不统一：有 `.request/.response`，也有 `.broadcast/.return`，还有 `.event/.ack`
+
+3. **Error 作为一等公民缺位**
+   - `delivery_kind: "error"` 存在，但对应什么 `message_type`？我们没有"error 包装 X 业务动词"的标准 pattern
+   - 实际写法通常是 body 里塞 `error: {...}`——和 CICP 的 `msg_type: ERROR, msg_intent: PREPARE_CONTEXT` 比起来，我们对**失败版本的同一业务动词**没有显式表达
+
+4. **Registry 校验只看 `message_type`**
+   - `envelope.ts:309` 的 `NACP_MESSAGE_TYPES_ALL.has(env.header.message_type)` 只检查字符串在不在白名单
+   - 但 `(message_type, delivery_kind)` 二元组的**合法组合矩阵**从未被显式校验（例如 `tool.call.request` 能不能配 `delivery_kind: "event"`？协议上没有答案）
+
+---
+
+### 9.3 CICP 双轴设计的真实优势（辩证地，不是 cheerleading）
+
+**CICP 的优势（客观）**：
+
+- **显式正交**：`msg_type (4) × msg_intent (20+) = 80+ 个交互语义`，但只需定义两条小轴
+- **统一 error 包装**：任何 intent 都可以带 `msg_type: ERROR` 出现，错误转发逻辑整齐
+- **`same verb, different role`**：`CONTEXT_READY` 这个业务动词，在不同方向都可以出现（COMMAND 下是 "请你准备好"，REPORT 下是 "我准备好了"），**一个字符串走天下**
+- **路由表易写**：高基数过滤器先按 `msg_type`（4-way），再按 `msg_intent`（20-way），两级 switch/dispatcher
+- **观测性分群自然**：`filter(msg_type === 'EVENT')` 就是所有 push-notification 流；NACP 要维护一个字符串数组去 includes-check
+
+**CICP 的劣势（同样客观）**：
+
+- **双真相源**：`(msg_type, msg_intent)` 必须约束合法组合——例如 `CONTEXT_READY` 不应以 `msg_type: COMMAND` 出现；registry 复杂度变成笛卡尔积
+- **Body schema 与 type 的绑定更复杂**：NACP 现在是 `message_type → body schema` 一对一；CICP 里同一 intent 在不同 msg_type 下 payload 可能不同（`PREPARE_CONTEXT` 当 COMMAND 时带 `input_payload`，当 ERROR 时带 `error`），schema 要条件分支
+- **CICP 内部并非完全正交**：`CLIENT_MSG_SUBMIT` vs `CLIENT_MSG_PUSH` 这两个 intent **本身就隐含方向**（submit 是上行，push 是下行）——说明即便用双轴，**业务动词里仍会偷偷混进方向信息**
+- **CICP 没有单独校验 (msg_type, msg_intent) 合法矩阵的代码**——和我们 NACP 一样
+- **向 wire-level 路由（Cloudflare Queues / DLQ）不利**：单字段分区比双字段分区更常见
+
+---
+
+### 9.4 NACP 其他维度 CICP 并没有的优势
+
+|  NACP 已有 | CICP 等价 | 说明 |
+|---|---|---|
+| `producer_role` (8 种) | 无（CICP 用 `source: CicpModule` 字符串） | NACP 做了**强类型**的生产者角色 → 8-role registry 是 nano-agent 特化的产物 |
+| `audience: internal/audit-only/client-visible` | 无 | 这是 nano-agent **多租户 / 合规**场景特有的轴；CICP 不需要 |
+| `reply_to_message_uuid` | 无显式字段（用 trace_uuid 间接） | NACP 的 request-response pairing 用 uuid 级精确配对，比 CICP 的 intent 字符串配对更严谨 |
+| `control.tenant_delegation` + HMAC signature | 无 | B2-B6 的多租户首席合规 API，CICP 完全无 |
+| `stream_uuid / stream_seq` 在 trace 里 | 无（CICP 不 stream 化） | 我们 B6 eval sink dedup 依赖这两个字段 |
+| `producer_key` 正则约束 `namespace.sub@vN` | 无 | NACP 对 producer identity 有强格式约束 |
+
+**结论**：NACP 在**身份 / 多租户 / stream 协调**维度比 CICP 富得多；CICP 在**交互模式分类 / error 包装统一性**维度比 NACP 整洁。**两者设计优先级不同**，不是谁替代谁。
+
+---
+
+### 9.5 可以吸收回 NACP 的部分（分三档）
+
+> **设计约束**：不 break B1-B7 shipped wire。任何吸收都走**additive, non-breaking** 路径。
+
+#### 9.5.1 🔴 立即可做（docs-only，不改 code，B8 可包含）
+
+**A. 在 nacp-core README / spec 里明确 "`delivery_kind` 是我们的 msg_type 轴"**
+- 当前文档只把 `delivery_kind` 描述为"投递语义"
+- 应显式写："`delivery_kind` is the **interaction pattern axis**（command = request, response = reply to command, event = one-way push, error = fault wrapper）; `message_type` is the **business verb axis**。Two together form the 2D matrix."
+- 这让读者（包括 worker matrix phase 的 charter 作者）一眼看出我们**已经有双轴**，不需要重造
+
+**B. 记录已知的"两轴冗余" tech debt**
+- 在 `docs/rfc/nacp-core-1-2-0.md`（或新建 `nacp-core-1-3-draft.md`）里标注：
+  > "message_type 的 `.request / .response / .result / .broadcast / .return` 后缀在 v1 里与 `delivery_kind` 语义重叠。v2 考虑把方向信息完全归并到 `delivery_kind`，message_type 只保留业务动词。"
+- **不**在 B8 修改 shipped wire；只开 RFC tracking issue
+
+#### 9.5.2 🟠 **nacp-1.3 冻结窗口：在 worker matrix 开工前完成**（owner 修订 2026-04-20）
+
+> **原提议**（被推翻）：本节 C/D/E 推到 "worker matrix 之后" 再做 RFC。
+>
+> **owner 修订理由**：依据 nano-agent 的**"freeze the biggest cognition range of contract surface"** 纪律——B2-B6 每一个 ship phase 都在进入下一阶段前把 contract 冻结到当时认知的最大范围。nacp-1.3 的 (message_type, delivery_kind) 矩阵是我们**今天就能诚实冻结**的认知（下文 §9.7.2 逐项核验）；**推迟到 worker matrix 之后会让 4 个 first-wave workers 带着旧 wire 跑起来，然后又要全员滚动升级——成本数量级更高**。
+>
+> **因此**：C/D/E 在 worker matrix **开工前** RFC 定稿、**首 phase 内**实装为 shipped contract，作为 agent.core / bash.core / filesystem.core / context.core 首次 emit envelope 的基准。v1.1 旧字符串保留为 alias 不 break。
+
+**C. 引入 `(message_type, delivery_kind)` 合法组合矩阵校验**（nacp-1.3 normative）
+- 现在 `validateEnvelope()` (envelope.ts:309) 只校验 `message_type` 在 `NACP_MESSAGE_TYPES_ALL` 里
+- 扩展：新增 `NACP_TYPE_DIRECTION_MATRIX: Record<message_type, Set<delivery_kind>>`，校验 `env.header.delivery_kind ∈ allowed`
+- 例子：
+  ```ts
+  "tool.call.request"    → Set(["command"]),
+  "tool.call.response"   → Set(["response", "error"]),
+  "tool.call.result"     → Set(["response"]),  // progress interim/final
+  "hook.broadcast"       → Set(["event"]),
+  "hook.return"          → Set(["response", "error"]),
+  "session.stream.event" → Set(["event"]),
+  ```
+- **价值**：堵住当前 "tool.call.request + delivery_kind=event" 之类的非法组合（此类组合在 v1.1 里运行时绝不会被捕获）
+- **落地位置**：`packages/nacp-core/src/envelope.ts` 新增矩阵 + 在 `validateEnvelope()` 第 6 层校验
+- **兼容性**：纯加法；现有正确用法全部通过
+
+**D. 引入 "error wrapper for business verb" 的标准 pattern**（nacp-1.3 normative）
+- 新增 convention：任何 message_type `X.request` 的错误响应以 `X.response` 发出，`delivery_kind: "error"`，body schema 用统一的 `NacpErrorBodySchema`（`{code, message, retriable?, cause?}`）
+- 这样 error forwarding 逻辑和 happy path 共享同一份 message_type；不像 CICP 需要给 error 单独 intent
+- **落地位置**：`packages/nacp-core/src/error-body.ts`（新文件）+ 在 message_type registry 里给每个 `X.response` 标注 "accepts error body when delivery_kind=error"
+- **价值**：hook dispatcher / inspector / eval sink 可用统一逻辑处理任何 verb 的错误
+
+**E. 业务动词的命名规范**（nacp-1.3 normative for NEW verbs only；旧字符串保留 alias）
+- 制定 nacp-1.3 spec 章节 "business verb naming"，**对新增 message_type 强制**：
+  - 全部 `<namespace>.<verb>`（两段，不多不少）
+  - 方向不进 message_type（依赖 `delivery_kind` 表达）
+  - 例：worker-matrix phase 新增的 `context.rerank` / `context.rebalance` / `agent.step` / `agent.turn` 全部按新规
+- **旧字符串（tool.call.request / hook.broadcast 等）保留为 alias**，直到 nacp-2.0 breaking bump
+- **落地位置**：`packages/nacp-core/src/naming-spec.ts` + message_type registry 注释
+
+**F(new). 补：在 worker matrix 开工前显式确定 Message Class 轴语义（避免 agent.core 首次 emit 就踩错）**
+- `delivery_kind` 的 4 个值语义用 nacp-1.3 spec 写死：
+  - `command`: 期望 response；接收方必须 ack 或回 error（配合 `reply_to_message_uuid`）
+  - `response`: 对某条 command 的回复；必带 `reply_to_message_uuid`；body 可正常或 error（视 delivery_kind=response vs error）
+  - `event`: 单向 push；无配对；无 `reply_to_message_uuid`
+  - `error`: fault wrapper；结合 `message_type` 表达"哪条 verb 出错"；可能带 `reply_to_message_uuid`（作为对某 command 的失败回复）也可能不带（观察性错误）
+- **价值**：B7 binding-F04 验证过 `reply_to` 在跨 Worker push 路径上能走通；nacp-1.3 把这个行为文字化+schema 化
+
+#### 9.5.3 🟢 远期 nacp-2.0（可能不做）
+
+**F. 完全移除 message_type 的方向后缀**
+- breaking change；需要客户端、inspector、hook dispatcher 一起升级
+- 只在"我们确实因为冗余付出真实代价"时触发（例如有 Worker 因 `.request/.response` 字符串解析出错）
+- **预判**：这个代价短期内不会出现；可能一直停在 9.5.2 的 additive approach
+
+**G. 吸收 CICP 的 client-facing intent 空间**
+- CICP 有 `CLIENT_HANDSHAKE / CLIENT_MSG_SUBMIT / CLIENT_MSG_PUSH` 一组 client-level 协议动词
+- 我们当前 `nacp-session` 的 `session.start / resume / cancel / end` 是等价物，但粒度偏大
+- post-worker-matrix 阶段，如果前端 SDK 需要更细粒度的握手/历史/推送协议，再考虑扩充
+- **现阶段不做**——`session.*` 八类已经覆盖 B7 LIVE 验证的全部场景
+
+---
+
+### 9.6 明确**不建议**吸收的 CICP 设计
+
+| CICP 设计 | 为什么 nano-agent 不应照搬 |
+|---|---|
+| `source / target: string enum` 模块名路由 | 我们的 `producer_role` + `reply_to_message_uuid` 是**强类型 + 精确配对**，比 CICP 的字符串对更严谨；不应倒退 |
+| `msg_intent` 直接作为 routing 主键 | 我们 `message_type` + `producer_role` 双重 gating（见 `NACP_ROLE_REQUIREMENTS`）比单 intent 更安全 |
+| ERROR 作为独立 msg_type 下塞任意 intent | 我们要保持 `message_type → body schema` 一对一的强约束，error 用 `delivery_kind: "error"` + standard error body 就够 |
+| Client-in-protocol（把前端 WS 消息也塞 CICP） | 我们通过 `@nano-agent/nacp-session` 已经做到等价；不需要让客户端也学 nacp-core 的复杂度 |
+| `EVENT` 作为独立 msg_type | 我们已有 `delivery_kind: "event"`；不需要字符串层再区分 |
+| 2-level dispatch | 我们 wire-level 走 Cloudflare Queues 分区按 message_type 单字段更合理；内部 DO 逻辑已用 switch(messageType) 跑通（B7 LIVE 验证） |
+
+---
+
+### 9.7 时机与范围约束（修订版 — owner 2026-04-20 更新）
+
+> **原提议**（我第一版写的）：9.5.2 C/D/E 留到 worker matrix 之后做 RFC；9.7 强调"B8 out-of-scope，一切后置"。
+>
+> **owner 修订**（本次）：这违反了 nano-agent 既有的 **"freeze the biggest cognition range of contract surface"** 纪律——B2/B3/B4/B5/B6 每一个 ship phase 都在进入下一阶段前把 contract 冻结到当时认知的最大范围；nacp-1.3 的矩阵 + error wrapper + naming spec 是**今天就能诚实冻结的认知**，推迟到 worker matrix 之后相当于让 agent.core / bash.core / filesystem.core / context.core 四个 first-wave workers 带着**已知道是 tech debt**的 v1.1 wire 跑起来，然后再全员滚动升级——**成本数量级更高**。
+>
+> **因此，时序 flip**：nacp-1.3 在 worker matrix 开工前 RFC 定稿，首 phase 内实装；B8 handoff memo 必须**具名**把这个冻结窗口列出来，而不是模糊提一下。
+
+#### 9.7.1 分层时序（修订版）
+
+| 时机 | 动作 | 状态 |
+|---|---|---|
+| **B8 期间**（当前） | (a) handoff memo §6 "Binding Catalog Evolution Policy" 明确写："**nacp-1.3 是 worker matrix 开工前的 pre-req**，非 post-matrix 可选项"；<br>(b) 同 memo 附一节 "Two-Axis Matrix Cognition Today"（即本文档 §9.1-§9.4 的浓缩） | **待 B8 Phase 2 执行** |
+| **B8 closed 之后，worker matrix Phase 0 之前** | 起草 `docs/rfc/nacp-core-1-3-draft.md`（覆盖 C/D/E/F new）；独立 `B9-nacp-1-3-contract-freeze.md` action-plan | **新 phase**（本文档首次提出） |
+| **worker matrix Phase 0** | 实装 C/D/E/F new；加 regression test；bump `NACP_VERSION = "1.3.0"`；老字符串保留 alias | **首 phase 内** |
+| **worker matrix 后续 phases** | 4 first-wave workers 用 nacp-1.3 canonical 形式 emit envelope（新 verb 按 §9.5.2 E 规范；老 verb 可继续 alias） | **自然进入** |
+| **post-worker-matrix（不确定时点）** | F（breaking 移除 alias）、G（client intent 扩充）视真实业务压力决策 | **仍然保留现状** |
+
+#### 9.7.2 "今天能不能诚实冻结 nacp-1.3" — 逐项核验
+
+对每一项 nacp-1.3 normative 内容，问三个问题：
+1. **认知是否已饱和**（B1-B7 已经让我们看到全部边界？）
+2. **冻结后我们有没有能力兑现**（能写出通过 regression test 的实装？）
+3. **不冻结的代价是否真实存在**（worker matrix 不冻是否会产生 roll-back cost？）
+
+| 项 | Q1 认知饱和 | Q2 实装能力 | Q3 不冻代价 | 冻结决策 |
+|---|---|---|---|---|
+| **C** (type × delivery_kind matrix) | ✅ B7 LIVE 3 workers 的 wire 样本已覆盖 request/response/event/error 全部 4 种组合 | ✅ `envelope.ts:309` 扩展 1 层校验即可；<50 行代码 | 🔴 若不冻，agent.core 首次 emit 错配组合无校验报警，tech debt 进生产 | **冻** |
+| **D** (error body wrapper) | ✅ B5-B6 review 过程中我们已写过多次 ad-hoc error body，pattern 稳定 | ✅ 新 schema + 1 个 validator hook；<80 行 | 🔴 若不冻，每个新 worker 发明自己的 error shape，inspector / eval sink 无法统一解析 | **冻** |
+| **E** (verb naming `<namespace>.<verb>`) | ✅ B4/B5/B6 的 lifecycle event / hook event / message_type 都已经是这个结构 | ✅ 纯 naming convention + lint/registry warning；<30 行 | 🔴 若不冻，worker matrix 4 workers 各自定 verb 风格，后期统一极难 | **冻** |
+| **F new** (delivery_kind 4 值语义写死) | ✅ B6 `reply_to_message_uuid` 在 B7 binding-F04 cross-worker push path 上 LIVE 验证 | ✅ spec 文档 + 测试 assertion；<40 行 | 🟡 中：今天各模块对 4 值含义已基本共识；不冻短期 OK，长期歧义 | **冻**（趁势一起做） |
+| **F 原** (breaking 移除 alias) | ❌ 需要看 worker matrix 时期的真实用量决策 | ❌ 会 break B1-B7 shipped wire | ❌ 目前没有代价 | **不冻** |
+| **G** (client-level intent 扩充) | ❌ 前端 SDK 的真实需求还没暴露 | ❌ 需要前后端协商 | ❌ `session.*` 已覆盖 | **不冻** |
+
+**结论**：4 项应冻（C/D/E/F-new），2 项不应冻（F-原/G）。**nacp-1.3 的 scope 明确且可完成**。
+
+#### 9.7.3 对 B8 action-plan 的直接影响
+
+基于上述修订，B8 action-plan 需要：
+
+**加** 1 项 Phase 2 deliverable：
+- D7 (NEW): handoff memo §11 "nacp-1.3 Pre-Requisite for Worker Matrix" — 专节说明 worker matrix 不得在 nacp-1.3 ship 前启动 Phase 0；列出 C/D/E/F-new 的冻结清单与 RFC 责任
+
+**不改** 以下（严格守住 B8 doc-phase 纪律）：
+- B8 本身**仍然不改 packages/ 代码**
+- nacp-1.3 RFC 的起草 + 实装 = **新 phase（B9 or B9.5）**，不塞进 B8
+
+#### 9.7.4 新增 `B9-nacp-1-3-contract-freeze.md` action-plan（proposed）
+
+**Phase 结构**（建议）：
+| Phase | 工作量 | 内容 |
+|---|---|---|
+| P1 | S | RFC 起草：`docs/rfc/nacp-core-1-3-draft.md`（base 本文档 §9.5.2） |
+| P2 | M | 实装 C（matrix 校验）+ D（error body schema）+ F-new（4 值语义 spec）|
+| P3 | M | 实装 E（verb naming lint + 新 verb registry） |
+| P4 | S | 更新 nacp-session / session-do-runtime / hooks / capability-runtime 所有使用点以通过新校验；旧 alias 保留 |
+| P5 | S | `NACP_VERSION = "1.3.0"` bump + CHANGELOG + regression test lock |
+
+**Exit criterion**：B9 closure 后才允许 worker matrix Phase 0 启动（即 B9 是 worker matrix 的硬前置）。
+
+---
+
+### 9.8 辩证小结（修订版）
+
+用户的原始判断（"msg_type + msg_intent 双轴可拓展空间更大"）**方向正确，前提略有偏差**：
+
+- ✅ **正确**：双轴设计比"纯单轴字符串"更整洁、更易扩展
+- ⚠️ **偏差**：NACP **已经有**双轴（`message_type` + `delivery_kind`），不是"在一个平面上"——只是**这两轴信息重叠 + 缺合法矩阵校验 + 缺 error wrapper 标准**，看起来像单轴
+- 🎯 **真正的 action**：不是重造双轴，而是**正交化 + 合法矩阵 + error 统一 + naming 规范**
+
+**时序上的核心修订（owner 2026-04-20）**：
+- ❌ 我第一版说"nacp-1.3 放到 post-worker-matrix" —— **错了**
+- ✅ 修订后：nacp-1.3 **在 worker matrix 开工前** 完成 RFC 与实装，作为 worker matrix Phase 0 的硬前置
+- 🧭 遵循的 nano-agent 纪律：**"freeze the biggest cognition range of contract surface"**；B2-B6 都是这么做的
+- 🔒 冻结范围严格限定：C/D/E/F-new 四项；F-原/G 不冻
+
+**对 B8 的直接影响**：
+- 🔴 B8 handoff memo §11 必须**明确写出** "nacp-1.3 contract freeze 是 worker matrix 的硬前置"
+- 🔴 B8 同步提出**新 phase `B9-nacp-1-3-contract-freeze`** 的 action-plan（或 §11 内置简化版）
+- 🔴 B8 本身 **仍然不改 packages/ 代码**（B8 doc-phase 纪律不变）
+- 🔴 B9（新）将**改 packages/**，是 nacp-1.3 的实装 phase
+
+CICP 给我们的**最大启发**从未是"双轴 vs 单轴"，而是：
+**"方向信息 command/response/event/error 应该只有一个 source of truth；contract surface 的冻结时机应该是 maximum cognition，不是 minimum commitment"**。
+
+---
+
+
+---
+
+## 10. 辩证分析：Contexter = 编排器, Nano-agent = Runtime — 分层架构决策（owner 2026-04-20 澄清后重写）
+
+> **📌 文档纪律声明**：本章节**完全替换**先前（同日早些时候）的 §10。先前版本基于错误前提（把 smind-contexter 当成 peer agent system 来对比 per-user vs per-session DO），得出了"nano-agent 应该转向 per-user DO"的结论——那结论是**错误**的。
+>
+> **owner 2026-04-20 澄清**：
+> 1. Contexter 是**对话网关**，主要目标是 intent 判断 + 聊天路由；上下文管理只是其**内部集成**的功能
+> 2. Contexter 的本质是**编排器**，不是 agent runtime；因此用 user 作为 DO stub 是合理的
+> 3. Nano-agent 到目前是**标准 agent runtime**，负责执行上游命令；因此用 session 作为 DO stub 是**正确**的选择
+> 4. 未来应改造 contexter：去掉上下文管理，嵌入 user-based memory，**允许注入 session**；强化 orchestrator / intent / user-based DO 功能
+> 5. Nano-agent 应作为 contexter 的**直接下游**，负责 session-based operations
+>
+> **本章节要做的事**：基于 contexter 与 nano-agent 的真实代码事实，辩证验证这 5 点；把一个**分层架构提议**写清楚；复核本文档其他章节受此澄清影响需要修订的地方。
+
+---
+
+### 10.1 我先前 §10 分析错在哪里 — 溯源
+
+我先前 §10 的核心错误判断：
+> "smind-contexter 以 user 为 DO entity 是 '绝对真理'，nano-agent 应切换到 per-user DO"
+
+这个判断是在把**两个不同层级的系统**（orchestrator vs runtime）当成同层 peer 对比。**层级不同，架构约束不同**——smind 的 per-user DO 对它正确，**不构成**对 nano-agent 也正确的论据。
+
+先前 §10 里的有效分析（可以在新 §10 里重用）：
+- §10.1 的**代码事实核查**（`verifyTenantBoundary` 在 session-do-runtime 零调用）✅
+- §10.2 的**多租户占位清单**（6 项必做 vs 6 项可延后）✅
+- §10.3.4 的**"长跑 agent task 并发会在 per-user DO 上被序列化"分析** ✅——这条事实上**更强地论证 per-session DO 是正确的**，只是先前我用它作 "需要 task worker delegation" 的调和，现在重新理解：它直接证明 runtime **应当** per-session
+
+先前 §10 里必须**撤回**的结论：
+- ❌ "nano-agent 应该迁移到 per-user DO"
+- ❌ "per-user DO + task worker delegation 混合架构"
+- ❌ "B1-B7 的 per-session 需要 migration"
+- ❌ Q8: 是否接受 per-user DO？（问题前提错了，自动撤回）
+
+这些错误结论的根源是**范畴错误**：把 smind 的经验当成"agent system 通用经验"，而 smind 根本不是 agent system，是 chat orchestrator。
+
+---
+
+### 10.2 核对 owner 澄清的 4 点 — 基于代码事实
+
+#### 10.2.1 Claim 1: "Contexter 是对话网关，主要目标是 intent 判断 + 聊天路由"
+
+**代码证据**：
+
+| 文件 | 职责 | 证据 |
+|---|---|---|
+| `context/smind-contexter/src/chat.ts` | HTTP/WS 网关；JWT 验证；协议转换 | `plan-chat.ts.txt §1` 明确 "反向代理网关与协议转换器" |
+| `context/smind-contexter/ai/intent.ts` | 意图识别（NLU，Local/LLM Hybrid） | `app/design.txt` 行 64 "intent.ts — [NLU] 意图识别" |
+| `context/smind-contexter/context/director.ts` | 根据意图路由到不同处理路径 | `director.ts:201-295` 有 `handleRagFlow / handleSmallTalk / handleRejection` 的 switch |
+| `context/smind-contexter/context/producer.ts` v1.2 | 上下文管理（Slot / Rerank / Activate） | 这是 contexter **当前** 内嵌的上下文管理；user 要求剥离 |
+
+**核实结果**：✅ Claim 准确。contexter 的 top-level flow 是 **gateway → intent → route**；context 管理是**目前嵌在 orchestration pipeline 里的一个阶段**，不是 contexter 的本质。
+
+#### 10.2.2 Claim 2: "Contexter 本质是编排器，不是 agent runtime"
+
+**代码证据**：
+
+检查 contexter 的"主循环"——`director.ts::handleUserMessage`（行 139 起）：
+
+```
+receive CICP packet
+  → extract user query
+  → intent.analyze(query) → AiIntentResult
+  → switch(intent_type):
+      'rag_talk'    → handleRagFlow (writer → producer → gen)
+      'small_talk'  → handleSmallTalk
+      _             → handleRejection
+  → stream response back to client
+```
+
+**关键观察**：这个 flow 是 **one-shot per user message**。没有：
+- 任何 "agent step-by-step loop"
+- 任何 "tool call iteration"
+- 任何 "planner → step → observation → plan again"
+- 任何类似我们 `NanoSessionDO.actorState` 的 `unattached → attached → turn_running → turn_ending` 状态机
+- 任何 step budget / max iterations 概念
+
+**对比 nano-agent 的 `SessionOrchestrator`**（`packages/session-do-runtime/src/orchestration.ts`）：
+
+```
+startTurn
+  → emit Setup / SessionStart / UserPromptSubmit hooks
+  → transition actor state → turn_running
+  → enter runStepLoop:
+      repeat up to maxTurnSteps:
+        advanceStep(snapshot, signals)
+        push emitted events
+        if done: break
+      emit turn.end + trace
+```
+
+nano-agent **有真正的 agent loop**，有 step counting，有 signals (cancelRequested / timeoutReached / compactRequired / llmFinished)，有可能 5 分钟甚至更长。
+
+**核实结果**：✅ Claim 准确。contexter = 一次意图路由 + 一次 LLM gen；nano-agent = iterative agent-loop runtime。**这两种系统的执行 model 根本不是一个量级**。
+
+#### 10.2.3 Claim 3: "Nano-agent 是标准 agent runtime，使用 session 作 DO stub 是正确的选择"
+
+**代码证据**：
+```ts
+// packages/session-do-runtime/src/worker.ts:86
+const stub = env.SESSION_DO.get(env.SESSION_DO.idFromName(sessionId));
+```
+
+**为什么 per-session 对 runtime 是正确的**（现在我必须把先前 §10.3.4 的分析重新定位为主论点而不是折中论据）：
+
+1. **并发 agent task 的刚需**：用户会同时跑多个独立 agent 任务（代码重构 + web research + 数据分析）。每个任务时长可能数分钟到数小时。DO 是 **strongly-serialized**——如果用 per-user DO，3 个任务会排队；per-session DO 才允许真并发。
+2. **Agent task 的失败隔离**：一个 task 崩溃不应影响其他 task。per-session 提供**物理级**隔离（不同 DO 实例）；per-user 只能提供**逻辑级**隔离（需要 workspace namespace + 严格访问控制）。
+3. **Checkpoint/restore 粒度**：B7 F04 LIVE 验证过 DO 的 transactional storage；单一 task 的 checkpoint 大小合理；per-user DO 需要 checkpoint "所有 workspace" 会显著放大 hibernation 成本。
+4. **B1-B7 已 LIVE 验证**：所有 wire protocol、cross-seam anchor、binding-F04 dedup、eval sink、checkpoint/restore 都是 per-session DO 跑出来的。这**不是可以轻易丢弃的投资**。
+5. **B5 `Setup` hook 的语义**：`Setup` 是"actor runtime startup"——per-session DO 下，每个 session 启动一次 Setup 自然；per-user DO 下，Setup 语义模糊（user 级启动？还是 workspace 级启动？）
+
+**核实结果**：✅ Claim 准确。Nano-agent per-session DO 是**对的**；我先前 §10.3 的结论必须**完全撤回**。
+
+#### 10.2.4 Claim 4: "Contexter 应改造：去掉上下文管理，嵌入 user-based memory，允许注入 session"
+
+这是 user 的架构**提议**，不是现状核查。我在 §10.7 单独展开。这里先确认两个前置事实：
+
+**代码证据 A**：contexter 当前的 context 管理（`producer.ts`、`writer.ts`、`contexts` 表、`vec_history` 表）确实是**与 orchestration 深度耦合**的。director.ts 行 201-295 的 handleRagFlow 明确串接 writer → producer → gen，三者同属 contexter 进程。
+
+**代码证据 B**：user 提出的 "user-based memory 允许注入 session"——这在 nano-agent 侧**已经有 wire 支持**：
+```ts
+// packages/nacp-session/src/messages.ts:17-22
+export const SessionStartBodySchema = z.object({
+  cwd: z.string().max(512).optional(),
+  initial_context: z.record(z.string(), z.unknown()).optional(),  // ← 预留字段
+  initial_input: z.string().max(32768).optional(),
+});
+```
+
+`initial_context` 字段**已经存在**在 nano-agent 的 session.start 协议里，类型是任意 `Record<string, unknown>`。这是**为 upstream memory 注入预留的天然入口**。我们 B1-B7 做协议时已经 frame 了这个 hook，只是没想好谁来填——**contexter 来填，刚好合拍**。
+
+**核实结果**：✅ Claim 直接可落地。wire 已经 ready，只缺 upstream 的生产方（contexter 改造后）与 downstream 的消费方（nano-agent 内部 context.core 在 §4 中规划的 ingest 阶段）。
+
+#### 10.2.5 Claim 5: "Nano-agent 应作为 contexter 的直接下游，负责 session-based operations"
+
+这是 **架构归位**的结论。核实路径：
+
+- Contexter 改造后的输出形态：`{ intent, user_memory, realm_hints, …} → dispatch as session.start to downstream runtime`
+- Nano-agent 改造后的输入形态：`session.start { initial_context: { memory: …, intent: …, realm: …}, initial_input: user_query }`
+- 接口契约：**完全走 nano-agent 已有的 nacp-session wire** —— 不需要新协议
+
+**核实结果**：✅ 在协议层上，nano-agent 作为 contexter 下游是 **零协议修改的自然拼接**。
+
+---
+
+### 10.3 两个系统本质角色的工程学对比
+
+| 维度 | Contexter（编排器） | Nano-agent（agent runtime） |
+|---|---|---|
+| **核心工作循环** | receive message → classify intent → route → one-shot gen | receive session start → agent-loop (plan/step/observe) → tool calls → checkpoint |
+| **执行时长** | 秒级（单个用户消息） | 秒到小时级（单个 agent 任务） |
+| **DO 单线程影响** | 同一用户的消息序列化处理是 feature（对话天然 serial） | 同一用户的多 task 序列化是 bug（并发需求刚性） |
+| **状态生命周期** | 以用户为单位（跨会话记忆、意图空间、预制菜） | 以 task 为单位（actor state machine、turn checkpoint） |
+| **Memory 的位置** | 长期 / 用户级 / 向量化 / 跨对话 | 短期 / 任务级 / 当前 prompt 内 |
+| **LLM 调用模式** | 一次 gen（RAG 完成即结束） | 循环 gen（plan → observe → plan），可能数百次 |
+| **Checkpoint 语义** | 用户状态持久化（conversations / chats / user_memory 表） | 任务断点续跑（actor state + kernel snapshot） |
+| **失败语义** | 一次消息失败 → retry | 任务中任何 step 失败 → recovery / 部分回滚 |
+| **DO 身份 (idFromName)** | user_uuid | session_uuid |
+| **Hibernation 频率** | 用户下线时休眠 | 任务完成 / 闲置超时休眠 |
+| **Wire 协议** | CICP（自创）或 nacp-session 上行 | nacp-session 下行 + nacp-core（跨 worker） |
+
+**关键结论**：两种系统的**每一行都不同**——它们不是"两种 agent 系统"，它们是"完全不同职责的两个系统"。我先前 §10 把它们当 peer 比较是范畴错误。
+
+---
+
+### 10.4 DO 身份选择的重新辩证（结论翻转）
+
+#### 10.4.1 对 Contexter：per-user DO 正确 ✅
+
+smind 选 `idFromName(user_uuid)` 是对的，理由（摘要）：
+- 用户的意图空间 / warm preset / 对话历史都是跨对话共享 → 单 DO 便于集中管理
+- 对话本质 serial → serialization 不是问题
+- 跨对话记忆是核心产品功能（"用户昨天问过什么"） → 单 DO 零成本访问
+- Chat UI 用户不会真正并发多个对话 → serialization 不会造成 UX 问题
+- Intent vector cache 每用户加载一次 → N 倍成本节省
+
+#### 10.4.2 对 Nano-agent：per-session DO 正确 ✅
+
+我们选 `idFromName(sessionId)` 是对的，理由（摘要）：
+- Agent task 是独立工作单元 → 隔离更强
+- 并发 task 是刚性需求 → 避免 serialization bottleneck
+- B1-B7 已 LIVE 验证 → 零迁移风险
+- Task-level checkpoint 比 user-level 小 → hibernation 快
+- Failure blast radius 限于单 task → 更好的错误边界
+- per-session DO 天然 delete-per-task → 合规友好
+
+#### 10.4.3 对 "两个都正确"的辩证补充
+
+表面上"两个 DO 身份策略都正确"看似折中，但它的**本质是**：
+
+> **DO 身份应当与"这个系统的自然并发单元"一致。**
+>
+> - Contexter 的自然并发单元是"用户"（每个用户独立一条对话时间线）
+> - Nano-agent 的自然并发单元是"task"（每个 task 独立一条 agent-loop 时间线）
+
+这是**一条比 smind/nano-agent 对比更泛化的架构原则**。未来我们立 skill.core / filesystem.core 时，同样要问"这个系统的自然并发单元是什么"——答案可能是 user，也可能是 workspace，也可能是 (user, resource) 元组。
+
+#### 10.4.4 撤回先前结论
+
+先前 §10.3.5 提议的 "per-user DO + per-workspace subprocess + task worker delegation" 混合架构——**作废**。这个架构在分层模型下是不必要的：
+- 上层用户身份管理 → contexter 的 per-user DO 已经负责
+- 下层 task 执行 → nano-agent 的 per-session DO 已经负责
+- 之间通过 nacp-session wire 链接
+
+**我先前硬要在 nano-agent 单侧实现"user-level 记忆"是越权**——那是 contexter 的职责。
+
+---
+
+### 10.5 分层架构提议：Contexter → Nano-agent
+
+#### 10.5.1 架构图
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│ Client App (Web / Mobile / SDK)                                      │
+│                                                                       │
+│   ▲ user message / WS messages                                       │
+│   │ CICP or nacp-session (see §10.5.3)                               │
+│   ▼                                                                   │
+├──────────────────────────────────────────────────────────────────────┤
+│ Contexter = 编排器 (per-user DO)                                     │
+│                                                                       │
+│  ┌───────────────────────────────────────────────┐                   │
+│  │ idFromName(user_uuid) → UserDO                │                   │
+│  │                                                │                   │
+│  │  • JWT authn / tenant stamping                │                   │
+│  │  • Intent classification (ai/intent.ts)       │                   │
+│  │  • User memory management (vec_intents /      │                   │
+│  │    vec_history / alarm-driven refresh)        │                   │
+│  │  • Conversation history across sessions       │                   │
+│  │  • **Dispatch decision**: chat gen in-place   │                   │
+│  │    OR delegate to nano-agent downstream       │                   │
+│  └───────────────────────────────────────────────┘                   │
+│                                                                       │
+│   ▲                                                                   │
+│   │ assemble initial_context { user_memory, intent, realm, … }       │
+│   │ then emit session.start                                          │
+│   ▼                                                                   │
+├──────────────────────────────────────────────────────────────────────┤
+│ Nano-agent = Agent Runtime (per-session DO)                          │
+│                                                                       │
+│  ┌───────────────────────────────────────────────┐                   │
+│  │ idFromName(session_uuid) → SessionDO          │                   │
+│  │                                                │                   │
+│  │  • verifyTenantBoundary(envelope) on ingress  │                   │
+│  │  • SessionOrchestrator.startTurn              │                   │
+│  │     - ingest initial_context to context.core  │                   │
+│  │     - emit Setup / SessionStart / UserPrompt  │                   │
+│  │     - runStepLoop (agent loop)                │                   │
+│  │  • tool calls, hooks, capability execution    │                   │
+│  │  • checkpoint/restore                          │                   │
+│  │  • stream session.stream.event back upstream  │                   │
+│  └───────────────────────────────────────────────┘                   │
+│                                                                       │
+│   ▲ stream events                        ▼ service bindings          │
+│   │                                                                   │
+│   │      ┌─────────────────┐    ┌─────────────────┐                  │
+│   │      │ bash.core       │    │ filesystem.core │                  │
+│   │      │ (stateless)     │    │ (stateless)     │                  │
+│   │      └─────────────────┘    └─────────────────┘                  │
+│   │                                                                   │
+│   │      ┌─────────────────┐    ┌─────────────────┐                  │
+│   │      │ context.core    │    │ context.reranker│                  │
+│   │      │ (slot mgmt)     │    │ (§4.4)          │                  │
+│   │      └─────────────────┘    └─────────────────┘                  │
+│                                                                       │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+#### 10.5.2 职责严格划分
+
+| 关注点 | Contexter | Nano-agent |
+|---|---|---|
+| 用户身份 / JWT / tenant stamping | ✅ | ❌（verify only） |
+| 跨对话记忆 / user memory | ✅ | ❌ |
+| Intent classification | ✅ | ❌（得到已分类的 intent 作 input） |
+| 对话历史（conversations / chats） | ✅ | ❌ |
+| Warm preset / intent_space vector cache | ✅ | ❌ |
+| 决定是否 delegate 到 agent runtime | ✅ | ❌ |
+| 简单 chat gen（不需 agent loop） | ✅ | ❌ |
+| Session-level actor state machine | ❌ | ✅ |
+| Agent loop (plan/step/observe) | ❌ | ✅ |
+| Tool calls / capability execution | ❌ | ✅ |
+| In-session prompt 管理（slot / compact） | ❌ | ✅（context.core） |
+| Checkpoint / restore 单个 task | ❌ | ✅ |
+| Hook dispatching（Class A/B/C/D） | ❌ | ✅ |
+| Cross-seam anchor / trace propagation | Contexter 起始 stamp | Nano-agent 消费 + 向下游传递 |
+
+#### 10.5.3 通信协议：复用已 ship 的 nacp-session，不造新协议
+
+**从 Contexter 到 Nano-agent 的下行**：
+- `session.start` —— 携带 `initial_context` 注入 user memory + intent
+- `session.followup_input` —— 后续输入
+- `session.cancel` —— 取消 task
+- `session.end` —— 终止 session
+- `session.resume` —— 断点续跑
+- `session.heartbeat` —— 心跳
+
+**从 Nano-agent 到 Contexter 的上行**：
+- `session.stream.event` 的 9 种 kind —— 包括 `turn.begin/end`、`tool.call.progress/result`、`hook.broadcast`、`session.update`、`compact.notify`、`system.notify`、`llm.delta`
+- `session.stream.ack` —— 确认回执
+
+**关键发现 🔴**：**nacp-session wire 已经是这套分层架构的天然载体**。我们 B5/B6/B7 做协议时的顶层设计已经在为这个分层做准备——只是当时没画出完整分层图，所以看起来像"nano-agent 直接面对 client"。真正的形态是 "nano-agent 面对 upstream orchestrator，orchestrator 面对 client"——**client 到 nano-agent 之间本来就需要有编排层**，B1-B7 的测试只是省略了这一层（B7 spike 里 worker-a 直接 POST `/probe/follow-ups/...` 模拟了一个 minimal orchestrator）。
+
+#### 10.5.4 对 CICP vs nacp-session 的取舍
+
+既然 contexter 要改造、要下对接 nano-agent，它**不应该再坚持 CICP 内部协议**——应当直接采用 nacp-session 作为**上下行双向**的 wire：
+
+- Contexter ↔ Client: nacp-session（`session.start / session.stream.event / …`）
+- Contexter ↔ Nano-agent: nacp-session (same)
+
+这意味着 **contexter 改造后要引入 `@nano-agent/nacp-session` 作为依赖**，CICP 退化为 contexter **内部模块通信**的可选约定（不再是 wire）。
+
+**收益**：
+- Client 只需实现一套 nacp-session SDK
+- Nano-agent 的上游感知不变（反正它只看 nacp-session）
+- `trace_uuid / stream_uuid / stream_seq / message_uuid` 这些 B6 投资全部端到端可用
+
+---
+
+### 10.6 User-based memory 注入机制（落到 wire 层）
+
+#### 10.6.1 注入点：`session.start.body.initial_context`
+
+代码事实（重申）：
+```ts
+// packages/nacp-session/src/messages.ts:17-22
+export const SessionStartBodySchema = z.object({
+  cwd: z.string().max(512).optional(),
+  initial_context: z.record(z.string(), z.unknown()).optional(),  // ← 注入口
+  initial_input: z.string().max(32768).optional(),
+});
+```
+
+**提议的 initial_context schema**（non-breaking addition at nacp-session v1.3 以配合 nacp-1.3 冻结，或更晚在 nacp-session v1.4）：
+
+```ts
+interface SessionStartInitialContext {
+  readonly user_memory?: {
+    readonly recent_intents: string[];       // 最近意图
+    readonly preferences: Record<string, unknown>;
+    readonly session_summaries: Array<{      // 历史会话摘要（contexter 预制）
+      readonly session_uuid: string;
+      readonly summary: string;
+      readonly ended_at: string;
+    }>;
+  };
+  readonly intent?: {                        // contexter 已分类好的本次意图
+    readonly type: "rag" | "agent_task" | "…";
+    readonly confidence: number;
+    readonly keywords: string[];
+  };
+  readonly warm_slots?: Array<{              // 可直接放 L3 的冷藏知识
+    readonly context_uuid: string;
+    readonly content_full: string;
+    readonly vector?: number[];              // Float32Array 序列化为 number[]
+    readonly meta: Record<string, unknown>;
+  }>;
+  readonly realm_hints?: {
+    readonly realm: string;                  // e.g. "finance" / "code-review"
+    readonly source_name?: string;           // tenant scope
+  };
+}
+```
+
+#### 10.6.2 Nano-agent 侧消费点
+
+在 `NanoSessionDO.dispatchAdmissibleFrame('session.start', body)` 处：
+
+```ts
+// 现状（B7 shipped）
+const turnInput = extractTurnInput(messageType, body);
+if (turnInput) {
+  this.state = await this.orchestrator.startTurn(this.state, turnInput);
+}
+
+// 改造后（§4.1 context.core slot-store 就位之后）
+const turnInput = extractTurnInput(messageType, body);
+const injectedContext = body.initial_context as SessionStartInitialContext | undefined;
+if (turnInput) {
+  if (injectedContext) {
+    // user memory / warm slots → context.core slot-store 的 L3 ingest
+    await this.subsystems.contextCore?.ingestFromUpstream(injectedContext);
+  }
+  this.state = await this.orchestrator.startTurn(this.state, turnInput);
+}
+```
+
+`ingestFromUpstream` 就是 smind `producer.ts::ingest` 的**本层适配**——在 nano-agent 侧不做 retrieval（那是 contexter 的事），只做 slot ingest。
+
+#### 10.6.3 对 smind producer.ts 代码的重新归属
+
+先前 §4 我提议 "smind producer.ts 的 L1/L2/L3 模型迁移到 nano-agent `context.core`"。**这个提议现在需要分开理解**：
+
+| smind producer.ts 的能力 | 新归属 | 备注 |
+|---|---|---|
+| L1 Active / L2 Swap 装配（session 内 prompt 管理） | **nano-agent context.core** | 这是 session 内的短期上下文管理 |
+| L3 Storage + cosine 激活（跨会话记忆） | **contexter user memory** | 这属于 user 级长期记忆 |
+| ingest 接口 | **nano-agent context.core** 暴露，由 upstream (contexter) 调用 | 通过 `initial_context.warm_slots` 注入 |
+| rerank（`applyExternalRerank`） | **nano-agent context.core + context.reranker worker** | §4.4 结论不变 |
+| conversations / chats 表 | **contexter** | 对话历史是 user 级 |
+| vec_intents 表（intent 预制） | **contexter** | 意图分类是 user 级 |
+| contexts 表（L1/L2 slot JSON） | **nano-agent 内部 DO storage** | session 级；用 tenantDoStoragePut 写 |
+| vec_history 表 | **跨两层分裂**——contexter 存长期、nano-agent 只在 session 内临时 slot | 需要 careful 设计边界 |
+
+**核心校正**：先前 §4 里我把整个 producer.ts 都往 nano-agent 搬——**过度集中**。现在正确的做法是**按层拆开**：session 短期归 nano-agent，user 长期归 contexter。
+
+---
+
+### 10.7 Contexter 改造提议的具体路径（user Claim 4 展开）
+
+基于 contexter 代码实现 + user 提议方向，改造清单：
+
+#### 10.7.1 移除（当前 contexter 有 → 改造后去掉）
+
+| 组件 | 当前位置 | 为什么移除 |
+|---|---|---|
+| `context/producer.ts` 的 L1/L2 session 内 slot 管理 | contexter 进程内 | 这是 runtime 责任；移到 nano-agent context.core |
+| `contexts` 表 | DO SQLite | 同上 |
+| `ai/gen.ts` 的 LLM call（如果用于 agent-like 场景） | contexter 进程内 | agent-loop LLM 归 nano-agent；contexter 只保留"简单 chat gen"的 LLM call |
+| `context/director.ts::handleRagFlow` 中的 gen 步骤 | contexter 进程内 | 改成 delegate to nano-agent |
+
+#### 10.7.2 保留并强化（contexter 的核心价值）
+
+| 组件 | 为什么保留 |
+|---|---|
+| `src/chat.ts` 网关 | 仍是 entry point |
+| `ai/intent.ts` 意图识别 | 核心编排器能力 |
+| `context/director.ts` 的 routing 逻辑 | 核心编排器能力 |
+| `ai/vec.ts` embedding | 给 intent / memory vectorization 用 |
+| `ai/topK.ts` RAG 召回 | 给 user memory 检索用 |
+| `core/alarm.ts` intent 刷新 | 用户级热表维护 |
+| `vec_intents` 表 | 用户级意图路由 |
+| `conversations / chats` 表 | 对话历史（user 级） |
+
+#### 10.7.3 新增（改造后的 contexter 需要）
+
+| 组件 | 描述 |
+|---|---|
+| User Memory 子模块 | 管理 recent_intents / preferences / session_summaries 的跨会话存储 |
+| Session dispatch 子模块 | 调用 nano-agent 的 service binding，填充 `initial_context` 发出 `session.start` |
+| Nano-agent stream relay | 把 nano-agent 的 `session.stream.event` 中转回 client |
+| `@nano-agent/nacp-session` 依赖 | 作为 wire SDK（替代内部 CICP 用于外部通信） |
+
+#### 10.7.4 改造不影响什么（兼容性 guarantees）
+
+- smind 现有用户的 chat flow 不必断——改造可以 **feature-flag**：
+  - FLAG=in_process → 维持现状 RAG → gen
+  - FLAG=delegate → 新分层：RAG → dispatch to nano-agent
+- 先支持 delegate 仅对 "agent_task" intent 生效，其他 intent 仍走内 process
+
+---
+
+### 10.8 多租户边界在分层模型下的重新布置
+
+先前 §10 里关于 tenant 的分析**绝大部分仍然成立**，但**责任划分更清晰**了：
+
+| 阶段 | Contexter 侧职责 | Nano-agent 侧职责 |
+|---|---|---|
+| **Stamping** | JWT 验证后从 token 提取 `team_uuid / user_uuid`，stamp 到 NACP envelope `authority` | N/A（contexter 已 stamp） |
+| **Session dispatch** | 生成 `session.start` envelope，`authority.team_uuid / user_uuid / plan_level` 完整 | N/A |
+| **Ingress verify** | N/A | `verifyTenantBoundary(envelope)` 在 `dispatchAdmissibleFrame` 入口强制校验 |
+| **Storage scope** | 自己的 user-level storage 走 `tenantKv*` / `tenantR2*` | 所有 DO storage op 走 `tenantDoStorage*`，scope 到 `(team_uuid, session_uuid)` |
+| **Hook emission** | N/A | 每个 hook emit 携带 `authority.team_uuid` |
+| **Cross-seam anchor** | 生产 anchor 源 | 消费 + 向 bash.core / filesystem.core / context.core 传递 |
+
+**B2/B6 tenant wrapper 的变现路径**：
+- Contexter 侧：`tenantKv*` / `tenantR2*` 直接使用
+- Nano-agent 侧：把 `NanoSessionDO` 内所有 `state.storage.put/get/delete` **必须**改成 `tenantDoStorage*` 调用；`verifyTenantBoundary` **必须**在 `webSocketMessage` / `fetch` ingress 入口调用
+
+**这部分先前 §10.2 的占位清单仍然完全有效，只是"占位"的边界更具体了**：
+- Contexter 负责 "生产正确的 authority"
+- Nano-agent 负责 "消费并强制校验 authority"
+
+---
+
+### 10.9 Reranker 归属的重新讨论
+
+先前 §4.4 的结论："reranker 作为独立 `context.reranker` worker，从 `context.core` 通过 hook 唤醒"——**基本不变**，但**服务对象更清晰**：
+
+| rerank 发生位置 | 目的 | 消费者 |
+|---|---|---|
+| **Contexter 内部** | 对 user memory 的 topK 召回结果做 rerank，选出"注入给 session 的 top-N warm slots" | contexter 在生成 `initial_context` 之前 |
+| **Nano-agent 内部（context.core + context.reranker）** | session 内多轮 agent-loop 中，对工具结果 + 注入 memory 混合的 L1/L2 slot 做 rerank | nano-agent 在每轮 rebalance 时 |
+
+**两层 rerank 不矛盾**——它们优化的是不同层级的决策：
+- Contexter 层：**哪些 user memory 值得投递给这个 session**
+- Nano-agent 层：**当前 turn 的 prompt 里应保留哪些 slot**
+
+**落地提议**：
+- `context.reranker` worker（§4.4 定义）**保留原设计**——独立 worker、hook 唤醒、fail-open
+- 它**同时服务于** contexter 和 nano-agent（两个 upstream caller，都发相同形状的 hook `ContextRerankRequested`）
+- 这是比单独给 contexter 做 reranker 更好的架构（**DRY**）
+
+---
+
+### 10.10 对 §9 nacp-1.3 判断的复核
+
+§9 的核心结论："nacp-1.3 在 worker matrix 开工前冻结 `(message_type, delivery_kind)` 矩阵 + error body 标准 + verb naming"——**完全不受本 §10 澄清影响**，**全部保留**。
+
+仅需**补一条**在 nacp-1.3 RFC 里：
+
+**加一类新 message_type namespace "orchestrator"**（reserved for contexter-class upstreams）：
+
+```
+orchestrator.session.dispatch    — contexter → nano-agent 的 session 启动指令
+orchestrator.session.relay       — contexter → client 的事件中转
+orchestrator.memory.query        — nano-agent → contexter 查询用户记忆（如需要回查）
+orchestrator.memory.update       — nano-agent → contexter 回写 session 摘要到用户记忆
+```
+
+**这些不需要在 nacp-1.3 首发全部 ship**——只需 RFC 里**预留 namespace**，实际定义在"contexter 改造 + nano-agent 对接"那个 phase 里做。
+
+---
+
+### 10.11 对 B8 / worker matrix 影响的修订
+
+先前 §9.7 + §10 提议给 B8 加 D7/D8/D9 deliverables——**D7/D8 保留，D9 修订，新增 D10**：
+
+| Deliverable | 状态 | 说明 |
+|---|---|---|
+| **D7** nacp-1.3 pre-requisite note | ✅ 保留 | 不受 §10 影响 |
+| **D8** tenant boundary checklist | ✅ 保留（微调） | 只是现在明确分 contexter-stamp / nano-agent-verify 两侧 |
+| **D9** DO identity migration path | ❌ **撤回** | nano-agent per-session **不需要**迁移 |
+| **D10（NEW）** Upstream orchestrator interface spec | 🆕 加入 | 定义 contexter（或任何上游）如何通过 `initial_context` 给 nano-agent 注入 memory + intent |
+
+先前 Q8/Q9：
+- ❌ **Q8 撤回**（是否接受 per-user DO for nano-agent？前提错了，问题作废）
+- ✅ **Q9 保留**（nacp-1.3 是否是 worker matrix 硬前置？）
+- 🆕 **Q10（NEW）**：是否批准 contexter 改造 + nano-agent 作为直接下游的分层架构作为 worker matrix 之后的 roadmap？
+- 🆕 **Q11（NEW）**：`initial_context` 字段的 schema（见 §10.6.1）是否作为 nacp-session v1.4 的一部分冻结？还是留到 contexter-integration phase 再冻？
+
+---
+
+### 10.12 对本文档其他章节受 §10 影响的复核
+
+| 章节 | 是否需修订 | 说明 |
+|---|---|---|
+| §1-§3 材料审读 | ❌ 不改 | 事实陈述 |
+| §4 可吸收内容 | 🟡 微调 | §4.4 reranker 从"仅服务 context.core"改为"同时服务 contexter 和 context.core"；已在 §10.9 反映 |
+| §4.1.1 L1/L2/L3 作为 context.core 内部结构 | 🟡 微调 | 限定为"**session 级** L1/L2"；user 级长期记忆归 contexter；已在 §10.6.3 反映 |
+| §5 不建议照搬 | ❌ 不改 | |
+| §6 整合建议 | 🟡 微调 | §6.2 worker matrix 新增项表需要补一条 "接口支持 upstream initial_context 注入" |
+| §7 一句话总结 | 🟡 微调 | 补一句"分层：contexter 编排 + nano-agent runtime" |
+| §8 资产清单 | 🟡 微调 | 资产消费者按 contexter vs nano-agent 重新分组 |
+| §9 NACP dialectic | ❌ 不改 | §10.10 已覆盖补充项 |
+| **§10 本节** | 🆕 新写 | |
+
+**这些微调不在本次 §10 rewrite 的 scope 里**——单独提交另做，避免本 §10 变成"顺手改全文"。
+
+---
+
+### 10.13 §10 辩证小结
+
+| 议题 | 结论 |
+|---|---|
+| **Contexter 与 nano-agent 的本质区别** | Contexter 是**编排器 + 网关**；Nano-agent 是 **agent runtime**。两者执行 model 不同，DO 身份选择不同 |
+| **DO 身份选择** | Contexter per-user ✅；Nano-agent per-session ✅。**我先前 §10 把 nano-agent 往 per-user 推是错的，全部撤回** |
+| **先前 §10 的哪些部分仍然有效** | tenant boundary 占位清单（6 + 6 项）；§10.3.4 关于 per-user DO 并发 serialization 的分析（但重新定位为**支持** per-session 的正论据） |
+| **User-based memory 注入** | 已有 wire 支持：`SessionStartBodySchema.initial_context` 是预留的注入口（B5-B7 shipped）。contexter 改造只需生产 upstream，nano-agent 只需消费 |
+| **smind producer.ts 代码归属** | L1/L2 session 内 slot 管理 → nano-agent；L3 跨会话记忆 → contexter。先前 §4 "整搬"方案需要按层拆 |
+| **Reranker** | `context.reranker` worker 独立设计不变；但服务对象扩大为"contexter + nano-agent 两侧 upstream"，更 DRY |
+| **nacp-1.3 冻结窗口** | 完全不变；新增预留 `orchestrator.*` message_type namespace 即可 |
+| **B8 影响** | D7/D8 保留；D9 撤回；新增 D10（upstream orchestrator interface spec）；Q8 作废、Q9 保留、Q10/Q11 新增 |
+| **我先前判断失误的教训** | 没有先确认两个系统的**职责归属**（orchestrator vs runtime）就在架构决策上展开——这是**范畴错误**；未来做类似对比分析必须先画清**层级 / 职责 / 并发单元** |
+
+---
+
+### 10.14 对 owner 5 点澄清的最终辩证表态
+
+| # | owner claim | 我的辩证判断 |
+|---|---|---|
+| 1 | Contexter 是对话网关 + 内嵌上下文管理 | ✅ 代码事实准确；内嵌的上下文管理是**当前实现**，应改造拆出 |
+| 2 | Contexter 是编排器不是 runtime | ✅ 代码事实准确；`director.ts` 的 flow 是 one-shot，无 agent loop |
+| 3 | Nano-agent 是标准 agent runtime，per-session DO 正确 | ✅ 代码事实准确；B1-B7 投资完全 validate；我先前 §10 全部撤回 |
+| 4 | 改造 contexter：剥离上下文管理，嵌入 user memory，注入 session | ✅ 架构方向正确；wire 已经预留注入点（`initial_context`）；落地路径见 §10.7 |
+| 5 | Nano-agent 是 contexter 的直接下游 | ✅ 架构正确；nacp-session wire 天然支持；之前 B1-B7 是"省略了上游"的测试形态 |
+
+**最终立场**：**owner 的 5 点全部站得住；我先前 §10 的错误分析完全撤回**。本次 §10 rewrite 回归到一个**更诚实**的分层理解：
+
+> **Nano-agent 是一个 agent runtime，天然处于 agent 产品栈的下游；它不必也不应该承担 orchestration / user memory / intent routing 的职责——那些是上层（如 contexter 类系统）的事。我们 B1-B7 shipped 的 per-session DO + nacp-session wire + NACP envelope 是这个分层架构的下游基石，不是"缺失"了什么。**
