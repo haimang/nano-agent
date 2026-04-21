@@ -56,10 +56,45 @@ describe("validateSessionFrame (R2 fix)", () => {
   });
   it("accepts valid session.stream.event", () => {
     const r = validateSessionFrame({
-      header: { ...VALID_HEADER, message_type: "session.stream.event" }, authority: VALID_AUTHORITY, trace: VALID_TRACE,
+      header: { ...VALID_HEADER, message_type: "session.stream.event", delivery_kind: "event" }, authority: VALID_AUTHORITY, trace: VALID_TRACE,
       session_frame: VALID_SESSION_FRAME, body: { kind: "system.notify", severity: "info", message: "ok" },
     });
     expect(r.header.message_type).toBe("session.stream.event");
+  });
+
+  // B9 / 1.3 — session-side (message_type × delivery_kind) matrix
+  it("B9 matrix: accepts session.start with delivery_kind=command", () => {
+    const r = validateSessionFrame({
+      header: { ...VALID_HEADER, message_type: "session.start", delivery_kind: "command" },
+      authority: VALID_AUTHORITY, trace: VALID_TRACE,
+      session_frame: VALID_SESSION_FRAME, body: { initial_input: "hi" },
+    });
+    expect(r.header.delivery_kind).toBe("command");
+  });
+
+  it("B9 matrix: rejects session.start with delivery_kind=event", () => {
+    expect(() => validateSessionFrame({
+      header: { ...VALID_HEADER, message_type: "session.start", delivery_kind: "event" },
+      authority: VALID_AUTHORITY, trace: VALID_TRACE,
+      session_frame: VALID_SESSION_FRAME, body: { initial_input: "hi" },
+    })).toThrow(NacpSessionError);
+  });
+
+  it("B9 matrix: accepts session.heartbeat with delivery_kind=event", () => {
+    const r = validateSessionFrame({
+      header: { ...VALID_HEADER, message_type: "session.heartbeat", delivery_kind: "event" },
+      authority: VALID_AUTHORITY, trace: VALID_TRACE,
+      session_frame: VALID_SESSION_FRAME, body: { ts: Date.now() },
+    });
+    expect(r.header.delivery_kind).toBe("event");
+  });
+
+  it("B9 matrix: rejects session.heartbeat with delivery_kind=command", () => {
+    expect(() => validateSessionFrame({
+      header: { ...VALID_HEADER, message_type: "session.heartbeat", delivery_kind: "command" },
+      authority: VALID_AUTHORITY, trace: VALID_TRACE,
+      session_frame: VALID_SESSION_FRAME, body: { ts: Date.now() },
+    })).toThrow(NacpSessionError);
   });
   it("accepts valid session.start body", () => {
     const r = validateSessionFrame({

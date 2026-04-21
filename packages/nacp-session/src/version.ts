@@ -14,6 +14,6 @@
  * `header.schema_version` on the first frame instead).
  */
 
-export const NACP_SESSION_VERSION = "1.1.0";
+export const NACP_SESSION_VERSION = "1.3.0";
 export const NACP_SESSION_VERSION_COMPAT = "1.0.0";
 export const NACP_SESSION_WS_SUBPROTOCOL = "nacp-session.v1";

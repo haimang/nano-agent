@@ -12,6 +12,16 @@ export { NACP_SESSION_VERSION, NACP_SESSION_VERSION_COMPAT, NACP_SESSION_WS_SUBP
 // ── Errors ──
 export { NacpSessionError, SESSION_ERROR_CODES } from "./errors.js";
 
+// ── Type × Direction matrix (1.3) ──
+export {
+  NACP_SESSION_TYPE_DIRECTION_MATRIX,
+  isLegalSessionDirection,
+} from "./type-direction-matrix.js";
+
+// ── Upstream context schema (1.3) ──
+export { SessionStartInitialContextSchema } from "./upstream-context.js";
+export type { SessionStartInitialContext } from "./upstream-context.js";
+
 // ── Messages ──
 export {
   SessionStartBodySchema, SessionResumeBodySchema, SessionCancelBodySchema,

@@ -18,6 +18,7 @@ import {
 import { SESSION_MESSAGE_TYPES, SESSION_BODY_SCHEMAS, SESSION_BODY_REQUIRED } from "./messages.js";
 import { SessionStreamEventBodySchema } from "./stream-event.js";
 import { NacpSessionError, SESSION_ERROR_CODES } from "./errors.js";
+import { NACP_SESSION_TYPE_DIRECTION_MATRIX } from "./type-direction-matrix.js";
 
 // ── Session frame extension fields ──
 
@@ -77,6 +78,22 @@ export function validateSessionFrame(raw: unknown): NacpSessionFrame {
   const frame = parsed.data;
 
   validateSessionMessageType(frame.header.message_type);
+
+  // B9 / 1.3: (message_type × delivery_kind) matrix legality.
+  // Owned by the session profile; NOT re-using core's validateEnvelope() matrix.
+  const allowedDirections =
+    NACP_SESSION_TYPE_DIRECTION_MATRIX[frame.header.message_type];
+  if (
+    allowedDirections &&
+    !allowedDirections.has(frame.header.delivery_kind)
+  ) {
+    throw new NacpSessionError(
+      [
+        `delivery_kind '${frame.header.delivery_kind}' is not legal for session message_type '${frame.header.message_type}'. Allowed: ${[...allowedDirections].join(", ")}`,
+      ],
+      SESSION_ERROR_CODES.NACP_SESSION_TYPE_DIRECTION_MISMATCH,
+    );
+  }
 
   // Enforce SESSION_BODY_REQUIRED (Blocker 1 fix)
   const mt = frame.header.message_type;

@@ -1,7 +1,7 @@
 # @nano-agent/nacp-session
 
 > NACP-Session — the client ↔ session DO WebSocket profile of the NACP Protocol Family.
-> **Baseline**: `1.1.0` (frozen) — shares `NACP_VERSION` with `@nano-agent/nacp-core`. `NACP_VERSION_COMPAT = "1.0.0"` (pre-freeze payloads are accepted via `migrate_v1_0_to_v1_1` at the envelope layer).
+> **Baseline**: `1.3.0` (frozen) — shares `NACP_VERSION` with `@nano-agent/nacp-core`. `NACP_VERSION_COMPAT = "1.0.0"` (pre-freeze payloads are accepted via `migrate_v1_0_to_v1_1` at the envelope layer). B9 added the session-side `(message_type × delivery_kind)` matrix + `SessionStartInitialContextSchema` (see `docs/rfc/nacp-core-1-3-draft.md`).
 
 ## What this package provides
 
@@ -56,8 +56,9 @@ await helper.restore(ctx.storage);
 
 This package **depends on** `@nano-agent/nacp-core` and extends its types:
 - `NacpSessionFrameSchema` extends `NacpEnvelopeBaseSchema`
-- `session-registry.ts` imports `SessionPhase` / `isMessageAllowedInPhase` from Core for phase gate
+- `session-registry.ts` imports the `SessionPhase` type from Core but owns its **own** phase matrix (`SESSION_PHASE_ALLOWED`). Core's phase table only covers `session.start/resume/cancel/end`; the session profile adds `session.stream.event / stream.ack / heartbeat / followup_input`, which must be routed through Session's matrix rather than Core's `isMessageAllowedInPhase()`.
 - Error types extend Core's `NacpValidationError`
+- B9 / 1.3: session profile **also** owns its own `(message_type × delivery_kind)` matrix (`NACP_SESSION_TYPE_DIRECTION_MATRIX`) consumed by `validateSessionFrame()`; core's Layer 6 matrix only gates core-registered verbs.
 
 ## Follow-up Input Family (A1 Phase 0 — frozen)
 

@@ -12,11 +12,15 @@
 
 import { z } from "zod";
 import { NacpRefSchema } from "@nano-agent/nacp-core";
+import { SessionStartInitialContextSchema } from "./upstream-context.js";
 
 // ── session.start ──
 export const SessionStartBodySchema = z.object({
   cwd: z.string().max(512).optional(),
-  initial_context: z.record(z.string(), z.unknown()).optional(),
+  // B9 / 1.3: tightened from z.record(...) to SessionStartInitialContextSchema.
+  // Back-compat: the inner schema is .passthrough() with every field optional,
+  // so existing loose payloads (including {}) continue to parse.
+  initial_context: SessionStartInitialContextSchema.optional(),
   initial_input: z.string().max(32768).optional(),
 });
 export type SessionStartBody = z.infer<typeof SessionStartBodySchema>;
