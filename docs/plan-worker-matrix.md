@@ -1,5 +1,42 @@
 # Plan Worker Matrix — First-Wave Worker Assembly with Verified Foundations
 
+> ⚠️ **DEPRECATED — r1 整体废弃,等待 r2 rewrite**
+>
+> **状态**:`deprecated / awaiting-rewrite-after-pre-worker-matrix-closes`
+> **Deprecation 时间**:`2026-04-21`
+> **Deprecation 原因**:
+>
+> r1 草稿完成后,经过 2 轮 owner 讨论,发现它在两个根本层面上的架构认知错误:
+>
+> 1. **目录结构认知错误** — r1 默认 4 个 worker "以 host composition handle 形式 in-process 存在于 session-do-runtime";owner 纠正:每个 worker 应有独立 `workers/<name>/` 顶级目录,各自 wrangler.jsonc / package.json / src / test,获得 Cloudflare-native 的部署隔离与风险隔离
+> 2. **packages 定位认知错误** — r1 默认 `packages/` 是"永久共享 library";owner 纠正:**除 `nacp-core` 与 `nacp-session`** 之外,所有 packages 都是"验证 + 吸收上下文",随 worker 成熟而 phase out;只有 NACP 两个包会真实发布到 GitHub Packages
+>
+> 这两个认知错误还推导出 r1 的第 3 个 gap:
+>
+> 3. **前置阶段缺失** — r1 把 NACP 发布、跨 worker 协议设计(γ workspace RPC + β remote compact delegate + evidence envelope forwarding)、package 吸收 blueprint、`workers/` 目录脚手架等 5 类"完全不同种类的 risk"塞进 worker-matrix 的 P0 sub-phase,违反 nano-agent 一贯的"单 phase 单焦点"纪律
+>
+> Owner 已确认需要一个独立的前置阶段 `pre-worker-matrix` 先处理上述 gap,本 r1 进入 deprecated 状态。
+>
+> **替代文档**:在 `pre-worker-matrix` 阶段完成前,请使用 **`docs/plan-pre-worker-matrix.md`** 作为 authoritative charter
+>
+> **Rewrite 时机**:pre-worker-matrix 阶段 W5(Closure & Handoff)完成时,依据本阶段实际产出触发 r2 rewrite
+>
+> **r2 预期修订面(记录,待 pre-worker-matrix 闭合后执行)**:
+> - §0 / §1 / §2 重写(新起点:NACP 1.4.0 + 发布就绪 + 3 新协议 + 10 blueprint + 4 worker scaffold)
+> - §4 In-Scope 重写为"按 blueprint 执行 absorption + 装配 live turn loop + 激活 cross-worker service-binding"
+> - §5 方法论新增"blueprint-driven absorption" / "protocol-based integration" / "gradual packages removal"
+> - §6 4 worker 章节基于 W3 blueprint 深化
+> - §8 Phase 数量从 3 扩到 6-7(并行 absorption + integration + deprecation)
+> - §11 Exit criteria 新增"live agent turn loop 端到端" / "Tier B packages 物理删除完成"
+>
+> r1 内容以下保留作为历史审计 / worker charter-level 边界参考(§6 / §7 的 worker 定位 + 不变量仍有长期参考价值),但不得作为 r2 rewrite 之前的 authoritative planning input。
+>
+> ---
+>
+> ## 以下为 r1 原文(deprecated)
+>
+> ---
+
 > 文档对象:`nano-agent / worker-matrix phase charter`
 > 刷新日期:`2026-04-21 (r1)`
 > 作者:`Claude Opus 4.7 (1M context)`
@@ -7,6 +44,7 @@
 >
 > **修订历史:**
 > - **r1 (2026-04-21)**:初版,基于 `docs/eval/worker-matrix/` 上下文束与 B8/B9 shipped reality 编制。
+> - **r1 deprecated (2026-04-21)**:经 2 轮 owner 讨论,发现 workers 目录结构 + packages 定位两项根本认知错误;推导出 pre-worker-matrix 独立前置阶段缺失;等待 pre-worker-matrix 闭合后 r2 rewrite。替代文档:`docs/plan-pre-worker-matrix.md`。
 >
 > **输入依据:**
 > - `docs/plan-after-foundations.md` (r2,已全部 phase 闭合 — 4 轮修正收口与 5 类 ship code 已落地)
