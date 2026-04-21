@@ -96,6 +96,24 @@ It is **not** one more entry in the same category as:
 Those are remote seams. `agent.core` is the host.  
 Worker matrix should preserve that abstraction boundary even if the host later exposes callback endpoints of its own.
 
+### 5.1 `agent.core` has an upstream
+
+The host/runtime distinction is only half of the story:
+
+1. `agent.core` is the host worker,
+2. but it is also the **downstream runtime** of some upstream orchestrator,
+3. and that upstream may already ship intent classification, user memory, and conversation-history logic of its own.
+
+Therefore worker matrix should assume `agent.core` must be ready to consume:
+
+- `session.start.body.initial_context`
+- upstream-stamped `authority.*`
+- session-scoped input that was already routed by an orchestrator layer
+
+B8 does **not** freeze the upstream worker’s name. It only freezes the posture:
+
+> `agent.core` should be designed as an orchestrator-ready runtime, not as the place that re-implements upstream orchestration responsibilities.
+
 ---
 
 ## 6. Naming migration posture for worker matrix

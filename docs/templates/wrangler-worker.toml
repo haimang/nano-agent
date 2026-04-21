@@ -51,6 +51,8 @@ database_id = "replace-with-d1-id"
 
 # First-wave worker-matrix proposal service names.
 # These are deployment names, not proof that B8 changed the current v1 binding catalog.
+# If worker matrix renames these proposal workers, update both `binding` and `service`
+# consistently and reflect the change back into `next-phase-worker-naming-proposal.md`.
 [[services]]
 binding = "BASH_CORE"
 service = "nano-agent-bash-core"

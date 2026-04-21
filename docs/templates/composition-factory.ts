@@ -132,6 +132,10 @@ export function createWorkerMatrixTemplate(
   // B7 proved the real cross-worker path. Keep the bounded sink explicit.
   const evalSink = new BoundedEvalSink({ capacity: 1024 });
 
+  // When `r2` is wired, the orchestrator may spill oversize summaries to R2
+  // instead of failing at the DO cap boundary. Without `r2`, summaries above
+  // `DOStorageAdapter.maxValueBytes` fail, so worker matrix should choose that
+  // fallback behavior explicitly per worker profile.
   const compact =
     doStorage && options.llmProvider
       ? new AsyncCompactOrchestrator({
