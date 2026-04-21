@@ -6,15 +6,20 @@
 > 关联文档:
 > - Charter: `docs/plan-pre-worker-matrix.md` §4.1 F / §7.6
 > - 前置 design(全部消费对象):
->   - `W0-nacp-consolidation.md`
->   - `W1-cross-worker-protocols.md`(v0.2)
->   - `W2-publishing-pipeline.md`
->   - `W3-absorption-blueprint-and-dryrun.md`
->   - `W4-workers-scaffolding.md`
+>   - `W0-nacp-consolidation.md`(**v0.2 narrower** — BoundedEvalSink class 不搬;hooks wire-shape only)
+>   - `W1-cross-worker-protocols.md`(**v0.3 RFC-only**)
+>   - `W2-publishing-pipeline.md`(**v0.2 parallel** — skeleton 必做,首发/dogfood optional)
+>   - `W3-absorption-blueprint-and-dryrun.md`(**v0.2 map + 2-3 blueprint + optional capability-runtime dry-run**)
+>   - `W4-workers-scaffolding.md`(**v0.2 1 real(agent-core)+ 3 dry-run**)
 > - 消费对象(W5 触发其 rewrite):`docs/plan-worker-matrix.md`(currently deprecated)
 > - 消费对象(W5 更新):`docs/eval/worker-matrix/00-contexts/00-current-gate-truth.md`
 > - 消费对象(W5 更新):`docs/issue/after-foundations/after-foundations-final-closure.md`
-> 文档状态:`draft`
+> 文档状态:`draft (v0.3 post-GPT-R6-review: body fully aligned with charter r2 6 exit criteria & narrower W1/W3/W4)`
+>
+> **修订历史**:
+> - v0.1 (2026-04-21):初稿。X1-X7 + 横向一致性 5 对角线
+> - v0.2 (2026-04-21):Post-GPT-review narrowing(charter r2 scope 收窄的 downstream)。横向一致性检查内容微调以匹配 W0 narrower + W1 RFC-only + W2 parallel + W3 narrower + W4 1-deploy;final closure 结构描述 6 个 phase 的**收窄后**产出;exit criteria 继承 charter r2 §11 的 6 条收窄版。
+> - v0.3 (2026-04-21):Post-GPT-R6 body-level narrowing。GPT 指出 v0.2 仅改顶部/概要,§7.2 X3 "5 大产出" 与 X4 "4 就绪" 仍为旧 W1 shipped protocol / W2 1.4.0 首发 / W3 10 blueprint + llm-wrapper / W4 4 URL 写法。本版:§7.2 X3 "5 大产出" 改为 "6 大产出" 对应 charter r2 §11 exit criteria;§7.2 X4 "4 就绪 table" 扩到 6 就绪(协议 topology / package 策略 / import-publish / orphan 决定 / scaffold / handoff);全文 "4 就绪 / 10 blueprint / llm-wrapper / 4 URL" 系统改为 narrower 表述;§7.2 X5 rev 3 新 §N、§4.1 亮点、§4.3 借鉴、§6.3 三大方向杠杆 一并同步。
 
 ---
 
@@ -22,21 +27,21 @@
 
 ### 0.1 为什么 W5 必须作为独立 phase(而非 W0-W4 各自闭环了事)
 
-pre-worker-matrix 前 5 个 phase(W0-W4)各自产出独立交付物(吸收代码 / 新协议 / 发布管道 / blueprint / 脚手架),但它们之间存在**横向一致性需求**:
+pre-worker-matrix 前 5 个 phase(W0-W4)各自产出独立交付物(**W0 narrower NACP 吸收 / W1 方向 RFC / W2 publishing skeleton / W3 map + 2-3 blueprint / W4 脚手架 + 1 real deploy**),但它们之间存在**横向一致性需求**(v0.2 版本):
 
-1. W0 吸收的 evidence vocabulary shape 必须与 W1 `wrapEvidenceAsAudit` 使用的 shape byte-identical
-2. W2 发布的 nacp-core 1.4.0 必须包含 W0 + W1 所有 shipped 新 symbol
-3. W3 blueprint 里引用的 `@<scope>/nacp-core` import path 必须对应 W2 真实发布的包名
-4. W4 workers 的 `package.json` deps 必须能解析到 W2 发布的版本
-5. 如果 W3 llm-wrapper dry-run 的目的地是 `workers/agent-core/src/llm/`,W4 必须先建 `workers/agent-core/` 目录
+1. **W0 吸收的 evidence vocabulary shape** 必须与 **W1 RFC 里描述的 wrapping pattern** 一致(W1 RFC-only 无 helper 代码,但 shape reference 要对齐)
+2. **W2 pipeline skeleton** 的 workflow 能正确打包 W0 shipped 1.4.0 symbols(首发若未完成,skeleton dry-run 能过即可)
+3. **W3 map + 代表 blueprint** 里引用的 NACP import path 必须与 W0 shipped 路径一致
+4. **W4 workers package.json** 的 NACP deps 能 resolve 成功(`workspace:*` 或 `@<scope>/nacp-core@1.4.0` 任一 path)
+5. **若 W3 做 optional capability-runtime dry-run**,目的地 `workers/bash-core/src/` 需要 W4 先建;若不做,此横向依赖不存在
 
 这些**横向依赖不会被单个 W0-W4 phase 的 closure 自动验证**。W5 存在的本质:
 
-> **对 W0-W4 的全部产出做一次整体性一致性检查,并把结果浓缩为"worker-matrix charter r2 作者直接可消费的 input pack"。**
+> **对 W0-W4 narrower 产出做一致性检查,并把结果浓缩为"worker-matrix charter r2 作者直接可消费的 input pack"。**
 
 若跳过 W5 直接进入 worker-matrix P0,会出现两类高频问题:
-- **协议漂移**:W3 blueprint 的 import 写的是 `nacp-core/evidence/sink`,但 W0 实际落地位置是 `nacp-core/src/evidence/sink.ts`;worker-matrix P0 执行者踩坑
-- **依赖漂移**:W4 workers 的 package.json 指 `nacp-core@1.4.0`,但 W2 真实发布成了 `1.4.1`(因某 bug fix);worker-matrix P0 启动时 install 失败
+- **协议漂移**:W3 blueprint 的 import 路径与 W0 实际路径不一致;worker-matrix P0 执行者踩坑
+- **依赖漂移**:W4 workers 用 `workspace:*` interim 跑过,但切到 published version 时某 symbol 不存在
 
 W5 的 "final closure + handoff" 就是在这两类漂移扩散前收束。
 
@@ -90,7 +95,7 @@ W5 的全部产出都是**文档 + 元文档更新**:
 | phase closure | 单 phase 自闭合的 memo,记录产出 + 遗留 + 验证证据 | W0-W4 各自先产出(在各 phase 末尾);W5 只是检查与归档 |
 | final closure | 整个 pre-worker-matrix 阶段的综合 closure memo | W5 产出核心 |
 | handoff memo | 向下一 phase(worker-matrix)传递的 input pack | W5 产出核心 |
-| 4 就绪(状态)| 协议就绪(W0+W1)/ 发布就绪(W2)/ blueprint 就绪(W3)/ 脚手架就绪(W4) | handoff 的四类核心事实 |
+| 6 就绪(状态)| 协议 topology / package 策略 / import-publish / orphan 决定 / scaffold / handoff(对应 charter r2 §11 6 条 exit criteria) | handoff 的六类核心事实 |
 | charter rewrite trigger | `plan-worker-matrix.md` 从 deprecated 进入 `needs-rewrite-r2` 状态的动作 | W5 的最后一个动作 |
 | meta-doc | `docs/eval/worker-matrix/00-contexts/00-current-gate-truth.md` 等跨 phase 索引文档 | W5 rev 更新对象 |
 | 横向一致性检查 | W0-W4 产出之间的交叉引用对齐检查 | W5 独有的纪律动作 |
@@ -113,7 +118,7 @@ W5 的全部产出都是**文档 + 元文档更新**:
 - **服务于**:
   - Owner:获得"阶段性胜利感"的凭据 + worker-matrix 是否可启动的判断依据
   - worker-matrix charter r2 作者:得到直接可消费的 input pack
-  - worker-matrix P0 执行者:得到 4 就绪清单 + 遗留 open items 精确列表
+  - worker-matrix P0 执行者:得到 6 就绪清单 + 遗留 open items 精确列表
 - **依赖**:W0-W4 全部 owner-approved + 实施完成 + 各自 closure 已写
 - **被谁依赖**:worker-matrix charter r2 cycle 启动(handoff memo 是其直接 input)
 
@@ -133,7 +138,7 @@ W5 的全部产出都是**文档 + 元文档更新**:
 
 ### 2.3 一句话定位陈述
 
-> 在 nano-agent 里,`Pre-Worker-Matrix Closure & Handoff` 是 **pre-worker-matrix 的最后一 phase**,负责 **对 W0-W4 产出做横向一致性检查 + 产出 final closure 与 handoff memo + 解锁 `plan-worker-matrix.md` 进入 r2 rewrite**,对上游(owner)提供 **"pre-worker-matrix 闭环且可进下阶段" 的统一凭据**,对下游(worker-matrix charter r2 作者 + P0 执行者)提供 **4 就绪 + 可直接消费 input pack + 遗留 open items 精确清单**。
+> 在 nano-agent 里,`Pre-Worker-Matrix Closure & Handoff` 是 **pre-worker-matrix 的最后一 phase**,负责 **对 W0-W4 产出做横向一致性检查 + 产出 final closure 与 handoff memo + 解锁 `plan-worker-matrix.md` 进入 r2 rewrite**,对上游(owner)提供 **"pre-worker-matrix 闭环且可进下阶段" 的统一凭据**,对下游(worker-matrix charter r2 作者 + P0 执行者)提供 **6 就绪(对应 charter r2 §11 exit criteria)+ 可直接消费 input pack + 遗留 open items 精确清单**。
 
 ---
 
@@ -147,7 +152,7 @@ W5 的全部产出都是**文档 + 元文档更新**:
 | Handoff memo 写成 worker-matrix charter r2 的 draft | 越位做下游 | r2 rewrite 是 worker-matrix cycle 工作 | 否 |
 | W5 期间跑所有 regression 一次 | 最后验证冲动 | 各 phase 已跑;W5 引用 evidence | 若 W0-W4 某 evidence 遗失,重跑 |
 | Deprecated Tier B packages | 顺手清理 | 共存期未到;per-worker absorb 时再加 | 否(W3 blueprint 已规定时机) |
-| 为 4 workers 真实调度 smoke check | 验证 W4 deploy 持久 | W4 closure 已记录一次 curl;W5 引用即可 | 若 URL 1 周内失效,专门 incident |
+| 为 agent-core URL 真实调度 smoke check | 验证 W4 deploy 持久 | W4 closure 已记录一次 curl;W5 引用即可 | 若 URL 1 周内失效,专门 incident |
 | W5 修 W0-W4 发现的小 typo | 善后冲动 | Typo 由后续 doc reviewer 修;W5 focus on structure | 否 |
 | 为 worker-matrix P0 写 action-plan | 越位设计 | P0 action-plan 属 worker-matrix cycle | 否 |
 | 邮件 / Slack 通知 | 外部沟通 | nano-agent 纪律是 docs-first;通知由 owner 决定 | 否 |
@@ -157,7 +162,7 @@ W5 的全部产出都是**文档 + 元文档更新**:
 | 扩展点 | 表现形式 | 第一版行为 | 未来演进 |
 |---|---|---|---|
 | Final closure 的 "open items" section | markdown bullet list | 列出 W0-W4 遗留的 TODO | worker-matrix P0 消费时逐条关闭;关闭后回写 |
-| Handoff memo 的 "4 就绪" 状态表 | markdown table | 4 行 × (状态 / 产出 / 引用) | 未来若新 worker 加入,加行 |
+| Handoff memo 的 "6 就绪" 状态表 | markdown table | 6 行 × (状态 / 产出 / 引用),对应 charter r2 §11 6 条 exit criteria | 未来若新 exit 维度加入,加行 |
 | `00-current-gate-truth.md` revision history | 顶部 "revision history" block | 记录 rev 1 (2026-04-21 initial) / rev 2 (2026-04-21 post-B9) / rev 3 (2026-04-21 pre-worker-matrix closure) | 每次 meta 更新加 row |
 | Worker-matrix r2 rewrite checklist | markdown checkbox list | 列 8-10 条必改节 | 实际 r2 撰写时逐条 check off |
 
@@ -194,7 +199,7 @@ W5 的全部产出都是**文档 + 元文档更新**:
   - closure + handoff 分别 memo 的结构
   - 6 条约束陈述 + 开放 gates 明示
 - **值得借鉴**:
-  - 4 就绪状态的结构化表达
+  - 就绪状态的结构化表达(W5 扩到 6 就绪对应 charter r2 §11 exit criteria)
   - 开放 gates 精确列出(F03 / F09)
 - **不照抄的地方**:
   - B8 handoff 也有 post-B9 review 后的补回填(§11/§12/§13);W5 的 handoff 初版可更干净因为 W0-W4 期间已做整合性检查
@@ -217,7 +222,7 @@ W5 的全部产出都是**文档 + 元文档更新**:
   - Checklist-driven
   - 多人参与 sign-off
 - **值得借鉴**:
-  - W5 的 "4 就绪" 状态 = mini gate review checklist
+  - W5 的 "6 就绪" 状态 = mini gate review checklist(对应 charter r2 §11 exit criteria)
 - **不照抄的地方**:
   - 企业 gate review 通常有正式 sign-off ceremony;W5 只需 owner 实质 approve,不需仪式
 
@@ -242,20 +247,20 @@ W5 的全部产出都是**文档 + 元文档更新**:
   - `docs/issue/pre-worker-matrix/W2-closure.md`
   - `docs/issue/pre-worker-matrix/W3-closure.md`
   - `docs/issue/pre-worker-matrix/W4-closure.md`
-- **[X2]** **横向一致性检查**(5 条对角线):
-  - (a)W0 吸收的 evidence vocabulary 与 W1 F7 helper 的 shape byte-identical?
-  - (b)W2 发布的 `@<scope>/nacp-core@1.4.0` 是否包含 W0+W1 所有新 shipped symbol?
-  - (c)W3 10 份 blueprint 里引用的 `@<scope>/nacp-core` import path 是否与 W2 实际发布包名匹配?
-  - (d)W4 的 4 workers package.json 是否能从 W2 发布的 registry 真实 install `1.4.0`?
-  - (e)W4 的 `workers/agent-core/src/` 目录与 W3 llm-wrapper dry-run 落点 `workers/agent-core/src/llm/` 是否结构兼容?
+- **[X2 v0.2]** **横向一致性检查**(5 条对角线,v0.2 内容微调以匹配 narrower scope):
+  - (a)W0 吸收的 evidence vocabulary Zod schema 与 W1 **RFC 文档**里描述的 wrapping pattern shape 是否一致?(v0.2 — W1 无 helper 代码;检查 RFC 描述的 shape 是否引用 W0 shipped 的 EvidenceAnchorSchema)
+  - (b v0.2)若 W2 已完成首发:`@<scope>/nacp-core@1.4.0` 是否包含 W0 所有 shipped 新 symbol(不再期望包含 W1 的 — W1 RFC-only 无代码);**若 W2 未完成首发,跳过此检查,改查 publishConfig + workflow 就绪状态**
+  - (c v0.2)**W3 absorption map + 2-3 代表 blueprint** 里引用的 NACP import path 是否与 W0 实际 shipped 路径一致?(不再是 10 份 blueprint)
+  - (d v0.2)W4 的 agent-core 是否能:(i) 若 W2 已发首发,从 GitHub Packages resolve `@<scope>/nacp-core@1.4.0`;(ii) 若未发,用 `workspace:*` resolve 成功;**两者任一 pass 即可**
+  - (e v0.2)W4 的 `workers/agent-core/src/` 结构与 W3 **optional capability-runtime dry-run**(若执行)落点 `workers/bash-core/src/` 是否兼容?若未做 dry-run,(e) 检查降为"workers/ 4 个目录结构统一"
 - **[X3]** 产出 **`docs/issue/pre-worker-matrix/pre-worker-matrix-final-closure.md`**(§7.2 X3 详述)
 - **[X4]** 产出 **`docs/handoff/pre-worker-matrix-to-worker-matrix.md`**(§7.2 X4 详述)
 - **[X5]** 更新 **`docs/eval/worker-matrix/00-contexts/00-current-gate-truth.md`** rev 3:
   - 加顶部 rev 3 note
   - 新增章节 "§N. Pre-Worker-Matrix Closure Integration (rev 3)":
-    - 4 就绪状态总结
-    - 4 deploy URLs
-    - NACP 1.4.0 已发布 evidence
+    - r2 narrower 6 就绪状态总结(拓扑 / 包策略 / import-publish / orphan 决定 / scaffold / handoff)
+    - 1 agent-core deploy URL + 3 dry-run log
+    - NACP 1.4.0 发布状态(pre-phase 已发 OR 延后;二者之一 evidence)
     - 指向 final closure + handoff memo
 - **[X6]** 更新 **`docs/issue/after-foundations/after-foundations-final-closure.md`**:
   - §6 "readiness statement" 从 "worker matrix Phase 0 gate OPEN" 改为 "pre-worker-matrix shipped;worker-matrix charter r2 待启动"
@@ -272,7 +277,7 @@ W5 的全部产出都是**文档 + 元文档更新**:
 - **[Y3]** 为 Tier B packages 加 deprecated 贴纸(属 worker-matrix P0 按 W3 blueprint 执行)
 - **[Y4]** 真实重跑 regression(W0/W4 已跑;W5 引用 evidence)
 - **[Y5]** 修复 W0-W4 closure 里 typo / 小 bug(由后续 doc reviewer 修)
-- **[Y6]** 重新 deploy 4 workers 验证 URL 持久(W4 closure 已记录;若 URL 失效属单独 incident)
+- **[Y6]** 重新 deploy agent-core / 触发 3 workers 的 real deploy 验证 URL 持久(W4 closure 已记录 agent-core 1 URL;其余 3 workers 仅 dry-run 不需 URL;若 URL 失效属单独 incident)
 - **[Y7]** 为 worker-matrix P0 招新 actor / 分配任务(非 W5 scope)
 - **[Y8]** `plan-pre-worker-matrix.md` 本 charter 状态更新(该 charter 结束时自然 "已闭环",不需特别 flip)
 - **[Y9]** skill.core deferral 状态更新(已在 `docs/eval/worker-matrix/skill-core-deferral-rationale.md` 冻结;除非 owner 提供新决策)
@@ -283,8 +288,8 @@ W5 的全部产出都是**文档 + 元文档更新**:
 | 项目 | 判定 | 理由 |
 |---|---|---|
 | W5 期间若发现某 W0-W4 closure 有严重 bug | **in-scope 但 escalate** | W5 不直接改 W0-W4 closure;通知该 phase owner;若 block W5,暂停 W5 待 fix;若不 block,记录到 open items |
-| Final closure 是否引用 4 deploy URLs 原文 | **in-scope** | URL 作为"脚手架就绪"的机读 evidence;curl 响应 json 也附录 |
-| Handoff memo 是否列 10 份 W3 blueprint 的逐份 | **in-scope** | charter r2 作者需要 per-blueprint 状态;但只列状态 + 链接,不 inline 内容 |
+| Final closure 是否引用 1 agent-core deploy URL + 3 dry-run log 原文 | **in-scope**(v0.2 narrower)| URL + dry-run log 作为"脚手架就绪"的机读 evidence;agent-core curl 响应 json 附录 |
+| Handoff memo 是否列 W3 absorption map(10 行)逐行 + 2-3 代表 blueprint 状态 | **in-scope**(v0.2 narrower) | charter r2 作者需要 map 逐行状态 + 代表 blueprint per-file 状态 + 外推风险标签;只列状态 + 链接,不 inline 内容 |
 | 是否为 W5 自己也写 `W5-closure.md` | **in-scope**(§7.2 X3 的子产出)| W5 自己作为 phase,也应产 phase closure;但可合并进 final closure 作为 §N 一节,不需独立文件 |
 | W5 是否负责 update worker-matrix charter r2 预期修订面的 checklist | **in-scope 起始版本**,**可选 refinement** | `plan-worker-matrix.md` deprecated banner 已列 r2 预期修订面;W5 review 确认 / 补充,不重写 |
 | 若 owner W5 期间决定延迟 worker-matrix(如先做 skill.core) | **out-of-scope 改方向**,**in-scope 记录** | W5 本身不 gatekeep owner 方向决策;但在 final closure 记录决策;handoff memo 更新目标 phase |
@@ -339,7 +344,7 @@ W5 的全部产出都是**文档 + 元文档更新**:
 6. **取舍 6 — 不重跑 regression,只引用 W0/W4 evidence**
    - **选择引用**,不是 **W5 期间重跑**
    - **为什么**:
-     - W0 完成时已跑全包 regression + B7 LIVE;W4 完成时已跑 4 workers deploy + CI
+     - W0 完成时已跑全包 regression + B7 LIVE;W4 完成时已跑 agent-core 1 real deploy + 3 workers dry-run + CI
      - 重跑会把 W5 变成"验证 phase"而非"收口 phase"
      - 若需重跑,说明某 W0-W4 closure 的 evidence 已失效 — 那是该 phase 的问题,不是 W5
    - **接受的代价**:W5 产出依赖 W0-W4 closure 的 evidence 可信;若 closure 造假 / 错误,W5 吸收
@@ -352,7 +357,7 @@ W5 的全部产出都是**文档 + 元文档更新**:
 | W0-W4 某 closure 未写 / 未 approved | phase 实施遗漏 | W5 无法启动 | X1 严格检查;缺则返回该 phase |
 | X2 横向一致性检查发现不一致 | 跨 phase 漂移 | W5 delay;需返回某 phase 修 | escalate pattern(见 §5.3);若 block 则暂停 W5 |
 | Handoff memo 写得太抽象,下游用不起来 | 作者视角偏回顾 | worker-matrix r2 作者另写 input pack,W5 产出浪费 | §7.2 X4 要求 handoff memo 含具体文件路径 / 具体 symbol 名;not generic |
-| Meta-doc rev 3 写与现实不符 | W4 deploy URL 已失效 | charter r2 作者被误导 | X2.d 专门检查 W4 deploy 持久性(curl 一次记录);若失效,write as "曾 deployed at ..." |
+| Meta-doc rev 3 写与现实不符 | W4 agent-core deploy URL 已失效 | charter r2 作者被误导 | X2.d 专门检查 W4 agent-core deploy 持久性(curl 一次记录);若失效,write as "曾 deployed at ..." |
 | `plan-worker-matrix.md` 状态 flip 后,长期无人启动 r2 | owner 未排期 | pre-worker-matrix 收益在 6 个月内衰减 | W5 完成后 60 天内 owner 若未启动 r2,worker-matrix input pack 应 revision(具体由 owner 决定) |
 | pre-worker-matrix 期间出现 owner 决策变动(e.g. 决定放弃 filesystem.core 独立 worker) | owner 方向改变 | W0-W4 部分产出失效 | handoff memo 顶部加 "owner decision freeze date";若后变,开新 charter |
 
@@ -366,7 +371,7 @@ W5 的全部产出都是**文档 + 元文档更新**:
   - 横向一致性检查的 5 条对角线 pattern 可复用(未来 phase 之间也可做类似 check)
 - **对三大深耕方向杠杆**:
   - **上下文管理**:handoff memo 明确 context.core 已就绪的 protocol + shell + blueprint;worker-matrix P0 直接实装
-  - **Skill**:4 workers 就绪 pattern 可复用给未来 skill.core(若入场)
+  - **Skill**:`workers/` 目录 + agent-core 1 real deploy pattern 可复用给未来 skill.core(若入场)
   - **稳定性**:X2 横向一致性检查内化为 nano-agent 的 phase 纪律,降低下阶段回滚概率
 
 ---
@@ -379,8 +384,8 @@ W5 的全部产出都是**文档 + 元文档更新**:
 |---|---|---|---|
 | X1 | W0-W4 closure 审阅 | 确认 5 份 phase closure shipped 且 owner-approved | ✅ 5 个文件 exist + owner sign-off |
 | X2 | 横向一致性 5 检查 | 5 条对角线检查 | ✅ 5 条全 pass(或 fail + evidence + remediation plan) |
-| X3 | Final closure memo | pre-worker-matrix 综合回顾 | ✅ 6 大产出 + 遗留 open items + X2 检查结果 |
-| X4 | Handoff memo | 向 worker-matrix 传递 input pack | ✅ 4 就绪 + 具体 input 链接 + r2 预期修订面 |
+| X3 | Final closure memo | pre-worker-matrix 综合回顾 | ✅ 6 大产出(对应 charter r2 §11 exit criteria)+ 遗留 open items + X2 检查结果 |
+| X4 | Handoff memo | 向 worker-matrix 传递 input pack | ✅ 6 就绪(对应 charter r2 §11 exit criteria)+ 具体 input 链接 + r2 预期修订面 |
 | X5 | `00-current-gate-truth.md` rev 3 | Meta-doc 同步 | ✅ 加 "§N. Pre-Worker-Matrix Closure" rev 3 |
 | X6 | `after-foundations-final-closure.md` 更新 | 跨阶段 readiness 同步 | ✅ §6 状态更新;引用新 handoff |
 | X7 | `plan-worker-matrix.md` 状态 flip | charter 解锁 | ✅ banner state 从 deprecated 改 needs-rewrite-r2 |
@@ -416,29 +421,30 @@ W5 的全部产出都是**文档 + 元文档更新**:
   - **Pass 条件**:所有 symbol 可 import
   - **Evidence 附录**:dogfood build log + import 列表
 
-  **(c)W2 ↔ W3 — Import Path Consistency**
-  - **检查**:W3 10 份 blueprint 里引用的 `@<scope>/nacp-core` import path 是否与 W2 实际发布包名匹配
+  **(c v0.2)W2 ↔ W3 — Import Path Consistency**
+  - **检查(v0.2 narrower)**:W3 **absorption map + 2-3 代表 blueprint** 里引用的 NACP import path 是否与 W0 实际 shipped 路径一致
   - **执行**:
-    - `grep -r '"@nano-agent/nacp' docs/design/pre-worker-matrix/W3-absorption-blueprint-*.md`
-    - 确认 scope 名与 W2 实际 publish scope 一致
-  - **Pass 条件**:10 份 blueprint 里 scope 名一致
+    - `grep -r '"@nano-agent/nacp' docs/design/pre-worker-matrix/W3-absorption-map.md docs/design/pre-worker-matrix/W3-absorption-blueprint-*.md`
+    - 确认 scope 名与 W0 shipped scope 一致
+  - **Pass 条件**:map + 2-3 份 blueprint 里 import path 与 W0 实际路径一致
   - **Evidence 附录**:grep 输出
 
-  **(d)W2 ↔ W4 — Install Reality**
-  - **检查**:W4 的 4 workers `package.json` 能否从 W2 registry 真实 install `1.4.0`
+  **(d v0.2)W2 ↔ W4 — Install Reality**
+  - **检查(v0.2 narrower)**:W4 agent-core `package.json` 能用 `workspace:*` 或 `@<scope>/nacp-core@1.4.0`(二者之一)成功 install + build
   - **执行**:
-    - 本地 fresh `git clone` + `pnpm install`(workers/ 目录)
-    - 或 W4 CI workflow 首次 run 的 install step 成功
-  - **Pass 条件**:pnpm install 成功 + 无 unresolved `@<scope>/nacp-core`
-  - **Evidence 附录**:pnpm install log + workflow run URL
+    - 若 W2 首发已完成:`cd workers/agent-core && pnpm install` + build 成功(published)
+    - 若 W2 首发未完成:同上,但 deps 用 `workspace:*`,也成功
+  - **Pass 条件**:**二者任一 path 可用**即 pass(不强制 published)
+  - **Evidence 附录**:pnpm install log + build log + 当前使用的 deps 路径说明
 
-  **(e)W3 dry-run ↔ W4 directory — Structure Compatibility**
-  - **检查**:W3 llm-wrapper dry-run 落点 `workers/agent-core/src/llm/` 与 W4 建立的 `workers/agent-core/src/` 目录结构兼容
-  - **执行**:
-    - `ls workers/agent-core/src/`
-    - 确认 `index.ts`(W4 shell)+ `llm/`(W3 dry-run)共存
-    - `pnpm -C workers/agent-core build` 两者都能 compile(W4 shell 不 import llm/;llm/ 独立 build)
-  - **Pass 条件**:两者 coexist + build 双绿
+  **(e v0.2)W3 dry-run ↔ W4 directory — Structure Compatibility**
+  - **检查(v0.2 narrower)**:
+    - **若 W3 做了 optional capability-runtime dry-run**:落点 `workers/bash-core/src/` 与 W4 建立的 `workers/bash-core/src/` 目录结构兼容;W4 shell 的 `src/index.ts` 不 import dry-run 代码(保持空壳纯净)
+    - **若 W3 未做 dry-run**:降为 "4 个 workers/<name>/ 目录结构统一" 检查
+  - **执行**(若有 dry-run):
+    - `ls workers/bash-core/src/`
+    - `pnpm -C workers/bash-core build` 两者都能 compile
+  - **Pass 条件**:两者 coexist + build 双绿;或 4 目录结构统一
   - **Evidence 附录**:ls + tsc log
 
 - **检查结果表(写入 final closure X3)**:
@@ -457,44 +463,47 @@ W5 的全部产出都是**文档 + 元文档更新**:
 - **文件位置**:`docs/issue/pre-worker-matrix/pre-worker-matrix-final-closure.md`
 - **章节建议**:
   1. **概况**:pre-worker-matrix 阶段的一句话总结 + 开始/结束时间
-  2. **本阶段 5 大产出**:
-     - 协议吸收(W0)— 新增 nacp-core 子目录 + 1.4.0 CHANGELOG + RFC 链接
-     - 新协议(W1)— workspace.fs.* / remote compact delegate / evidence forwarding 3 套 + 3 份 RFC 链接
-     - 发布管道(W2)— GitHub Packages 首发 1.4.0 + dogfood 通过 + discipline doc
-     - Absorption blueprint(W3)— 10 份 blueprint + llm-wrapper dry-run 成功 + pattern doc
-     - Workers 脚手架(W4)— `workers/` 4 worker + 真实 deploy 4 URL + matrix CI
+  2. **本阶段 6 大产出**(对应 charter r2 §11 6 条 exit criteria):
+     - 协议吸收(W0)— nacp-core / nacp-session 子目录 + 1.3.0/1.4.0 CHANGELOG + RFC 链接
+     - 方向性 RFC(W1)— workspace.fs.* / remote compact delegate / evidence forwarding 3 份 RFC(v0.3 降级为 RFC-only,不含代码)
+     - 发布管道(W2)— GitHub Packages 双包 workflow skeleton + discipline doc;**首发 1.3.0/1.4.0 为可选**(若 dogfood 过则 published,否则 workspace:* interim)
+     - Absorption map + 代表 blueprint(W3)— 全 worker 范围 absorption map + 2-3 份代表性 blueprint + pattern spec;**capability-runtime dry-run 为可选**(做则强化 blueprint,不做则明确 skip 理由)
+     - Workers 脚手架(W4)— `workers/` 目录 + agent-core 1 次 real deploy(URL 可访问) + 3 workers(bash-core/persistence-core/pool-core)dry-run build pass;matrix CI 通过
+     - 横向一致性(W5 自身)— 5 × 对角检查全 pass 或有 remediation plan
   3. **每大产出的代码锚点 + 文档锚点**(具体 file:line / URL)
   4. **横向一致性检查结果**(X2 的 5 × 结果表)
   5. **遗留 open items 清单**(按 phase 汇总;每条含 owner + 预期解决时机)
   6. **W5 自身的 phase-level meta**(作为 §N 一节,不独立 W5-closure.md)
   7. **对 worker-matrix 阶段的 handoff posture**(简述 + 指向 handoff memo)
 - **预期长度**:~300-400 行
-- **一句话收口目标**:✅ **文件 shipped + 6 大章节齐全 + 5 一致性检查结果完整 + open items 精确**
+- **一句话收口目标**:✅ **文件 shipped + 6 大章节齐全 + 6 产出对应 charter r2 §11 exit criteria + 5 一致性检查结果完整 + open items 精确**
 
 #### X4: `pre-worker-matrix-to-worker-matrix.md`
 
 - **文件位置**:`docs/handoff/pre-worker-matrix-to-worker-matrix.md`
 - **章节建议**:
-  1. **4 就绪状态总结**:
+  1. **6 就绪状态总结**(对应 charter r2 §11 exit criteria):
      | 就绪 | 状态 | 产出位置 | 消费指引 |
      |---|---|---|---|
-     | 协议就绪 | ✅ | nacp-core 1.4.0 @ GitHub Packages | import `@<scope>/nacp-core` |
-     | 发布就绪 | ✅ | workflow + discipline doc | 后续 minor bump 按 discipline |
-     | Blueprint 就绪 | ✅ | 10 blueprints + pattern doc | worker-matrix P0 按 blueprint 执行 |
-     | 脚手架就绪 | ✅ | `workers/` + 4 URLs | worker-matrix P0 直接填 src/ |
+     | 协议 topology 就绪 | ✅ | nacp-core / nacp-session 子目录 + 1.3.0/1.4.0 CHANGELOG | 参考 W0 §3.4 directory layout |
+     | Package 策略就绪 | ✅ | Tier A / Tier B 分层 + 吸收清单 | worker-matrix P0 按 Tier B 清单 absorb |
+     | Import / Publish 策略就绪 | ✅ | W4 §0.3 共识 + W2 pipeline skeleton | agent-core 已 real deploy;其余 worker 可选 workspace:* 或 published |
+     | Orphan-packages 决定就绪 | ✅ | W0 §5 deprecation matrix | worker-matrix P0 执行 packages/ 删除或保留决策 |
+     | Scaffold 就绪 | ✅ | `workers/` 目录 + agent-core 1 real URL + 3 workers dry-run | worker-matrix P0 基于 blueprint 填 src/ |
+     | Handoff 就绪 | ✅ | 本 memo + X3 closure + X5 rev 3 | charter r2 作者 1 小时内启动 rewrite |
   2. **可直接消费的 input pack**(按 worker-matrix P0 执行者视角):
-     - 开始前读:pre-worker-matrix final closure(本 X3)+ 4 份 phase design(W0/W1/W3/W4)
-     - 开始时拿:10 blueprints + pattern doc + 4 workers 目录
-     - 开始中查:current-gate-truth rev 3(X5)+ handoff 本身
+     - 开始前读:pre-worker-matrix final closure(本 X3)+ 5 份 phase design(W0/W1/W2/W3/W4)+ charter r2
+     - 开始时拿:absorption map + 2-3 代表 blueprint + pattern spec + `workers/` 目录
+     - 开始中查:current-gate-truth rev 3(X5)+ handoff 本身 + W1 3 份 RFC(若涉及跨 worker 通信)
   3. **worker-matrix charter r2 必 revise 节 checklist**:
-     - [ ] §0 背景:加 "pre-worker-matrix 4 就绪" 前提
-     - [ ] §2.1 当前起点:NACP 1.4.0 published + 4 workers shelled
-     - [ ] §4 In-Scope A.1-A.4:重写为 blueprint-driven absorption(不再说 "不建 workers/")
+     - [ ] §0 背景:加 "pre-worker-matrix 6 就绪"(协议 topology / package 策略 / import-publish / orphan 决定 / scaffold / handoff)前提
+     - [ ] §2.1 当前起点:nacp-core/nacp-session topology 就位;agent-core 1 real deploy;3 workers dry-run;published first publish 可能未完成(以实际 X3 结果为准)
+     - [ ] §4 In-Scope A.1-A.4:重写为 blueprint-driven absorption(基于 W3 map + 2-3 代表 blueprint 扩展到全 Tier B)
      - [ ] §4 Out-of-Scope A.1-A.4:移除 "不建独立 worker shell"(已 W4 做)
      - [ ] §5 方法论:加 blueprint-driven / packages-phase-out / workspace-authority 3 条
-     - [ ] §6 4 workers 章节:基于 W3 blueprints 深化;具体文件清单
+     - [ ] §6 4 workers 章节:基于 W3 代表 blueprint + pattern spec 扩展到全 Tier B;具体文件清单
      - [ ] §8 Phase 拆分:从 3 扩到 6-7(含 P0.A-P0.D 按 worker 并行 absorption + P0.E composition + P0.F cross-worker wiring + P0.G packages deprecation)
-     - [ ] §11 Exit criteria:新增 "live agent turn loop 端到端" + "Tier B packages 物理删除完成"
+     - [ ] §11 Exit criteria:新增 "live agent turn loop 端到端" + "Tier B packages 物理删除完成" + "若 W2 published 可选未完成,P0 完成 first published cut"
   4. **遗留 open items transfer list**(哪些 open items 需 worker-matrix P0 解决)
   5. **跨 phase 依赖警告**(e.g. "若 owner 在 W5 完成后延迟 r2 超 60 天,input pack 可能 stale")
   6. **Charter state 解锁说明**:pointer to X7
@@ -507,9 +516,10 @@ W5 的全部产出都是**文档 + 元文档更新**:
 - **修改点**:
   - **顶部**:加 "revision 3 (2026-XX-XX)" entry,说明 "pre-worker-matrix closure integrated"
   - **新增 §N** "Pre-Worker-Matrix Closure Integration (rev 3)":
-    - 4 就绪状态快照(简短版,引用 X4 handoff memo)
-    - NACP 1.4.0 published evidence
-    - 4 workers deploy URLs(引用 W4 closure)
+    - 6 就绪状态快照(对应 charter r2 §11 exit criteria;简短版,引用 X4 handoff memo)
+    - nacp-core / nacp-session topology 证据(目录 + CHANGELOG + RFC 链接)
+    - agent-core 1 real deploy URL + 3 workers dry-run build 证据(引用 W4 closure)
+    - W2 published first cut 状态(若已 published 则 1.3.0/1.4.0 链接;若未 published 则标 interim workspace:*)
     - X2 横向一致性检查结果摘要(引用 X3 final closure)
     - pointer to X3 + X4 作为权威
   - **原有 §3**(B9 review integrated)保持不动(那是 rev 2 的产出)
@@ -657,3 +667,29 @@ W5 是 **"pre-worker-matrix 最后一 phase + docs-only phase"**:
 | 版本 | 日期 | 修改者 | 主要变更 |
 |---|---|---|---|
 | v0.1 | 2026-04-21 | Claude Opus 4.7 | 初稿:7 个 X 功能 + 6 个 tradeoff + 横向一致性 5 对角线 + final closure/handoff 双文件结构 + 4 处 meta 更新 |
+| v0.2 | 2026-04-21 | Claude Opus 4.7 | Post-GPT-review narrowing(charter r2 scope 收窄的 downstream,W5 自身 scope 不变,只对 "被检查的产出" 做内容调整):<br/>• 顶部加修订历史<br/>• §5.1 X2 5 对角线检查内容微调<br/>• §11 exit criteria 继承 charter r2 §11 的 6 条收窄版本<br/>**净效果**:W5 自身结构(6 closure + 1 handoff + 2 meta + 1 charter flip)不变;检查内容改为"scope 收窄后的版本"适配 |
+| **v0.3** | 2026-04-21 | Claude Opus 4.7 | Post-GPT-R6-review body-level narrowing(GPT 指出 v0.2 仅改顶部,正文仍为旧 W1/W3/W4 产出做 closure):<br/>• §7.2 X3 "本阶段 5 大产出" 改为 "6 大产出"对应 charter r2 §11 exit criteria<br/>• §7.2 X4 "4 就绪" 扩为 "6 就绪" table(协议 topology / package 策略 / import-publish / orphan 决定 / scaffold / handoff)<br/>• 全文 "4 就绪 / 10 blueprint / llm-wrapper dry-run / 4 URL" 系统改为 narrower 表述(map + 2-3 代表 blueprint;capability-runtime optional dry-run;agent-core 1 real deploy + 3 dry-run;workspace:* OR published)<br/>• §7.2 X3 "一句话收口目标" 加 "6 产出对应 charter r2 §11 exit criteria"<br/>• §7.2 X4 "charter r2 必 revise 节 checklist" 中 "4 就绪" 前提改 "6 就绪";Exit criteria 加 "若 W2 first publish 可选未完成,P0 完成 first cut"<br/>• §7.2 X5 rev 3 新增 §N 描述改为 "6 就绪 + agent-core 1 real + W2 first publish 状态"<br/>• §4.1/§4.3/§6.1 取舍 6 / §6.3 三大方向杠杆 中 "4 workers / 4 URL" 改 "agent-core 1 real + 3 dry-run"<br/>**净效果**:W5 全文与 charter r2 §11 的 6 条 exit criteria 及 W1-W4 v0.2/v0.3 narrower scope 对齐;无 stale "10 blueprint / llm-wrapper / 4 URL" 引用 |
+
+### D. 修订综述
+
+**v0.2 核心调整**:W5 的 "结构不变,内容适配"。W5 作为 closure phase,其存在价值不因 scope 收窄而变;只是 "被 closure 的产出" 变轻了,所以检查与归档内容相应调整。
+
+**关键保留**:
+- Final closure + handoff 双文件结构保留
+- 横向一致性 5 对角线保留(是 W5 独有的纪律贡献)
+- Charter state flip(`plan-worker-matrix.md` → needs-rewrite-r2)保留
+- Meta-doc rev 3 保留
+
+**关键调整**:
+- 5 对角线的具体检查 predicate 适配 narrower scope(见上表)
+- Final closure 的 "6 大产出"描述对应 charter r2 §11 6 条 exit criteria(协议 topology / package 策略 / import-publish / orphan 决定 / scaffold / handoff)
+- Handoff memo 的 "6 就绪" 状态:协议 topology / Package 策略 / Import-Publish 策略 / Orphan-packages 决定 / Scaffold / Handoff(6 条对应 charter r2 §11 exit criteria,从原 4 就绪扩展)
+- §7.2 X3/X4 章节建议的产出描述与表格与窄化后的 W1(RFC-only)、W2(skeleton + optional first publish)、W3(map + 2-3 blueprint + optional capability-runtime dry-run)、W4(1 real + 3 dry-run)对齐
+
+**v0.3 后续微调**(R6 修订):
+- §5.1 X2 (c)(d)(e) 三条对角线 predicate 进一步对齐 narrower scope(W3 2-3 代表 blueprint / W4 agent-core workspace:* or published / capability-runtime dry-run 作为 dry-run 目标)
+- §7.2 X3 "本阶段产出"从 5 条改为 6 条(对应 charter r2 §11 6 条 exit);llm-wrapper 引用改为 capability-runtime;"10 份 blueprint + 真实 deploy 4 URL" 统一改为 "map + 2-3 代表 blueprint;agent-core 1 real + 3 dry-run"
+- §7.2 X4 "4 就绪状态表"扩到 6 就绪(协议 topology / package 策略 / import-publish / orphan 决定 / scaffold / handoff);charter r2 必 revise checklist 中 "4 就绪" 前提改为 "6 就绪";Exit criteria 新增 "若 W2 first publish 可选未完成,P0 完成 first cut" 一条
+- 全文其余 "4 就绪 / 10 blueprint / llm-wrapper dry-run / 4 URL" 出现处同步改为 narrower 表述
+
+**对 charter r2 §11 第 6 条(worker-matrix r2 起跑线已重写清楚)的支持**:本 W5 的 X7 charter flip + handoff memo 是新 exit 第 6 条的直接交付。

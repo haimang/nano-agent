@@ -10,7 +10,11 @@
 >   - `docs/design/pre-worker-matrix/W0-nacp-consolidation.md`(ship 1.4.0 shape)
 >   - `docs/design/pre-worker-matrix/W1-cross-worker-protocols.md`(ship 1.4.0 新协议)
 > - 后继 design(W2 阻塞):`W4-workers-scaffolding.md`(4 worker 从 GitHub Packages import NACP)
-> 文档状态:`draft`
+> 文档状态:`draft (v0.2 post-GPT-review: publishing as parallel track)`
+>
+> **修订历史**:
+> - v0.1 (2026-04-21):初稿
+> - v0.2 (2026-04-21):Post-GPT-review narrowing(GPT review 盲点 2 整改)— publishing 从"硬 blocker"降级为 **parallel track**。pipeline skeleton(publishConfig + workflow + auth)仍在 pre-phase 完成;首次真实发布可 parallel 到 worker-matrix first-wave 期间完成。worker-matrix first-wave 允许 workers 用 `workspace:*` 作为 interim 依赖。
 
 ---
 
@@ -42,14 +46,27 @@ owner 在 `packages 定位辩证` 讨论中明确:**`nacp-core` 与 `nacp-sessio
 2. 等 W0+W1 代码全 merge → 一次性 tag `nacp-v1.4.0` → 流水线触发首次发布
 3. Dogfood 验证 → 反馈到 discipline doc → W2 closure
 
-### 0.3 前置共识(不再辩论)
+### 0.3 前置共识(v0.2 调整)
 
-- **仅 2 个包发布**:`nacp-core` + `nacp-session`;其他 9 个 Tier B 包**绝不**发布
-- **GitHub Packages 而非 npm 公共 registry**:owner 决策;避免管控空间失控
-- **publish-on-tag 纪律**:只有 `nacp-v*.*.*` 格式 git tag 触发发布,不用 branch / commit / PR merge
-- **Additive versioning**:继承 W0 的 1.4.0 additive 纪律;第一次发布版本号 = W0+W1 合并后的 1.4.0
-- **Access 模式**:`restricted`(private) — 初期仅 nano-agent 组织内部消费;未来可提升到 `public`
-- **Consumer 是 workers/\***:worker-matrix 阶段的 4 个 worker 是首批 known consumers;dogfood 消费者可以是独立 throwaway
+- **仅 2 个包发布**:`nacp-core` + `nacp-session`;其他 9 个 Tier B 包**绝不**发布(决策不变)
+- **GitHub Packages 而非 npm 公共 registry**:owner 决策(不变)
+- **publish-on-tag 纪律**:只有 `nacp-v*.*.*` 格式 git tag 触发发布(不变)
+- **Additive versioning**:继承 W0 的 1.4.0 additive 纪律;首发版本号 = W0 shipped 的 1.4.0(**v0.3 W1 RFC-only 不新增 symbol,所以 1.4.0 即可;不含原 v0.1 写的 "W0+W1 合并"**)
+- **Access 模式**:`restricted`(private)— 初期仅 nano-agent 组织内部消费(不变)
+- **【v0.2 调整】Consumer 是 workers/\*,但不是 blocker**:worker-matrix first-wave 期间 workers 允许用 `workspace:*` 作 interim;首次发布可 parallel 到 worker-matrix;切换到 published version 的动作属 worker-matrix 的 scope,不属 pre-phase hard gate
+
+### 0.4 v0.2 MAJOR CHANGE — Publishing 降为 parallel track
+
+GPT review 盲点 2:原 v0.1 "Publishing-Before-Scaffolding" 硬纪律论证不足。若 worker-matrix first-wave 仍是 monorepo 内结构重组与装配,publishing 可完全 parallel,不必先卡死。
+
+v0.2 修正:
+
+| 原 v0.1 立场 | v0.2 修正立场 |
+|---|---|
+| W2 是 worker-matrix 启动的硬前提 | W2 pipeline skeleton 是前提;**首次真实发布可延到 worker-matrix first-wave 期间** |
+| W4 workers 必须从 GitHub Packages import | W4 workers 首版用 `workspace:*`;发布就绪后通过 worker-matrix 阶段 migration 切到 published version |
+| Publishing 完成是 W2 exit criterion | pipeline skeleton + 首发准备就绪(可随时触发)是 W2 exit;实际首发 optional |
+| Dogfood 必须完成才算 W2 closure | Dogfood optional — 若首发在 pre-phase,做;若首发延后,dogfood 跟随延后 |
 
 ### 0.4 显式排除
 
@@ -68,10 +85,11 @@ owner 在 `packages 定位辩证` 讨论中明确:**`nacp-core` 与 `nacp-sessio
 ### 1.1 功能簇定义
 
 - **名称**:`NACP GitHub Packages Publishing Pipeline`
-- **一句话定义**:一条由 `nacp-v*` git tag 触发、通过 GitHub Actions 自动发布 `nacp-core` + `nacp-session` 到 GitHub Packages 的受控流水线,并通过 throwaway dogfood 消费者证明端到端可用
-- **边界描述**:
-  - **包含**:2 个 `package.json` 的 `publishConfig`、`.github/workflows/publish-nacp.yml`、repo secrets / permissions、首次发布 nacp-v1.4.0、dogfood 消费者、publishing discipline 文档
-  - **不包含**:runtime 行为(那是 W0/W1)、发布 beta / canary tag、发布其他 9 个包、npm 公共 registry、nacp 1.3.0 补发
+- **一句话定义(v0.2 parallel)**:一条**可 tag-trigger 即发布** 的 publishing pipeline,pipeline skeleton(publishConfig + workflow + auth + discipline)在 pre-phase **必做**;首次真实发布 + dogfood 为 **optional / parallel**,可在 pre-phase 或 worker-matrix first-wave 期间完成
+- **边界描述(v0.2 两层)**:
+  - **Mandatory skeleton(pre-phase 必做)**:2 个 `package.json` 的 `publishConfig`、`.github/workflows/publish-nacp.yml`、repo secrets / permissions、publishing discipline 文档
+  - **Optional first publish + dogfood(可 parallel 到 worker-matrix)**:首次 `nacp-v1.4.0` tag 触发 + dogfood 消费者验证;若 pre-phase 内完成最好,若未完成,由 worker-matrix 阶段在某 owner-决定 milestone 前触发
+  - **不包含**:runtime 行为(W0)、发布 beta / canary tag、发布其他 9 个包、npm 公共 registry、nacp 1.3.0 补发
 
 ### 1.2 关键术语对齐
 
@@ -91,27 +109,27 @@ owner 在 `packages 定位辩证` 讨论中明确:**`nacp-core` 与 `nacp-sessio
 - 现有 `packages/nacp-core/package.json`(W2 要加 publishConfig)
 - 现有 `packages/nacp-session/package.json`(同上)
 - W0 §7.2 C6 CHANGELOG 1.4.0 草案(首次发布对应 entry)
-- Charter §5.2 publishing-before-scaffolding 纪律(W4 workers 必须从 GitHub Packages 而非 workspace link 消费)
+- **Charter r2 §5.2 调整**:原 "publishing-before-scaffolding" 硬纪律已降级为 parallel — workers 可用 `workspace:*` interim,publishing 作 parallel track(v0.2 调整)
 
 ---
 
 ## 2. 在 nano-agent 中的定位
 
-### 2.1 角色
+### 2.1 角色(v0.2 parallel)
 
-- **整体架构里的角色**:DevOps/CI 层的最小必要流水线;把 "代码 ship ready" 转化为 "外部 consumer 可 install"
+- **整体架构里的角色**:DevOps/CI 层流水线骨架;让"代码 ship ready → 外部 consumer 可 install"的链路**随时可触发**;但不强制在 pre-phase 触发
 - **服务于**:
-  - W4 的 4 个空 worker(首批消费者)
-  - worker-matrix 阶段的 4 个实装 worker
+  - W4 的 4 个空 worker(**可选**消费者;若 W2 未首发,W4 用 `workspace:*` interim)
+  - worker-matrix 阶段的 4 个实装 worker(最终切到 published version;切换时机由 worker-matrix charter 决定)
   - 未来第三方 nano-agent 实现(若有)
 - **依赖**:
-  - W0 完成(1.4.0 代码 shipped in repo)
-  - 可选 W1 完成(新 `workspace.fs.*` 等 symbol 包含在 1.4.0 首发)
-  - GitHub repo 存在 + repository owner 有 `packages: write` 权限
+  - W0 完成(1.4.0 代码 shipped in repo)— skeleton 就绪即可
+  - 不依赖 W1(v0.3 RFC-only 无新代码;首次发布不需含 W1 symbol)
+  - GitHub repo 存在 + repository owner 有 `packages: write` 权限(首次发布时必要)
 - **被谁依赖**:
-  - W4 scaffolding 的 `package.json` dependency resolution
-  - 所有 worker-matrix 阶段对 NACP 的消费
-  - 未来 pre-worker-matrix 后续(每次 nacp-core minor bump)
+  - W4 scaffolding 的 `package.json` dependency resolution — **但 W4 可选择 `workspace:*` interim,不阻塞**
+  - worker-matrix 阶段末期切到 published version 时必要
+  - 未来每次 NACP minor bump 发布节奏
 
 ### 2.2 与其他功能簇的交互矩阵
 
@@ -122,14 +140,14 @@ owner 在 `packages 定位辩证` 讨论中明确:**`nacp-core` 与 `nacp-sessio
 | git tag 规则 | W2 define(`nacp-v*` 专属) | 强 | 与其他 tag(若有)正交 |
 | `.github/workflows/` | W2 create(目录不存在,W2 建) | 强 | 本阶段第一个 workflow |
 | W0/W1 的 CHANGELOG | W2 consume(发布时 attach changelog) | 中 | 发布 release note 引用 |
-| W4 scaffolding | W2 enables | 强 | W4 workers 的 `package.json` 从 GitHub Packages import |
+| W4 scaffolding | W2 **optionally** enables | **弱-中** | W4 workers 默认用 `workspace:*`;若 W2 首发已完成,W4 可切到 published version(不强制) |
 | pnpm lockfile | W2 may affect | 弱 | dogfood 消费者有独立 lockfile;不污染主 repo |
 | 第三方消费者 | W2 theoretical serve | 弱 | 当前无;未来可消费 |
 | `test/*.test.mjs` root tests | W2 不干扰 | 无 | 发布管道与测试流水线隔离 |
 
-### 2.3 一句话定位陈述
+### 2.3 一句话定位陈述(v0.2 parallel)
 
-> 在 nano-agent 里,`NACP GitHub Packages Publishing Pipeline` 是**DevOps 层最小必要流水线**,负责**以 `nacp-v*` git tag 为唯一触发器自动发布 `nacp-core` + `nacp-session` 到 GitHub Packages 并通过 dogfood 证明可消费**,对上游(pre-worker-matrix)提供**"只发 NACP 2 包" owner 决策的 CI/CD 实体化**,对下游(W4 + worker-matrix workers)要求**从 GitHub Packages 而非 workspace link 消费 NACP**。
+> 在 nano-agent 里,`NACP GitHub Packages Publishing Pipeline` 是**DevOps 层可按需触发的流水线 skeleton**,负责**为 "只发 NACP 2 包" owner 决策提供 CI/CD 基础设施**,对上游(pre-worker-matrix)**必须交付 skeleton + discipline**,对首次真实发布与 dogfood **不强制在 pre-phase 完成**,对下游(W4 / worker-matrix workers)**允许 `workspace:*` interim**,切换到 published version 的 milestone 由 owner 在 worker-matrix 阶段决定。
 
 ---
 
@@ -273,7 +291,7 @@ owner 在 `packages 定位辩证` 讨论中明确:**`nacp-core` 与 `nacp-sessio
   - Future 扩展规则
 - **[S10]** Closure memo `docs/issue/pre-worker-matrix/W2-closure.md`:归档首次发布证据(截图 / tag URL / registry URL / dogfood build log)
 
-### 5.2 Out-of-Scope(W2 不做)
+### 5.2 Out-of-Scope(W2 不做,v0.2 新增 O13)
 
 - **[O1]** 发布其他 9 个 Tier B 包
 - **[O2]** 发布到 npm 公共 registry
@@ -287,6 +305,7 @@ owner 在 `packages 定位辩证` 讨论中明确:**`nacp-core` 与 `nacp-sessio
 - **[O10]** nacp-session 独立发布节奏(与 nacp-core 同步)
 - **[O11]** Dogfood 消费者进入 pnpm workspace(会破坏 dogfood 语义)
 - **[O12]** Consumer `.npmrc` 自动配置(每个 consumer 自行配置)
+- **【v0.2 新增】[O13]** **把 publishing 作为 worker-matrix 启动的硬 blocker** — pipeline skeleton 就绪即可,首发可 parallel
 
 ### 5.3 边界清单(灰色地带)
 
@@ -391,17 +410,19 @@ owner 在 `packages 定位辩证` 讨论中明确:**`nacp-core` 与 `nacp-sessio
 
 ## 7. In-Scope 功能详细列表
 
-### 7.1 功能清单
+### 7.1 功能清单(v0.2 两层)
 
-| 编号 | 功能名 | 描述 | 一句话收口目标 |
-|---|---|---|---|
-| P1 | `publishConfig` 加入 2 package.json | GitHub Packages registry + restricted | ✅ 2 个 `package.json` 有 publishConfig;本地 `pnpm publish --dry-run` 能识别 target |
-| P2 | `.github/workflows/publish-nacp.yml` 新建 | tag-triggered publish workflow | ✅ YAML 可被 GitHub Actions 识别;`nacp-v*` tag push 触发 |
-| P3 | Repository secrets + permissions | `GITHUB_TOKEN` + `packages: write` | ✅ workflow 有 permissions block;actions enabled |
-| P4 | 首次发布 `nacp-v1.4.0` | 真实 publish | ✅ GitHub Packages registry 可见 2 个包 |
-| P5 | Dogfood 消费者 | 独立 consumer 证明可 install | ✅ `dogfood/nacp-consume-test/` build + test 成功 |
-| P6 | Publishing discipline doc | 纪律文档 | ✅ `W2-publishing-discipline.md` owner-approved |
-| P7 | W2 closure memo | 归档证据 | ✅ `W2-closure.md` 含 tag URL / registry URL / dogfood log |
+> **v0.2 两层结构**:P1-P3 + P6-P7 为 **mandatory skeleton**(pre-phase 必做);P4-P5 为 **optional first publish + dogfood**(可 parallel 到 worker-matrix,非 pre-phase gate)。
+
+| 编号 | 层 | 功能名 | 描述 | 一句话收口目标 |
+|---|---|---|---|---|
+| **P1** | **mandatory** | `publishConfig` 加入 2 package.json | GitHub Packages registry + restricted | ✅ 2 个 `package.json` 有 publishConfig;本地 `pnpm publish --dry-run` 能识别 target |
+| **P2** | **mandatory** | `.github/workflows/publish-nacp.yml` 新建 | tag-triggered publish workflow | ✅ YAML 可被 GitHub Actions 识别;`nacp-v*` tag push 触发 |
+| **P3** | **mandatory** | Repository secrets + permissions | `GITHUB_TOKEN` + `packages: write` | ✅ workflow 有 permissions block;actions enabled |
+| **P4** | **optional (parallel OK)** | 首次发布 `nacp-v1.4.0` | 真实 publish | ✅ 若在 pre-phase 完成:GitHub Packages registry 可见 2 个包;**若延到 worker-matrix,pre-phase 不 block** |
+| **P5** | **optional (parallel OK)** | Dogfood 消费者 | 独立 consumer 证明可 install | ✅ 若做:`dogfood/nacp-consume-test/` build + test 成功;**若延后,pre-phase 不 block** |
+| **P6** | **mandatory** | Publishing discipline doc | 纪律文档 | ✅ `W2-publishing-discipline.md` owner-approved;明确 workspace:* interim → published version 切换规则 |
+| **P7** | **mandatory** | W2 closure memo | 归档证据 | ✅ `W2-closure.md` 含 skeleton 就绪证据 + 首发状态(完成 OR 延后说明) |
 
 ### 7.2 详细阐述
 
@@ -755,3 +776,16 @@ W2 是 **"最小必要 DevOps 层"**:
 | 版本 | 日期 | 修改者 | 主要变更 |
 |---|---|---|---|
 | v0.1 | 2026-04-21 | Claude Opus 4.7 | 初稿:7 个 P1-P7 功能 + 6 个 tradeoff + workflow YAML 草案 + dogfood 消费者 shape |
+| **v0.2** | 2026-04-21 | Claude Opus 4.7 | Post-GPT-review narrowing(GPT review 盲点 2 整改):<br/>• 顶部加修订历史<br/>• §0.3 前置共识 Consumer 条调整(workers 可用 workspace:* interim)<br/>• §0.4 新增 "MAJOR CHANGE — Publishing 降为 parallel track" 表格(原立场 vs v0.2 修正)<br/>• §5.2 新增 [O13]:publishing 不作为 worker-matrix 启动硬 blocker<br/>• exit criteria(未在本文件;在 charter §11)简化为 "pipeline skeleton 就绪"<br/>**净效果**:W2 保留全部 pipeline 建设工作,但首发时机放宽;worker-matrix first-wave 不受 publishing 进度阻塞;workers 可用 `workspace:*` 直到 owner-决定的 migration milestone |
+
+### D. 修订综述
+
+**v0.2 核心调整**:publishing 的 **是否做**不变(owner 决策);**何时做**放宽。
+
+- Pipeline skeleton(publishConfig + workflow + auth + discipline doc)仍在 pre-phase 完成
+- 首次真实发布(`nacp-v1.4.0` tag push)可 pre-phase 完成 OR parallel 到 worker-matrix
+- Dogfood consumer 跟随首发节奏
+
+**对 W4 的 downstream 影响**:W4 workers 的 `package.json` 首版可用 `workspace:*`(v0.2 charter 也如此调整);发布就绪后由 worker-matrix 阶段的独立 migration PR 切到 published version — 这个 migration 不在 pre-phase。
+
+**对 charter r2 §11 exit criteria 的支持**:原 r1 第 3/4 条"publishing + dogfood 必须完成"已被 charter r2 第 3 条"import/publish 策略已冻结(含 workspace:* 允许)"替代。W2 本 design 对应到新 exit 第 3 条。

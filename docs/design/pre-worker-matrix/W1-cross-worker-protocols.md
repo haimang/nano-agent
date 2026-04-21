@@ -9,11 +9,12 @@
 > - Tier 映射:`docs/plan-pre-worker-matrix.md` §1.3
 > - Cross-worker 交互矩阵:`docs/eval/worker-matrix/cross-worker-interaction-matrix.md`
 > - 当前 NACP contract:`docs/rfc/nacp-core-1-3-draft.md` + `packages/nacp-core/src/messages/`
-> 文档状态:`draft (v0.2 revised post-W0)`
+> 文档状态:`draft (v0.3 major downgrade post-GPT-review)`
 >
 > **修订历史:**
 > - **v0.1 (2026-04-21)**:初稿
 > - **v0.2 (2026-04-21)**:W0 design 完成后的回顾性修订 3 处 —— §4 新增 §4.5 引用 W0 sibling design pattern;§7.2 F7 的 `wrapEvidenceAsAudit` 签名基于 W0 §7.2 C3 的 `EvidenceAnchorSchema` 精确化(ctx 冗余消除);§9.3 Q1 标记为 resolved by W0 §7.2 C5。
+> - **v0.3 (2026-04-21) — MAJOR DOWNGRADE**:Post-GPT-review narrowing。GPT review 盲点 4 明确指出 3 条跨 worker 新协议属 Layer 3 远期工作(依 live loop 证据驱动),不应作为 first-wave 硬前置。本 design 整体从 "code-ship + RFC" 降级为 **"RFC-only"**:workspace.fs.* 不实装 Zod schema + 不注册 matrix + 不 ship helper;β compact delegate 确认现有 `context.compact.*` family 足够,不新增 message + 不实装 remote delegate helper;evidence forwarding 不实装 `wrapEvidenceAsAudit` / `extractEvidenceFromAudit` helpers。3 份 RFC 作为 worker-matrix 后续 phase 的 input 仍要写。所有原 v0.2 的 schema 草案保留作为 RFC 起草 reference material。
 
 ---
 
@@ -31,16 +32,34 @@ pre-worker-matrix 阶段 W0 正在把 5 类 cross-worker 契约吸收进 `nacp-c
 2. `agent.core kernel → context.core` 的 compact delegate(今天 in-process)
 3. `filesystem.core / bash.core / context.core → agent.core sink` 的 evidence 流转(今天 in-process + 默认 sink)
 
-这 3 条通讯面在 `nacp-core 1.3.0` 下都**无现成协议承载**,所以 W1 存在:**为这 3 条通讯设计并实装最小协议**,作为 `nacp-core 1.4.0` 的一部分 ship,是 worker-matrix 阶段真正独立跨 worker 的前置条件。
+这 3 条通讯面在 `nacp-core 1.3.0` 下都**无现成协议承载**(或现有 family 尚未经 live evidence 验证)。W1 v0.3 的定位:**为这 3 条通讯写 3 份方向性 RFC,冻结设计方向供 worker-matrix 后续 phase 在 live loop 证据驱动下实装**;**不在本阶段 ship 代码、不新增 message family、不实装 helper、不注册 matrix entries**。
 
-### 0.2 前置共识(不再辩论)
+**事实核查(v0.3 关键支撑)**:
+- `context.compact.*` 在 `packages/nacp-core/src/messages/context.ts:18-29` 已 shipped — β remote compact delegate 路线 **无需新 message family**,只需 RFC 层文档化跨 worker 调用 pattern
+- `audit.record` 在 `packages/nacp-core/src/messages/system.ts:10-27` 已 shipped — cross-worker evidence forwarding 可 wrap 在 audit.record 内,**无需新 evidence.* family**
+- workspace.fs.* 目前 **无** 现成协议承载 — RFC 冻结未来 shape,实装等 live loop evidence
 
-- **γ/β 路线已确定**:owner 已在讨论中选定,**不重启方向级讨论**;本 design 只负责**具体 shape 与实装细节**
-- **所有 cross-worker 通讯必须经 NACP 协议层**:不允许 "side-channel RPC" 或 "in-process shortcut"(违反 Tier A/B 分离)
-- **1.3.0 消费者零破坏**:W1 所有新增协议 additive 进 1.4.0,现有 `tool.call.*` / `context.compact.*` / `hook.*` / `audit.*` / `system.*` 契约不改
-- **Layer 6 matrix 强制**:所有新 message types 必须在 `NACP_CORE_TYPE_DIRECTION_MATRIX` 注册
-- **tenant boundary 强制**:所有新 message 必须经 `verifyTenantBoundary` gate
-- **W0 先于 W1 实装**:本 design 可先写,但实装需等 W0 的 evidence vocabulary / storage-law / cross-seam helper 落到 nacp-core 后再接
+### 0.2 前置共识(v0.3 post-GPT-review 更新)
+
+- **γ/β 路线方向已 owner 确定**:本 design **只产 RFC 冻结方向,不实装代码**(v0.3 降级)
+- **所有未来 cross-worker 通讯必须经 NACP 协议层**:不允许 "side-channel RPC"(纪律保持)
+- **1.3.0 消费者零破坏**:即使 W1 RFC-only,原则保留以防未来实装时违反
+- **Layer 6 matrix 约定**:未来实装时新 message types 必须在 matrix 注册(RFC 里描述即可,不实装)
+- **tenant boundary 强制**:未来实装时新 message 必须经 `verifyTenantBoundary` gate(同上)
+- **RFC 不依赖 W0 完成**:本 design 产 RFC 文档,可与 W0 实装并行;不阻塞 W0 进度
+
+### 0.5 v0.3 MAJOR DOWNGRADE 说明
+
+GPT review 盲点 4 明确指出:
+- workspace.fs.* 是否要成为新 NACP family,今天**证据不够**
+- `context.compact.*` 现有 family **很可能已经够 first-wave**
+- evidence forwarding 是否需要新 protocol,**未被当前运行路径证明**
+
+结合 charter r2 §0.5 分层原则(long-term vs first-wave),W1 的代码实装属 Layer 3 远期工作,应由 live loop 证据驱动。v0.3 的正确定位:
+
+> **W1 只冻结方向,不实装代码**。3 份 RFC shipped = W1 成功 exit;Zod schema / matrix registration / helper functions 推迟到 worker-matrix 后续 phase 由真实 runtime 证据驱动。
+
+本 design 原 v0.2 的 schema 草案 + helper 签名保留在 §7,但其地位从 "实装规格" 变为 **"RFC 起草的 reference material"**。
 
 ### 0.3 显式排除
 
@@ -56,11 +75,11 @@ pre-worker-matrix 阶段 W0 正在把 5 类 cross-worker 契约吸收进 `nacp-c
 
 ### 1.1 功能簇定义
 
-- **名称**:`Cross-Worker Protocol Triad`(W1 三件套)
-- **一句话定义**:为 worker-matrix 阶段的 3 对关键 cross-worker 通讯设计最小可实装的 NACP 协议扩展
-- **边界描述**:
-  - **包含**:γ workspace RPC / β remote compact delegate / cross-worker evidence forwarding 三条通讯的 wire shape + schema + matrix/role entry + delegate helper 代码
-  - **不包含**:上述通讯的 runtime 实现(那是各 worker 的 consumer 职责)、端到端 live turn loop 验证(那是 worker-matrix 的 Phase 0 exit criteria)
+- **名称**:`Cross-Worker Protocol Triad RFC Set`(W1 三份 RFC)
+- **一句话定义(v0.3 RFC-only)**:为 worker-matrix 后续 phase 的 3 对 cross-worker 通讯撰写**方向性 RFC 文档**(非代码),冻结设计方向以便 live loop evidence 驱动下的实装有 reference
+- **边界描述(v0.3)**:
+  - **包含**:3 份 RFC markdown 文档(`workspace-rpc.md` / `remote-compact-delegate.md` / `evidence-envelope-forwarding.md`);每份含:目标、shape 草案、matrix/role 预期、实装延后至 worker-matrix 后续 phase 的理由
+  - **不包含**:任何代码实装 — Zod schema 不注册、matrix entries 不 register、helper 函数不实装、contract tests 不写、1.4.0 不新增 W1 symbols
 
 ### 1.2 关键术语对齐
 
@@ -87,30 +106,29 @@ pre-worker-matrix 阶段 W0 正在把 5 类 cross-worker 契约吸收进 `nacp-c
 
 ## 2. 在 nano-agent 中的定位
 
-### 2.1 角色
+### 2.1 角色(v0.3 RFC-only)
 
-- **在整体架构里的角色**:协议层的 3 块新基石,它们让 Tier B 逻辑层 absorption 之后的 workers 仍然能**按协议组合**
-- **服务于**:worker-matrix 阶段的 4 个 first-wave worker(agent/bash/context/filesystem);间接服务于未来的 skill.core / 其他独立 worker
-- **依赖**:W0 已经把 evidence vocabulary / cross-seam anchor / storage-law 吸收进 nacp-core(W1 message 的 body schema 会 import 这些)
-- **被谁依赖**:worker-matrix P0 所有 absorption + service-binding wiring;各 worker 的测试 harness
+- **在整体架构里的角色**:**方向性 RFC 集**,冻结未来 cross-worker 协议演进的 design reference;不是协议代码
+- **服务于**:worker-matrix 后续 phase 的实装者(在 live loop evidence 驱动下把 RFC 变成真实代码时有参考基线)
+- **依赖**:W0 narrower 产出(evidence vocabulary / cross-seam anchor / storage-law 吸收后的 shape)— RFC 引用这些 shape
+- **被谁依赖**:worker-matrix 后续 phase 的 remote-split 实装(非 first-wave)
 
 ### 2.2 与其他功能簇的交互矩阵
 
 | 相邻功能簇 | 交互方向 | 耦合强度 | 说明 |
 |---|---|---|---|
-| `nacp-core` envelope validator | W1 extends | 强 | 新 message types 必须通过 Layer 1-6 全部校验 |
-| `nacp-core` matrix | W1 register | 强 | 6 条新 type 要进入 `NACP_CORE_TYPE_DIRECTION_MATRIX` |
-| `nacp-core` tenant helpers | W1 consume | 强 | 所有新 message 带 authority,verify 走统一 helper |
-| `nacp-core` evidence vocabulary(W0) | W1.3 consume | 强 | audit.record.detail 承载 evidence record shape |
-| `nacp-core` storage-law(W0) | W1.1 consume | 强 | workspace.fs.* 的 path + ref 走 storage-law |
-| `context.compact.*`(1.3 已存在) | W1.2 复用 | 强 | 不新增 message,只做 delegate 实装 |
-| `tool.call.*`(1.3 已存在) | W1 正交 | 弱 | tool.call 是 agent→capability worker;workspace.fs 是 capability→filesystem worker,不耦合 |
-| service binding transport(Cloudflare 平台) | W1 承载于 | 中 | 平台层不归我们管;W1 只规定 wire shape |
-| BoundedEvalSink(W0 吸收后) | W1.3 consume | 强 | evidence 转发终点 |
+| `nacp-core` envelope validator | W1 RFC 引用 | 弱 | RFC 描述未来 Layer 6 matrix entries 的预期 shape,不实际注册 |
+| `nacp-core` matrix | W1 RFC 预告 | 弱 | RFC 列出未来要注册的 matrix rows,不实际注册 |
+| `nacp-core` evidence vocabulary(W0 narrower) | W1 RFC 引用 | 中 | RFC 在 evidence forwarding 部分引用 W0 shipped shape |
+| `nacp-core` storage-law(W0) | W1 RFC 引用 | 中 | workspace RPC RFC 引用 storage-law builders |
+| `context.compact.*`(1.3 已存在) | W1 RFC 确认够用 | 强 | RFC 结论:现有 family 已足够承载 remote compact delegate — 不新增 |
+| `audit.record`(1.3 已存在) | W1 RFC 利用 | 强 | RFC 结论:wrap 进 audit.record 已足够承载 evidence forwarding — 不新增 family |
+| `tool.call.*`(1.3 已存在) | W1 正交 | 弱 | 不耦合 |
+| W4 workers 空壳 | 无耦合 | 无 | W1 不产代码,workers 不消费 W1 产出 |
 
-### 2.3 一句话定位陈述
+### 2.3 一句话定位陈述(v0.3 RFC-only)
 
-> 在 nano-agent 里,`Cross-Worker Protocol Triad` 是**协议扩展包**,负责**新增 workspace RPC + 复用 compact 协议做 remote delegate + 以 audit.record 包裹 evidence 转发**,对上游(worker-matrix P0)提供**3 条已冻结的跨 worker 通讯 contract**,对下游(worker 实装)要求**严格按协议 shape 生产/消费,不得 side-channel**。
+> 在 nano-agent 里,`Cross-Worker Protocol Triad RFC Set` 是**方向性协议 RFC 集(非代码)**,负责**为 3 条未来 cross-worker 通讯冻结设计方向**(workspace RPC 新增 / compact delegate 复用现有 context.compact.* / evidence 复用现有 audit.record),对上游(worker-matrix 后续 phase 实装者)提供**设计 reference baseline**,对下游(live loop evidence 驱动的实装)要求**按 RFC 冻结方向推进,不另立替代协议**。
 
 ---
 
@@ -242,20 +260,29 @@ W0 是 pre-worker-matrix 的姊妹 phase,先 W1 完成的 design `docs/design/pr
 
 ## 5. In-Scope / Out-of-Scope 判断
 
-### 5.1 In-Scope(W1 第一版必须完成)
+### 5.1 In-Scope(W1 v0.3 RFC-only 版)
 
-- **[S1]** `workspace.fs.*` NACP message family 设计 + schema(5-6 条 message types)
-- **[S2]** `workspace.fs.*` 注册进 Layer 6 matrix + role gate + body schemas
-- **[S3]** `workspace.fs.*` RFC 文档(`docs/rfc/nacp-workspace-rpc.md`)
-- **[S4]** `CompactDelegate` TS interface 冻结(在 `@nano-agent/agent-runtime-kernel`)
-- **[S5]** `createRemoteCompactDelegate(binding, ctx)` helper 实装(in `@nano-agent/nacp-core` 或 agent-runtime-kernel)
-- **[S6]** β delegate 使用 existing `context.compact.request/response`,不新增 message type
-- **[S7]** β RFC 文档(`docs/rfc/remote-compact-delegate.md`)
-- **[S8]** `wrapEvidenceAsAudit(record) → NacpEnvelope` helper
-- **[S9]** `extractEvidenceFromAudit(envelope) → EvidenceRecord | null` helper
-- **[S10]** γ RFC 文档(`docs/rfc/evidence-envelope-forwarding.md`)
-- **[S11]** 3 条协议的 root contract tests(每条至少 legality / happy path / error path 3 用例)
-- **[S12]** `nacp-core 1.4.0` ship 包含上述所有新 symbol + 新 message family
+> **v0.3 MAJOR DOWNGRADE**:原 v0.2 的 S1-S12 包含大量代码实装动作。v0.3 按 GPT review 盲点 4 整改,**只保留 RFC deliverables**;所有 Zod schema / matrix registration / helper implementation 全部**降级** OR **删除**。
+
+- **[S1]** ~~workspace.fs.* NACP message family 设计 + schema~~ → **RFC-only**:写 `docs/rfc/nacp-workspace-rpc.md` 含 shape 方向 + 未来实装规划,但**不**实装代码
+- **[S2]** ~~workspace.fs.* 注册进 Layer 6 matrix~~ → **删除**(RFC 中说明未来注册方案即可)
+- **[S3]** ✅ `docs/rfc/nacp-workspace-rpc.md` RFC 文档(保留)
+- **[S4]** ~~CompactDelegate TS interface 冻结~~ → **降级**:RFC 中描述接口预期;不在 `@nano-agent/agent-runtime-kernel` 添加实际 TS code
+- **[S5]** ~~createRemoteCompactDelegate 实装~~ → **删除**(worker-matrix 阶段 live 后再实装)
+- **[S6]** ✅ 确认 β delegate 可复用 existing `context.compact.request/response`,不新增 message type(结论写入 RFC)
+- **[S7]** ✅ `docs/rfc/remote-compact-delegate.md` RFC 文档(保留)
+- **[S8]** ~~wrapEvidenceAsAudit helper 实装~~ → **删除**(RFC 中描述 wrapping pattern;实装延后)
+- **[S9]** ~~extractEvidenceFromAudit helper 实装~~ → **删除**(同上)
+- **[S10]** ✅ `docs/rfc/evidence-envelope-forwarding.md` RFC 文档(保留)
+- **[S11]** ~~3 条协议的 root contract tests~~ → **删除**(未实装,无代码可测)
+- **[S12]** ~~nacp-core 1.4.0 ship 包含 W1 新 symbol~~ → **删除**(W0 shipped 1.4.0 不含 W1 协议代码)
+
+### 5.1.1 v0.3 In-Scope 净清单(只剩 RFC)
+
+- **[R1]** 写 3 份 RFC(`nacp-workspace-rpc.md` / `remote-compact-delegate.md` / `evidence-envelope-forwarding.md`)
+- **[R2]** 每份 RFC 含:方向描述 + 未来实装规划 + 为什么 first-wave 不需要实装
+- **[R3]** RFC 内保留原 v0.2 §7 的 shape 草案作为 reference material
+- **[R4]** 3 份 RFC 互相 cross-link + 与 W0 shipped vocabulary 对齐
 
 ### 5.2 Out-of-Scope(W1 不做)
 
@@ -343,24 +370,37 @@ W0 是 pre-worker-matrix 的姊妹 phase,先 W1 完成的 design `docs/design/pr
 
 ## 7. In-Scope 功能详细列表
 
-### 7.1 功能清单
+### 7.1 功能清单(v0.3 RFC-only 净清单)
+
+> **v0.3 重写说明**:原 v0.2 的 F1-F10 包含大量代码实装动作(Zod schema / helper / matrix registration / contract tests / 1.4.0 ship)。按 R2 整改,v0.3 的 W1 **仅**产出 3 份 RFC 文档;所有代码动作 **移除或推迟**。原 F1-F10 的详细 schema/helper 草案作为 **"superseded reference / appendix"** 保留在 §7.2,供未来实装者参考,**不**作为本阶段交付。
 
 | 编号 | 功能名 | 描述 | 一句话收口目标 |
 |---|---|---|---|
-| F1 | `workspace.fs.read.request/response` | filesystem.core 上文件读取 RPC | ✅ 能通过 service binding 完成 read,body 通过 Layer 4/6 验证 |
-| F2 | `workspace.fs.write.request/response` | filesystem.core 上文件写入 RPC | ✅ 同上,支持 readonly mount reject |
-| F3 | `workspace.fs.list.request/response` | 目录列出 RPC | ✅ 同上,返回 file entries |
-| F4 | `workspace.fs.stat.request/response` | 文件元数据 RPC | ✅ 同上,`null` 用 error response 表达 |
-| F5 | `workspace.fs.delete.request/response` | 文件删除 RPC | ✅ 同上,支持 readonly mount reject |
-| F6 | `CompactDelegate` TS interface + `createRemoteCompactDelegate()` helper | β 路线 remote compact wiring | ✅ kernel 可无感知切换 local / remote delegate |
-| F7 | `wrapEvidenceAsAudit` / `extractEvidenceFromAudit` helpers | cross-worker evidence envelope forwarding | ✅ 4 类 evidence record 可双向 round-trip |
-| F8 | 3 条协议的 matrix + role gate registration | Layer 6 强制 | ✅ 非法 `(type, delivery_kind)` 被 reject |
-| F9 | 3 份 RFC 文档 | 正式协议文档 | ✅ owner-approved 作为 1.4.0 一部分 |
-| F10 | root contract tests | W1 整体 contract 守护 | ✅ 每条协议 legality + happy + error 3 用例 |
+| **R1** | workspace RPC RFC | 写 `docs/rfc/nacp-workspace-rpc.md`;含未来 `workspace.fs.*` family 方向(read/write/list/stat/delete 5 ops),但**不实装** | ✅ RFC markdown shipped + owner-reviewed;**无代码** |
+| **R2** | remote compact delegate RFC | 写 `docs/rfc/remote-compact-delegate.md`;结论:复用 `context.compact.*` 现有 family 足够,未来 `createRemoteCompactDelegate` helper 实装由 worker-matrix 后续 phase 完成 | ✅ RFC markdown shipped + owner-reviewed;**不新增 message family** |
+| **R3** | evidence forwarding RFC | 写 `docs/rfc/evidence-envelope-forwarding.md`;结论:wrap 进现有 `audit.record` envelope 足够,未来 `wrapEvidenceAsAudit` helper 实装推迟 | ✅ RFC markdown shipped + owner-reviewed;**不新增 family / helper** |
+| **R4** | 3 份 RFC 相互 cross-link | RFC 互相引用 + 与 W0 shipped vocabulary 对齐 | ✅ 3 份 RFC 内部引用链完整;所有对 W0 shape 的 reference 准确 |
 
-### 7.2 详细阐述
+**以下 v0.2 的 F1-F10 全部移除作为本阶段 in-scope** — 保留在 §7.2 作 superseded reference:
 
-#### F1: `workspace.fs.read.request` / `workspace.fs.read.response`
+| 原 F 编号 | v0.2 状态 | v0.3 状态 |
+|---|---|---|
+| F1-F5(workspace.fs.* 5 ops schema 实装)| in-scope | **superseded** — reference material only;实装归 worker-matrix 后续 phase |
+| F6(CompactDelegate + createRemoteCompactDelegate)| in-scope | **superseded** — RFC 确认现有 family 足够;helper 实装推迟 |
+| F7(wrapEvidenceAsAudit / extractEvidenceFromAudit helpers)| in-scope | **superseded** — helper 实装推迟 |
+| F8(matrix + role gate registration)| in-scope | **superseded** — 无新代码可注册 |
+| F9(3 份 RFC 文档)| in-scope | ✅ **保留为 R1-R3**(本阶段唯一交付) |
+| F10(root contract tests)| in-scope | **superseded** — 无代码可测 |
+
+### 7.2 详细阐述 — **v0.3 标注为 SUPERSEDED REFERENCE / APPENDIX**
+
+> **v0.3 重要说明**:以下 F1-F10 各节内容**不是本阶段交付**,而是为未来实装者保留的 **design reference material**。本阶段唯一交付是 3 份 RFC markdown(对应上表 R1-R3)。每个 F 节的 schema 草案 / helper 签名 / contract test 设想将被 RFC 引用,但**不在本阶段 ship 代码**。
+>
+> ⚠️ 若 worker-matrix 阶段决定实装这些,实装者应基于**当时的 live loop evidence** 重新 review 下列草案,不得直接视为已 frozen specification。
+
+---
+
+#### F1 (superseded reference): `workspace.fs.read.request` / `workspace.fs.read.response`
 
 - **输入(request body)**:
   ```ts
@@ -397,7 +437,7 @@ W0 是 pre-worker-matrix 的姊妹 phase,先 W1 完成的 design `docs/design/pr
   - response:producer `capability`(filesystem.core role = capability)
 - **一句话收口目标**:✅ **schema 冻结 + matrix/role 注册 + 独立 unit test 3 用例**
 
-#### F2: `workspace.fs.write.request` / `workspace.fs.write.response`
+#### F2 (superseded reference): `workspace.fs.write.request` / `workspace.fs.write.response`
 
 - **输入(request body)**:
   ```ts
@@ -424,7 +464,7 @@ W0 是 pre-worker-matrix 的姊妹 phase,先 W1 完成的 design `docs/design/pr
   - response:producer `capability`
 - **一句话收口目标**:✅ **schema + matrix/role + test 3 用例(happy / readonly / no-mount)**
 
-#### F3: `workspace.fs.list.request` / `workspace.fs.list.response`
+#### F3 (superseded reference): `workspace.fs.list.request` / `workspace.fs.list.response`
 
 - **输入**:
   ```ts
@@ -453,19 +493,19 @@ W0 是 pre-worker-matrix 的姊妹 phase,先 W1 完成的 design `docs/design/pr
   ```
 - **一句话收口目标**:✅ **schema + matrix/role + test(flat / recursive / empty-dir 3 用例)**
 
-#### F4: `workspace.fs.stat.request` / `workspace.fs.stat.response`
+#### F4 (superseded reference): `workspace.fs.stat.request` / `workspace.fs.stat.response`
 
 - **输入**:`{path: string}`
 - **输出**:`{status, entry?: FileEntry, error?}`(not-found 走 `error.code: "WORKSPACE_NOT_FOUND"`)
 - **一句话收口目标**:✅ **schema + matrix/role + test(exist / not-found 2 用例)**
 
-#### F5: `workspace.fs.delete.request` / `workspace.fs.delete.response`
+#### F5 (superseded reference): `workspace.fs.delete.request` / `workspace.fs.delete.response`
 
 - **输入**:`{path: string}`
 - **输出**:`{status, deleted?: boolean, error?}`
 - **一句话收口目标**:✅ **schema + matrix/role + test(happy / readonly / not-found 3 用例)**
 
-#### F6: `CompactDelegate` interface + `createRemoteCompactDelegate`
+#### F6 (superseded reference): `CompactDelegate` interface + `createRemoteCompactDelegate`
 
 - **CompactDelegate TS interface**(在 `@nano-agent/agent-runtime-kernel`):
   ```ts
@@ -486,7 +526,7 @@ W0 是 pre-worker-matrix 的姊妹 phase,先 W1 完成的 design `docs/design/pr
   - 错误:response `status: "error"` → throw `CompactFailedError(code, message)`
 - **一句话收口目标**:✅ **interface 冻结 + helper 可测 + 本地/远端 dual implementation unit test pass**
 
-#### F7: `wrapEvidenceAsAudit` / `extractEvidenceFromAudit`
+#### F7 (superseded reference): `wrapEvidenceAsAudit` / `extractEvidenceFromAudit`
 
 > **v0.2 修订**:原 ctx 参数与 `EvidenceRecord.anchor`(W0 §7.2 C3 shipped 的 `EvidenceAnchorSchema` 内含 `traceUuid / sessionUuid / teamUuid / sourceRole / sourceKey? / turnUuid? / timestamp`)冗余。v0.2 把 `ctx` 收窄为 `WrapEvidenceAsAuditOptions`,只承载**不能从 anchor 派生**的字段:envelope-level message_uuid / sent_at + authority 补足字段。
 
@@ -540,7 +580,7 @@ W0 是 pre-worker-matrix 的姊妹 phase,先 W1 完成的 design `docs/design/pr
   - **约束**:round-trip 可逆 — `extractEvidenceFromAudit(wrapEvidenceAsAudit(record, opts))` 必须返回与 `record` deeply equal 的 EvidenceRecord
 - **一句话收口目标**:✅ **4 类 evidence record 双向 round-trip test pass;非 evidence 的 audit.record 返回 null;签名无 ctx 冗余(anchor 已承载跨 worker 身份)**
 
-#### F8-F10:其他(Matrix registration / RFC / tests)
+#### F8-F10 (superseded reference):其他(Matrix registration / RFC / tests)
 
 - **F8**:在 `nacp-core/src/type-direction-matrix.ts` 的 `NACP_CORE_TYPE_DIRECTION_MATRIX` 加 5 条 `workspace.fs.*.request = command` + 5 条 `workspace.fs.*.response = [response, error]`
 - **F9**:3 份 RFC:
@@ -688,3 +728,12 @@ W1 的 cross-worker protocol triad 是 nano-agent 从"单 worker in-process" 走
 |---|---|---|---|
 | v0.1 | 2026-04-21 | Claude Opus 4.7 | 初稿:3 条协议的 schema + matrix/role + helper + RFC 规划 |
 | v0.2 | 2026-04-21 | Claude Opus 4.7 | W0 design 完成后的回顾性修订:§4 新增 §4.5 sibling W0 pattern 借鉴;§7.2 F7 `wrapEvidenceAsAudit` 签名从 `(record, ctx)` 精确化为 `(record, options)` — ctx 的 trace/session/team 字段从 record.anchor 派生,options 只承载 envelope_message_uuid / envelope_sent_at / authority 补足字段;§9.3 Q1 标记为 resolved by W0 §7.2 C5 |
+| **v0.3** | 2026-04-21 | Claude Opus 4.7 | **MAJOR DOWNGRADE — Post-GPT-review narrowing**(GPT review 盲点 4 整改)。将整份 design 从 "code-ship + RFC" 降级为 **"RFC-only"**:<br/>• §0.2 前置共识调整:本 design 只产 RFC,不实装代码<br/>• §0.5 新增 "MAJOR DOWNGRADE 说明" — 解释 Layer 3 远期工作不应前移<br/>• §5.1 S1-S12 逐条降级/删除(S3/S6/S7/S10 保留,其他删或降级)<br/>• §5.1.1 新增 "v0.3 In-Scope 净清单" — 只剩 R1-R4 共 4 条 RFC-focused items<br/>• §7 功能详述保留作为 RFC 起草 reference material,**不作为实装规格**<br/>• §9.1 功能簇画像:代码量级从 ~500 行 TS 降为 ~0 行 TS + ~900-1200 行 RFC 文档<br/>**净效果**:W1 工作量减少 ~75%(仅留 RFC 写作);worker-matrix first-wave 不再被阻塞在 3 条新协议实装上;实装延后到 live loop 证据驱动的未来 phase |
+
+### D. 修订综述
+
+**v0.3 核心原则**(post-GPT-review):Pre-worker-matrix 的 W1 责任是 **冻结未来跨 worker 协议的方向**(写 RFC),**不是**提前把代码写完。Layer 3 远期工作(workspace.fs.* 实装、remote compact delegate 实装、evidence forwarding helper)由 worker-matrix 后续 phase 的 live loop 证据驱动。
+
+**本 design 的 v0.2 精确化工作**(`wrapEvidenceAsAudit` 签名设计)作为 **RFC-quality reference material** 保留在 §7.2 F7;未来实装时可直接采用。但本阶段不 ship TS code。
+
+**W1 在新 pre-worker-matrix 的 charter r2 里的角色**:§4.1 B 降级为 3 份 RFC;§11 exit criteria 第 5 条中 "方向性 RFC × 3 shipped" 是本 design 的唯一硬交付。
