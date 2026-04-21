@@ -141,6 +141,9 @@ importers:
 
   packages/session-do-runtime:
     dependencies:
+      '@nano-agent/nacp-core':
+        specifier: workspace:*
+        version: link:../nacp-core
       '@nano-agent/nacp-session':
         specifier: workspace:*
         version: link:../nacp-session
