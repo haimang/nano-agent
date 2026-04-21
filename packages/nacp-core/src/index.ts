@@ -96,6 +96,24 @@ export {
 } from "./state-machine.js";
 export type { SessionPhase, RoleRequirement } from "./state-machine.js";
 
+// ── Type × Direction matrix (1.3) ──
+export {
+  NACP_CORE_TYPE_DIRECTION_MATRIX,
+  isLegalCoreDirection,
+} from "./type-direction-matrix.js";
+
+// ── Standard error body (1.3) ──
+export {
+  NacpErrorBodySchema,
+  wrapAsError,
+  NACP_ERROR_BODY_VERBS,
+} from "./error-body.js";
+export type {
+  NacpErrorBody,
+  WrapAsErrorInput,
+  WrapAsErrorOverrides,
+} from "./error-body.js";
+
 // ── Tenancy ──
 export {
   verifyTenantBoundary,

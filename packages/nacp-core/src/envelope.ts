@@ -13,6 +13,9 @@ import { z } from "zod";
 import { NacpValidationError } from "./errors.js";
 import { NACP_VERSION, NACP_VERSION_COMPAT, cmpSemver } from "./version.js";
 import { migrate_v1_0_to_v1_1 } from "./compat/migrations.js";
+import {
+  NACP_CORE_TYPE_DIRECTION_MATRIX,
+} from "./type-direction-matrix.js";
 
 // ═══════════════════════════════════════════════════════════════════
 // §1 — Primitive schemas
@@ -268,7 +271,7 @@ export function registerMessageType(
 }
 
 // ═══════════════════════════════════════════════════════════════════
-// §10 — Validate (5 layers) + Encode / Decode
+// §10 — Validate (6 layers) + Encode / Decode
 // ═══════════════════════════════════════════════════════════════════
 
 const MAX_ENVELOPE_BYTES = 96 * 1024;
@@ -352,6 +355,19 @@ export function validateEnvelope(raw: unknown): NacpEnvelope {
         `producer_role '${env.header.producer_role}' not allowed for '${env.header.message_type}'. Allowed: ${[...allowedRoles].join(", ")}`,
       ],
       "NACP_PRODUCER_ROLE_MISMATCH",
+    );
+  }
+
+  // Layer 6: (message_type × delivery_kind) matrix — B9 / RFC §2.
+  // Fail-closed for core-registered types, fail-open for unknown types
+  // (session.* or future orchestrator.* get their own matrix consumers).
+  const allowedDirections = NACP_CORE_TYPE_DIRECTION_MATRIX[env.header.message_type];
+  if (allowedDirections && !allowedDirections.has(env.header.delivery_kind)) {
+    throw new NacpValidationError(
+      [
+        `delivery_kind '${env.header.delivery_kind}' is not legal for '${env.header.message_type}'. Allowed: ${[...allowedDirections].join(", ")}`,
+      ],
+      "NACP_TYPE_DIRECTION_MISMATCH",
     );
   }
 

@@ -161,7 +161,8 @@ describe("compat/migrations", () => {
     it("accepts a legacy 1.0 payload through the Layer-0 compat shim", () => {
       const legacy = makeLegacyV10Envelope();
       const validated = validateEnvelope(legacy);
-      expect(validated.header.schema_version).toBe(NACP_VERSION);
+      // migrate_v1_0_to_v1_1 targets the 1.1 floor, not the current NACP_VERSION.
+      expect(validated.header.schema_version).toBe("1.1.0");
       expect(validated.header.producer_key).toBe("nano-agent.session.do@v1");
       expect(validated.authority.stamped_by_key).toBe("nano-agent.platform.ingress@v1");
       expect(validated.trace.trace_uuid).toBe(UUID);

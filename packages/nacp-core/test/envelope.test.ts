@@ -471,7 +471,8 @@ describe("validateEnvelope", () => {
       env.trace.trace_id = env.trace.trace_uuid;
       delete env.trace.trace_uuid;
       const result = validateEnvelope(env);
-      expect(result.header.schema_version).toBe(NACP_VERSION);
+      // migrate_v1_0_to_v1_1 targets the 1.1 floor, not the current NACP_VERSION.
+      expect(result.header.schema_version).toBe("1.1.0");
       expect(result.header.producer_key).toBe(VALID_PRODUCER_ID);
     });
   });

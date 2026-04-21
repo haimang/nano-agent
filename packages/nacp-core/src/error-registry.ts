@@ -62,6 +62,7 @@ def("NACP_VALIDATION_FAILED", "validation", false, "envelope schema validation f
 def("NACP_UNKNOWN_MESSAGE_TYPE", "validation", false, "message_type not in registry");
 def("NACP_SIZE_EXCEEDED", "validation", false, "envelope exceeds 96KB, use refs");
 def("NACP_VERSION_INCOMPATIBLE", "validation", false, "schema_version below compat floor");
+def("NACP_TYPE_DIRECTION_MISMATCH", "validation", false, "delivery_kind not legal for message_type (see NACP 1.3 matrix)");
 
 // ── Runtime delivery ──
 def("NACP_DEADLINE_EXCEEDED", "transient", false, "message past deadline_ms");

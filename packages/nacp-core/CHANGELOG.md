@@ -1,5 +1,29 @@
 # Changelog — @nano-agent/nacp-core
 
+## 1.3.0 — 2026-04-21 (B9 — contract freeze pre worker-matrix)
+
+Per `docs/rfc/nacp-core-1-3-draft.md`. Zero breaking change. Version jumps over `1.2.0` because that semver tag is owned by the B6-reconciled "no-schema-delta" RFC (`docs/rfc/nacp-core-1-2-0.md`); reusing it would create ambiguity between "B6 frozen decision" and "B9 shipped delta."
+
+### Added
+
+- `NACP_CORE_TYPE_DIRECTION_MATRIX` (`src/type-direction-matrix.ts`) — `Record<string, Set<NacpDeliveryKind>>` covering all 11 core-registered message types. Conservative first-publish: every `(type, delivery_kind)` combination present in shipped test fixtures or source paths is legal.
+- `isLegalCoreDirection(type, kind)` helper — fail-open for unknown types, fail-closed for known.
+- `validateEnvelope()` **Layer 6**: `(message_type × delivery_kind)` matrix check. Throws `NacpValidationError` with code `NACP_TYPE_DIRECTION_MISMATCH` on illegal combination.
+- `NacpErrorBodySchema` (`src/error-body.ts`) — standard per-verb error body shape. **Per-verb response shape migration (`tool.call.response`, `context.compact.response`, `skill.invoke.response`) is explicitly out-of-scope** and scheduled as a separate, owner-approved PR (RFC §3.2).
+- `NACP_ERROR_BODY_VERBS: ReadonlySet<string>` registry — the canonical list of verbs that declare their body schema as `NacpErrorBodySchema`. **Empty at 1.3.0**; populated by the migration PR (RFC §3.3).
+- `wrapAsError()` **provisional** helper — constructs error-shaped envelopes. Honors an optional `overrides.target_message_type`. Does NOT self-validate; its output will not pass `validateEnvelope()` against existing shipped verbs until the per-verb migration PR lands. Consumer guidance is in the RFC §3.1.1 table.
+- `error-registry.ts`: new error code `NACP_TYPE_DIRECTION_MISMATCH`.
+
+### Changed
+
+- `NACP_VERSION` bumped `1.1.0 → 1.3.0`. `NACP_VERSION_COMPAT` unchanged (`1.0.0`) — existing v1.0/v1.1 consumers continue to work without migration.
+- `validateEnvelope()` comment: "5 layers" → "6 layers."
+
+### Not shipped (deferred)
+
+- `LEGACY_ALIAS_REGISTRY` runtime machinery (RFC §4.3) — all current verbs already comply with `<namespace>.<verb>` law; a runtime alias layer would have zero consumers today.
+- Per-verb response body migration to `NacpErrorBodySchema` (RFC §3.2/§3.3) — requires a separate PR touching every `status`-dispatching consumer.
+
 ## 2026-04-20 — B6 reconciliation (stay at 1.1.0; "1.2.0" RFC closes as no-schema-delta)
 
 Per `docs/rfc/nacp-core-1-2-0.md` (B6-reconciled 2026-04-20), every

@@ -13,6 +13,7 @@ import {
   BODY_SCHEMAS,
   BODY_REQUIRED,
   ROLE_GATE,
+  NACP_CORE_TYPE_DIRECTION_MATRIX,
 } from "../../src/index.js";
 import { NacpValidationError } from "../../src/errors.js";
 import { NACP_VERSION } from "../../src/version.js";
@@ -21,17 +22,29 @@ const UUID = "11111111-1111-1111-1111-111111111111";
 const TEAM = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
 const SENT = "2026-04-16T00:00:00.000+00:00";
 
+/**
+ * B9 / 1.3: delivery_kind is now Layer-6 validated. Tests pick the first
+ * legal delivery_kind from the matrix for each message_type, unless
+ * overridden explicitly.
+ */
+function pickLegalDeliveryKind(messageType: string): string {
+  const allowed = NACP_CORE_TYPE_DIRECTION_MATRIX[messageType];
+  if (!allowed) return "command";
+  return [...allowed][0]!;
+}
+
 function makeEnv(
   messageType: string,
   producerRole: string,
   body: unknown,
+  deliveryKind: string = pickLegalDeliveryKind(messageType),
 ) {
   return {
     header: {
       schema_version: NACP_VERSION,
       message_uuid: UUID,
       message_type: messageType,
-      delivery_kind: "command",
+      delivery_kind: deliveryKind,
       sent_at: SENT,
       producer_role: producerRole,
       producer_key: `nano-agent.${producerRole}.test@v1`,
