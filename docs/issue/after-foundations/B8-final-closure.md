@@ -42,15 +42,19 @@ That produced one explicit B8 rule:
 |---|---|---|
 | `F03` cross-colo KV read-after-write | `still-open` | yes |
 | `F09` owner-URL high-volume curl | `still-open` | yes |
+| proposed `B9` nacp-1.3 contract freeze (`C / D / E / F-new`) | pre-phase-0 prerequisite | yes |
+| tenant wrapper plumbing (`verifyTenantBoundary` + `tenantDoStorage*`) | shipped-but-unused in current host runtime | yes |
+| upstream `initial_context` interface | wire hook shipped, schema/consumer contract still implicit | yes |
 | B5-B6 review findings | addressed before B7 entry | no blocker carried |
 | B7 review concerns outside the conservative subset | excluded from B8 consumption | no blocker carried beyond the two gates |
+| B8 docs review (`B8-docs-reviewed-by-opus.md`) | absorbed into the current handoff pack | no unresolved B8-review finding remains |
 
 ---
 
 ## 4. Handoff readiness checklist
 
 - [x] truth inventory exists and is cited as B8’s single source
-- [x] handoff memo ships with all 10 required sections
+- [x] handoff memo keeps the 10 required sections and adds the post-review `§11–§13` handoff addenda
 - [x] naming proposal starts with an explicit non-binding warning
 - [x] `agent.core ≠ binding slot` remains explicit
 - [x] wrangler template carries B1/B7 evidence-backed comments
@@ -72,4 +76,4 @@ After-foundations now has a proper handoff pack:
 4. two deploy-shaped templates,
 5. and a terminal whole-phase closure doc.
 
-Worker-matrix charter work may proceed, but it must continue to treat `F03` and `F09` as open gates.
+Worker-matrix charter work may proceed, but Phase 0 should still wait for the proposed B9 nacp-1.3 freeze and keep tenant plumbing / `initial_context` activation explicit alongside the two open gates.

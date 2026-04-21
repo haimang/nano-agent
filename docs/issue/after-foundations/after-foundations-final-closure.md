@@ -46,7 +46,7 @@ Interpretation:
 | B8 handoff / template / closure docs | 8 | `docs/handoff/*`, `docs/templates/{wrangler-worker.toml,composition-factory.ts}`, `docs/issue/after-foundations/B8-*.md` |
 | round-2 deployed workers | 3 | `nano-agent-spike-do-storage-r2`, `nano-agent-spike-binding-pair-a-r2`, `nano-agent-spike-binding-pair-b-r2` |
 | round-2 raw evidence files | 10+ | `spikes/round-2-integrated/**/*.out/*` |
-| major GPT review artifacts | 3 rounds | B1 dual-track audit, `B5-B6-reviewed-by-GPT.md`, `B7-reviewed-by-GPT.md` |
+| major GPT/Opus review artifacts | 4 rounds | B1 dual-track audit, `B5-B6-reviewed-by-GPT.md`, `B7-reviewed-by-GPT.md`, `B8-docs-reviewed-by-opus.md` |
 
 Grouped total is comfortably above the “40+ artifacts” threshold the B8 plan wanted to capture.
 
@@ -65,6 +65,10 @@ Hard handoff rule:
 
 > Worker matrix may proceed, but it must keep the two open gates visible rather than silently inheriting assumptions from same-colo KV or ownerless curl stress.
 
+Additional handoff-time inventory that is **not** a B1/B7 finding, but must remain visible:
+
+- `tenant-wrapper-plumbing` = `shipped-but-unused` at after-foundations exit (`verifyTenantBoundary` / `tenantDoStorage*` exist, but current host runtime has not wired them yet).
+
 ---
 
 ## 4. Review outcome summary
@@ -74,11 +78,14 @@ Hard handoff rule:
 | B1 code/docs audit | B1 downgraded to `ready-with-fixes` | caveats were recorded and the real round-2 follow-ups were consumed by B7 |
 | B5-B6 review | `changes-requested` | findings closed before B7 entry (`BoundedEvalSink`, `Setup/SessionStart`, permission carriers, inspector contract note) |
 | B7 review | `changes-requested` | B8 handoff consumes only the conservative subset proven by current code + current `.out` evidence |
+| B8 docs review (Opus) | `changes-requested` | `R1–R7` were absorbed into the current handoff pack; the remaining blocker is the proposed B9 nacp-1.3 freeze, not an unresolved B8-doc gap |
 
 Net result:
 
 - no shipped-package blocker remains open at after-foundations exit;
-- only the two explicit owner/platform gates remain open.
+- only the two explicit owner/platform gates remain open as findings;
+- one additional handoff inventory item remains visible: `tenant-wrapper-plumbing` is shipped-but-unused;
+- worker-matrix Phase 0 should still wait for the proposed B9 nacp-1.3 freeze.
 
 ---
 
@@ -103,12 +110,14 @@ Worker-matrix-consumable numbers frozen at exit:
 
 ## 6. Readiness statement for worker matrix
 
-Worker-matrix charter work may start **now**, provided it keeps these four constraints explicit:
+Worker-matrix charter work may start **now**, but worker-matrix **Phase 0** should wait for the proposed B9 nacp-1.3 freeze, and the next phase should keep these six constraints explicit:
 
 1. do not treat `agent.core` as a binding slot;
 2. do not silently reopen B2-B7 substrate decisions already frozen by shipped packages and live evidence;
 3. do not erase the two open gates (`F03`, `F09`);
 4. start from the B8 handoff pack, not from scattered phase docs.
+5. treat the proposed B9 `nacp-1.3` contract freeze (`C / D / E / F-new`) as pre-phase-0 work, not as optional cleanup;
+6. design `agent.core` as an orchestrator-ready runtime that consumes upstream `session.start.body.initial_context` rather than re-owning user-memory / intent-routing concerns.
 
 Recommended kickoff inputs:
 

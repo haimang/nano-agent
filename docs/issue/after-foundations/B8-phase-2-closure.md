@@ -9,7 +9,7 @@
 
 ## 0. One-sentence verdict
 
-Phase 2 is closed: B8 now has a single worker-matrix memo with all 10 required sections, plus a separate naming proposal that stays explicitly non-binding and preserves the critical `agent.core ≠ binding slot` rule.
+Phase 2 is closed: B8 now has a single worker-matrix memo that preserves all 10 required sections and adds 3 post-review handoff sections, plus a separate naming proposal that stays explicitly non-binding and preserves the critical `agent.core ≠ binding slot` rule.
 
 ---
 
@@ -39,13 +39,13 @@ This phase kept four rules explicit:
 
 | check | result |
 |---|---|
-| `grep '^## §' docs/handoff/after-foundations-to-worker-matrix.md \| wc -l` | `10` |
+| `grep '^## §' docs/handoff/after-foundations-to-worker-matrix.md \| wc -l` | `13` |
 | `grep -ciE 'proposal\|not a frozen\|not binding' docs/handoff/next-phase-worker-naming-proposal.md` | `6` |
 | placeholder grep on the two B8 handoff files | empty |
 
 Interpretation:
 
-- the memo really does ship with the required 10-section structure;
+- the memo keeps the required `§1–§10` structure and now adds `§11–§13` as post-review handoff addenda;
 - the naming proposal repeats the non-binding warning enough times to reduce freeze-misread risk;
 - no leftover `{PLACEHOLDER}` tokens remain in the two handoff docs.
 
