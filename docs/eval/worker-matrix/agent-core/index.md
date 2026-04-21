@@ -108,8 +108,8 @@
 | `agent.core` 的身份 | **host worker，不是 binding slot** | `docs/handoff/after-foundations-to-worker-matrix.md:92-135`; `packages/session-do-runtime/src/worker.ts:72-88`; `packages/session-do-runtime/src/env.ts:72-82` |
 | host shell 是否已存在 | **已存在，而且真实宿主是 `NanoSessionDO`** | `packages/session-do-runtime/src/do/nano-session-do.ts:130-280`; `packages/session-do-runtime/test/worker.test.ts:30-65` |
 | client-facing 协议谁负责 | **`nacp-session` 负责 session profile；`nacp-core` 不是替身** | `packages/nacp-session/src/ingress.ts:25-74`; `packages/nacp-session/src/frame.ts:66-136`; `packages/nacp-core/src/envelope.ts:1-10, 279-372` |
-| `initial_context` 的现状 | **wire contract 已冻结，但 host 侧尚无真实 consumer** | `packages/nacp-session/src/upstream-context.ts:1-42`; `packages/nacp-session/src/messages.ts:17-25`; `packages/session-do-runtime/src/do/nano-session-do.ts:608-645` |
-| 当前最大技术债 | **默认 host 能跑 session shell，但还没有默认跑出真实 agent turn loop** | `packages/session-do-runtime/src/composition.ts:82-106`; `packages/session-do-runtime/src/remote-bindings.ts:385-395`; `packages/session-do-runtime/src/do/nano-session-do.ts:906-921`; `packages/agent-runtime-kernel/src/runner.ts:35-111`; `packages/llm-wrapper/src/executor.ts:44-198` |
+| `initial_context` 的现状 | **wire contract 已冻结,consumer 归 `agent.core` (host),但尚未实装**。责任划分:`nacp-session` 负责 shape,`context.core` 提供 `assembler.appendInitialContextLayer(...)` 等 API,**但由 `NanoSessionDO.dispatchAdmissibleFrame` 在处理 `session.start` 时负责调用**(host 为 upstream→substrate 的调度者)。详见 `context-core/index.md §6.3`。 | `packages/nacp-session/src/upstream-context.ts:1-42`; `packages/nacp-session/src/messages.ts:17-25`; `packages/session-do-runtime/src/do/nano-session-do.ts:608-645` (当前只抽 turn_input,未消费 initial_context — 这是 Phase 0 必补点) |
+| 当前最大技术债 = **worker-matrix Phase 0 的唯一必要里程碑** | **默认 composition 必须把 `KernelRunner + LLMExecutor + (CAPABILITY_WORKER 下的 capability transport)` 装成真实 agent turn loop**。这不是"改进项"或"可选加强",而是 **Phase 0 退出的必要且充分条件**;在此之前 host 只能跑 session shell,不能跑真正的 agent。具体落点:`packages/session-do-runtime/src/composition.ts::createDefaultCompositionFactory()` 从当前 all-undefined 状态升级为实例化 kernel + llm + capability。 | `packages/session-do-runtime/src/composition.ts:82-106` (当前默认工厂返回全 undefined——必须升级为真实装配); `packages/session-do-runtime/src/remote-bindings.ts:385-395` (remote 工厂仍未接 kernel/workspace/eval/storage——同样必须升级); `packages/session-do-runtime/src/do/nano-session-do.ts:906-921` (kernel 缺席时当前 honest degrade——Phase 0 后不应再触发此路径); `packages/agent-runtime-kernel/src/runner.ts:35-111` (Kernel 已真实实现,等着被装); `packages/llm-wrapper/src/executor.ts:44-198` (LLMExecutor 已真实实现,等着被装) |
 
 ---
 
@@ -131,13 +131,13 @@
 
 ## 6. 当前仍然开放的关键缺口
 
-| 缺口 | 当前状态 | 是否阻止 `agent.core` 作为 first-wave 研究对象 |
-|---|---|---|
-| 默认 composition 未实例化 `KernelRunner` | 仍未接通 | **不阻止研究，但阻止“已完成”判断** |
-| 默认 composition 未实例化真实 `LLMExecutor` | 仍未接通 | 同上 |
-| `initial_context` 只有 schema、没有 consumer | 仍未接通 | **不阻止 host 定位冻结，但阻止 upstream integration 宣称完成** |
-| `TEAM_UUID / SESSION_UUID` 仍未完全成为显式公开 env contract | 部分隐式存在 | **不阻止方向判断，但需要后续文档/类型收口** |
-| F03/F09 两个 owner/platform gate | 仍 open | **不阻止 `agent.core` 建模，但阻止把 cross-colo/high-volume network 当成已验证事实** |
+| 缺口 | 当前状态 | 是否阻止 `agent.core` 作为 first-wave 研究对象 | Phase 0 charter 建议 |
+|---|---|---|---|
+| 默认 composition 未实例化 `KernelRunner` | 仍未接通 | **不阻止研究，但阻止"已完成"判断** | **Phase 0 唯一必要里程碑**(见 §4 最后一行) |
+| 默认 composition 未实例化真实 `LLMExecutor` | 仍未接通 | 同上 | 同上 (与 kernel 同一 PR) |
+| **`initial_context` consumer 在 host 侧缺失**(责任已明确归 agent.core host) | schema 冻结,host 侧未接 | **不阻止 host 定位冻结，但阻止 upstream integration 宣称完成** | **Phase 0 必补,与 kernel/llm 同一 PR**;`NanoSessionDO.dispatchAdmissibleFrame` 的 `session.start` 分支新增 `if (body.initial_context) { workspaceComposition.assembler.appendInitialContextLayer(...); }` 调用。详细决策见 `context-core/index.md §6.3`。|
+| `TEAM_UUID / SESSION_UUID` 仍未完全成为显式公开 env contract | 部分隐式存在 | **不阻止方向判断，但需要后续文档/类型收口** | **defer to Phase 1** — 与 wrangler deploy 文档一起收口 |
+| F03/F09 两个 owner/platform gate | 仍 open | **不阻止 `agent.core` 建模，但阻止把 cross-colo/high-volume network 当成已验证事实** | **owner-side action** — 非 charter scope |
 
 ---
 

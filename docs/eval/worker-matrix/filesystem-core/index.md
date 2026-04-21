@@ -143,13 +143,25 @@
 
 ## 6. 当前仍然开放的关键缺口
 
-| 缺口 | 当前状态 | 是否阻止 `filesystem.core` 继续建模 |
-|---|---|---|
-| 独立 `filesystem.core` worker deploy shell | 仍不存在 | **不阻止建模，但阻止“已独立部署”判断** |
-| remote/service-binding workspace seam | `remote-bindings` 仍返回 `workspace: undefined` | **不阻止 host-local first-wave，但阻止 remote closure 宣称** |
-| `mkdir` fully supported | 仍是 `partial-with-disclosure` | **不阻止基础 substrate 成立，但阻止把 fake-bash FS 写成完整 POSIX** |
-| `git` baseline | 只读 `status/diff/log`，且 `diff/log` 仍是 honest partial | **不阻止 filesystem substrate 建模，但阻止把 VCS 当成成熟子系统** |
-| KV/D1 full runtime placement | 仍应保持 provisional / evidence-driven | **不阻止继续推进，但阻止过早冻结“完整文件系统服务”叙事** |
+| 缺口 | 当前状态 | 是否阻止 `filesystem.core` 继续建模 | Phase 0 charter 建议 |
+|---|---|---|---|
+| 独立 `filesystem.core` worker deploy shell | 仍不存在 | **不阻止建模，但阻止"已独立部署"判断** | **defer to Phase 1+** — 第一波保持 host-local workspace |
+| remote/service-binding workspace seam | `remote-bindings` 仍返回 `workspace: undefined` | **不阻止 host-local first-wave，但阻止 remote closure 宣称** | **defer to Phase 1+** — 独立 worker 化前不需要 remote seam |
+| `mkdir` fully supported | 仍是 `partial-with-disclosure` | **不阻止基础 substrate 成立，但阻止把 fake-bash FS 写成完整 POSIX** | **honest partial 维持** — 不在第一波升级;LLM 面保留当前 disclosure |
+| `git` baseline | 只读 `status/diff/log`，且 `diff/log` 仍是 honest partial | **不阻止 filesystem substrate 建模，但阻止把 VCS 当成成熟子系统** | **honest partial 维持** — 不在第一波升级 |
+| KV/D1 full runtime placement | 仍应保持 provisional / evidence-driven | **不阻止继续推进，但阻止过早冻结"完整文件系统服务"叙事** | **defer to evidence calibration** — 依然 evidence-driven,不冻结 topology |
+| **`ReferenceBackend` connected mode 启用策略** (新) | connected mode + R2 promotion 已是真实代码 (`packages/workspace-context-artifacts/src/backends/reference.ts:7-29,58-80,120-140`),但 **默认 DO 路径目前用 memory backend 而非 connected ReferenceBackend** | **不阻止** | **Phase 0 推荐:保持 memory-only default;connected mode 作为 opt-in per-env 配置**。理由:(1) memory backend 已和 DO 1 MiB cap 对齐;(2) connected mode 涉及 R2 bucket binding 与 promotion 语义,第一波引入会把 R2 promotion 风险卷入默认 path;(3) 一旦 agent turn loop 跑起来,真正的 workspace size pressure 才能被评估,那时再激活 connected mode 是有证据的决策 |
+
+### 6.1 关于 `ReferenceBackend.connected` 的第一波决策锚点
+
+这是 Opus context-space review 明确指出的 charter 决策空白,特别补注:
+
+- **当前现实**:`ReferenceBackend` 已具备两种模式(not-connected 占位 / connected CRUD + R2 promotion),实码在 `packages/workspace-context-artifacts/src/backends/reference.ts`。
+- **默认 DO 路径**:`composeWorkspaceWithEvidence` 使用的是 `MemoryBackend`,不是 connected `ReferenceBackend`。
+- **第一波建议**:
+  1. Phase 0 不切换默认;memory-only 是可预测、可回归的起点;
+  2. Phase 0 完成后(即 agent turn loop 跑起来后),把"是否需要 promotion 到 R2"作为 evidence-driven calibration 决策;
+  3. 任何把 connected mode 当成默认的 PR 都必须附带 R2 binding + team-scoped bucket layout 的 wiring 证据;第一波不承担这个。
 
 ---
 

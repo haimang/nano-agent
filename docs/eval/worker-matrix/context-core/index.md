@@ -130,13 +130,44 @@
 
 ## 6. 当前仍然开放的关键缺口
 
-| 缺口 | 当前状态 | 是否阻止 `context.core` 继续建模 |
-|---|---|---|
-| 独立 `context.core` worker deploy shell | 仍不存在 | **不阻止建模，但阻止“已独立部署”判断** |
-| live `context.compact.*` remote transport | 仍不存在 | **不阻止 package-level truth，但阻止 cross-worker closure 宣称** |
-| slot / reranker / intent-routing strategy | 仍 deferred | **不阻止 first-wave 薄 worker，但阻止厚 context-engine 宣称** |
-| inspector public mount | helper 已存在，默认 host path 未启用 | **不阻止 context substrate 成立，但阻止 public control plane closure 宣称** |
-| storage placement evidence 闭环 | adapters / calibration 已有，runtime 主路径仍薄 | **不阻止方向判断，但阻止 DO/KV/R2 物理拓扑提前冻结** |
+| 缺口 | 当前状态 | 是否阻止 `context.core` 继续建模 | Phase 0 charter 建议 |
+|---|---|---|---|
+| 独立 `context.core` worker deploy shell | 仍不存在 | **不阻止建模，但阻止"已独立部署"判断** | **defer to Phase 1+** |
+| live `context.compact.*` remote transport | 仍不存在 | **不阻止 package-level truth，但阻止 cross-worker closure 宣称** | **defer to Phase 1+** — compact 保持 in-process |
+| slot / reranker / intent-routing strategy | 仍 deferred | **不阻止 first-wave 薄 worker，但阻止厚 context-engine 宣称** | **defer to post-worker-matrix phase** |
+| **inspector public mount 启用策略** (细化) | helper 已存在 (`mountInspectorFacade()`),默认 host path 未启用 | **不阻止 context substrate 成立，但阻止 public control plane closure 宣称** | **Phase 0 推荐:保持 opt-in,默认 OFF**。详见 §6.1 |
+| **`AsyncCompactOrchestrator` 自动装载策略** (新) | orchestrator 是真实 runtime (`async-compact/index.ts:502-605`),但默认 `NanoSessionDO` 构造函数**不自动创建**实例 | **不阻止代码存在判断,但阻止"compact loop 已默认接通"宣称** | **Phase 0 决策点** — 见 §6.2 |
+| **`initial_context → context substrate` 消费归属** (新) | schema 冻结 (`SessionStartInitialContextSchema`),但消费方是 agent.core host 还是 context.core subsystem 未明确 | 不阻止建模,但阻止 `agent.core` 与 `context.core` 责任分工宣称 | **Phase 0 决策点** — 见 §6.3 |
+| storage placement evidence 闭环 | adapters / calibration 已有，runtime 主路径仍薄 | **不阻止方向判断，但阻止 DO/KV/R2 物理拓扑提前冻结** | **defer to evidence calibration** |
+
+### 6.1 inspector 默认启用态 — 第一波决策锚点
+
+- **当前现实**:`mountInspectorFacade()` 是显式 opt-in helper;`test/context-management-contract.test.mjs:52-65` 锁住"默认 routeRequest 不认 /inspect/..."这条事实。
+- **owner 问题**:谁决定 inspector 在哪个环境打开?开发者 dev mode?operator 诊断窗口?永久公网 endpoint?
+- **第一波建议**:
+  1. **默认 OFF**(即当前状态)——charter 不应把"inspect endpoint 默认在线"作为 Phase 0 目标;
+  2. 提供 env gate 的 opt-in 机制(当前 `mountInspectorFacade()` 已支持 `envGate`),但**由 deploy-time wrangler env 控制**,不进入默认 composition;
+  3. 任何把 inspector 作为默认 public surface 的提案需要独立 RFC,至少回答:auth 模型 / rate-limit / tenant boundary 可见范围;第一波不承担这三项决策。
+
+### 6.2 `AsyncCompactOrchestrator` 自动装载 — 第一波决策锚点
+
+- **当前现实**:B4 ship 了 orchestrator,但 `NanoSessionDO` 默认 composition 不自动实例化它;kernel 如需 compact 必须由 caller 主动 inject `createKernelCompactDelegate`。
+- **决策空间**:
+  - **选项 A — 第一波不自动装**:保持当前 opt-in;agent.core Phase 0 milestone 装 kernel+llm 时**不带 compact**,让首个 turn loop 以 "no compact" 跑起来;
+  - **选项 B — 第一波自动装**:`createDefaultCompositionFactory()` 额外实例化 orchestrator 并通过 `createKernelCompactDelegate` 接进 kernel;优点是一开始就覆盖 long context,代价是 compact failure path 进入 Phase 0 回归面。
+- **Opus 建议(非 owner 决议)**:**选项 A 更稳**。Phase 0 的核心是"kernel + llm + capability" 三件套打通 turn loop;compact 是治理层强化,与 turn loop 正交,**不应把它的 retry/generation token/failure state 塞进 Phase 0 debuggability surface**。Phase 1 把 compact auto-mount 作为独立 PR 推。
+
+### 6.3 `initial_context` 消费归属 — cross-worker orphan
+
+- **当前现实**:schema 已冻结在 `nacp-session`,`SessionStartBodySchema.initial_context` 在 `session.start` 体内被 `validateSessionFrame` 接纳,但 `NanoSessionDO.buildIngressContext` 只抽 `turn_input`,不查 `initial_context`(`packages/session-do-runtime/src/do/nano-session-do.ts:608-645`)。
+- **归属模糊**:
+  - agent.core 的视角(参见 `agent-core/index.md §4`):"consumer 未实现"——含义是 agent.core 没接;
+  - context.core 的视角:`ContextAssembler` / `AsyncCompactOrchestrator` 都没有 "accept initial upstream payload" 的入口;
+- **Phase 0 决策推荐**:
+  1. **消费归属 agent.core(host 侧)**:由 `NanoSessionDO.dispatchAdmissibleFrame` 的 `session.start` 分支,在完成 ingress 之后,**先**把 `body.initial_context` 喂给 context substrate(via `workspaceComposition.assembler` 的 caller-supplied context layer),**后**触发 `startTurn`;
+  2. **context.core 只负责 shape**:提供 `SessionStartInitialContextSchema` 解析,并暴露 `appendInitialContextLayer(...)` 之类的 assembler API,让 host 负责调用;
+  3. **不建议**:让 context.core 直接读 session frame — 这会打破 "agent.core 是 host, context.core 是 substrate" 的分层。
+- 这条决策必须在 Phase 0 前落地(因为它是 `agent.core` default composition 升级的 adjacent work)。charter 应把它写成 agent.core + context.core 的**shared deliverable**,而非让任一方单独承担。
 
 ---
 
