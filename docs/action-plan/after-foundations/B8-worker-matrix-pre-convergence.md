@@ -74,7 +74,7 @@
 本 action-plan 采用 **"先收集 truth、再构造 handoff memo、再沉淀 templates、最后做整体 closure"** 的四段式：
 
 1. **Phase 1 — Truth Inventory + 前置校验**：确认 B1-B7 全部 phase closure 已 ship，抓齐每条 finding 的 Round-2 verdict、每个 shipped package 的 version、每条 LIVE 数字，把它们汇总成**"B8 Truth Inventory 电子表格"**（作为 Phase 2/3 的唯一输入源）。
-2. **Phase 2 — Handoff Memo + Worker Naming Proposal**：按 P7 §3.1 的 10 章节结构写 handoff memo；按 P7 §3.2 写 worker naming proposal，每条都 cite Truth Inventory 的对应条目。
+2. **Phase 2 — Handoff Memo + Worker Naming Proposal**：按 P7 §3.1 的 10 章节结构写 handoff memo；按 P7 §3.2 写 worker naming proposal，每条都 cite Truth Inventory 的对应条目。若 B8 review 后出现新的上游认知，则允许在保持 `§1–§10` 不变的前提下追加 handoff addenda。
 3. **Phase 3 — 2 个 Templates**：按 P7 §3.3 / §3.4 写 `wrangler-worker.toml` + `composition-factory.ts`，模板注释必须 cite 具体 B7 LIVE 数字（例如 cross-worker call timeout 建议默认 ≥ 100ms 对应 binding-F01 p99=7ms 的 ~14× buffer；`maxValueBytes = 2,097,152` 对应 F08 LIVE cap 2.1 MiB）。
 4. **Phase 4 — Closure + After-Foundations Final Exit**：B8 phase-1/2/3 closure issues + B8-final-closure + **after-foundations-final-closure**（single-page terminal closure for the whole after-foundations phase）。
 
@@ -610,7 +610,7 @@ packages/*/CHANGELOG.md            # frozen
 |---|---|
 | `ls docs/handoff/* docs/templates/wrangler-worker.toml docs/templates/composition-factory.ts` | 通过 |
 | `ls docs/issue/after-foundations/B8-*.md docs/issue/after-foundations/after-foundations-final-closure.md` | 通过 |
-| `grep '^## §' docs/handoff/after-foundations-to-worker-matrix.md \| wc -l` | `10` |
+| `grep '^## §' docs/handoff/after-foundations-to-worker-matrix.md \| wc -l` | `13`（保留 `§1–§10` 必选结构，追加 `§11–§13` review-driven addenda） |
 | `grep -ciE 'proposal\|not a frozen\|not binding' docs/handoff/next-phase-worker-naming-proposal.md` | `6` |
 | placeholder grep（仅针对 B8 handoff/template 新文件） | 空 |
 | `node_modules/.pnpm/node_modules/.bin/tsc -p /root/.copilot/session-state/592cb120-8b05-4ffb-8229-199bb74fd46a/files/b8-template-tsconfig.json` | 通过 |
@@ -632,13 +632,13 @@ packages/*/CHANGELOG.md            # frozen
 
 我的收口判断是：
 
-> **B8 可以正式关闭，after-foundations 可以正式结束，worker-matrix charter 可以立刻启动。**
+> **B8 可以正式关闭，after-foundations 可以正式结束，worker-matrix charter 可以立刻启动；但 worker-matrix Phase 0 应等待 proposed B9 nacp-1.3 freeze。**
 
 理由只有三条，但都已被事实支撑：
 
 1. **B8 没有发明新 truth**：它只是把 B1-B7 的分散 truth 收束成 inventory / memo / templates / closure pack。
 2. **B8 保持了诚实边界**：`F03 / F09` 两个 gate 仍显式开放；`agent.core ≠ binding slot` 没被偷换；naming proposal 也明确保持 non-binding。
-3. **B8 完成了 handoff 责任**：下一阶段不再需要倒翻 B1-B7 全部 closure / review / `.out` 证据，已经可以从 handoff pack 直接起步。
+3. **B8 完成了 handoff 责任**：下一阶段不再需要倒翻 B1-B7 全部 closure / review / `.out` 证据，已经可以从 handoff pack 直接起步，并清楚看到 `nacp-1.3`、tenant plumbing、`initial_context` interface 这三类 pre-phase-0 认知。
 
 因此本阶段的最终 verdict 是：
 
