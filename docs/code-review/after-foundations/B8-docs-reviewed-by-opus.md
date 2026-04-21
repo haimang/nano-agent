@@ -379,3 +379,18 @@
    - throwaway `tsconfig` typecheck；
    - `git diff -- packages spikes`；
    - 根测试 `77/77` 与 `91/91`。
+
+---
+
+## §6 Close-out — 2026-04-21 (via B9 shipped artifacts)
+
+The B9 rewrite (driven by `docs/code-review/after-foundations/B9-plan-reviewed-by-GPT.md`) directly landed code + docs that close this review's outstanding items. Opus's original R1/R2/R3 are now marked `fixed via B9 shipped`; R4-R7 were resolved via inline doc diff in the same pass.
+
+- **R1** (NACP 1.3 pre-requisite posture in handoff memo) — `fixed via B9 shipped §11`. `docs/handoff/after-foundations-to-worker-matrix.md` now has a dedicated §11 "NACP 1.3 Pre-Requisite for Worker Matrix" that cites `docs/rfc/nacp-core-1-3-draft.md` and B9 final closure.
+- **R2** (tenant plumbing checklist) — `fixed via B9 shipped §12`. B8 memo §12 now lists the 6 materialized use-sites (DO checkpoint write/read, LAST_SEEN_SEQ write, WS helper replay, ingress boundary verify) plus the enforcement hook (`test/tenant-plumbing-contract.test.mjs` white-list).
+- **R3** (upstream orchestrator interface clarity) — `fixed via B9 shipped §13`. B8 memo §13 now documents the wire shape (`SessionStartInitialContextSchema`), producer (non-normative — Contexter), and consumer (worker-matrix `agent.core`), with the explicit "B9 preserves the field; B9 does not dispatch" clause.
+- **R4-R7** — `fixed via inline doc diff` during the B8 review response cycle and reaffirmed via B9 documentation synchronization (README, registry doc, CHANGELOG, action-plan §0.5 GPT-review tracker).
+
+**Net verdict**: all 7 review items now have shipped artifacts. Worker matrix Phase 0 is unblocked.
+
+Reference: `docs/issue/after-foundations/B9-final-closure.md`, `docs/action-plan/after-foundations/B9-nacp-1-3-contract-freeze.md` §12.

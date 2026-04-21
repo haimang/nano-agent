@@ -110,13 +110,13 @@ Worker-matrix-consumable numbers frozen at exit:
 
 ## 6. Readiness statement for worker matrix
 
-Worker-matrix charter work may start **now**, but worker-matrix **Phase 0** should wait for the proposed B9 nacp-1.3 freeze, and the next phase should keep these six constraints explicit:
+Worker-matrix charter work may start **now**; worker-matrix **Phase 0** is now unblocked — B9 shipped on 2026-04-21 and the nacp-1.3 contract surface is frozen. The next phase should keep these six constraints explicit:
 
 1. do not treat `agent.core` as a binding slot;
-2. do not silently reopen B2-B7 substrate decisions already frozen by shipped packages and live evidence;
+2. do not silently reopen B2-B9 substrate decisions already frozen by shipped packages and live evidence;
 3. do not erase the two open gates (`F03`, `F09`);
-4. start from the B8 handoff pack, not from scattered phase docs.
-5. treat the proposed B9 `nacp-1.3` contract freeze (`C / D / E / F-new`) as pre-phase-0 work, not as optional cleanup;
+4. start from the B8 handoff pack + B9 final closure, not from scattered phase docs;
+5. consume the B9-shipped `NACP_CORE_TYPE_DIRECTION_MATRIX` + `NACP_SESSION_TYPE_DIRECTION_MATRIX` + `SessionStartInitialContextSchema` + `NanoSessionDO` tenant plumbing as **immutable truth** unless a new RFC is opened;
 6. design `agent.core` as an orchestrator-ready runtime that consumes upstream `session.start.body.initial_context` rather than re-owning user-memory / intent-routing concerns.
 
 Recommended kickoff inputs:

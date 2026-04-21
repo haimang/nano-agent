@@ -349,3 +349,56 @@ The handoff implication is simple:
 
 > Worker matrix should design `agent.core` as an **orchestrator-ready runtime**.  
 > It is downstream-capable, not upstream-agnostic.
+
+---
+
+## §11. NACP 1.3 Pre-Requisite for Worker Matrix
+
+B9 shipped the first **protocol-wire-validated** contract surface the worker matrix is allowed to rely on.
+
+- `@nano-agent/nacp-core@1.3.0` — Layer 6 `(message_type × delivery_kind)` matrix + `NacpErrorBodySchema` helper.
+- `@nano-agent/nacp-session@1.3.0` — session profile ships its own matrix in `validateSessionFrame()` + `SessionStartInitialContextSchema` for upstream orchestrator payloads.
+- `@nano-agent/session-do-runtime@0.3.0` — materialized B6's tenant plumbing (`verifyTenantBoundary`, `tenantDoStorage*`) inside `NanoSessionDO`.
+
+**Worker matrix Phase 0 MUST:**
+1. Use `NACP_VERSION` / `NACP_SESSION_VERSION` constants — never hardcode `"1.1.0"` or earlier version strings.
+2. For every new verb, ensure the `(message_type, delivery_kind)` pair is either already legal in the shipped matrix or introduced via an additive PR that updates the matrix first (RFC §2.4 conservative rule).
+3. Emit error envelopes via `wrapAsError()` where possible. Existing `{status: "ok"|"error", error?}` response shapes are not migrated yet (RFC §3.2 is deferred to a separate PR); do NOT silently reshape them in worker-matrix code.
+
+Reference: `docs/rfc/nacp-core-1-3-draft.md`, `docs/issue/after-foundations/B9-final-closure.md`.
+
+---
+
+## §12. Tenant Boundary Plumbing Checklist
+
+B9 materialized the B6-shipped tenant seams inside `NanoSessionDO`. Any new worker must follow the same discipline.
+
+| use-site | before B9 | after B9 | required for workers |
+|---|---|---|---|
+| DO state-machine checkpoint (write) | `this.doState.storage.put(CHECKPOINT_STORAGE_KEY, ...)` | `getTenantScopedStorage().put(...)` → `tenants/<team>/session:checkpoint` | **yes** |
+| DO checkpoint restore (read) | `this.doState.storage.get(CHECKPOINT_STORAGE_KEY)` | `getTenantScopedStorage().get(...)` | **yes** |
+| `session.resume` LAST_SEEN_SEQ | `this.doState.storage.put(LAST_SEEN_SEQ_KEY, ...)` | wrapper | **yes** |
+| WS helper replay buffer | `this.doState.storage` | wrapper via `wsHelperStorage()` | **yes** |
+| Ingress boundary verify | not called | `verifyTenantBoundary(result.frame, ...)` after `acceptIngress.ok` | **yes** |
+| Raw `this.doState.storage.*` call sites outside the wrapper | allowed | **forbidden** — caught by `test/tenant-plumbing-contract.test.mjs` | **enforced** |
+
+Worker matrix enforcement hook: the root test `test/tenant-plumbing-contract.test.mjs` scans the DO source and fails CI if any new `this.doState.storage.*` call lives outside the documented white-list. Add new legitimate sites to the white-list by PR.
+
+---
+
+## §13. Upstream Orchestrator Interface
+
+B9 shipped the **wire shape**, not a dispatch path. Worker matrix owns the dispatch.
+
+- Wire: `SessionStartBodySchema.initial_context: SessionStartInitialContextSchema.optional()`.
+- Shape: `{ user_memory?, intent?, warm_slots?, realm_hints? }`, all optional, root `.passthrough()`.
+- Producer (non-normative): an upstream orchestrator like the Contexter gateway described in `docs/eval/after-foundations/smind-contexter-learnings.md` §10.5 / §10.6.
+- Consumer: worker matrix's `agent.core` / `context.core`. B9 preserves `body.initial_context` in the validated frame; **B9 does not dispatch it**.
+
+Worker matrix Phase 0 tasks related to this seam:
+1. Design `agent.core` to read `body.initial_context` at session-start time.
+2. Define the `initial_context → context.core slot` mapping (e.g. `warm_slots[].key → L2 swap-in`).
+3. Treat unknown `initial_context` keys as non-fatal (passthrough already tolerates them).
+4. Do NOT re-expand `agent.core` to own user memory or intent routing — those are upstream concerns.
+
+Reference: `docs/rfc/nacp-core-1-3-draft.md` §6, `smind-contexter-learnings.md` §10.5–§10.11.

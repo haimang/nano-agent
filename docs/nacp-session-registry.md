@@ -1,4 +1,4 @@
-# NACP-Session Registry — v1.1.0
+# NACP-Session Registry — v1.3.0
 
 > Subprotocol: `nacp-session.v1`
 > Auto-generated. Do not edit manually.
