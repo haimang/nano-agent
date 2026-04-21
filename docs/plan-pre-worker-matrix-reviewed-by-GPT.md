@@ -402,3 +402,210 @@ Opus 现在把两层目标混成了一层：
 ### 8.3 最终一句话
 
 **我支持“先做 pre-worker-matrix”，但只支持一个收窄版、去膨胀版、以冻结起跑线为目的的 pre-worker-matrix；不支持当前这版把 future remote era 的大量议题一次性前移为 first-wave 硬门槛。**
+
+---
+
+## 9. Response by Opus — 2026-04-21
+
+> Status: **accepted-with-narrowing**  
+> Responder: Claude Opus 4.7 (1M context)  
+> Action scope: 7 份文件修订(charter `plan-pre-worker-matrix.md` + 6 份 W0-W5 design)
+
+### 9.1 总体 verdict
+
+**我实质接受 GPT 的核心判断,并立即执行 scope 收窄。** 我的 r1 pre-worker-matrix 设计在 3 个层面上膨胀:
+
+1. 把 remote-era 议题(W1 3 条新协议 / W2 publishing 硬 blocker / W3 10 份 detailed blueprint / W4 4 次真实 deploy)误当成 first-wave 前置硬门槛
+2. 把"长期吸收终局"与"first-wave 验证路径"混成一层(盲点 7 核心洞见)
+3. W0 把部分 runtime semantics(如 `BoundedEvalSink` class)误纳入 NACP 协议边界
+
+GPT §5 建议的 "拓扑 / 策略 / 责任归属 / 最小脚手架" 窄前置定义是正确重构方向。我按此执行。
+
+### 9.2 3 点 owner 决策(确认接受 GPT 建议)
+
+| 决策点 | 原 r1 设计 | 新 r2 设计(owner 接受 GPT) |
+|---|---|---|
+| **GitHub Packages publishing 时机** | 硬 blocker,必须先于 worker-matrix | **parallel track**:worker-matrix 期间可并行做;first-wave 可用 `workspace:*` 作默认 |
+| **W4 deploy 范围** | 4 real deploy(4 个 URL) | **1 real deploy(agent-core)+ 3 dry-run**;DevOps 验证一次够 |
+| **W3 blueprint 粒度** | 10 份 detailed blueprint + llm-wrapper dry-run(gate) | **1 份 absorption map(轻)+ 2-3 份代表性 blueprint(高复杂度包,如 capability-runtime / workspace-context-artifacts)+ dry-run 可选(非 gate)** |
+
+### 9.3 7 盲点裁决清单
+
+| 盲点 | 裁决 | 触发的 design 修订 |
+|---|---|---|
+| **1. 4 空壳 deploy 过度** | 部分接受 | W4 §5.1 S7 / §7.2 S7 / §11 exit:改为 "1 real(agent-core)+ 3 dry-run" |
+| **2. Publishing 作绝对 blocker 论证不足** | 接受 | W2 §0.3 前置共识 / §3 方法论 "Publishing-Before-Scaffolding" 降级 / §5.1 S1-S10 / §11;workers 默认 `workspace:*`,publishing parallel |
+| **3. W0 `nacp-core` 边界膨胀** | 部分接受 | W0 §7.2 C1(BoundedEvalSink class 不搬,只搬 dedup+overflow shape)+ §7.2 C4(hooks catalog 拆 wire-shape vs HookEventMeta runtime metadata) |
+| **4. W1 3 条新协议 premature code-ship** | 强烈接受 | W1 **整份 major downgrade**:code-ship → RFC-only;§4.1 A/B/C 全改;§5.1 S1-S12 收窄;§7.2 F1-F7 从 "schema+helper implementation" 改为 "RFC deliverables" |
+| **5. llm-wrapper dry-run 代表性低** | 接受 | W3 dry-run 从 gate 降为 optional;若做则选 capability-runtime 或 workspace-context-artifacts |
+| **6. Exit criteria 过重** | 接受 | charter §11 从 11 条 primary + secondary 收窄到 6 条(严格对应 GPT §6)|
+| **7. 长期 vs first-wave 未分层** | 强烈接受 | charter §0.5 新增分层原则;每份 design 首段加 "pre-phase 只冻结起跑线,不解决 remote era" 纪律 |
+
+### 9.4 我对 GPT 的 2 处辩证保留(非否定,而是 owner-approved 范围内的调整)
+
+**保留 1**:Owner 决策 "NACP 必须发布到 GitHub Packages" 不可被 GPT 质疑 — 只调整**时机**(parallel),不取消**是否做**。W2 保留但降级,不删除。
+
+**保留 2**:W3 的 "absorption map" **必要**(owner "packages 是吸收上下文" 决策的直接兑现),不能只靠 GPT §5.2 的抽象文字描述。map + 2-3 份代表 blueprint 是最低必要深度。
+
+### 9.5 7 份文件详细修订清单
+
+#### 文件 1:`docs/plan-pre-worker-matrix.md`(charter)
+
+| 位置 | 原内容 | 新内容 | 规模 |
+|---|---|---|---|
+| 顶部 metadata | r1 only | 新增 "r2(2026-04-21)— post-GPT-review narrowing" 修订历史 entry + revision note | +10 行 |
+| §0 | 背景说明 | 新增 §0.5 "Long-term vs First-wave 分层原则":pre-phase 只冻结起跑线,不解 remote era | +30 行 |
+| §1.5 publishing | 必须先发布 | 改为 "publishing 是 parallel track,不是 worker-matrix 启动 blocker" | ±15 行 |
+| §3 一句话目标 | 5 件事含 W1 协议实装 + W2 强发布 + W3 10 blueprints + W4 4 deploy | 重写为 "冻结目录拓扑 + 包策略 + 3 orphan 决策 + 最小脚手架 + 1 RFC 方向" | ±40 行 |
+| §4.1 A-F in-scope | 全部 code-ship 向 | 大幅收窄:A=W0 narrower / B=W1 RFC-only / C=W2 parallel / D=W3 map + 2-3 blueprints / E=W4 narrower deploy / F=W5 narrower closure | ±100 行 |
+| §4.2 out-of-scope | 14 条 | 新增 O-new 几条(remote protocol code-ship / 4 真实 deploy / llm-wrapper dry-run gate) | +20 行 |
+| §8 DAG + 时长 | 4-5 周 | 改为 2-3 周(减重后) | ±10 行 |
+| §11 exit criteria | 11 条 primary + secondary | 收窄到 6 条(严格对应 GPT §6) | ±50 行 |
+| 底部 | — | 加 "版本编号 + 修订内容综述" footer | +20 行 |
+
+**合计**:~295 行 diff
+
+#### 文件 2:`docs/design/pre-worker-matrix/W0-nacp-consolidation.md`
+
+| 位置 | 修订 |
+|---|---|
+| 顶部 metadata | 加 v0.2 修订历史 entry |
+| §0.4 code 事实核查 | 新增第 4 条修正:BoundedEvalSink class 是 runtime,不进 NACP |
+| §1.3 Tier A 映射表 | BoundedEvalSink 行拆:`EvalSinkEmitArgs / EvalSinkOverflowDisclosure` shape 进 NACP;**`BoundedEvalSink` class 留原位**;hooks catalog 行拆:event name + payload Zod schema 进 NACP;**HookEventMeta(blocking / allowedOutcomes / redactionHints)runtime metadata 不进 NACP** |
+| §4.1 W0 In-Scope A 5 条 | C1 改为"只搬 dedup+overflow shape";C4 改为"只搬 event name + payload schema" |
+| §7.2 C1 详述 | 去掉 BoundedEvalSink class 代码迁移;保留 contract shape 定义 |
+| §7.2 C4 详述 | 同上,区分 vocabulary vs metadata |
+| 底部 | 加版本 footer |
+
+**合计**:~60 行 diff
+
+#### 文件 3:`docs/design/pre-worker-matrix/W1-cross-worker-protocols.md`
+
+| 位置 | 修订 |
+|---|---|
+| 顶部 metadata | 加 v0.3 修订(v0.2 already exists) |
+| §0 背景 | 新增 §0.5 "为何本 phase 只产 RFC 不实装" — 引用 GPT §3.4 判断 |
+| §4.1 A/B/C (charter In-Scope 三条) | 全部从 "code-ship" 改为 "RFC-only" |
+| §5.1 S1-S12 In-Scope | 收窄:S1-S5 (workspace.fs.* schema + matrix) 从实装改为 RFC design doc;S6-S10 类似;S12 "ship 1.4.0" 删除(W0 自己 ship 即可,不含 W1 协议实装) |
+| §7.2 F1-F5 (workspace.fs.* 5 ops) | 从 "Zod schema 实装 + 注册 matrix" 改为 "RFC 定义 + 未来实装策略" |
+| §7.2 F6 CompactDelegate | 从 "helper 实装" 改为 "确认现有 `context.compact.*` 足够,RFC 层文档化调用流" |
+| §7.2 F7 wrapEvidenceAsAudit | 从 "helper 实装 + root test" 改为 "RFC 定义 + pattern spec;实装延后到有真实 emitter" |
+| §7.2 F8-F10 | 收窄:F8 matrix registration 不做;F9 RFC 文档仍做;F10 root contract tests 不做 |
+| §9.1 功能簇画像 | 代码量级从 ~500 行 TS 改为 ~0 行 TS + ~600-900 行 RFC |
+| 底部 | 加 v0.3 版本 footer |
+
+**合计**:~200 行 diff(最大改动文件)
+
+#### 文件 4:`docs/design/pre-worker-matrix/W2-publishing-pipeline.md`
+
+| 位置 | 修订 |
+|---|---|
+| 顶部 metadata | 加 v0.2 修订历史 |
+| §0.2 时机 | 从 "W4 必须在 GitHub Packages 发布后才能启动" 改为 "W2 与 W4 可 parallel;若 W2 未完成,W4 用 `workspace:*`" |
+| §0.3 前置共识 | 去掉 "publishing-before-scaffolding"硬纪律 |
+| §3 §5.2 方法论"Publishing-Before-Scaffolding" | 整节重写:降级为"parallel discipline — 不强制先发布,但要求发布完成前 workers 标注 `workspace:*` 为 interim" |
+| §5.1 S1-S10 | S7 "首次发布" 改为 "可延后到 first-wave 期间";S8 dogfood 不作为阻塞 |
+| §5.2 Out-of-Scope | 加 [O13]:"不把 publishing 作为 worker-matrix 启动的硬 blocker" |
+| §11 exit criteria | 把 "首次发布必须完成" 改为 "或 S1-S3 pipeline skeleton 就绪,可随时触发即算通过" |
+| 底部 | 加 v0.2 版本 footer |
+
+**合计**:~80 行 diff
+
+#### 文件 5:`docs/design/pre-worker-matrix/W3-absorption-blueprint-and-dryrun.md`
+
+| 位置 | 修订 |
+|---|---|
+| 顶部 metadata | 加 v0.2 修订历史 |
+| §0.1 必要性 | 收窄:从 "10 份 blueprint 是硬前置" 改为 "1 份 absorption map 是硬前置;2-3 份代表性 blueprint 是 in-scope;其他作 charter handoff 时未完成的 follow-up" |
+| §0.2 dry-run 必要性 | 从 "dry-run 是最小可验证样本" 改为 "dry-run 是 optional 工具,若做则选代表性高的包" |
+| §1.1 功能簇定义 | 描述从 "10 份 blueprint + 1 dry-run" 改为 "absorption map + 2-3 代表性 blueprint + optional dry-run" |
+| §4.1 D(charter in-scope) | 映射调整 |
+| §5.1 S1-S6 In-Scope | S1 TEMPLATE 保留;S2 从 "10 份 blueprint" 改为 "1 份 10-entry map + 2-3 份 detailed blueprint(capability-runtime / workspace-context-artifacts 优先)";S3 dry-run 标记 optional + 目标改为 capability-runtime;S4 pattern spec 保留;S5 back-write 删除或退化 |
+| §5.2 Out-of-Scope | 加 [O11]:"llm-wrapper dry-run 不是 gate" |
+| §6.1 取舍 2(dry-run 目标)| 重新评估:capability-runtime 更代表性,但风险高 — 若 owner 决定做 dry-run,选 capability-runtime |
+| §7.2 T2 | 从 10 份改为 map + 2-3 份 |
+| §7.2 T3 | 整节加 "optional" 标注;目标改 capability-runtime(若做)|
+| §11 | exit criteria 中 "10 份 blueprint + dry-run 成功" 改为 "map 完成 + 2-3 份 detailed blueprint shipped" |
+| 底部 | 加 v0.2 版本 footer |
+
+**合计**:~150 行 diff
+
+#### 文件 6:`docs/design/pre-worker-matrix/W4-workers-scaffolding.md`
+
+| 位置 | 修订 |
+|---|---|
+| 顶部 metadata | 加 v0.2 修订历史 |
+| §0.1 必要性 | 收窄:scaffolding 完整做,但 deploy 只 1 次(agent-core)|
+| §5.1 S7 "4 workers 真实 deploy" | 改为 "agent-core 真实 deploy + 3 worker 用 `wrangler deploy --dry-run`";记录 1 个真实 URL + 3 个 dry-run log |
+| §5.5 Empty-Shell-Deploy-Discipline | 从 "4 workers 必须真实 deploy" 改为 "至少 1 worker 真实 deploy 验证 DevOps 链路;其他 3 个 dry-run 即可" |
+| §6.1 取舍 4 "preview env" | 保留;只针对 agent-core 的真实 deploy |
+| §7.2 S7 详述 | 执行步骤中只 1 次真实 deploy;其他 3 次 dry-run |
+| §11 exit criteria | "4 URL 可访问" 改为 "1 URL 可访问 + 3 dry-run success" |
+| 底部 | 加 v0.2 版本 footer |
+
+**合计**:~80 行 diff
+
+#### 文件 7:`docs/design/pre-worker-matrix/W5-closure-and-handoff.md`
+
+| 位置 | 修订 |
+|---|---|
+| 顶部 metadata | 加 v0.2 修订历史 |
+| §0.1 "横向依赖" | 保持 5 条对角线分析框架,但具体检查内容调整(因 W1 code-ship 改 RFC,consistency 范围变)|
+| §5.1 X2 5 对角线 | 检查内容微调:(b) "W2 发布的 1.4.0 包含 W0+W1 所有 shipped 新 symbol" 改为 "W2 若已发布,1.4.0 包含 W0 所有 shipped 新 symbol;W1 RFC shipped 不含新代码,无需 publishing consistency";(d) "W4 install reality" 改为 "agent-core 可从 W2 或 workspace:\* 二者之一 install 成功";(e) 保留 |
+| §5.1 X7 charter flip | 保持 |
+| §7.2 X3 Final closure | "6 大产出" 改为 "6 个 phase 产出,含 4 个收窄维度说明"(协议吸收 narrower / RFC only / publishing parallel / map + 2-3 blueprint / 1 real deploy + 3 dry-run) |
+| §11 exit criteria | 继承 charter §11 收窄后的 6 条 |
+| 底部 | 加 v0.2 版本 footer |
+
+**合计**:~60 行 diff
+
+### 9.6 版本编号约定
+
+7 份文件统一升级至 r2 / v0.2 / v0.3(W1 因已 v0.2,本次升 v0.3):
+
+- charter:r1 → r2
+- W0:v0.1 → v0.2
+- W1:v0.2 → v0.3
+- W2:v0.1 → v0.2
+- W3:v0.1 → v0.2
+- W4:v0.1 → v0.2
+- W5:v0.1 → v0.2
+
+每份文件 footer 统一加"版本历史"与"修订综述"两个 section。
+
+### 9.7 执行顺序
+
+1. Step 1 (已完成):写本 response 到文件底部
+2. Step 2:更新 charter(驱动全局 scope 收窄)
+3. Step 3:更新 W1(最大改动,major downgrade)
+4. Step 4:更新 W0 / W2 / W3 / W4 / W5(按字母顺序或依赖顺序)
+5. Step 5:整体再次与本 response + GPT review 校准,记录最终 verdict
+
+### 9.8 整体 scope 变化量化
+
+| 维度 | r1 | r2(post-GPT) | 变化 |
+|---|---|---|---|
+| pre-phase 时长估算 | 4-5 周 | 2-3 周 | **-40%** |
+| Code ship 工作量 | W0(~700 行)+ W1(~400 行)+ W2(~200 行)+ W3 dry-run(~2500 行)+ W4(~850 行)= ~4650 行 | W0(~700 行)+ W2(~200 行)+ W4(~850 行)= ~1750 行 | **-62%** |
+| RFC 文档量 | ~900 行 | ~1500-2000 行(W1 全部 RFC 化) | **+80%** |
+| Worker deploy 次数 | 4 | 1 | **-75%** |
+| Blueprint 详细度 | 10 份 detailed | 1 map + 2-3 detailed | **-70%** |
+| Exit criteria 条目 | 11 primary | 6 | **-45%** |
+
+**净效果**:pre-worker-matrix 从 "新主阶段" 收窄回 "校准起跑线" 的窄前置,scope 降幅 ~60%;但 RFC 文档化部分加强(方向锁定但实装延后)。
+
+### 9.9 对 GPT 审查方法论的致谢
+
+这一轮 GPT 的 review 展示了 **"长期拓扑 vs first-wave 路径" 的分层纪律**:
+
+- 它没有否定 owner 的 `workers/` 目录 + NACP 发布决策(尊重 owner 硬决策)
+- 它挑战 TIMING 与 DEPTH,不挑战 WHETHER
+- 它用 `worker-readiness-stratification.md` 与 `cross-worker-interaction-matrix.md` 我自己先前写的文档作为反向证据(用我自己的纪律反驳我)
+
+这种 "借彼论点破彼论点" 的 review 方法论非常有力。我接受并感谢。
+
+### 9.10 最终 verdict
+
+**✅ pre-worker-matrix 仍成立,但整体降为 "窄前置" 定位;7 份文件按 §9.5 清单立即修订。**
+
+修订完成后,worker-matrix 的起跑线将是:**拓扑已冻 + 策略已明 + 脚手架最小必要 + 3 个 orphan 决策落定 + 方向性 RFC 就绪**;远端 split / 协议扩张 / 全面吸收 等在 worker-matrix 阶段用 live loop 证据驱动推进。
