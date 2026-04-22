@@ -10,6 +10,7 @@
 > - `docs/plan-pre-worker-matrix.md`
 > - `docs/design/pre-worker-matrix/W2-publishing-pipeline.md`
 > - `docs/design/pre-worker-matrix/W2-publishing-discipline.md`
+> - `docs/action-plan/pre-worker-matrix/W5-closure-and-handoff.md`
 > 文档状态: `draft`
 
 ---
@@ -120,8 +121,9 @@ W2 Publishing Pipeline
 | P1-01 | Phase 1 | 双包 publishConfig | `update` | `packages/nacp-core/package.json` `packages/nacp-session/package.json` | 固化 registry/access truth | `medium` |
 | P1-02 | Phase 1 | discipline 收口 | `update` | `docs/design/pre-worker-matrix/W2-publishing-discipline.md` | 固化 publish rules | `low` |
 | P2-01 | Phase 2 | publish workflow | `add` | `.github/workflows/publish-nacp.yml` | 让 tag-publish 可执行 | `medium` |
-| P2-02 | Phase 2 | dogfood consumer | `add` | `dogfood/nacp-consume-test/*` | 证明 consumer path 可走通 | `medium` |
+| P2-02 | Phase 2 | dogfood consumer | `add` | `dogfood/nacp-consume-test/{package.json,.npmrc,src/smoke.ts,README.md}` | 证明 consumer path 可走通 | `medium` |
 | P2-03 | Phase 2 | auth/permission 文档 | `update` | workflow docs / closure notes | 记录 packages:write 与 token 约定 | `low` |
+| P2-04 | Phase 2 | workspace 排除 dogfood | `update` | `pnpm-workspace.yaml` | 明确 dogfood 不进入主 workspace | `medium` |
 | P3-01 | Phase 3 | optional 首发 | `update` | git tag / workflow run / registry evidence | 若 owner 开窗则完成首次发布 | `medium` |
 | P3-02 | Phase 3 | W2 closure | `add` | `docs/issue/pre-worker-matrix/W2-closure.md` | 明确 skeleton-only 或 first-publish closure | `low` |
 
@@ -141,8 +143,9 @@ W2 Publishing Pipeline
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
 | P2-01 | publish workflow | 建 tag-trigger workflow skeleton | `.github/workflows/publish-nacp.yml` | 可随时执行首发 | workflow lint / run | 流程完整 |
-| P2-02 | dogfood consumer | 建最小 consumer package | `dogfood/nacp-consume-test/*` | published path 有验证入口 | build/install 验证 | 不走 workspace link |
+| P2-02 | dogfood consumer | 建最小 consumer package，显式落 `package.json / .npmrc / src/smoke.ts / README.md` | `dogfood/nacp-consume-test/*` | published path 有验证入口 | build/install 验证 | 不走 workspace link |
 | P2-03 | auth/permission 说明 | 明确 token / packages:write / `.npmrc` 要求 | docs/closure notes | owner 能正确配置环境 | 文档核对 | 配置清晰 |
+| P2-04 | workspace 排除 dogfood | 保持 `pnpm-workspace.yaml` 不吸入 `dogfood/`，即使未来加入 `workers/*` 也不污染 dogfood | `pnpm-workspace.yaml` | dogfood 独立 lockfile / install path 成立 | 文档核对 | 不被 workspace link 污染 |
 
 ### 4.3 Phase 3 — optional 首发与 closure
 
@@ -189,15 +192,21 @@ W2 Publishing Pipeline
   - `P2-01`
   - `P2-02`
   - `P2-03`
+  - `P2-04`
 - **本 Phase 新增文件**：
   - `.github/workflows/publish-nacp.yml`
-  - `dogfood/nacp-consume-test/*`
+  - `dogfood/nacp-consume-test/package.json`
+  - `dogfood/nacp-consume-test/.npmrc`
+  - `dogfood/nacp-consume-test/src/smoke.ts`
+  - `dogfood/nacp-consume-test/README.md`
 - **本 Phase 修改文件**：
+  - `pnpm-workspace.yaml`
   - `相关文档说明`
 - **具体功能预期**：
   1. `nacp-v*` tag 可触发发布
   2. dogfood 可证明 published consumer path
   3. auth/permission 配置方式清楚
+  4. dogfood 不会被误吸进主 workspace
 - **具体测试安排**：
   - **单测**：`无`
   - **集成测试**：`workflow dry path + dogfood build/install`
@@ -245,7 +254,7 @@ W2 Publishing Pipeline
 - **为什么必须确认**：`scope 决定 package 名称、.npmrc、workflow publish target`
 - **当前建议 / 倾向**：`沿用统一 owner scope，不拆双 scope`
 - **Q**：`NACP 双包最终使用的 GitHub Packages scope 是否就是当前统一组织 scope？`
-- **A**：`待 owner 决定`
+- **A**：`是。默认沿用当前统一组织 scope，不在 W2 再拆双 scope。`
 
 #### Q2
 
@@ -253,7 +262,7 @@ W2 Publishing Pipeline
 - **为什么必须确认**：`影响 W2 的 closure 形态`
 - **当前建议 / 倾向**：`允许 skeleton complete + first publish deferred`
 - **Q**：`owner 是否要求 pre-worker-matrix 阶段内必须完成首次真实发布？`
-- **A**：`待 owner 决定`
+- **A**：`否。首次真实发布保持 optional parallel；pre-worker-matrix 的硬交付是 skeleton complete。`
 
 ### 6.2 问题整理建议
 
@@ -315,9 +324,10 @@ W2 Publishing Pipeline
 
 1. 双包 skeleton 完整
 2. dogfood path 存在
-3. closure 能区分 first publish 是否已完成
-4. W4/W5 可直接消费 dual-path 结论
-5. 不存在“顺手发布其他包”的 scope 漂移
+3. dogfood `.npmrc` 与 `pnpm-workspace.yaml` 排除策略明确
+4. closure 能区分 first publish 是否已完成
+5. W4/W5 可直接消费 dual-path 结论
+6. 不存在“顺手发布其他包”的 scope 漂移
 
 ### 8.3 完成定义（Definition of Done）
 

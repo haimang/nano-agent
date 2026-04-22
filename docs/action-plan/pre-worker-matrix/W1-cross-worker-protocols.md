@@ -12,6 +12,7 @@
 > - `docs/rfc/nacp-workspace-rpc.md`
 > - `docs/rfc/remote-compact-delegate.md`
 > - `docs/rfc/evidence-envelope-forwarding.md`
+> - `docs/action-plan/pre-worker-matrix/W5-closure-and-handoff.md`
 > 文档状态: `draft`
 
 ---
@@ -39,14 +40,14 @@ W1 在经过 review 收窄后，已经不是“新增协议并 ship 代码”的
 
 ### 1.1 总体执行方式
 
-采用 **先校对现有 contract reality，再起草 3 份 RFC，最后做横向一致性核对** 的方式推进。W1 不写任何代码，因此核心是引用关系、边界表述和 deferred rationale 的精确性。
+采用 **先校对现有 contract reality，再对已存在的 3 份 RFC 做 revise / verify，最后做横向一致性核对** 的方式推进。W1 不写任何代码，因此核心是引用关系、边界表述和 deferred rationale 的精确性。
 
 ### 1.2 Phase 总览
 
 | Phase | 名称 | 预估工作量 | 目标摘要 | 依赖前序 |
 |------|------|------------|----------|----------|
 | Phase 1 | 现状核对 | `S` | 对齐 W0 / 1.3.0 reality 与 3 条 seam 的当前状态 | `W0 design ready` |
-| Phase 2 | RFC 起草 | `M` | 写 3 份方向性 RFC | `Phase 1` |
+| Phase 2 | RFC 修订与校准 | `M` | 对已存在的 3 份方向性 RFC 做 revise / verify | `Phase 1` |
 | Phase 3 | 一致性收口 | `S` | 核对 W0/W3/W5 引用链并写 closure | `Phase 2` |
 
 ### 1.3 Phase 说明
@@ -54,9 +55,9 @@ W1 在经过 review 收窄后，已经不是“新增协议并 ship 代码”的
 1. **Phase 1 — 现状核对**
    - **核心目标**：确认哪些已有 contract 可直接复用，哪些只讨论方向
    - **为什么先做**：W1 的风险在于“凭想象设计协议”
-2. **Phase 2 — RFC 起草**
-   - **核心目标**：完成 workspace RPC / remote compact / evidence forwarding 三份 RFC
-   - **为什么放在这里**：先有 reality，再写 RFC，才能避免旧 scope 残留
+2. **Phase 2 — RFC 修订与校准**
+   - **核心目标**：对已存在的 workspace RPC / remote compact / evidence forwarding 三份 RFC 做 reality-driven revise
+   - **为什么放在这里**：先有 reality，再校 RFC，才能避免旧 scope 残留和重复发明 family
 3. **Phase 3 — 一致性收口**
    - **核心目标**：核对 W0 vocabulary、W3 blueprint、W5 closure predicate
    - **为什么放在这里**：W1 的价值在于成为下游 reference baseline，而不是孤立文档
@@ -93,8 +94,8 @@ W1 Cross-Worker Protocol Design
 ### 2.1 In-Scope（本次 action-plan 明确要做）
 
 - **[S1]** 核对 `context.compact.*`、`audit.record`、workspace 当前 reality 与 future seam 的关系
-- **[S2]** 起草 `nacp-workspace-rpc.md`
-- **[S3]** 起草 `remote-compact-delegate.md` 与 `evidence-envelope-forwarding.md`
+- **[S2]** revise / verify `nacp-workspace-rpc.md`
+- **[S3]** revise / verify `remote-compact-delegate.md` 与 `evidence-envelope-forwarding.md`
 - **[S4]** 核对 RFC 与 W0/W3/W5 的引用一致性并写 W1 closure
 
 ### 2.2 Out-of-Scope（本次 action-plan 明确不做）
@@ -122,9 +123,9 @@ W1 Cross-Worker Protocol Design
 | P1-01 | Phase 1 | compact reality 核对 | `update` | `nacp-core/messages/context.ts` | 证明无需新增 compact family | `medium` |
 | P1-02 | Phase 1 | audit reality 核对 | `update` | `nacp-core/messages/system.ts` | 证明 evidence 可包进 audit.record | `medium` |
 | P1-03 | Phase 1 | workspace reality 核对 | `update` | `workspace-context-artifacts` | 给 workspace RFC 提供 substrate anchor | `medium` |
-| P2-01 | Phase 2 | workspace RFC | `add` | `docs/rfc/nacp-workspace-rpc.md` | 冻结未来 workspace seam 方向 | `medium` |
-| P2-02 | Phase 2 | compact delegate RFC | `add` | `docs/rfc/remote-compact-delegate.md` | 冻结复用现有 compact family 的方向 | `low` |
-| P2-03 | Phase 2 | evidence forwarding RFC | `add` | `docs/rfc/evidence-envelope-forwarding.md` | 冻结 payload truth 不变的 forwarding 方向 | `low` |
+| P2-01 | Phase 2 | workspace RFC revise / verify | `update` | `docs/rfc/nacp-workspace-rpc.md` | 冻结未来 workspace seam 方向 | `medium` |
+| P2-02 | Phase 2 | compact delegate RFC revise / verify | `update` | `docs/rfc/remote-compact-delegate.md` | 冻结复用现有 compact family 的方向 | `low` |
+| P2-03 | Phase 2 | evidence forwarding RFC revise / verify | `update` | `docs/rfc/evidence-envelope-forwarding.md` | 冻结 payload truth 不变的 forwarding 方向 | `low` |
 | P3-01 | Phase 3 | cross-doc consistency | `update` | `W1/W3/W5 docs` | 避免主文和 RFC 打架 | `medium` |
 | P3-02 | Phase 3 | W1 closure | `add` | `docs/issue/pre-worker-matrix/W1-closure.md` | 为 W5 提供 RFC evidence | `low` |
 
@@ -140,13 +141,13 @@ W1 Cross-Worker Protocol Design
 | P1-02 | audit reality 核对 | 核对 `audit.record` 与 evidence payload 的兼容性 | `nacp-core/src/messages/system.ts` | 明确 evidence forwarding 走 envelope reuse | 文档/代码比对 | RFC 可直接引用 |
 | P1-03 | workspace reality 核对 | 核对当前 workspace substrate 与 future RPC seam | `workspace-context-artifacts` | 为 workspace RFC 提供真实锚点 | 文档/代码比对 | 不脱离现有码面 |
 
-### 4.2 Phase 2 — RFC 起草
+### 4.2 Phase 2 — RFC 修订与校准
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P2-01 | workspace RFC | 写最小 `workspace.fs.*` future surface 与不支持列表 | `docs/rfc/nacp-workspace-rpc.md` | future workspace seam baseline | 文档 review | RFC-only 立场明确 |
-| P2-02 | compact delegate RFC | 明确远端 compact 继续复用 canonical compact family | `docs/rfc/remote-compact-delegate.md` | 避免再造第二套 compact 协议 | 文档 review | 不引入私有 family |
-| P2-03 | evidence RFC | 明确 remote evidence 不改 payload truth，只转 envelope | `docs/rfc/evidence-envelope-forwarding.md` | 避免 worker-specific evidence schema | 文档 review | W0 payload truth 被复用 |
+| P2-01 | workspace RFC revise / verify | 在已存在 RFC 上校对 future surface、不支持列表与当前 workspace substrate anchor | `docs/rfc/nacp-workspace-rpc.md` | future workspace seam baseline | 文档 review | RFC-only 立场明确 |
+| P2-02 | compact delegate RFC revise / verify | 明确远端 compact 继续复用 canonical `context.compact.request/response` | `docs/rfc/remote-compact-delegate.md` | 避免再造第二套 compact 协议 | 文档 review | 不引入私有 family |
+| P2-03 | evidence RFC revise / verify | 明确 remote evidence 继续复用 `audit.record` + 既有 evidence payload truth | `docs/rfc/evidence-envelope-forwarding.md` | 避免 worker-specific evidence schema | 文档 review | 不新增 evidence-forwarding message type |
 
 ### 4.3 Phase 3 — 一致性收口
 
@@ -185,23 +186,24 @@ W1 Cross-Worker Protocol Design
 - **本 Phase 风险提醒**：
   - 容易把 future desire 写成 current reality
 
-### 5.2 Phase 2 — RFC 起草
+### 5.2 Phase 2 — RFC 修订与校准
 
-- **Phase 目标**：完成 3 份方向性 RFC
+- **Phase 目标**：在已存在文档基础上完成 3 份方向性 RFC 的校准
 - **本 Phase 对应编号**：
   - `P2-01`
   - `P2-02`
   - `P2-03`
 - **本 Phase 新增文件**：
+  - `无`
+- **本 Phase 修改文件**：
   - `docs/rfc/nacp-workspace-rpc.md`
   - `docs/rfc/remote-compact-delegate.md`
   - `docs/rfc/evidence-envelope-forwarding.md`
-- **本 Phase 修改文件**：
-  - `无`
 - **具体功能预期**：
   1. 每份 RFC 都有目标、边界、推荐方向、defer 理由
   2. 不偷渡 code-ship 口径
-  3. 可作为 worker-matrix 后续 phase 的输入
+  3. 显式写出对现有 `context.compact.*` / `audit.record` 的复用，不重复发明 family
+  4. 可作为 worker-matrix 后续 phase 的输入
 - **具体测试安排**：
   - **单测**：`无`
   - **集成测试**：`无`
@@ -251,7 +253,7 @@ W1 Cross-Worker Protocol Design
 - **为什么必须确认**：`关系到 future workspace seam 最终是 NACP family 还是更薄的 transport interface`
 - **当前建议 / 倾向**：`RFC 保持 NACP-shaped family 倾向，但本阶段不代码化`
 - **Q**：`workspace future seam 是否继续以 NACP family 作为默认目标形态？`
-- **A**：`待 owner 决定`
+- **A**：`是。默认目标仍是 NACP-shaped family，但 W1 只冻结 RFC 方向，不进入代码化。`
 
 #### Q2
 
@@ -259,7 +261,7 @@ W1 Cross-Worker Protocol Design
 - **为什么必须确认**：`关系到 W5 是否把 W1 当作纯 RFC gate，而非 code gate`
 - **当前建议 / 倾向**：`是，W1 只作为 RFC gate`
 - **Q**：`W5 是否明确以“RFC shipped + 引用一致”作为 W1 唯一 closure gate？`
-- **A**：`待 owner 决定`
+- **A**：`是。W1 的 closure gate 是“3 份 RFC 已存在且与 W0/W3/W5 引用一致”，不要求 code-ship。`
 
 ### 6.2 问题整理建议
 
@@ -319,11 +321,12 @@ W1 Cross-Worker Protocol Design
 
 所有 Phase 完成后，至少应满足以下条件：
 
-1. 3 份 RFC 全部落盘
+1. 3 份 RFC 已存在且完成 revise / verify
 2. W1 不包含任何代码交付要求
-3. RFC 与 W0/W3/W5 引用链一致
-4. future remote split 有明确 baseline
-5. W1 closure 可被 W5 直接消费
+3. RFC 明确复用现有 `context.compact.*` / `audit.record`，不自创新 family
+4. RFC 与 W0/W3/W5 引用链一致
+5. future remote split 有明确 baseline
+6. W1 closure 可被 W5 直接消费
 
 ### 8.3 完成定义（Definition of Done）
 

@@ -11,6 +11,7 @@
 > - `docs/design/pre-worker-matrix/W4-workers-scaffolding.md`
 > - `docs/design/pre-worker-matrix/W2-publishing-pipeline.md`
 > - `docs/design/pre-worker-matrix/W3-absorption-blueprint-and-dryrun.md`
+> - `docs/action-plan/pre-worker-matrix/W5-closure-and-handoff.md`
 > 文档状态: `draft`
 
 ---
@@ -120,10 +121,11 @@ W4 workers scaffolding
 |------|------------|--------|------|------------------|------------|----------|
 | P1-01 | Phase 1 | `workers/` 顶级目录 | `add` | `workers/*` | 建立 4 个 shell 容器 | `low` |
 | P1-02 | Phase 1 | 每个 worker 的 shell 文件 | `add` | `wrangler.jsonc package.json src test README tsconfig` | 冻结统一结构 | `medium` |
+| P1-03 | Phase 1 | `agent-core` DO slot | `add` | `workers/agent-core/src/nano-session-do.ts` `workers/agent-core/src/index.ts` `workers/agent-core/wrangler.jsonc` | 给唯一 real deploy worker 预留 Durable Object slot | `high` |
 | P2-01 | Phase 2 | workspace 接入 | `update` | `pnpm-workspace.yaml` | 让 workers 与 packages 共存 | `medium` |
 | P2-02 | Phase 2 | matrix CI | `add` | `.github/workflows/workers.yml` | 统一 build/test 验证 | `medium` |
 | P2-03 | Phase 2 | dual-path 依赖说明 | `update` | package/README/closure notes | published / workspace:* 均可解析 | `medium` |
-| P3-01 | Phase 3 | agent-core real deploy | `update` | `workers/agent-core` | 完成最小真实 Cloudflare 验证 | `high` |
+| P3-01 | Phase 3 | agent-core real deploy / fallback | `update` | `workers/agent-core` | 完成最小真实 Cloudflare 验证，或记录 deployable fallback | `high` |
 | P3-02 | Phase 3 | bash/context/filesystem dry-run | `update` | 其余 3 workers | 证明 3 个 shell 均 deploy-shaped | `medium` |
 | P3-03 | Phase 3 | W4 closure | `add` | `docs/issue/pre-worker-matrix/W4-closure.md` | 为 W5 提供 deploy evidence | `low` |
 
@@ -137,6 +139,7 @@ W4 workers scaffolding
 |------|--------|----------|------------------|----------|----------|----------|
 | P1-01 | `workers/` 顶级目录 | 建 4 个 worker 目录 | `workers/*` | worker 顶级空间成为物理事实 | 目录检查 | 4 目录齐全 |
 | P1-02 | shell 文件 | 每个 worker 补 `wrangler.jsonc/package.json/src/test/README` | 各 worker | deploy-shaped shell 统一 | build/test smoke | 结构同构 |
+| P1-03 | `agent-core` DO slot | 单独补 `NanoSessionDO` stub export、`durable_objects.bindings` 与 `migrations` block | `workers/agent-core/*` | 唯一 real deploy worker 具备 DO 形态 | build/test smoke | 不会因缺 DO class 导致 deploy 失败 |
 
 ### 4.2 Phase 2 — workspace 与 CI
 
@@ -150,7 +153,7 @@ W4 workers scaffolding
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P3-01 | agent-core real deploy | 真实 deploy 到 preview/workers.dev | `workers/agent-core` | 至少 1 个 live URL | wrangler deploy + curl | live JSON 可访问 |
+| P3-01 | agent-core real deploy / fallback | 若凭据可用则真实 deploy 到 preview/workers.dev；否则至少 dry-run 并在 closure 记为 shell-deployable pending credentials | `workers/agent-core` | 至少 1 个 live URL，或 deployable fallback 状态明确 | wrangler deploy + curl / wrangler dry-run | live JSON 可访问，或 fallback 证据完整 |
 | P3-02 | 3 workers dry-run | `wrangler deploy --dry-run` | bash/context/filesystem | 其余 3 个 shell 可 bundle/deploy-shaped | wrangler dry-run | 日志可归档 |
 | P3-03 | W4 closure | 写 deploy evidence 与 dual-path reality | `docs/issue/pre-worker-matrix/W4-closure.md` | W5 可直接引用 | 文档 review | evidence 完整 |
 
@@ -164,17 +167,19 @@ W4 workers scaffolding
 - **本 Phase 对应编号**：
   - `P1-01`
   - `P1-02`
+  - `P1-03`
 - **本 Phase 新增文件**：
   - `workers/agent-core/*`
   - `workers/bash-core/*`
   - `workers/context-core/*`
   - `workers/filesystem-core/*`
+  - `workers/agent-core/src/nano-session-do.ts`
 - **本 Phase 修改文件**：
   - `无`
 - **具体功能预期**：
   1. 4 个 worker 都有 deploy-shaped 最小结构
   2. 结构保持完全同构
-  3. `agent-core != binding slot` 的 host 定位可在 shell 层预留 DO slot
+  3. `agent-core` 作为 host worker 会额外预留 DO slot，与另外 3 个 plain fetch shell 拉开边界
 - **具体测试安排**：
   - **单测**：`各 worker smoke test`
   - **集成测试**：`build shell`
@@ -185,6 +190,7 @@ W4 workers scaffolding
   - `wrangler.jsonc` / package 命名与 design 一致
 - **本 Phase 风险提醒**：
   - 最容易把不同 worker 写成不同目录风格，破坏后续 absorb pattern
+  - 最容易漏掉 `agent-core` 的 DO slot，直接把 W4 唯一 real deploy 点写残
 
 ### 5.2 Phase 2 — workspace 与 CI
 
@@ -226,16 +232,18 @@ W4 workers scaffolding
 - **本 Phase 修改文件**：
   - `workers/*`（按 deploy 反馈微调）
 - **具体功能预期**：
-  1. `agent-core` 至少有 1 个 live URL
-  2. 其余 3 workers 至少 dry-run 成功
-  3. evidence 能被 W5 与 future charter 使用
+  1. 若 owner 提供凭据，`agent-core` 至少有 1 个 live URL
+  2. 若凭据不可用，`agent-core` 也至少达到 shell-deployable + dry-run 成功的 fallback 状态
+  3. 其余 3 workers 至少 dry-run 成功
+  4. evidence 能被 W5 与 future charter 使用
 - **具体测试安排**：
   - **单测**：`shell smoke`
   - **集成测试**：`wrangler deploy --dry-run`
   - **回归测试**：`pnpm --filter './workers/*' build/test`
   - **手动验证**：`curl agent-core preview URL`
 - **收口标准**：
-  - 1 real + 3 dry-run 达成
+  - `agent-core` 达成 real deploy，或 fallback 为 shell-deployable pending credentials
+  - 其余 3 workers dry-run 达成
   - W4 closure 记录 dual-path install reality
 - **本 Phase 风险提醒**：
   - owner-side Cloudflare account / token 是外部 gate
@@ -250,9 +258,9 @@ W4 workers scaffolding
 
 - **影响范围**：`Phase 3`
 - **为什么必须确认**：`agent-core real deploy 需要 Cloudflare account / token / preview 策略`
-- **当前建议 / 倾向**：`使用 preview env 完成 1 次真实 deploy`
+- **当前建议 / 倾向**：`使用 preview env 完成 1 次真实 deploy；若凭据不可用则按 shell-deployable fallback closure`
 - **Q**：`owner 是否提供 W4 阶段 agent-core preview deploy 所需的 Cloudflare 账户与凭据？`
-- **A**：`待 owner 决定`
+- **A**：`若能及时提供，则按 preview env 完成 1 次真实 deploy；若不能及时提供，W4 允许按 "agent-core shell deployable, pending owner credentials" 的 fallback 路径 closure。`
 
 #### Q2
 
@@ -260,7 +268,7 @@ W4 workers scaffolding
 - **为什么必须确认**：`决定 W4 当前依赖走 workspace:* 还是已发布版本`
 - **当前建议 / 倾向**：`优先允许 workspace:*，不阻塞 W4`
 - **Q**：`若 W2 首发尚未完成，owner 是否接受 W4 全程使用 workspace:* 作为 interim path？`
-- **A**：`待 owner 决定`
+- **A**：`是。W4 默认接受全程使用 workspace:* 作为 interim path；published cutover 推迟到 worker-matrix 阶段决定。`
 
 ### 6.2 问题整理建议
 
@@ -278,6 +286,7 @@ W4 workers scaffolding
 | Cloudflare 凭据 | W4 real deploy 受 owner 环境约束 | `high` | 先完成 shell/CI，最后再做 real deploy |
 | dual-path 漂移 | W2/W4/W5 口径不一致会误导后续 cutover | `medium` | closure 必写当前解析路径 |
 | shell 结构不统一 | 会直接增加 worker-matrix P0 吸收成本 | `high` | Phase 1 统一模板化 |
+| `agent-core` DO slot 漏声明 | 会让唯一 real deploy worker 在 wrangler 阶段直接失败 | `high` | Phase 1 单拆 `P1-03`，把 stub export + bindings + migrations 一次写清 |
 
 ### 7.2 约束与前提
 
@@ -324,9 +333,10 @@ W4 workers scaffolding
 
 1. `workers/` 目录成为物理事实
 2. 4 个 shell 项目结构统一
-3. agent-core 完成 1 次真实 deploy
-4. 其余 3 个 shell 至少 dry-run 成功
-5. W5 可直接引用 W4 deploy evidence
+3. `agent-core` DO slot 预留完整
+4. `agent-core` 完成 1 次真实 deploy，或 fallback 为 shell-deployable pending credentials
+5. 其余 3 个 shell 至少 dry-run 成功
+6. W5 可直接引用 W4 deploy evidence
 
 ### 8.3 完成定义（Definition of Done）
 
