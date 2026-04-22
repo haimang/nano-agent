@@ -11,7 +11,7 @@
 > - `docs/design/pre-worker-matrix/W0-nacp-consolidation.md`
 > - `docs/design/pre-worker-matrix/W1-cross-worker-protocols.md`
 > - `docs/action-plan/pre-worker-matrix/W5-closure-and-handoff.md`
-> 文档状态: `draft`
+> 文档状态: `executed`
 
 ---
 

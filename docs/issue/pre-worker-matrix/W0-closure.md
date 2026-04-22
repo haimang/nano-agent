@@ -74,18 +74,21 @@ W0 已达到 action-plan 约定的关闭条件。
 
 ### 4.2 W0 实施后的直接验证
 
-1. `pnpm --filter @nano-agent/nacp-core typecheck build test`
-2. `pnpm install`
-3. `pnpm --filter @nano-agent/session-do-runtime typecheck build test`
-4. `pnpm --filter @nano-agent/hooks typecheck build test`
-5. `pnpm --filter @nano-agent/storage-topology typecheck build test`
-6. `pnpm --filter @nano-agent/workspace-context-artifacts typecheck build test`
+1. `pnpm --filter @nano-agent/nacp-core typecheck build test` → `18/18` test files, `259/259` tests passed
+2. `pnpm --filter @nano-agent/nacp-session typecheck build test` → `14/14` test files, `119/119` tests passed
+3. `pnpm --filter @nano-agent/session-do-runtime typecheck build test` → `29/29` test files, `357/357` tests passed
+4. `pnpm --filter @nano-agent/hooks typecheck build test` → `16/16` test files, `198/198` tests passed
+5. `pnpm --filter @nano-agent/storage-topology typecheck build test` → `15/15` test files, `169/169` tests passed
+6. `pnpm --filter @nano-agent/workspace-context-artifacts typecheck build test` → `17/17` test files, `192/192` tests passed
 
 ### 4.3 W0 最终仓级验证
 
-1. `pnpm -r run test`
-2. `node --test test/*.test.mjs`
-3. `npm run test:cross`
+1. `pnpm -r run test` → `11` 个 workspace test targets 全绿；汇总输出共 `2177/2177` tests passed
+2. `node --test test/*.test.mjs` → root contract suite `98/98` passed
+3. `npm run test:cross` → root contract + e2e cross suite `112/112` passed
+4. `node --test test/b7-round2-integrated-contract.test.mjs` → **B7 LIVE contract `5/5` passed**
+
+> 说明：第 4 条是对 B7 LIVE 的显式单独复核。它已经被第 2/3 条的 root suite 覆盖，但为满足 pre-worker-matrix / W0 的收口纪律，这里额外单列结果。
 
 ---
 
@@ -105,6 +108,16 @@ W0 已达到 action-plan 约定的关闭条件。
 2. **W2** 可以把 publish gate 建立在已经稳定的 core surface 上
 3. **W3** 可以把 blueprint / absorption map 对齐到新的 import truth
 4. **W4** 可以直接消费 cross-seam / storage-law / evidence vocabulary 作为 scaffold 契约
+
+### 5.3 本轮未按 design 拆成 5 个独立 commit 的 tradeoff 说明
+
+W0 的代码提交最终收束成了“core consolidation 一组 + downstream compat 一组 + docs/test 两组”的较粗粒度历史，而不是 design §6.1 预想的 5 类独立可回滚 commit。
+
+这里的实际取舍是：
+
+1. W0 的 5 类 vocabulary 吸收在代码上高度耦合到同一轮 `nacp-core@1.4.0` surface freeze；若强行拆成 5 组，验证面会被重复扩大到 5 轮全仓回归。
+2. 这次选择优先保证 **单轮完整 regression + additive/non-breaking 收口**，而不是为了历史颗粒度去做 5 次重复 build/test。
+3. 这一偏离只接受在 W0；后续 W1/W3 若继续做多类文档/blueprint 收口，应恢复“每类独立 commit / 易回滚”的纪律，避免进一步放宽。
 
 ---
 

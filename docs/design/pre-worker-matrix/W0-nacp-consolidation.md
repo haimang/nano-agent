@@ -8,11 +8,12 @@
 > - Tier 映射:`docs/plan-pre-worker-matrix.md` §1.3
 > - 姊妹 design:`docs/design/pre-worker-matrix/W1-cross-worker-protocols.md`(依赖本 design 的产出)
 > - 当前 NACP contract:`docs/rfc/nacp-core-1-3-draft.md`
-> 文档状态:`draft (v0.2 post-GPT-review narrowing)`
+> 文档状态:`executed (v0.3 shipped)`
 >
 > **修订历史**:
 > - v0.1 (2026-04-21):初稿
 > - v0.2 (2026-04-21):post-GPT-review narrowing — BoundedEvalSink class 不搬 NACP(只搬 dedup/overflow shape + extractMessageUuid helper);hooks catalog 拆分(wire-level event name + payload schema → NACP;HookEventMeta runtime metadata 留 hooks 包)
+> - v0.3 (2026-04-22):executed / shipped — W0 已按 narrowed scope 落地；收口见 `docs/rfc/nacp-core-1-4-consolidation.md` 与 `docs/issue/pre-worker-matrix/W0-closure.md`
 
 ---
 
