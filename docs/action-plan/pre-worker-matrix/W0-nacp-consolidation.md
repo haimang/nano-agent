@@ -417,3 +417,89 @@ W0 NACP Protocol Consolidation
 ## 10. 结语
 
 这份 action-plan 以 **把 Tier A contract 收束到单一 NACP 真理源** 为第一优先级，采用 **先 shape、再 compat、最后版本与文档收口** 的推进方式，优先解决 **协议分散、发布对象不纯、后续 phase 缺少统一引用基线**，并把 **不搬 runtime class / 不改语义 / 不破坏现有消费者** 作为主要约束。整个计划完成后，`pre-worker-matrix / W0` 应达到 **nacp-core 1.4.0-ready 的稳定状态**，从而为后续的 **W1 RFC、W2 发布、W3 blueprint、W4 shell** 提供稳定基础。
+
+---
+
+## 11. GPT 工作日志回填（2026-04-22）
+
+### 11.1 总体结果
+
+- **结论**：W0 已按 action-plan 完成代码落地并达到关闭条件。
+- **核心变化**：`@nano-agent/nacp-core` 现在成为 W0 范围内 Tier A vocabulary 的单一真理源；旧 package 继续保留 compat surface，但不再各自维护重复 truth。
+
+### 11.2 新增文件
+
+1. `packages/nacp-core/src/transport/cross-seam.ts`
+2. `packages/nacp-core/src/evidence/sink-contract.ts`
+3. `packages/nacp-core/src/evidence/vocabulary.ts`
+4. `packages/nacp-core/src/evidence/index.ts`
+5. `packages/nacp-core/src/hooks-catalog/index.ts`
+6. `packages/nacp-core/src/storage-law/constants.ts`
+7. `packages/nacp-core/src/storage-law/builders.ts`
+8. `packages/nacp-core/src/storage-law/index.ts`
+9. `packages/nacp-core/test/transport/cross-seam.test.ts`
+10. `packages/nacp-core/test/evidence.test.ts`
+11. `packages/nacp-core/test/hooks-catalog.test.ts`
+12. `packages/nacp-core/test/storage-law.test.ts`
+13. `docs/rfc/nacp-core-1-4-consolidation.md`
+14. `docs/issue/pre-worker-matrix/W0-closure.md`
+
+### 11.3 修改文件
+
+1. `packages/nacp-core/src/index.ts`
+2. `packages/nacp-core/src/transport/index.ts`
+3. `packages/nacp-core/src/version.ts`
+4. `packages/nacp-core/package.json`
+5. `packages/nacp-core/CHANGELOG.md`
+6. `packages/nacp-core/test/version.test.ts`
+7. `packages/session-do-runtime/src/cross-seam.ts`
+8. `packages/session-do-runtime/src/eval-sink.ts`
+9. `packages/hooks/src/catalog.ts`
+10. `packages/hooks/package.json`
+11. `packages/storage-topology/src/keys.ts`
+12. `packages/storage-topology/src/refs.ts`
+13. `packages/storage-topology/package.json`
+14. `packages/workspace-context-artifacts/src/evidence-emitters.ts`
+15. `packages/workspace-context-artifacts/package.json`
+16. `docs/design/pre-worker-matrix/W0-nacp-consolidation.md`
+17. `test/nacp-1-3-matrix-contract.test.mjs`
+18. `pnpm-lock.yaml`
+
+### 11.4 关键实现点
+
+1. **Phase 1 / 2 — consolidated core surface**
+   - 新建 `transport/cross-seam.ts`，只吸收 propagation truth，不搬 failure taxonomy / startup queue。
+   - 新建 `evidence/sink-contract.ts`，吸收 `EvalSinkEmitArgs / EvalSinkOverflowDisclosure / EvalSinkStats / extractMessageUuid()`。
+   - 新建 `evidence/vocabulary.ts`，用 schema 冻结 `assembly / compact / artifact / snapshot` 四类 evidence record。
+   - 新建 `hooks-catalog/index.ts`，冻结 18 个 `HookEventName` 与 per-event payload schema。
+   - 新建 `storage-law/*`，冻结 `DO_KEYS / KV_KEYS / R2_KEYS` 与 ref builders/validator。
+2. **Phase 3 — compat / no-break path**
+   - `session-do-runtime/src/cross-seam.ts` 只保留 runtime-owned error/startup 逻辑，propagation truth 改为 re-export `nacp-core`。
+   - `session-do-runtime/src/eval-sink.ts` 只保留 `BoundedEvalSink`，sink contract types + helper 改为 re-export `nacp-core`。
+   - `hooks/src/catalog.ts` 改为消费 `HookEventName` 与 payload-schema-name truth，但继续保留 `HOOK_EVENT_CATALOG` runtime metadata。
+   - `storage-topology/src/{keys.ts,refs.ts}` 改为 compat re-export。
+   - `workspace-context-artifacts/src/evidence-emitters.ts` 改为对齐 `nacp-core` evidence record types。
+3. **Phase 4 — version / docs**
+   - `@nano-agent/nacp-core` 版本提升到 `1.4.0`，并新增 `./evidence`、`./hooks-catalog`、`./storage-law` subpath exports。
+   - 新增 consolidation RFC 与 W0 closure memo。
+   - `@nano-agent/nacp-session` 保持 `1.3.0`，因为 W0 没有引入新的 session package surface 或 import 依赖。
+
+### 11.5 验证与结果
+
+以下验证面已通过：
+
+1. `pnpm --filter @nano-agent/nacp-core typecheck build test`
+2. `pnpm --filter @nano-agent/nacp-session typecheck build test`
+3. `pnpm --filter @nano-agent/session-do-runtime typecheck build test`
+4. `pnpm --filter @nano-agent/hooks typecheck build test`
+5. `pnpm --filter @nano-agent/storage-topology typecheck build test`
+6. `pnpm --filter @nano-agent/workspace-context-artifacts typecheck build test`
+7. `node --test test/*.test.mjs`
+8. `npm run test:cross`
+
+### 11.6 最终收口意见
+
+1. W0 的目标已经兑现：Tier A shape 已收口到单一 NACP 真理源。
+2. compat 路径成立：旧 import 面继续可用，没有把下游强行拖进同步迁移。
+3. runtime / vocabulary 边界保持住了：`BoundedEvalSink`、`CrossSeamError`、`StartupQueue`、`HOOK_EVENT_CATALOG` metadata、storage adapters 都没有被误搬进 core。
+4. 下一阶段可以直接进入 `W1-cross-worker-protocols`，并以 `@nano-agent/nacp-core@1.4.0` 作为 RFC 与 import truth 基线。
