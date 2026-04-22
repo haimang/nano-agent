@@ -226,6 +226,36 @@
 
 ---
 
+## 7. 二次审查
+
+### 7.1 二次审查结论
+
+> 复核者: `GPT-5.4`
+> 复核时间: `2026-04-21`
+> 复核依据: `实现者 §6 的回应 + 当前 design 文档事实 + 当前仓库工件存在性`
+
+- **二次结论**：`本轮 body-level narrowing 只部分生效；W0 已基本收口，但 W1/W2/W3/W4/W5 仍残留会误导执行的正文级 stale 内容，且 W5 依赖的 closure / handoff / RFC / blueprint 工件多数尚未落盘，因此本轮仍不能收口。`
+- **是否收口**：`no`
+
+### 7.2 已验证有效的修复
+
+| 审查编号 | 复核结论 | 依据 |
+|----------|----------|------|
+| R1 | `closed` | `docs/design/pre-worker-matrix/W0-nacp-consolidation.md:383-386,393-413` 已把 C1/C4 改成 `sink-contract`/wire-shape，明确 `BoundedEvalSink class` 与 `HookEventMeta` 不搬；`docs/design/pre-worker-matrix/W0-nacp-consolidation.md:199-203` 的目录结构也已同步。 |
+
+### 7.3 仍未收口的问题
+
+| 审查编号 | 当前状态 | 说明 | 下一步要求 |
+|----------|----------|------|------------|
+| R2 | `partial` | W1 虽已把 `§5.1 / §7.1` 改成 RFC-only，但正文其他主干仍保留 code-ship posture：`docs/design/pre-worker-matrix/W1-cross-worker-protocols.md:178-189` 仍写 `wrapEvidenceAsAudit` helper 聚合在 `nacp-core`; `:249-257` 仍写 W1 新 symbol 与 `1.4.0` 共写 CHANGELOG；`:307,358` 仍讨论 `workspace.fs.*` response / matrix unit test 等实装问题；`:411-420` 仍以实装型 schema/body 写法展开。 | 把 `§3.4 / §4.4 / §4.5 / §6 / §7.2` 中仍像“本阶段将 ship 的代码”之处，要么改成明确的 RFC/future-note，要么整体移入清晰标注的 superseded appendix。 |
+| R3 | `partial` | W2 的两层结构已进入 `§1.1 / §7.1`，但正文前半仍保留 hard-dependency 叙述：`docs/design/pre-worker-matrix/W2-publishing-pipeline.md:27-31` 仍说 worker-matrix `workers/*` 将从 GitHub Packages import；`:39-47` 仍把首次发布写成推荐主节奏；`:122-123` 虽说 W4 可选消费者，但总体背景仍把 published path 当默认前提。 | 重写 `§0.1 / §0.2 / §2.1`，统一成“skeleton 必做、首发可 parallel、workers first-wave 默认允许 workspace:* interim”。 |
+| R4 | `partial` | W3 主标题和主表已收窄，但正文仍残留 llm-wrapper-era 文本：`docs/design/pre-worker-matrix/W3-absorption-blueprint-and-dryrun.md:96` 的 dry-run 定义仍写 “llm-wrapper 在 W3 dry-run”；`:109` 仍以 `packages/llm-wrapper/` 作为参考上下文；`:299-304,319` 的 Out-of-Scope/边界仍围绕 llm-wrapper；`:439` 模板还提 `S5 back-write`；`:586-606` 整个 `§8.2` 仍是 llm-wrapper 目标与 `workers/agent-core/src/llm/` 旧落点。 | 把 llm-wrapper 相关内容彻底收敛成“历史对比附录”或删除；正文、模板、边界、参考实现只能保留 capability-runtime / map + 2-3 blueprint 的 narrowed posture。 |
+| R5 | `partial` | W4 的 `§0 / §7` 已基本改到位，但 `§2` 与 `§3.3` 仍保留 GitHub Packages hard dependency：`docs/design/pre-worker-matrix/W4-workers-scaffolding.md:126-130` 仍写 “W2 完成(workers 要 import @<scope>/nacp-core@1.4.0)”；`:149` 仍写 “W2 发布前 W4 无法闭环”；`:196-197` 仍写 workers deps 走 npm path、不写 `workspace:*`。 | 统一重写 `§2.1 / §2.2 / §3.3`，与 `§0.3` 和 `§7.2 S3` 的双路径策略一致：`workspace:*` 与 published version 二选一均可闭环。 |
+| R6 | `open` | W5 仍存在最关键的 closure 错位：`docs/design/pre-worker-matrix/W5-closure-and-handoff.md:411-420` 继续要求检查 W1 `wrapEvidenceAsAudit` shipped code、`W0+W1` published symbols、`HookEventMeta`/`workspace.fs.*`/`wrapEvidenceAsAudit` import；`:467-472` 的 X3 仍把 W1/W2/W4 产物写成旧版闭环，并且出现错误 worker 名 `persistence-core / pool-core`。 | 以 charter r2 §11 的 6 条 exit criteria 重新写 `X2/X3/X4`；W5 不得再假设 W1 shipped code，不得再把 W0+W1 联合 published symbol completeness 当成 closure predicate。 |
+| R7 | `new` | W5 及 W1/W2/W3 design 假定的 execution artifacts 多数尚未存在：`docs/issue/pre-worker-matrix/*.md` 无匹配；`docs/handoff/pre-worker-matrix-to-worker-matrix.md` 无匹配；`docs/rfc/nacp-workspace-rpc.md` / `remote-compact-delegate.md` / `evidence-envelope-forwarding.md` 无匹配；`docs/design/pre-worker-matrix/W3-absorption-map.md` 与 `W3-absorption-blueprint-*.md` 无匹配；`docs/design/pre-worker-matrix/W2-publishing-discipline.md` 无匹配。`docs/plan-worker-matrix.md` 也仍是 `deprecated / awaiting-rewrite-after-pre-worker-matrix-closes`。 | 在讨论进入代码前，先把 pre-worker-matrix 自己承诺的 RFC / map / representative blueprints / closure / handoff 工件落盘，并完成 `plan-worker-matrix.md` 的 r2 rewrite 触发链。否则当前只能算“设计文档仍在收敛中”，还不是可执行实现阶段。 |
+
+---
+
 ## 6. 实现者回应
 
 ### 6.1 对本轮审查的回应
