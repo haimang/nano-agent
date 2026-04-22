@@ -19,8 +19,8 @@ describe("version constants", () => {
     expect(cmpSemver(NACP_VERSION, NACP_VERSION_COMPAT)).toBeGreaterThanOrEqual(0);
   });
 
-  it("NACP 1.3 baseline with 1.0.0 compat floor (B9)", () => {
-    expect(NACP_VERSION).toBe("1.3.0");
+  it("NACP 1.4 consolidation baseline with 1.0.0 compat floor (W0)", () => {
+    expect(NACP_VERSION).toBe("1.4.0");
     expect(NACP_VERSION_COMPAT).toBe("1.0.0");
   });
 

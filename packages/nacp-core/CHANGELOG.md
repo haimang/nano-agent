@@ -1,5 +1,33 @@
 # Changelog — @nano-agent/nacp-core
 
+## 1.4.0 — 2026-04-22 (W0 — pre-worker-matrix consolidation)
+
+Per `docs/rfc/nacp-core-1-4-consolidation.md`. Zero breaking change. This cut consolidates Tier A vocabulary that had been split across adjacent runtime packages into `@nano-agent/nacp-core`, while leaving runtime classes / dispatchers / adapters in their original homes.
+
+### Added
+
+- `src/transport/cross-seam.ts` — `CrossSeamAnchor`, `CROSS_SEAM_HEADERS`, `buildCrossSeamHeaders()`, `readCrossSeamHeaders()`, `validateCrossSeamAnchor()`.
+- `src/evidence/sink-contract.ts` — `EvalSinkEmitArgs`, `EvalSinkOverflowDisclosure`, `EvalSinkStats`, and `extractMessageUuid()`.
+- `src/evidence/vocabulary.ts` — `EvidenceAnchorSchema`, 4-stream evidence record schemas (`assembly` / `compact` / `artifact` / `snapshot`), and `EvidenceRecordSchema`.
+- `src/hooks-catalog/index.ts` — `HookEventNameSchema`, the frozen 18-event hook name set, per-event payload schemas, and `HOOK_EVENT_PAYLOAD_SCHEMA_{NAMES,SCHEMAS}` registries.
+- `src/storage-law/{constants.ts,builders.ts,index.ts}` — `DO_KEYS`, `KV_KEYS`, `R2_KEYS`, `buildDoStorageRef()`, `buildKvRef()`, `buildR2Ref()`, `validateRefKey()`, plus `StorageRef` / `BuildRefOptions`.
+- New public subpath exports: `@nano-agent/nacp-core/evidence`, `@nano-agent/nacp-core/hooks-catalog`, `@nano-agent/nacp-core/storage-law`.
+
+### Changed
+
+- `NACP_VERSION` bumped `1.3.0 → 1.4.0`. `NACP_VERSION_COMPAT` stays `1.0.0`.
+- `packages/session-do-runtime/src/cross-seam.ts` now keeps only runtime-owned failure/startup logic locally; propagation truth is re-exported from `@nano-agent/nacp-core`.
+- `packages/session-do-runtime/src/eval-sink.ts` now re-exports sink contract types + `extractMessageUuid()` from `@nano-agent/nacp-core` while keeping `BoundedEvalSink` local.
+- `packages/workspace-context-artifacts/src/evidence-emitters.ts` now types its evidence records against `@nano-agent/nacp-core` vocabulary.
+- `packages/hooks/src/catalog.ts` now consumes `HookEventName` and payload-schema-name truth from `@nano-agent/nacp-core`.
+- `packages/storage-topology/src/{keys.ts,refs.ts}` now re-export storage-law truth from `@nano-agent/nacp-core`.
+
+### Not shipped (deferred)
+
+- `BoundedEvalSink`, `CrossSeamError`, `StartupQueue`, evidence emitters, hook runtime metadata, storage adapters, and any other runtime classes / dispatchers / adapters remain outside `@nano-agent/nacp-core`.
+- No new cross-worker message families or worker-matrix RFC surface ship in 1.4.0; W1 remains the RFC-only follow-up phase.
+- `@nano-agent/nacp-session` does **not** bump in W0 because this consolidation did not require new `nacp-session` imports or surface changes.
+
 ## 1.3.0 — 2026-04-21 (B9 — contract freeze pre worker-matrix)
 
 Per `docs/rfc/nacp-core-1-3-draft.md`. Zero breaking change. Version jumps over `1.2.0` because that semver tag is owned by the B6-reconciled "no-schema-delta" RFC (`docs/rfc/nacp-core-1-2-0.md`); reusing it would create ambiguity between "B6 frozen decision" and "B9 shipped delta."

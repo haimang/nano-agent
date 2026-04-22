@@ -16,7 +16,7 @@
  * Within any minor line, patch versions are mutually compatible.
  */
 
-export const NACP_VERSION = "1.3.0";
+export const NACP_VERSION = "1.4.0";
 export const NACP_VERSION_COMPAT = "1.0.0";
 
 /**

@@ -138,6 +138,10 @@ export {
 
 // ── Transport ──
 export {
+  CROSS_SEAM_HEADERS,
+  buildCrossSeamHeaders,
+  readCrossSeamHeaders,
+  validateCrossSeamAnchor,
   ServiceBindingTransport,
   DoRpcTransport,
   buildDoIdName,
@@ -149,6 +153,7 @@ export type {
   NacpHandler,
   NacpSendOptions,
   NacpProgressResponse,
+  CrossSeamAnchor,
   ServiceBindingTarget,
   DoStubLike,
   DoNamespaceLike,
@@ -157,6 +162,86 @@ export type {
   QueueDlqWriterLike,
   QueueConsumerOptions,
 } from "./transport/index.js";
+
+// ── Evidence ──
+export {
+  extractMessageUuid,
+  EvidenceAnchorSchema,
+  EvidenceStreamSchema,
+  AssemblyEvidenceRecordSchema,
+  CompactEvidencePhaseSchema,
+  CompactRequestEvidenceRecordSchema,
+  CompactResponseEvidenceRecordSchema,
+  CompactBoundaryEvidenceRecordSchema,
+  CompactErrorEvidenceRecordSchema,
+  CompactEvidenceRecordSchema,
+  ArtifactLifecycleStageSchema,
+  ArtifactEvidenceRecordSchema,
+  SnapshotCaptureEvidenceRecordSchema,
+  SnapshotRestoreEvidenceRecordSchema,
+  SnapshotEvidenceRecordSchema,
+  EvidenceRecordSchema,
+} from "./evidence/index.js";
+export type {
+  EvalSinkEmitArgs,
+  EvalSinkOverflowDisclosure,
+  EvalSinkStats,
+  EvidenceAnchor,
+  EvidenceStream,
+  AssemblyEvidenceRecord,
+  CompactEvidencePhase,
+  CompactEvidenceRecord,
+  ArtifactLifecycleStage,
+  ArtifactEvidenceRecord,
+  SnapshotEvidenceRecord,
+  EvidenceRecord,
+} from "./evidence/index.js";
+
+// ── Hook vocabulary ──
+export {
+  HOOK_EVENT_NAMES,
+  HookEventNameSchema,
+  SessionStartPayloadSchema,
+  SessionEndPayloadSchema,
+  UserPromptSubmitPayloadSchema,
+  PreToolUsePayloadSchema,
+  PostToolUsePayloadSchema,
+  PostToolUseFailurePayloadSchema,
+  PreCompactPayloadSchema,
+  PostCompactPayloadSchema,
+  SetupPayloadSchema,
+  StopPayloadSchema,
+  PermissionRequestPayloadSchema,
+  PermissionDeniedPayloadSchema,
+  ContextPressurePayloadSchema,
+  ContextCompactArmedPayloadSchema,
+  ContextCompactPrepareStartedPayloadSchema,
+  ContextCompactCommittedPayloadSchema,
+  ContextCompactFailedPayloadSchema,
+  EvalSinkOverflowPayloadSchema,
+  HOOK_EVENT_PAYLOAD_SCHEMA_NAMES,
+  HOOK_EVENT_PAYLOAD_SCHEMAS,
+} from "./hooks-catalog/index.js";
+export type {
+  HookEventName,
+  HookPayloadSchemaName,
+} from "./hooks-catalog/index.js";
+
+// ── Storage law ──
+export {
+  DO_KEYS,
+  KV_KEYS,
+  R2_KEYS,
+  buildR2Ref,
+  buildKvRef,
+  buildDoStorageRef,
+  validateRefKey,
+} from "./storage-law/index.js";
+export type {
+  StorageBackend,
+  StorageRef,
+  BuildRefOptions,
+} from "./storage-law/index.js";
 
 // ── Types (re-exported for convenience) ──
 export type {
