@@ -483,3 +483,96 @@ Out-of-Scope 的叙事边界整体维护良好;问题集中在 In-Scope 的**漏
 > 本轮 review 不收口,等待实现者按 §6 响应并重写相关 action-plan(特别是 W5 从零起草,以及 W0 / W3 的已存在文件状态校准)。
 
 ---
+
+## 6. GPT 修订回填（基于代码事实）
+
+### 6.1 Q/A 结构化工作日志
+
+#### Q1
+
+- **影响范围**：`W0 / R1`
+- **为什么必须确认**：`W0 若不显式承接 1.4.0 物理 bump 与 nacp-session 条件分支，W2/W4/W5 会同时失去版本基线。`
+- **当前建议 / 倾向**：`把版本动作单独列成 Phase 4 work items，而不是混在 CHANGELOG 叙事里。`
+- **Q**：`W0 是否已经补入 NACP_VERSION bump 与 nacp-session 条件 bump 决策？`
+- **A**：`是。已在 W0 action-plan 新增/重排 P4-01 ~ P4-04：P4-01 物理修改 nacp-core version / NACP_VERSION，P4-02 记录 nacp-session 是否跟随 bump 的 evidence-based 决策，P4-03 新增 consolidation RFC 与 CHANGELOG 收口，P4-04 写 W0 closure。§4.4、§5.4、§8.2、§8.3 已同步收紧到 “1.4.0 + 条件分支有证据链” 的口径。`
+
+#### Q2
+
+- **影响范围**：`W0 / R2 / R5 / R6`
+- **为什么必须确认**：`W0 是执行指南；若继续保留不存在的符号名、barrel 时机悬空、re-export 文件级 checklist 缺失，执行者会直接撞到源码事实断点。`
+- **当前建议 / 倾向**：`用当前代码真相替换 stale wording，并把 compat/re-export 的落点写到文件级。`
+- **Q**：`W0 是否已经按真实代码校准 storage-law / hooks / re-export 细节？`
+- **A**：`是。已把 W0 的 storage-law 叙事从不存在的 parseTenantKey / _PLATFORM_RESERVED 收紧为 buildDoStorageRef / buildR2Ref / buildKvRef + DO_KEYS / KV_KEYS / R2_KEYS；把 hooks 叙事明确为只吸收 HookEventName union + payload schemas，原位 runtime 事实名为 HOOK_EVENT_CATALOG；补入 evidence/index.ts 与 storage-law/index.ts 的 barrel 时机；并把 P3-01 细化到 session-do-runtime / workspace-context-artifacts / hooks / storage-topology 的具体文件与 @deprecated JSDoc 迁移指针。`
+
+#### Q3
+
+- **影响范围**：`W1 / R3 / R7`
+- **为什么必须确认**：`3 份 RFC 已经存在，W1 若继续写成 add/new，会把 “reality 校准” 错写成 “重新起草”。`
+- **当前建议 / 倾向**：`把 W1 Phase 2 收紧为 revise / verify，并把对现有 compact / audit family 的复用写进验收标准。`
+- **Q**：`W1 是否已经从 “新增 RFC” 改成 “修订已存在 RFC”，并显式锁定复用 context.compact.* / audit.record？`
+- **A**：`是。W1 已把 In-Scope 与 Phase 2 work items 全部改为 revise / verify，P2-01 ~ P2-03 的 type 改为 update，§5.2 改成“在已存在文档基础上完成校准”，§4.2 / §8.2 明确写入 remote compact 继续复用 context.compact.request/response，evidence forwarding 继续复用 audit.record + 既有 evidence payload truth。`
+
+#### Q4
+
+- **影响范围**：`W2 / R8`
+- **为什么必须确认**：`dogfood 若没有物理 `.npmrc` 与 workspace exclusion，验证路径会退化成 workspace link，自身失去价值。`
+- **当前建议 / 倾向**：`把 dogfood 的最小文件集和 pnpm-workspace 排除策略写成明确工作项。`
+- **Q**：`W2 是否已经把 dogfood / .npmrc / workspace 排除策略转成执行级 work items？`
+- **A**：`是。W2 现已新增 P2-04“workspace 排除 dogfood”，并把 P2-02 细化到 dogfood/nacp-consume-test/{package.json,.npmrc,src/smoke.ts,README.md}。§5.2 已补入 P2-04 编号、pnpm-workspace.yaml 修改点，以及 “dogfood 不会被误吸进主 workspace” 的收口目标。`
+
+#### Q5
+
+- **影响范围**：`W3 / R4 / R9 / R10`
+- **为什么必须确认**：`W3 的核心资产本来就已存在；若不承认 “已有 map/pattern/blueprints shipped” 与 capability-runtime 的真实代表性，W3 会重新膨胀成错误的大迁移 phase。`
+- **当前建议 / 倾向**：`把 W3 重写成 verify + revise 型 phase，并诚实写清 capability-runtime 的代表性和工作量。`
+- **Q**：`W3 是否已经从 “新增文档” 改为 “核对并修订既有文档”，且校准了 capability-runtime 的事实？`
+- **A**：`是。W3 已改成 Phase 1 reality verification pass + Phase 2 增量 revise；P1/P2 的 map、pattern、template、3 份 representative blueprints 均从 add 改为 update。对 capability-runtime 的说明也已改成 “cross-package dep = 0；代表性来自 fake-bash/policy seam 与大体量代码，不来自循环依赖复杂度”，并在 Phase 3 明确补入约 src 5000 LOC / test 4500 LOC 的工作量事实。`
+
+#### Q6
+
+- **影响范围**：`W4 / R11 / R12`
+- **为什么必须确认**：`agent-core 是唯一 real deploy 点；若 DO slot 不单拆、credentials fallback 不显式，W4 会被外部门禁直接卡死。`
+- **当前建议 / 倾向**：`把 agent-core 特殊性与 credentials fallback 明确进 work items / DoD / Q/A。`
+- **Q**：`W4 是否已经补齐 agent-core DO slot 与 Cloudflare credentials fallback 两个缺口？`
+- **A**：`是。W4 已新增 P1-03“agent-core DO slot”，把 workers/agent-core/src/nano-session-do.ts、index.ts re-export、wrangler.jsonc 的 Durable Object slot / migrations 预留写成单独执行项；P3-01 也改成 “real deploy / fallback” 双路径，§5.3、§8.2、§6.1 Q1 都明确了 credentials 不可用时允许按 shell-deployable pending credentials 关闭 W4。`
+
+#### Q7
+
+- **影响范围**：`W5 / R13`
+- **为什么必须确认**：`没有 W5，pre-worker-matrix 就没有 aggregate closure / handoff 的执行路径。`
+- **当前建议 / 倾向**：`单独补齐完整 W5 action-plan，而不是把收口动作散落回 W0-W4。`
+- **Q**：`W5 action-plan 是否已经创建，并覆盖 X1-X7 / 横向一致性 / 6 就绪 / handoff / charter state flip？`
+- **A**：`是。已新增 docs/action-plan/pre-worker-matrix/W5-closure-and-handoff.md，按 3 个 Phase 组织：Phase 1 审阅 W0-W4 closure + 横向 5 对角线 + 6 就绪判定，Phase 2 写 final closure / handoff / W5 closure，Phase 3 更新 meta-doc 并把 plan-worker-matrix 切到 needs-rewrite-r2。W0-W4 顶部关联文档也已补上对 W5 action-plan 的引用。`
+
+#### Q8
+
+- **影响范围**：`W0-W5 / R14`
+- **为什么必须确认**：`若所有 §6 都停留在“待 owner 决定”，action-plan 仍然不具备启动条件。`
+- **当前建议 / 倾向**：`把 charter / design 已冻结的默认答案直接写进 A。`
+- **Q**：`全部 action-plan 的 §6 是否已经从 “待 owner 决定” 改成默认可执行答案？`
+- **A**：`是。当前 pre-worker-matrix 六份 action-plan 已不再包含 “待 owner 决定” 文案。W0 固定 1.4.0 / 3 个月 compat window；W1 固定 RFC-only gate；W2 固定 skeleton mandatory + first publish optional；W3 固定 optional dry-run 可延期；W4 固定 workspace:* interim path 与 credentials fallback；W5 固定只触发 worker-matrix rewrite、不越位代写。`
+
+### 6.2 本轮回填后的判断
+
+- **修订范围**：`W0-W4 全部重写关键执行段，并新增 W5 action-plan`
+- **基于代码事实的结论**：`Opus 提出的 blocker / main-gap 均成立，且已被 action-plan 层面吸收；当前 pre-worker-matrix action-plan 集合已具备执行级 SSOT 形态。`
+- **仍保留为执行时核对项的内容**：
+  1. `W0 的 1.4.0 物理版本改动与 nacp-session 条件分支，仍需在真正实施阶段按代码证据落盘。`
+  2. `W2/W4/W5 的 optional / fallback 分支（first publish deferred、credentials unavailable）仍需在 closure memo 中诚实记录实际发生路径。`
+  3. `W5 只解锁 worker-matrix charter r2，不代写其正文；这一边界已明确写死。`
+
+### 6.3 工作结果清单
+
+1. **新增文件**
+   - `docs/action-plan/pre-worker-matrix/W5-closure-and-handoff.md`
+2. **修订文件**
+   - `docs/action-plan/pre-worker-matrix/W0-nacp-consolidation.md`
+   - `docs/action-plan/pre-worker-matrix/W1-cross-worker-protocols.md`
+   - `docs/action-plan/pre-worker-matrix/W2-publishing-pipeline.md`
+   - `docs/action-plan/pre-worker-matrix/W3-absorption-blueprint-and-dryrun.md`
+   - `docs/action-plan/pre-worker-matrix/W4-workers-scaffolding.md`
+3. **本次修订的收口判断**
+   - `R1-R4 / R11-R14 对应的 blocker 已在 action-plan 层闭合。`
+   - `R5-R10 也已按“执行指南需要的精度”补入正文，不再保留为悬空 follow-up。`
+
+---
