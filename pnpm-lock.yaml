@@ -70,6 +70,10 @@ importers:
         version: 3.25.76
 
   packages/hooks:
+    dependencies:
+      '@nano-agent/nacp-core':
+        specifier: workspace:*
+        version: link:../nacp-core
     devDependencies:
       tsx:
         specifier: ^4.19.0
@@ -165,6 +169,10 @@ importers:
         version: 3.25.76
 
   packages/storage-topology:
+    dependencies:
+      '@nano-agent/nacp-core':
+        specifier: workspace:*
+        version: link:../nacp-core
     devDependencies:
       tsx:
         specifier: ^4.19.0
@@ -181,6 +189,9 @@ importers:
 
   packages/workspace-context-artifacts:
     dependencies:
+      '@nano-agent/nacp-core':
+        specifier: workspace:*
+        version: link:../nacp-core
       '@nano-agent/storage-topology':
         specifier: workspace:*
         version: link:../storage-topology
