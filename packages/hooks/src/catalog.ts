@@ -1,3 +1,8 @@
+import {
+  HOOK_EVENT_PAYLOAD_SCHEMA_NAMES,
+  type HookEventName,
+} from "@nano-agent/nacp-core";
+
 /**
  * @nano-agent/hooks — the v2 hook event catalog (18 events across 3 classes).
  *
@@ -35,35 +40,8 @@
  * `docs/design/after-foundations/P4-hooks-catalog-expansion.md §3-§7`.
  */
 
-/**
- * Canonical hook event names.
- *
- * Class A (8) — unchanged from the 1.x baseline.
- * Class B (4) — startup / shutdown / permission.
- * Class D (6) — async-compact lifecycle + eval-sink overflow.
- */
-export type HookEventName =
-  // ── Class A (unchanged) ──
-  | "SessionStart"
-  | "SessionEnd"
-  | "UserPromptSubmit"
-  | "PreToolUse"
-  | "PostToolUse"
-  | "PostToolUseFailure"
-  | "PreCompact"
-  | "PostCompact"
-  // ── Class B (new — startup/shutdown/permission) ──
-  | "Setup"
-  | "Stop"
-  | "PermissionRequest"
-  | "PermissionDenied"
-  // ── Class D (new — async-compact lifecycle + eval-sink) ──
-  | "ContextPressure"
-  | "ContextCompactArmed"
-  | "ContextCompactPrepareStarted"
-  | "ContextCompactCommitted"
-  | "ContextCompactFailed"
-  | "EvalSinkOverflow";
+/** @deprecated Import `HookEventName` from `@nano-agent/nacp-core`. */
+export type { HookEventName } from "@nano-agent/nacp-core";
 
 /** Metadata describing a single hook event's dispatch semantics. */
 export interface HookEventMeta {
@@ -91,13 +69,13 @@ export const HOOK_EVENT_CATALOG: Readonly<Record<HookEventName, HookEventMeta>> 
   SessionStart: {
     blocking: false,
     allowedOutcomes: ["additionalContext", "diagnostics"],
-    payloadSchema: "SessionStartPayload",
+    payloadSchema: HOOK_EVENT_PAYLOAD_SCHEMA_NAMES.SessionStart,
     redactionHints: [],
   },
   SessionEnd: {
     blocking: false,
     allowedOutcomes: ["diagnostics"],
-    payloadSchema: "SessionEndPayload",
+    payloadSchema: HOOK_EVENT_PAYLOAD_SCHEMA_NAMES.SessionEnd,
     redactionHints: [],
   },
   // Design §7.2: UserPromptSubmit is governance-only; `updatedInput` is
@@ -105,19 +83,19 @@ export const HOOK_EVENT_CATALOG: Readonly<Record<HookEventName, HookEventMeta>> 
   UserPromptSubmit: {
     blocking: true,
     allowedOutcomes: ["block", "additionalContext", "diagnostics"],
-    payloadSchema: "UserPromptSubmitPayload",
+    payloadSchema: HOOK_EVENT_PAYLOAD_SCHEMA_NAMES.UserPromptSubmit,
     redactionHints: ["user_input"],
   },
   PreToolUse: {
     blocking: true,
     allowedOutcomes: ["block", "updatedInput", "additionalContext", "diagnostics"],
-    payloadSchema: "PreToolUsePayload",
+    payloadSchema: HOOK_EVENT_PAYLOAD_SCHEMA_NAMES.PreToolUse,
     redactionHints: ["tool_input"],
   },
   PostToolUse: {
     blocking: false,
     allowedOutcomes: ["additionalContext", "diagnostics"],
-    payloadSchema: "PostToolUsePayload",
+    payloadSchema: HOOK_EVENT_PAYLOAD_SCHEMA_NAMES.PostToolUse,
     redactionHints: ["tool_output"],
   },
   // Design §7.2: PostToolUseFailure may request `stop` so a failing tool
@@ -125,13 +103,13 @@ export const HOOK_EVENT_CATALOG: Readonly<Record<HookEventName, HookEventMeta>> 
   PostToolUseFailure: {
     blocking: false,
     allowedOutcomes: ["additionalContext", "stop", "diagnostics"],
-    payloadSchema: "PostToolUseFailurePayload",
+    payloadSchema: HOOK_EVENT_PAYLOAD_SCHEMA_NAMES.PostToolUseFailure,
     redactionHints: ["error_details"],
   },
   PreCompact: {
     blocking: true,
     allowedOutcomes: ["block", "diagnostics"],
-    payloadSchema: "PreCompactPayload",
+    payloadSchema: HOOK_EVENT_PAYLOAD_SCHEMA_NAMES.PreCompact,
     redactionHints: [],
   },
   // Design §7.2: PostCompact may add context (e.g. a summary reference)
@@ -139,7 +117,7 @@ export const HOOK_EVENT_CATALOG: Readonly<Record<HookEventName, HookEventMeta>> 
   PostCompact: {
     blocking: false,
     allowedOutcomes: ["additionalContext", "diagnostics"],
-    payloadSchema: "PostCompactPayload",
+    payloadSchema: HOOK_EVENT_PAYLOAD_SCHEMA_NAMES.PostCompact,
     redactionHints: [],
   },
 
@@ -154,7 +132,7 @@ export const HOOK_EVENT_CATALOG: Readonly<Record<HookEventName, HookEventMeta>> 
   Setup: {
     blocking: false,
     allowedOutcomes: ["additionalContext", "diagnostics"],
-    payloadSchema: "SetupPayload",
+    payloadSchema: HOOK_EVENT_PAYLOAD_SCHEMA_NAMES.Setup,
     redactionHints: [],
   },
   // Session-machine shutdown. Emitted during `gracefulShutdown()` BEFORE
@@ -163,7 +141,7 @@ export const HOOK_EVENT_CATALOG: Readonly<Record<HookEventName, HookEventMeta>> 
   Stop: {
     blocking: false,
     allowedOutcomes: ["diagnostics"],
-    payloadSchema: "StopPayload",
+    payloadSchema: HOOK_EVENT_PAYLOAD_SCHEMA_NAMES.Stop,
     redactionHints: [],
   },
   // Capability ask-gated permission request. Blocking so the executor
@@ -179,7 +157,7 @@ export const HOOK_EVENT_CATALOG: Readonly<Record<HookEventName, HookEventMeta>> 
   PermissionRequest: {
     blocking: true,
     allowedOutcomes: ["block", "additionalContext", "diagnostics"],
-    payloadSchema: "PermissionRequestPayload",
+    payloadSchema: HOOK_EVENT_PAYLOAD_SCHEMA_NAMES.PermissionRequest,
     redactionHints: ["tool_input"],
   },
   // Observational — emitted AFTER a permission decision resolves to
@@ -189,7 +167,7 @@ export const HOOK_EVENT_CATALOG: Readonly<Record<HookEventName, HookEventMeta>> 
   PermissionDenied: {
     blocking: false,
     allowedOutcomes: ["additionalContext", "diagnostics"],
-    payloadSchema: "PermissionDeniedPayload",
+    payloadSchema: HOOK_EVENT_PAYLOAD_SCHEMA_NAMES.PermissionDenied,
     redactionHints: ["tool_input"],
   },
 
@@ -203,7 +181,7 @@ export const HOOK_EVENT_CATALOG: Readonly<Record<HookEventName, HookEventMeta>> 
   ContextPressure: {
     blocking: false,
     allowedOutcomes: ["additionalContext", "diagnostics"],
-    payloadSchema: "ContextPressurePayload",
+    payloadSchema: HOOK_EVENT_PAYLOAD_SCHEMA_NAMES.ContextPressure,
     redactionHints: [],
   },
   // Transition: `idle → armed` / `failed → armed` (retry path).
@@ -211,7 +189,7 @@ export const HOOK_EVENT_CATALOG: Readonly<Record<HookEventName, HookEventMeta>> 
   ContextCompactArmed: {
     blocking: false,
     allowedOutcomes: ["diagnostics"],
-    payloadSchema: "ContextCompactArmedPayload",
+    payloadSchema: HOOK_EVENT_PAYLOAD_SCHEMA_NAMES.ContextCompactArmed,
     redactionHints: [],
   },
   // Transition: `armed → preparing`. Background prepare job dispatched.
@@ -219,7 +197,7 @@ export const HOOK_EVENT_CATALOG: Readonly<Record<HookEventName, HookEventMeta>> 
   ContextCompactPrepareStarted: {
     blocking: false,
     allowedOutcomes: ["diagnostics"],
-    payloadSchema: "ContextCompactPrepareStartedPayload",
+    payloadSchema: HOOK_EVENT_PAYLOAD_SCHEMA_NAMES.ContextCompactPrepareStarted,
     redactionHints: [],
   },
   // Transition: `committing → committed → idle`. Async-compact happy path
@@ -228,7 +206,7 @@ export const HOOK_EVENT_CATALOG: Readonly<Record<HookEventName, HookEventMeta>> 
   ContextCompactCommitted: {
     blocking: false,
     allowedOutcomes: ["additionalContext", "diagnostics"],
-    payloadSchema: "ContextCompactCommittedPayload",
+    payloadSchema: HOOK_EVENT_PAYLOAD_SCHEMA_NAMES.ContextCompactCommitted,
     redactionHints: [],
   },
   // Transition: prepare error / commit error / fallback error → `failed`.
@@ -236,7 +214,7 @@ export const HOOK_EVENT_CATALOG: Readonly<Record<HookEventName, HookEventMeta>> 
   ContextCompactFailed: {
     blocking: false,
     allowedOutcomes: ["diagnostics"],
-    payloadSchema: "ContextCompactFailedPayload",
+    payloadSchema: HOOK_EVENT_PAYLOAD_SCHEMA_NAMES.ContextCompactFailed,
     redactionHints: [],
   },
   // B1 binding-F04 disclosure: eval sink overflow with explicit
@@ -246,7 +224,7 @@ export const HOOK_EVENT_CATALOG: Readonly<Record<HookEventName, HookEventMeta>> 
   EvalSinkOverflow: {
     blocking: false,
     allowedOutcomes: ["additionalContext", "diagnostics"],
-    payloadSchema: "EvalSinkOverflowPayload",
+    payloadSchema: HOOK_EVENT_PAYLOAD_SCHEMA_NAMES.EvalSinkOverflow,
     redactionHints: [],
   },
 } as const;

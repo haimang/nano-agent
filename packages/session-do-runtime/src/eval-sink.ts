@@ -1,3 +1,22 @@
+import type {
+  EvalSinkEmitArgs,
+  EvalSinkOverflowDisclosure,
+  EvalSinkStats,
+} from "@nano-agent/nacp-core";
+
+/**
+ * @deprecated Import sink contract types from `@nano-agent/nacp-core`.
+ */
+export type {
+  EvalSinkEmitArgs,
+  EvalSinkOverflowDisclosure,
+  EvalSinkStats,
+} from "@nano-agent/nacp-core";
+/**
+ * @deprecated Import `extractMessageUuid` from `@nano-agent/nacp-core`.
+ */
+export { extractMessageUuid } from "@nano-agent/nacp-core";
+
 /**
  * Session DO Runtime — bounded-FIFO eval sink with B6 dedup + overflow
  * disclosure.
@@ -28,53 +47,6 @@
  * `unknown`. Dedup keys + overflow disclosures are the only structural
  * metadata the sink surfaces.
  */
-
-/**
- * Arguments accepted by `emit()`.
- *
- * `messageUuid` is the envelope-level dedup key (per
- * `packages/nacp-session/src/websocket.ts::postStreamEvent`
- * where it lives on `session_frame.header.message_uuid`). When absent,
- * the record is recorded unconditionally — dedup is opt-in.
- */
-export interface EvalSinkEmitArgs {
-  readonly record: unknown;
-  readonly messageUuid?: string;
-}
-
-/**
- * A single overflow-disclosure entry. The sink keeps the last N of
- * these (`disclosureBufferSize`) so an inspector can show the user
- * "you lost 12 records; most recent drop was at …".
- */
-export interface EvalSinkOverflowDisclosure {
-  readonly at: string;
-  readonly reason: "capacity-exceeded" | "duplicate-message";
-  readonly droppedCount: number;
-  readonly capacity: number;
-  readonly messageUuid?: string;
-}
-
-/**
- * Observability snapshot exposed to tests, inspector facade, and B7
- * integrated spike.
- */
-export interface EvalSinkStats {
-  /** Number of records currently held. */
-  readonly recordCount: number;
-  /** Hard capacity (constructor-provided). */
-  readonly capacity: number;
-  /** Total records ever dropped because capacity was exceeded. */
-  readonly capacityOverflowCount: number;
-  /** Total records dropped because their `messageUuid` was already seen. */
-  readonly duplicateDropCount: number;
-  /** Combined: `capacity + duplicate` drops. */
-  readonly totalOverflowCount: number;
-  /** Events that carried a `messageUuid` and were recorded. */
-  readonly dedupEligible: number;
-  /** Events emitted without a `messageUuid`. */
-  readonly missingMessageUuid: number;
-}
 
 export interface BoundedEvalSinkOptions {
   /** Hard record capacity. Defaults to 1024 (parity with pre-B6 behaviour). */
@@ -232,61 +204,4 @@ export class BoundedEvalSink {
       }
     }
   }
-}
-
-/**
- * Extract a best-effort `messageUuid` from whatever shape the record
- * happens to have. Current default sink callers pass either a raw
- * `TraceEvent` (no uuid) or an inspector-friendly wrapper. The
- * accessor checks the handful of shapes we've observed in practice:
- *
- *   - `{ messageUuid: "..." }`                      — direct field
- *   - `{ envelope: { header: { message_uuid } } }`  — full NACP frame
- *   - `{ header: { message_uuid } }`                — loose frame
- *
- * Returns `undefined` when nothing matches — opts the record out of
- * dedup per B6 contract.
- */
-export function extractMessageUuid(record: unknown): string | undefined {
-  if (record === null || typeof record !== "object") return undefined;
-  const obj = record as Record<string, unknown>;
-
-  if (typeof obj.messageUuid === "string" && obj.messageUuid.length > 0) {
-    return obj.messageUuid;
-  }
-  if (typeof obj.message_uuid === "string" && (obj.message_uuid as string).length > 0) {
-    return obj.message_uuid as string;
-  }
-
-  const envelope =
-    obj.envelope !== null && typeof obj.envelope === "object"
-      ? (obj.envelope as Record<string, unknown>)
-      : undefined;
-  const envelopeHeader =
-    envelope &&
-    envelope.header !== null &&
-    typeof envelope.header === "object"
-      ? (envelope.header as Record<string, unknown>)
-      : undefined;
-  if (
-    envelopeHeader &&
-    typeof envelopeHeader.message_uuid === "string" &&
-    (envelopeHeader.message_uuid as string).length > 0
-  ) {
-    return envelopeHeader.message_uuid as string;
-  }
-
-  const header =
-    obj.header !== null && typeof obj.header === "object"
-      ? (obj.header as Record<string, unknown>)
-      : undefined;
-  if (
-    header &&
-    typeof header.message_uuid === "string" &&
-    (header.message_uuid as string).length > 0
-  ) {
-    return header.message_uuid as string;
-  }
-
-  return undefined;
 }

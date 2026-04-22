@@ -13,6 +13,13 @@
  * in its dependency graph.
  */
 
+import type {
+  ArtifactEvidenceRecord,
+  AssemblyEvidenceRecord,
+  CompactEvidenceRecord,
+  EvidenceAnchor,
+  SnapshotEvidenceRecord,
+} from "@nano-agent/nacp-core";
 import type { AssemblyResult } from "./context-assembler.js";
 import type { ContextCompactRequestBody, ContextCompactResponseBody } from "./compact-boundary.js";
 import type { CompactBoundaryRecord, WorkspaceSnapshotFragment } from "./snapshot.js";
@@ -21,16 +28,8 @@ import type { CompactBoundaryRecord, WorkspaceSnapshotFragment } from "./snapsho
 // Structural aliases
 // ─────────────────────────────────────────────────────────────────────
 
-/** Trace-first carrier (matches `eval-observability::EvidenceAnchor`). */
-export interface EvidenceAnchorLike {
-  readonly traceUuid: string;
-  readonly sessionUuid: string;
-  readonly teamUuid: string;
-  readonly sourceRole: string;
-  readonly sourceKey?: string;
-  readonly turnUuid?: string;
-  readonly timestamp: string;
-}
+/** @deprecated Import `EvidenceAnchor` from `@nano-agent/nacp-core`. */
+export type EvidenceAnchorLike = EvidenceAnchor;
 
 export interface EvidenceSinkLike {
   emit(record: unknown): void | Promise<void>;
@@ -56,7 +55,7 @@ export interface AssemblyEvidenceInput {
 export function buildAssemblyEvidence(
   anchor: EvidenceAnchorLike,
   input: AssemblyEvidenceInput,
-): unknown {
+): AssemblyEvidenceRecord {
   const assembledKinds = input.result.assembled.map((l) => l.kind);
   const consideredKinds = input.consideredKinds ?? assembledKinds;
   const droppedSet = new Set(consideredKinds);
@@ -120,7 +119,7 @@ export type CompactEvidenceInput =
 export function buildCompactEvidence(
   anchor: EvidenceAnchorLike,
   input: CompactEvidenceInput,
-): unknown {
+): CompactEvidenceRecord {
   switch (input.phase) {
     case "request":
       return {
@@ -199,7 +198,7 @@ export interface ArtifactEvidenceInput {
 export function buildArtifactEvidence(
   anchor: EvidenceAnchorLike,
   input: ArtifactEvidenceInput,
-): unknown {
+): ArtifactEvidenceRecord {
   return {
     stream: "artifact" as const,
     anchor,
@@ -253,7 +252,7 @@ function fragmentSummary(fragment: WorkspaceSnapshotFragment): {
 export function buildSnapshotEvidence(
   anchor: EvidenceAnchorLike,
   input: SnapshotEvidenceInput,
-): unknown {
+): SnapshotEvidenceRecord {
   const summary = fragmentSummary(input.fragment);
   if (input.phase === "capture") {
     return {
@@ -269,7 +268,9 @@ export function buildSnapshotEvidence(
     phase: "restore",
     ...summary,
     restoreCoverage: input.restoreCoverage,
-    missingFragments: input.missingFragments,
+    missingFragments: input.missingFragments
+      ? [...input.missingFragments]
+      : undefined,
   };
 }
 

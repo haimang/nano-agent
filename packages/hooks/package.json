@@ -22,6 +22,9 @@
     "build:schema": "tsx scripts/export-schema.ts",
     "build:docs": "tsx scripts/gen-registry-doc.ts"
   },
+  "dependencies": {
+    "@nano-agent/nacp-core": "workspace:*"
+  },
   "peerDependencies": {
     "zod": ">=3.22.0"
   },

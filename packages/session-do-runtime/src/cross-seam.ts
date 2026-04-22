@@ -21,103 +21,19 @@
  *     surfaced on `drop()` so they never silently vanish.
  */
 
-// ─────────────────────────────────────────────────────────────────────
-// Propagation
-// ─────────────────────────────────────────────────────────────────────
-
 /**
- * The minimum set of identity carriers every cross-seam call must
- * thread. Header names mirror NACP wire-level snake_case so a Worker
- * receiving the call can read them with no translation.
+ * @deprecated Import propagation truth from `@nano-agent/nacp-core`.
  */
-export interface CrossSeamAnchor {
-  readonly traceUuid: string;
-  readonly sessionUuid: string;
-  readonly teamUuid: string;
-  readonly requestUuid: string;
-  readonly sourceRole?: string;
-  readonly sourceKey?: string;
-  /** Optional client-supplied deadline in ms-since-epoch. */
-  readonly deadlineMs?: number;
-}
-
-/** Standard HTTP headers stamped on every cross-seam request. */
-export const CROSS_SEAM_HEADERS = {
-  trace: "x-nacp-trace-uuid",
-  session: "x-nacp-session-uuid",
-  team: "x-nacp-team-uuid",
-  request: "x-nacp-request-uuid",
-  sourceRole: "x-nacp-source-role",
-  sourceKey: "x-nacp-source-key",
-  deadline: "x-nacp-deadline-ms",
-} as const;
-
+export {
+  CROSS_SEAM_HEADERS,
+  buildCrossSeamHeaders,
+  readCrossSeamHeaders,
+  validateCrossSeamAnchor,
+} from "@nano-agent/nacp-core";
 /**
- * Build a `Headers`-shaped record from a `CrossSeamAnchor`. The
- * record is intentionally a plain object (not a `Headers`) so it can
- * be merged into existing `RequestInit.headers` without losing fields.
+ * @deprecated Import propagation truth from `@nano-agent/nacp-core`.
  */
-export function buildCrossSeamHeaders(
-  anchor: CrossSeamAnchor,
-): Record<string, string> {
-  const out: Record<string, string> = {
-    [CROSS_SEAM_HEADERS.trace]: anchor.traceUuid,
-    [CROSS_SEAM_HEADERS.session]: anchor.sessionUuid,
-    [CROSS_SEAM_HEADERS.team]: anchor.teamUuid,
-    [CROSS_SEAM_HEADERS.request]: anchor.requestUuid,
-  };
-  if (anchor.sourceRole) out[CROSS_SEAM_HEADERS.sourceRole] = anchor.sourceRole;
-  if (anchor.sourceKey) out[CROSS_SEAM_HEADERS.sourceKey] = anchor.sourceKey;
-  if (anchor.deadlineMs !== undefined) {
-    out[CROSS_SEAM_HEADERS.deadline] = String(anchor.deadlineMs);
-  }
-  return out;
-}
-
-/** Read a `CrossSeamAnchor` back out of an HTTP `Headers`-like object. */
-export function readCrossSeamHeaders(
-  headers: { get(name: string): string | null },
-): Partial<CrossSeamAnchor> {
-  const get = (k: string) => headers.get(k) ?? undefined;
-  const deadlineRaw = get(CROSS_SEAM_HEADERS.deadline);
-  const draft: {
-    -readonly [K in keyof CrossSeamAnchor]?: CrossSeamAnchor[K];
-  } = {};
-  const traceUuid = get(CROSS_SEAM_HEADERS.trace);
-  if (traceUuid) draft.traceUuid = traceUuid;
-  const sessionUuid = get(CROSS_SEAM_HEADERS.session);
-  if (sessionUuid) draft.sessionUuid = sessionUuid;
-  const teamUuid = get(CROSS_SEAM_HEADERS.team);
-  if (teamUuid) draft.teamUuid = teamUuid;
-  const requestUuid = get(CROSS_SEAM_HEADERS.request);
-  if (requestUuid) draft.requestUuid = requestUuid;
-  const sourceRole = get(CROSS_SEAM_HEADERS.sourceRole);
-  if (sourceRole) draft.sourceRole = sourceRole;
-  const sourceKey = get(CROSS_SEAM_HEADERS.sourceKey);
-  if (sourceKey) draft.sourceKey = sourceKey;
-  if (deadlineRaw) {
-    const v = Number(deadlineRaw);
-    if (Number.isFinite(v)) draft.deadlineMs = v;
-  }
-  return draft;
-}
-
-/**
- * Validate that an anchor carries the load-bearing fields. Returns the
- * list of missing fields so callers can either reject the call or
- * surface a typed `not-ready` failure rather than passing a broken
- * anchor downstream.
- */
-export function validateCrossSeamAnchor(
-  anchor: Partial<CrossSeamAnchor>,
-): readonly (keyof CrossSeamAnchor)[] {
-  const missing: (keyof CrossSeamAnchor)[] = [];
-  if (!anchor.traceUuid) missing.push("traceUuid");
-  if (!anchor.sessionUuid) missing.push("sessionUuid");
-  if (!anchor.teamUuid) missing.push("teamUuid");
-  if (!anchor.requestUuid) missing.push("requestUuid");
-  return missing;
-}
+export type { CrossSeamAnchor } from "@nano-agent/nacp-core";
 
 // ─────────────────────────────────────────────────────────────────────
 // Failure taxonomy

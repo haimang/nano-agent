@@ -19,6 +19,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@nano-agent/nacp-core": "workspace:*",
     "@nano-agent/storage-topology": "workspace:*"
   },
   "peerDependencies": {
