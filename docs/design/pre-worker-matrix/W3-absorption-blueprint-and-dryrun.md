@@ -52,10 +52,10 @@ v0.2 立场:
 
 ### 0.3 前置共识(v0.2 narrower — 不再辩论)
 
-- **10 个 Tier B 包的目的地固定**(charter §1.3 Tier B 映射表)
+- **9 个 Tier B packages 的归宿已基本固定,但吸收视角会展开为 10 个 absorption units**(其中 `workspace-context-artifacts` 至少拆成 context/filesystem 两个主要单元;见 charter §1.3 Tier B 映射表)
 - **Absorption map 必做**(1 份 10 行表)
 - **Detailed blueprint 仅做 2-3 份代表性高复杂度包**(v0.2 narrower):
-  - 必写:`capability-runtime`(→ bash.core,跨包依赖最复杂)
+  - 必写:`capability-runtime`(→ bash.core,capability surface / policy / honest-partial 纪律最集中)
   - 必写:`workspace-context-artifacts-split`(→ context.core + filesystem.core,需拆分决策)
   - 可选:`session-do-runtime`(→ agent.core,含 DO class)
 - **其他 7 份 detailed blueprint 不在本阶段**:由 worker-matrix P0 该 worker absorb 前现场撰写(不是 pre-phase gate)
@@ -82,7 +82,7 @@ v0.2 立场:
 ### 1.1 功能簇定义
 
 - **名称(v0.2)**:`Absorption Map + Representative Blueprints + Optional capability-runtime Dry-Run`
-- **一句话定义(v0.2 narrower)**:为 10 个 Tier B package 产出 **1 份 absorption map**(粗粒度 10 行表)+ **2-3 份代表性高复杂度 detailed blueprint**(capability-runtime / workspace-context-artifacts-split / 可选 session-do-runtime)+ **optional capability-runtime dry-run**(非 gate);其他 7 份 detailed blueprint 延到 worker-matrix P0 该 worker absorb 前现场撰写
+- **一句话定义(v0.2 narrower)**:为 **9 个 Tier B packages（按吸收单元展开为 10 行 map）** 产出 **1 份 absorption map**+ **2-3 份代表性高复杂度 detailed blueprint**(capability-runtime / workspace-context-artifacts-split / 可选 session-do-runtime)+ **optional capability-runtime dry-run**(非 gate);其他非代表性单元的细化 blueprint 延到 worker-matrix P0 该 worker absorb 前现场撰写
 - **边界描述**:
   - **包含(v0.2)**:blueprint 模板定义、**1 份 absorption map**、**2-3 份代表性 detailed blueprint** 撰写、optional `capability-runtime` dry-run 执行、pattern spec 文档、deprecated 标注纪律
   - **不包含**:其他 9 个包的实际 absorb、worker-matrix P0 的具体 phase 拆分、blueprint 里提到的 workers/ 目录实际创建(那是 W4)
@@ -93,8 +93,8 @@ v0.2 立场:
 |---|---|---|
 | blueprint | 针对一个 Tier B package 的搬迁蓝图,含映射表 + 循环解决 + 测试迁移 + deprecated 时机 + LOC + 时长 | W3 的主交付物 |
 | absorption | 把 Tier B package 的代码物理搬进 `workers/<name>/` 并删除原位置(worker-matrix P0 执行) | 词义与 W0 的 consolidation 区别:consolidation = Tier B → nacp-core;absorption = Tier B → workers/\* |
-| dry-run | 对 1 个包做真实 absorption(代码搬 + 测试迁 + 构建绿),但保留原包并行存在,不删 | llm-wrapper 在 W3 dry-run |
-| pattern | dry-run 过程中发现的可复用步骤、坑位、工具链决定,写成独立 spec doc | 给其他 9 份 blueprint 使用 |
+| dry-run | 对 1 个代表包做真实 absorption 样本(代码搬 + 测试迁 + 构建绿),但保留原包并行存在,不删 | W3 若执行,目标是 capability-runtime |
+| pattern | dry-run 过程中发现的可复用步骤、坑位、工具链决定,写成独立 spec doc | 给 map 外推与后续 blueprint 使用 |
 | deprecated 贴纸 | Tier B 包的 README.md 顶部加 `⚠️ DEPRECATED` banner + 迁移指引 | 在 worker-matrix P0 该 worker absorb 完成后统一加 |
 | 共存期 | Tier B 包与 workers/\* 代码并行存在的时间窗口(~3 个月) | W3 blueprint 默认假设 |
 | LOC 估算 | 预估 absorption 期间 diff 总行数(新增 + 修改 + 删除) | 每份 blueprint 必填 |
@@ -104,9 +104,9 @@ v0.2 立场:
 
 - Charter `docs/plan-pre-worker-matrix.md` §1.3 Tier B 映射表(10 包 → workers 目的地)
 - Charter §7.4 `In-Scope` 条目 32-39(blueprint 6 字段 + dry-run 5 条)
-- Charter §14.1 文档清单:`W3-absorption-blueprint-<package>.md` × 10 + `W3-absorption-pattern.md`
+- Charter r2 当前文档清单:template + map + 2-3 份代表 blueprint + pattern spec
 - B9 `tenancy/*` 吸收 precedent(`docs/issue/after-foundations/B9-final-closure.md`)— 最接近的 "跨 package 搬迁" 历史成功案例
-- 当前 `packages/llm-wrapper/` 代码事实核查(见 §6.1 取舍 2)
+- 当前 `packages/capability-runtime/` / `packages/workspace-context-artifacts/` 代码事实核查(见 §6.1 取舍 2)
 
 ### 1.4 Dry-run 目标重评(v0.2 — capability-runtime 替代 llm-wrapper)
 
@@ -158,7 +158,7 @@ v0.2 立场:
 
 ### 2.3 一句话定位陈述
 
-> 在 nano-agent 里(v0.2),`Absorption Map + Representative Blueprints + Optional capability-runtime Dry-Run` 是 **设计层桥梁**,负责 **产出 1 份全 Tier B 包的 absorption map(映射表)+ 2-3 份代表性 absorption blueprint(作为 pattern 样本)+ optional capability-runtime dry-run(若执行则强化 pattern;若不执行则明确 skip 理由)**,对上游(pre-worker-matrix)提供 **"packages 被 worker 吸收"的方向性 shopping list(map)+ 样本(blueprint)**,对下游(worker-matrix P0)要求 **按 map 执行,按 2-3 代表 blueprint 外推到其余包;不临时设计**。
+> 在 nano-agent 里(v0.2),`Absorption Map + Representative Blueprints + Optional capability-runtime Dry-Run` 是 **设计层桥梁**,负责 **产出 1 份覆盖全部 9 个 Tier B packages / 10 个 absorption units 的 map + 2-3 份代表性 absorption blueprint(作为 pattern 样本)+ optional capability-runtime dry-run(若执行则强化 pattern;若不执行则明确 skip 理由)**,对上游(pre-worker-matrix)提供 **"packages 被 worker 吸收"的方向性 shopping list(map)+ 样本(blueprint)**,对下游(worker-matrix P0)要求 **按 map 执行,按 2-3 代表 blueprint 外推到其余单元;不临时设计**。
 
 ---
 
@@ -271,9 +271,9 @@ v0.2 立场:
 > **v0.2 说明**:原 v0.1 的 S1-S6 覆盖 10 份 detailed blueprint + llm-wrapper dry-run(gate)+ 全量 back-write。v0.2 依据 GPT review 盲点 5-6 整改,收窄为 map + 2-3 代表 + optional dry-run。
 
 - **[S1]** **Blueprint 模板定义**:一份 `docs/design/pre-worker-matrix/TEMPLATE-absorption-blueprint.md`,8 节固定结构(保留)
-- **[S2 v0.2]** **1 份 absorption map**:`docs/design/pre-worker-matrix/W3-absorption-map.md`,含 10 行表:每行含 (source package → destination worker / 粗粒度 LOC / 主要跨包依赖 / deprecated 时机 policy)。**轻粒度,不逐文件**。
+- **[S2 v0.2]** **1 份 absorption map**:`docs/design/pre-worker-matrix/W3-absorption-map.md`,含 **10 个 absorption units** 的映射表(覆盖 9 个 Tier B packages):每行含 (source unit → destination worker / 复杂度 / 主要依赖 / deprecated 时机 policy)。**轻粒度,不逐文件**。
 - **[S3 v0.2]** **2-3 份代表性 detailed blueprint**(必,按 TEMPLATE):
-  - 必写:`W3-absorption-blueprint-capability-runtime.md`(→ bash.core;跨包依赖最复杂 + bash.core 是独立 worker 角色主力)
+  - 必写:`W3-absorption-blueprint-capability-runtime.md`(→ bash.core;capability surface / policy / honest-partial 纪律最集中 + bash.core 是独立 worker 角色主力)
   - 必写:`W3-absorption-blueprint-workspace-context-artifacts-split.md`(→ context.core + filesystem.core 的拆分决策;workspace-context-artifacts 内部要切)
   - 可选(推荐):`W3-absorption-blueprint-session-do-runtime.md`(→ agent.core;含 NanoSessionDO + DO class 吸收)
 - **[S4 optional]** **Dry-run(optional,非 gate)**:
@@ -296,14 +296,14 @@ v0.2 立场:
 ### 5.2 Out-of-Scope(W3 不做)
 
 - **[O1]** 实际搬迁其他 9 个 Tier B 包(那是 worker-matrix P0 全部工作)
-- **[O2]** 删除 `packages/llm-wrapper/`(共存期内不删)
-- **[O3]** 在 `packages/llm-wrapper/README.md` 加 deprecated 贴纸(按 §0.3 时机在 worker-matrix P0 agent.core absorb 完成时加)
+- **[O2]** 删除任一 Tier B 原包(共存期内不删;即使执行 optional dry-run 也保留原包)
+- **[O3]** 在 W3 期间提前给原包 README 加 deprecated 贴纸(按 §0.3 时机在 worker-matrix P0 对应 absorb 完成后加)
 - **[O4 v0.2]** 为 2-3 份代表 blueprint **以外** 的 7 份 package 撰写 detailed blueprint(这些由 worker-matrix charter r2 的 P0 sub-phases 现场产出);以及为任何 blueprint 写 action-plan
 - **[O5]** 自动 migration script / codemod
 - **[O6]** 对其他 9 个包做 dry-run(blueprint 已足够)
-- **[O7]** 修改任何 10 个 Tier B 包的 public API 或 source code(llm-wrapper 除外,且 llm-wrapper 的"修改"只是搬位置不改 shape)
+- **[O7]** 修改任一 Tier B 包的 public API 或语义(若执行 optional dry-run,也仅允许位置复制与 import 调整,不改行为)
 - **[O8]** 为 Tier B 包单独发版(它们不发布;见 W2)
-- **[O9]** 修改 pnpm workspace 主配置(dry-run 的 `workers/agent-core/` 加入 workspace 由 W4 处理)
+- **[O9]** 把 `workers/*` 引入 workspace 作为 W3 的独立交付(W4 统一处理;W3 只在 dry-run 需要时使用 stub 目录)
 - **[O10]** 决定 worker-matrix P0 的具体 phase 拆分 / order(那是 worker-matrix charter r2)
 
 ### 5.3 边界清单(灰色地带)
@@ -316,7 +316,7 @@ v0.2 立场:
 | `session-do-runtime` 的 cross-seam / eval-sink(W0 已吸收)是否还在 W3 blueprint | **out-of-scope** | 同上;blueprint 只描述 NanoSessionDO + orchestration + controllers |
 | `evidence-emitters.ts` 的 emit helpers(W0 未搬)是否进 blueprint | **in-scope**,归 agent.core | 按 owner 决策,emit helpers 归 agent.core(`workspace-context-artifacts-context` blueprint 说明这部分去 agent.core 而非 context.core) |
 | Dry-run 是否跑 cross-worker integration test | **out-of-scope** | dry-run 只验证包内测试绿;跨 worker 集成在 worker-matrix P0 |
-| W3 完成后 llm-wrapper 是否同时存在于 2 处 | **yes,故意** | 共存期;worker-matrix P0 agent.core absorb 结束时再删原位置 |
+| W3 完成后 optional dry-run 目标是否同时存在于 2 处 | **yes,故意** | 共存期;worker-matrix P0 对应 worker absorb 结束时再删原位置 |
 | Blueprint 是否要给出 absorption 执行的确切 PR 顺序 | **no**(blueprint 描述"怎么搬",不规定"何时") | 顺序由 worker-matrix charter r2 决定 |
 | 是否为 `context.core` 的 W3 blueprint 额外考虑 β 路线的 remote compact delegate | **blueprint 层面仅标注** | β 路线 compact delegate 的接线属于 worker-matrix P0 cross-worker integration;blueprint 只注明"context.core worker 必须消费 W1 `context.compact.*` 现有协议" |
 
@@ -411,7 +411,7 @@ v0.2 立场:
 |---|---|---|---|
 | **T1** | Blueprint TEMPLATE | 8 节固定结构的 markdown 模板 | ✅ `TEMPLATE-absorption-blueprint.md` 可被代表性 blueprint 直接 copy-fill(后续 worker-matrix P0 现场写 blueprint 也用同一 template) |
 | **T2 (v0.2)** | **Absorption map**(1 份)+ **代表性 detailed blueprint**(2-3 份)| map 为 10 行 package → destination 表(粗粒度);代表性 blueprint 针对 capability-runtime / workspace-context-artifacts-split / 可选 session-do-runtime | ✅ map + 2-3 blueprint shipped;其他 7 份不在本阶段 |
-| **T3 (v0.2 optional)** | capability-runtime dry-run(非 gate) | 若 owner 决定做:真实搬 capability-runtime 到 `workers/bash-core/src/`,测试绿 | ✅ 若做:`workers/bash-core/src/` 有真实代码 + 352 tests green;**若不做:pattern doc 延后回写** |
+| **T3 (v0.2 optional)** | capability-runtime dry-run(非 gate) | 若 owner 决定做:真实搬 capability-runtime 到 `workers/bash-core/src/`,测试绿 | ✅ 若做:`workers/bash-core/src/` 有真实代码 + package-local tests green;**若不做:pattern doc 延后回写** |
 | **T4** | Pattern spec | 基于 dry-run(若做)或 generic knowledge 的 pattern doc | ✅ generic 部分(deprecated wording / 共存期纪律)shipped;具体 pattern(循环引用 / LOC 系数)若无 dry-run 留 placeholder |
 | ~~**T5**~~ | ~~Back-write~~ | **v0.2 删除** — 只有 2-3 份代表,无需大规模 back-write | N/A |
 | **T6 (v0.2)** | W3 closure memo | 归档 | ✅ `W3-closure.md` 含 map + 2-3 代表 blueprint + dry-run 状态(完成或延后)+ 7 份未写 blueprint 的 worker-matrix P0 交接指引 |
@@ -436,7 +436,7 @@ v0.2 立场:
      - 目的地 worker:`workers/<name>/`
      - 源 package 规模:source LOC / test LOC
      - 估算 diff:新增 / 删除(约 LOC)
-     - 估算时长:dry-run 回归系数 × LOC(W3 末期由 S5 back-write)
+     - 估算时长:若已有 dry-run 数据则引用其系数;否则给出人工 rough estimate
   
   ## §2. Files → Destination 映射表(逐文件)
      | src path | dest path | 动作(move/split/skip) | 备注 |
@@ -447,7 +447,7 @@ v0.2 立场:
      - 当前 import 扫描:`grep -r "import.*from" packages/<name>/src packages/<name>/test`
      - 跨包 import 清单(每条:源文件 → 目标包 → 具体 symbol)
      - 循环风险评估:
-       - 低:如 llm-wrapper(零跨包)
+       - 低:如 leaf package(跨包 import 极少)
        - 中:如 hooks(依赖 nacp-core)
        - 高:如 workspace-context-artifacts(相互依赖 storage-topology / capability-runtime)
      - 解决 pattern:
@@ -469,8 +469,8 @@ v0.2 立场:
      - 原包是否发 patch bump(推荐:发 0.X.1 patch 只加 README 贴纸)
   
   ## §6. 与 NACP 1.4.0 的 import 改写
-     - 原包内从 tier B 兄弟包 import 的 symbol,absorb 后应改为 `@nano-agent/nacp-core` / `@nano-agent/nacp-session`(GitHub Packages import path)
-     - 列出具体改写点(file:line → new import path)
+      - 原包内 shared protocol imports,absorb 后仍应指向 `@nano-agent/nacp-core` / `@nano-agent/nacp-session`
+      - workers package-level resolution 可暂用 `workspace:*` 或 published version,由 W2/W4 当时状态决定
   
   ## §7. Worker-matrix P0 执行 checklist
      - [ ] src 搬迁完成
@@ -483,7 +483,7 @@ v0.2 立场:
      - [ ] PR reviewed + merged
   
   ## §8. 依赖 / 下游 / 后续 phase 引用
-     - 本 blueprint 依赖:W0 / W1 / W2 / W4 完成
+      - 本 blueprint 依赖:W0 完成、W1 RFC 可读、W4 目录就绪;W2 只需 skeleton 就绪(首发可选)
      - 本 blueprint 被谁依赖:worker-matrix P0 的 `<worker>` absorption sub-phase
      - Related pattern spec sections:(指向 pattern doc 的相关节)
   ```
@@ -498,11 +498,11 @@ v0.2 立场:
 - 规模:~1 页 markdown(100-150 行)
 
 **Detailed blueprint(2-3 份,必做代表性高复杂度包)**:
-- 必:`docs/design/pre-worker-matrix/W3-absorption-blueprint-capability-runtime.md`(bash.core,跨包依赖最复杂)
+- 必:`docs/design/pre-worker-matrix/W3-absorption-blueprint-capability-runtime.md`(bash.core,capability surface / policy 纪律最集中)
 - 必:`docs/design/pre-worker-matrix/W3-absorption-blueprint-workspace-context-artifacts-split.md`(context.core + filesystem.core 拆分)
 - 可选:`docs/design/pre-worker-matrix/W3-absorption-blueprint-session-do-runtime.md`(agent.core + DO class)
 - 每份按 T1 TEMPLATE 8 节满填;~300-500 行 markdown
-- **其他 7 份不在本阶段写**:(`agent-runtime-kernel` / `llm-wrapper` / `hooks-runtime` / `eval-observability` / `context-management` / `workspace-context-artifacts-evidence-emitter-split` / `storage-topology-adapters`)→ 由 worker-matrix P0 该 worker absorb 前现场撰写
+- **其他 7 份不在本阶段写**:由 worker-matrix P0 在对应 worker absorb 前现场撰写;W3 只要求 map 给出 destination / 复杂度 / 外推风险
 
 - **一句话收口目标(v0.2)**:✅ **map + 2-3 blueprint shipped;7 份未写 blueprint 在 W3 closure memo 交接给 worker-matrix P0**
 
@@ -518,11 +518,11 @@ v0.2 立场:
   4. **搬 test**:`cp -r packages/capability-runtime/test/* workers/bash-core/test/`
   5. **调 import**:`nacp-core` 引用改 `@<scope>/nacp-core`(若 W2 首发)或保持 `workspace:*`;workspace-context-artifacts 引用 — **这里会遇到 circular / cross-worker 依赖问题**,按 pattern doc §2 解决方案处理(dependency inversion / interface extraction / relocation)
   6. **build 验证**:`cd workers/bash-core && pnpm build`
-  7. **test 验证**:`cd workers/bash-core && pnpm test`(期望 352 tests all green)
+  7. **test 验证**:`cd workers/bash-core && pnpm test`(目标是 package-local tests 全绿)
   8. **记录 lessons**:跨包依赖解决路径 + 实际 LOC + 实际时长 → 写 pattern doc(T4)
 - **共存期**:`packages/capability-runtime/` 完全不动;共存
 - **回归**:`pnpm -r run test` 全绿
-- **一句话收口目标(v0.2 若做)**:✅ **workers/bash-core/src/ 有真实代码 + 352 tests all green;packages/capability-runtime/ 未改;主 regression 全绿;pattern doc 循环引用节已回写**
+- **一句话收口目标(v0.2 若做)**:✅ **workers/bash-core/src/ 有真实代码 + package-local tests 全绿;packages/capability-runtime/ 未改;主 regression 全绿;pattern doc 循环引用节已回写**
 - **若不做**:pattern doc 的 LOC 系数 / 循环引用具体 pattern 保留 placeholder,等 worker-matrix P0 首次 absorb 回写
 
 #### T4 (v0.2): Pattern Spec
@@ -583,14 +583,16 @@ v0.2 删除 — 只有 2-3 份代表 blueprint,不需要大规模 back-write;LOC
 | `packages/nacp-core/src/tenancy/` | B9 吸收后的目标目录 | `workers/<name>/src/llm/` 等目的地的命名类比 |
 | `docs/plan-pre-worker-matrix.md` §1.3 | 10 包 → workers/ 的映射表 | blueprint §2 的源 mapping |
 
-### 8.2 来自 llm-wrapper 自身(dry-run 目标)
+### 8.2 来自 capability-runtime / workspace-context-artifacts 的代表性锚点
 
 | 位置 | 内容 | 借鉴点 |
 |---|---|---|
-| `packages/llm-wrapper/src/index.ts` (74 行) | 包的 public API | 搬迁后 `workers/agent-core/src/llm/index.ts` shape 保持 |
-| `packages/llm-wrapper/test/executor.test.ts` (378 行) | 最大 test 文件 | test 迁移的典型案例 |
-| `packages/llm-wrapper/package.json` | 依赖声明 | 搬迁后 `workers/agent-core/package.json` 的 LLM-related dep 来源 |
-| `packages/llm-wrapper/src/executor.ts` (327 行) | 核心 class | pattern doc 的 "大 class 迁移" 示例 |
+| `packages/capability-runtime/src/tool-call.ts` | `tool.call.*` body bridge | bash.core 代表 blueprint 的协议锚点 |
+| `packages/capability-runtime/src/capabilities/{filesystem,search,text-processing,network,vcs,exec}.ts` | fake-bash handler 家族 | bash.core 吸收时的 file-level grouping 参考 |
+| `packages/capability-runtime/src/capabilities/workspace-truth.ts` | `WorkspaceNamespace` 依赖边界 | 从本地 workspace truth 走向 future authority split 的关键 seam |
+| `packages/workspace-context-artifacts/src/{compact-boundary,snapshot}.ts` | context 侧 snapshot / compact seam | context.core 代表 blueprint 的主要锚点 |
+| `packages/workspace-context-artifacts/src/{mounts,namespace,backends/*}.ts` | filesystem 侧 mount / namespace / backend | filesystem.core 代表 blueprint 的主要锚点 |
+| `packages/workspace-context-artifacts/src/evidence-emitters.ts` | evidence helper 与 schema 混居 | 需要在 split blueprint 中明确 residual 分配 |
 
 ### 8.3 来自 Strangler Fig Pattern / 软件迁移文献
 
@@ -603,7 +605,7 @@ v0.2 删除 — 只有 2-3 份代表 blueprint,不需要大规模 back-write;LOC
 |---|---|---|
 | 一次 mega PR 搬 10 包 | 风险爆炸 + review 不可能 | W3 只 dry-run 1 个;worker-matrix P0 按 blueprint 分批 |
 | blueprint 精确到 line 级 | 代码每天变 | W3 blueprint 到 file 级 |
-| dry-run 删除原包 | 破坏共存期纪律 | §0.3 明确 llm-wrapper 原包保留 |
+| dry-run 删除原包 | 破坏共存期纪律 | §0.3 明确 optional dry-run 也必须保留原包 |
 | 在 W3 期间加所有 deprecated 贴纸 | Consumer 误解"现在不该用" | §6.1 取舍 5 明确 deprecated 时机 |
 | 写 auto-migration script | 每包循环引用不同;脚本化失败率高 | §3.1 精简 |
 

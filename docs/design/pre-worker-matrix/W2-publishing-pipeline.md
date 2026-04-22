@@ -24,11 +24,17 @@
 
 owner 在 `packages 定位辩证` 讨论中明确:**`nacp-core` 与 `nacp-session` 是唯一永久对外契约**,必须以 GitHub Packages 形式发布,其他 9 个 Tier B packages 都是"吸收上下文"不对外。
 
-这个决策直接推出 W2 的必要性:worker-matrix 阶段 `workers/*` 的 `package.json` 将**从 GitHub Packages import** `@<scope>/nacp-core` + `@<scope>/nacp-session`,而非用 `workspace:*` local link。若本阶段不完成 publishing pipeline:
+这个决策直接推出 W2 的必要性,但**不再推出 "pre-phase 内必须首发完成"**。正确理解是:
 
-1. W4 的 4 个空 worker 无法用 GitHub Packages path 消费 NACP(等于脚手架名存实亡)
-2. worker-matrix P0 的 absorption 期间 Tier B 包逐个 deprecated,若 NACP 还没发布,workers 会连 Tier A 的 source-of-truth 都找不到
-3. 第三方实现者(若有)无任何消费路径
+1. pre-phase 内**必须**把 publish pipeline skeleton 搭好,让 NACP 随时可从 repo 内进入 registry
+2. worker-matrix first-wave **允许** `workers/*` 先用 `workspace:*` 作为 interim 依赖
+3. 首次真实发布 + dogfood 可以 parallel 到 worker-matrix first-wave,但不能无限期拖延
+
+若本阶段连 skeleton 都不完成:
+
+1. worker-matrix 后续任何时点都无法平滑从 `workspace:*` 切到 published path
+2. 第三方实现者(若有)依然没有正式消费路径
+3. “只发 NACP 2 包”仍然停留在 charter 文本,不是可执行事实
 
 所以 W2 存在的本质:**把"只发 NACP 2 包"这一 owner 决策,从 charter 文字变成 CI/CD 可执行的真实流水线**。
 
@@ -37,13 +43,13 @@ owner 在 `packages 定位辩证` 讨论中明确:**`nacp-core` 与 `nacp-sessio
 按 charter §8 DAG,W2 的依赖与并发:
 
 - **硬依赖**:W0(必须先 consolidate 好 1.4.0 代码,才能发布)
-- **软依赖**:W1(W1 新增的 `workspace.fs.*` + 3 helper 若想包含在首次发布,应等 W1 完成;若不等,可以发 "W0-only" 的中间版本后再发)
-- **并发可能**:W2 可与 W1 并行启动(发布管道搭建不依赖 W1 代码完成),但**首次真实发布**应等 W0+W1 都 ship
+- **软依赖**:W1 只提供 RFC 文档,不再决定首发 artifact 的代码内容
+- **并发可能**:W2 可与 W1 并行启动(发布管道搭建不依赖 W1 完成);**首次真实发布**最小前提只需 W0 shipped code ready
 
 **推荐节奏**:
 
 1. W2 先搭 pipeline skeleton(publishConfig / workflow / secret / permission)— 可与 W1 并行
-2. 等 W0+W1 代码全 merge → 一次性 tag `nacp-v1.4.0` → 流水线触发首次发布
+2. 等 W0 shipped code ready → 可选择 tag `nacp-v1.4.0` 触发首发
 3. Dogfood 验证 → 反馈到 discipline doc → W2 closure
 
 ### 0.3 前置共识(v0.2 调整)
@@ -533,7 +539,7 @@ v0.2 修正:
 
 #### P4: 首次发布 `nacp-v1.4.0`
 
-- **前置条件**:W0 + W1 代码全 merge;`package.json` version = 1.4.0;CHANGELOG 1.4.0 entry landed
+- **前置条件**:W0 shipped 代码 ready;`package.json` version = 1.4.0;CHANGELOG 1.4.0 entry landed
 - **执行步骤**:
   1. `git tag nacp-v1.4.0`
   2. `git push origin nacp-v1.4.0`

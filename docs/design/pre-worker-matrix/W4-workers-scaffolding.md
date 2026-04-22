@@ -9,7 +9,7 @@
 > - 前置 design:
 >   - `W0-nacp-consolidation.md`(nacp-core 1.4.0 shape)
 >   - `W1-cross-worker-protocols.md`(协议 shape;wrangler 里预留 service binding 名对应 W1 设想的 workers)
->   - `W2-publishing-pipeline.md`(GitHub Packages 发布 — W4 workers 的直接消费前置)
+>   - `W2-publishing-pipeline.md`(import/publish 策略与 W4 package resolution 的前置)
 >   - `W3-absorption-blueprint-and-dryrun.md`(v0.2 optional capability-runtime dry-run;若执行,落点 `workers/bash-core/src/`,与 W4 时序协同)
 > - 模板参考:
 >   - `docs/templates/wrangler-worker.toml`(B8 shipped,evidence-backed 注释;W4 转 `.jsonc` 格式)
@@ -123,15 +123,15 @@ owner 的 `workers/` 顶级目录决策(`plan-pre-worker-matrix.md` §1.2)要求
 
 - **整体架构里的角色**:脚手架 + DevOps 验证层;把 owner "`workers/` 顶级目录" 决策从字面变成物理事实
 - **服务于**:
-  - W2(provides real GitHub Packages consumers)
-  - W3(provides `workers/agent-core/` 目录给 dry-run)
+  - W2(提供 future published consumer 的着陆点,但不是硬前置)
+  - W3(provides `workers/bash-core/` 等目的地目录给 map / blueprint / optional dry-run)
   - worker-matrix P0(provides shell,absorption 直接填 src)
 - **依赖**:
-  - W2 完成(workers 要 import `@<scope>/nacp-core@1.4.0`)
+  - W2 skeleton 就绪(或至少明确 workers 采用 `workspace:*` interim 路径)
   - W1 设计可读(wrangler service binding 名与 W1 worker 命名对齐)
   - Owner 提供 Cloudflare account(deploy 需要)
 - **被谁依赖**:
-  - W3 的 dry-run(若 W4 在 W3 之前完成 `workers/agent-core/`)
+  - W3 的 optional dry-run(若执行,优先复用 `workers/bash-core/`)
   - W5 closure(引用 agent-core 1 个 deploy URL + 3 dry-run log + CI pass)
   - worker-matrix P0 全部 absorption
 
@@ -146,13 +146,13 @@ owner 的 `workers/` 顶级目录决策(`plan-pre-worker-matrix.md` §1.2)要求
 | `.github/workflows/publish-nacp.yml`(W2) | W4 平行 | 弱 | 两个独立 workflow;互不干扰 |
 | `.github/workflows/workers.yml`(本 design S6) | W4 create | 强 | W4 核心产出 |
 | Cloudflare Account | W4 consume | 强 | deploy 必须;owner-gated |
-| GitHub Packages registry | W4 consume | 强 | NACP import;W2 发布前 W4 无法闭环 |
+| W2 import/publish 策略 | W4 consume | 中 | workers 可先用 `workspace:*`,也可在首发后切 published version |
 | `workers/bash-core/src/`(W3 optional dry-run 产出,若执行) | W4 coexist | 弱-中 | W4 建 `workers/bash-core/` 目录;W3 若执行 optional capability-runtime dry-run,其产出落入该目录 |
 | `packages/*` | W4 coexist | 弱 | workspace 同时 include 两者 |
 
 ### 2.3 一句话定位陈述
 
-> 在 nano-agent 里,`workers/ Scaffolding & Cloudflare Deploy Validation` 是**脚手架 + DevOps 验证层**,负责**建立 `workers/` 顶级目录并产出 4 个 deploy-validated 空壳 worker 项目**,对上游(owner `workers/` 决策)提供**物理目录 + 真实 Cloudflare URL 双重兑现**,对下游(W3 dry-run + worker-matrix P0)要求**按 W4 冻结的项目结构直接填业务代码而不重建脚手架**。
+> 在 nano-agent 里,`workers/ Scaffolding & Cloudflare Deploy Validation` 是**脚手架 + DevOps 验证层**,负责**建立 `workers/` 顶级目录并产出 4 个 deploy-shaped 空壳 worker 项目**,对上游(owner `workers/` 决策)提供**物理目录 + agent-core 1 次真实 deploy / 其余 3 个 dry-run 的最小证明**,对下游(W3 dry-run + worker-matrix P0)要求**按 W4 冻结的项目结构直接填业务代码而不重建脚手架**。
 
 ---
 
@@ -193,7 +193,7 @@ owner 的 `workers/` 顶级目录决策(`plan-pre-worker-matrix.md` §1.2)要求
   - 部署失败只影响该 worker,不影响其他 3 个
 - **workers/ 与 packages/ 完全独立**
   - pnpm workspace 同时识别但不混合
-  - workers 的 package.json deps 走 npm 路径(`@<scope>/nacp-core@1.4.0`);不写 `workspace:*`
+  - workers 的 package.json deps 指向统一 NACP 包名,但解析路径可为 `workspace:*` 或 published version
   - packages/ 保留 `workspace:*` internal deps;这是 Tier B 包之间的旧 contract
 - **CI matrix 与 W2 publish workflow 完全独立**
   - 两个 YAML 互不 import / 互不 depend
@@ -270,7 +270,7 @@ owner 的 `workers/` 顶级目录决策(`plan-pre-worker-matrix.md` §1.2)要求
 | bindings 详尽度 | 高(含 evidence 注释) | 中 | 无 | 中 | **高**(继承 B8 模板语义) |
 | worker 数量 | 1 模板 | 1 个 | 1 个 | 2 个 | **4 个** |
 | deploy 验证 | 否(纯模板) | 部分 B7 已 LIVE | N/A | N/A | **必须 deploy** |
-| NACP import | 无 | 内部 workspace | 无 | 无 | **from GitHub Packages** |
+| NACP import | 无 | 内部 workspace | 无 | 无 | **`workspace:*` 或 published version** |
 
 ---
 
@@ -282,7 +282,7 @@ owner 的 `workers/` 顶级目录决策(`plan-pre-worker-matrix.md` §1.2)要求
 - **[S2]** 更新 `pnpm-workspace.yaml` 加 `workers/*`(保留 `packages/*`)
 - **[S3]** 为 4 workers 各建:
   - `workers/<name>/wrangler.jsonc`
-  - `workers/<name>/package.json`(deps: `@<scope>/nacp-core@1.4.0` + `@<scope>/nacp-session@1.4.0` + `wrangler` + `@cloudflare/workers-types` + `typescript` + `vitest`)
+  - `workers/<name>/package.json`(deps 指向 `@<scope>/nacp-core` + `@<scope>/nacp-session`;解析方式依 W2 状态为 `workspace:*` 或 published version)
   - `workers/<name>/src/index.ts`(hello-world fetch handler,含 NACP version probe)
   - `workers/<name>/src/types.ts`(env binding types,初期 empty interface)
   - `workers/<name>/test/smoke.test.ts`(3-5 个 shell-level unit test)
@@ -291,7 +291,7 @@ owner 的 `workers/` 顶级目录决策(`plan-pre-worker-matrix.md` §1.2)要求
   - `workers/<name>/.gitignore`(node_modules / dist / .wrangler / .dev.vars)
 - **[S4]** `agent-core` 特殊处理:声明 `SESSION_DO` DO binding + export `class NanoSessionDO` stub(最小实现返回 `Response.json({ worker: "agent-core", binding: "session-do-stub" })`)
 - **[S5 v0.2]** **1 real deploy(agent-core)+ 3 dry-run(其他 3 workers)**:
-  - **agent-core real deploy**:`wrangler deploy --env preview`;1 个 URL 记录;curl 返回 JSON 含 `worker: "agent-core"` + NACP version + status(若 W2 首发已完成则 NACP from GitHub Packages;否则 `workspace:*`)
+  - **agent-core real deploy**:`wrangler deploy --env preview`;1 个 URL 记录;curl 返回 JSON 含 `worker: "agent-core"` + NACP version + status(解析路径可为 published version 或 `workspace:*`)
   - **bash-core / context-core / filesystem-core dry-run**:各自 `wrangler deploy --dry-run`;不真实部署;只验证 wrangler.jsonc parse + bindings resolve + TS build
   - **3 份 dry-run log 归档**(作为 DevOps 链路同构证据)
 - **[S6]** `.github/workflows/workers.yml` matrix CI:
@@ -385,7 +385,7 @@ owner 的 `workers/` 顶级目录决策(`plan-pre-worker-matrix.md` §1.2)要求
 6. **取舍 6 — hello-world fetch 返回 JSON 带 NACP version probe,不是纯 200 OK**
    - **选择 JSON + version probe**,不是 **`Response("OK")`**
    - **为什么**:
-     - version probe 证明 NACP 从 GitHub Packages 真的 import 成功(bundle 成功)
+     - version probe 证明 NACP import 真的 resolve 成功(bundle 成功),不强制要求必须来自 GitHub Packages
      - 给 W4 closure memo 提供可机读 evidence(curl + jq)
      - 成本近零(3 行代码)
    - **接受的代价**:无
@@ -404,7 +404,7 @@ owner 的 `workers/` 顶级目录决策(`plan-pre-worker-matrix.md` §1.2)要求
 | 风险 | 触发条件 | 影响 | 缓解 |
 |---|---|---|---|
 | Cloudflare account 未 owner-approved / 权限不足 | owner 未提供 credentials | wrangler deploy 失败 | **Q3 owner-gate**;W4 启动前必须 owner 提供 account ID + API token |
-| NACP 包从 GitHub Packages install 失败 | W2 未完成或 auth 未配 | build 失败 | W4 依赖 W2 完成;CI 中 install 失败立即 annotate |
+| workers 的 NACP 解析路径配置错误 | `workspace:*` / published version 选择与当下 W2 状态不匹配 | build 失败 | 在 W4 closure 里显式记录当前采用的解析路径;CI 按该路径验证 |
 | DO binding stub 在 agent-core 未正确 export | NanoSessionDO class 未 export | wrangler deploy 报错 "no class NanoSessionDO" | §7.2 S4 明确 stub class export 要求 |
 | 4 worker 的 `wrangler.jsonc.name` 冲突 or 重名 | 命名策略漂移 | deploy 覆盖 / refused | W4 冻结命名:`nano-agent-<name>`(如 `nano-agent-agent-core`);4 名字互不冲突 |
 | Matrix workflow 某 worker 失败但其他 worker 成功却被看成整体绿 | CI dashboard 读法误解 | 漏掉失败 | matrix 使用 `fail-fast: false` + 每个 worker 独立 annotate |
@@ -416,7 +416,7 @@ owner 的 `workers/` 顶级目录决策(`plan-pre-worker-matrix.md` §1.2)要求
 
 - **对开发者自己**:
   - 4 个 worker 的绝对物理位置冻结;worker-matrix P0 执行者直接填 src 不建壳
-  - 4 个独立 URL 提供 "还活着" probing 能力
+  - 至少 1 个真实 URL + 3 份 dry-run 证明,足够确认脚手架与 deploy 形状成立
 - **对 nano-agent 长期演进**:
   - `workers/` 目录从字面变成事实;packages/ 的 phase out trajectory 有物理终点
   - CI matrix 模式为未来加 worker 提供 zero-cost extensibility
@@ -589,7 +589,7 @@ owner 的 `workers/` 顶级目录决策(`plan-pre-worker-matrix.md` §1.2)要求
   This is the pre-worker-matrix W4 shell for `<name>`. Its job at this
   phase is to validate:
   - wrangler.jsonc parses
-  - NACP 1.4.0 imports from GitHub Packages
+  - NACP package imports resolve (`workspace:*` or published version)
   - Cloudflare deploy pipeline works
   
   Real business code will be absorbed here during worker-matrix Phase 0,
@@ -756,7 +756,7 @@ owner 的 `workers/` 顶级目录决策(`plan-pre-worker-matrix.md` §1.2)要求
   - 真实 deploy 仍由本地 / 手工 `pnpm --filter ./workers/<name> deploy:preview` 触发
 - **一句话收口目标**:✅ **workflow 首次 run 4 workers 全绿**
 
-#### S7: 4 Workers 真实 Cloudflare Deploy
+#### S7: 1 Real Deploy + 3 Dry-Run
 
 - **执行步骤(v0.2 — 1 real + 3 dry-run)**(owner 提供 Cloudflare account + API token 后):
   1. 本地:`export CLOUDFLARE_ACCOUNT_ID=<owner-provides>` + `export CLOUDFLARE_API_TOKEN=<owner-provides>`
@@ -767,7 +767,7 @@ owner 的 `workers/` 顶级目录决策(`plan-pre-worker-matrix.md` §1.2)要求
 - **预期产出(v0.2)**:
   - agent-core real:`https://nano-agent-agent-core-preview.<account>.workers.dev`(1 URL 外网可访问)
   - bash-core / context-core / filesystem-core dry-run:各自 `pnpm wrangler deploy --dry-run` 成功日志(bundle 生成成功 + config 校验通过)
-- **一句话收口目标(v0.2)**:✅ **agent-core 1 URL 存在且 `curl | jq '.nacp_core_version'` 返回 `"1.4.0"`;3 workers dry-run build 成功**
+- **一句话收口目标(v0.2)**:✅ **agent-core 1 URL 存在且 `curl` 返回包含 NACP version 的 JSON;3 workers dry-run build 成功**
 
 #### S8: W4 Closure Memo
 
@@ -875,7 +875,7 @@ W4 是 **"脚手架 + 一次 DevOps 贯通验证"** phase:
   - **Q4**:GitHub Packages consumer auth 是否已在 workflow secrets 配置(继承 W2)?
 - [ ] **关联 action-plan**:`docs/action-plan/pre-worker-matrix/D5-workers-scaffolding-and-deploy.md`(S1-S8 的批次化)
 - [ ] **依赖就绪确认**:
-  - W2 首次发布完成 + dogfood 绿 → W4 可启动
+  - W2 skeleton 就绪 + 当前解析路径(`workspace:*` 或 published version)已冻结 → W4 可启动
   - W3 若执行 optional dry-run 的 `workers/bash-core/src/` 与本 W4 各 worker `src/index.ts` 共存于 `workers/<name>/src/`,W4 不 import 那些 dry-run 代码(保持空壳纯净)
 - [ ] **待深入调查**:
   - 现有 `packages/session-do-runtime/wrangler.jsonc` 是否需要在 W4 阶段标 deprecated?(推荐:不标;worker-matrix P0 末期 absorb 完再处理)

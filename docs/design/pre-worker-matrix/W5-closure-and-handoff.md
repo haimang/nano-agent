@@ -408,18 +408,18 @@ W5 的全部产出都是**文档 + 元文档更新**:
 - **5 条对角线详述**:
 
   **(a)W0 ↔ W1 — Evidence Vocabulary Shape Identity**
-  - **检查**:W0 §7.2 C3 的 `AssemblyEvidenceRecord / CompactEvidenceRecord / ArtifactEvidenceRecord / SnapshotEvidenceRecord` Zod schema 与 W1 §7.2 F7(v0.2)的 `wrapEvidenceAsAudit(record, options)` 消费 shape 是否 byte-identical
-  - **执行**:对比 W0 shipped code `packages/nacp-core/src/evidence/vocabulary.ts` 的 4 kinds 字段集 + W1 shipped code `packages/nacp-core/src/evidence/forwarding.ts`(或等价)里 `wrapEvidenceAsAudit` 的 input type
-  - **Pass 条件**:两者 reference 同一 `EvidenceRecord` discriminated union type + 字段集 exact match
-  - **Evidence 附录**:`diff` 或 `tsc` 类型推断截图
+  - **检查**:W1 `evidence-envelope-forwarding.md` RFC 中引用的 evidence payload / anchor / `audit.record` wrapping 语义,是否与 W0 shipped 的 `packages/nacp-core/src/evidence/vocabulary.ts` 一致
+  - **执行**:对照 RFC 文本与 W0 shipped code,确认 W1 没有重新定义第二套 evidence record shape
+  - **Pass 条件**:RFC 只引用 W0 的 discriminated union / anchor 语义,不存在私有字段集或平行 vocabulary
+  - **Evidence 附录**:W0 code anchor + W1 RFC 引用段落
 
-  **(b)W0+W1 ↔ W2 — Published Symbol Completeness**
-  - **检查**:W2 发布的 `@<scope>/nacp-core@1.4.0` 是否包含 W0+W1 所有 shipped 新 symbol
+  **(b)W0 ↔ W2 — Published Symbol / Skeleton Completeness**
+  - **检查**:若 W2 已首发,发布的 `@<scope>/nacp-core@1.4.0` 是否包含 W0 shipped 新 symbol;若 W2 未首发,则检查 publishConfig + workflow + discipline 是否齐备
   - **执行**:
-    - `npm view @<scope>/nacp-core@1.4.0 --json`(或等价 pnpm)检查发布版本号
-    - 从 dogfood 消费者 `import { ... } from "@<scope>/nacp-core"` 全部 W0+W1 新 symbol(BoundedEvalSink, CrossSeamAnchor, EvidenceRecord, HookEventMeta, storage-law helpers, NACP_CORE_TYPE_DIRECTION_MATRIX for workspace.fs.*, wrapEvidenceAsAudit 等),TypeScript 不报错
-  - **Pass 条件**:所有 symbol 可 import
-  - **Evidence 附录**:dogfood build log + import 列表
+    - 若已首发:`npm view @<scope>/nacp-core@1.4.0 --json` + dogfood import W0 shipped symbols
+    - 若未首发:检查 `package.json publishConfig`、`publish-nacp.yml`、`W2-publishing-discipline.md`
+  - **Pass 条件**:已首发时 W0 shipped symbols 可 import;未首发时 skeleton 完整且触发路径清晰
+  - **Evidence 附录**:dogfood build log 或 skeleton 文件清单
 
   **(c v0.2)W2 ↔ W3 — Import Path Consistency**
   - **检查(v0.2 narrower)**:W3 **absorption map + 2-3 代表 blueprint** 里引用的 NACP import path 是否与 W0 实际 shipped 路径一致
@@ -466,9 +466,9 @@ W5 的全部产出都是**文档 + 元文档更新**:
   2. **本阶段 6 大产出**(对应 charter r2 §11 6 条 exit criteria):
      - 协议吸收(W0)— nacp-core / nacp-session 子目录 + 1.3.0/1.4.0 CHANGELOG + RFC 链接
      - 方向性 RFC(W1)— workspace.fs.* / remote compact delegate / evidence forwarding 3 份 RFC(v0.3 降级为 RFC-only,不含代码)
-     - 发布管道(W2)— GitHub Packages 双包 workflow skeleton + discipline doc;**首发 1.3.0/1.4.0 为可选**(若 dogfood 过则 published,否则 workspace:* interim)
-     - Absorption map + 代表 blueprint(W3)— 全 worker 范围 absorption map + 2-3 份代表性 blueprint + pattern spec;**capability-runtime dry-run 为可选**(做则强化 blueprint,不做则明确 skip 理由)
-     - Workers 脚手架(W4)— `workers/` 目录 + agent-core 1 次 real deploy(URL 可访问) + 3 workers(bash-core/persistence-core/pool-core)dry-run build pass;matrix CI 通过
+      - 发布管道(W2)— GitHub Packages 双包 workflow skeleton + discipline doc;**首发为可选**(若已完成则附 publish evidence,否则附 workspace:* interim 说明)
+      - Absorption map + 代表 blueprint(W3)— 全 worker 范围 absorption map + 2-3 份代表性 blueprint + pattern spec;**capability-runtime dry-run 为可选**(做则强化 blueprint,不做则明确 skip 理由)
+      - Workers 脚手架(W4)— `workers/` 目录 + agent-core 1 次 real deploy(URL 可访问) + 3 workers(bash-core/context-core/filesystem-core)dry-run build pass;matrix CI 通过
      - 横向一致性(W5 自身)— 5 × 对角检查全 pass 或有 remediation plan
   3. **每大产出的代码锚点 + 文档锚点**(具体 file:line / URL)
   4. **横向一致性检查结果**(X2 的 5 × 结果表)

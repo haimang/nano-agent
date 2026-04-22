@@ -78,7 +78,7 @@ GPT review 盲点 4 明确指出:
 - **名称**:`Cross-Worker Protocol Triad RFC Set`(W1 三份 RFC)
 - **一句话定义(v0.3 RFC-only)**:为 worker-matrix 后续 phase 的 3 对 cross-worker 通讯撰写**方向性 RFC 文档**(非代码),冻结设计方向以便 live loop evidence 驱动下的实装有 reference
 - **边界描述(v0.3)**:
-  - **包含**:3 份 RFC markdown 文档(`workspace-rpc.md` / `remote-compact-delegate.md` / `evidence-envelope-forwarding.md`);每份含:目标、shape 草案、matrix/role 预期、实装延后至 worker-matrix 后续 phase 的理由
+  - **包含**:3 份 RFC markdown 文档(`nacp-workspace-rpc.md` / `remote-compact-delegate.md` / `evidence-envelope-forwarding.md`);每份含:目标、shape 草案、matrix/role 预期、实装延后至 worker-matrix 后续 phase 的理由
   - **不包含**:任何代码实装 — Zod schema 不注册、matrix entries 不 register、helper 函数不实装、contract tests 不写、1.4.0 不新增 W1 symbols
 
 ### 1.2 关键术语对齐
@@ -88,9 +88,9 @@ GPT review 盲点 4 明确指出:
 | workspace RPC | 跨 worker 文件操作通讯,由 filesystem.core 作为 authority 提供 | γ 路线的具体表现 |
 | remote compact delegate | agent.core kernel 通过 service binding 调 context.core 做压缩的装配模式 | β 路线的具体表现 |
 | evidence envelope forwarding | 非 agent.core worker 发出 evidence record,通过 NACP envelope 流到 agent.core sink 的机制 | 第三条通讯 |
-| `workspace.fs.*` | W1 新增 NACP message family(候选 5-6 条 message types) | 本 design §7.1 具体化 |
-| `audit.record` wrap | 用已有 `audit.record` envelope 承载 evidence record 的复用策略 | 替代新增 `evidence.*` family |
-| CompactDelegate | `@nano-agent/agent-runtime-kernel` 消费的 compact 接口类型 | β 路线的消费端 type |
+| `workspace.fs.*` | 未来可能新增的 NACP message family 名称 | 当前只在 RFC 中讨论,不代表已 ship |
+| `audit.record` wrap | 用已有 `audit.record` envelope 承载 evidence record 的复用策略 | 当前是 RFC 推荐方向,不是 helper API |
+| CompactDelegate | agent.core/kernel 侧需要的 compact 消费接口概念 | 当前只作为 RFC 语义对象,不新增 TS symbol |
 
 ### 1.3 参考上下文
 
@@ -163,30 +163,29 @@ GPT review 盲点 4 明确指出:
   - 必须用纯 Zod primitive + NacpRef
   - 原因:NACP 是 wire contract,消费者的 in-process 类型是 runtime 细节
 
-- **remote compact delegate helper 与 in-process delegate 接口表面一致,实现分离**
-  - 都实现 `CompactDelegate` interface
-  - `createInProcessCompactDelegate(orchestrator)` vs `createRemoteCompactDelegate(binding)`
-  - kernel 不知道它调的是哪一个
+- **remote compact delegate 的 RFC 语义必须与本地 compact seam 解耦**
+  - RFC 只冻结"kernel 需要什么输入/输出",不冻结 helper 落点
+  - 本地 orchestrator / 未来 remote binding / 未来 transport helper 可以分别演化
+  - 这样 worker-matrix first-wave 仍可继续使用本地 compact,后续 phase 再做 remote split
 
-- **evidence 转发路径的 emitter 与 sink 完全解耦**
-  - emitter(filesystem / bash / context)只产 `audit.record` envelope
-  - sink(agent.core 的 BoundedEvalSink)只消费 envelope,不知道是谁发的
-  - 解耦让未来引入 `evidence.reranker` worker 作为 intermediate aggregator 不需改 emitter/sink
+- **evidence 转发路径的 emitter 与 sink 必须保持 envelope 级解耦**
+  - emitter(filesystem / bash / context)只需要遵守 `audit.record` + W0 evidence vocabulary 的 RFC 描述
+  - sink(agent.core)只按 envelope + body 语义消费,不依赖某个 helper 实现
+  - 这样未来若插入中间聚合层或 reranker worker,不需要回头修改 RFC 语义
 
 ### 3.4 聚合点(单一中心)
 
-- **W1 所有新 message types 聚合在 `nacp-core/src/messages/workspace.ts`**
-  - 不分散到 `nacp-workspace` 子包(会产生循环)
-  - 与 `tool.ts` / `context.ts` / `hook.ts` 同级,保持 registry 集中
-  
-- **CompactDelegate type 聚合在 `agent-runtime-kernel`**
-  - 本地 + remote 实现都在这里;或 remote 实现在 `nacp-core` 作为 transport helper
-  - 原则:delegate 是 kernel 的接口要求,由 kernel 决定归属
-  
-- **evidence envelope 转发纪律聚合在 `nacp-core/src/evidence/forwarding.ts`(新建,W1 一部分)**
-  - 统一 helper:`wrapEvidenceAsAudit(record) → NacpEnvelope`
-  - 统一 helper:`extractEvidenceFromAudit(envelope) → EvidenceRecord | null`
-  - 让所有 emitter / sink 走同一入口,避免 shape 漂移
+- **W1 的单一中心是 3 份 RFC,不是代码目录**
+  - `docs/rfc/nacp-workspace-rpc.md`
+  - `docs/rfc/remote-compact-delegate.md`
+  - `docs/rfc/evidence-envelope-forwarding.md`
+  - 在未来真的要代码化之前,这 3 份文档就是唯一的 design baseline
+
+- **若未来进入代码化,预期落点要在 RFC 中明确,但不提前占坑**
+  - workspace RPC 若成立,预计仍落 `nacp-core/src/messages/`
+  - remote compact 若成立,helper 落点由当时 kernel / transport 边界决定
+  - evidence forwarding 若成立,helper 预计仍落 `nacp-core/src/evidence/`
+  - 这些都是未来落点候选,不是本阶段 deliverable
 
 ---
 
@@ -242,19 +241,14 @@ GPT review 盲点 4 明确指出:
 | 错误形状 | `{status, error?}` | `{status, error?}` | N/A | **`{status, error?}`**(统一) |
 | nano-agent 倾向 | 复用 shape | 复用 | 复用 | **新增,但遵循现有 shape 惯例** |
 
-### 4.5 来自 sibling W0 design 的 pattern 借鉴(v0.2 新增)
+### 4.5 来自 sibling W0 design 的 pattern 借鉴(v0.3 RFC-only 改写)
 
-W0 是 pre-worker-matrix 的姊妹 phase,先 W1 完成的 design `docs/design/pre-worker-matrix/W0-nacp-consolidation.md` 建立了几条关键纪律,W1 应直接继承而非另立:
+W0 是 pre-worker-matrix 的姊妹 phase,它冻结了本阶段最重要的协议语义边界。W1 在 RFC-only 语境下,真正需要继承的是**方法纪律**,不是提前承诺要与 W0 一起 ship 某批代码:
 
-- **共用 `nacp-core 1.4.0` 版本号**:W0 已把 `NACP_VERSION 1.3.0 → 1.4.0` 作为 pre-worker-matrix 的统一 additive bump;W1 的新 `workspace.fs.*` message family + helper 作为同一 1.4.0 的一部分 ship,**不单独 bump 1.5.0**
-- **Additive-only 纪律**:W0 §6.1 取舍 1 已建立 1.3.0 消费者零破坏原则;W1 新增 message types 通过 `registerMessageType` 追加,不修改现有 registry;新加的 matrix entries 只是 `NACP_CORE_TYPE_DIRECTION_MATRIX` 的新 key,不改现有 key
-- **子目录聚合惯例**:W0 已建立 `evidence/ hooks-catalog/ storage-law/` + `transport/cross-seam.ts` 的子目录 pattern;W1 的 `workspace.fs.*` 应放 `messages/workspace.ts`(与 `tool.ts / hook.ts / skill.ts / context.ts / system.ts` 同级),保持 messages 家族聚合;`workspace.fs.*` 不新建 `messages/workspace/` 子目录
-- **Evidence schema 依赖方向**:W0 §7.2 C3 已冻结 `EvidenceAnchorSchema` + 4 kinds discriminated union;W1 §7.2 F7 的 `wrapEvidenceAsAudit` 必须**消费** W0 shipped 的这套 schema,不得在 W1 里重新定义 evidence record shape
-- **CHANGELOG 共写**:W0 §7.2 C6 的 CHANGELOG 1.4.0 entry 会**合并** W0 + W1 的新 symbol;W1 不产 CHANGELOG 单独条目,而是把新增贡献加入 W0 草案的 CHANGELOG(见 W0 §7.2 C6 entry 草案,本 design 中的 W1 新 symbol 需合并进去)
-
-**什么 W1 不继承 W0**:
-
-- W0 的 **re-export 纪律**(原位置保留 wrapper)不适用 W1 — W1 的 `workspace.fs.*` 和 `wrapEvidenceAsAudit` 都是**全新 symbol**,没有"老家"可 re-export;直接在 nacp-core 新建即可
+- **Additive-only 纪律仍然有效**:未来若 workspace RPC / evidence forwarding 真的代码化,必须是 additive append,不能改写 1.3/1.4 已有 registry 语义
+- **目录聚合惯例仍然有效**:未来若新增 message family,应继续留在 `nacp-core/src/messages/` 体系下,而不是另起平行包
+- **Evidence 依赖方向仍然有效**:W1 的 evidence forwarding RFC 必须消费 W0 已冻结的 vocabulary / anchor / audit.record 事实,不得重新发明 evidence record shape
+- **版本与 CHANGELOG 本阶段不承诺**:由于 W1 当前不 ship 代码,因此不在本阶段绑定某个 semver bump 或 CHANGELOG entry;是否进入未来某个版本,由 worker-matrix 后续 phase 决定
 
 ---
 
@@ -314,36 +308,36 @@ W0 是 pre-worker-matrix 的姊妹 phase,先 W1 完成的 design `docs/design/pr
 ### 6.1 核心取舍
 
 1. **取舍 1 — workspace RPC 走 NACP envelope,不走 raw service-binding RPC**
-   - **我们选择 NACP envelope 路径**,而不是**裸 `fetch` + typed handlers** 这样轻的 RPC
+   - **RFC 推荐 NACP envelope 路径**,而不是**裸 `fetch` + typed handlers** 这样轻的 RPC
    - **为什么**:
-     - 单协议路径 = 所有 cross-worker 流量都经 Layer 6 matrix + tenant verify + audit trail
-     - 复用现成 `CrossSeamAnchor` header law / 认证 / tracing
-     - 与其他 NACP family(`tool.call.*` / `context.compact.*`)交互一致
-   - **我们接受的代价**:每次 fs 操作都 encode / validate / decode envelope,有额外延迟(估计 + 0.5-2ms / op)
-   - **未来重评条件**:若 profile 显示 fs 操作延迟是 first-wave 瓶颈(超 20% latency budget),考虑 envelope-less fast path
+      - 单协议路径 = 所有 cross-worker 流量都经 Layer 6 matrix + tenant verify + audit trail
+      - 复用现成 `CrossSeamAnchor` header law / 认证 / tracing
+      - 与其他 NACP family(`tool.call.*` / `context.compact.*`)交互一致
+   - **我们接受的代价**:未来真正代码化时,每次 fs 操作都要承担 envelope encode / validate / decode 成本
+   - **未来重评条件**:若 live loop profile 证明 fs 操作延迟是瓶颈,再评估 envelope-less fast path;不是 pre-phase 先验决定
 
 2. **取舍 2 — β 路线不新增 message family,复用 `context.compact.*`**
-   - **我们选择复用**,而不是新增 `kernel.compact.delegate.*`
+   - **RFC 推荐复用**,而不是新增 `kernel.compact.delegate.*`
    - **为什么**:
-     - 现有 schema 完全覆盖 delegate 所需(history_ref + target_budget → summary_ref + token stats)
-     - 减少协议 surface;避免"为同一种语义引入两套 shape"
-   - **我们接受的代价**:`context.compact.*` 的使用场景略微放大(不仅是一般 compact,也用于 kernel delegate)— 但语义完全一致
-   - **未来重评条件**:若 kernel compact delegate 出现其他使用场景需要不同 shape(如 partial compact / cancel),再引入新 family
+      - 现有 schema 完全覆盖 delegate 所需(history_ref + target_budget → summary_ref + token stats)
+      - 减少协议 surface;避免"为同一种语义引入两套 shape"
+   - **我们接受的代价**:`context.compact.*` 的适用语义在 RFC 中被解释得更宽,后续需要在 consumer 文档里写清楚
+   - **未来重评条件**:若 kernel delegate 出现现有 shape 承载不了的新语义(如 partial compact / cancel / resume),再考虑新 family
 
 3. **取舍 3 — evidence 转发复用 `audit.record`,不新增 family**
-   - **我们选择复用**,而不是新增 `evidence.emit`
+   - **RFC 推荐复用**,而不是新增 `evidence.emit`
    - **为什么**:
-     - `audit.record.event_kind` 本就是 discriminator string;evidence 4 kinds 对它来说是新值而非新 shape
-     - `audit.record.detail` 灵活;可承载 W0 定义的 evidence record discriminated union
-     - 减少 nacp-core 1.4.0 的 surface 增量
+      - `audit.record.event_kind` 本就是 discriminator string;evidence 4 kinds 对它来说是新值而非新 shape
+      - `audit.record.detail` 灵活;可承载 W0 定义的 evidence record discriminated union
+      - 减少未来 nacp-core surface 增量
    - **我们接受的代价**:audit.record 语义从"审计事件"扩张到"审计 + 证据",但这本来就是合理的语义合并 — audit 的本义就是 evidence
    - **未来重评条件**:若出现 evidence 需要 `audit.record` 没有的字段(如强制 `trace_uuid` / `emitter_role` 等),评估是否专设 family
 
 4. **取舍 4 — 每个 fs op 一个独立 message type,不共用 "fs_op: string" discriminator**
-   - **我们选择 per-op schema**,而不是 `workspace.fs.op.request` 用 `{op_name: string, args: ...}` 共用
+   - **RFC 推荐 per-op schema**,而不是 `workspace.fs.op.request` 用 `{op_name: string, args: ...}` 共用
    - **为什么**:
-     - 每个 op 有独立 body schema → Layer 4 body validation 直接强制每个 op 的 args shape
-     - 与 `tool.call.request` 的 `tool_name: string + tool_input: record` 不同,后者是 "we don't know all tool names at registry time";但 fs 操作是固定有限集合,per-op schema 更强
+      - 每个 op 有独立 body schema → Layer 4 body validation 直接强制每个 op 的 args shape
+      - 与 `tool.call.request` 的 `tool_name: string + tool_input: record` 不同,后者是 "we don't know all tool names at registry time";但 fs 操作是固定有限集合,per-op schema 更强
    - **我们接受的代价**:message types 从 1 个膨胀到 5-6 个
    - **未来重评条件**:若 fs 操作动态扩张需求出现(不太可能),考虑降级为单 type + discriminator
 
@@ -351,20 +345,20 @@ W0 是 pre-worker-matrix 的姊妹 phase,先 W1 完成的 design `docs/design/pr
 
 | 风险 | 触发条件 | 影响 | 缓解 |
 |---|---|---|---|
-| W1 设计的 schema 在 worker-matrix 实装时发现不足 | absorption 时暴露新字段需求 | nacp-core 1.4.0 → 1.5.0 被迫非额外 bump | §3.2 predefined optional 扩展点;新字段走 `.optional()` additive |
-| `audit.record` 扩张承载 evidence 导致审计诉求失真 | 消费者用 `event_kind.startsWith("evidence.")` 过滤 | evidence 与 audit 的消费面混 | §7.3 要求 emitter 明确用 `evidence.<kind>` 前缀;消费者 strict filter |
-| remote compact delegate 的 latency 超出 in-process 基线 | real deploy profile | compact 可能变成 user-visible 卡顿 | kernel 本来就是 async 消费 compact;latency 可吸收;监控 `tokens_after - tokens_before` |
-| workspace RPC role gate 错配 | bash.core 被错误允许 producer session | 权限外泄 | §7.1 严格 role gate;root contract test 锁定 |
-| Layer 6 matrix 漏列某合法 `(workspace.fs.*, delivery_kind)` 组合 | 真实发送被 reject | 第一次 wiring 时 `NACP_TYPE_DIRECTION_MISMATCH` | §7.1 Table 列出所有;unit test enumerate |
+| RFC 把未来 shape 写得过满 | live loop 证据出现时发现真实 runtime 不需要这么复杂 | 后续实现者被文档误导 | 在 3 份 RFC 顶部显式标注“方向冻结,非实现规格”;reference material 与 normative text 分层 |
+| `audit.record` 扩张承载 evidence 导致审计语义模糊 | 下游消费者不区分普通 audit 与 evidence-forwarding | 消费面混淆 | RFC 强制 `event_kind = evidence.<kind>` 前缀,并要求消费者按前缀过滤 |
+| remote compact delegate 被误当作 first-wave 硬前提 | action-plan 直接去做 remote split | pre-phase scope 再次膨胀 | RFC 明确 first-wave 允许继续本地 compact;remote split 进入 worker-matrix 后续阶段 |
+| workspace RPC 命名过早冻结 | filesystem.core live loop 证据与 RFC 提案不一致 | 后续需要重写 message 命名 | RFC 只冻结最小 surface 与不变量,把细节 shape 保留为 proposal appendix |
+| 3 份 RFC 彼此口径漂移 | 分开写作,引用不同术语 | action-plan 输入不稳定 | 统一在 W1 design 中冻结术语表,并要求 RFC 互相 cross-link |
 
 ### 6.3 本次 tradeoff 能带来的价值
 
-- **对开发者自己(我们)**:W1 完成后,worker-matrix absorption 中的 "跨 worker 通讯" 不再是设计问题,只剩接线问题;P0 执行复杂度大幅下降
-- **对 nano-agent 的长期演进**:workspace RPC / remote compact 成为第三方 nano-agent 实现的**公开契约**(经 GitHub Packages 发布 nacp-core 1.4.0);`skill.core` / 未来 workers 进场时不需要重新设计这两个基础面
+- **对开发者自己(我们)**:W1 完成后,worker-matrix 后续阶段在讨论 remote split 时不必从 0 争论协议方向,只需要回到 live evidence 上决定是否代码化
+- **对 nano-agent 的长期演进**:workspace RPC / remote compact / evidence forwarding 的**方向**被先行冻结,未来不容易在不同 worker 上各写一套私有协议
 - **对"上下文管理 / Skill / 稳定性"三大方向的杠杆**:
-  - 上下文管理:remote compact delegate 解锁 context.core 的真实 isolation(独立部署)
-  - Skill:workspace RPC 为 skill.core 未来访问文件提供现成协议,不需要另立
-  - 稳定性:cross-worker 协议 + tenant boundary 强制 + matrix 强制,三重约束让跨 worker 交互的失败模式收敛到少数已知面
+  - 上下文管理:remote compact delegate 的 RFC 先把边界讲清,避免 context.core 后续被 host 私有 API 绑死
+  - Skill:workspace RPC RFC 先提供共享 filesystem authority 的思路,skill.core 若未来入场不需要重新设计文件访问语义
+  - 稳定性:即使本阶段不写代码,也先把 tenant / trace / envelope 约束写进 RFC,避免后续 worker 各自偷跑 side-channel RPC
 
 ---
 
@@ -594,21 +588,10 @@ W0 是 pre-worker-matrix 的姊妹 phase,先 W1 完成的 design `docs/design/pr
 
 ### 7.3 非功能性要求
 
-- **性能目标**:
-  - workspace RPC single op 延迟(service binding internal,同 colo)< 10ms P50 / < 50ms P99(Cloudflare 官方给出的 service binding 典型延迟基线)
-  - remote compact delegate 不作为 user-visible hot path(async),无硬 latency 目标
-  - evidence forwarding 无 batch / 每条走 envelope;如量过大由 W0 shipped `BoundedEvalSink` 的 overflow mechanism 自然 degrade
-- **可观测性要求**:
-  - 每条 workspace RPC envelope 带 CrossSeamAnchor trace header
-  - 每个 delegate call 带 trace link 到原 kernel turn
-  - evidence envelope 保持原 emitter 的 trace,不破坏 trace tree
-- **稳定性要求**:
-  - 所有 W1 新 schema 通过 1.3.0 消费者 compat test(它们不触及现有 family)
-  - Layer 6 matrix 对新 type 严格;非法组合 fail-closed
-- **测试覆盖要求**:
-  - W1 新文件 unit test 覆盖 ≥ 90% lines
-  - 3 份 root contract test 全绿
-  - 继承 nacp-core 全包 regression(≥ 247 + N new = 247+ tests)
+- **RFC 可读性**:每份 RFC 的 normative text / deferred items / appendix reference material 必须分层,避免读者把草案当 shipped spec
+- **RFC 互引一致性**:3 份 RFC 的术语、角色、trace/tenant 约束必须互相兼容,不允许出现平行命名
+- **现实锚点充分**:每份 RFC 都必须明确引用当前代码已存在的 shape(`context.compact.*` / `audit.record` / WorkspaceNamespace 等),不能凭空造概念
+- **延后边界诚实**:每份 RFC 都要明确写出“为什么不在 pre-worker-matrix 代码化”,避免 action-plan 被误导成先做 remote split
 
 ---
 
@@ -618,11 +601,11 @@ W0 是 pre-worker-matrix 的姊妹 phase,先 W1 完成的 design `docs/design/pr
 
 | 文件:行 | 内容 | 借鉴点 |
 |---|---|---|
-| `packages/nacp-core/src/messages/tool.ts:4-36` | request/response/cancel shape | workspace.fs.* 直接套用 request/response pair |
-| `packages/nacp-core/src/messages/context.ts:5-30` | request/response with `history_ref` / `summary_ref` | NacpRef 在 body 中的正确用法;large payload 经 ref 不 inline |
-| `packages/nacp-core/src/messages/system.ts:10-23` | audit.record schema + registerMessageType | F7 直接基于此构造 wrapper |
-| `packages/nacp-core/src/type-direction-matrix.ts:17-40` | matrix entry 格式 | F8 append 到同一 const |
-| `packages/nacp-core/src/error-registry.ts` | 错误 code 命名惯例 | `WORKSPACE_*` / `COMPACT_*` / `EVIDENCE_*` 前缀 |
+| `packages/nacp-core/src/messages/tool.ts:4-36` | request/response/cancel shape | workspace RPC RFC 可借鉴 request/response 命名与错误体习惯 |
+| `packages/nacp-core/src/messages/context.ts:5-30` | request/response with `history_ref` / `summary_ref` | remote compact RFC 的现实锚点;证明现有 family 已存在 |
+| `packages/nacp-core/src/messages/system.ts:10-23` | audit.record schema + registerMessageType | evidence forwarding RFC 的现实锚点 |
+| `packages/nacp-core/src/type-direction-matrix.ts` | matrix entry 格式 | 若未来代码化,应沿用既有 matrix append 模式 |
+| `packages/nacp-core/src/error-registry.ts` | 错误 code 命名惯例 | 若未来代码化,错误族命名可参考 `WORKSPACE_*` / `COMPACT_*` 前缀 |
 
 ### 8.2 来自 `packages/workspace-context-artifacts/src/namespace.ts`
 
@@ -633,17 +616,17 @@ W0 是 pre-worker-matrix 的姊妹 phase,先 W1 完成的 design `docs/design/pr
 
 ### 8.3 来自 `packages/agent-runtime-kernel/`(若已有 compact delegate shape)
 
-- 未完整看到 `CompactDelegate` 现有定义;F6 建议**新建**若不存在;若已有,保持 shape 兼容
-- 预期位置:`packages/agent-runtime-kernel/src/compact/` 或 `packages/context-management/src/async-compact/kernel-adapter.ts`
-- 后者已有 `createKernelCompactDelegate` 函数 — F6 的 remote 版本是其姊妹实现
+- 未完整看到稳定的 remote delegate 入口;这正是本 RFC 只冻结语义、不冻结 helper 落点的原因
+- 可继续参考 `packages/context-management/src/async-compact/` 现有本地 compact seam,把 remote 版当作未来姊妹实现
+- 若未来在 `agent-runtime-kernel` 内已经有稳定接口,实现阶段应优先兼容既有 kernel consumption shape
 
 ### 8.4 需要避开的反例
 
 | 位置 | 问题 | 我们为什么避开 |
 |---|---|---|
-| 自行发明的 "workspace.batch.*" | 过早 batch 协议 | §3.1 砍;单 op/envelope 足够 |
-| 复用 `tool.call.request` 承载 fs op | 语义污染 | fs op 不是 tool;role gate 不匹配 |
-| 新增 `evidence.emit` family | 不必要的 surface 膨胀 | §4.3 说明 audit.record 足够 |
+| 自行发明的 "workspace.batch.*" | 过早 batch 协议 | §3.1 已砍;先冻结最小 surface |
+| 复用 `tool.call.request` 承载 fs op | 语义污染 | fs op 不是 tool;role gate 与 authority 边界都不同 |
+| 在 pre-phase 直接实装 `wrapEvidenceAsAudit` | scope 前移 | 本阶段只需 RFC 描述,helper 应等 live loop 证据 |
 
 ---
 
@@ -651,51 +634,46 @@ W0 是 pre-worker-matrix 的姊妹 phase,先 W1 完成的 design `docs/design/pr
 
 ### 9.1 功能簇画像
 
-W1 的 cross-worker protocol triad 是 nano-agent 从"单 worker in-process" 走向"多 worker 协议协作"的**最后一块关键协议砖**。
+W1 的 cross-worker protocol triad 是 nano-agent 从"单 worker in-process" 走向"多 worker 协议协作"时的**方向冻结层**。
 
-- **存在形式**:作为 `nacp-core 1.4.0` 的 additive 新增(5-6 个 `workspace.fs.*` message types + 2 个 cross-worker helper)
+- **存在形式**:3 份 RFC markdown + 1 份承载 superseded reference material 的 design doc
 - **覆盖范围**:3 对关键 cross-worker 通讯(filesystem authority / compact delegate / evidence forwarding)
-- **与其他部分耦合**:与 W0 是**前后耦合**(W1 body schema 引用 W0 吸收的 evidence vocabulary + storage-law);与 W2 是**发布耦合**(W1 新符号必须包含在 1.4.0 首次发布的 GitHub Packages artifact 里);与 W3/W4 **无直接耦合**(那是 worker 级工作)
+- **与其他部分耦合**:与 W0 是**强语义耦合**(必须引用 W0 吸收的 evidence vocabulary + storage-law);与 W2/W4 **只有文档级耦合**(W1 不要求首发 artifact 带新 symbol);与 W3 是**方向引用耦合**(blueprint 可引用 RFC,但不依赖代码)
 - **预期代码量级**:
-  - `nacp-core/src/messages/workspace.ts`:~150-200 行
-  - `nacp-core/src/transport/compact-delegate.ts`:~80-120 行
-  - `nacp-core/src/evidence/forwarding.ts`:~60-100 行
-  - `nacp-core/src/type-direction-matrix.ts` 增量:~15 行
-  - 3 份 root test:合计 ~300-400 行
-  - 3 份 RFC:合计 ~600-900 行
-- **预期复杂度**:中 — 每个协议独立简单,但需要与 W0 consolidated NACP 保持一致性 + 1.3.0 消费者零破坏
+  - TS / schema / tests: **0 行本阶段新增**
+  - 3 份 RFC:合计约 ~600-900 行
+  - design reference material:沿用本文件 §7.2 appendix
+- **预期复杂度**:中 — 不是代码复杂,而是要把“未来方向”与“当前不做”写得足够清楚
 
 ### 9.2 Value Verdict
 
 | 评估维度 | 评级 (1-5) | 一句话说明 |
 |---|---|---|
 | 对 nano-agent 核心定位的贴合度 | **5** | 是"协议决定工程形态"这一纪律的直接延伸 |
-| 第一版实现的性价比 | **4** | 3 条协议聚焦 + 复用 2 条既有 family,surface 增量很小 |
-| 对未来"上下文管理 / Skill / 稳定性"演进的杠杆 | **5** | workspace RPC 为所有未来 worker 的 fs 访问提供公共地基;skill.core 等不需重走 |
+| 第一版实现的性价比 | **5** | 不写代码就先冻结方向,能显著降低后续协议争论成本 |
+| 对未来"上下文管理 / Skill / 稳定性"演进的杠杆 | **5** | 先收束 protocol language,后续每个 worker 不必再自造 cross-worker 语义 |
 | 对开发者自己的日用友好度 | **4** | protocol-level 工作非 day-to-day,但收口后 worker-matrix 执行效率大幅提升 |
-| 风险可控程度 | **4** | additive-only + Layer 6 matrix + 1.3.0 compat shim 多重约束;唯一不确定性在 workspace RPC 的 schema 完备性 |
-| **综合价值** | **4.5** | 标准 "不性感但 load-bearing" 的基础设施工作 |
+| 风险可控程度 | **5** | scope 降为 RFC-only 后,最大风险从“写错代码”降成“文档写得不够诚实” |
+| **综合价值** | **4.7** | 标准 “不炫技但能稳住后续工程形状” 的设计工作 |
 
 ### 9.3 下一步行动
 
 - [ ] **决策确认**:owner 在本 design owner-approve 前列表确认:
-  - §7.1 F1-F5 的 schema 草案是否接受?
   - §6.1 取舍 3(audit.record 复用 vs evidence.* family)是否接受?
   - §6.1 取舍 4(per-op schema vs 共用 discriminator)是否接受?
-  - `workspace.fs.*` 的 producer role gate 收窄到哪 3 种(session / capability / skill)是否接受?
+  - `context.compact.*` 继续承担 remote compact delegate 语义是否接受?
+  - W1 保持 RFC-only,不提前代码化是否接受?
 - [ ] **关联 RFC 撰写**(由本 design owner-approve 后触发):
   - `docs/rfc/nacp-workspace-rpc.md`
   - `docs/rfc/remote-compact-delegate.md`
   - `docs/rfc/evidence-envelope-forwarding.md`
 - [ ] **关联 action-plan**:`docs/action-plan/pre-worker-matrix/D2-cross-worker-protocols.md`(基于本 design 展开执行批次)
 - [ ] **待深入调查的子问题**:
-  - `CompactDelegate` TS interface 是否已在 `agent-runtime-kernel` 存在?若存在,F6 仅扩展 remote 实装;若不存在,F6 含 interface 定义
-  - `NacpRef.kind` 是否需扩展 `"evidence-large"` 让超 96KB 的 evidence 走 ref?(若 evidence body 不可能超,无需)
+  - live loop 之后,workspace RPC 是否真的需要独立 message family,还是 service binding 只需更薄 envelope?
+  - remote compact delegate 是否需要 cancel / partial / resume 语义,还是现有 request/response 足够?
 - [ ] **需要同步更新的其他设计文档**:
-  - `W0-nacp-consolidation.md`(如尚未写):evidence vocabulary shape 要与 F7 的 `wrapEvidenceAsAudit` 的 `event_kind` 前缀 `"evidence."` 对齐
-  - `W3-absorption-blueprint-capability-runtime.md`(W3 阶段):bash.core fs handler 必须从"直接 import WorkspaceFsLike" 迁移到"通过 workspace RPC 调 filesystem.core",blueprint 需预告这件事
-  - `W3-absorption-blueprint-context-management.md`(W3 阶段):kernel compact 消费点必须从"in-process delegate" 迁到 "remote delegate"
-  - `W3-absorption-blueprint-workspace-context-artifacts.md`(W3 阶段):evidence-emitters helper 重构为"发 audit.record envelope",不直接调 local sink
+  - `W3-absorption-blueprint-capability-runtime.md`:需要把“何时从本地 WorkspaceNamespace 转为 remote filesystem authority”写成 deferred integration checkpoint
+  - `W3-absorption-blueprint-workspace-context-artifacts-split.md`:需要明确 snapshot / compact / mount / namespace 各自对 W1 RFC 的引用关系
 
 ---
 
