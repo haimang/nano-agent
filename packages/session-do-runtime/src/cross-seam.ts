@@ -23,6 +23,7 @@
 
 /**
  * @deprecated Import propagation truth from `@nano-agent/nacp-core`.
+ * Planned removal: worker-matrix P0 absorption phase (target 2026-Q3).
  */
 export {
   CROSS_SEAM_HEADERS,
@@ -32,6 +33,7 @@ export {
 } from "@nano-agent/nacp-core";
 /**
  * @deprecated Import propagation truth from `@nano-agent/nacp-core`.
+ * Planned removal: worker-matrix P0 absorption phase (target 2026-Q3).
  */
 export type { CrossSeamAnchor } from "@nano-agent/nacp-core";
 

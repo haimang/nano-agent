@@ -40,7 +40,10 @@ import {
  * `docs/design/after-foundations/P4-hooks-catalog-expansion.md §3-§7`.
  */
 
-/** @deprecated Import `HookEventName` from `@nano-agent/nacp-core`. */
+/**
+ * @deprecated Import `HookEventName` from `@nano-agent/nacp-core`.
+ * Planned removal: worker-matrix P0 absorption phase (target 2026-Q3).
+ */
 export type { HookEventName } from "@nano-agent/nacp-core";
 
 /** Metadata describing a single hook event's dispatch semantics. */

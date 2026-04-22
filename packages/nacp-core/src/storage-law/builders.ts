@@ -77,7 +77,7 @@ export function buildDoStorageRef(
   };
 }
 
-export function validateRefKey(ref: Pick<StorageRef, "team_uuid" | "key">): boolean {
+export function validateRefKey(ref: StorageRef): boolean {
   if (!ref.key || ref.key.length === 0) return false;
   return ref.key.startsWith(`tenants/${ref.team_uuid}/`);
 }

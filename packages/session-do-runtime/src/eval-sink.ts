@@ -6,6 +6,7 @@ import type {
 
 /**
  * @deprecated Import sink contract types from `@nano-agent/nacp-core`.
+ * Planned removal: worker-matrix P0 absorption phase (target 2026-Q3).
  */
 export type {
   EvalSinkEmitArgs,
@@ -14,6 +15,7 @@ export type {
 } from "@nano-agent/nacp-core";
 /**
  * @deprecated Import `extractMessageUuid` from `@nano-agent/nacp-core`.
+ * Planned removal: worker-matrix P0 absorption phase (target 2026-Q3).
  */
 export { extractMessageUuid } from "@nano-agent/nacp-core";
 

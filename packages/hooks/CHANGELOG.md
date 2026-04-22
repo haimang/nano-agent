@@ -1,5 +1,12 @@
 # Changelog — @nano-agent/hooks
 
+## Unreleased — 2026-04-22 (W0 pre-worker-matrix compat adapt)
+
+### Changed
+
+- `src/catalog.ts` now imports `HookEventName` and `HOOK_EVENT_PAYLOAD_SCHEMA_NAMES` from `@nano-agent/nacp-core@1.4.0` so hook vocabulary truth is shared with the W0 consolidated source.
+- `HOOK_EVENT_CATALOG` runtime metadata remains local to `@nano-agent/hooks`; this is a compat / source-topology change only, not a package-version bump.
+
 ## 0.2.0 — 2026-04-20
 
 B5 — Hooks Catalog Expansion 1.0.0. The catalog grows from 8 events to

@@ -1,5 +1,13 @@
 # Changelog — @nano-agent/session-do-runtime
 
+## Unreleased — 2026-04-22 (W0 pre-worker-matrix compat adapt)
+
+### Changed
+
+- `src/cross-seam.ts` now re-exports propagation truth from `@nano-agent/nacp-core@1.4.0` while keeping `CrossSeamError`, `CROSS_SEAM_FAILURE_REASONS`, and `StartupQueue` local.
+- `src/eval-sink.ts` now re-exports `EvalSinkEmitArgs`, `EvalSinkOverflowDisclosure`, `EvalSinkStats`, and `extractMessageUuid()` from `@nano-agent/nacp-core@1.4.0` while keeping `BoundedEvalSink` local.
+- These are compat / import-topology updates only; runtime behavior and package version stay unchanged in W0.
+
 ## 0.3.0 — 2026-04-21 (B9 — tenant plumbing + NACP 1.3 consumer)
 
 > Version baseline note: the previous `0.2.0` CHANGELOG entry existed as a B6 historical record for the `BoundedEvalSink` shipment, but `package.json` remained at `0.1.0` (the `0.2.0` tag was never actually published). B9 jumps `0.1.0 → 0.3.0` and lets the historical `0.2.0` section below stand as the record of B6 work. Per B9 GPT review R4.

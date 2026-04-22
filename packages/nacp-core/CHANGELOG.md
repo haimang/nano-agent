@@ -21,6 +21,8 @@ Per `docs/rfc/nacp-core-1-4-consolidation.md`. Zero breaking change. This cut co
 - `packages/workspace-context-artifacts/src/evidence-emitters.ts` now types its evidence records against `@nano-agent/nacp-core` vocabulary.
 - `packages/hooks/src/catalog.ts` now consumes `HookEventName` and payload-schema-name truth from `@nano-agent/nacp-core`.
 - `packages/storage-topology/src/{keys.ts,refs.ts}` now re-export storage-law truth from `@nano-agent/nacp-core`.
+- `StorageRef` is now expressed as `extends NacpRef` inside `src/storage-law/builders.ts`; the public field set remains structurally equivalent to the pre-W0 flat interface.
+- `validateRefKey()` keeps its pre-W0 call signature (`StorageRef`) while validating the same `team_uuid` + tenant-prefix rule now frozen in `@nano-agent/nacp-core`.
 
 ### Not shipped (deferred)
 

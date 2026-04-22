@@ -15,10 +15,16 @@
 
 import type {
   ArtifactEvidenceRecord,
+  ArtifactLifecycleStage,
   AssemblyEvidenceRecord,
+  CompactEvidencePhase,
   CompactEvidenceRecord,
   EvidenceAnchor,
   SnapshotEvidenceRecord,
+} from "@nano-agent/nacp-core";
+export type {
+  ArtifactLifecycleStage,
+  CompactEvidencePhase,
 } from "@nano-agent/nacp-core";
 import type { AssemblyResult } from "./context-assembler.js";
 import type { ContextCompactRequestBody, ContextCompactResponseBody } from "./compact-boundary.js";
@@ -85,8 +91,6 @@ export function emitAssemblyEvidence(
 // ─────────────────────────────────────────────────────────────────────
 // Compact evidence
 // ─────────────────────────────────────────────────────────────────────
-
-export type CompactEvidencePhase = "request" | "response" | "boundary" | "error";
 
 export interface CompactRequestEvidenceInput {
   readonly phase: "request";
@@ -176,13 +180,6 @@ export function emitCompactEvidence(
 // ─────────────────────────────────────────────────────────────────────
 // Artifact lifecycle evidence
 // ─────────────────────────────────────────────────────────────────────
-
-export type ArtifactLifecycleStage =
-  | "inline"
-  | "promoted"
-  | "prepared"
-  | "archived"
-  | "replaced";
 
 export interface ArtifactEvidenceInput {
   readonly artifactName: string;

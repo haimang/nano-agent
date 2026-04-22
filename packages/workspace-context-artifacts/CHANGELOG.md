@@ -1,5 +1,12 @@
 # Changelog — @nano-agent/workspace-context-artifacts
 
+## Unreleased — 2026-04-22 (W0 pre-worker-matrix compat adapt)
+
+### Changed
+
+- `src/evidence-emitters.ts` now types `EvidenceAnchor`, `CompactEvidencePhase`, `ArtifactLifecycleStage`, and the 4 evidence record outputs against `@nano-agent/nacp-core@1.4.0`.
+- Builder / emit helper ownership remains local to `@nano-agent/workspace-context-artifacts`; this is a vocabulary-alignment change only, not a package-version bump.
+
 ## 0.1.0 — 2026-04-17
 
 Initial v1 implementation + post-review corrections.

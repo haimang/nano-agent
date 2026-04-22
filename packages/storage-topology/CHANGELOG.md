@@ -1,5 +1,13 @@
 # Changelog — @nano-agent/storage-topology
 
+## Unreleased — 2026-04-22 (W0 pre-worker-matrix compat adapt)
+
+### Changed
+
+- `src/{keys.ts,refs.ts}` now act as explicit compatibility re-export layers over `@nano-agent/nacp-core@1.4.0` storage-law truth.
+- `src/taxonomy.ts` now re-exports `StorageBackend` from `@nano-agent/nacp-core@1.4.0` so the backend literal union no longer has an independent local source of truth.
+- Storage adapters / placement / calibration ownership remains local to `@nano-agent/storage-topology`; this is a source-topology update only, not a package-version bump.
+
 ## 2.0.0 — 2026-04-20
 
 After-foundations Phase 1 (B2). First package-side consumption of B1
