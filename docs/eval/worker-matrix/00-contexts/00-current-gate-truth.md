@@ -1,27 +1,28 @@
 # Worker Matrix — Current Gate Truth
 
-> **Snapshot date**: `2026-04-21`
-> **Revision 2**: `2026-04-21` — synced to post-B9-review-integration state (see §6 below)
+> **Snapshot date**: `2026-04-23`
+> **Revision 3**: `2026-04-23` — integrated pre-worker-matrix final closure / handoff state (see §7 below)
 > **Use this file before consuming the rest of the bundle.**
 
 ---
 
 ## 1. One-line verdict (revised)
 
-**Worker-matrix planning may now use both B8 handoff AND B9 contract freeze as stable planning inputs. The three B9 correctness findings raised in the 2026-04-21 GPT review have been materially repaired and are closed as of this revision.**
+**Worker-matrix planning should now start from the pre-worker-matrix final closure and handoff pack. B8 handoff and B9 contract freeze remain stable upstream truths, but the direct gate is no longer “B8 + B9 alone”; it is “after-foundations completed → pre-worker-matrix closed → worker-matrix rewrite r2”.**
 
 ---
 
 ## 2. What is stable enough to plan against
 
-### 2.1 B8 handoff remains valid
+### 2.1 B8 handoff and B9 freeze remain valid upstream inputs
 
-The following are still good planning inputs:
+The following are still good upstream planning inputs:
 
 1. `B8-phase-1-closure.md` as the consolidated truth inventory
 2. `after-foundations-to-worker-matrix.md` as the main handoff memo
 3. `next-phase-worker-naming-proposal.md` as the naming seed
 4. `wrangler-worker.toml` and `composition-factory.ts` as starter shapes
+5. `docs/issue/after-foundations/B9-final-closure.md` as the reconciled contract-freeze closure
 
 ### 2.2 worker-matrix architecture evaluations remain useful
 
@@ -31,6 +32,15 @@ The GPT / Opus worker-matrix evaluations and the `smind-contexter` learnings are
 - host vs remote worker split
 - `context.core` scope and timing
 - `skill.core` reservation posture
+
+### 2.3 pre-worker-matrix is now the authoritative downstream handoff pack
+
+The new direct planning pack is:
+
+1. `docs/issue/pre-worker-matrix/pre-worker-matrix-final-closure.md`
+2. `docs/handoff/pre-worker-matrix-to-worker-matrix.md`
+3. `docs/issue/pre-worker-matrix/W5-closure.md`
+4. `docs/issue/pre-worker-matrix/W4-closure.md`
 
 ---
 
@@ -60,18 +70,21 @@ In practice, that means:
 
 | topic | use this as current truth | do not blindly inherit |
 |---|---|---|
-| B8 worker-matrix handoff | `01-b8-handoff/*` | scattered older phase docs |
+| direct worker-matrix rewrite input | `docs/issue/pre-worker-matrix/pre-worker-matrix-final-closure.md` + `docs/handoff/pre-worker-matrix-to-worker-matrix.md` + this file | the deprecated `docs/plan-worker-matrix.md` r1 banner text alone |
+| B8 worker-matrix handoff ancestry | `01-b8-handoff/*` | scattered older phase docs |
 | B9 contract freeze readiness | `02-b9-contract/B9-reviewed-by-GPT.md` §6 response + `docs/issue/after-foundations/B9-final-closure.md` §8 (revision) | B9 review §1-5 without the §6 integration |
-| overall after-foundations readiness | this file + B8 handoff + B9 post-integration closure | the original `B9-final-closure.md` wording that predates the §8 revision |
+| overall stage-chain readiness | this file rev 3 + pre-worker final closure/handoff + B9 post-integration closure | the old direct “after-foundations → worker-matrix Phase 0 OPEN” wording |
 
 ---
 
 ## 5. What worker matrix should do with this (revised)
 
-1. Start charter/design from the B8 handoff pack.
-2. Consume B9 contract freeze as **shipped** — the 2026-04-21 review findings are closed; matrix validation (Core + Session), tenant plumbing (now `await`ed), `initial_context` wire shape, and provisional `wrapAsError()` helper are all stable.
+1. Start charter/design from the pre-worker handoff memo and final closure, not from the deprecated r1 worker charter.
+2. Consume B8/B9 as **upstream shipped truth** through that pack — especially the reconciled session/core contract, tenant-boundary gating, and naming/binding ancestry.
 3. The `wrapAsError()` helper is **provisional** — do NOT rely on it producing a valid envelope for existing verbs until the per-verb migration PR (RFC §3.3) lands.
-4. Use the evaluation docs to decide first-wave worker boundaries; use the per-worker `docs/eval/worker-matrix/{agent,bash,context,filesystem}-core/index.md` as the SSOT on each worker's current code truth.
+4. Use the W3 absorption map + representative blueprints as the first concrete execution baseline for Tier B absorption.
+5. Use W4 shells as already-materialized topology; `agent-core` real preview deploy proves one live shell path, while the other three remain honest dry-run shells.
+6. Keep the dual import reality explicit: published `@haimang/*` exists, and `workspace:*` remains a legal interim path until worker-matrix chooses its cutover milestone.
 
 ---
 
@@ -84,3 +97,17 @@ This revision was triggered by the Opus context-space review at `docs/eval/worke
 3. The per-worker `index.md` files, which already reflected the post-fix state
 
 The underlying asymmetry — meta-doc lagging per-worker docs — is tracked as a future curation risk. Any subsequent per-worker doc update must synchronize this meta-doc in the same PR.
+
+---
+
+## 7. Revision 3 provenance (2026-04-23)
+
+This revision was triggered by W5 closure and handoff, which converted pre-worker-matrix from an active gating phase into a closed predecessor stage. The concrete inputs are:
+
+1. `docs/issue/pre-worker-matrix/pre-worker-matrix-final-closure.md`
+2. `docs/handoff/pre-worker-matrix-to-worker-matrix.md`
+3. `docs/issue/pre-worker-matrix/W5-closure.md`
+4. `docs/issue/pre-worker-matrix/W4-closure.md`
+5. `docs/plan-worker-matrix.md` top-of-file state flip to `needs-rewrite-r2`
+
+The key meta change is simple: B8/B9 remain upstream truth, but worker-matrix should no longer read them as the *direct* kickoff gate. Pre-worker-matrix is now the immediate predecessor stage and must mediate that handoff.

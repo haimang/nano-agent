@@ -1,8 +1,8 @@
 # Plan Worker Matrix — First-Wave Worker Assembly with Verified Foundations
 
-> ⚠️ **DEPRECATED — r1 整体废弃,等待 r2 rewrite**
+> ⚠️ **NEEDS REWRITE R2 — r1 保留为历史审计稿**
 >
-> **状态**:`deprecated / awaiting-rewrite-after-pre-worker-matrix-closes`
+> **状态**:`needs-rewrite-r2 / pre-worker-matrix closed on 2026-04-23`
 > **Deprecation 时间**:`2026-04-21`
 > **Deprecation 原因**:
 >
@@ -17,17 +17,21 @@
 >
 > Owner 已确认需要一个独立的前置阶段 `pre-worker-matrix` 先处理上述 gap,本 r1 进入 deprecated 状态。
 >
-> **替代文档**:在 `pre-worker-matrix` 阶段完成前,请使用 **`docs/plan-pre-worker-matrix.md`** 作为 authoritative charter
+> **当前 authoritative 输入包**:
+> - `docs/issue/pre-worker-matrix/pre-worker-matrix-final-closure.md`
+> - `docs/handoff/pre-worker-matrix-to-worker-matrix.md`
+> - `docs/eval/worker-matrix/00-contexts/00-current-gate-truth.md`
+> - `docs/plan-pre-worker-matrix.md` (作为已执行 charter 历史稿)
 >
-> **Rewrite 时机**:pre-worker-matrix 阶段 W5(Closure & Handoff)完成时,依据本阶段实际产出触发 r2 rewrite
+> **Rewrite 时机**:pre-worker-matrix 阶段 W5 已完成;`plan-worker-matrix.md` 必须在开始 worker-matrix P0 之前完成 r2 rewrite
 >
 > **r2 预期修订面(记录,待 pre-worker-matrix 闭合后执行)**:
-> - §0 / §1 / §2 重写(新起点:NACP 1.4.0 + 发布就绪 + 3 新协议 + 10 blueprint + 4 worker scaffold)
+> - §0 / §1 / §2 重写(新起点:`@haimang/nacp-core@1.4.0` + `@haimang/nacp-session@1.3.0` 已发布、W1 RFC×3 已冻结、W3 absorption map + 3 份代表 blueprint 已存在、W4 `workers/*` shell 已 materialize)
 > - §4 In-Scope 重写为"按 blueprint 执行 absorption + 装配 live turn loop + 激活 cross-worker service-binding"
-> - §5 方法论新增"blueprint-driven absorption" / "protocol-based integration" / "gradual packages removal"
-> - §6 4 worker 章节基于 W3 blueprint 深化
+> - §5 方法论新增"blueprint-driven absorption" / "protocol-based integration" / "progressive published-path cutover" / "gradual packages removal"
+> - §6 4 worker 章节基于 W3 blueprint + W4 shell reality 深化
 > - §8 Phase 数量从 3 扩到 6-7(并行 absorption + integration + deprecation)
-> - §11 Exit criteria 新增"live agent turn loop 端到端" / "Tier B packages 物理删除完成"
+> - §11 Exit criteria 新增"live agent turn loop 端到端" / "Tier B packages 物理吸收完成" / "published-path cutover milestone"
 >
 > r1 内容以下保留作为历史审计 / worker charter-level 边界参考(§6 / §7 的 worker 定位 + 不变量仍有长期参考价值),但不得作为 r2 rewrite 之前的 authoritative planning input。
 >
