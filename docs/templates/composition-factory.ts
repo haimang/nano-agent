@@ -43,11 +43,11 @@ import { HookDispatcher, HookRegistry } from "@nano-agent/hooks";
 import {
   ServiceBindingTransport,
   type ServiceBindingTarget,
-} from "@nano-agent/nacp-core";
+} from "@haimang/nacp-core";
 import {
   hookBroadcastToStreamEvent,
   toolResultToStreamEvent,
-} from "@nano-agent/nacp-session";
+} from "@haimang/nacp-session";
 import {
   BoundedEvalSink,
   readCompositionProfile,

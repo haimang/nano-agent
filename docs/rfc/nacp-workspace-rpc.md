@@ -50,7 +50,7 @@ W1 对 workspace seam 的判断只有三条：
 
 ## 4. 建议的最小消息族
 
-> 说明：以下是 **推荐命名**，用于 worker-matrix P0 继续细化；W1 不要求在 `@nano-agent/nacp-core` 立即 ship。
+> 说明：以下是 **推荐命名**，用于 worker-matrix P0 继续细化；W1 不要求在 `@haimang/nacp-core` 立即 ship。
 
 | 家族 | 目标 | 最小 body 关注点 |
 |---|---|---|

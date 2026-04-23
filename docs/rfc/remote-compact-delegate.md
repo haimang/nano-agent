@@ -109,7 +109,7 @@ agent-core
 
 | 事实 | 当前代码锚点 | 这份 RFC 的含义 |
 |---|---|---|
-| canonical compact wire 已存在 | `@nano-agent/nacp-core` 现有 compact 消息族 | 不重发明 family |
+| canonical compact wire 已存在 | `@haimang/nacp-core` 现有 compact 消息族 | 不重发明 family |
 | runtime compact seam 已存在 | `compact-boundary.ts` / `context-assembler.ts` | 远端只改变执行位置 |
 | live runtime 已有 evidence wiring | `session-do-runtime/src/workspace-runtime.ts` | remote compact 也要继续保留 evidence truth |
 
