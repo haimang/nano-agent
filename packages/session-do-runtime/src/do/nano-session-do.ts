@@ -31,6 +31,7 @@ import { SessionOrchestrator } from "../orchestration.js";
 import type { OrchestrationDeps, OrchestrationState } from "../orchestration.js";
 import { assertTraceLaw, type TraceContext } from "../traces.js";
 import { extractTurnInput } from "../turn-ingress.js";
+import { appendInitialContextLayer } from "../context-api/append-initial-context-layer.js";
 import { transitionPhase as transitionPhaseImported } from "../actor-state.js";
 import { validateSessionCheckpoint } from "../checkpoint.js";
 import { createDefaultCompositionFactory } from "../composition.js";
@@ -609,6 +610,41 @@ export class NanoSessionDO {
     messageType: string,
     body: Record<string, unknown> | undefined,
   ): Promise<void> {
+    // P2 Phase 3 mirror (D05 R1 + R2) — session.start initial_context consumer.
+    // See workers/agent-core/src/host/do/nano-session-do.ts for the authoritative
+    // consumer. packages/ keeps a symmetric copy during the coexistence period
+    // (W3 pattern §6); D09 deprecation will remove this mirror.
+    if (messageType === "session.start" && body?.["initial_context"]) {
+      const assembler = (
+        this.subsystems.workspace as
+          | { assembler?: import("@nano-agent/workspace-context-artifacts").ContextAssembler }
+          | undefined
+      )?.assembler;
+      if (assembler) {
+        try {
+          const payload = body["initial_context"] as import("@haimang/nacp-session").SessionStartInitialContext;
+          appendInitialContextLayer(assembler, payload);
+        } catch (err) {
+          const message =
+            err instanceof Error
+              ? `initial_context_consumer_error: ${err.message}`
+              : `initial_context_consumer_error: unknown error`;
+          const helper = this.ensureWsHelper();
+          if (helper) {
+            try {
+              helper.pushEvent(this.streamUuid, {
+                kind: "system.notify",
+                severity: "error",
+                message,
+              } as unknown as Parameters<typeof helper.pushEvent>[1]);
+            } catch {
+              // pushEvent failure is non-fatal — the turn continues.
+            }
+          }
+        }
+      }
+    }
+
     switch (messageType) {
       case "session.start":
       case "session.followup_input": {
