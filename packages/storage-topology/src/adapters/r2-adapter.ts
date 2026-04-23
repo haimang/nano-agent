@@ -39,7 +39,7 @@ export interface R2ListResult {
 /**
  * Minimal R2 bucket binding — structurally compatible with
  * Cloudflare's `R2Bucket`. Same decoupling pattern as
- * `@nano-agent/nacp-core`'s `R2BucketLike`.
+ * `@haimang/nacp-core`'s `R2BucketLike`.
  */
 export interface R2BucketBinding {
   put(

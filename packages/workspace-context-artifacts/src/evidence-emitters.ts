@@ -21,11 +21,11 @@ import type {
   CompactEvidenceRecord,
   EvidenceAnchor,
   SnapshotEvidenceRecord,
-} from "@nano-agent/nacp-core";
+} from "@haimang/nacp-core";
 export type {
   ArtifactLifecycleStage,
   CompactEvidencePhase,
-} from "@nano-agent/nacp-core";
+} from "@haimang/nacp-core";
 import type { AssemblyResult } from "./context-assembler.js";
 import type { ContextCompactRequestBody, ContextCompactResponseBody } from "./compact-boundary.js";
 import type { CompactBoundaryRecord, WorkspaceSnapshotFragment } from "./snapshot.js";
@@ -34,7 +34,7 @@ import type { CompactBoundaryRecord, WorkspaceSnapshotFragment } from "./snapsho
 // Structural aliases
 // ─────────────────────────────────────────────────────────────────────
 
-/** @deprecated Import `EvidenceAnchor` from `@nano-agent/nacp-core`. */
+/** @deprecated Import `EvidenceAnchor` from `@haimang/nacp-core`. */
 export type EvidenceAnchorLike = EvidenceAnchor;
 
 export interface EvidenceSinkLike {

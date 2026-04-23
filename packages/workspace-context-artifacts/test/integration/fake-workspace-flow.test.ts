@@ -5,7 +5,7 @@
  *   1. Mount a writable `/` mount backed by the memory backend.
  *   2. Promote a tool-output string into an artifact, register it in
  *      the store, and confirm the produced ref parses under the real
- *      `NacpRefSchema` from `@nano-agent/nacp-core`.
+ *      `NacpRefSchema` from `@haimang/nacp-core`.
  *   3. Read/write files through the namespace; list mounts.
  *   4. Build a snapshot fragment — mount configs, file index and
  *      artifact refs are all populated (no more empty arrays).

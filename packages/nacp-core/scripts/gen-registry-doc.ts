@@ -1,6 +1,6 @@
 /**
  * Generate NACP-Core Registry documentation as Markdown.
- * Usage: pnpm -F @nano-agent/nacp-core build:docs
+ * Usage: pnpm -F @haimang/nacp-core build:docs
  * Output: stdout (pipe to file)
  */
 import { writeFileSync, mkdirSync } from "node:fs";
@@ -40,7 +40,7 @@ lines.push("");
 // R3 fix: separate session.* placeholders from Core messages to avoid scope confusion
 lines.push("## Role Requirements (Core-Only)");
 lines.push("");
-lines.push("> **Note**: `client` role references `session.*` message types that are defined in `@nano-agent/nacp-session`, not in Core.");
+lines.push("> **Note**: `client` role references `session.*` message types that are defined in `@haimang/nacp-session`, not in Core.");
 lines.push("> They appear here because Core's state machine needs phase-transition awareness, but their body schemas live in the Session profile package.");
 lines.push("");
 lines.push("| role | must_produce | must_consume | note |");

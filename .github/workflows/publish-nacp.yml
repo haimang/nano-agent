@@ -28,7 +28,7 @@ jobs:
           node-version: 20
           cache: pnpm
           registry-url: https://npm.pkg.github.com
-          scope: "@nano-agent"
+          scope: "@haimang"
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -67,25 +67,49 @@ jobs:
 
       - name: Typecheck NACP packages
         run: |
-          pnpm --filter @nano-agent/nacp-core typecheck
-          pnpm --filter @nano-agent/nacp-session typecheck
+          pnpm --filter @haimang/nacp-core typecheck
+          pnpm --filter @haimang/nacp-session typecheck
 
       - name: Build NACP packages
         run: |
-          pnpm --filter @nano-agent/nacp-core build
-          pnpm --filter @nano-agent/nacp-session build
+          pnpm --filter @haimang/nacp-core build
+          pnpm --filter @haimang/nacp-session build
 
       - name: Test NACP packages
         run: |
-          pnpm --filter @nano-agent/nacp-core test
-          pnpm --filter @nano-agent/nacp-session test
+          pnpm --filter @haimang/nacp-core test
+          pnpm --filter @haimang/nacp-session test
 
       - name: Publish nacp-core
-        run: pnpm --filter @nano-agent/nacp-core publish --no-git-checks
+        run: pnpm --filter @haimang/nacp-core publish --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish nacp-session
-        run: pnpm --filter @nano-agent/nacp-session publish --no-git-checks
+        run: pnpm --filter @haimang/nacp-session publish --no-git-checks
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify dogfood install
+        shell: bash
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          for attempt in 1 2 3 4 5; do
+            if pnpm --dir dogfood/nacp-consume-test install --ignore-workspace --no-frozen-lockfile; then
+              pnpm --dir dogfood/nacp-consume-test build
+              pnpm --dir dogfood/nacp-consume-test smoke
+              exit 0
+            fi
+
+            if [ "${attempt}" -eq 5 ]; then
+              echo "::error::dogfood install failed after 5 attempts"
+              exit 1
+            fi
+
+            echo "dogfood install not ready yet; retrying in 10s (attempt ${attempt}/5)"
+            rm -rf dogfood/nacp-consume-test/node_modules dogfood/nacp-consume-test/pnpm-lock.yaml
+            sleep 10
+          done

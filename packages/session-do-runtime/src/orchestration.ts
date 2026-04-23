@@ -13,7 +13,7 @@
  * Stream-event discipline
  * -----------------------
  * Every `pushStreamEvent(kind, body)` call MUST emit a body that parses
- * under `@nano-agent/nacp-session`'s `SessionStreamEventBodySchema` (9
+ * under `@haimang/nacp-session`'s `SessionStreamEventBodySchema` (9
  * discriminated kinds). The orchestrator no longer invents `turn.started`
  * / `turn.cancelled` / `session.ended` kinds:
  *

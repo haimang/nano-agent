@@ -1,5 +1,5 @@
 /**
- * @nano-agent/nacp-core — NACP Protocol Family, Core Envelope Layer
+ * @haimang/nacp-core — NACP Protocol Family, Core Envelope Layer
  *
  * This is the public API surface. All consumers should import from here.
  */

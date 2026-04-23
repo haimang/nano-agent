@@ -8,7 +8,7 @@
  * isMessageAllowedInPhase() which would reject normal session traffic.
  */
 
-import type { SessionPhase } from "@nano-agent/nacp-core";
+import type { SessionPhase } from "@haimang/nacp-core";
 import { SESSION_MESSAGE_TYPES } from "./messages.js";
 import { NacpSessionError, SESSION_ERROR_CODES } from "./errors.js";
 

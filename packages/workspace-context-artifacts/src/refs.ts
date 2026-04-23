@@ -1,7 +1,7 @@
 /**
  * Workspace Context Artifacts — Artifact Reference Types
  *
- * `ArtifactRef` is a semantic wrapper around `@nano-agent/nacp-core`'s
+ * `ArtifactRef` is a semantic wrapper around `@haimang/nacp-core`'s
  * `NacpRef`. The underlying wire shape IS a NacpRef (same field names,
  * same tenant-prefix rule, same `kind` enum: `r2 | kv | do-storage |
  * d1 | queue-dlq`). Artifact-specific metadata is carried in a small

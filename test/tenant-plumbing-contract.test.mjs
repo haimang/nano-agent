@@ -229,6 +229,6 @@ test("B9 GPT-R4 — http-controller no longer hardcodes '1.1.0'", () => {
   );
   assert.ok(
     source.includes("NACP_VERSION"),
-    "http-controller.ts should import NACP_VERSION from @nano-agent/nacp-core",
+    "http-controller.ts should import NACP_VERSION from @haimang/nacp-core",
   );
 });

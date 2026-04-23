@@ -2,11 +2,11 @@ import {
   NACP_CORE_TYPE_DIRECTION_MATRIX,
   NACP_VERSION,
   validateEnvelope,
-} from "@nano-agent/nacp-core";
+} from "@haimang/nacp-core";
 import {
   NACP_SESSION_VERSION,
   validateSessionFrame,
-} from "@nano-agent/nacp-session";
+} from "@haimang/nacp-session";
 
 if (typeof validateEnvelope !== "function") {
   throw new Error("validateEnvelope export is unavailable");

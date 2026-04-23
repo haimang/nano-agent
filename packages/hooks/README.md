@@ -162,7 +162,7 @@ point. Every call goes through three guards:
 ## Protocol codec
 
 The `core-mapping.ts` helpers align with the real
-`@nano-agent/nacp-core` schemas:
+`@haimang/nacp-core` schemas:
 
 ```
 HookEmitBody     { event_name, event_payload }

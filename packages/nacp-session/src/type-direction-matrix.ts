@@ -3,13 +3,13 @@
  *
  * Ownership rule (B9 / GPT-R1): session profile owns its own matrix.
  * `validateSessionFrame()` consumes this matrix — NOT `validateEnvelope()`.
- * Core types have their own matrix in `@nano-agent/nacp-core`.
+ * Core types have their own matrix in `@haimang/nacp-core`.
  *
  * Conservative first-publish rule (B9 RFC §2.4): every (type, delivery_kind)
  * combination in shipped session tests / source paths is legal here.
  */
 
-import type { NacpDeliveryKind } from "@nano-agent/nacp-core";
+import type { NacpDeliveryKind } from "@haimang/nacp-core";
 
 export const NACP_SESSION_TYPE_DIRECTION_MATRIX: Readonly<
   Record<string, ReadonlySet<NacpDeliveryKind>>

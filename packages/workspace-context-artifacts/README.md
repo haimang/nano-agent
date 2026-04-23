@@ -7,7 +7,7 @@ snapshot fragment that session-do-runtime persists across DO
 hibernation.
 
 Every `ArtifactRef` / `PreparedArtifactRef` is structurally aligned
-with `@nano-agent/nacp-core`'s `NacpRefSchema` — artifact kinds live
+with `@haimang/nacp-core`'s `NacpRefSchema` — artifact kinds live
 on `artifactKind`, not on the NacpRef wire `kind`. The compact
 boundary manager produces / consumes bodies that parse directly under
 `context.compact.request` / `context.compact.response`.
@@ -39,7 +39,7 @@ boundary manager produces / consumes bodies that parse directly under
     boundary marker.
   - `pickSplitPoint()` selects a budget-aware split (by
     `tokenEstimate` / `content.length`, never by naive message count).
-- `redactPayload()` — local mirror of `@nano-agent/nacp-session`'s
+- `redactPayload()` — local mirror of `@haimang/nacp-session`'s
   `redactPayload()`; callers can inject the Session version via
   `redactForClient({ payloadRedactor })`.
 - `WorkspaceSnapshotBuilder` — ACTUALLY captures mount configs + file

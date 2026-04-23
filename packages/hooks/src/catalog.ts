@@ -1,7 +1,7 @@
 import {
   HOOK_EVENT_PAYLOAD_SCHEMA_NAMES,
   type HookEventName,
-} from "@nano-agent/nacp-core";
+} from "@haimang/nacp-core";
 
 /**
  * @nano-agent/hooks — the v2 hook event catalog (18 events across 3 classes).
@@ -41,10 +41,10 @@ import {
  */
 
 /**
- * @deprecated Import `HookEventName` from `@nano-agent/nacp-core`.
+ * @deprecated Import `HookEventName` from `@haimang/nacp-core`.
  * Planned removal: worker-matrix P0 absorption phase (target 2026-Q3).
  */
-export type { HookEventName } from "@nano-agent/nacp-core";
+export type { HookEventName } from "@haimang/nacp-core";
 
 /** Metadata describing a single hook event's dispatch semantics. */
 export interface HookEventMeta {

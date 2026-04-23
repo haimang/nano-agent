@@ -111,7 +111,7 @@ seam is used for HTTP-fallback durable reads from a reconnecting client.
 
 `SessionInspector` strictly consumes the **9 canonical
 `session.stream.event` kinds** mirrored locally from
-`@nano-agent/nacp-session`:
+`@haimang/nacp-session`:
 
 ```
 tool.call.progress   tool.call.result   hook.broadcast

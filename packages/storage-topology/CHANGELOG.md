@@ -4,8 +4,8 @@
 
 ### Changed
 
-- `src/{keys.ts,refs.ts}` now act as explicit compatibility re-export layers over `@nano-agent/nacp-core@1.4.0` storage-law truth.
-- `src/taxonomy.ts` now re-exports `StorageBackend` from `@nano-agent/nacp-core@1.4.0` so the backend literal union no longer has an independent local source of truth.
+- `src/{keys.ts,refs.ts}` now act as explicit compatibility re-export layers over `@haimang/nacp-core@1.4.0` storage-law truth.
+- `src/taxonomy.ts` now re-exports `StorageBackend` from `@haimang/nacp-core@1.4.0` so the backend literal union no longer has an independent local source of truth.
 - Storage adapters / placement / calibration ownership remains local to `@nano-agent/storage-topology`; this is a source-topology update only, not a package-version bump.
 
 ## 2.0.0 — 2026-04-20
@@ -37,7 +37,7 @@ spike findings (`docs/spikes/storage-findings.md`,
 - `R2ObjectLike` — minimal R2 object descriptor exposed from
   `adapters/scoped-io.ts` so the package stays decoupled from
   `@cloudflare/workers-types` (same `*Like` pattern as
-  `@nano-agent/nacp-core`).
+  `@haimang/nacp-core`).
 - `R2Adapter` (`adapters/r2-adapter.ts`) — production-shaped per-binding
   wrapper. Includes:
   - `get` / `head` / `put` / `delete` (plus `delete(string[])`).

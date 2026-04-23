@@ -4,7 +4,7 @@
  * Drives `canonical → adapter → executor → normalizer → session-stream
  * adapter` off fixtures in `fixtures/stream/` and `fixtures/provider-profiles/`,
  * and asserts that the resulting session stream body parses under the
- * real `@nano-agent/nacp-session` `SessionStreamEventBodySchema`.
+ * real `@haimang/nacp-session` `SessionStreamEventBodySchema`.
  */
 
 import { describe, it, expect, vi } from "vitest";

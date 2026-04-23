@@ -88,14 +88,14 @@ import {
   type SessionContext,
   type SessionPhase,
   type SessionStorageLike,
-} from "@nano-agent/nacp-session";
+} from "@haimang/nacp-session";
 import {
   verifyTenantBoundary,
   tenantDoStorageGet,
   tenantDoStoragePut,
   tenantDoStorageDelete,
   type DoStorageLike,
-} from "@nano-agent/nacp-core";
+} from "@haimang/nacp-core";
 
 // ═══════════════════════════════════════════════════════════════════
 // §1 — DurableObjectState subset

@@ -12,7 +12,7 @@
  * envelope shape without needing a full DO.
  */
 
-import { NACP_VERSION } from "@nano-agent/nacp-core";
+import { NACP_VERSION } from "@haimang/nacp-core";
 
 /** Set of supported HTTP fallback actions. */
 const SUPPORTED_ACTIONS = new Set([

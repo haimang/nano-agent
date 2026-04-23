@@ -8,7 +8,7 @@
  * to enforce message_type, body schema, and SESSION_BODY_REQUIRED.
  */
 
-import type { NacpAuthority } from "@nano-agent/nacp-core";
+import type { NacpAuthority } from "@haimang/nacp-core";
 import { type NacpClientFrame, type NacpSessionFrame, validateSessionFrame } from "./frame.js";
 import { NacpSessionError, SESSION_ERROR_CODES } from "./errors.js";
 import { SESSION_MESSAGE_TYPES, SESSION_BODY_SCHEMAS } from "./messages.js";

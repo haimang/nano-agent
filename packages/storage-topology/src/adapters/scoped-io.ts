@@ -1,7 +1,7 @@
 /**
  * Storage Topology — Scoped Storage Adapter Interface (v2)
  *
- * Thin adapter types that align with `@nano-agent/nacp-core`'s
+ * Thin adapter types that align with `@haimang/nacp-core`'s
  * tenant-scoped I/O helpers (`tenantR2Put/Get/Head/List/Delete`,
  * `tenantKvGet/Put/Delete`, `tenantDoStorageGet/Put/Delete`). This
  * module does not re-implement storage operations — it provides typed

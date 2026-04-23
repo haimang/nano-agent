@@ -4,7 +4,7 @@
 
 ### Changed
 
-- `src/evidence-emitters.ts` now types `EvidenceAnchor`, `CompactEvidencePhase`, `ArtifactLifecycleStage`, and the 4 evidence record outputs against `@nano-agent/nacp-core@1.4.0`.
+- `src/evidence-emitters.ts` now types `EvidenceAnchor`, `CompactEvidencePhase`, `ArtifactLifecycleStage`, and the 4 evidence record outputs against `@haimang/nacp-core@1.4.0`.
 - Builder / emit helper ownership remains local to `@nano-agent/workspace-context-artifacts`; this is a vocabulary-alignment change only, not a package-version bump.
 
 ## 0.1.0 — 2026-04-17
@@ -31,7 +31,7 @@ Initial v1 implementation + post-review corrections.
   - `applyCompactResponse(messages, response, summaryRef, turnRange)`
   - `pickSplitPoint(messages, targetTokenBudget)` — token-budget-aware
     split (via `tokenEstimate` / `content.length`).
-- `redactPayload()` mirror of `@nano-agent/nacp-session`'s
+- `redactPayload()` mirror of `@haimang/nacp-session`'s
   `redactPayload`; `redactForClient()` applies it to JSON previews
   and can take an injected `payloadRedactor` for Session parity.
 - `WorkspaceSnapshotBuilder.buildFragment()` now ACTUALLY captures

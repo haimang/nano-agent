@@ -2,7 +2,7 @@
  * Tests for Core message mapping.
  *
  * These tests verify the builder/parser pair round-trips through the
- * real `@nano-agent/nacp-core` `HookEmitBodySchema` and
+ * real `@haimang/nacp-core` `HookEmitBodySchema` and
  * `HookOutcomeBodySchema` — which is the reality we're aligning to.
  */
 

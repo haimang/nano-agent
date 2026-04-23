@@ -1,6 +1,6 @@
 /**
  * Integration — storage-topology refs and `ScopedStorageAdapter` signatures
- * align with `@nano-agent/nacp-core` tenant-scoped I/O reality.
+ * align with `@haimang/nacp-core` tenant-scoped I/O reality.
  *
  * Verifies:
  *   - Every `build*Ref()` output parses under the real `NacpRefSchema`.

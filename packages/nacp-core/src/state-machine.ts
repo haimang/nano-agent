@@ -21,7 +21,7 @@ export type SessionPhase =
 // NOTE (GPT code-review §3.1): session.* message types appear here for phase
 // transition awareness — Core needs to know WHICH messages trigger phase changes
 // even though Core does NOT define body schemas for session.* messages.
-// Body schemas for session.* live in @nano-agent/nacp-session.
+// Body schemas for session.* live in @haimang/nacp-session.
 const PHASE_ALLOWED_MESSAGES: Record<SessionPhase, Set<string>> = {
   unattached: new Set([
     "session.start",

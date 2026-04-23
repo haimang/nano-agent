@@ -51,7 +51,7 @@ export interface DurableObjectTransactionLike {
 /**
  * Minimal Durable Object storage binding — structurally compatible
  * with Cloudflare's `DurableObjectStorage`. Same decoupling pattern as
- * `@nano-agent/nacp-core`'s `DoStorageLike`.
+ * `@haimang/nacp-core`'s `DoStorageLike`.
  */
 export interface DurableObjectStorageBinding {
   get<T = unknown>(key: string): Promise<T | undefined>;

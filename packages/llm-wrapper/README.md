@@ -4,7 +4,7 @@ Provider-agnostic LLM wrapper for nano-agent. Owns the canonical request /
 message / event model, the adapter seam to OpenAI-compatible Chat
 Completions APIs, the local-fetch executor (with retry, timeout, `on-429`
 key rotation and `Retry-After` handling), attachment planning, and the
-bridge from LLM events into `@nano-agent/nacp-session` client-visible
+bridge from LLM events into `@haimang/nacp-session` client-visible
 stream bodies.
 
 ---

@@ -6,7 +6,7 @@
  * identifier-law rename and the widened `session.followup_input` family
  * landed. `NACP_SESSION_VERSION_COMPAT` stays at `1.0.0` so a 1.1 session
  * reader can still accept pre-freeze payloads through
- * `@nano-agent/nacp-core`'s `migrate_v1_0_to_v1_1()`.
+ * `@haimang/nacp-core`'s `migrate_v1_0_to_v1_1()`.
  *
  * The WebSocket subprotocol label stays `nacp-session.v1` — the major line
  * never moved, and a minor bump inside v1 does not change the handshake

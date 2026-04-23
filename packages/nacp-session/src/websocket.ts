@@ -14,7 +14,7 @@ import { HeartbeatTracker, type HeartbeatOptions } from "./heartbeat.js";
 import { SessionStreamEventBodySchema, type SessionStreamEventBody } from "./stream-event.js";
 import { NacpSessionError, SESSION_ERROR_CODES } from "./errors.js";
 import { NACP_SESSION_WS_SUBPROTOCOL } from "./version.js";
-import { NACP_VERSION } from "@nano-agent/nacp-core";
+import { NACP_VERSION } from "@haimang/nacp-core";
 
 export interface SessionSocketLike {
   send(data: string): void;

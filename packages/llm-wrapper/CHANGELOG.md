@@ -25,7 +25,7 @@ Initial v1 implementation + post-review corrections.
   `@nano-agent/workspace-context-artifacts`'s `PreparedArtifactRefSchema`
   (plus a wrapper-only `textContent` convenience).
 - `session-stream-adapter.ts` bodies now strictly parse under
-  `@nano-agent/nacp-session`'s `SessionStreamEventBodySchema` (9-kind
+  `@haimang/nacp-session`'s `SessionStreamEventBodySchema` (9-kind
   catalog, no invented `llm.tool_call` kind; `system.notify` uses
   `severity`, not `level`).
 - `test/canonical.test.ts` + `fixtures/` (provider profiles, SSE, non-stream JSON).

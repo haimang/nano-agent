@@ -22,7 +22,7 @@
  */
 
 /**
- * @deprecated Import propagation truth from `@nano-agent/nacp-core`.
+ * @deprecated Import propagation truth from `@haimang/nacp-core`.
  * Planned removal: worker-matrix P0 absorption phase (target 2026-Q3).
  */
 export {
@@ -30,12 +30,12 @@ export {
   buildCrossSeamHeaders,
   readCrossSeamHeaders,
   validateCrossSeamAnchor,
-} from "@nano-agent/nacp-core";
+} from "@haimang/nacp-core";
 /**
- * @deprecated Import propagation truth from `@nano-agent/nacp-core`.
+ * @deprecated Import propagation truth from `@haimang/nacp-core`.
  * Planned removal: worker-matrix P0 absorption phase (target 2026-Q3).
  */
-export type { CrossSeamAnchor } from "@nano-agent/nacp-core";
+export type { CrossSeamAnchor } from "@haimang/nacp-core";
 
 // ─────────────────────────────────────────────────────────────────────
 // Failure taxonomy

@@ -2,7 +2,7 @@
  * @nano-agent/eval-observability — real-time session inspector.
  *
  * Strictly consumes the 9 canonical `session.stream.event` kinds defined
- * in `@nano-agent/nacp-session` and provides filterable, chronological
+ * in `@haimang/nacp-session` and provides filterable, chronological
  * access to the observed stream.
  *
  * The inspector is the WebSocket-first observer: it records whatever the
@@ -14,7 +14,7 @@
 /**
  * The 9 canonical `session.stream.event` kinds.
  *
- * Mirrored locally rather than depending on `@nano-agent/nacp-session`
+ * Mirrored locally rather than depending on `@haimang/nacp-session`
  * to avoid pulling Session profile code into the observability surface.
  * The catalog MUST stay in lock-step with
  * `packages/nacp-session/src/stream-event.ts`; a drift check test

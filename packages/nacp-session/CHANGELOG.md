@@ -1,4 +1,4 @@
-# Changelog — @nano-agent/nacp-session
+# Changelog — @haimang/nacp-session
 
 ## 1.3.0 — 2026-04-21 (B9 — contract freeze pre worker-matrix)
 

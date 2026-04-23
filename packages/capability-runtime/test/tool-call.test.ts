@@ -9,7 +9,7 @@ import type { CapabilityPlan } from "../src/types.js";
 
 // Local re-declaration of the NACP schema shapes so this package can
 // validate against them without taking a runtime dependency on
-// @nano-agent/nacp-core. These MUST stay in sync with
+// @haimang/nacp-core. These MUST stay in sync with
 // packages/nacp-core/src/messages/tool.ts.
 const ToolCallRequestBodySchema = z.object({
   tool_name: z.string().min(1).max(64),

@@ -8,7 +8,7 @@ evidence-driven calibration seam.
 
 This package is a **semantics library**. It does NOT perform storage
 I/O itself; production reads and writes always go through
-`@nano-agent/nacp-core`'s `tenant*` scoped-I/O helpers (or a real
+`@haimang/nacp-core`'s `tenant*` scoped-I/O helpers (or a real
 adapter injected at deploy time). Its job is to make sure every
 subsystem shares one vocabulary, one set of key patterns, and one
 calibration seam.
@@ -26,7 +26,7 @@ calibration seam.
   is the single `_platform/` exception reserved for ambient feature
   flags.
 - `StorageRef` + `build{R2,Kv,DoStorage}Ref()` — every output parses
-  under `@nano-agent/nacp-core`'s `NacpRefSchema`. Every ref kind
+  under `@haimang/nacp-core`'s `NacpRefSchema`. Every ref kind
   (including `do-storage`) uses the `tenants/{team_uuid}/...` key
   prefix.
 - `ScopedStorageAdapter` interface with `do*` / `kv*` / `r2*` methods

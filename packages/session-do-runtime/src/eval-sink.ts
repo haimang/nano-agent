@@ -2,22 +2,22 @@ import type {
   EvalSinkEmitArgs,
   EvalSinkOverflowDisclosure,
   EvalSinkStats,
-} from "@nano-agent/nacp-core";
+} from "@haimang/nacp-core";
 
 /**
- * @deprecated Import sink contract types from `@nano-agent/nacp-core`.
+ * @deprecated Import sink contract types from `@haimang/nacp-core`.
  * Planned removal: worker-matrix P0 absorption phase (target 2026-Q3).
  */
 export type {
   EvalSinkEmitArgs,
   EvalSinkOverflowDisclosure,
   EvalSinkStats,
-} from "@nano-agent/nacp-core";
+} from "@haimang/nacp-core";
 /**
- * @deprecated Import `extractMessageUuid` from `@nano-agent/nacp-core`.
+ * @deprecated Import `extractMessageUuid` from `@haimang/nacp-core`.
  * Planned removal: worker-matrix P0 absorption phase (target 2026-Q3).
  */
-export { extractMessageUuid } from "@nano-agent/nacp-core";
+export { extractMessageUuid } from "@haimang/nacp-core";
 
 /**
  * Session DO Runtime — bounded-FIFO eval sink with B6 dedup + overflow

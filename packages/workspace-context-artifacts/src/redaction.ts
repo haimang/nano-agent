@@ -4,7 +4,7 @@
  * Provides utilities for building client-safe previews of artifacts,
  * reducing internal-only artifacts to ref-only stubs, and applying
  * `redaction_hint`-driven payload scrubbing consistent with
- * `@nano-agent/nacp-session`'s `redactPayload()`.
+ * `@haimang/nacp-session`'s `redactPayload()`.
  *
  * The `redactPayload()` truth is re-implemented locally (kept in
  * lock-step with Session by the integration test) so this package
@@ -23,7 +23,7 @@ import type { ArtifactMetadata } from "./artifacts.js";
 /**
  * Consume `redaction_hint`-style paths and scrub sensitive fields
  * before a payload leaves this process. Same behaviour as
- * `@nano-agent/nacp-session`'s `redactPayload()` — the integration
+ * `@haimang/nacp-session`'s `redactPayload()` — the integration
  * test pins the two in lock-step.
  */
 export function redactPayload(
@@ -143,7 +143,7 @@ export function buildPreview(content: string, maxLength: number = 200): string {
 /**
  * Apply `redactPayload()` to an arbitrary artifact-side payload. Thin
  * wrapper so callers don't need to care whether they got the payload
- * redactor from `@nano-agent/nacp-session` or from this package.
+ * redactor from `@haimang/nacp-session` or from this package.
  */
 export function redactArtifactPayload(
   payload: Record<string, unknown>,

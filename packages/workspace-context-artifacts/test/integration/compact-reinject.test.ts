@@ -3,7 +3,7 @@
  *
  * Verifies that `CompactBoundaryManager` produces wire bodies that
  * parse under the real `context.compact.request/response` schemas from
- * `@nano-agent/nacp-core`, and that applying the response reinjects a
+ * `@haimang/nacp-core`, and that applying the response reinjects a
  * boundary marker back into the live message list without mutating the
  * originally-passed array.
  */

@@ -5,7 +5,7 @@
  * `delivery_kind` values. Consumed by `validateEnvelope()` Layer 6.
  *
  * Ownership rule (B9 / GPT-R1): core only covers the 11 core-registered
- * types. Session profile (8 types) has its own matrix in `@nano-agent/nacp-session`.
+ * types. Session profile (8 types) has its own matrix in `@haimang/nacp-session`.
  *
  * Conservative first-publish rule (B9 RFC §2.4): any (type, delivery_kind)
  * combination present in a shipped test fixture or source path must be legal

@@ -34,7 +34,7 @@ import {
   type NacpClientFrame,
   type NacpSessionFrame,
   type SessionPhase,
-} from "@nano-agent/nacp-session";
+} from "@haimang/nacp-session";
 
 // ─────────────────────────────────────────────────────────────────────
 // Result types

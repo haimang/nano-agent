@@ -1,4 +1,4 @@
-# @nano-agent/nacp-core
+# @haimang/nacp-core
 
 > NACP-Core — the internal envelope layer of the Nano-Agent Communication Protocol family.
 
@@ -12,7 +12,7 @@ import {
   encodeEnvelope,
   decodeEnvelope,
   NACP_VERSION,
-} from "@nano-agent/nacp-core";
+} from "@haimang/nacp-core";
 
 // Build an envelope
 const envelope = {
@@ -56,8 +56,8 @@ NACP is a **protocol family**, not a single protocol:
 
 | Layer | Package | Purpose |
 |-------|---------|---------|
-| **NACP-Core** (this package) | `@nano-agent/nacp-core` | Internal worker/DO/queue envelope |
-| **NACP-Session** | `@nano-agent/nacp-session` | Client ↔ session DO WebSocket profile |
+| **NACP-Core** (this package) | `@haimang/nacp-core` | Internal worker/DO/queue envelope |
+| **NACP-Session** | `@haimang/nacp-session` | Client ↔ session DO WebSocket profile |
 | **Transport Profiles** | (part of core) | Per-wire rules (service-binding, queue, DO-RPC, HTTP) |
 
 ## Multi-Tenant First-Class
@@ -65,7 +65,7 @@ NACP is a **protocol family**, not a single protocol:
 Every envelope carries `authority.team_uuid`. Anonymous messages are rejected. All resource references (`refs[]`) must be tenant-namespaced (`tenants/{team_uuid}/...`). Cross-tenant access requires explicit delegation with HMAC signature.
 
 ```typescript
-import { verifyTenantBoundary } from "@nano-agent/nacp-core";
+import { verifyTenantBoundary } from "@haimang/nacp-core";
 
 // After validateEnvelope, before business logic:
 await verifyTenantBoundary(envelope, {

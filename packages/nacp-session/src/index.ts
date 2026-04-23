@@ -1,5 +1,5 @@
 /**
- * @nano-agent/nacp-session — Session profile of the NACP Protocol Family.
+ * @haimang/nacp-session — Session profile of the NACP Protocol Family.
  *
  * Client ↔ session DO WebSocket interaction layer.
  * Provides: message schemas, frame normalize/stamp, replay/ack/heartbeat

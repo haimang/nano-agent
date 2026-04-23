@@ -57,7 +57,7 @@ storage-topology); those are composed in via a `CompositionFactory`.
 - Final workspace storage topology / DDL.
 - Production analytics / billing pipelines.
 - Cross-region migration or DO sharding.
-- Reinventing the `@nano-agent/nacp-session` profile.
+- Reinventing the `@haimang/nacp-session` profile.
 
 ---
 

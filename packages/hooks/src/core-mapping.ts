@@ -1,5 +1,5 @@
 /**
- * @nano-agent/hooks — codec between hook domain and `@nano-agent/nacp-core`
+ * @nano-agent/hooks — codec between hook domain and `@haimang/nacp-core`
  * `hook.emit` / `hook.outcome` message bodies.
  *
  * The Core truth (mirrored here so this package doesn't hard-depend on

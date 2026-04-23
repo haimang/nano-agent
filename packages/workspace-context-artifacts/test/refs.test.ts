@@ -61,7 +61,7 @@ describe("ArtifactRefSchema", () => {
     }
   });
 
-  it("output also parses under the real NacpRefSchema from @nano-agent/nacp-core", () => {
+  it("output also parses under the real NacpRefSchema from @haimang/nacp-core", () => {
     const ref = baseRef();
     const nacpShape = toNacpRef(ref);
     expect(NacpRefSchema.safeParse(nacpShape).success).toBe(true);

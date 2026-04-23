@@ -153,7 +153,7 @@ describe("validateRefKey", () => {
   });
 });
 
-describe("cross-package alignment with @nano-agent/nacp-core NacpRefSchema", () => {
+describe("cross-package alignment with @haimang/nacp-core NacpRefSchema", () => {
   const teamUuid = "team-abc-123";
 
   it("buildR2Ref output parses under NacpRefSchema", () => {

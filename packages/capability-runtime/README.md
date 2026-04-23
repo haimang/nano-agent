@@ -15,7 +15,7 @@ Design goals:
   `requestId` and can be cancelled externally. Timeouts abort the
   underlying handler via `AbortSignal`.
 - Protocol-agnostic result objects that map cleanly onto the NACP
-  `tool.call.*` message schemas from `@nano-agent/nacp-core`.
+  `tool.call.*` message schemas from `@haimang/nacp-core`.
 
 ## Supported commands (B3, 21 total)
 

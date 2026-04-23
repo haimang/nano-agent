@@ -4,7 +4,7 @@
  * Structurally compatible with
  * `@nano-agent/workspace-context-artifacts`'s
  * `PreparedArtifactRefSchema`, which is in turn aligned with
- * `@nano-agent/nacp-core`'s `NacpRefSchema`:
+ * `@haimang/nacp-core`'s `NacpRefSchema`:
  *
  *   { kind:        "r2" | "kv" | "do-storage" | "d1" | "queue-dlq",
  *     binding,

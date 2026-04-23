@@ -4,7 +4,7 @@
  * Maps internal kernel RuntimeEvent types to the 9 nacp-session
  * stream event kinds used by pushEvent(). The produced body shape
  * MUST match `SessionStreamEventBodySchema` from
- * `@nano-agent/nacp-session/stream-event`:
+ * `@haimang/nacp-session/stream-event`:
  * fields are snake_case and use the NACP field names.
  *
  * Note on UUIDs: NACP requires `turn_uuid` and `request_uuid` to be
@@ -53,7 +53,7 @@ export function mapRuntimeEventToStreamKind(
 /**
  * Returns the body shape for `session.stream.event` consumption.
  * The shape conforms to `SessionStreamEventBodySchema` in
- * `@nano-agent/nacp-session` — snake_case field names and the exact
+ * `@haimang/nacp-session` — snake_case field names and the exact
  * fields required by each variant.
  */
 export function buildStreamEventBody(event: RuntimeEvent): unknown {

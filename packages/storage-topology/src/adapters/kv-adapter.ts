@@ -27,7 +27,7 @@ import { ValueTooLargeError } from "../errors.js";
 /**
  * Minimal Workers KV namespace binding — structurally compatible with
  * Cloudflare's `KVNamespace`. Same decoupling pattern as
- * `@nano-agent/nacp-core`'s `KVNamespaceLike`.
+ * `@haimang/nacp-core`'s `KVNamespaceLike`.
  */
 export interface KVNamespaceBinding {
   get(key: string): Promise<string | null>;

@@ -1,7 +1,7 @@
 /**
  * @nano-agent/hooks — audit record building.
  *
- * Produces `audit.record` bodies that conform to `@nano-agent/nacp-core`'s
+ * Produces `audit.record` bodies that conform to `@haimang/nacp-core`'s
  * `AuditRecordBodySchema`:
  *
  *   { event_kind: string, ref?: NacpRef, detail?: Record<string, unknown> }

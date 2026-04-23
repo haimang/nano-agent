@@ -1,4 +1,4 @@
-import { NacpValidationError } from "@nano-agent/nacp-core";
+import { NacpValidationError } from "@haimang/nacp-core";
 
 export class NacpSessionError extends NacpValidationError {
   constructor(errors: string[], code: string) {

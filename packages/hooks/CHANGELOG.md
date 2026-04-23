@@ -4,7 +4,7 @@
 
 ### Changed
 
-- `src/catalog.ts` now imports `HookEventName` and `HOOK_EVENT_PAYLOAD_SCHEMA_NAMES` from `@nano-agent/nacp-core@1.4.0` so hook vocabulary truth is shared with the W0 consolidated source.
+- `src/catalog.ts` now imports `HookEventName` and `HOOK_EVENT_PAYLOAD_SCHEMA_NAMES` from `@haimang/nacp-core@1.4.0` so hook vocabulary truth is shared with the W0 consolidated source.
 - `HOOK_EVENT_CATALOG` runtime metadata remains local to `@nano-agent/hooks`; this is a compat / source-topology change only, not a package-version bump.
 
 ## 0.2.0 — 2026-04-20

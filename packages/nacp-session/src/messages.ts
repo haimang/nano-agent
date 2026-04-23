@@ -11,7 +11,7 @@
  */
 
 import { z } from "zod";
-import { NacpRefSchema } from "@nano-agent/nacp-core";
+import { NacpRefSchema } from "@haimang/nacp-core";
 import { SessionStartInitialContextSchema } from "./upstream-context.js";
 
 // ── session.start ──

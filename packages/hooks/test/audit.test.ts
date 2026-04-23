@@ -37,7 +37,7 @@ describe("buildHookAuditRecord → AuditRecordBody", () => {
     expect(body.detail?.blocked).toBe(false);
   });
 
-  it("round-trips through @nano-agent/nacp-core AuditRecordBodySchema", () => {
+  it("round-trips through @haimang/nacp-core AuditRecordBodySchema", () => {
     const body = buildHookAuditRecord(
       "PreCompact",
       makeOutcome({

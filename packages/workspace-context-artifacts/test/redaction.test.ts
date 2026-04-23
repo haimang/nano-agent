@@ -1,6 +1,6 @@
 /**
  * Tests for preview / redaction helpers. Verifies that the local
- * `redactPayload()` matches `@nano-agent/nacp-session`'s behaviour and
+ * `redactPayload()` matches `@haimang/nacp-session`'s behaviour and
  * that `redactForClient()` properly uses it for JSON previews.
  */
 
@@ -27,7 +27,7 @@ function makeRef(): ArtifactRef {
   };
 }
 
-describe("redactPayload alignment with @nano-agent/nacp-session", () => {
+describe("redactPayload alignment with @haimang/nacp-session", () => {
   it("produces the same output as the nacp-session version for the same inputs", () => {
     const payload = { a: { b: "secret" }, c: "public" };
     const hints = ["a.b"];

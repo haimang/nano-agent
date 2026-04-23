@@ -9,7 +9,7 @@
  *   - turned into a `continue` outcome with `diagnostics` (never an
  *     uncaught exception reaching the main loop),
  *   - round-tripped through the core-mapping builder so the wire body
- *     matches `@nano-agent/nacp-core`'s `hook.emit` schema.
+ *     matches `@haimang/nacp-core`'s `hook.emit` schema.
  */
 
 import { describe, it, expect } from "vitest";

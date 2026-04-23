@@ -56,12 +56,12 @@ library.
   date index for hibernation-safe `readTimeline()`, optional `list(prefix)`
   fast path.
 - `audit.record` codec (`traceEventToAuditBody` / `auditBodyToTraceEvent`)
-  aligned with `@nano-agent/nacp-core`.
+  aligned with `@haimang/nacp-core`.
 - `SessionTimeline` with a generic `TraceTimelineReader` seam for both live
   sink reads and HTTP-fallback durable reads.
 - `SessionInspector` that strictly consumes the 9 canonical
   `session.stream.event` kinds, with an optional body validator, a drift
-  guard test against `@nano-agent/nacp-session`, and rejection diagnostics.
+  guard test against `@haimang/nacp-session`, and rejection diagnostics.
 - `ScenarioSpec` / `ScenarioRunner` / `ScenarioResult` DSL + runner.
 - `FailureReplayHelper` over a `SessionTimeline`.
 - `StoragePlacementLog` for DO/KV/R2 placement evidence.

@@ -1,5 +1,5 @@
 {
-  "name": "@nano-agent/nacp-core",
+  "name": "@haimang/nacp-core",
   "version": "1.4.0",
   "type": "module",
   "description": "NACP-Core — Nano-Agent Communication Protocol internal envelope layer",
@@ -71,7 +71,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/nano-agent/nano-agent.git",
+    "url": "https://github.com/haimang/nano-agent.git",
     "directory": "packages/nacp-core"
   },
   "license": "UNLICENSED"

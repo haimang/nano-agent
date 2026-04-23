@@ -1,7 +1,7 @@
-# @nano-agent/nacp-session
+# @haimang/nacp-session
 
 > NACP-Session — the client ↔ session DO WebSocket profile of the NACP Protocol Family.
-> **Baseline**: `1.3.0` (frozen) — shares `NACP_VERSION` with `@nano-agent/nacp-core`. `NACP_VERSION_COMPAT = "1.0.0"` (pre-freeze payloads are accepted via `migrate_v1_0_to_v1_1` at the envelope layer). B9 added the session-side `(message_type × delivery_kind)` matrix + `SessionStartInitialContextSchema` (see `docs/rfc/nacp-core-1-3-draft.md`).
+> **Baseline**: `1.3.0` (frozen) — shares `NACP_VERSION` with `@haimang/nacp-core`. `NACP_VERSION_COMPAT = "1.0.0"` (pre-freeze payloads are accepted via `migrate_v1_0_to_v1_1` at the envelope layer). B9 added the session-side `(message_type × delivery_kind)` matrix + `SessionStartInitialContextSchema` (see `docs/rfc/nacp-core-1-3-draft.md`).
 
 ## What this package provides
 
@@ -22,7 +22,7 @@ import {
   SessionWebSocketHelper,
   normalizeClientFrame,
   toolProgressToStreamEvent,
-} from "@nano-agent/nacp-session";
+} from "@haimang/nacp-session";
 
 // SessionContext is required — provides real tenant/session identity
 const helper = new SessionWebSocketHelper({
@@ -54,7 +54,7 @@ await helper.restore(ctx.storage);
 
 ## Relationship to NACP-Core
 
-This package **depends on** `@nano-agent/nacp-core` and extends its types:
+This package **depends on** `@haimang/nacp-core` and extends its types:
 - `NacpSessionFrameSchema` extends `NacpEnvelopeBaseSchema`
 - `session-registry.ts` imports the `SessionPhase` type from Core but owns its **own** phase matrix (`SESSION_PHASE_ALLOWED`). Core's phase table only covers `session.start/resume/cancel/end`; the session profile adds `session.stream.event / stream.ack / heartbeat / followup_input`, which must be routed through Session's matrix rather than Core's `isMessageAllowedInPhase()`.
 - Error types extend Core's `NacpValidationError`

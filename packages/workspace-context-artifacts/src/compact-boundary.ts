@@ -5,7 +5,7 @@
  * `context.compact.request` / `context.compact.response` Core
  * messages.
  *
- * Wire shapes (from `@nano-agent/nacp-core`'s `messages/context.ts`):
+ * Wire shapes (from `@haimang/nacp-core`'s `messages/context.ts`):
  *
  *   ContextCompactRequestBody  : { history_ref, target_token_budget }
  *   ContextCompactResponseBody : { status, summary_ref?, tokens_before?,

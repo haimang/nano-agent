@@ -4,8 +4,8 @@
 
 ### Changed
 
-- `src/cross-seam.ts` now re-exports propagation truth from `@nano-agent/nacp-core@1.4.0` while keeping `CrossSeamError`, `CROSS_SEAM_FAILURE_REASONS`, and `StartupQueue` local.
-- `src/eval-sink.ts` now re-exports `EvalSinkEmitArgs`, `EvalSinkOverflowDisclosure`, `EvalSinkStats`, and `extractMessageUuid()` from `@nano-agent/nacp-core@1.4.0` while keeping `BoundedEvalSink` local.
+- `src/cross-seam.ts` now re-exports propagation truth from `@haimang/nacp-core@1.4.0` while keeping `CrossSeamError`, `CROSS_SEAM_FAILURE_REASONS`, and `StartupQueue` local.
+- `src/eval-sink.ts` now re-exports `EvalSinkEmitArgs`, `EvalSinkOverflowDisclosure`, `EvalSinkStats`, and `extractMessageUuid()` from `@haimang/nacp-core@1.4.0` while keeping `BoundedEvalSink` local.
 - These are compat / import-topology updates only; runtime behavior and package version stay unchanged in W0.
 
 ## 0.3.0 — 2026-04-21 (B9 — tenant plumbing + NACP 1.3 consumer)
@@ -14,7 +14,7 @@
 
 ### Added
 
-- Explicit dependency on `@nano-agent/nacp-core` (previously transitive via `@nano-agent/nacp-session`). B9 imports `verifyTenantBoundary`, `tenantDoStorageGet`, `tenantDoStoragePut`, `tenantDoStorageDelete` directly from nacp-core.
+- Explicit dependency on `@haimang/nacp-core` (previously transitive via `@haimang/nacp-session`). B9 imports `verifyTenantBoundary`, `tenantDoStorageGet`, `tenantDoStoragePut`, `tenantDoStorageDelete` directly from nacp-core.
 - `NanoSessionDO.tenantTeamUuid()` — single source-of-truth for the DO's tenant identity (reads `env.TEAM_UUID`, falls back to `"_unknown"` for the test harness).
 - `NanoSessionDO.getTenantScopedStorage()` — returns a `DoStorageLike`-shaped proxy whose every put/get/delete goes through nacp-core's `tenantDoStorage*` helpers. All non-wrapper DO storage accesses now go through this proxy.
 - `acceptClientFrame()` is now `async` and explicitly `await`s `verifyTenantBoundary()` on the validated session frame. A boundary violation is converted into a typed `IngressEnvelope` rejection so that the caller's `if (!envelope.ok) return;` gate actually blocks `dispatchAdmissibleFrame()` from running. Materializes B6's shipped tenant contract at the DO ingress edge. (Second-round GPT review B9-R1 integration — fire-and-forget bug fixed.)
@@ -24,7 +24,7 @@
 - `wsHelperStorage()` — backing store switched from raw `this.doState.storage` to `getTenantScopedStorage()`. WS helper replay-buffer keys are now namespaced under `tenants/<team>/`.
 - `persistCheckpoint()` / `restoreFromStorage()` — `CHECKPOINT_STORAGE_KEY` is now written/read through the tenant-scoped wrapper.
 - `session.resume` handling (line 559) — `LAST_SEEN_SEQ_KEY` put now goes through the tenant-scoped wrapper.
-- `http-controller.ts` — hardcoded `"1.1.0"` replaced by `NACP_VERSION` import from `@nano-agent/nacp-core`. Addresses B9 GPT review R4 baseline-drift finding.
+- `http-controller.ts` — hardcoded `"1.1.0"` replaced by `NACP_VERSION` import from `@haimang/nacp-core`. Addresses B9 GPT review R4 baseline-drift finding.
 
 ### Not changed
 

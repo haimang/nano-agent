@@ -1,4 +1,4 @@
-import type { StorageBackend } from "@nano-agent/nacp-core";
+import type { StorageBackend } from "@haimang/nacp-core";
 
 /**
  * Storage Taxonomy — the shared vocabulary for nano-agent's hot/warm/cold data tiers.
@@ -18,7 +18,7 @@ export type StorageClass = "hot" | "warm" | "cold";
 
 // ── Storage Backend ──
 
-export type { StorageBackend } from "@nano-agent/nacp-core";
+export type { StorageBackend } from "@haimang/nacp-core";
 
 /**
  * Maps a semantic storage class to its concrete Cloudflare backend.

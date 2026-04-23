@@ -23,7 +23,7 @@
     "build:docs": "tsx scripts/gen-registry-doc.ts"
   },
   "dependencies": {
-    "@nano-agent/nacp-core": "workspace:*"
+    "@haimang/nacp-core": "workspace:*"
   },
   "peerDependencies": {
     "zod": ">=3.22.0"

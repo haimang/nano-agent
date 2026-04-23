@@ -1,7 +1,7 @@
 /**
  * @nano-agent/hooks — session broadcast mapping.
  *
- * Maps hook events to `@nano-agent/nacp-session`'s `hook.broadcast` stream
+ * Maps hook events to `@haimang/nacp-session`'s `hook.broadcast` stream
  * event kind. The emitted body strictly conforms to
  * `SessionStreamEventBodySchema`:
  *

@@ -1,6 +1,6 @@
 /**
  * Export all NACP-Core zod schemas as a single JSON Schema file.
- * Usage: pnpm -F @nano-agent/nacp-core build:schema
+ * Usage: pnpm -F @haimang/nacp-core build:schema
  * Output: dist/nacp-core.schema.json
  */
 import { zodToJsonSchema } from "zod-to-json-schema";

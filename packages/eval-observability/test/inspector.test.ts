@@ -6,7 +6,7 @@
  *  - Optional body validator plug-in (e.g. `SessionStreamEventBodySchema.safeParse`).
  *  - `filterByKind` / `getLatest` preserve `seq` and `timestamp`.
  *  - Catalog drift guard: the local 9-kind catalog stays aligned with
- *    `@nano-agent/nacp-session`'s `STREAM_EVENT_KINDS`.
+ *    `@haimang/nacp-session`'s `STREAM_EVENT_KINDS`.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
@@ -30,7 +30,7 @@ describe("SessionInspector", () => {
   });
 
   describe("catalog alignment", () => {
-    it("mirrors the 9 canonical kinds exported by @nano-agent/nacp-session", () => {
+    it("mirrors the 9 canonical kinds exported by @haimang/nacp-session", () => {
       const mine = [...SESSION_STREAM_EVENT_KINDS].sort();
       const theirs = [...STREAM_EVENT_KINDS].sort();
       expect(mine).toEqual(theirs);

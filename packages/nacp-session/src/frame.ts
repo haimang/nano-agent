@@ -14,7 +14,7 @@ import {
   NacpHeaderSchema,
   NacpTraceSchema,
   NacpAuthoritySchema,
-} from "@nano-agent/nacp-core";
+} from "@haimang/nacp-core";
 import { SESSION_MESSAGE_TYPES, SESSION_BODY_SCHEMAS, SESSION_BODY_REQUIRED } from "./messages.js";
 import { SessionStreamEventBodySchema } from "./stream-event.js";
 import { NacpSessionError, SESSION_ERROR_CODES } from "./errors.js";

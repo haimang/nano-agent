@@ -1,7 +1,7 @@
 /**
  * Session Stream Adapter
  *
- * Maps `NormalizedLLMEvent`s to `@nano-agent/nacp-session`
+ * Maps `NormalizedLLMEvent`s to `@haimang/nacp-session`
  * `session.stream.event` bodies. The output shape strictly conforms to
  * `SessionStreamEventBodySchema` — the 9-kind discriminated union is the
  * single source of truth for client-visible live stream events.
