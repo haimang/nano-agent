@@ -46,9 +46,9 @@ const SESSION_UUID = "22222222-2222-4222-8222-222222222222";
 const REQUEST_UUID = "33333333-3333-4333-8333-333333333333";
 const TEAM_UUID = "team-seam";
 
-test("V1 binding catalog freezes exactly capability/hook/fake-provider, SKILL_WORKERS reserved", () => {
+test("V1 binding catalog freezes exactly bash-core/hook/fake-provider, SKILL_WORKERS reserved", () => {
   assert.deepEqual([...V1_BINDING_CATALOG], [
-    "CAPABILITY_WORKER",
+    "BASH_CORE",
     "HOOK_WORKER",
     "FAKE_PROVIDER_WORKER",
   ]);
@@ -157,7 +157,7 @@ test("composition factory: profile flips per binding presence", () => {
     R2_ARTIFACTS: {},
     KV_CONFIG: {},
     HOOK_WORKER: { fetch: fakeHookFetch },
-    CAPABILITY_WORKER: { fetch: fakeCapabilityFetch },
+    BASH_CORE: { fetch: fakeCapabilityFetch },
   };
   const handles = factory.create(env, {
     heartbeatIntervalMs: 1000,

@@ -208,6 +208,9 @@ importers:
 
   workers/agent-core:
     dependencies:
+      '@haimang/context-core-worker':
+        specifier: workspace:*
+        version: link:../context-core
       '@haimang/nacp-core':
         specifier: workspace:*
         version: link:../../packages/nacp-core
@@ -273,6 +276,15 @@ importers:
       '@haimang/nacp-session':
         specifier: workspace:*
         version: link:../../packages/nacp-session
+      '@nano-agent/storage-topology':
+        specifier: workspace:*
+        version: link:../../packages/storage-topology
+      '@nano-agent/workspace-context-artifacts':
+        specifier: workspace:*
+        version: link:../../packages/workspace-context-artifacts
+      zod:
+        specifier: ^3.24.0
+        version: 3.25.76
     devDependencies:
       '@cloudflare/workers-types':
         specifier: ^4.20251101.0
@@ -295,6 +307,9 @@ importers:
       '@haimang/nacp-session':
         specifier: workspace:*
         version: link:../../packages/nacp-session
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
     devDependencies:
       '@cloudflare/workers-types':
         specifier: ^4.20251101.0

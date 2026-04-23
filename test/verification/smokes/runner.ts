@@ -254,7 +254,7 @@ export function writeVerdictBundle(
  * smoke specs may pass through to the harness. Using a named
  * interface (instead of `as never` / `as unknown`) keeps typecheck
  * honest: if `SessionRuntimeEnv` drops `TEAM_UUID` / `SESSION_UUID` /
- * `HOOK_WORKER` / `CAPABILITY_WORKER` / `FAKE_PROVIDER_WORKER`, every
+ * `HOOK_WORKER` / `BASH_CORE` / `FAKE_PROVIDER_WORKER`, every
  * smoke that supplies them fails at compile time instead of silently
  * passing an inert override.
  */
@@ -265,6 +265,7 @@ export interface HarnessEnvOverrides
       | "TEAM_UUID"
       | "SESSION_UUID"
       | "HOOK_WORKER"
+      | "BASH_CORE"
       | "CAPABILITY_WORKER"
       | "FAKE_PROVIDER_WORKER"
     >
