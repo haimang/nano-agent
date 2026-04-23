@@ -5,8 +5,14 @@
   "description": "Cloudflare-native agent runtime",
   "packageManager": "pnpm@9.15.0",
   "scripts": {
-    "test:contracts": "node --test test/*.test.mjs",
-    "test:e2e": "node --test test/e2e/*.test.mjs",
-    "test:cross": "node --test test/*.test.mjs test/e2e/*.test.mjs"
+    "test:contracts": "node --test test-legacy/*.test.mjs",
+    "test:e2e": "node --test test/package-e2e/**/*.test.mjs test/cross-e2e/**/*.test.mjs",
+    "test:cross": "node --test test/package-e2e/**/*.test.mjs test/cross-e2e/**/*.test.mjs",
+    "test:legacy:contracts": "node --test test-legacy/*.test.mjs",
+    "test:legacy:e2e": "node --test test-legacy/e2e/*.test.mjs",
+    "test:legacy:cross": "node --test test-legacy/*.test.mjs test-legacy/e2e/*.test.mjs",
+    "test:package-e2e": "node --test test/package-e2e/**/*.test.mjs",
+    "test:cross-e2e": "node --test test/cross-e2e/**/*.test.mjs",
+    "test:live:e2e": "node --test test/package-e2e/**/*.test.mjs test/cross-e2e/**/*.test.mjs"
   }
 }

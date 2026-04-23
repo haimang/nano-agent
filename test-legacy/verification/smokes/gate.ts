@@ -124,7 +124,7 @@ export async function runGate(
     const handoff = {
       bundleVersion: 1,
       generatedAt: verdict.generatedAt,
-      sourceGate: "test/verification/verdict-bundles/gate-verdict.json",
+      sourceGate: "test-legacy/verification/verdict-bundles/gate-verdict.json",
       verdict: verdict.verdict,
       scenarios: Object.keys(perScenario),
       consumedBy: "A7 / P6 storage-and-context-evidence-closure",

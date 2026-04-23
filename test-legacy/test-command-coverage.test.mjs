@@ -6,16 +6,27 @@ const PKG = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf8"),
 );
 
-test("root test scripts pin the after-skeleton contracts/e2e/cross split", () => {
-  assert.equal(PKG.scripts["test:contracts"], "node --test test/*.test.mjs");
-  assert.equal(PKG.scripts["test:e2e"], "node --test test/e2e/*.test.mjs");
+test("root test scripts pin legacy contracts and new live e2e/cross cutover", () => {
+  assert.equal(PKG.scripts["test:contracts"], "node --test test-legacy/*.test.mjs");
+  assert.equal(
+    PKG.scripts["test:e2e"],
+    "node --test test/package-e2e/**/*.test.mjs test/cross-e2e/**/*.test.mjs",
+  );
   assert.equal(
     PKG.scripts["test:cross"],
-    "node --test test/*.test.mjs test/e2e/*.test.mjs",
+    "node --test test/package-e2e/**/*.test.mjs test/cross-e2e/**/*.test.mjs",
+  );
+  assert.equal(
+    PKG.scripts["test:package-e2e"],
+    "node --test test/package-e2e/**/*.test.mjs",
+  );
+  assert.equal(
+    PKG.scripts["test:cross-e2e"],
+    "node --test test/cross-e2e/**/*.test.mjs",
   );
 });
 
-test("root test tree still carries both contract and e2e suites", () => {
+test("legacy test tree still carries both contract and e2e suites", () => {
   const rootTests = readdirSync(new URL("./", import.meta.url)).filter((name) =>
     name.endsWith(".test.mjs"),
   );

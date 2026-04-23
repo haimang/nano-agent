@@ -11,10 +11,10 @@
  *
  *   2. `SmokeRecorder` — accumulates assertion results, per-step
  *      timings, failure records, and trace anchors. Matches the bundle
- *      shape documented in `test/verification/README.md`.
+ *      shape documented in `test-legacy/verification/README.md`.
  *
  *   3. `writeVerdictBundle()` — serialises a recorder + computed
- *      verdict to `test/verification/verdict-bundles/<ts>-<id>.json`
+ *      verdict to `test-legacy/verification/verdict-bundles/<ts>-<id>.json`
  *      (or returns the JSON when the writer is invoked in-memory).
  *
  * The runner intentionally has zero external deps beyond Node + the

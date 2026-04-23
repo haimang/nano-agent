@@ -9,7 +9,7 @@ This tree implements the L0 / L1 / L2 verification ladder defined in
 ## Layout
 
 ```text
-test/verification/
+test-legacy/verification/
 ├── README.md                        ← this file
 ├── profiles/                        ← wrangler / binding manifests
 │   ├── manifest.ts                  ← typed registry of all profiles
@@ -71,7 +71,7 @@ Current state (2026-04-18, post A4-A5 + A6-A7 review fix):
 ## Bundle shape
 
 Each run produces an immutable JSON bundle under
-`test/verification/verdict-bundles/<isoTimestamp>-<profile>-<scenario>.json`
+`test-legacy/verification/verdict-bundles/<isoTimestamp>-<profile>-<scenario>.json`
 with this shape:
 
 ```jsonc
