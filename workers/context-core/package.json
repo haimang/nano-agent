@@ -4,6 +4,18 @@
   "version": "0.0.0",
   "type": "module",
   "description": "Pre-worker-matrix shell for context-core",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./context-api/append-initial-context-layer": {
+      "types": "./dist/context-api/append-initial-context-layer.d.ts",
+      "import": "./dist/context-api/append-initial-context-layer.js"
+    }
+  },
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
@@ -13,7 +25,10 @@
   },
   "dependencies": {
     "@haimang/nacp-core": "workspace:*",
-    "@haimang/nacp-session": "workspace:*"
+    "@haimang/nacp-session": "workspace:*",
+    "@nano-agent/storage-topology": "workspace:*",
+    "@nano-agent/workspace-context-artifacts": "workspace:*",
+    "zod": "^3.24.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20251101.0",
