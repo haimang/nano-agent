@@ -3,7 +3,8 @@
 > **Status**: `closed` ✅
 > **Closed**: 2026-04-20
 > **Owner**: GPT-5.4
-> **Next phase enabled**: worker-matrix charter design
+> **Revision 2**: 2026-04-23 — downstream gate updated after pre-worker-matrix closure
+> **Next phase enabled**: worker-matrix charter rewrite r2 (via pre-worker-matrix closure)
 
 ---
 
@@ -110,17 +111,20 @@ Worker-matrix-consumable numbers frozen at exit:
 
 ## 6. Readiness statement for worker matrix
 
-Worker-matrix charter work may start **now**; worker-matrix **Phase 0** is now unblocked — B9 shipped on 2026-04-21 and the nacp-1.3 contract surface is frozen. The next phase should keep these six constraints explicit:
+After-foundations no longer opens worker-matrix **Phase 0** directly. That downstream gate was intentionally mediated by pre-worker-matrix, and pre-worker-matrix is now closed. The next active step is **worker-matrix charter rewrite r2**, which should keep these six constraints explicit:
 
 1. do not treat `agent.core` as a binding slot;
 2. do not silently reopen B2-B9 substrate decisions already frozen by shipped packages and live evidence;
 3. do not erase the two open gates (`F03`, `F09`);
-4. start from the B8 handoff pack + B9 final closure, not from scattered phase docs;
+4. start from the pre-worker-matrix final closure + handoff pack, with B8/B9 consumed as upstream ancestry rather than as the direct kickoff pack;
 5. consume the B9-shipped `NACP_CORE_TYPE_DIRECTION_MATRIX` + `NACP_SESSION_TYPE_DIRECTION_MATRIX` + `SessionStartInitialContextSchema` + `NanoSessionDO` tenant plumbing as **immutable truth** unless a new RFC is opened;
 6. design `agent.core` as an orchestrator-ready runtime that consumes upstream `session.start.body.initial_context` rather than re-owning user-memory / intent-routing concerns.
 
 Recommended kickoff inputs:
 
+- `docs/issue/pre-worker-matrix/pre-worker-matrix-final-closure.md`
+- `docs/handoff/pre-worker-matrix-to-worker-matrix.md`
+- `docs/eval/worker-matrix/00-contexts/00-current-gate-truth.md`
 - `docs/issue/after-foundations/B8-phase-1-closure.md`
 - `docs/handoff/after-foundations-to-worker-matrix.md`
 - `docs/handoff/next-phase-worker-naming-proposal.md`
