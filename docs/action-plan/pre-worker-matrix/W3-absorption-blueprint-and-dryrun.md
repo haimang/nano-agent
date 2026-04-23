@@ -12,7 +12,7 @@
 > - `docs/design/pre-worker-matrix/W3-absorption-map.md`
 > - `docs/design/pre-worker-matrix/W3-absorption-pattern.md`
 > - `docs/action-plan/pre-worker-matrix/W5-closure-and-handoff.md`
-> 文档状态: `draft`
+> 文档状态: `executed`
 
 ---
 
@@ -345,14 +345,110 @@ W3 Absorption Blueprint & Dry-Run
 
 ## 9. 执行后复盘关注点
 
-- **哪些 Phase 的工作量估计偏差最大**：`待执行后回填`
-- **哪些编号的拆分还不够合理**：`待执行后回填`
-- **哪些问题本应更早问架构师**：`待执行后回填`
-- **哪些测试安排在实际执行中证明不够**：`待执行后回填`
-- **模板本身还需要补什么字段**：`待执行后回填`
+- **哪些 Phase 的工作量估计偏差最大**：`Phase 1 reality verification pass 工作量被低估`。action-plan 预估 `S`(小),实际因为发现 capability-runtime v0.2 设计主文描述与 package.json / 源码 grep 真相冲突,触发了 Phase 2 一串级联修正(主文 §0.2 / §1.4 / §6.1 取舍 2 / §7.2 T3 / blueprint §2.1 / pattern spec Pattern 4),反向推大了 Phase 2 revise 工作量到接近 `M`。结论:当 design v0.2 是 post-review narrowing 产物时,reality verification 一定要先实测 `package.json.dependencies` 与 `grep -r "from" src/test`,不能只读文档。
+- **哪些编号的拆分还不够合理**：`P1-02 pattern reality 核对` 与 `P2-01 capability-runtime blueprint revise` 其实天然耦合。pattern spec Pattern 4 的 "capability-runtime direct deps 很少" 必须与 blueprint §2.1 "direct `@nano-agent/*` import 极少" 同步修改,两份文档的 representativeness 表述要一致,否则 worker-matrix P0 读者会看到矛盾。未来拆分可以让 P1-02 与 P2-01 合并成 "capability-runtime representativeness 统一修正"。
+- **哪些问题本应更早问架构师**：`NACP 发布 scope`。W3 design v0.2 遗留了 `@<scope>/nacp-core` 占位符;如果 W2 scope 更早确定为 `@haimang`,W3 blueprint 首次落稿就能对齐,不必在 W3 execution 阶段做一次 repo-wide scope 迁移 sweep。
+- **哪些测试安排在实际执行中证明不够**：本轮没有跑 package test,因为 W3 属于 design-heavy phase,交付物是 markdown。真正的 "测试" 是 **文档 vs reality 对照**(grep / wc / package.json 读取)。未来 design-heavy phase 的 action-plan 应该把 "reality pass 核查命令清单" 显式列到 §8.1 基础校验,而不是只写 "文档 review"。
+- **模板本身还需要补什么字段**:blueprint TEMPLATE §2.1 `package-level 事实` 节建议补一行 **"实测 `dependencies` 列出"** 与 **"实测 cross-package import grep 命中"**,避免 representativeness 描述与 reality 偏移。下一版 TEMPLATE revise 可以把这两项列为必填。
 
 ---
 
 ## 10. 结语
 
 这份 action-plan 以 **把 package absorb 从“临场设计”变成“按 map 与代表样本执行”** 为第一优先级，采用 **先模板/方法，再 map/样本，最后 optional dry-run** 的推进方式，优先解决 **归宿模糊、split-package 难落地、worker-matrix P0 容易重新设计** 的问题，并把 **不提前 full absorb、不把 dry-run 写成强 gate、保持 9 packages / 10 units 口径** 作为主要约束。整个计划完成后，`pre-worker-matrix / W3` 应达到 **可直接被 worker-matrix P0 消费的吸收设计基线**，从而为后续的 **4 worker 实际吸收与 cutover** 提供稳定基础。
+
+---
+
+## 11. 工作日志回填
+
+> 日期:`2026-04-23`
+> 执行者:`Claude Opus 4.7 (1M context)`
+> 对应 closure:`docs/issue/pre-worker-matrix/W3-closure.md`
+
+### 11.1 本轮完成范围
+
+1. **Phase 0 前置 — scope 真相层全仓对齐**:把 W2 已首发的 `@haimang/nacp-core@1.4.0` + `@haimang/nacp-session@1.3.0` 这一真相层,统一刷到所有 pre-worker-matrix active design / action-plan / RFC / template / 生成 registry doc,消除 `@nano-agent/nacp-*` 旧 scope 残留。
+2. **Phase 1 reality verification pass**(action-plan §4.1 P1-01/P1-02/P1-03):
+   - 对 TEMPLATE / pattern / map 做代码事实对照
+   - 通过 `package.json` 读取、`grep -r "from '@..." src/test`、`wc -l` 三种硬事实来源,实测 `capability-runtime` / `workspace-context-artifacts` / `session-do-runtime` 三个代表对象的真实 deps / imports / LOC
+   - 发现并记录 1 个设计 vs reality 冲突:capability-runtime v0.2 设计主文声称 "跨 package 依赖 = 中 (nacp / hooks)",实际 `dependencies: {}` + 零跨包 import
+3. **Phase 2 增量 revise**(action-plan §4.2 P2-01/P2-02/P2-03):
+   - capability-runtime blueprint §2.1 重写 representativeness 说明
+   - WCA split blueprint §2.1 补齐 `@haimang/nacp-core` 依赖 + 显式列出 `evidence-emitters.ts` 真实 export surface(4 类 build/emit helper + 2 个结构类型)
+   - session-do-runtime optional blueprint reality check(无需修改)
+   - W3 设计主文 §0.2 / §1.4 / §6.1 取舍 2 / §7.2 T3 step 1 / T3 收口目标 / T4 循环引用节 做 reality-pass 级联修正
+   - pattern spec Pattern 4 改写("direct deps 很少" → "`dependencies: {}`(实测零)")
+4. **Phase 3 dry-run 决策与 closure**(action-plan §4.3 P3-01/P3-02):
+   - 按 owner `Q1 A: 否` 决策,**不执行** optional capability-runtime dry-run
+   - 产出 `docs/issue/pre-worker-matrix/W3-closure.md` 完整 closure memo(8 节)
+   - 在本 action-plan §9 回填复盘关注点,在 §11 回填工作日志
+
+### 11.2 代码与文档改动清单
+
+#### 新增文件
+
+- `docs/issue/pre-worker-matrix/W3-closure.md` — W3 closure memo(8 节)
+
+#### 修改文件 — scope 真相层统一(Phase 0)
+
+> 只对 NACP 双包(`nacp-core` / `nacp-session`)迁移,对 Tier B 内部包(`@nano-agent/hooks` / `@nano-agent/storage-topology` / `@nano-agent/session-do-runtime` / `@nano-agent/workspace-context-artifacts` / `@nano-agent/capability-runtime` / `@nano-agent/context-management` / `@nano-agent/agent-runtime-kernel` / `@nano-agent/llm-wrapper` / `@nano-agent/eval-observability`)**不迁移**,因为这些包没发布到 GitHub Packages,`@nano-agent/*` 仍是它们在 workspace 内的真实包名。
+
+- `docs/design/pre-worker-matrix/TEMPLATE-absorption-blueprint.md` — 模板 §4.1 "保留为 package dependency 的内容" 改成 `@haimang/nacp-core` / `@haimang/nacp-session`
+- `docs/design/pre-worker-matrix/W0-nacp-consolidation.md` — absorption 说明中的 `@nano-agent/nacp-*` 全部改 `@haimang/nacp-*`
+- `docs/design/pre-worker-matrix/W1-cross-worker-protocols.md` — S4 / CompactDelegate TS interface 相关片段中的 `@nano-agent/nacp-*` 改 `@haimang/nacp-*`
+- `docs/design/pre-worker-matrix/W3-absorption-blueprint-and-dryrun.md` — v0.3 reality calibration:§0.2 / §1.4 / §6.1 取舍 2 / §7.2 T3 全面改写;`@<scope>/nacp-core` 占位符改 `@haimang/nacp-core`(3 处)
+- `docs/design/pre-worker-matrix/W3-absorption-blueprint-session-do-runtime.md` — §2.1 `@nano-agent/nacp-*` 依赖项改 `@haimang/nacp-*`
+- `docs/design/pre-worker-matrix/W3-absorption-map.md` — §5.1 "直接源码级耦合最明显的对象" 行改 `@haimang/nacp-*`
+- `docs/design/pre-worker-matrix/W4-workers-scaffolding.md` — `.npmrc` scope(`@nano-agent:registry` → `@haimang:registry`)与 GitHub Actions `scope: '@nano-agent'` → `'@haimang'`
+- `docs/action-plan/pre-worker-matrix/W0-nacp-consolidation.md` — 同步 scope
+- `docs/action-plan/pre-worker-matrix/W1-cross-worker-protocols.md` — 同步 scope
+- `docs/issue/pre-worker-matrix/W0-closure.md` — 同步 scope(验证命令中的 filter 目标不变,但原说明文字中的 `@nano-agent/nacp-*` 改 `@haimang/*`)
+- `docs/rfc/nacp-core-1-4-consolidation.md` — W0 consolidation RFC 中 `@nano-agent/nacp-*` 改 `@haimang/*`
+- `docs/rfc/nacp-workspace-rpc.md` — W1 directional RFC 中 scope 更新
+- `docs/rfc/remote-compact-delegate.md` — W1 directional RFC 中 scope 更新
+- `docs/templates/composition-factory.ts` — `@nano-agent/nacp-*` 改 `@haimang/*`(Tier B imports 保持 `@nano-agent/*`)
+- `docs/nacp-core-registry.md` — 通过 `pnpm --filter @haimang/nacp-core build:docs` 自动重新生成
+
+#### 修改文件 — W3 reality pass(Phase 1-2)
+
+- `docs/design/pre-worker-matrix/W3-absorption-blueprint-capability-runtime.md` — §2.1 重写 representativeness(实测 `dependencies: {}` + 零跨包 import + ~9473 LOC + semantic coupling 来源四项)
+- `docs/design/pre-worker-matrix/W3-absorption-blueprint-workspace-context-artifacts-split.md` — §2.1 补 `@haimang/nacp-core` 依赖 + 显式列 evidence-emitters 四类 build/emit helper
+- `docs/design/pre-worker-matrix/W3-absorption-pattern.md` — Pattern 4 改写(`dependencies: {}` 实测零 + 真实循环引用样本在 WCA split)
+- `docs/design/pre-worker-matrix/W3-absorption-blueprint-and-dryrun.md` — v0.3 reality-calibrated:§0.2 / §1.4 候选表 / §6.1 取舍 2 候选表 / §7.2 T3 step 1 / T3 收口目标 / T4 循环引用节 6 处 reality 级联修正
+- `docs/action-plan/pre-worker-matrix/W3-absorption-blueprint-and-dryrun.md` — 本文:顶部状态 `draft` → `executed`;§9 复盘 5 项回填;§11 本工作日志
+
+### 11.3 关键事实与收口判断
+
+1. **W3 design v0.2 的最大真相偏移**:主文 §6.1 取舍 2 表 "capability-runtime 跨 package 依赖 = 中 (nacp / hooks)" 与 §0.2 "它有真实跨包依赖" 均 **与 package.json 事实冲突**。实测 `dependencies: {}`,且 `grep -r "from ['\"]@nano-agent\|from ['\"]@haimang" packages/capability-runtime/{src,test}` 零命中。这个偏移若未在 W3 阶段修正,会让 worker-matrix P0 读者带错误预期进入 capability-runtime absorb,浪费 "审计跨包依赖" 时间。
+2. **真正的循环引用样本是 `workspace-context-artifacts`,不是 capability-runtime**。WCA 实测依赖 `@haimang/nacp-core`(Tier A)+ `@nano-agent/storage-topology`(Tier B),是 pre-worker-matrix 内 **唯一** 同时跨两个 tier 的 Tier B 包。因此 pattern spec "循环引用解决 pattern" 节的回填点被 v0.3 改为 "必须等 WCA split 真实发生",不再依赖 capability-runtime dry-run 是否执行。
+3. **optional dry-run deferred 的理由更清晰**:即使执行 capability-runtime dry-run,它也 **只能** 验证 "搬 src + 搬 test + build + test 可执行流水线",不会产生循环引用 lesson。因此 defer 它到 worker-matrix P0 更合理:P0 首次 absorb 时一并产出流水线样板 + LOC 系数。
+4. **scope 迁移属于 W2 遗留的跨阶段债务**。W3 design v0.2 写稿时 W2 未首发,scope 用 `@<scope>/nacp-core` 占位;W2 首发后 `@haimang` 已定,但 W3 design 与配套文档未同步。本轮把它作为 Phase 0 前置处理,避免污染 W3 本身的 reality pass。
+
+### 11.4 验证与结果摘要
+
+| 验证维度 | 命令 / 方式 | 结果 |
+|---|---|---|
+| capability-runtime deps 实测 | `node -e "const p=require('./packages/capability-runtime/package.json'); console.log(p.dependencies)"` | `{}`(零)|
+| capability-runtime 跨包 import 实测 | `grep -rn "from ['\"]@nano-agent\|from ['\"]@haimang" packages/capability-runtime/{src,test}` | 零命中 |
+| capability-runtime LOC 实测 | `wc -l packages/capability-runtime/**/*.ts` | 9473 行合计 |
+| WCA deps 实测 | `node -e "const p=require('./packages/workspace-context-artifacts/package.json'); console.log(p.dependencies)"` | `{ "@haimang/nacp-core": "workspace:*", "@nano-agent/storage-topology": "workspace:*" }` |
+| session-do-runtime deps 实测 | `node -e "const p=require('./packages/session-do-runtime/package.json'); console.log(p.dependencies)"` | 3 个依赖与 blueprint §2.1 完全一致 |
+| scope 迁移零残留核查 | `grep -rn "@nano-agent/nacp-core\|@nano-agent/nacp-session\|@<scope>/nacp" docs/design/pre-worker-matrix/ docs/action-plan/pre-worker-matrix/ docs/issue/pre-worker-matrix/ docs/rfc/nacp-core-1-4-consolidation.md docs/rfc/nacp-workspace-rpc.md docs/rfc/remote-compact-delegate.md docs/templates/composition-factory.ts docs/nacp-core-registry.md docs/plan-pre-worker-matrix.md` | 零命中 |
+| `nacp-core-registry.md` 重生成 | `pnpm --filter @haimang/nacp-core build:docs` | 成功;`@haimang/nacp-session` 自动落入注册表说明 |
+| evidence-emitters 实测 export surface | `grep -n "^export" packages/workspace-context-artifacts/src/evidence-emitters.ts` | 4 类 build + 4 类 emit helper + `EvidenceAnchorLike` / `EvidenceSinkLike` 与 blueprint §3.3 完全一致 |
+
+### 11.5 最终收口意见
+
+**结论**:W3 可以收口为 `closed (design-heavy; optional dry-run deferred to worker-matrix P0 per owner Q1)`。本阶段的硬交付 6 件(template / pattern / map / 2 份必写代表 blueprint / 1 份可选代表 blueprint / closure)全部齐备,且与 repo 当前代码事实完全对齐。capability-runtime v0.2 reality 偏移已闭合;scope 真相层已统一到 `@haimang/*`;optional dry-run 被诚实 defer 且 pattern spec 三个 placeholder 节的回填路径已预埋给 worker-matrix P0。
+
+**对 W4 / W5 的直接影响**:
+
+1. **W4** 的 scaffolding 阶段可以直接按 `W3-absorption-map.md` 决定 4 个 worker 各自接收哪些 absorption units,不需要再辩论归宿。若未来启动 optional dry-run,落点 `workers/bash-core/` 由 W4 提供。
+2. **W5** 的 final handoff pack 可以把 W3 closure + map + 2-3 份代表 blueprint + pattern spec 一起引用,diagonal check 里 "包归宿" / "吸收方法论" 两个维度已有 stable evidence。
+3. **worker-matrix P0**:每个 worker absorption sub-phase 开前必读 pattern spec + 对应 blueprint(若存在);非代表包按 pattern + map 外推,on-demand 用 TEMPLATE copy-fill;首次 absorb 完成后回填 pattern spec 三个 placeholder 节。
+
+### 11.6 未解决 / 待跟进项
+
+1. `W3-absorption-pattern.md` 的 "LOC → 时长系数" / "可执行流水线样板" / "循环引用解决 pattern" 三个 placeholder 节,**等 worker-matrix P0 首次 absorb 回填**(pattern 中的前两项)+ **等 WCA split 真实发生时回填**(循环引用那一项)。
+2. blueprint TEMPLATE §2.1 建议新增两行必填字段("实测 `dependencies`" + "实测 cross-package import grep 命中"),下次 TEMPLATE revise 时统一落地。
+3. `agent-runtime-kernel` / `llm-wrapper` / `hooks` runtime residual / `eval-observability` runtime seam / `context-management` / `storage-topology` residual 等 7 份 detailed blueprint,由 worker-matrix P0 在对应 worker absorb 前现场补写,不在 W3 范围内。

@@ -361,7 +361,7 @@ W1 Cross-Worker Protocol Design
 ### 11.1 总体结果
 
 - **结论**：W1 已按 action-plan 以 **RFC-only** 方式完成收口。
-- **核心变化**：3 份 cross-worker RFC 已基于 W0 `@nano-agent/nacp-core@1.4.0` reality 完成 revise / verify；W1 不新增任何代码、schema、matrix entry 或 helper。
+- **核心变化**：3 份 cross-worker RFC 已基于 W0 `@haimang/nacp-core@1.4.0` reality 完成 revise / verify；W1 不新增任何代码、schema、matrix entry 或 helper。
 
 ### 11.2 新增文件
 

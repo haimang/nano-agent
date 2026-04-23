@@ -17,7 +17,7 @@
 
 ## 0. 执行背景与目标
 
-W0 是 pre-worker-matrix 的最前置执行计划。它不新增跨 worker 行为，也不触碰 worker-matrix 的 live loop；它只做一件事：把已经散落在 `session-do-runtime`、`workspace-context-artifacts`、`hooks`、`storage-topology` 里的 **Tier A vocabulary / helper-adjacent shape** 物理归位到 `@nano-agent/nacp-core`，让后续 W1-W4 都能围绕统一协议真理源推进。
+W0 是 pre-worker-matrix 的最前置执行计划。它不新增跨 worker 行为，也不触碰 worker-matrix 的 live loop；它只做一件事：把已经散落在 `session-do-runtime`、`workspace-context-artifacts`、`hooks`、`storage-topology` 里的 **Tier A vocabulary / helper-adjacent shape** 物理归位到 `@haimang/nacp-core`，让后续 W1-W4 都能围绕统一协议真理源推进。
 
 这份 action-plan 的目标不是“扩张 nacp-core 成为大运行时核心”，而是严格按 narrowed design 执行：**只搬 wire-level / contract-adjacent truth，不搬 runtime class，不改语义，不破坏现有消费者。**
 
@@ -203,7 +203,7 @@ W0 NACP Protocol Consolidation
 - **具体测试安排**：
   - **单测**：`nacp-core` 相关新增测试
   - **集成测试**：暂不新增，延到 compat 后统一回归
-  - **回归测试**：`pnpm --filter @nano-agent/nacp-core typecheck build test`
+  - **回归测试**：`pnpm --filter @haimang/nacp-core typecheck build test`
   - **手动验证**：核对新旧 symbol 列表
 - **收口标准**：
   - 新子目录与命名冻结
@@ -233,10 +233,10 @@ W0 NACP Protocol Consolidation
 - **具体测试安排**：
   - **单测**：新增 vocabulary schema tests
   - **集成测试**：与原 helper 输出/消费面核对
-  - **回归测试**：`pnpm --filter @nano-agent/nacp-core test`
+  - **回归测试**：`pnpm --filter @haimang/nacp-core test`
   - **手动验证**：核对 top-level exports
 - **收口标准**：
-  - 4 类 evidence / hooks vocab 均可从 `@nano-agent/nacp-core` 导出
+  - 4 类 evidence / hooks vocab 均可从 `@haimang/nacp-core` 导出
   - 无 runtime meta 混入
 - **本 Phase 风险提醒**：
   - hook event reality 以当前代码为准，不以旧文案为准
@@ -258,7 +258,7 @@ W0 NACP Protocol Consolidation
   - `packages/storage-topology/src/refs.ts`
 - **具体功能预期**：
   1. 原位置保留 re-export
-  2. 旧 import path 不需要立刻改，且每个 re-export 文件都带 `@deprecated` JSDoc 指向 `@nano-agent/nacp-core`
+  2. 旧 import path 不需要立刻改，且每个 re-export 文件都带 `@deprecated` JSDoc 指向 `@haimang/nacp-core`
   3. 回归面证明 1.3 → 1.4 additive 成立
 - **具体测试安排**：
   - **单测**：各 package 现有 test
@@ -366,8 +366,8 @@ W0 NACP Protocol Consolidation
 ### 8.1 Action-Plan 整体测试方法
 
 - **基础校验**：
-  - `pnpm --filter @nano-agent/nacp-core typecheck build test`
-  - `pnpm --filter @nano-agent/nacp-session typecheck build test`
+  - `pnpm --filter @haimang/nacp-core typecheck build test`
+  - `pnpm --filter @haimang/nacp-session typecheck build test`
 - **单元测试**：
   - `新增 vocabulary / hooks-catalog / storage-law 局部测试`
 - **集成测试**：
@@ -425,7 +425,7 @@ W0 NACP Protocol Consolidation
 ### 11.1 总体结果
 
 - **结论**：W0 已按 action-plan 完成代码落地并达到关闭条件。
-- **核心变化**：`@nano-agent/nacp-core` 现在成为 W0 范围内 Tier A vocabulary 的单一真理源；旧 package 继续保留 compat surface，但不再各自维护重复 truth。
+- **核心变化**：`@haimang/nacp-core` 现在成为 W0 范围内 Tier A vocabulary 的单一真理源；旧 package 继续保留 compat surface，但不再各自维护重复 truth。
 
 ### 11.2 新增文件
 
@@ -480,16 +480,16 @@ W0 NACP Protocol Consolidation
    - `storage-topology/src/{keys.ts,refs.ts}` 改为 compat re-export。
    - `workspace-context-artifacts/src/evidence-emitters.ts` 改为对齐 `nacp-core` evidence record types。
 3. **Phase 4 — version / docs**
-   - `@nano-agent/nacp-core` 版本提升到 `1.4.0`，并新增 `./evidence`、`./hooks-catalog`、`./storage-law` subpath exports。
+   - `@haimang/nacp-core` 版本提升到 `1.4.0`，并新增 `./evidence`、`./hooks-catalog`、`./storage-law` subpath exports。
    - 新增 consolidation RFC 与 W0 closure memo。
-   - `@nano-agent/nacp-session` 保持 `1.3.0`，因为 W0 没有引入新的 session package surface 或 import 依赖。
+   - `@haimang/nacp-session` 保持 `1.3.0`，因为 W0 没有引入新的 session package surface 或 import 依赖。
 
 ### 11.5 验证与结果
 
 以下验证面已通过：
 
-1. `pnpm --filter @nano-agent/nacp-core typecheck build test`
-2. `pnpm --filter @nano-agent/nacp-session typecheck build test`
+1. `pnpm --filter @haimang/nacp-core typecheck build test`
+2. `pnpm --filter @haimang/nacp-session typecheck build test`
 3. `pnpm --filter @nano-agent/session-do-runtime typecheck build test`
 4. `pnpm --filter @nano-agent/hooks typecheck build test`
 5. `pnpm --filter @nano-agent/storage-topology typecheck build test`
@@ -502,4 +502,4 @@ W0 NACP Protocol Consolidation
 1. W0 的目标已经兑现：Tier A shape 已收口到单一 NACP 真理源。
 2. compat 路径成立：旧 import 面继续可用，没有把下游强行拖进同步迁移。
 3. runtime / vocabulary 边界保持住了：`BoundedEvalSink`、`CrossSeamError`、`StartupQueue`、`HOOK_EVENT_CATALOG` metadata、storage adapters 都没有被误搬进 core。
-4. 下一阶段可以直接进入 `W1-cross-worker-protocols`，并以 `@nano-agent/nacp-core@1.4.0` 作为 RFC 与 import truth 基线。
+4. 下一阶段可以直接进入 `W1-cross-worker-protocols`，并以 `@haimang/nacp-core@1.4.0` 作为 RFC 与 import truth 基线。

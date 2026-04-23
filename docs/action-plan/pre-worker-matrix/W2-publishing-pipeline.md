@@ -1,7 +1,7 @@
 # W2 — GitHub Packages Publishing Pipeline
 
 > 服务业务簇: `pre-worker-matrix / W2 / publishing-pipeline`
-> 计划对象: `建立 NACP 双包的 GitHub Packages 发布 skeleton，并保留首发 optional parallel 轨道`
+> 计划对象: `建立 NACP 双包的 GitHub Packages 发布与首发路径`
 > 类型: `migration`
 > 作者: `GPT-5.4`
 > 时间: `2026-04-21`
@@ -17,7 +17,7 @@
 
 ## 0. 执行背景与目标
 
-W2 的目的不是“现在就把所有东西发出去”，而是把 owner 已经确认的长期纪律——**只有 `nacp-core` 与 `nacp-session` 对外发布，其他 Tier B 包都不发布**——变成一条真正可执行的 CI/CD 路径。根据 narrowed design，W2 在 pre-worker-matrix 阶段的**硬交付**是 skeleton 与 discipline；首次真实发布和 dogfood 可以作为 optional parallel track 执行。
+W2 的目的不是“为了发布而发布”，而是把 owner 已经确认的长期纪律——**只有 `nacp-core` 与 `nacp-session` 对外发布，其他 Tier B 包都不发布**——变成一条真正可执行的 CI/CD 路径。当前这条路径已经完成第一次真实落地：`@haimang/nacp-core@1.4.0` + `@haimang/nacp-session@1.3.0` 已经发布。
 
 因此，这份 action-plan 要同时覆盖两层：一层是 **mandatory skeleton**，另一层是 **optional first publish**。前者必须在 pre-phase 完成，后者若 owner 选择推迟，也必须留下明确的切换与 closure 口径。
 
@@ -108,7 +108,7 @@ W2 Publishing Pipeline
 | 项目 | 判定 | 理由 | 预计何时重评 |
 |------|------|------|--------------|
 | `publishConfig` + workflow skeleton | `in-scope` | 这是 pre-phase mandatory skeleton | `W2 执行期` |
-| 首次真实发布 | `defer / depends-on-decision` | narrowed design 允许 optional parallel | `Phase 3 / owner 决策` |
+| 首次真实发布 | `done` | 已按 owner-aligned `@haimang` scope 完成 | `已收口` |
 | dogfood proof | `in-scope` | 即使不首发，也应留下可消费验证路径 | `W2 执行期` |
 | 其他 package 发布 | `out-of-scope` | 违反长期纪律 | `无` |
 
@@ -261,9 +261,9 @@ W2 Publishing Pipeline
 
 - **影响范围**：`Phase 3`
 - **为什么必须确认**：`影响 W2 的 closure 形态`
-- **当前建议 / 倾向**：`允许 skeleton complete + first publish deferred`
+- **当前建议 / 倾向**：`已完成首发，后续只维护发布纪律与证据归档`
 - **Q**：`owner 是否要求 pre-worker-matrix 阶段内必须完成首次真实发布？`
-- **A**：`否。首次真实发布保持 optional parallel；pre-worker-matrix 的硬交付是 skeleton complete。`
+- **A**：`本轮已完成。后续不再把“是否首发”当开放问题，只保留版本和 namespace 纪律。`
 
 ### 6.2 问题整理建议
 
@@ -365,7 +365,7 @@ W2 Publishing Pipeline
 1. 给 `packages/nacp-core/package.json` 与 `packages/nacp-session/package.json` 补齐 GitHub Packages `publishConfig`，冻结 W2 的最小 publish metadata。
 2. 新建 `.github/workflows/publish-nacp.yml`，固定 `nacp-v*.*.*` tag-trigger、`packages: write` 权限、双包 typecheck/build/test，以及 bundle-version check。
 3. 新建 `dogfood/nacp-consume-test/` 最小 consumer skeleton，并保持它在 workspace 外部，避免误走 workspace link。
-4. 新建 `docs/issue/pre-worker-matrix/W2-closure.md`，把 W2 收口到 **skeleton complete / first publish deferred** 的真实状态。
+4. 新建 `docs/issue/pre-worker-matrix/W2-closure.md`，并在首发完成后升级为 **first publish completed** 的真实状态。
 5. 同步修正 `W2-publishing-pipeline.md` / `W2-publishing-discipline.md` / `W4-workers-scaffolding.md` / `W5-closure-and-handoff.md` 中与 W0 当前版本现实直接冲突的口径。
 
 ### 11.2 代码与文档改动清单
@@ -394,7 +394,7 @@ W2 Publishing Pipeline
 1. W2 当前最重要的 reality 不是“双包同步到 1.4.0”，而是 **`nacp-core@1.4.0` 已 shipped、`nacp-session@1.3.0` 仍未引入新的 published surface**；因此 workflow 的 version gate 必须锚定 `nacp-core`，不能继续假造双包同版本。
 2. `.github/` 原先被 `.gitignore` 忽略，若不先解除，W2 的 workflow skeleton 根本无法成为真实仓库资产；这个问题已与 W2 一并修复。
 3. `pnpm-workspace.yaml` 当前天然未包含 `dogfood/`，因此 dogfood exclusion 的正确做法不是新增复杂 negate pattern，而是保留 `packages/*` 单路径并补清注释。
-4. 真实 GitHub Packages 首发仍未执行；当前 repo owner 与 package scope 之间仍存在 owner-aligned namespace 风险。因此本轮 closure 必须是 **skeleton complete / first publish deferred**，不能冒进宣称 registry 已 ready。
+4. 当前 repo 已完成 owner-aligned `@haimang/*` 首发；后续 closure 必须围绕真实 package / tag / run / dogfood evidence 维护，不再沿用 deferred 口径。
 
 ### 11.4 验证与结果摘要
 
@@ -404,7 +404,7 @@ W2 Publishing Pipeline
 
 ### 11.5 最终收口意见
 
-**结论**：W2 已可按 narrowed scope 收口为 **executed**。本阶段要求的 mandatory skeleton（publish metadata / workflow / discipline / dogfood skeleton / closure）已经齐备；首次真实发布与 published-path dogfood 继续保持 optional parallel，并受 owner-aligned namespace / release window 约束。这一状态足以支撑后续 W4/W5 消费，不需要再把 W2 误写成 pre-worker-matrix 的剩余 blocker。
+**结论**：W2 已可按 narrowed scope 收口为 **executed + first publish completed**。本阶段要求的 mandatory skeleton（publish metadata / workflow / discipline / dogfood skeleton / closure）已经齐备，且 `@haimang/*` published-path 已真实成立。这一状态足以支撑后续 W4/W5 消费，不需要再把 W2 误写成 pre-worker-matrix 的剩余 blocker。
 
 ### 11.6 真实首发补充日志（2026-04-23）
 
