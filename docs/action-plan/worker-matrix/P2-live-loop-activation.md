@@ -1,7 +1,7 @@
 # P2 — Live Turn Loop Activation(initial_context + composition + agent↔bash tool.call)
 
 > 服务业务簇: `worker-matrix / Phase 2 — Live Turn Loop Activation`
-> 计划对象: `D05(initial_context host consumer,已吸收 R1+R2)+ D06(default composition + remote-bindings 4 nullable,已吸收 R1)+ D07(CAPABILITY_WORKER binding 激活 + local-ts fallback 保留)`
+> 计划对象: `D05(initial_context host consumer,已吸收 D01-D09 GPT review R1+R2)+ D06(default composition + remote-bindings 4 nullable,已吸收 D01-D09 GPT review R1)+ D07(CAPABILITY_WORKER binding 激活 + local-ts fallback 保留)+ P1-P5 GPT review R1(appendInitialContextLayer 不作 mutator / 不发明 layer kind / 断言 assembledKinds 含 canonical mapped kind)+ R2(wire 上只有 session.start.initial_input / session.followup_input.text,`turn_input` 仅为 runtime 内部概念)`
 > 类型: `new`(host consumer / composition handle / binding 激活) + `upgrade`(empty bag → live composition;seam → active service-binding) + `modify`(wrangler 取消注释)
 > 作者: `Claude Opus 4.7 (1M context)`
 > 时间: `2026-04-23`
@@ -141,7 +141,7 @@ worker-matrix/P2/
 
 ### 2.1 In-Scope
 
-- **[S1]** D03 F4 `appendInitialContextLayer(assembler, payload)` API stub 落在 `workers/agent-core/src/host/context-api/`(临时位置;P3 迁 context-core),实现可以是最小 no-op `assembler.appendLayer(...)` 调用
+- **[S1]** D03 F4 `appendInitialContextLayer(assembler, payload)` API stub 落在 `workers/agent-core/src/host/context-api/`(临时位置;P3 迁 context-core)。**实现形态(per P1-P5 GPT review R1)**:不在 `ContextAssembler` 上新增 `appendLayer()` mutator;**不**发明 `initial_context` 这个 layer kind(当前 `ContextLayerKindSchema` 仅 `system / session / workspace_summary / artifact_summary / recent_transcript / injected` 6 个,`initial_context` 不存在);改为 helper **维护 assembler 之外的 pending layers** — 每次 consumer 调 `appendInitialContextLayer(assembler, payload)`,helper 把 payload 映射成现有 canonical layer kinds(以 `session` / `injected` 为首选,由 helper 内部根据 payload 形态选),合并入 helper 维护的 pending list;下次 DO 调 `assembler.assemble(layers)` 时,host 把 pending list 与既有 turn-level layers 合并传入 — `assembler.assemble()` API **保持 byte-identical,不改公共 API shape**
 - **[S2]** D06 `createDefaultCompositionFactory` 升级:6 handle 全非 undefined;workspace 用 `composeWorkspaceWithEvidence`(含 `ContextAssembler` 实例);capability 用 `serviceBindingTransport` 作 default;local-ts fallback seam 保留(env `CAPABILITY_TRANSPORT=local-ts` 可切回)
 - **[S3]** D06 `makeRemoteBindingsFactory` 对 kernel/workspace/eval/storage 4 nullable 显式处理:返回 null + 附 reason 文档注释("kernel 始终 host-local"/"workspace host-local per Q4a"/"eval sink owner 在 host"/"storage tenant wrapper 在 host DO")
 - **[S4]** D06 `SubsystemHandles` 保持现有 8 槽位(`kernel/llm/capability/workspace/hooks/eval/storage/profile`);**不**新增 top-level `assembler`(R1 口径;assembler 继续挂在 `WorkspaceCompositionHandle.assembler` 下)
@@ -149,8 +149,8 @@ worker-matrix/P2/
 - **[S6]** D05 共存期对称:同 logic 落 `packages/session-do-runtime/src/do/nano-session-do.ts`(P5/D09 deprecate 时清理)
 - **[S7]** D07 `workers/agent-core/wrangler.jsonc` `BASH_CORE` 取消注释,service 名 `nano-agent-bash-core`
 - **[S8]** D07 env switch:`CAPABILITY_TRANSPORT` 默认空(= service-binding);`local-ts` 保留为 opt-in(test / dev / 故障回退)
-- **[S9]** root e2e #1 `test/tool-call-live-loop.test.mjs`:发起 `session.start` + `turn_input` → kernel 产生 tool_call → CAPABILITY_WORKER transport → bash-core response → session.stream.event 回 client
-- **[S10]** root e2e #2 `test/initial-context-live-consumer.test.mjs`:发起 `session.start` 带 `initial_context` payload → consumer 跑 → assembler layers 数 +1 → AssemblyEvidence 含 initial_context 标识 + 一条 negative case
+- **[S9]** root e2e #1 `test/tool-call-live-loop.test.mjs`(per P1-P5 GPT review R2):发起 `session.start`,body 含非空 `initial_input` 字符串(当前 wire truth:`session.start.body.initial_input` 是首轮 turn 入口;**不**写 `turn_input` 这个 wire 名 — `turn_input` 仅为 runtime 内部 `TurnInput` 类型)→ kernel 产生 tool_call → CAPABILITY_WORKER transport → bash-core response → session.stream.event 回 client;follow-up case(若有)用 `session.followup_input`(body `text` 字段)
+- **[S10]** root e2e #2 `test/initial-context-live-consumer.test.mjs`(per P1-P5 GPT review R1):发起 `session.start` 带 `initial_context` payload(以及非空 `initial_input` 以触发 turn)→ consumer 调 `appendInitialContextLayer`(helper 合并 pending layer)→ 在 kernel 随后首次 `assemble()` 时 payload 真被纳入 layers。**断言改口径**:(a) no throw;(b) `AssemblyResult.assembled` 或等价 BoundedEvalSink `AssemblyEvidenceRecord.assembledKinds` **含 consumer 映射到的 canonical kind**(预期 `session` 或 `injected`,由 D03 F4 最终映射决定);(c) 对比 negative case(`session.start` 不传 `initial_context`),同一 kind 的 layer 内容 / token 数出现差异;**不**再断言 "layers 数 +1" 这种暗合假设(layers 数量受 budget / required 过滤影响,不是可靠 observable);**不**再断言 `layer_kind: "initial_context"` 这种不存在的字段(`AssemblyEvidenceRecord` 仅含 `assembledKinds / droppedOptionalKinds / orderApplied / totalTokens / truncated / requiredLayerBudgetViolation / preparedArtifactsUsed / dropReason`)
 - **[S11]** Phase 2-4 每 PR 跑 B7 LIVE + 全仓回归 + 两个 workers test + dry-run
 - **[S12]** Phase 6 agent-core preview redeploy + 写 `docs/issue/worker-matrix/P2-closure.md`
 
@@ -173,7 +173,7 @@ worker-matrix/P2/
 
 | 项目 | 判定 | 理由 | 预计何时重评 |
 |------|------|------|--------------|
-| `appendInitialContextLayer` 实装深度 | `in-scope no-op stub + assembler.appendLayer 调用` | 只需让 consumer 非 no-op;P3 再实装 | P3 C1 吸收 |
+| `appendInitialContextLayer` 实装深度 | `in-scope helper-maintained pending layers(不改 assembler API,不发明 layer kind)` | R1:`ContextAssembler` 只有 `assemble(layers)`,无 `appendLayer()`;helper 维护 pending list,合并进 `assemble()` 入参 | P3 C1 吸收 |
 | host consumer 物理落点 | `in-scope workers + packages 两处` | 共存期纪律 W3 pattern §6 | P5 D09 deprecate |
 | top-level `assembler` handle | `out-of-scope` | R1;SubsystemHandles 保持 8 槽 | NOT revisit |
 | `system.error` kind | `out-of-scope` | R2;不自造 schema 外 kind | NOT revisit |
@@ -228,7 +228,7 @@ worker-matrix/P2/
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P1-01 | API stub 写入 | `export function appendInitialContextLayer(assembler: ContextAssembler, payload: SessionStartInitialContext): void` + 最小实现(调 `assembler.appendLayer({kind: "initial_context", ...payload})` 或等价)| `workers/agent-core/src/host/context-api/append-initial-context-layer.ts` | 签名合法;最小实现 | `pnpm --filter workers/agent-core typecheck` 绿 | export 存在;P3 可直接迁 |
+| P1-01 | API stub 写入(R1 口径)| `export function appendInitialContextLayer(assembler: ContextAssembler, payload: SessionStartInitialContext): void`(签名保留,consumer 可见形状不变)+ 最小实现:helper 维护 **模块级 / per-DO pending layers map**(keyed by assembler ref 或 DO instance),把 `payload` 映射成 1 条 canonical `ContextLayer`(`kind: "session"` 或 `"injected"`,按 payload 内容决策),push 到 pending list;**不**调 `assembler.appendLayer`(该方法不存在);host 在 `assemble()` 前合并 pending list;P3 迁到 context-core 时 helper 可以改为 namespace/anchor-scoped 存储 | `workers/agent-core/src/host/context-api/append-initial-context-layer.ts` | 签名 + helper 存储 + 映射到 canonical kind | `pnpm --filter workers/agent-core typecheck` 绿 | export 存在;映射到 6 canonical kinds 之一;P3 可直接迁 |
 | P1-02 | unit test | 3 cases:(a) normal payload;(b) missing field 用 default;(c) throw 上抛 | `workers/agent-core/test/host/context-api/append-initial-context-layer.test.ts` | 3 cases 绿 | `pnpm --filter workers/agent-core test` | 3 cases 全绿 |
 
 ### 4.3 Phase 2 — D06 composition factory 升级
@@ -264,8 +264,8 @@ worker-matrix/P2/
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P5-01 | root e2e #1 tool.call loop | in-process harness(Miniflare / mock binding)模拟 agent-core + bash-core 两侧;发 `session.start` + `turn_input` 触发 tool_call;断言:(a) request 到达 bash-core;(b) response 返回 agent-core;(c) `session.stream.event tool.call.progress + result` 发给 client | `test/tool-call-live-loop.test.mjs` | 3 断言绿 | `node --test test/tool-call-live-loop.test.mjs` | 3/3 绿 |
-| P5-02 | root e2e #2 initial_context | 发 `session.start { initial_context: {...} }` → consumer 调 API → 断言:(a) no throw;(b) assembler layers 数 ≥ initial + 1;(c) BoundedEvalSink 一条 AssemblyEvidence 含 initial_context 标识;加 negative case:不传 initial_context → layers 数不变 | `test/initial-context-live-consumer.test.mjs` | 3 positive + 1 negative | `node --test test/initial-context-live-consumer.test.mjs` | 4/4 绿 |
+| P5-01 | root e2e #1 tool.call loop(R2)| in-process harness(Miniflare / mock binding)模拟 agent-core + bash-core 两侧;发 `session.start`(body 含非空 `initial_input` 字符串,**不**写 `turn_input`)触发 kernel tool_call;断言:(a) request 到达 bash-core;(b) response 返回 agent-core;(c) `session.stream.event tool.call.progress + result` 发给 client | `test/tool-call-live-loop.test.mjs` | 3 断言绿 | `node --test test/tool-call-live-loop.test.mjs` | 3/3 绿 |
+| P5-02 | root e2e #2 initial_context(R1)| 发 `session.start { initial_input: "<non-empty>", initial_context: {...} }` → consumer 调 `appendInitialContextLayer` → kernel assemble 合并 pending → 断言:(a) no throw;(b) `AssemblyEvidenceRecord.assembledKinds` **含 helper 映射到的 canonical kind**(预期 `session` 或 `injected`);(c) 与 negative case(不传 `initial_context`)对比,**同一 canonical kind 的 layer content 或 totalTokens 有可观测差异**;不再断言 "layers 数 +1" / `layer_kind` 字段 | `test/initial-context-live-consumer.test.mjs` | 3 positive + 1 negative | `node --test test/initial-context-live-consumer.test.mjs` | 4/4 绿 |
 
 ### 4.7 Phase 6 — redeploy + 全仓回归 + closure
 
@@ -300,7 +300,7 @@ worker-matrix/P2/
 - **本 Phase 修改文件**:无
 - **具体功能预期**:
   1. 签名 `appendInitialContextLayer(assembler: ContextAssembler, payload: SessionStartInitialContext): void`
-  2. 最小实现:调 `assembler.appendLayer({ kind: "initial_context", ...mapped })` 或等价
+  2. 最小实现(per R1):helper 维护 **pending layers list**(不调不存在的 `assembler.appendLayer`);每次 consumer 调 `appendInitialContextLayer(assembler, payload)`,helper 把 payload 映射成 1 条 canonical `ContextLayer`(`kind: "session"` 或 `"injected"`,按 payload 形态),push 到 pending list;host 在 kernel turn 组装入参时把 pending list 与既有 turn-level layers 合并传给 `assembler.assemble(layers)` — `assemble()` API 不改
   3. 异常上抛(consumer 侧 catch)
 - **具体测试安排**:
   - **单测**:3 cases(normal / missing field / throw)
@@ -397,7 +397,7 @@ worker-matrix/P2/
 - **收口标准**:两 e2e 全绿;不依赖 live preview deploy(in-process mock 足矣)
 - **本 Phase 风险提醒**:
   - e2e 若依赖 live preview URL,CI 会脆;用 Miniflare / mock binding
-  - e2e #2 依赖 BoundedEvalSink 的 AssemblyEvidence emission;若 emission 漏掉 `layer_kind: "initial_context"` tag,断言 (c) 会红 — 此时应修 `appendInitialContextLayer` 实装(Phase 1 stub)或 emit 侧
+  - e2e #2 断言 **不**基于 `layer_kind` 字段(该字段不存在);断言基于 `AssemblyEvidenceRecord.assembledKinds` 是否含 helper 映射到的 canonical kind,以及 negative-vs-positive case 的 content / totalTokens 差异。若 negative 与 positive 出现 **0 可观测差异**,说明 helper 未把 payload 成功挂到 pending list 或 host 未合并 pending → 修 Phase 1 helper;若 `assembledKinds` 缺 mapped kind 但 layer 进入了,说明 kind 映射选择(`session` vs `injected`)错误 → 调 D03 F4 映射策略
 
 ### 5.7 Phase 6 — redeploy + 全仓回归 + closure
 

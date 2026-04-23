@@ -7,7 +7,7 @@
 > 时间: `2026-04-23`
 > 文件位置:
 > - `workers/{agent-core,bash-core,context-core,filesystem-core}/package.json`(nacp 依赖从 `workspace:*` 切 `1.4.0` / `1.3.0`)
-> - `pnpm-lock.yaml`(resolution 从 `link:` 切 tarball)
+> - `pnpm-lock.yaml`(resolution **从 `link:` 切到非 `link:` published-path**;per P1-P5 GPT review R5:真相是"非 link:",tarball / registry version 均为合法表面形态)
 > - `.npmrc`(若 R4 诚实化后发现必要,按 `workers/<name>/.npmrc` → `workers/.npmrc` → `root/.npmrc` 最小面补)
 > - `packages/<name>/README.md`(9 Tier B 包各贴 DEPRECATED banner;per Q6c per-worker 节奏)
 > - `packages/<name>/CHANGELOG.md`(7 有的包加 entry;`agent-runtime-kernel` / `capability-runtime` 2 个缺 CHANGELOG 按 R5 走 README-only 或 minimal stub)
@@ -46,7 +46,7 @@ P5 的任务是把这三件事按 **独立 release PR** 方式关掉,并写 fina
   - Tier B 9 包 README 未贴 DEPRECATED;2 包缺 CHANGELOG(R5 提供 README-only / minimal stub 两种合法路径)`
   - worker-matrix 没有 final closure memo + 下一阶段 handoff`
 - **本次计划的直接产出**:
-  - 独立 release PR(1 PR)完成 4 workers `package.json` cutover + lockfile resolution 切 tarball + agent-core preview redeploy + live probe `nacp_core_version: "1.4.0"` / `nacp_session_version: "1.3.0"` 不变
+  - 独立 release PR(1 PR)完成 4 workers `package.json` cutover + lockfile resolution **不再是 `link:`**(tarball / registry version 任一形态合法,per R5)+ agent-core preview redeploy + live probe `nacp_core_version: "1.4.0"` / `nacp_session_version: "1.3.0"` 不变
   - 9 per-worker deprecation PR(按 D09 §5.1 S5 顺序)Tier B banner 全贴;2 缺 CHANGELOG 包走 R5 路径
   - `docs/issue/worker-matrix/worker-matrix-final-closure.md`
   - `docs/handoff/worker-matrix-to-<next>.md`(若有下一阶段)
@@ -65,7 +65,7 @@ P5 的任务是把这三件事按 **独立 release PR** 方式关掉,并写 fina
 | Phase | 名称 | 预估工作量 | 目标摘要 | 依赖前序 |
 |------|------|------------|----------|----------|
 | Phase 0 | P5 kickoff gate check | `XS` | P2/P3/P4 DoD 全绿 + `@haimang/nacp-core@1.4.0` + `nacp-session@1.3.0` 仍 installable | P4 closed |
-| Phase 1 | 独立 release PR cutover | `M` | 4 workers package.json workspace:* → 1.4.0/1.3.0 + lockfile tarball + regression + agent-core preview redeploy + `.npmrc` readiness verdict(R4)| Phase 0 |
+| Phase 1 | 独立 release PR cutover | `M` | 4 workers package.json workspace:* → 1.4.0/1.3.0 + lockfile 非 `link:` published-path(R5)+ regression + agent-core preview redeploy + `.npmrc` readiness verdict(R4)| Phase 0 |
 | Phase 2 | 9 per-worker deprecation PR 流水(per Q6c)| `L` | 9 Tier B 包按 D09 §5.1 S5 顺序贴 README banner + CHANGELOG entry;`agent-runtime-kernel` / `capability-runtime` 走 R5 路径 | Phase 1(或部分可与 Phase 1 并行,取决于 owner)|
 | Phase 3 | W3 pattern 3 placeholder 清点 + 补齐 | `S` | "LOC→时长 / 可执行流水线 / 循环引用" 三节最终状态 | Phase 1-2 |
 | Phase 4 | worker-matrix final closure + handoff memo | `S` | closure memo + handoff(若有下一阶段) | Phase 3 |
@@ -77,7 +77,7 @@ P5 的任务是把这三件事按 **独立 release PR** 方式关掉,并写 fina
    - F1 prerequisite 验证(PR body)
    - F2 4 package.json diff(8 行)
    - F3 **`.npmrc` readiness 诚实化(R4)**:先 trial-and-error;不足再 minimal-surface 补;PR body 必须含 "`.npmrc` readiness verdict"(未落仓 / 补了哪里 / 补了什么)
-   - F4 `pnpm install` → lockfile resolution 切 tarball
+   - F4 `pnpm install` → lockfile resolution **不再是 `link:`**(tarball / registry version 均合法,per R5)
    - F5 全仓回归(typecheck / test / dry-run / root / cross)
    - F6 agent-core preview redeploy + `curl` `nacp_core_version: "1.4.0"` / `nacp_session_version: "1.3.0"` 不变
    - F7 PR body 结构固化(prerequisites / diff / regression / redeploy evidence / rollback)
@@ -110,7 +110,7 @@ worker-matrix/P5/
 │   ├── workers/bash-core/package.json          [same]
 │   ├── workers/context-core/package.json       [same]
 │   ├── workers/filesystem-core/package.json    [same]
-│   ├── pnpm-lock.yaml                           [resolution link → tarball]
+│   ├── pnpm-lock.yaml                           [resolution link → 非 link:(tarball / registry version 均合法,per R5)]
 │   ├── .npmrc(optional,per R4 trial-and-error)
 │   └── agent-core preview redeploy + Version ID
 ├── Phase 2 — 9 per-worker deprecation PR/
@@ -138,9 +138,9 @@ worker-matrix/P5/
 
 - **[S1]** Phase 1 独立 release PR:`workers/{agent-core,bash-core,context-core,filesystem-core}/package.json` 对 `@haimang/nacp-core` + `@haimang/nacp-session` 从 `workspace:*` → `1.4.0` / `1.3.0`(精确 pin,不 caret)
 - **[S2]** Phase 1 `.npmrc` readiness 诚实化(R4):先 trial install;不足再补;PR body 含 readiness verdict
-- **[S3]** Phase 1 `pnpm install` → `pnpm-lock.yaml` resolution 从 `link:packages/nacp-*` 切 tarball;PR reviewer grep 验证
+- **[S3]** Phase 1 `pnpm install` → `pnpm-lock.yaml` 对 `@haimang/nacp-core` / `@haimang/nacp-session` 的 resolution **不再是 `link:`**(当前是 `version: link:../../packages/nacp-core`);切完后具体表面形态可为 tarball descriptor 或 registry version,**均为合法 published-path truth**(per R5);PR reviewer grep 验证的是 `resolution.*link:` 对 nacp-* 条目已消失
 - **[S4]** Phase 1 全仓回归:`pnpm -r run typecheck && pnpm -r run test && pnpm --filter './workers/*' run deploy:dry-run && node --test test/*.test.mjs && npm run test:cross` 全绿
-- **[S5]** Phase 1 agent-core redeploy preview:`pnpm --filter workers/agent-core run build && run deploy:preview`;`curl` 返回 `nacp_core_version: "1.4.0"` / `nacp_session_version: "1.3.0"`(value 不变,但源头从 registry tarball 的 package.json 读)
+- **[S5]** Phase 1 agent-core redeploy preview:`pnpm --filter workers/agent-core run build && run deploy:preview`;`curl` 返回 `nacp_core_version: "1.4.0"` / `nacp_session_version: "1.3.0"`(value 不变,但源头从 published-path 而非 workspace link 读 — 具体 resolution 形态无所谓,见 R5)
 - **[S6]** Phase 1 PR body 结构:Prerequisites / Changed files / Regression evidence / Redeploy evidence(URL + Version ID)/ Rollback instruction / `.npmrc` readiness verdict
 - **[S7]** Phase 2:9 Tier B 包按 D09 §5.1 S5 顺序逐个开 deprecation PR;每 PR 只改 1 package 的 `README.md` + 可选 `CHANGELOG.md`
 - **[S8]** Phase 2 R5 路径:`agent-runtime-kernel` / `capability-runtime` 2 包 PR author 在 **README-only** 或 **minimal CHANGELOG stub** 二选一;PR body 注明选哪条(R5 口径)
@@ -191,7 +191,7 @@ worker-matrix/P5/
 | P0-02 | Phase 0 | published bundle installable 验证 | check | `gh api ...` | `1.4.0` / `1.3.0` listed | low |
 | P1-01 | Phase 1 | 4 package.json cutover | upgrade | 4 package.json × 2 行 | workspace:* → 1.4.0/1.3.0 | medium |
 | P1-02 | Phase 1 | `.npmrc` readiness 诚实化(R4)| optional new | `<worker>/.npmrc` / `workers/.npmrc` / `root/.npmrc` 任一 or 无 | trial-and-error + PR verdict | medium |
-| P1-03 | Phase 1 | `pnpm install` + lockfile 切 tarball | update | `pnpm-lock.yaml` | resolution tarball | medium |
+| P1-03 | Phase 1 | `pnpm install` + lockfile 对 nacp-* 切到非 `link:` | update | `pnpm-lock.yaml` | resolution **不再是 `link:`**(tarball / registry 均合法,per R5)| medium |
 | P1-04 | Phase 1 | 全仓回归 | test | 全仓 | 全绿 | medium |
 | P1-05 | Phase 1 | agent-core redeploy preview | new | workers/agent-core | URL live + `curl` JSON 不变 | medium |
 | P1-06 | Phase 1 | charter §11 同步修订 | update | `docs/plan-worker-matrix.md` §11 | 标 "cutover 已触发 Y-M-D" | low |
@@ -218,7 +218,7 @@ worker-matrix/P5/
 |------|--------|----------|------------------|----------|----------|----------|
 | P1-01 | 4 package.json cutover | sed / 手工 edit:`"@haimang/nacp-core": "workspace:*"` → `"1.4.0"`;`"@haimang/nacp-session": "workspace:*"` → `"1.3.0"`;4 files × 2 lines = 8 行 diff | `workers/*/package.json` | 4 文件各 2 行 diff | `grep "workspace:\\*" workers/*/package.json` 0 | 0 interim 残留 |
 | P1-02 | `.npmrc` trial(R4)| `pnpm --filter workers/agent-core install` 看是否 resolve `@haimang/nacp-core@1.4.0`;若报 registry/auth 失败,按 `workers/agent-core/.npmrc` → `workers/.npmrc` → `root/.npmrc` 最小补 | 可能新建 1 个 `.npmrc` 或 0 改 | install 成功 | trial install | PR body `.npmrc` readiness verdict |
-| P1-03 | `pnpm install` | `pnpm install` 更新 lockfile | `pnpm-lock.yaml` | resolution tarball | `grep -A2 "'workers/agent-core':" pnpm-lock.yaml` 的 `@haimang/nacp-core` 条目是 tarball 或 registry,不是 `link:` | lockfile 切完 |
+| P1-03 | `pnpm install` | `pnpm install` 更新 lockfile | `pnpm-lock.yaml` | resolution **不再是 `link:`** | `grep -A2 "'workers/agent-core':" pnpm-lock.yaml` 的 `@haimang/nacp-core` 条目 **不含** `version: link:`(tarball descriptor 或 registry `version: 1.4.0` 均合法,per R5)| lockfile `link:` 对 nacp-* 消失 |
 | P1-04 | 全仓回归 | `pnpm -r run typecheck && pnpm -r run test && pnpm --filter './workers/*' run deploy:dry-run && node --test test/*.test.mjs && npm run test:cross` | 全仓 | 全绿 | 命令组 | 0 failure;B7 LIVE 5 绿;P2 两条 e2e 绿;98 + 112 绿 |
 | P1-05 | agent-core redeploy | `pnpm --filter workers/agent-core run build && run deploy:preview`;`curl -fsSL <preview-url>/` 验证 `nacp_core_version: "1.4.0"` / `nacp_session_version: "1.3.0"`(value 不变) | workers/agent-core | URL live + 2 字段不变 | curl + jq | Version ID 记录 |
 | P1-06 | charter §11 同步 | charter §11 维护规则触发:cutover 触发 → 同 PR 内附一行 "cutover 已在 YYYY-MM-DD via PR #<num> 触发";若需改 §1.2 "worker shell 依赖" 注也同改 | `docs/plan-worker-matrix.md` §11 + §1.2 | charter diff ≤ 10 行 | `grep "cutover 已触发"` ≥ 1 | charter 同步 |
@@ -270,7 +270,7 @@ worker-matrix/P5/
 
 ### 5.2 Phase 1 — 独立 release PR cutover
 
-- **Phase 目标**:4 workers workspace:* → 1.4.0/1.3.0;lockfile 切 tarball;全仓回归 + agent-core redeploy 全绿;`.npmrc` readiness 诚实化(R4)
+- **Phase 目标**:4 workers workspace:* → 1.4.0/1.3.0;lockfile 对 `@haimang/nacp-*` 条目**不再是 `link:`**(tarball / registry version 任一均合法,per R5);全仓回归 + agent-core redeploy 全绿;`.npmrc` readiness 诚实化(R4)
 - **本 Phase 对应编号**:`P1-01` 至 `P1-07`
 - **本 Phase 新增文件**:可能 1 个 `.npmrc`(视 R4 trial-and-error 结果);可能 `docs/issue/worker-matrix/P5.1-cutover-memo.md`(可选)
 - **本 Phase 修改文件**:
@@ -279,7 +279,7 @@ worker-matrix/P5/
   - `docs/plan-worker-matrix.md` §11(1 行 cutover 标注)
 - **具体功能预期**:
   1. 4 package.json 8 行 diff
-  2. lockfile tarball
+  2. lockfile 对 `@haimang/nacp-*` resolution **不再是 `link:`**(tarball / registry version 均合法,per R5)
   3. 全仓回归全绿
   4. agent-core preview redeploy;`nacp_core_version: "1.4.0"` / `nacp_session_version: "1.3.0"` value 不变
   5. `.npmrc` readiness verdict in PR body
@@ -293,7 +293,7 @@ worker-matrix/P5/
 - **本 Phase 风险提醒**:
   - `NODE_AUTH_TOKEN` 过期 → install 红;提前 refresh
   - GitHub Packages 短时 unavailable → 重试或 revert
-  - lockfile 未切 tarball(仍 `link:`)→ PR reviewer 必须 grep verify
+  - lockfile 未切出 `link:`(仍 `version: link:...`)→ PR reviewer 必须 grep verify 对 nacp-* 条目已无 `link:`(per R5;不绑定 tarball 特定表面)
   - preview redeploy 后 curl 字段漂移 → 回滚 revert commit 完整 restore workspace:*
   - `.npmrc` 如果补在不对的位置,pnpm 不继承 → Phase 1-02 trial 多次
 
@@ -403,14 +403,14 @@ worker-matrix/P5/
 |-------------|------|----------|----------|
 | `NODE_AUTH_TOKEN` 过期 | Phase 1 install 红 | `medium` | 提前 refresh;W2 pipeline battle-tested |
 | GitHub Packages unavailable | Phase 1 install 红 | `low` | 重试 / 暂停 cutover 1-2 天 |
-| lockfile resolution 未切 tarball | Phase 1 silent 漂移 | `medium` | PR reviewer grep lockfile |
+| lockfile resolution 未切出 `link:` | Phase 1 silent 漂移 | `medium` | PR reviewer grep `resolution.*link:` 对 nacp-* 行数 == 0(per R5 真相 = 非 `link:`,不绑定 tarball 特定表面)|
 | `.npmrc` 补错位置 | Phase 1 pnpm 找不到 | `medium` | R4 trial-and-error;PR body 诚实 verdict |
 | agent-core redeploy 破坏 live probe shape | Phase 1 | `medium` | curl 5 字段断言 + Version ID rollback |
 | Phase 2 PR 误改 source | PR review gate 失效 | `medium` | PR body 限制 diff only README + CHANGELOG |
 | R5 双路径 PR author 自选混乱 | `capability-runtime` / `agent-runtime-kernel` | `low` | Q2 owner 统一 |
 | WCA split 贴 banner 时 C2/D1 某端未 stable | Phase 2 PR#8 | `medium` | 按 D09 §5.3 边界清单:C2+D1 都 stable 后才贴 |
 | `workspace:*` → `1.4.0` 之后仍有 workers 忘切 | Phase 1 partial cutover | `high` | Phase 1-01 grep 强校验:`grep "workspace:\\*" workers/*/package.json | grep nacp` == 0 |
-| `nacp_core_version` 字段源头漂移 | Phase 1-05 | `medium` | curl 断言 value 不变 + lockfile 切 tarball verify |
+| `nacp_core_version` 字段源头漂移 | Phase 1-05 | `medium` | curl 断言 value 不变 + lockfile 对 nacp-* 非 `link:` verify(per R5)|
 | Tier B 物理删除被误做 | 任一 Phase | `low` | charter §3.2 O4 硬约束 |
 | 下一阶段 trigger handoff 写具体计划 | Phase 4 | `low` | 默认 placeholder(Q3) |
 
@@ -484,7 +484,7 @@ worker-matrix/P5/
 - Phase 1 `.npmrc` readiness 最终走哪条路径(未落仓 / 落在 `workers/<name>/` / 落在 `workers/` / 落在 root)
 - Phase 2 的 9 PR 实际节奏(串行 / 并行批)与 Q1 建议偏差
 - R5 的 capability-runtime / agent-runtime-kernel 选 README-only 还是 minimal stub
-- live probe `nacp_core_version` 字段源头是否真的切到 registry tarball(build-time vs runtime read 差别)
+- live probe `nacp_core_version` 字段源头是否真的切到 published-path(build-time vs runtime read 差别;具体 lockfile 表面 tarball / registry version 均可,per R5)
 - charter §11 同步修订是否在 Phase 1 PR 内被 reviewer 注意到
 - handoff memo 是否真的在 P5 当日写就;还是延迟到 live loop stability 2-4 周后才具体
 

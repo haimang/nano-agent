@@ -401,13 +401,13 @@ worker-matrix/P4/
 | `FILESYSTEM_CORE` 意外取消注释 | Phase 4 | `medium` | grep `FILESYSTEM_CORE` 行以 `//` 开头 |
 | P2 两条 e2e 红 | Phase 1-4 任一 | `high` | block merge |
 | B7 LIVE 红 | 任一 phase | `high` | block |
-| workspace cross-import 限制(同 P3 Q1)| Phase 1-3 | `medium` | 同 P3 Q1 策略 |
+| workspace cross-import 限制(同 P3 Q1 / per P1-P5 GPT review R3)| Phase 1-3 | `medium` | 使用真实 worker package name(`@haimang/filesystem-core-worker` / `@haimang/context-core-worker`)+ `workspace:*` 依赖;或保留共享 helper 在 packages 一端(选项 B);**不得使用** `@nano-agent/filesystem-core` / `@nano-agent/context-core`(这两个 name 在仓库里不存在)|
 
 ### 7.2 约束与前提
 
 - **技术前提**:P2 closed;P3 可并行(不强制先完成)
 - **运行时前提**:Cloudflare preview deploy 凭证(若 Phase 5 deploy)
-- **组织协作前提**:workspace cross-import 策略(与 P3 Q1 同)
+- **组织协作前提**:workspace cross-import 策略(与 P3 Q1 同;真实 package name 为 `@haimang/filesystem-core-worker`,**不是** `@nano-agent/filesystem-core`,per P1-P5 GPT review R3)
 - **上线 / 合并前提**:每 phase 独立 PR;B7 LIVE + P2 e2e + tenant wrapper 0 违规 硬闸
 
 ### 7.3 文档同步要求

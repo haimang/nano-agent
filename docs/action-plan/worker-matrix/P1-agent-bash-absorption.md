@@ -7,7 +7,7 @@
 > 时间: `2026-04-23`
 > 文件位置:
 > - `workers/agent-core/src/{host/,kernel/,llm/,hooks/,eval/}`(A1-A5 吸收目的地)
-> - `workers/agent-core/test/`(A1-A5 tests)
+> - `workers/agent-core/test/`(A1-A5 **package-local** tests;root contract / cross tests 留在 root,不迁 — per P1-P5 GPT review R4)
 > - `workers/bash-core/src/{core/,fake-bash/,capabilities/,targets/,index.ts}`(B1 吸收目的地)
 > - `workers/bash-core/test/`(B1 tests)
 > - `workers/{agent-core,bash-core}/package.json`
@@ -133,12 +133,12 @@ worker-matrix/P1/
 
 ### 2.1 In-Scope
 
-- **[S1]** P1.A-sub1:A1 整 host shell + A2 kernel 搬进 `workers/agent-core/src/{host,kernel}/`;保持 byte-identical runtime 语义;`packages/session-do-runtime` + `packages/agent-runtime-kernel` 原位保留
-- **[S2]** P1.A-sub2:A3 llm + A4 hooks residual + A5 eval residual 搬进 `workers/agent-core/src/{llm,hooks,eval}/`;hooks 的 wire catalog 仍归 `@haimang/nacp-core`,不搬
+- **[S1]** P1.A-sub1:A1 整 host shell + A2 kernel 搬进 `workers/agent-core/src/{host,kernel}/`;保持 byte-identical runtime 语义;`packages/session-do-runtime` + `packages/agent-runtime-kernel` 原位保留;**package-local tests 随 src 搬到 `workers/agent-core/test/{host,kernel}/`;root `test/*.test.mjs` 与 `test/e2e/**` 不搬**(per P1-P5 GPT review R4)
+- **[S2]** P1.A-sub2:A3 llm + A4 hooks residual + A5 eval residual 搬进 `workers/agent-core/src/{llm,hooks,eval}/`;hooks 的 wire catalog 仍归 `@haimang/nacp-core`,不搬;**package-local tests 随 src 搬;root contract / cross / e2e tests 不搬**(per R4)
 - **[S3]** P1.A-sub3:`workers/agent-core/src/index.ts` 从 version-probe 升到 host worker entry(re-export DO + worker fetch handler + 保留 probe JSON 字段兼容 W4 preview contract);package.json 补吸收涉及的 devDeps
 - **[S4]** P1.B:`packages/capability-runtime/{src,test}` 一次 PR 搬进 `workers/bash-core/{src,test}`;`index.ts` 按 D02 v0.2 升级为 binding-first(R3 口径,`/capability/call` + `/capability/cancel` internal path)
 - **[S5]** P1.B F6 real preview deploy:`pnpm --filter workers/bash-core run deploy:preview` 成功;preview URL live;`curl` 返回 JSON 含 `worker:"bash-core" status:"ok" absorbed_runtime:true nacp_core_version:"1.4.0" nacp_session_version:"1.3.0"`;Version ID 记录
-- **[S6]** P1 所有 sub-PR 都跑 B7 LIVE 5 + 98 root + 112 cross + 两个 workers test + dry-run 回归
+- **[S6]** P1 所有 sub-PR 都跑:root 侧 `node --test test/*.test.mjs`(含 B7 LIVE 5 tests,不搬)+ cross tests + package-local(两 workers test)+ dry-run 回归(per R4 保留两层测试所有权)
 - **[S7]** W3 pattern spec 2 个 placeholder 节("LOC→时长系数" + "可执行流水线样板")在 P1.A-sub3 或首个 P1.A sub-PR 内回填(第 3 个 "循环引用解决 pattern" 由 P3/P4 在涉及 WCA split 时回填,本 P1 不强制)
 - **[S8]** P1 closure memo(`docs/issue/worker-matrix/P1-closure.md`):含 A1-A5 实测 LOC / 时长 / PR link / W3 pattern 回填 link / B1 preview URL + Version ID / 全绿证据
 
@@ -178,7 +178,7 @@ worker-matrix/P1/
 |------|------------|--------|------|------------------|------------|----------|
 | P1-01 | Phase 1 | A1 host shell 搬迁 | migration | `packages/session-do-runtime/src/**` → `workers/agent-core/src/host/**` | byte-identical DO + worker entry + composition 空壳 | high |
 | P1-02 | Phase 1 | A2 kernel 搬迁 | migration | `packages/agent-runtime-kernel/src/**` → `workers/agent-core/src/kernel/**` | byte-identical kernel runtime | medium |
-| P1-03 | Phase 1 | host + kernel 的 test 搬迁 | migration | `packages/*/test/**` → `workers/agent-core/test/{host,kernel}/**` | tests 全绿 | medium |
+| P1-03 | Phase 1 | host + kernel 的 **package-local** test 搬迁(per R4)| migration | `packages/{session-do-runtime,agent-runtime-kernel}/test/**` **package-local** → `workers/agent-core/test/{host,kernel}/**` | package-local tests 全绿;**root `test/*.test.mjs` 与 `test/e2e/*.test.mjs` 不搬**(B7 LIVE 等 root guardians 继续在 root 跑)| medium |
 | P1-04 | Phase 1 | import rewrite(sub1 范围)| update | 被搬的 .ts 内部 import | 相对 import 保留;外部 `@haimang/nacp-*` / `@nano-agent/*` 不变 | medium |
 | P2-01 | Phase 2 | A3 llm 搬迁 | migration | `packages/llm-wrapper/{src,test}/**` → `workers/agent-core/{src/llm,test/llm}/**` | byte-identical llm runtime | medium |
 | P2-02 | Phase 2 | A4 hooks residual 搬迁 | migration | `packages/hooks/{src,test}/**` runtime residual → `workers/agent-core/{src/hooks,test/hooks}/**` | wire catalog 不迁 | medium |
@@ -187,7 +187,7 @@ worker-matrix/P1/
 | P3-02 | Phase 3 | package.json 更新 | update | `workers/agent-core/package.json` | 补 A1-A5 所需 devDeps;dependencies 对齐 `@haimang/nacp-*` workspace:* | low |
 | P3-03 | Phase 3 | W3 pattern 回填 | update | `docs/design/pre-worker-matrix/W3-absorption-pattern.md` | "LOC→时长系数" + "可执行流水线样板" 两节用 A1-A5 实测填入 | low |
 | P4-01 | Phase 4 | B1 src 搬迁 | migration | `packages/capability-runtime/src/**` → `workers/bash-core/src/**`(按 W3 blueprint §3 目标目录)| 21-command + fake-bash + targets 整体搬 | high |
-| P4-02 | Phase 4 | B1 test 搬迁 | migration | `packages/capability-runtime/test/**` → `workers/bash-core/test/**` | 352 tests 全绿 | medium |
+| P4-02 | Phase 4 | B1 **package-local** test 搬迁(per R4)| migration | `packages/capability-runtime/test/**` **package-local** → `workers/bash-core/test/**`;**root `test/capability-toolcall-contract.test.mjs` 等 root guardians 不搬** | 352 tests 全绿 + root contract guardian 仍绿 | medium |
 | P4-03 | Phase 4 | `workers/bash-core/src/index.ts` 升级(R3 binding-first)| update | `workers/bash-core/src/index.ts` | binding-first:`/capability/call` + `/capability/cancel`;**不**开 `/tool.call.request` public HTTP | high |
 | P4-04 | Phase 4 | `workers/bash-core/package.json` + wrangler | update | 两文件 | devDeps 补齐;wrangler name 不漂移 | low |
 | P5-01 | Phase 5 | F6 real preview deploy | new | `workers/bash-core` deploy:preview | URL live + curl 合法 JSON + Version ID 记录 | medium |
@@ -204,7 +204,7 @@ worker-matrix/P1/
 |------|--------|----------|------------------|----------|----------|----------|
 | P1-01 | A1 host shell 搬 | `cp -r packages/session-do-runtime/src/* workers/agent-core/src/host/`(按 A1 代表 blueprint §3 目录重组);保留 byte-identical 语义;不动 consumer 逻辑 | `workers/agent-core/src/host/{do,composition,worker,orchestration}/` | 文件存在;import 正确 | `pnpm --filter workers/agent-core typecheck` 绿 | 编译通过 + no diff semantic |
 | P1-02 | A2 kernel 搬 | `cp -r packages/agent-runtime-kernel/src/* workers/agent-core/src/kernel/` | `workers/agent-core/src/kernel/` | 文件存在;import 正确 | 同上 | 同上 |
-| P1-03 | tests 搬 | `packages/*/test/*` → `workers/agent-core/test/{host,kernel}/` | `workers/agent-core/test/` | tests 全绿 | `pnpm --filter workers/agent-core test` 绿 | 0 failure |
+| P1-03 | package-local tests 搬(R4)| `packages/{session-do-runtime,agent-runtime-kernel}/test/**` **package-local** 文件 → `workers/agent-core/test/{host,kernel}/`;**不搬** root `test/*.test.mjs` / `test/e2e/*.test.mjs` / `test/verification/**`(B7 LIVE / 21+ root contract tests / cross tests 继续作 root gate)| workers/agent-core/test(package-local)+ root `test/`(guardians 原位)| package-local 绿 + root guardians 仍绿 | `pnpm --filter workers/agent-core test` + `node --test test/*.test.mjs` 两者分别跑 | 0 failure 两端;root 未被误搬 |
 | P1-04 | import rewrite | 内部相对 import 保持;对 `@haimang/nacp-*` / `@nano-agent/*` 不变;对被搬兄弟 package 的 cross import(如 kernel → session)调整到 `workers/agent-core/src/` 内部路径 | 被搬 .ts | 无 dangling import | `pnpm --filter workers/agent-core typecheck` 绿 | grep `@nano-agent/session-do-runtime` == 0(在 workers/agent-core/src/ 内)|
 | P1-05 | 全仓回归 | B7 LIVE + 98 root + 112 cross | 全仓 | 全绿 | `node --test test/*.test.mjs && npm run test:cross && pnpm -r run test` | 0 failure |
 | P1-06 | W3 pattern §6 共存期纪律落地 | `packages/session-do-runtime/` + `packages/agent-runtime-kernel/` 保留;本 sub-PR 内任一后续 bug 先改原包再同步 workers/ | `packages/*` + `workers/agent-core/src/host,kernel/` | 共存 | PR review gate + grep | PR body 明确 "共存期 bug 先修原包" |
@@ -215,7 +215,7 @@ worker-matrix/P1/
 |------|--------|----------|------------------|----------|----------|----------|
 | P2-01 | A3 llm 搬 | `cp -r packages/llm-wrapper/src/* workers/agent-core/src/llm/` + tests | `workers/agent-core/src/llm/` + `test/llm/` | 文件齐 | `pnpm --filter workers/agent-core test` 绿 | 0 failure |
 | P2-02 | A4 hooks residual 搬 | runtime dispatcher / registry 搬;**wire catalog 不迁** — `hooks-catalog.ts` 保留在 `@haimang/nacp-core` | `workers/agent-core/src/hooks/` + `test/hooks/` | 文件齐 + catalog 不在此处 | `grep "hooks-catalog" workers/agent-core/src/` == 0 | 仅 runtime residual |
-| P2-03 | A5 eval residual 搬 | `BoundedEvalSink` + `InspectorSeam` 搬;保留 dedup / overflow disclosure(B7 LIVE 契约)| `workers/agent-core/src/eval/` + `test/eval/` | 文件齐 | `pnpm --filter workers/agent-core test` 绿 + B7 LIVE 5 tests 绿 | 0 failure + B7 LIVE 不破 |
+| P2-03 | A5 eval residual 搬(R4)| `BoundedEvalSink` + `InspectorSeam` 搬;保留 dedup / overflow disclosure(B7 LIVE 契约);**eval package-local tests 随 src 搬**;**B7 LIVE root tests 不搬**(作为 root gate 继续保护 dedup / overflow 契约)| `workers/agent-core/src/eval/` + package-local `test/eval/` + root B7 LIVE 原位 | 文件齐 + root B7 LIVE 不动 | `pnpm --filter workers/agent-core test` 绿 + root `node --test test/b7-round2-integrated-contract.test.mjs` 绿 | 0 failure + B7 LIVE 未被移动且未红 |
 | P2-04 | import rewrite(sub2 范围)| llm / hooks / eval 之间相对 import + 回落 `host` 的 import | 被搬 .ts | 无 dangling | typecheck 绿 | — |
 | P2-05 | 全仓回归 | 同 P1-05 | 全仓 | 全绿 | 同上 | 0 failure |
 
@@ -261,13 +261,13 @@ worker-matrix/P1/
 
 - **Phase 目标**:`workers/agent-core/src/{host,kernel}/` 从空升到含 A1 + A2 runtime;byte-identical 语义;B7 LIVE 不破
 - **本 Phase 对应编号**:`P1-01` `P1-02` `P1-03` `P1-04` `P1-05` `P1-06`
-- **本 Phase 新增文件**:`workers/agent-core/src/host/**`、`workers/agent-core/src/kernel/**`、`workers/agent-core/test/{host,kernel}/**`
+- **本 Phase 新增文件**:`workers/agent-core/src/host/**`、`workers/agent-core/src/kernel/**`、`workers/agent-core/test/{host,kernel}/**`(均为 package-local;per R4 root `test/` 不搬)
 - **本 Phase 修改文件**:无(`packages/*` 不动)
 - **具体功能预期**:
   1. `workers/agent-core/src/host/do/nano-session-do.ts` 等价于原 `packages/session-do-runtime/src/do/nano-session-do.ts`
   2. `workers/agent-core/src/host/composition/index.ts` + `.../remote-bindings.ts` 等价于原;**仍是空 bag**(D06/P2 才升级)
   3. `workers/agent-core/src/kernel/` 完整吸收
-  4. B7 LIVE 5 tests 在 workers/agent-core/test 下跑绿
+  4. B7 LIVE 5 tests 继续作为 **root gate**,在 root `test/b7-round2-integrated-contract.test.mjs` 等位置跑绿(**不搬** 到 workers/agent-core/test;per R4);workers/agent-core/test 只含 package-local 单测
 - **具体测试安排**:
   - **单测**:`pnpm --filter workers/agent-core test` 绿;`pnpm --filter @nano-agent/session-do-runtime test`(原包)仍绿
   - **集成测试**:`node --test test/*.test.mjs` 98/98 绿
@@ -286,7 +286,7 @@ worker-matrix/P1/
 
 - **Phase 目标**:A3/A4/A5 搬入 `workers/agent-core/src/{llm,hooks,eval}/`;hooks wire catalog 不迁;B7 LIVE 仍绿
 - **本 Phase 对应编号**:`P2-01` `P2-02` `P2-03` `P2-04` `P2-05`
-- **本 Phase 新增文件**:`workers/agent-core/src/{llm,hooks,eval}/**`、`workers/agent-core/test/{llm,hooks,eval}/**`
+- **本 Phase 新增文件**:`workers/agent-core/src/{llm,hooks,eval}/**`、`workers/agent-core/test/{llm,hooks,eval}/**`(均为 package-local;per R4 root `test/` 不搬)
 - **本 Phase 修改文件**:无
 - **具体功能预期**:
   1. A3 llm 完整吸收

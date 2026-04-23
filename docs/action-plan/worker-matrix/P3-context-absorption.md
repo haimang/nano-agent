@@ -235,7 +235,7 @@ worker-matrix/P3/
 | P3-03 | packages 侧对称 | `packages/session-do-runtime/src/do/nano-session-do.ts` import 同步 | packages | — | typecheck 绿 | ✓ |
 | P3-04 | unit test 迁 | 把 agent-core 侧 stub 的 3 cases 迁到 `workers/context-core/test/context-api/` | workers/context-core/test | 3 cases | `pnpm --filter workers/context-core test` | 3/3 绿 |
 
-> **注 P3-02/P3-03 workspace cross-import**:workers/agent-core 从 workers/context-core 的 import 通常也不被 pnpm workspace 默认允许(除非用 `@nano-agent/...` alias 或 package.json 里加依赖)。**推荐落点**:让 `workers/context-core/src/context-api/index.ts` 暴露 `appendInitialContextLayer`,然后在 agent-core 的 `package.json` 的 `dependencies` 或 `workspace:*` 里声明对 `workers/context-core`(如 workspace 允许)或使用 `@nano-agent/context-core` alias(若 monorepo 支持)。具体方案由 kickoff 时 owner 决定 — Q1。
+> **注 P3-02/P3-03 workspace cross-import(per P1-P5 GPT review R3 校准)**:workers 之间的 source import 必须走 **真实已存在的 package name**。当前 `workers/context-core/package.json::name` 是 **`@haimang/context-core-worker`**(非 `@nano-agent/context-core` — 后者在仓库里不存在,是历史讨论中的 placeholder)。**落地路径**:让 `workers/context-core/src/context-api/index.ts` 暴露 `appendInitialContextLayer` 并挂到该 package public API;然后在 `workers/agent-core/package.json` 的 `dependencies` 加 `"@haimang/context-core-worker": "workspace:*"`;agent-core consumer 代码 `import { appendInitialContextLayer } from "@haimang/context-core-worker"`;`packages/session-do-runtime` 侧共存期路径做同样引用。或者(更稳妥)**不**做 worker-to-worker source import,改把共享 helper 留在 `packages/*`(例如 `packages/session-do-runtime/src/context-api/append-initial-context-layer.ts`),P3 只迁 C1 + C2 业务逻辑,helper 作为 shared seam 保持在 packages 一端;此路线不会产生 cross-worker import 的 typecheck 风险。两条路均不使用 `@nano-agent/context-core` 这个不存在的名字。具体路线由 kickoff Q1 锁定。
 
 ### 4.5 Phase 4 — compact posture Q3c
 
@@ -313,7 +313,7 @@ worker-matrix/P3/
 - **本 Phase 风险提醒**:
   - mixed helper 切分若把 artifact 部分误迁 context-core,P4 filesystem 吸收会二次返工
   - WCA split 过程中可能遇到循环引用(context 层调 filesystem 层的 namespace.write → snapshot → evidence emit → context 回);若发生,W3 pattern 第 3 placeholder 回填
-  - workspace boundary 规则:packages/workers 之间的 cross-import 通常不允许;如需,通过 `@nano-agent/*` package name 形式 + package.json deps 声明
+  - workspace boundary 规则:packages/workers 之间的 cross-import 通常不允许;如需,通过**真实存在**的 package name(`@haimang/<worker>-worker`;per R3)+ package.json deps `workspace:*` 声明 — **不使用** `@nano-agent/context-core` 这种仓库里不存在的 alias
 
 ### 5.4 Phase 3 — `appendInitialContextLayer` 迁出
 
@@ -333,7 +333,7 @@ worker-matrix/P3/
   - **集成测试**:P2 e2e #2 initial_context 仍绿
 - **收口标准**:P2 e2e #2 绿 + 物理位置正确
 - **本 Phase 风险提醒**:
-  - workspace boundary(见上文);agent-core 的 package.json 需加对 context-core 的依赖(`workspace:*`)
+  - workspace boundary(见上文);若选 cross-worker import 路线,agent-core 的 package.json 需加 `"@haimang/context-core-worker": "workspace:*"`(真实 name,per R3);若选 "helper 留 packages" 路线,则 agent-core 保持现有 `packages/session-do-runtime`(或等价)依赖不变
   - packages/session-do-runtime 同步落必须;否则共存期 bug 路径会调 undefined
 
 ### 5.5 Phase 4 — compact posture Q3c
@@ -367,13 +367,15 @@ worker-matrix/P3/
 
 ## 6. 需要业主 / 架构师回答的问题清单
 
-### Q1 — workspace cross-import 路径
+### Q1 — workspace cross-import 路径(per P1-P5 GPT review R3 已部分冻结)
 
 - **影响范围**:Phase 3(agent-core → context-core 调 appendInitialContextLayer)+ 未来 bash/context/filesystem 之间的共享
-- **为什么必须确认**:pnpm workspace 允许 workers/agent-core 通过 `@nano-agent/context-core`(若 package.json 声明)或相对路径 import `workers/context-core` 吗?这条路径若不定,Phase 3 import 改动会被 typecheck 拒
-- **当前建议 / 倾向**:**通过 package.json `workspace:*` 依赖 + 包名 alias** — 即 `workers/context-core/package.json` name 设为 `@nano-agent/context-core`;agent-core package.json deps 加 `"@nano-agent/context-core": "workspace:*"`;import 路径 `from "@nano-agent/context-core"`
-- **Q**:cross-worker import 策略?
-- **A**:_pending_
+- **为什么必须确认**:pnpm workspace 允许 workers/agent-core 通过真实 worker package name(当前 `workers/context-core/package.json::name` 是 `@haimang/context-core-worker`;`@nano-agent/context-core` **不存在** — R3)import,或相对路径 import `workers/context-core`(后者通常不可)。这条路径若不定,Phase 3 import 改动会被 typecheck 拒
+- **当前建议 / 倾向**:**二选一**,均不发明新 package name:
+  - **选项 A(cross-worker import,推荐)**:继续使用现有 `@haimang/context-core-worker` 作为 context-core worker 的 package name;在 `workers/agent-core/package.json` 的 `dependencies` 加 `"@haimang/context-core-worker": "workspace:*"`;consumer import `from "@haimang/context-core-worker"`
+  - **选项 B(helper 留 packages)**:`appendInitialContextLayer` helper 保留在 `packages/session-do-runtime/src/context-api/`(或新 `packages/context-api/`);P3 只迁 C1+C2 的 substrate 业务,不强制 cross-worker import
+- **Q**:选 A 还是 B?
+- **A**:_pending_(**不得选择** "使用 `@nano-agent/context-core`" — 该 name 不存在,R3 已明确)
 
 ### Q2 — context-core preview deploy 时机
 
