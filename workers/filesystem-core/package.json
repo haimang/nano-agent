@@ -13,7 +13,8 @@
   },
   "dependencies": {
     "@haimang/nacp-core": "workspace:*",
-    "@haimang/nacp-session": "workspace:*"
+    "@haimang/nacp-session": "workspace:*",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20251101.0",

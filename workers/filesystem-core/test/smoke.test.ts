@@ -14,6 +14,8 @@ describe("filesystem-core shell smoke", () => {
 
     expect(body.worker).toBe("filesystem-core");
     expect(body.status).toBe("ok");
+    expect(body.phase).toBe("worker-matrix-P4-absorbed");
+    expect(body.absorbed_runtime).toBe(true);
   });
 
   it("returns NACP versions from the shell response", async () => {

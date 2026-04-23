@@ -8,7 +8,8 @@ function createShellResponse(): FilesystemCoreShellResponse {
     nacp_core_version: NACP_VERSION,
     nacp_session_version: NACP_SESSION_VERSION,
     status: "ok",
-    phase: "pre-worker-matrix-W4-shell",
+    phase: "worker-matrix-P4-absorbed",
+    absorbed_runtime: true,
   };
 }
 

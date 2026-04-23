@@ -1,66 +1,61 @@
 /**
- * Workspace Context Artifacts — Core Types
+ * Workspace Context Artifacts — Prepared Artifact Pipeline
  *
- * Defines mount configuration, backend kinds, and file entry types
- * for the workspace namespace layer.
+ * Contract for artifact preparation (extracting text, generating
+ * summaries or previews from raw artifacts). Includes a stub
+ * implementation for testing.
  */
 
-import { z } from "zod";
+import type { ArtifactRef, PreparedArtifactKind, PreparedArtifactRef } from "./refs.js";
 
 // ═══════════════════════════════════════════════════════════════════
-// §1 — Mount Access
+// §1 — Prepare Request
 // ═══════════════════════════════════════════════════════════════════
 
-export const MountAccessSchema = z.enum(["readonly", "writable"]);
-export type MountAccess = z.infer<typeof MountAccessSchema>;
-
-// ═══════════════════════════════════════════════════════════════════
-// §2 — Mount Config
-// ═══════════════════════════════════════════════════════════════════
-
-export const MountConfigSchema = z.object({
-  mountPoint: z.string(),
-  backend: z.string(),
-  access: MountAccessSchema,
-  description: z.string().optional(),
-});
-export type MountConfig = z.infer<typeof MountConfigSchema>;
-
-// ═══════════════════════════════════════════════════════════════════
-// §3 — Backend Kind
-// ═══════════════════════════════════════════════════════════════════
-
-export const BackendKindSchema = z.enum([
-  "memory",
-  "do-storage",
-  "kv",
-  "r2",
-  "reference",
-]);
-export type BackendKind = z.infer<typeof BackendKindSchema>;
-
-// ═══════════════════════════════════════════════════════════════════
-// §4 — Workspace File Entry
-// ═══════════════════════════════════════════════════════════════════
-
-export const WorkspaceFileEntrySchema = z.object({
-  path: z.string(),
-  size: z.number().int().min(0),
-  mimeType: z.string().optional(),
-  modifiedAt: z.string(),
-});
-export type WorkspaceFileEntry = z.infer<typeof WorkspaceFileEntrySchema>;
-
-export interface FilesystemCoreEnv {
-  readonly ENVIRONMENT?: string;
-  readonly OWNER_TAG?: string;
+export interface PrepareRequest {
+  readonly sourceRef: ArtifactRef;
+  readonly targetKind: PreparedArtifactKind;
 }
 
-export interface FilesystemCoreShellResponse {
-  readonly worker: "filesystem-core";
-  readonly nacp_core_version: string;
-  readonly nacp_session_version: string;
-  readonly status: "ok";
-  readonly phase: "worker-matrix-P4-absorbed";
-  readonly absorbed_runtime: true;
+// ═══════════════════════════════════════════════════════════════════
+// §2 — Prepare Result
+// ═══════════════════════════════════════════════════════════════════
+
+export interface PrepareResult {
+  readonly success: boolean;
+  readonly preparedRef?: PreparedArtifactRef;
+  readonly error?: string;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// §3 — Artifact Preparer Interface
+// ═══════════════════════════════════════════════════════════════════
+
+export interface ArtifactPreparer {
+  prepare(request: PrepareRequest): Promise<PrepareResult>;
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// §4 — Stub Artifact Preparer
+// ═══════════════════════════════════════════════════════════════════
+
+/**
+ * Returns a fake prepared result for testing. The prepared ref
+ * inherits all fields from the source ref, adding the prepared
+ * kind and a synthetic key.
+ */
+export class StubArtifactPreparer implements ArtifactPreparer {
+  async prepare(request: PrepareRequest): Promise<PrepareResult> {
+    const preparedRef: PreparedArtifactRef = {
+      ...request.sourceRef,
+      key: `${request.sourceRef.key}__${request.targetKind}`,
+      preparedKind: request.targetKind,
+      sourceRef: request.sourceRef,
+    };
+
+    return {
+      success: true,
+      preparedRef,
+    };
+  }
 }
