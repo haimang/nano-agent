@@ -34,9 +34,9 @@ following the W3 blueprints and the W4 closure memo.
 | Binding | Status | Notes |
 | --- | --- | --- |
 | `SESSION_DO` | active shell slot | bound to `NanoSessionDO` stub |
-| `BASH_CORE` | documented future slot | activated during worker-matrix P0 |
-| `CONTEXT_CORE` | documented future slot | activated during worker-matrix P0 |
-| `FILESYSTEM_CORE` | documented future slot | activated during worker-matrix P0 |
+| `BASH_CORE` | active binding slot | activated in worker-matrix P2 |
+| `CONTEXT_CORE` | commented first-wave slot | absorbed in P3, still host-local in agent-core |
+| `FILESYSTEM_CORE` | commented first-wave slot | absorbed in P4, still host-local in agent-core |
 | `KV_CONFIG` / `R2_ARTIFACTS` | intentionally omitted | owner-managed resources stay out of W4 |
 
 ## Preview URL

@@ -4,8 +4,8 @@
  * Covers (per action-plan §4.5 P4-03 + Q2a):
  *   - env.CAPABILITY_TRANSPORT=local-ts routes capability transport
  *     to the local reference path (not service-binding);
- *   - default (env unset + CAPABILITY_WORKER bound) routes to service-binding;
- *   - local-ts seam is preserved even when CAPABILITY_WORKER is present
+ *   - default (env unset + BASH_CORE bound) routes to service-binding;
+ *   - local-ts seam is preserved even when BASH_CORE is present
  *     (Q2a opt-in semantics).
  */
 
@@ -40,10 +40,10 @@ function fakeBinding(): ServiceBindingLike {
 }
 
 describe("D07 binding activation + local-ts fallback (Q2a)", () => {
-  it("env unset + CAPABILITY_WORKER bound → service-binding transport is selected (default)", () => {
+  it("env unset + BASH_CORE bound → service-binding transport is selected (default)", () => {
     const factory = createDefaultCompositionFactory();
     const h = factory.create(
-      makeEnv({ CAPABILITY_WORKER: fakeBinding() }),
+      makeEnv({ BASH_CORE: fakeBinding() }),
       DEFAULT_RUNTIME_CONFIG,
     );
     const cap = h.capability as CapabilityCompositionHandle;
@@ -54,7 +54,7 @@ describe("D07 binding activation + local-ts fallback (Q2a)", () => {
     const factory = createDefaultCompositionFactory();
     const h = factory.create(
       makeEnv({
-        CAPABILITY_WORKER: fakeBinding(),
+        BASH_CORE: fakeBinding(),
         CAPABILITY_TRANSPORT: "local-ts",
       } as unknown as Partial<SessionRuntimeEnv>),
       DEFAULT_RUNTIME_CONFIG,

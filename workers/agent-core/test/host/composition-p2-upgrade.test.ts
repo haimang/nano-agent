@@ -75,10 +75,10 @@ describe("P2 Phase 2 — createDefaultCompositionFactory upgrade", () => {
 });
 
 describe("P2 Phase 2 — capability transport selection (Q2a)", () => {
-  it("default: service-binding when env.CAPABILITY_WORKER present", () => {
+  it("default: service-binding when env.BASH_CORE present", () => {
     const factory = createDefaultCompositionFactory();
     const h = factory.create(
-      makeEnv({ CAPABILITY_WORKER: fakeBinding() }),
+      makeEnv({ BASH_CORE: fakeBinding() }),
       DEFAULT_RUNTIME_CONFIG,
     );
     const cap = h.capability as CapabilityCompositionHandle;
@@ -86,11 +86,11 @@ describe("P2 Phase 2 — capability transport selection (Q2a)", () => {
     expect(cap.serviceBindingTransport).not.toBeNull();
   });
 
-  it("opt-in: local-ts when env.CAPABILITY_TRANSPORT=local-ts (even if CAPABILITY_WORKER present)", () => {
+  it("opt-in: local-ts when env.CAPABILITY_TRANSPORT=local-ts (even if BASH_CORE is present)", () => {
     const factory = createDefaultCompositionFactory();
     const h = factory.create(
       makeEnv({
-        CAPABILITY_WORKER: fakeBinding(),
+        BASH_CORE: fakeBinding(),
         CAPABILITY_TRANSPORT: "local-ts",
       } as unknown as Partial<SessionRuntimeEnv>),
       DEFAULT_RUNTIME_CONFIG,
@@ -109,13 +109,23 @@ describe("P2 Phase 2 — capability transport selection (Q2a)", () => {
     expect(cap.serviceBindingTransport).toBeNull();
     expect(cap.reason).toContain("unavailable");
   });
+
+  it("legacy alias: service-binding still works when only env.CAPABILITY_WORKER is present", () => {
+    const factory = createDefaultCompositionFactory();
+    const h = factory.create(
+      makeEnv({ CAPABILITY_WORKER: fakeBinding() }),
+      DEFAULT_RUNTIME_CONFIG,
+    );
+    const cap = h.capability as CapabilityCompositionHandle;
+    expect(cap.transport).toBe("service-binding");
+  });
 });
 
 describe("P2 Phase 2 — makeRemoteBindingsFactory 4-nullable documented", () => {
   it("returns explicit null (not undefined) for kernel / workspace / eval / storage with reason comments in source", () => {
     const factory = makeRemoteBindingsFactory();
-    const h = factory.create(
-      makeEnv({ CAPABILITY_WORKER: fakeBinding() }),
+      const h = factory.create(
+      makeEnv({ BASH_CORE: fakeBinding() }),
       DEFAULT_RUNTIME_CONFIG,
     );
     // The 4 always-host-local slots are explicitly nulled at this

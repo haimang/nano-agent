@@ -28,8 +28,10 @@
   // P2 Phase 4 (D07 activation): BASH_CORE service binding activated
   // — the downstream worker `nano-agent-bash-core-preview` is live
   // (P1.B Phase 5 deploy; Version ID 50335742-e9e9-4f49-b6d7-ec58e0d1cfb4).
-  // CONTEXT_CORE / FILESYSTEM_CORE stay commented until P3 / P4 posture
-  // decisions.
+  // CONTEXT_CORE / FILESYSTEM_CORE stay commented in first-wave runtime:
+  // P3 / P4 absorb their code, but agent-core still keeps context/filesystem
+  // on the host-local side until a later charter explicitly promotes them
+  // to remote bindings.
   "services": [
     { "binding": "BASH_CORE", "service": "nano-agent-bash-core" }
     // { "binding": "CONTEXT_CORE", "service": "nano-agent-context-core" },

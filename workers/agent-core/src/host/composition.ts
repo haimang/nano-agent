@@ -22,6 +22,7 @@ import type { CompositionProfile, SessionRuntimeEnv, RuntimeConfig } from "./env
 import {
   DEFAULT_COMPOSITION_PROFILE,
   readCompositionProfile,
+  resolveCapabilityBinding,
 } from "./env.js";
 import {
   InMemoryArtifactStore,
@@ -152,7 +153,8 @@ export function resolveCompositionProfile(
  *   - `storage` is an explicit `host-local` marker (per Q4a host-local
  *     continues; tenant wrapper lives in the DO itself, not here).
  *   - `capability` reads `env.CAPABILITY_TRANSPORT` to select transport:
- *     default = `service-binding` (consumes `env.CAPABILITY_WORKER`);
+ *     default = `service-binding` (consumes canonical `env.BASH_CORE`,
+ *     with legacy `env.CAPABILITY_WORKER` still accepted during closeout);
  *     opt-in `local-ts` forces the local reference path (dev / unit
  *     test / failure fallback, per Q2a).
  *   - `kernel` / `llm` / `hooks` remain honest `P2-stub` placeholders
@@ -207,7 +209,7 @@ export function createDefaultCompositionFactory(): CompositionFactory {
       const transportEnv = envRecord["CAPABILITY_TRANSPORT"] as
         | string
         | undefined;
-      const capabilityBinding = envRecord["CAPABILITY_WORKER"];
+      const capabilityBinding = resolveCapabilityBinding(env);
       let capability: CapabilityCompositionHandle;
       if (transportEnv === "local-ts") {
         capability = {
@@ -221,21 +223,21 @@ export function createDefaultCompositionFactory(): CompositionFactory {
           serviceBindingTransport: capabilityBinding,
           transport: "service-binding",
           reason:
-            "default: bound to env.CAPABILITY_WORKER via service binding (Q2a default).",
+            "default: bound to env.BASH_CORE via service binding (legacy env.CAPABILITY_WORKER still accepted during closeout; Q2a default).",
         };
       } else {
         capability = {
           serviceBindingTransport: null,
           transport: "unavailable",
           reason:
-            "no env.CAPABILITY_WORKER binding and no opt-in CAPABILITY_TRANSPORT override; honest-degrade — tool.call will surface unavailable.",
+            "no env.BASH_CORE binding (or legacy env.CAPABILITY_WORKER alias) and no opt-in CAPABILITY_TRANSPORT override; honest-degrade — tool.call will surface unavailable.",
         };
       }
 
       const kernel: KernelCompositionHandle = {
         phase: "P2-stub",
         reason:
-          "kernel runner is host-local; live wiring (delegates injection) belongs to a later charter — composition provides a non-undefined sentinel so D05 consumer + downstream null-checks succeed.",
+          "kernel runner is host-local; no default compact delegate is auto-wired in first-wave composition, and later live delegate injection belongs to a later charter — composition provides a non-undefined sentinel so D05 consumer + downstream null-checks succeed.",
       };
       const llm: LlmCompositionHandle = {
         phase: "P2-stub",

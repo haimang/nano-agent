@@ -3,7 +3,7 @@
  *
  * Locks the three invariants the Session DO composition must obey once
  * external seams exist:
- *   1. `V1_BINDING_CATALOG` enumerates exactly `CAPABILITY_WORKER /
+ *   1. `V1_BINDING_CATALOG` enumerates exactly `BASH_CORE /
  *      HOOK_WORKER / FAKE_PROVIDER_WORKER`.
  *   2. `SKILL_WORKERS` is reserved — it never drives a profile flip.
  *   3. `resolveCompositionProfile()` honours explicit config first,
@@ -36,7 +36,7 @@ function makeEnv(overrides: Partial<SessionRuntimeEnv> = {}): SessionRuntimeEnv 
 describe("V1 binding catalog (AX-QNA Q9)", () => {
   it("lists exactly the three v1 slots in order", () => {
     expect([...V1_BINDING_CATALOG]).toEqual([
-      "CAPABILITY_WORKER",
+      "BASH_CORE",
       "HOOK_WORKER",
       "FAKE_PROVIDER_WORKER",
     ]);
@@ -58,7 +58,7 @@ describe("readCompositionProfile", () => {
   it("flips each seam to remote when its binding is present", () => {
     const profile = readCompositionProfile(
       makeEnv({
-        CAPABILITY_WORKER: { fetch: async () => new Response() },
+        BASH_CORE: { fetch: async () => new Response() },
         HOOK_WORKER: { fetch: async () => new Response() },
         FAKE_PROVIDER_WORKER: { fetch: async () => new Response() },
       }),
@@ -76,6 +76,15 @@ describe("readCompositionProfile", () => {
     );
     expect(profile).toEqual(DEFAULT_COMPOSITION_PROFILE);
   });
+
+  it("still flips capability to remote when only legacy CAPABILITY_WORKER is present", () => {
+    const profile = readCompositionProfile(
+      makeEnv({
+        CAPABILITY_WORKER: { fetch: async () => new Response() },
+      }),
+    );
+    expect(profile.capability).toBe("remote");
+  });
 });
 
 describe("resolveCompositionProfile", () => {
@@ -87,7 +96,7 @@ describe("resolveCompositionProfile", () => {
   it("config.compositionProfile takes priority over env signals", () => {
     const profile = resolveCompositionProfile(
       makeEnv({
-        CAPABILITY_WORKER: { fetch: async () => new Response() },
+        BASH_CORE: { fetch: async () => new Response() },
       }),
       {
         ...DEFAULT_RUNTIME_CONFIG,
@@ -160,5 +169,13 @@ describe("createDefaultCompositionFactory", () => {
     expect(evalHandle).toBeDefined();
     expect(typeof evalHandle.emit).toBe("function");
     expect(evalHandle.sink).toBeDefined();
+  });
+
+  it("keeps kernel compact delegate opt-in by default", () => {
+    const factory = createDefaultCompositionFactory();
+    const handles = factory.create(makeEnv(), DEFAULT_RUNTIME_CONFIG);
+    const kernel = handles.kernel as { phase?: string; reason?: string };
+    expect(kernel.phase).toBe("P2-stub");
+    expect(kernel.reason).toContain("no default compact delegate is auto-wired");
   });
 });

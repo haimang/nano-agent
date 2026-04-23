@@ -67,7 +67,7 @@ describe("NanoSessionDO default composition selection (A4-A5 review R3)", () => 
     expect(body.emitBody?.text).toBe("hi");
   });
 
-  it("picks the remote factory when only CAPABILITY_WORKER is bound", () => {
+  it("picks the remote factory when only BASH_CORE is bound", () => {
     const capBinding: ServiceBindingLike = {
       async fetch() {
         return new Response("{}", { status: 200 });
@@ -77,7 +77,7 @@ describe("NanoSessionDO default composition selection (A4-A5 review R3)", () => 
       {},
       {
         TEAM_UUID: "team-cap",
-        CAPABILITY_WORKER: capBinding,
+        BASH_CORE: capBinding,
       },
     );
     const s = doInstance.getSubsystems();

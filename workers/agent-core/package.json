@@ -5,6 +5,9 @@
   "type": "module",
   "description": "agent-core worker — absorbed runtime (P1.A: host / kernel / llm / hooks / eval)",
   "scripts": {
+    "prebuild": "pnpm --filter @haimang/context-core-worker build",
+    "pretest": "pnpm --filter @haimang/context-core-worker build",
+    "pretypecheck": "pnpm --filter @haimang/context-core-worker build",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -12,6 +15,7 @@
     "deploy:dry-run": "wrangler deploy --dry-run --env=\"\""
   },
   "dependencies": {
+    "@haimang/context-core-worker": "workspace:*",
     "@haimang/nacp-core": "workspace:*",
     "@haimang/nacp-session": "workspace:*",
     "@nano-agent/workspace-context-artifacts": "workspace:*"

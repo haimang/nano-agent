@@ -30,8 +30,8 @@ export interface DurableObjectNamespaceLike {
 /**
  * Minimum env shape — bindings declared in `wrangler.jsonc`.
  *
- * The optional `R2_ARTIFACTS / KV_CONFIG / HOOK_WORKER /
- * CAPABILITY_WORKER / FAKE_PROVIDER_WORKER` slots mirror the v1 binding
+ * The optional `R2_ARTIFACTS / KV_CONFIG / BASH_CORE /
+ * HOOK_WORKER / FAKE_PROVIDER_WORKER` slots mirror the v1 binding
  * catalog defined in `env.ts`. Keeping them on the Worker entrypoint
  * means the same TypeScript shape covers both `wrangler dev --remote`
  * and `wrangler deploy --env deploy_smoke` profiles without per-env
@@ -42,7 +42,9 @@ export interface WorkerEnv {
   readonly SESSION_DO: DurableObjectNamespaceLike;
   readonly R2_ARTIFACTS?: unknown;
   readonly KV_CONFIG?: unknown;
+  readonly BASH_CORE?: unknown;
   readonly HOOK_WORKER?: unknown;
+  /** @deprecated Legacy alias for `BASH_CORE`. */
   readonly CAPABILITY_WORKER?: unknown;
   readonly FAKE_PROVIDER_WORKER?: unknown;
   readonly LLM_API_KEY?: string;

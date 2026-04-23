@@ -25,13 +25,13 @@ import { WsController } from "../ws-controller.js";
 import { HttpController } from "../http-controller.js";
 import { HealthGate } from "../health.js";
 import type { HeartbeatTracker, AckWindow } from "../health.js";
-import { DEFAULT_RUNTIME_CONFIG } from "../env.js";
+import { DEFAULT_RUNTIME_CONFIG, resolveCapabilityBinding } from "../env.js";
 import type { RuntimeConfig } from "../env.js";
 import { SessionOrchestrator } from "../orchestration.js";
 import type { OrchestrationDeps, OrchestrationState } from "../orchestration.js";
 import { assertTraceLaw, type TraceContext } from "../traces.js";
 import { extractTurnInput } from "../turn-ingress.js";
-import { appendInitialContextLayer } from "../context-api/append-initial-context-layer.js";
+import { appendInitialContextLayer } from "@haimang/context-core-worker/context-api/append-initial-context-layer";
 import { transitionPhase as transitionPhaseImported } from "../actor-state.js";
 import { validateSessionCheckpoint } from "../checkpoint.js";
 import { createDefaultCompositionFactory } from "../composition.js";
@@ -75,7 +75,7 @@ function selectCompositionFactory(
 ): CompositionFactory {
   const e = (env ?? {}) as Partial<SessionRuntimeEnv>;
   const anyRemote = Boolean(
-    e.CAPABILITY_WORKER || e.HOOK_WORKER || e.FAKE_PROVIDER_WORKER,
+    resolveCapabilityBinding(e) || e.HOOK_WORKER || e.FAKE_PROVIDER_WORKER,
   );
   return anyRemote
     ? makeRemoteBindingsFactory({ anchorProvider })
