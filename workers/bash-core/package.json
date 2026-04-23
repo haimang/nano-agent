@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "Pre-worker-matrix shell for bash-core",
+  "description": "bash-core worker — absorbed capability-runtime (P1.B: governed fake-bash + 21-command registry + targets)",
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
@@ -19,6 +19,10 @@
     "@cloudflare/workers-types": "^4.20251101.0",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0",
-    "wrangler": "^4.83.0"
+    "wrangler": "^4.83.0",
+    "zod": "^3.24.0"
+  },
+  "peerDependencies": {
+    "zod": ">=3.22.0"
   }
 }
