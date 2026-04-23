@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 
 /**
  * B7 round-2 integrated contract — local simulation of the probes
- * that would live in `spikes/round-2-integrated/`.
+ * that would live in `the historical round-2 integrated spikes tree`.
  *
  * Live deployment of the round-2 workers requires Cloudflare account
  * credentials and owner/platform gates (F09_OWNER_URL, F03 cross-colo).
@@ -31,7 +31,7 @@ import {
 // ─────────────────────────────────────────────────────────────────────
 // binding-F04 local simulation — worker-a pushes to worker-b's
 // BoundedEvalSink, then queries stats + disclosure. Mirrors the
-// probe in `spikes/round-2-integrated/spike-binding-pair-r2/worker-a-r2
+// probe in `the historical round-2 integrated binding spike workspace
 // /src/follow-ups/binding-f04-true-callback.ts`.
 // ─────────────────────────────────────────────────────────────────────
 
