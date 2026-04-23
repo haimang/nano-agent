@@ -153,7 +153,7 @@ curl -sS -X POST "https://nano-agent-spike-do-storage.haimang.workers.dev/probe/
 
 ### 6.2 复现脚本位置
 
-- `spikes/round-1-bare-metal/spike-do-storage/src/probes/bash-capability-parity.ts`
+- `the historical round-1 storage spike workspace`
 
 ---
 
@@ -183,7 +183,7 @@ curl -sS -X POST "https://nano-agent-spike-do-storage.haimang.workers.dev/probe/
 
 > **Round-2 status**: `writeback-shipped` ✅ LIVE (2026-04-20)
 > **Writeback date**: 2026-04-20
-> **Driver**: `spikes/round-2-integrated/spike-do-storage-r2/src/re-validation/bash.ts` via `CapabilityExecutor` + `InMemoryCapabilityRegistry` + `CapabilityPolicyGate` + `LocalTsTarget`
+> **Driver**: `the historical round-2 integrated storage spike workspace` via `CapabilityExecutor` + `InMemoryCapabilityRegistry` + `CapabilityPolicyGate` + `LocalTsTarget`
 
 ### Round-2 evidence summary
 

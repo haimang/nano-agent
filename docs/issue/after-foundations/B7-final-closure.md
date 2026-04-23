@@ -231,7 +231,7 @@ pnpm-workspace by design).
 
 | # | Criterion | Met |
 |---|---|---|
-| 1 | `spikes/round-2-integrated/` tree + 2 worker skeletons | ✅ |
+| 1 | `the historical round-2 integrated spikes tree` tree + 2 worker skeletons | ✅ |
 | 2 | separate names / resources / no Round-1 pollution | ✅ |
 | 3 | 7 follow-up probes with raw evidence | ✅ 5 LIVE + 2 honest-gated |
 | 4 | 13 required findings re-validated | ✅ through §9 closure + LIVE probes |

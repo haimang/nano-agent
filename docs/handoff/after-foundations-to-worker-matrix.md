@@ -3,7 +3,7 @@
 > **Status**: `handoff-ready` ✅
 > **Owner**: GPT-5.4
 > **Primary source of truth**: `docs/issue/after-foundations/B8-phase-1-closure.md`
-> **Scope**: B8 handoff only — no `packages/` or `spikes/` code changes
+> **Scope**: B8 handoff only — no `packages/` or the historical spikes tree code changes
 
 ---
 

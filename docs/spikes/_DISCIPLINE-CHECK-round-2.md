@@ -19,7 +19,7 @@ declared in §7 below with full rationale.
 
 ---
 
-## §1. 纪律 1：spike 代码放 `spikes/` 顶级目录，**不进** `packages/`
+## §1. 纪律 1：spike 代码放 the historical spikes tree 顶级目录，**不进** `packages/`
 
 ### Status: ✅ HOLDS
 
@@ -30,14 +30,14 @@ declared in §7 below with full rationale.
   packages:
     - "packages/*"
   ```
-- All Round-2 code lives under `spikes/round-2-integrated/`.
-- No `spikes/` files exist inside `packages/`.
+- All Round-2 code lives under `the historical round-2 integrated spikes tree`.
+- No the historical spikes tree files exist inside `packages/`.
 
 ### Verification command
 
 ```bash
-find packages/ -path '*/spikes/*' -o -name 'spike*' | wc -l   # → 0
-find spikes/round-2-integrated -type f | wc -l                # > 0
+find packages/ -path '*/the historical spikes tree *' -o -name 'spike*' | wc -l   # → 0
+find the historical round-2 integrated spikes tree -type f | wc -l                # > 0
 ```
 
 ---
@@ -53,7 +53,7 @@ find spikes/round-2-integrated -type f | wc -l                # > 0
   cognitive load).
 - Every Round-2 `package.json` description carries "Expiration:
   2026-08-01".
-- Top-level `spikes/round-2-integrated/README.md` declares the
+- Top-level `the historical round-2 integrated spikes treeREADME.md` declares the
   expiration up front.
 
 ---
@@ -66,9 +66,9 @@ find spikes/round-2-integrated -type f | wc -l                # > 0
 
 - Root `package.json` scripts still only call `pnpm -r run test`
   (packages) + `node --test test/*.test.mjs` (root contracts). The
-  `spikes/round-2-integrated/*/package.json` files do NOT expose a
+  `the historical round-2 integrated spikes tree*/package.json` files do NOT expose a
   `test` script.
-- `spikes/round-2-integrated/README.md` explicitly describes
+- `the historical round-2 integrated spikes treeREADME.md` explicitly describes
   deploy-dry-run / live capture as **operator** steps, not CI steps.
 
 ### Caveat
@@ -82,7 +82,7 @@ test, and consistent with discipline 3.
 
 ---
 
-## §4. 纪律 4：findings → docs/spikes/**/*.md per template
+## §4. 纪律 4：findings → docs/historical spike artifacts.md per template
 
 ### Status: ✅ HOLDS
 
@@ -95,10 +95,10 @@ test, and consistent with discipline 3.
   discipline preserved).
 - Writeback vocabulary is the frozen B7 `{writeback-shipped |
   dismissed-with-rationale | still-open}` set (per action-plan §1.2).
-- Any newly-discovered issues would go to `docs/spikes/round-2-
-  integrated/**` as `integrated-F*` — none were surfaced in this
-  phase (all Round-1 findings continue to hold; no shipped-package
-  bug was discovered).
+- Any newly-discovered issues would have gone to a dedicated
+  Round-2-integrated finding doc as `integrated-F*` — none were
+  surfaced in this phase (all Round-1 findings continue to hold; no
+  shipped-package bug was discovered).
 
 ---
 
@@ -201,7 +201,7 @@ binding-F04 where the push-path probe physically consumes
 
 | # | Discipline | Status | Notes |
 |---|---|---|---|
-| 1 | spikes/ not packages/ | ✅ | unchanged |
+| 1 | the historical spikes tree  not packages/ | ✅ | unchanged |
 | 2 | expiration date | ✅ | 2026-08-01 |
 | 3 | not in CI main | ✅ | root local-sim test is validation infra, not spike code |
 | 4 | findings template | ✅ | append-only §9 closure sections on every Round-1 doc |

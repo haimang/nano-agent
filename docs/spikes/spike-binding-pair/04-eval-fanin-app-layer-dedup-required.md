@@ -209,8 +209,8 @@ Service binding fetch-based seam 是无状态的 RPC——transport 层没有任
 
 ### 6.2 复现脚本位置
 
-- `spikes/round-1-bare-metal/spike-binding-pair/worker-a/src/probes/eval-fanin.ts`
-- `spikes/round-1-bare-metal/spike-binding-pair/worker-b/src/handlers/eval-emit.ts`
+- `the historical round-1 binding spike workspace`
+- `the historical round-1 binding spike workspace`
 
 ---
 
@@ -240,7 +240,7 @@ Service binding fetch-based seam 是无状态的 RPC——transport 层没有任
 
 > **Round-2 status**: `writeback-shipped` ✅ LIVE (2026-04-20, cross-worker push path)
 > **Writeback date**: 2026-04-20
-> **Driver**: `spikes/round-2-integrated/spike-binding-pair-r2/worker-a-r2/src/follow-ups/binding-f04-true-callback.ts` + `worker-b-r2/src/handlers/eval-sink-ingest.ts`
+> **Driver**: `the historical round-2 integrated binding spike workspace` + `worker-b-r2/src/handlers/eval-sink-ingest.ts`
 
 ### Round-2 evidence summary
 
@@ -276,7 +276,7 @@ dedup + overflow disclosure contract holds on the true wire.
 `nano-agent-spike-binding-pair-b-r2` (cross-worker service binding).
 Worker-a pushed records through the binding into worker-b's
 `BoundedEvalSink`. **Raw evidence**:
-`spikes/round-2-integrated/spike-binding-pair-r2/worker-a-r2/.out/probe_follow-ups_binding-f04-true-callback.json`
+`the historical round-2 integrated binding spike workspace`
 
 | observation | expected | observed | |
 |---|---|---|---|

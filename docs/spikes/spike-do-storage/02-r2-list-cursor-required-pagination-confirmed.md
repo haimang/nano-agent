@@ -165,8 +165,8 @@ async r2List(prefix: string): Promise<{ objects: Array<...> }> {
 
 ### 6.2 复现脚本位置
 
-- `spikes/round-1-bare-metal/spike-do-storage/src/probes/r2-list-cursor.ts`
-- `spikes/round-1-bare-metal/spike-do-storage/.out/2026-04-19T08-17-46Z.json`
+- `the historical round-1 storage spike workspace`
+- `the historical round-1 storage spike workspace`
 
 ---
 
@@ -197,7 +197,7 @@ async r2List(prefix: string): Promise<{ objects: Array<...> }> {
 
 > **Round-2 status**: `writeback-shipped` ✅ LIVE (2026-04-20)
 > **Writeback date**: 2026-04-20
-> **Driver**: `spikes/round-2-integrated/spike-do-storage-r2/src/re-validation/storage.ts` via `R2Adapter.listAll({ prefix })`
+> **Driver**: `the historical round-2 integrated storage spike workspace` via `R2Adapter.listAll({ prefix })`
 
 ### Round-2 evidence summary
 

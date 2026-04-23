@@ -157,7 +157,7 @@ Cloudflare Workers paid plan 的 outbound subrequest cap 远高于 25。example.
 
 ### 6.2 复现脚本位置
 
-- `spikes/round-1-bare-metal/spike-do-storage/src/probes/bash-curl-quota.ts`
+- `the historical round-1 storage spike workspace`
 
 ---
 
@@ -188,8 +188,8 @@ Cloudflare Workers paid plan 的 outbound subrequest cap 远高于 25。example.
 > **Writeback date**: 2026-04-20
 > **Gate**: `F09-OWNER-URL-MISSING`
 > **Drivers**:
->   - follow-up: `spikes/round-2-integrated/spike-do-storage-r2/src/follow-ups/curl-high-volume.ts`
->   - re-validation (conservative path only): `spikes/round-2-integrated/spike-do-storage-r2/src/re-validation/bash.ts`
+>   - follow-up: `the historical round-2 integrated storage spike workspace`
+>   - re-validation (conservative path only): `the historical round-2 integrated storage spike workspace`
 
 ### Round-2 evidence summary
 

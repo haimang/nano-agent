@@ -1,13 +1,13 @@
 # Nano-Agent 行动计划 — B1：Spike Round 1 Bare-metal Cloudflare Truth Probe
 
 > 服务业务簇：`After-Foundations Phase 0 — Spike-Driven Code Hardening`
-> 计划对象：`spikes/round-1-bare-metal/{spike-do-storage, spike-binding-pair}` + `docs/spikes/{per-finding, rollup}`
+> 计划对象：`the historical round-1 bare-metal spikes tree{spike-do-storage, spike-binding-pair}` + `docs/spikes/{per-finding, rollup}`
 > 类型：`new`
 > 作者：`Opus 4.7 (1M context)`
 > 时间：`2026-04-19`
 > 文件位置：
-> - `spikes/round-1-bare-metal/spike-do-storage/` （新建）
-> - `spikes/round-1-bare-metal/spike-binding-pair/` （新建）
+> - `the historical round-1 storage spike workspace/` （新建）
+> - `the historical round-1 binding spike workspace/` （新建）
 > - `docs/spikes/spike-do-storage/` （per-finding docs）
 > - `docs/spikes/spike-binding-pair/` （per-finding docs）
 > - `docs/spikes/{storage-findings, binding-findings, fake-bash-platform-findings}.md` （rollup docs）
@@ -97,7 +97,7 @@
 
 ```text
 nano-agent/
-├── spikes/                                          # 顶级目录（纪律 1：不进 packages/）
+├── the historical spikes tree                                           # 顶级目录（纪律 1：不进 packages/）
 │   └── round-1-bare-metal/
 │       ├── spike-do-storage/                        # Phase 2 新建
 │       │   ├── wrangler.jsonc
@@ -153,7 +153,7 @@ nano-agent/
 
 ### 2.1 In-Scope（本次 action-plan 明确要做）
 
-- **[S1]** 创建 2 个 spike 的目录骨架（`spikes/round-1-bare-metal/spike-do-storage/` + `spikes/round-1-bare-metal/spike-binding-pair/`）
+- **[S1]** 创建 2 个 spike 的目录骨架（`the historical round-1 storage spike workspace/` + `the historical round-1 binding spike workspace/`）
 - **[S2]** 部署 `spike-do-storage` 单 worker 到真实 Cloudflare 环境（含 R2 + KV + D1 + DO bindings）
 - **[S3]** 部署 `spike-binding-pair` 双 worker 到真实 Cloudflare 环境（worker-a 与 worker-b 通过 service binding 通讯）
 - **[S4]** 实现 9 个 storage/bash probe handler（含 V2 拆分后的 V2A capability-parity + V2B platform-stress + V2-curl-quota）
@@ -192,20 +192,20 @@ nano-agent/
 
 | 编号 | 所属 Phase | 工作项 | 类型 | 涉及模块 / 文件 | 目标一句话 | 风险等级 |
 |------|------------|--------|------|------------------|------------|----------|
-| P1-01 | Phase 1 | 创建 spike 顶级目录结构 + README | add | `spikes/`, `spikes/round-1-bare-metal/{spike-do-storage,spike-binding-pair}/README.md` | spike 物理目录就位 | low |
+| P1-01 | Phase 1 | 创建 spike 顶级目录结构 + README | add | the historical spikes tree, `the historical round-1 bare-metal spikes tree{spike-do-storage,spike-binding-pair}/README.md` | spike 物理目录就位 | low |
 | P1-02 | Phase 1 | 验证 finding 模板路径与 charter 对齐 | check | `docs/templates/_TEMPLATE-spike-finding.md` + `docs/plan-after-foundations.md` §14 | 模板路径唯一性确认 | low |
-| P1-03 | Phase 1 | spike-do-storage wrangler.jsonc + package.json 骨架 | add | `spikes/round-1-bare-metal/spike-do-storage/{wrangler.jsonc,package.json}` | wrangler deploy 可调用（即使 worker.ts 仅返回 healthz） | medium |
-| P1-04 | Phase 1 | spike-binding-pair worker-a + worker-b 骨架（无 probe 实现） | add | `spikes/round-1-bare-metal/spike-binding-pair/{worker-a,worker-b}/{wrangler.jsonc,package.json,src/worker.ts}` | 双 worker 都可 deploy；service binding 配置正确 | medium |
+| P1-03 | Phase 1 | spike-do-storage wrangler.jsonc + package.json 骨架 | add | `the historical round-1 storage spike workspace/{wrangler.jsonc,package.json}` | wrangler deploy 可调用（即使 worker.ts 仅返回 healthz） | medium |
+| P1-04 | Phase 1 | spike-binding-pair worker-a + worker-b 骨架（无 probe 实现） | add | `the historical round-1 binding spike workspace/{worker-a,worker-b}/{wrangler.jsonc,package.json,src/worker.ts}` | 双 worker 都可 deploy；service binding 配置正确 | medium |
 | P2-01 | Phase 2 | spike-do-storage 单 worker 真实部署 | deploy | wrangler deploy | spike worker URL 可从外网访问；`/healthz` 返回 200 | medium |
-| P2-02 | Phase 2 | 实现 6 个 storage probe handler (V1) | add | `spikes/.../spike-do-storage/src/probes/{r2-multipart,r2-list-cursor,kv-stale-read,do-transactional,mem-vs-do,d1-transaction}.ts` + `do/ProbeDO.ts` + `result-shape.ts` | 6 个 storage probe endpoint 全部可调用并返回结构化结果 | medium |
-| P2-03 | Phase 2 | 实现 V2A capability-parity probe（对齐 filesystem.ts 真实 contract） | add | `spikes/.../spike-do-storage/src/probes/bash-capability-parity.ts` | 验证 mkdir partial-no-directory-entity / `/_platform/**` reserved / rg cap 真实行为 | medium |
-| P2-04 | Phase 2 | 实现 V2B platform-stress probe（runtime 边界） | add | `spikes/.../spike-do-storage/src/probes/bash-platform-stress.ts` | 测出 DO memory / cpu_ms / subrequest 上限 | medium |
-| P2-05 | Phase 2 | 实现 V2-bash-curl-quota probe | add | `spikes/.../spike-do-storage/src/probes/bash-curl-quota.ts` | 测出单 turn 最大 outbound subrequest + payload 上限 | medium |
-| P2-06 | Phase 2 | 实现 `run-all-probes.sh` + `extract-finding.ts` | add | `spikes/.../spike-do-storage/scripts/{run-all-probes.sh,extract-finding.ts}` | 一键跑 9 routes 并生成 finding draft | low |
+| P2-02 | Phase 2 | 实现 6 个 storage probe handler (V1) | add | `historical spike-do-storage artifacts/src/probes/{r2-multipart,r2-list-cursor,kv-stale-read,do-transactional,mem-vs-do,d1-transaction}.ts` + `do/ProbeDO.ts` + `result-shape.ts` | 6 个 storage probe endpoint 全部可调用并返回结构化结果 | medium |
+| P2-03 | Phase 2 | 实现 V2A capability-parity probe（对齐 filesystem.ts 真实 contract） | add | `historical spike-do-storage artifacts/src/probes/bash-capability-parity.ts` | 验证 mkdir partial-no-directory-entity / `/_platform/**` reserved / rg cap 真实行为 | medium |
+| P2-04 | Phase 2 | 实现 V2B platform-stress probe（runtime 边界） | add | `historical spike-do-storage artifacts/src/probes/bash-platform-stress.ts` | 测出 DO memory / cpu_ms / subrequest 上限 | medium |
+| P2-05 | Phase 2 | 实现 V2-bash-curl-quota probe | add | `historical spike-do-storage artifacts/src/probes/bash-curl-quota.ts` | 测出单 turn 最大 outbound subrequest + payload 上限 | medium |
+| P2-06 | Phase 2 | 实现 `run-all-probes.sh` + `extract-finding.ts` | add | `historical spike-do-storage artifacts/scripts/{run-all-probes.sh,extract-finding.ts}` | 一键跑 9 routes 并生成 finding draft | low |
 | P3-01 | Phase 3 | spike-binding-pair worker-b 真实部署 | deploy | wrangler deploy worker-b | worker-b URL 可访问 | medium |
 | P3-02 | Phase 3 | spike-binding-pair worker-a 真实部署（依赖 worker-b service） | deploy | wrangler deploy worker-a | worker-a URL 可访问；service binding 真实通讯 | medium |
-| P3-03 | Phase 3 | 实现 4 个 binding probe handler + 5 个 worker-b handler | add | `spikes/.../spike-binding-pair/{worker-a,worker-b}/src/...` | 4 binding probe endpoint 全部可调用并返回结构化结果；包含显式 transport scope 注释（fetch-based only） | medium |
-| P3-04 | Phase 3 | 实现 deploy-both.sh + run-all-probes.sh | add | `spikes/.../spike-binding-pair/scripts/...` | 一键部署双 worker（强制顺序）+ 一键跑 4 probe | low |
+| P3-03 | Phase 3 | 实现 4 个 binding probe handler + 5 个 worker-b handler | add | `historical spike-binding-pair artifacts/{worker-a,worker-b}/src/...` | 4 binding probe endpoint 全部可调用并返回结构化结果；包含显式 transport scope 注释（fetch-based only） | medium |
+| P3-04 | Phase 3 | 实现 deploy-both.sh + run-all-probes.sh | add | `historical spike-binding-pair artifacts/scripts/...` | 一键部署双 worker（强制顺序）+ 一键跑 4 probe | low |
 | P4-01 | Phase 4 | 撰写 9 条 spike-do-storage required per-finding doc | add | `docs/spikes/spike-do-storage/{01..09}-{slug}.md` | 每条 finding 有 §3 Package Impact + §5 Writeback Action | high |
 | P4-02 | Phase 4 | 撰写 4 条 spike-binding-pair required per-finding doc | add | `docs/spikes/spike-binding-pair/{01..04}-{slug}.md` | 同上 | high |
 | P4-03 | Phase 4 | 撰写 N 条 optional `unexpected-F*` per-finding doc | add | `docs/spikes/unexpected/{NN}-{slug}.md` | optional findings 经过模板流程 | low |
@@ -224,7 +224,7 @@ nano-agent/
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P1-01 | 创建顶级目录 + README | `mkdir -p spikes/round-1-bare-metal/{spike-do-storage,spike-binding-pair}`；写两个 README 描述 spike 名字 / expiration / 7 纪律 reference | `spikes/`, `spikes/round-1-bare-metal/*/README.md` | 目录与 README 已 commit | 手动 ls + 文件检视 | README 含 expiration 2026-08-01 + 纪律 reference link |
+| P1-01 | 创建顶级目录 + README | `mkdir -p the historical round-1 bare-metal spikes tree{spike-do-storage,spike-binding-pair}`；写两个 README 描述 spike 名字 / expiration / 7 纪律 reference | the historical spikes tree, `the historical round-1 bare-metal spikes tree*/README.md` | 目录与 README 已 commit | 手动 ls + 文件检视 | README 含 expiration 2026-08-01 + 纪律 reference link |
 | P1-02 | 模板路径对齐核查 | 确认 `docs/templates/_TEMPLATE-spike-finding.md` 存在；确认 charter §14 已统一指向该路径；如有 `docs/spikes/_TEMPLATE-finding.md` 残留，删除 | `docs/templates/_TEMPLATE-spike-finding.md`, `docs/plan-after-foundations.md` §14 | 模板路径全 repo 唯一 | grep 模板路径在所有 .md 中的引用 | grep 仅返回 `docs/templates/_TEMPLATE-spike-finding.md` 一种路径 |
 | P1-03 | spike-do-storage wrangler 骨架 | 写 wrangler.jsonc（DO_PROBE / KV_PROBE / R2_PROBE / D1_PROBE 4 binding + EXPIRATION_DATE var）；写 package.json（type:module，devDep `@cloudflare/workers-types`）；写 worker.ts 仅返回 `/healthz` 200 | spike-do-storage wrangler.jsonc + package.json + src/worker.ts | wrangler deploy 不报 binding 缺失 | `wrangler deploy --dry-run` | dry-run 无 error |
 | P1-04 | spike-binding-pair worker-a/b 骨架 | 同 P1-03；worker-a 含 services WORKER_B；worker-b 不含 service binding；两个 worker.ts 仅返回 `/healthz` 200 | spike-binding-pair/{worker-a,worker-b}/{wrangler.jsonc,package.json,src/worker.ts} | 两个 worker dry-run 通过 | `wrangler deploy --dry-run` × 2 | dry-run 无 error；worker-a 的 services 字段引用 worker-b 名字 |
@@ -282,9 +282,9 @@ nano-agent/
 - **Phase 目标**：让 spike 物理基础设施 + 模板路径全部对齐 P0 design，给 implementer 一个 zero-ambiguity 的起点
 - **本 Phase 对应编号**：P1-01 / P1-02 / P1-03 / P1-04
 - **本 Phase 新增文件**：
-  - `spikes/round-1-bare-metal/spike-do-storage/{wrangler.jsonc, package.json, src/worker.ts}` + README
-  - `spikes/round-1-bare-metal/spike-binding-pair/{worker-a, worker-b}/{wrangler.jsonc, package.json, src/worker.ts}` + README
-  - `spikes/README.md`（顶级）
+  - `the historical round-1 storage spike workspace/{wrangler.jsonc, package.json, src/worker.ts}` + README
+  - `the historical round-1 binding spike workspace/{worker-a, worker-b}/{wrangler.jsonc, package.json, src/worker.ts}` + README
+  - `the retired historical spikes README`（顶级）
 - **本 Phase 修改文件**：（如 P1-02 发现 `docs/spikes/_TEMPLATE-finding.md` 残留）删除该残留路径
 - **具体功能预期**：
   1. `wrangler deploy --dry-run` 在两个 spike 都通过
@@ -306,10 +306,10 @@ nano-agent/
 - **Phase 目标**：单 worker 真实部署 + 9 个 probe endpoint 全部跑通；产出 `.out/YYYY-MM-DD.json`
 - **本 Phase 对应编号**：P2-01 / P2-02 / P2-03 / P2-04 / P2-05 / P2-06
 - **本 Phase 新增文件**：
-  - `spikes/round-1-bare-metal/spike-do-storage/src/do/ProbeDO.ts`
-  - `spikes/round-1-bare-metal/spike-do-storage/src/probes/*.ts` （9 个 probe handler）
-  - `spikes/round-1-bare-metal/spike-do-storage/src/result-shape.ts`
-  - `spikes/round-1-bare-metal/spike-do-storage/scripts/{deploy.sh, run-all-probes.sh, extract-finding.ts}`
+  - `the historical round-1 storage spike workspace`
+  - `the historical round-1 storage spike workspace*.ts` （9 个 probe handler）
+  - `the historical round-1 storage spike workspace`
+  - `the historical round-1 storage spike workspace{deploy.sh, run-all-probes.sh, extract-finding.ts}`
 - **本 Phase 修改文件**：`src/worker.ts`（从 healthz-only 升级到 9 routes）
 - **具体功能预期**：
   1. spike worker URL 可从外网访问（curl 测试通过）
@@ -336,9 +336,9 @@ nano-agent/
 - **Phase 目标**：双 worker 部署 + 4 binding probe 跑通；显式声明 transport scope = fetch-based only
 - **本 Phase 对应编号**：P3-01 / P3-02 / P3-03 / P3-04
 - **本 Phase 新增文件**：
-  - `spikes/round-1-bare-metal/spike-binding-pair/worker-a/src/{probes/*.ts, result-shape.ts}` （4 probe）
-  - `spikes/round-1-bare-metal/spike-binding-pair/worker-b/src/handlers/*.ts` （5 handler）
-  - `spikes/round-1-bare-metal/spike-binding-pair/scripts/{deploy-both.sh, run-all-probes.sh, extract-finding.ts}`
+  - `the historical round-1 binding spike workspace{probes/*.ts, result-shape.ts}` （4 probe）
+  - `the historical round-1 binding spike workspace*.ts` （5 handler）
+  - `the historical round-1 binding spike workspace{deploy-both.sh, run-all-probes.sh, extract-finding.ts}`
 - **本 Phase 修改文件**：worker-a / worker-b 的 `src/worker.ts`（升级 routes）
 - **具体功能预期**：
   1. worker-b 先部署，URL 可访问
@@ -424,7 +424,7 @@ nano-agent/
   3. B2 起草时能直接引用本 action plan 的 finding ID
 - **具体测试安排**：
   - **手动验证**：_DISCIPLINE-CHECK.md 7 条逐项 review
-  - **回归校验**：spike 是否仍然在 `spikes/` 顶级（纪律 1 仍成立）；spike 仍带 EXPIRATION_DATE（纪律 2）；spike 仍未进 CI（纪律 3）
+  - **回归校验**：spike 是否仍然在 the historical spikes tree 顶级（纪律 1 仍成立）；spike 仍带 EXPIRATION_DATE（纪律 2）；spike 仍未进 CI（纪律 3）
 - **收口标准**：
   - 7 条纪律全 ✅ 或带 explanation
   - 至少 1 个 packages/ writeback issue 存在
@@ -526,7 +526,7 @@ nano-agent/
   - `docs/design/after-foundations/P0-spike-do-storage-design.md` —— 如 probe 设计实施时调整，回填
   - `docs/design/after-foundations/P0-spike-binding-pair-design.md` —— 同上
 - 需要同步更新的说明文档 / README：
-  - `spikes/README.md` —— 顶级目录索引
+  - `the retired historical spikes README` —— 顶级目录索引
   - 两个 spike 各自的 README —— 含 expiration + 纪律 link
 - 需要同步更新的测试说明：
   - 本 action plan 不接 CI；无主线测试同步要求

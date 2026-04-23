@@ -46,7 +46,7 @@ Interpretation:
 | B7 closure docs | 4 | `docs/issue/after-foundations/B7-phase-{1,2,3}-closure.md`, `B7-final-closure.md` |
 | B8 handoff / template / closure docs | 8 | `docs/handoff/*`, `docs/templates/{wrangler-worker.toml,composition-factory.ts}`, `docs/issue/after-foundations/B8-*.md` |
 | round-2 deployed workers | 3 | `nano-agent-spike-do-storage-r2`, `nano-agent-spike-binding-pair-a-r2`, `nano-agent-spike-binding-pair-b-r2` |
-| round-2 raw evidence files | 10+ | `spikes/round-2-integrated/**/*.out/*` |
+| round-2 raw evidence files | 10+ | `the historical round-2 integrated spikes tree**/*.out/*` |
 | major GPT/Opus review artifacts | 4 rounds | B1 dual-track audit, `B5-B6-reviewed-by-GPT.md`, `B7-reviewed-by-GPT.md`, `B8-docs-reviewed-by-opus.md` |
 
 Grouped total is comfortably above the “40+ artifacts” threshold the B8 plan wanted to capture.

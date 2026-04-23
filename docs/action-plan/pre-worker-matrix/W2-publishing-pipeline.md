@@ -77,7 +77,7 @@ W2 Publishing Pipeline
 │   └── docs/design/pre-worker-matrix/W2-publishing-discipline.md
 ├── Phase 2: workflow 与 dogfood skeleton
 │   ├── .github/workflows/publish-nacp.yml
-│   ├── dogfood/
+│   ├── the retired historical dogfood tree
 │   └── docs/action-plan/pre-worker-matrix/
 └── Phase 3: optional 首发与 closure
     ├── git tag / workflow run
@@ -121,7 +121,7 @@ W2 Publishing Pipeline
 | P1-01 | Phase 1 | 双包 publishConfig | `update` | `packages/nacp-core/package.json` `packages/nacp-session/package.json` | 固化 registry/access truth | `medium` |
 | P1-02 | Phase 1 | discipline 收口 | `update` | `docs/design/pre-worker-matrix/W2-publishing-discipline.md` | 固化 publish rules | `low` |
 | P2-01 | Phase 2 | publish workflow | `add` | `.github/workflows/publish-nacp.yml` | 让 tag-publish 可执行 | `medium` |
-| P2-02 | Phase 2 | dogfood consumer | `add` | `dogfood/nacp-consume-test/{package.json,.npmrc,tsconfig.json,src/smoke.ts,README.md}` | 证明 consumer path 可走通 | `medium` |
+| P2-02 | Phase 2 | dogfood consumer | `add` | `the retired historical dogfood consumer{package.json,.npmrc,tsconfig.json,src/smoke.ts,README.md}` | 证明 consumer path 可走通 | `medium` |
 | P2-03 | Phase 2 | auth/permission 文档 | `update` | workflow docs / closure notes | 记录 packages:write 与 token 约定 | `low` |
 | P2-04 | Phase 2 | workspace 排除 dogfood | `update` | `pnpm-workspace.yaml` | 明确 dogfood 不进入主 workspace | `medium` |
 | P3-01 | Phase 3 | optional 首发 | `update` | git tag / workflow run / registry evidence | 若 owner 开窗则完成首次发布 | `medium` |
@@ -143,9 +143,9 @@ W2 Publishing Pipeline
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
 | P2-01 | publish workflow | 建 tag-trigger workflow skeleton | `.github/workflows/publish-nacp.yml` | 可随时执行首发 | workflow lint / run | 流程完整 |
-| P2-02 | dogfood consumer | 建最小 consumer package，显式落 `package.json / .npmrc / src/smoke.ts / README.md` | `dogfood/nacp-consume-test/*` | published path 有验证入口 | build/install 验证 | 不走 workspace link |
+| P2-02 | dogfood consumer | 建最小 consumer package，显式落 `package.json / .npmrc / src/smoke.ts / README.md` | `historical dogfood consumer files` | published path 有验证入口 | build/install 验证 | 不走 workspace link |
 | P2-03 | auth/permission 说明 | 明确 token / packages:write / `.npmrc` 要求 | docs/closure notes | owner 能正确配置环境 | 文档核对 | 配置清晰 |
-| P2-04 | workspace 排除 dogfood | 保持 `pnpm-workspace.yaml` 不吸入 `dogfood/`，即使未来加入 `workers/*` 也不污染 dogfood | `pnpm-workspace.yaml` | dogfood 独立 lockfile / install path 成立 | 文档核对 | 不被 workspace link 污染 |
+| P2-04 | workspace 排除 dogfood | 保持 `pnpm-workspace.yaml` 不吸入 `the retired historical dogfood tree`，即使未来加入 `workers/*` 也不污染 dogfood | `pnpm-workspace.yaml` | dogfood 独立 lockfile / install path 成立 | 文档核对 | 不被 workspace link 污染 |
 
 ### 4.3 Phase 3 — optional 首发与 closure
 
@@ -195,11 +195,11 @@ W2 Publishing Pipeline
   - `P2-04`
 - **本 Phase 新增文件**：
   - `.github/workflows/publish-nacp.yml`
-  - `dogfood/nacp-consume-test/package.json`
-  - `dogfood/nacp-consume-test/.npmrc`
-   - `dogfood/nacp-consume-test/tsconfig.json`
-   - `dogfood/nacp-consume-test/src/smoke.ts`
-   - `dogfood/nacp-consume-test/README.md`
+  - `the historical dogfood consumer package manifest`
+  - `the historical dogfood consumer npmrc`
+   - `the historical dogfood consumer tsconfig`
+   - `the historical dogfood consumer smoke entry`
+   - `the historical dogfood consumer README`
 - **本 Phase 修改文件**：
   - `pnpm-workspace.yaml`
   - `相关文档说明`
@@ -295,7 +295,7 @@ W2 Publishing Pipeline
   - `docs/design/pre-worker-matrix/W2-publishing-pipeline.md`
   - `docs/design/pre-worker-matrix/W2-publishing-discipline.md`
 - 需要同步更新的说明文档 / README：
-  - `dogfood/nacp-consume-test/README.md`（若创建）
+  - `the historical dogfood consumer README`（若创建）
 - 需要同步更新的测试说明：
   - `docs/issue/pre-worker-matrix/W2-closure.md`
 
@@ -364,7 +364,7 @@ W2 Publishing Pipeline
 
 1. 给 `packages/nacp-core/package.json` 与 `packages/nacp-session/package.json` 补齐 GitHub Packages `publishConfig`，冻结 W2 的最小 publish metadata。
 2. 新建 `.github/workflows/publish-nacp.yml`，固定 `nacp-v*.*.*` tag-trigger、`packages: write` 权限、双包 typecheck/build/test，以及 bundle-version check。
-3. 新建 `dogfood/nacp-consume-test/` 最小 consumer skeleton，并保持它在 workspace 外部，避免误走 workspace link。
+3. 新建 `the retired historical dogfood consumer` 最小 consumer skeleton，并保持它在 workspace 外部，避免误走 workspace link。
 4. 新建 `docs/issue/pre-worker-matrix/W2-closure.md`，并在首发完成后升级为 **first publish completed** 的真实状态。
 5. 同步修正 `W2-publishing-pipeline.md` / `W2-publishing-discipline.md` / `W4-workers-scaffolding.md` / `W5-closure-and-handoff.md` 中与 W0 当前版本现实直接冲突的口径。
 
@@ -372,11 +372,11 @@ W2 Publishing Pipeline
 
 - **新增文件**
   - `.github/workflows/publish-nacp.yml`
-  - `dogfood/nacp-consume-test/package.json`
-  - `dogfood/nacp-consume-test/.npmrc`
-  - `dogfood/nacp-consume-test/tsconfig.json`
-  - `dogfood/nacp-consume-test/src/smoke.ts`
-  - `dogfood/nacp-consume-test/README.md`
+  - `the historical dogfood consumer package manifest`
+  - `the historical dogfood consumer npmrc`
+  - `the historical dogfood consumer tsconfig`
+  - `the historical dogfood consumer smoke entry`
+  - `the historical dogfood consumer README`
   - `docs/issue/pre-worker-matrix/W2-closure.md`
 - **修改文件**
   - `.gitignore`
@@ -393,7 +393,7 @@ W2 Publishing Pipeline
 
 1. W2 当前最重要的 reality 不是“双包同步到 1.4.0”，而是 **`nacp-core@1.4.0` 已 shipped、`nacp-session@1.3.0` 仍未引入新的 published surface**；因此 workflow 的 version gate 必须锚定 `nacp-core`，不能继续假造双包同版本。
 2. `.github/` 原先被 `.gitignore` 忽略，若不先解除，W2 的 workflow skeleton 根本无法成为真实仓库资产；这个问题已与 W2 一并修复。
-3. `pnpm-workspace.yaml` 当前天然未包含 `dogfood/`，因此 dogfood exclusion 的正确做法不是新增复杂 negate pattern，而是保留 `packages/*` 单路径并补清注释。
+3. `pnpm-workspace.yaml` 当前天然未包含 `the retired historical dogfood tree`，因此 dogfood exclusion 的正确做法不是新增复杂 negate pattern，而是保留 `packages/*` 单路径并补清注释。
 4. 当前 repo 已完成 owner-aligned `@haimang/*` 首发；后续 closure 必须围绕真实 package / tag / run / dogfood evidence 维护，不再沿用 deferred 口径。
 
 ### 11.4 验证与结果摘要

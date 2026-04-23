@@ -1,6 +1,6 @@
 # Nano-Agent After-Foundations P6 — Spike Round 2 Integration Plan
 
-> 功能簇：`spikes/round-2-integrated/` (the second-round spike that validates B1-shipped packages)
+> 功能簇：`the historical round-2 integrated spikes tree` (the second-round spike that validates B1-shipped packages)
 > 讨论日期：`2026-04-19`
 > 讨论者：`Opus 4.7 (1M context)`
 >
@@ -49,7 +49,7 @@
 
 ## 0. 背景与前置约束
 
-`spikes/round-2-integrated/` 是 after-foundations 阶段的**最终验证 gate**。它做两件事：
+`the historical round-2 integrated spikes tree` 是 after-foundations 阶段的**最终验证 gate**。它做两件事：
 
 1. **B1 round-2 follow-ups** —— 把 B1 round-1 显式延后的 5 项验证跑透 (F03 / F08 / F09 / binding-F01 / unexpected-F01)
 2. **B2-B6 ship integration validation** —— 用 ship 后的 packages (storage 2.0.0 / fake-bash 扩展 / context-management 0.1.0 / hooks 1.0.0 / nacp 1.2.0) 重跑 B1 全部 13 required validation items + 2 optional unexpected，验证 finding 真的被消化
@@ -76,7 +76,7 @@ per charter §10.3 双向 traceability + §11.1 Primary Exit Criteria 第 1 条 
 
 ### 1.1 功能簇定义
 
-- **名称**：`spikes/round-2-integrated/`
+- **名称**：`the historical round-2 integrated spikes tree`
 - **一句话定义**：第二轮 spike——以 B2-B6 已 ship 的 packages 为基础，重跑 B1 全部 13 required + 2 optional finding 的验证项，并跑透 B1 显式 deferred 的 5 项 follow-up；输出 `integrated-F*` finding 把 B1 finding 状态从 `open` 推到 `writeback-shipped`/`dismissed-with-rationale`.
 - **边界描述**：本设计**包含**round-2 spike 部署形态、5 follow-up validation 项、13 + 2 = 15 round-1 findings 的 integration re-validation、B2-B6 packages import 接入策略、closure verdict 路径；**不包含**B2-B6 ship 内容、新 V4 类 validation items、worker matrix phase 工作。
 - **关键术语对齐**：
@@ -109,7 +109,7 @@ per charter §10.3 双向 traceability + §11.1 Primary Exit Criteria 第 1 条 
 
 | 相邻功能簇 | 交互方向 | 耦合强度 | 说明 |
 |---|---|---|---|
-| `spikes/round-1-bare-metal/` (existing) | sibling, separated dir | 中 | round 1 不污染 round 2 (PX-discipline §3.6) |
+| `the historical round-1 bare-metal spikes tree` (existing) | sibling, separated dir | 中 | round 1 不污染 round 2 (PX-discipline §3.6) |
 | B2-B6 ship'd packages | depends on (import) | 强 | round 2 spike 可 `import "@nano-agent/*"` (PX-discipline §3.7 round 2 例外) |
 | `docs/templates/_TEMPLATE-spike-finding.md` | reuses | 强 | round-2 finding docs 沿用同款 template |
 | `docs/spikes/spike-do-storage/` + `docs/spikes/spike-binding-pair/` | updates | 强 | 13+2 finding 文件 §0 status 由 round-2 推动 transition |
@@ -128,7 +128,7 @@ per charter §10.3 双向 traceability + §11.1 Primary Exit Criteria 第 1 条 
 ### 3.1 目录结构
 
 ```
-spikes/
+the historical spikes tree 
 ├── round-1-bare-metal/                         (B1 ship; do not modify)
 │   ├── spike-do-storage/                       (live worker, Round 2 may co-deploy新版本)
 │   └── spike-binding-pair/                     (live workers, Round 2 may co-deploy)
@@ -319,7 +319,7 @@ Round-2 verdicts are appended to Round-1 finding doc §8 修订历史 + a new §
 
 ### 5.3 Round-2 finding namespace
 
-New findings discovered during Round 2 (e.g., a packages/ ship has bug not seen in Round 1) are written under `docs/spikes/round-2-integrated/spike-do-storage-r2/` (or equivalent for binding-pair). Naming: `integrated-F{NN}-{slug}.md`.
+New findings discovered during Round 2 (e.g., a packages/ ship has bug not seen in Round 1) are written under `docs/the historical round-2 integrated storage spike workspace/` (or equivalent for binding-pair). Naming: `integrated-F{NN}-{slug}.md`.
 
 ---
 
@@ -357,7 +357,7 @@ New findings discovered during Round 2 (e.g., a packages/ ship has bug not seen 
 **Evidence**: B1 round-1 has 2 unexpected findings under `docs/spikes/unexpected/`. Round 2 may also discover unexpected platform truths (e.g., a B2-shipped adapter has bug). Need separate namespace to avoid confusion with round-1 unexpected.
 
 **Decision**:
-- New round-2-only findings → `docs/spikes/round-2-integrated/{spike-name}/integrated-F{NN}-{slug}.md`
+- New round-2-only findings → `docs/the historical round-2 integrated spikes tree{spike-name}/integrated-F{NN}-{slug}.md`
 - Round-1 follow-up findings (F03 / F08 / F09 / binding-F01 / unexpected-F01) → 在原 finding doc §8 加 round-2 closure section + update §0 status; 不创建新 doc（finding ID 复用，避免 ID 通胀）
 
 ### 6.5 决策：Round 2 closure issue 系列以 `B7-*` 命名
@@ -411,7 +411,7 @@ Round 2 closure (B7 final) requires:
 - [ ] `docs/spikes/_DISCIPLINE-CHECK-round-2.md` 6/7 ✅ + 1 modified (§3.7)
 - [ ] `docs/issue/after-foundations/B7-final-closure.md` ship
 - [ ] All B1 finding docs §0 status updated + §8 history extended with round-2 closure section
-- [ ] Any `integrated-F{NN}` new findings shipped under `docs/spikes/round-2-integrated/`
+- [ ] Any `integrated-F{NN}` new findings shipped under `docs/the historical round-2 integrated spikes tree`
 - [ ] Charter §11.1 第 1 条 (spike 真相已闭合) + 第 9 条 (closure ritual) signed off
 
 ---

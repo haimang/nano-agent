@@ -51,7 +51,7 @@ shipped packages (`do-size-cap-binary-search`, `r2-concurrent-put`,
 
 ## Exit criteria — met
 
-- [x] `spikes/round-2-integrated/` tree created
+- [x] `the historical round-2 integrated spikes tree` tree created
 - [x] 2 round-2 worker skeletons build-shaped with separate names
 - [x] shipped packages imported at the re-validation boundary
 - [x] result/evidence shape supports closure-section writeback

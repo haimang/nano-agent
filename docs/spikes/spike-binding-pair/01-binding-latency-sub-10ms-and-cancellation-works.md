@@ -181,7 +181,7 @@ Cloudflare service binding (fetch-based) 在同 account / 同 colo 下走 in-pro
 
 ### 6.2 复现脚本位置
 
-- `spikes/round-1-bare-metal/spike-binding-pair/worker-a/src/probes/latency-cancellation.ts`
+- `the historical round-1 binding spike workspace`
 
 ---
 
@@ -210,7 +210,7 @@ Cloudflare service binding (fetch-based) 在同 account / 同 colo 下走 in-pro
 
 > **Round-2 status**: `writeback-shipped` ✅ LIVE (2026-04-20, tail captured)
 > **Writeback date**: 2026-04-20
-> **Driver**: `spikes/round-2-integrated/spike-binding-pair-r2/worker-a-r2/src/follow-ups/binding-f01-callee-abort.ts` + `worker-b-r2/src/handlers/slow-abort-observer.ts`
+> **Driver**: `the historical round-2 integrated binding spike workspace` + `worker-b-r2/src/handlers/slow-abort-observer.ts`
 
 ### Round-2 evidence summary
 
@@ -231,12 +231,12 @@ Cloudflare service binding (fetch-based) 在同 account / 同 colo 下走 in-pro
 - **Caller-side**: worker-a observed `AbortError` on its
   `fetch(workerB, …)` — locked by probe JSON
   `callerAbortObserved === true`.
-  Evidence: `spikes/round-2-integrated/spike-binding-pair-r2/worker-a-r2/.out/probe_follow-ups_binding-f01-callee-abort.json`.
+  Evidence: `the historical round-2 integrated binding spike workspace`.
 - **Callee-side**: `wrangler tail` captured
   `outcome: "canceled"` on the `/slow` request — stronger evidence
   than the `console.log` the probe attempts, because the **platform
   itself** cancelled the worker execution. Raw tail:
-  `spikes/round-2-integrated/spike-binding-pair-r2/worker-b-r2/.out/binding-f01.tail.log`.
+  `the historical round-2 integrated binding spike workspace`.
 
 ```json
 {

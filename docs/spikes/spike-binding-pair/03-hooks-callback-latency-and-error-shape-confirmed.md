@@ -175,8 +175,8 @@ HTTP 500 + 结构化 JSON body 完整透传——caller 可解析失败原因。
 
 ### 6.2 复现脚本位置
 
-- `spikes/round-1-bare-metal/spike-binding-pair/worker-a/src/probes/hooks-callback.ts`
-- `spikes/round-1-bare-metal/spike-binding-pair/worker-b/src/handlers/hook-dispatch.ts`
+- `the historical round-1 binding spike workspace`
+- `the historical round-1 binding spike workspace`
 
 ---
 
@@ -206,7 +206,7 @@ HTTP 500 + 结构化 JSON body 完整透传——caller 可解析失败原因。
 
 > **Round-2 status**: `writeback-shipped` ✅ LIVE (2026-04-20)
 > **Writeback date**: 2026-04-20
-> **Driver**: `spikes/round-2-integrated/spike-binding-pair-r2/worker-a-r2/src/re-validation/binding.ts` via `/hooks/dispatch` on worker-b-r2
+> **Driver**: `the historical round-2 integrated binding spike workspace` via `/hooks/dispatch` on worker-b-r2
 
 ### Round-2 evidence summary
 

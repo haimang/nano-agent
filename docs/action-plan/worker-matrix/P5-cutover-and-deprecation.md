@@ -161,7 +161,7 @@ worker-matrix/P5/
 - **[O4]** `npm deprecate` CLI 调用(Tier B 不发布)
 - **[O5]** production env flip(charter §3.2 O5)
 - **[O6]** 修改 W2 发布纪律 / CI
-- **[O7]** 修改 `dogfood/nacp-consume-test`(已 published path)
+- **[O7]** 修改 `the retired historical dogfood consumer`(已 published path)
 - **[O8]** 改 `workers/*/src/**` 任一文件
 - **[O9]** 改 `packages/**/src/**` 任一文件(Phase 2 只动 README + CHANGELOG)
 - **[O10]** 其余 3 worker(bash/context/filesystem)real preview deploy 升级 — charter §6.5 允许 defer;本 phase 不强制除非 owner 要求

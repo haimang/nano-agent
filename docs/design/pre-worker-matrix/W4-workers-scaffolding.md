@@ -105,7 +105,7 @@ owner 的 `workers/` 顶级目录决策(`plan-pre-worker-matrix.md` §1.2)要求
 - B8 `docs/templates/wrangler-worker.toml`(shipped 2026-04-21 的模板,含 evidence-backed 注释)
 - B8 `docs/templates/composition-factory.ts`(shipped,真实 composition 时复用)
 - `packages/session-do-runtime/wrangler.jsonc`(现有 jsonc 格式先例)
-- W2 dogfood 消费者 `dogfood/nacp-consume-test/`(同类 GitHub Packages consumer;但 dogfood 不 deploy 到 Cloudflare;W4 多了一层 deploy validation)
+- W2 dogfood 消费者 `the retired historical dogfood consumer`(同类 GitHub Packages consumer;但 dogfood 不 deploy 到 Cloudflare;W4 多了一层 deploy validation)
 - Cloudflare Workers 文档 — Durable Objects binding 格式、service binding 格式、compatibility_date / flags
 
 ### 1.4 4 个 worker 的预期角色速查(W4 仅预留 slot,不实装)
@@ -142,7 +142,7 @@ owner 的 `workers/` 顶级目录决策(`plan-pre-worker-matrix.md` §1.2)要求
 | 相邻功能簇 | 交互方向 | 耦合强度 | 说明 |
 |---|---|---|---|
 | `pnpm-workspace.yaml` | W4 modify | 强 | 加 `workers/*` 必须;不替换 `packages/*` |
-| `dogfood/` | W4 参考但无依赖 | 弱 | W4 的 package.json 风格参考 dogfood;但独立 |
+| `the retired historical dogfood tree` | W4 参考但无依赖 | 弱 | W4 的 package.json 风格参考 dogfood;但独立 |
 | `packages/session-do-runtime/wrangler.jsonc` | W4 参考格式 | 中 | jsonc 格式先例 |
 | `docs/templates/wrangler-worker.toml` | W4 转格式使用 | 强 | 模板语义 → jsonc 格式化 |
 | `.github/workflows/publish-nacp.yml`(W2) | W4 平行 | 弱 | 两个独立 workflow;互不干扰 |
@@ -458,7 +458,7 @@ owner 的 `workers/` 顶级目录决策(`plan-pre-worker-matrix.md` §1.2)要求
     - "packages/*"
     - "workers/*"
   ```
-- **不加**:`dogfood/*`(W2 已明确 dogfood 不入 workspace)
+- **不加**:`the retired historical dogfood tree*`(W2 已明确 dogfood 不入 workspace)
 - **一句话收口目标**:✅ **`pnpm install` 执行后,4 workers 目录自带 node_modules;pnpm -r commands 扫 16 个 package**(11 tier B + 4 workers + dogfood 若需手工 run)
 
 #### S2: 4 × `wrangler.jsonc`
@@ -800,7 +800,7 @@ owner 的 `workers/` 顶级目录决策(`plan-pre-worker-matrix.md` §1.2)要求
 |---|---|---|
 | `docs/templates/wrangler-worker.toml` | B8 shipped 模板含 evidence 注释 | bindings 语义;转 jsonc |
 | `packages/session-do-runtime/wrangler.jsonc` | jsonc 格式先例 | 语法 + migration block |
-| `dogfood/nacp-consume-test/`(W2) | GitHub Packages 消费者 | package.json + .npmrc 模板 |
+| `the retired historical dogfood consumer`(W2) | GitHub Packages 消费者 | package.json + .npmrc 模板 |
 | `pnpm-workspace.yaml` | 现有 workspace | 扩展;不替换 |
 
 ### 8.2 来自 Cloudflare 官方

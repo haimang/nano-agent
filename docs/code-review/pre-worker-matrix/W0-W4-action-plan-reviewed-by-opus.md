@@ -61,13 +61,13 @@
   - `docs/design/pre-worker-matrix/W3-absorption-blueprint-session-do-runtime.md`(已存在)
   - `docs/design/pre-worker-matrix/W2-publishing-discipline.md`(113 行,已存在)
   - `docs/rfc/nacp-core-1-4-consolidation.md`(**不**存在 — 需 W0 创建)
-  - `pnpm-workspace.yaml`(当前只有 `packages: [packages/*]`;**无** `workers/*` / `dogfood/*`)
-  - 仓库根目录:**无** `workers/ dogfood/ .github/` 三目录
+  - `pnpm-workspace.yaml`(当前只有 `packages: [packages/*]`;**无** `workers/*` / `the retired historical dogfood tree*`)
+  - 仓库根目录:**无** `workers/ the retired historical dogfood tree .github/` 三目录
 - **执行过的验证**:
   - `grep -rn "_PLATFORM_RESERVED\|parseTenantKey" packages/`(0 matches)
   - `grep -rn "HOOK_EVENT_META_REGISTRY" packages/`(0 matches)
   - `wc -l docs/rfc/nacp-workspace-rpc.md`(115)+ 逐 RFC 存在性检查
-  - `ls /workspace/repo/nano-agent/`(确认无 workers/ dogfood/ .github/)
+  - `ls /workspace/repo/nano-agent/`(确认无 workers/ the retired historical dogfood tree .github/)
   - 读 `packages/nacp-core/CHANGELOG.md`(确认当前最新 entry 为 1.3.0,无 1.4.0)
   - 读 W0-W5 design v0.2/v0.3 全文,对照每份 action-plan 的 Phase / work item / Out-of-Scope 列表
 
@@ -82,7 +82,7 @@
 - W4 action-plan §3 P3-01 / P3-02 = 1 real(agent-core)+ 3 dry-run(bash/context/filesystem),与 design v0.3 一致
 - W4 action-plan §2 "[S3] 让 shell 支持 `workspace:*` 或 published dual-path"与 design v0.2 parallel 对齐
 - `context.compact.request/response` + `audit.record` 已在 nacp-core/messages/ 存在(W1 RFC 的事实锚点);W1 action-plan P1-01 / P1-02 "核对现有 family 是否足够"路径是正确的
-- 仓库根目录物理事实:`workers/` / `dogfood/` / `.github/` 均不存在,W4 action-plan P1-01 / P2-02 / P2-02 "add" 类型正确
+- 仓库根目录物理事实:`workers/` / `the retired historical dogfood tree` / `.github/` 均不存在,W4 action-plan P1-01 / P2-02 / P2-02 "add" 类型正确
 - W0 action-plan §1.5 目录树(`nacp-core/src/transport/ evidence/ storage-law/ hooks-catalog/`)与 design §3.4 子目录布局一致
 
 ### 1.2 已确认的负面事实
@@ -95,7 +95,7 @@
 - `docs/design/pre-worker-matrix/W3-absorption-map.md`(140)/ `W3-absorption-pattern.md`(121)/ `TEMPLATE-absorption-blueprint.md`(118)/ 3 份 W3-absorption-blueprint-*.md **已 shipped**;W3 action-plan §3 P1-01/02/03 + P2-01/02/03 全部标 `add`,§5.1 / §5.2 "本 Phase 新增文件" 也列为新建。
 - `docs/design/pre-worker-matrix/W2-publishing-discipline.md`(113)已 shipped;W2 action-plan §3 P1-02 标 `update`(较准确)但 §1.5 目录树把它放在"Phase 1 新增"位置,语义含糊。
 - `docs/rfc/nacp-core-1-4-consolidation.md` **不存在**;W0 action-plan §4.4 P4-01 / §7.3 文档同步都把它列为要产出的文件,OK — 但 §3 表里 type = `update`(而不是 `add`),与实际状态不一致。
-- `pnpm-workspace.yaml` 当前无 `workers/*` / `dogfood/*`;W2 action-plan P2-02 dogfood 与 W4 action-plan P2-01 workers 都假设要扩 workspace yaml,但 W2 的改动在 action-plan §4.1 / §4.2 里**没有明确列出 pnpm-workspace.yaml 修改编号**(只在 §5.2 风险提示"dogfood 若进 workspace");W4 action-plan §5.2 明确要改 `pnpm-workspace.yaml`,但未说明是否同时要 `dogfood/` 排除在外。
+- `pnpm-workspace.yaml` 当前无 `workers/*` / `the retired historical dogfood tree*`;W2 action-plan P2-02 dogfood 与 W4 action-plan P2-01 workers 都假设要扩 workspace yaml,但 W2 的改动在 action-plan §4.1 / §4.2 里**没有明确列出 pnpm-workspace.yaml 修改编号**(只在 §5.2 风险提示"dogfood 若进 workspace");W4 action-plan §5.2 明确要改 `pnpm-workspace.yaml`,但未说明是否同时要 `the retired historical dogfood tree` 排除在外。
 - `packages/capability-runtime/` 源码 `grep from.*@nano-agent` 零匹配;W3 design v0.3 + action-plan §5.2 "bash-core 代表样本 / 跨包 dep 最复杂" 的选择理由与事实部分不符(capability-runtime 实际跨包 dep = 0,而 context-management 跨包 dep = 3)。
 - `packages/capability-runtime/` 实测 src 4989 LOC + test 4484 LOC;远超 W3 design v0.3 §6.1 取舍 2 候选表里的 `~2400 src / ~3400 test` 估算;action-plan §5.3 P3-01 optional dry-run 的"工作量小"口径据此需要重估。
 
@@ -262,7 +262,7 @@
   - §4.2 P2-03 收口标准补:"明示复用现有 `audit.record` + 现有 evidence payload — 不新增 evidence-forwarding message type"
   - §8.1 整体测试加 `grep -n "context.compact\|audit.record" docs/rfc/*.md`(期望 RFC 正文引用现有 type 名,不自创新 type)
 
-### R8. W2 action-plan 缺 `pnpm-workspace.yaml` 排除 `dogfood/` 的显式 work item;`.npmrc` 样例未落实
+### R8. W2 action-plan 缺 `pnpm-workspace.yaml` 排除 `the retired historical dogfood tree` 的显式 work item;`.npmrc` 样例未落实
 
 - **严重级别**:`medium`
 - **类型**:`delivery-gap`
@@ -271,18 +271,18 @@
   - design W2 §2.2 "dogfood 消费者有独立 lockfile;不污染主 repo" + "`pnpm-workspace.yaml` 不包含 dogfood 目录"
   - current `pnpm-workspace.yaml` = `packages: [packages/*]`(只 1 行,未来 W4 要加 `workers/*`;若 dogfood 放 repo 内也要显式排除,或在 packages: pattern 里不 glob 到)
   - W2 action-plan §3 业务总表无 "pnpm-workspace.yaml 修改" 或 "dogfood 排除策略" work item
-  - §4.2 P2-02 "dogfood consumer" 涉及文件 = `dogfood/nacp-consume-test/*`(glob),但未列 pnpm-workspace.yaml 动作
+  - §4.2 P2-02 "dogfood consumer" 涉及文件 = `historical dogfood consumer files`(glob),但未列 pnpm-workspace.yaml 动作
   - §5.2 Phase 2 风险提 "dogfood 若进 workspace,会失去验证价值" — 这是提示不是动作
-  - §3 P2-03 "auth/permission 文档" 工作内容 = 记录 `packages:write` 与 token 约定 — 但 `.npmrc` 作为物理文件(若 dogfood 要独立 lockfile,`.npmrc` 应在 `dogfood/nacp-consume-test/.npmrc` 落地)未列
+  - §3 P2-03 "auth/permission 文档" 工作内容 = 记录 `packages:write` 与 token 约定 — 但 `.npmrc` 作为物理文件(若 dogfood 要独立 lockfile,`.npmrc` 应在 `the historical dogfood consumer npmrc` 落地)未列
 - **为什么重要**:
   - 若 dogfood 误入 pnpm workspace,会变成 `workspace:*` link 而不是走 GitHub Packages,首发 verify 失效(P2-02 的验证价值归零)
   - `.npmrc` 具体路径与内容不明,owner 配置时易出错(`@nano-agent:registry=https://npm.pkg.github.com` 还是 `@<owner-scope>:registry=...`)
 - **审查判断**:
   - Phase 2 的 dogfood 部分缺 1-2 个具体 work item
 - **建议修法**:
-  - P2-02 "dogfood consumer" 涉及文件明确列出:`dogfood/nacp-consume-test/package.json`(含 NACP dep version = 1.4.0)、`dogfood/nacp-consume-test/.npmrc`(scope→registry 映射)、`dogfood/nacp-consume-test/src/smoke.ts`(最小 import NACP_VERSION 的断言)、`dogfood/nacp-consume-test/README.md`
-  - 新增 P2-04 "pnpm-workspace.yaml 保持排除 dogfood/":动作 = 确认 packages glob 不匹配 `dogfood/*`,或显式加 `!dogfood/*` negation(pnpm 支持)
-  - §5.2 收口标准增加:`cd dogfood/nacp-consume-test && pnpm install --registry=https://npm.pkg.github.com && pnpm build` 可 dry-run 成功(若 W2 未首发,则模拟本地 file: fallback)
+  - P2-02 "dogfood consumer" 涉及文件明确列出:`the historical dogfood consumer package manifest`(含 NACP dep version = 1.4.0)、`the historical dogfood consumer npmrc`(scope→registry 映射)、`the historical dogfood consumer smoke entry`(最小 import NACP_VERSION 的断言)、`the historical dogfood consumer README`
+  - 新增 P2-04 "pnpm-workspace.yaml 保持排除 the retired historical dogfood tree":动作 = 确认 packages glob 不匹配 `the retired historical dogfood tree*`,或显式加 `!the retired historical dogfood tree*` negation(pnpm 支持)
+  - §5.2 收口标准增加:`cd the retired historical dogfood consumer && pnpm install --registry=https://npm.pkg.github.com && pnpm build` 可 dry-run 成功(若 W2 未首发,则模拟本地 file: fallback)
 
 ### R9. W3 action-plan "capability-runtime 跨包 dep 最复杂"的代表性论证与代码事实部分不符
 
@@ -518,7 +518,7 @@ Out-of-Scope 的叙事边界整体维护良好;问题集中在 In-Scope 的**漏
 - **为什么必须确认**：`dogfood 若没有物理 `.npmrc` 与 workspace exclusion，验证路径会退化成 workspace link，自身失去价值。`
 - **当前建议 / 倾向**：`把 dogfood 的最小文件集和 pnpm-workspace 排除策略写成明确工作项。`
 - **Q**：`W2 是否已经把 dogfood / .npmrc / workspace 排除策略转成执行级 work items？`
-- **A**：`是。W2 现已新增 P2-04“workspace 排除 dogfood”，并把 P2-02 细化到 dogfood/nacp-consume-test/{package.json,.npmrc,src/smoke.ts,README.md}。§5.2 已补入 P2-04 编号、pnpm-workspace.yaml 修改点，以及 “dogfood 不会被误吸进主 workspace” 的收口目标。`
+- **A**：`是。W2 现已新增 P2-04“workspace 排除 dogfood”，并把 P2-02 细化到 the retired historical dogfood consumer{package.json,.npmrc,src/smoke.ts,README.md}。§5.2 已补入 P2-04 编号、pnpm-workspace.yaml 修改点，以及 “dogfood 不会被误吸进主 workspace” 的收口目标。`
 
 #### Q5
 

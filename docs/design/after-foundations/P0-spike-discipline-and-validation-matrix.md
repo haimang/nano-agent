@@ -91,7 +91,7 @@ After-foundations 阶段是 worker matrix 之前的一道 spike-driven validatio
 
 > **核心约束**：本节 7 条纪律全部冻结。Phase 0-7 的任何 spike-related 决策都必须先通过这 7 条 review。
 
-### 3.1 纪律 1：spike 代码放 `spikes/` 顶级目录，**不进** `packages/`
+### 3.1 纪律 1：spike 代码放 the historical spikes tree 顶级目录，**不进** `packages/`
 
 **理由**：spike 是 disposable，packages/ 是 production-shaped。混在一起会让 packages/ 被迫吸收 spike 的临时假设。
 
@@ -110,7 +110,7 @@ After-foundations 阶段是 worker matrix 之前的一道 spike-driven validatio
 
 **理由**：spike 的失败不应阻塞主线 build；主线的失败不应被 spike 噪音掩盖。
 
-**判定**：`spikes/**/*` 不进入 `pnpm test` / `pnpm typecheck` / 任何 CI workflow 的主路径。spike 可以有自己的本地 deploy script，但不进 PR-blocking pipeline。
+**判定**：historical spike artifacts 不进入 `pnpm test` / `pnpm typecheck` / 任何 CI workflow 的主路径。spike 可以有自己的本地 deploy script，但不进 PR-blocking pipeline。
 
 ### 3.4 纪律 4：spike 的发现必须落到 design doc，不能只在代码注释里
 
@@ -132,7 +132,7 @@ After-foundations 阶段是 worker matrix 之前的一道 spike-driven validatio
 **目录结构**：
 
 ```
-spikes/
+the historical spikes tree 
 ├── round-1-bare-metal/
 │   ├── spike-do-storage/
 │   └── spike-binding-pair/

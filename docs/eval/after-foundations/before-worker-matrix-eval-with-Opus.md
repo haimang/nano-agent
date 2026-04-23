@@ -289,7 +289,7 @@ Opus(单 worker, 内部闭环)
 
 这是 spike 模式最容易出错的地方。我的建议：
 
-1. **spike 代码必须放在 `spikes/` 顶级目录**，**不能**放在 `packages/`——避免被 cross-package 测试与 release flow 拉进去
+1. **spike 代码必须放在 the historical spikes tree 顶级目录**，**不能**放在 `packages/`——避免被 cross-package 测试与 release flow 拉进去
 2. **spike 必须有 expiration date**——例如"2026-06-01 之前删除或转正式 worker"
 3. **spike 不接 CI 主链**——它有自己的 deploy script，但不进 main pipeline
 4. **spike 的发现必须落到 design doc**——不能只在 spike 代码里留注释；spike 一旦销毁，注释就丢了
@@ -449,7 +449,7 @@ GPT 的方案是：**5 个 worker 都建成 real worker，但厚薄不同**（3 
 
 ### 7.3 给 spike phase 立的 5 条纪律（再次强调）
 
-1. spike 代码放 `spikes/` 顶级目录，不进 `packages/`
+1. spike 代码放 the historical spikes tree 顶级目录，不进 `packages/`
 2. spike 必须有 expiration date
 3. spike 不接 CI 主链
 4. spike 的发现必须落到 design doc，不能只在代码注释里
@@ -465,7 +465,7 @@ GPT 的方案是：**5 个 worker 都建成 real worker，但厚薄不同**（3 
 
 如果你采纳本评估，建议的最小可执行动作：
 
-1. 创建目录：`spikes/spike-do-storage/` 和 `spikes/spike-binding-pair/`
+1. 创建目录：`the historical spikes tree spike-do-storage/` 和 `the historical spikes tree spike-binding-pair/`
 2. 创建文档：`docs/plan-pre-matrix-probing.md`（参考 `docs/plan-after-skeleton.md` 的格式），列出 Phase 7.5 的 in-scope / out-of-scope / 验收信号
 3. 创建 spike findings 模板：~~`docs/spikes/_TEMPLATE-finding.md`~~ → **已落到 `docs/templates/_TEMPLATE-spike-finding.md`**（业主决策，2026-04-19）
 4. 把本文 §3 的"缺口评估汇总表"作为 Phase 7.5 立项的 baseline checklist
@@ -806,7 +806,7 @@ packages/storage-topology/src/adapters/
 
 回到上文 §4.3 立的 5 条 spike 纪律，这里再补 2 条：
 
-6. **spike 代码两轮分目录**：`spikes/round-1-bare-metal/` 与 `spikes/round-2-integrated/`，互不污染
+6. **spike 代码两轮分目录**：`the historical round-1 bare-metal spikes tree` 与 `the historical round-2 integrated spikes tree`，互不污染
 7. **轮 1 spike 不依赖任何 packages/ 代码**——它是 platform reality 探针，必须独立
 
 ---
@@ -876,8 +876,8 @@ packages/storage-topology/src/adapters/
 如果你采纳本节修正，建议的可执行序列：
 
 1. 创建 `docs/plan-after-foundations.md`（参考 `docs/plan-after-skeleton.md` 格式），列出 §8.4 的 In-Scope 11 项 / 6 周时间线 / Out-of-Scope 7 项
-2. 创建 `spikes/round-1-bare-metal/spike-do-storage/` 与 `spikes/round-1-bare-metal/spike-binding-pair/`
-3. 创建 `spikes/round-2-integrated/`（暂留空，第三波 ship 完后填入）
+2. 创建 `the historical round-1 storage spike workspace/` 与 `the historical round-1 binding spike workspace/`
+3. 创建 `the historical round-2 integrated spikes tree`（暂留空，第三波 ship 完后填入）
 4. 创建 `packages/context-management/`（package skeleton + package.json + 4 个子模块目录）
 5. 创建 ~~`docs/spikes/_TEMPLATE-finding.md`~~ → **已落到 `docs/templates/_TEMPLATE-spike-finding.md`**（业主决策，2026-04-19）与三个 finding 文档骨架
 6. 创建 RFC 模板 `docs/rfc/_TEMPLATE-protocol-extension.md`，作为 nacp-core 1.2.0 / nacp-session 1.2.0 / hooks 1.0.0 升级的设计输入

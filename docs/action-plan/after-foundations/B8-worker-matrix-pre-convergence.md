@@ -34,9 +34,9 @@
 > 关键 reference（当前仓库 reality）：
 > - `packages/session-do-runtime/src/env.ts`（`V1_BINDING_CATALOG` 当前 3 active + 1 reserved）
 > - `packages/session-do-runtime/wrangler.jsonc`（当前声明的 3 条 services binding）
-> - `spikes/round-2-integrated/spike-do-storage-r2/wrangler.jsonc`（B7 final deploy 的 binding shape 示例）
-> - `spikes/round-2-integrated/spike-do-storage-r2/.out/probe_*.json`（LIVE evidence）
-> - `spikes/round-2-integrated/spike-binding-pair-r2/worker-a-r2/.out/probe_*.json`（LIVE binding evidence）
+> - `the historical round-2 integrated storage spike workspace`（B7 final deploy 的 binding shape 示例）
+> - `the historical round-2 integrated storage spike workspace*.json`（LIVE evidence）
+> - `the historical round-2 integrated binding spike workspace*.json`（LIVE binding evidence）
 > - `test/b7-round2-integrated-contract.test.mjs`（B6 dedup/overflow 契约的根测试锁）
 >
 > 文档状态：`draft`
@@ -80,7 +80,7 @@
 
 **关键执行不变量**：
 - **不修改 `packages/` 任何代码**（charter §4.1 H 第 32 项）
-- **不修改 `spikes/` 任何 probe 代码**（B7 closed；任何回改都要走 follow-up，不在 B8 范围）
+- **不修改 the historical spikes tree 任何 probe 代码**（B7 closed；任何回改都要走 follow-up，不在 B8 范围）
 - **不新增包、不升 version、不写实现**（B8 是 doc phase）
 - **所有引用必须是 file-or-evidence-link**（不允许 "as documented earlier" 之类的指称）
 
@@ -111,7 +111,7 @@
 ### 1.4 执行策略说明
 
 - **执行顺序原则**：**truth 先行、proposal 紧随、template 再下、closure 最末**。严格按 Phase 1→2→3→4 串行；Phase 内允许 parallelism，Phase 间不允许跳步。
-- **风险控制原则**：**零代码修改**。本 phase 下 `git diff -- 'packages/*' 'spikes/*'` 必须保持 0 行；任何看似"顺手修一下"的冲动都违反 charter §4.1 H 第 32 项。
+- **风险控制原则**：**零代码修改**。本 phase 下 `git diff -- 'packages/*' 'the historical spikes tree *'` 必须保持 0 行；任何看似"顺手修一下"的冲动都违反 charter §4.1 H 第 32 项。
 - **测试推进原则**：B8 无代码测试；用 **doc-consistency check** 替代——Phase 1 inventory 的每条 bullet 必须能在原始文档里 `grep` 到匹配；Phase 2/3 的每条 cite 必须能在 inventory 里匹配。整体收口要求根测试 `node --test test/*.test.mjs` + `npm run test:cross` 仍绿（作为 "no regression from B8 edits" 的 sanity check）。
 - **文档同步原则**：本 phase 的 deliverables 之间存在引用链（`composition-factory.ts` cite handoff memo §8；handoff memo §7 cite `B7-final-closure.md` §3；B8-final-closure cite 所有 4 个 deliverables）。一次改动一个文件；改完立即同步下游引用。
 
@@ -139,9 +139,9 @@ docs/
 
 ```text
 packages/**                        # zero source modification
-spikes/**                          # B7 closed; no probe edits
+historical spike artifacts                          # B7 closed; no probe edits
 test/**                            # no new tests; existing 77/77 + 91/91 must stay green
-docs/spikes/**                     # Round-1/2 finding docs stay as-is (§9 closure sections frozen)
+docs/historical spike artifacts                     # Round-1/2 finding docs stay as-is (§9 closure sections frozen)
 docs/design/after-foundations/**   # P0-P7 designs frozen
 docs/rfc/**                        # nacp-* RFCs frozen
 packages/*/CHANGELOG.md            # frozen
@@ -165,7 +165,7 @@ packages/*/CHANGELOG.md            # frozen
 ### 2.2 Out-of-Scope（本次 action-plan 明确不做）
 
 - **[O1]** 修改 `packages/` 任何文件（charter §4.1 H 第 32 项 + §4.2 第 2 项）
-- **[O2]** 修改 `spikes/` 任何 probe 代码（B7 已 closed）
+- **[O2]** 修改 the historical spikes tree 任何 probe 代码（B7 已 closed）
 - **[O3]** 新增或修改 `@nano-agent/*` 包的 version / CHANGELOG
 - **[O4]** worker matrix 阶段的实际 worker shell 实现（→ next phase 的 charter）
 - **[O5]** binding catalog v2 接口签名设计（→ next phase）
@@ -194,8 +194,8 @@ packages/*/CHANGELOG.md            # frozen
 | 编号 | 所属 Phase | 工作项 | 类型 | 涉及模块 / 文件 | 目标一句话 | 风险等级 |
 |---|---|---|---|---|---|---|
 | P1-01 | Phase 1 | 抓 B2-B6 shipped package versions + CHANGELOG 尾部 | doc | `packages/*/package.json` + `packages/*/CHANGELOG.md` | 记录 8 个包的当前 version + 最新 ship 日期 | low |
-| P1-02 | Phase 1 | 抓 B1 Round-1 + B7 Round-2 全部 finding 的 §0 status + §9 closure | doc | `docs/spikes/**/*.md` | 15 finding 的 Round-1 status / Round-2 verdict / gate 状态完整表 | low |
-| P1-03 | Phase 1 | 抓 B7 LIVE deploy 的所有 `.out/*.json` 关键数字 | doc | `spikes/round-2-integrated/**/*.out/*.json` | 每个 probe 的 headline 数字（DO cap、R2 曲线、binding-F04 stats、…）进表 | low |
+| P1-02 | Phase 1 | 抓 B1 Round-1 + B7 Round-2 全部 finding 的 §0 status + §9 closure | doc | `docs/historical spike artifacts.md` | 15 finding 的 Round-1 status / Round-2 verdict / gate 状态完整表 | low |
+| P1-03 | Phase 1 | 抓 B7 LIVE deploy 的所有 `.out/*.json` 关键数字 | doc | `the historical round-2 integrated spikes tree**/*.out/*.json` | 每个 probe 的 headline 数字（DO cap、R2 曲线、binding-F04 stats、…）进表 | low |
 | P1-04 | Phase 1 | 抓 3 份 GPT reviews 的最终 verdict + §6/§7 response 结论 | doc | `docs/code-review/after-foundations/*.md` | 每轮 review 的 verdict + 关闭 review 所需的 evidence 进表 | low |
 | P1-05 | Phase 1 | Sanity check: root tests 仍绿 | test | `test/*.test.mjs` + `npm run test:cross` | 77/77 + 91/91 作为 "no B8 pre-edit regression" baseline | low |
 | P1-06 | Phase 1 | 产出 `B8-phase-1-closure.md`（整份是 Truth Inventory） | doc | `docs/issue/after-foundations/B8-phase-1-closure.md` | Phase 2/3 的唯一事实源 | medium |
@@ -220,8 +220,8 @@ packages/*/CHANGELOG.md            # frozen
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |---|---|---|---|---|---|---|
 | P1-01 | B2-B6 version 抓取 | 对 8 个 shipped 包（`nacp-core / nacp-session / storage-topology / capability-runtime / context-management / workspace-context-artifacts / hooks / eval-observability / session-do-runtime`）逐一记录 `package.json version` + CHANGELOG 尾部最新 entry 的日期 | `packages/*/package.json`, `packages/*/CHANGELOG.md` | 8 行表格进 `B8-phase-1-closure.md` §2 | grep + 人工比对 | 每个包的 version 可 copy-paste，CHANGELOG 日期无出入 |
-| P1-02 | 15 finding Round-1/Round-2 status | 按 `docs/spikes/{spike-do-storage,spike-binding-pair,unexpected}/*.md` 的 §0 status 列 + §9 Round-2 closure 列出 15 行 | `docs/spikes/**/*.md` | `B8-phase-1-closure.md` §3 | grep `§9 Round-2 closure` 存在于 15 份 finding docs | 15 行完整；gate 字段（F03/F09）精确标注 |
-| P1-03 | B7 LIVE headline 数字 | 每个 B7 probe 抓 1-3 个 headline 数字：`DO cap (F08), R2 concurrent p50 curve (unexpected-F01), binding-F04 dedup/overflow stats, binding-F01 canceled outcome, F05 parity trace, …` | `spikes/round-2-integrated/**/*.out/*.json` | `B8-phase-1-closure.md` §4；每条数字后附 .out 文件 path | `python3 -c 'import json; ...'` 脚本重抽 | 数字能和 `.out/*.json` 逐一对上 |
+| P1-02 | 15 finding Round-1/Round-2 status | 按 `docs/spikes/{spike-do-storage,spike-binding-pair,unexpected}/*.md` 的 §0 status 列 + §9 Round-2 closure 列出 15 行 | `docs/historical spike artifacts.md` | `B8-phase-1-closure.md` §3 | grep `§9 Round-2 closure` 存在于 15 份 finding docs | 15 行完整；gate 字段（F03/F09）精确标注 |
+| P1-03 | B7 LIVE headline 数字 | 每个 B7 probe 抓 1-3 个 headline 数字：`DO cap (F08), R2 concurrent p50 curve (unexpected-F01), binding-F04 dedup/overflow stats, binding-F01 canceled outcome, F05 parity trace, …` | `the historical round-2 integrated spikes tree**/*.out/*.json` | `B8-phase-1-closure.md` §4；每条数字后附 .out 文件 path | `python3 -c 'import json; ...'` 脚本重抽 | 数字能和 `.out/*.json` 逐一对上 |
 | P1-04 | 3 轮 reviews verdict | `B5-B6-reviewed-by-GPT.md` + `B7-reviewed-by-GPT.md` + 本次 B8 对 reviews 的 response 的最终 verdict 列入 inventory | `docs/code-review/after-foundations/*.md` | `B8-phase-1-closure.md` §5；review ID → verdict → 闭环状态 | 人工核对 §6 response | 3 轮都标注为 closed with findings addressed |
 | P1-05 | root tests sanity | `node --test test/*.test.mjs` + `npm run test:cross` 在 B8 起点跑一次，记录基线 | `test/**`, repo root | `B8-phase-1-closure.md` §6；数字 + timestamp | actual test run | 77/77 + 91/91；与 B7 closure 一致 |
 | P1-06 | Phase 1 closure issue | 把 P1-01 到 P1-05 的产出汇编成 `B8-phase-1-closure.md`，作为 Phase 2/3 的唯一事实源 | 新文件 | 该文件存在 + 6 个 section 齐全 | 人工 review | Phase 2 开始前 Phase 1 必须 closed |
@@ -470,7 +470,7 @@ packages/*/CHANGELOG.md            # frozen
 4. **`docs/templates/composition-factory.ts`** ship，`tsc --noEmit` 通过
 5. **B8-phase-1/2/3-closure.md + B8-final-closure.md** 四份 closure issues 齐全
 6. **`after-foundations-final-closure.md`** 单页整阶段终极收口 ship
-7. **`packages/` + `spikes/` 目录 zero modification**（`git diff` 验证）
+7. **`packages/` + the historical spikes tree 目录 zero modification**（`git diff` 验证）
 8. root tests **77/77 + 91/91** 保持
 9. handoff memo §9 列出 F03 / F09 两个 gate + B5-B6 / B7 review 皆已 closed
 10. 本 action-plan §12 工作日志回填完成
@@ -528,7 +528,7 @@ packages/*/CHANGELOG.md            # frozen
 
 1. **只新增 / 修改 `docs/**` 与 session 临时验证文件**；
 2. **不修改 `packages/**`**；
-3. **不修改 `spikes/**` 探针实现**；
+3. **不修改 historical spike artifacts 探针实现**；
 4. **不改 package version / CHANGELOG / shipped code**。
 
 ### 12.2 实际完成的工作

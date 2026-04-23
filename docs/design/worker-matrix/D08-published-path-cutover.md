@@ -28,7 +28,7 @@ charter Q5 最终决策是 **(c) 独立 release PR schedule**(not `(a) 首批 ab
   - Tier B package cutover(Tier B 不发布,永远 `@nano-agent/*` 内部 scope;D09 negotiate Tier B deprecation)
   - production env flip(下一阶段)
   - 改变 nacp-core / nacp-session 的 semver 规则或发布纪律(W2 纪律保持)
-  - dogfood consumer 路径改动(`dogfood/nacp-consume-test/` 本就 published;保持不变)
+  - dogfood consumer 路径改动(`the retired historical dogfood consumer` 本就 published;保持不变)
 
 ---
 
@@ -49,7 +49,7 @@ charter Q5 最终决策是 **(c) 独立 release PR schedule**(not `(a) 首批 ab
 | `1.4.0` / `1.3.0` | 已发布到 GitHub Packages 的版本号 |
 | release PR | 专门负责 cutover 的 PR,独立于 P2-P4 任何 absorb PR |
 | live probe | `curl` agent-core preview 返回的 JSON;cutover 后 `nacp_core_version` / `nacp_session_version` 字段 value 不变 |
-| `.npmrc` scope | `@haimang:registry=https://npm.pkg.github.com`(**当前仓库 root 尚未落仓 `.npmrc`**;现有可见的 scope/registry 真相只在 `packages/nacp-core/package.json` / `packages/nacp-session/package.json` 的 `publishConfig.registry`、`dogfood/nacp-consume-test/.npmrc`、`.github/workflows` 的 `setup-node` + `NODE_AUTH_TOKEN` 三处;cutover PR **要先验证** pnpm/CI 现有 registry resolution 是否已足够 install published tarball,**仅在不足时**才在 root 或 worker 侧补 `.npmrc`)|
+| `.npmrc` scope | `@haimang:registry=https://npm.pkg.github.com`(**当前仓库 root 尚未落仓 `.npmrc`**;现有可见的 scope/registry 真相只在 `packages/nacp-core/package.json` / `packages/nacp-session/package.json` 的 `publishConfig.registry`、`the historical dogfood consumer npmrc`、`.github/workflows` 的 `setup-node` + `NODE_AUTH_TOKEN` 三处;cutover PR **要先验证** pnpm/CI 现有 registry resolution 是否已足够 install published tarball,**仅在不足时**才在 root 或 worker 侧补 `.npmrc`)|
 
 ### 1.2 参考调查报告
 
@@ -77,7 +77,7 @@ charter Q5 最终决策是 **(c) 独立 release PR schedule**(not `(a) 首批 ab
 | P2-P4 全部 absorb | 上游(硬前置)| 强 | P5 cutover 要求 P2/P3/P4 DoD 全绿 |
 | W2 published path | 上游 | 强 | cutover 依赖真实可 install 的 published bundle |
 | D09 deprecation | 同 P5 / 下游 | 中 | cutover 后,Tier B package 进入 deprecation 候选;但 cutover 本身只改 NACP 依赖,不动 Tier B |
-| `dogfood/nacp-consume-test` | 并行非 worker | 弱 | 已经走 published path;cutover 不改 dogfood |
+| `the retired historical dogfood consumer` | 并行非 worker | 弱 | 已经走 published path;cutover 不改 dogfood |
 | B7 LIVE | 非破坏 | 强 | cutover 后回归必须 5/5 |
 
 ### 2.3 一句话定位陈述
@@ -104,7 +104,7 @@ charter Q5 最终决策是 **(c) 独立 release PR schedule**(not `(a) 首批 ab
 | 扩展点 | 表现形式 | 第一版行为 | 未来演进 |
 |--------|----------|------------|----------|
 | 版本 pin 方式 | 精确 `1.4.0` / `1.3.0` | 不用 caret `^1.4.0` | 可按需切 caret / semver range |
-| registry | `@haimang` scope 指向 `https://npm.pkg.github.com` | 当前真相:`publishConfig.registry` + `dogfood/.npmrc` + GitHub Actions `setup-node`;**root `.npmrc` 尚未落仓**,cutover PR 需 trial-and-error 确认 pnpm/CI 是否需要新增 | 若未来迁到其他 org 走独立 migration |
+| registry | `@haimang` scope 指向 `https://npm.pkg.github.com` | 当前真相:`publishConfig.registry` + `the historical dogfood consumer npmrc` + GitHub Actions `setup-node`;**root `.npmrc` 尚未落仓**,cutover PR 需 trial-and-error 确认 pnpm/CI 是否需要新增 | 若未来迁到其他 org 走独立 migration |
 | cutover 回滚 | revert PR 即可 | workspace:* 完全可恢复 | — |
 
 ### 3.3 完全解耦点
@@ -125,7 +125,7 @@ charter Q5 最终决策是 **(c) 独立 release PR schedule**(not `(a) 首批 ab
 
 ### 4.1 W2 dogfood consumer(已在 published path 运行)
 
-- **实现概要**:`dogfood/nacp-consume-test/package.json` 使用 `@haimang/nacp-core: 1.4.0` 版本号 pin
+- **实现概要**:`the historical dogfood consumer package manifest` 使用 `@haimang/nacp-core: 1.4.0` 版本号 pin
 - **亮点**:release pipeline 已被真实消费者 battle-test
 - **借鉴**:cutover PR 可直接参考 dogfood 的 dependency 写法
 - **不照抄**:dogfood 是外部 workspace(`--ignore-workspace`);workers 是内部 workspace member — cutover 时 pnpm 仍识别 workers,但 registry resolve 优先(lockfile 会明确 resolution path)
@@ -293,7 +293,7 @@ charter Q5 最终决策是 **(c) 独立 release PR schedule**(not `(a) 首批 ab
 
 - **输入**:当前仓库事实 — **root `.npmrc` 尚未落仓**;现有可见 registry 真相来源三处:
   1. `packages/nacp-core/package.json` 与 `packages/nacp-session/package.json` 的 `publishConfig.registry`
-  2. `dogfood/nacp-consume-test/.npmrc`(external consumer 专用)
+  2. `the historical dogfood consumer npmrc`(external consumer 专用)
   3. `.github/workflows/publish-nacp.yml` 的 `setup-node` + `NODE_AUTH_TOKEN`
 - **输出**:no-op(若现有 resolution 足够)**或** 最小补丁(若不足;优先级 `workers/<name>/.npmrc` → `workers/.npmrc` → 最后才 `root/.npmrc`)
 - **核心逻辑**:
@@ -358,8 +358,8 @@ charter Q5 最终决策是 **(c) 独立 release PR schedule**(not `(a) 首批 ab
 
 | 位置 | 内容 | 借鉴点 |
 |------|------|--------|
-| `dogfood/nacp-consume-test/package.json` | 已 published path consumer | F2 dependency 写法参考 |
-| `dogfood/nacp-consume-test/.npmrc` | `@haimang` scope + auth | F3 参考 |
+| `the historical dogfood consumer package manifest` | 已 published path consumer | F2 dependency 写法参考 |
+| `the historical dogfood consumer npmrc` | `@haimang` scope + auth | F3 参考 |
 | `workers/*/package.json` | 当前 workspace:* | F2 目标文件 |
 | `pnpm-lock.yaml` | workspace resolution | F4 验证对照 |
 | `.github/workflows/publish-nacp.yml` | W2 发布 pipeline | 证明 version 存在 |

@@ -20,7 +20,7 @@ Phase 1 of `docs/action-plan/after-foundations/B1-spike-round-1-bare-metal.md` i
 
 | # | Item | Status | Evidence |
 |---|---|---|---|
-| P1-01 | Spike top-level dirs + 3 READMEs | ✅ | `spikes/README.md`, `spikes/round-1-bare-metal/spike-do-storage/README.md`, `spikes/round-1-bare-metal/spike-binding-pair/README.md` (含 EXPIRATION_DATE=2026-08-01 + 7 纪律 link) |
+| P1-01 | Spike top-level dirs + 3 READMEs | ✅ | `the retired historical spikes README`, `the historical round-1 storage spike workspace`, `the historical round-1 binding spike workspace` (含 EXPIRATION_DATE=2026-08-01 + 7 纪律 link) |
 | P1-02 | Template path uniqueness check | ✅ | active charter / design / action-plan 全部指向 `docs/templates/_TEMPLATE-spike-finding.md`；2 处历史 eval 文档残留已加 strikethrough 并标注业主决策 |
 | P1-03 | spike-do-storage skeleton + dry-run | ✅ | `wrangler deploy --dry-run` → 1.73 KiB worker；DO_PROBE / KV_PROBE / D1_PROBE / R2_PROBE + 5 env vars 全部识别 |
 | P1-04 | spike-binding-pair worker-a/b skeleton + dry-run | ✅ | worker-b dry-run → 0.95 KiB；worker-a dry-run → 1.49 KiB（含 WORKER_B service binding） |
@@ -28,7 +28,7 @@ Phase 1 of `docs/action-plan/after-foundations/B1-spike-round-1-bare-metal.md` i
 ## Files created (18)
 
 ```
-spikes/
+the historical spikes tree 
 ├── README.md                                        (顶级 spike workspace 索引 + 7 纪律 + 命名约定 + expiration)
 └── round-1-bare-metal/
     ├── spike-do-storage/
@@ -71,9 +71,9 @@ spikes/
 
 | 纪律 | 状态 | Evidence |
 |---|---|---|
-| 1. spikes/ 顶级，不进 packages/ | ✅ | `pnpm-workspace.yaml` 仅含 `packages/*` |
+| 1. the historical spikes tree  顶级，不进 packages/ | ✅ | `pnpm-workspace.yaml` 仅含 `packages/*` |
 | 2. expiration date | ✅ | `EXPIRATION_DATE=2026-08-01` 在 3 个 wrangler.jsonc + 3 个 README |
-| 3. 不接 CI 主链 | ✅ | spike 不在 pnpm workspace；本仓库根 scripts 不涉及 spikes/ |
+| 3. 不接 CI 主链 | ✅ | spike 不在 pnpm workspace；本仓库根 scripts 不涉及 the historical spikes tree  |
 | 4. finding → design doc | ⏳ | 模板就位 (`docs/templates/_TEMPLATE-spike-finding.md`)；finding 由 P4 产出 |
 | 5. 不接生产数据 / 不持业务数据 / 不实现新业务能力 | ✅ | spike worker.ts 仅 healthz；无 LLM key；无业务 logic |
 | 6. round-1 与 round-2 分目录 | ✅ | `round-1-bare-metal/` 已建；round-2 待 B7 |

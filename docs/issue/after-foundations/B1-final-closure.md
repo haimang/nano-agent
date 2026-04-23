@@ -68,7 +68,7 @@ All resources tagged `nano-agent` + `spike` per owner Q1; all carry `EXPIRATION_
 
 ## Aggregate deliverables
 
-### Spike code (`spikes/round-1-bare-metal/`)
+### Spike code (`the historical round-1 bare-metal spikes tree`)
 
 | Component | Files | LOC est |
 |---|---|---|
@@ -153,7 +153,7 @@ The following findings need Round 2 verification, blocking final exit of after-f
 
 | # | 纪律 | Status |
 |---|---|---|
-| 1 | spikes/ 顶级，不进 packages/ | ✅ |
+| 1 | the historical spikes tree  顶级，不进 packages/ | ✅ |
 | 2 | EXPIRATION_DATE = 2026-08-01 | ✅ |
 | 3 | 不接 CI 主链 | ✅ |
 | 4 | finding → design doc | ✅ |

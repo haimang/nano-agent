@@ -164,7 +164,7 @@
 
 ### 6.3 复现脚本位置
 
-- `spikes/round-{1|2}-{bare-metal|integrated}/{spike-name}/scripts/{repro-script}`
+- `the historical spikes tree round-{1|2}-{bare-metal|integrated}/{spike-name}/scripts/{repro-script}`
 
 ---
 

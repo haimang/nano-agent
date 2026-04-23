@@ -19,7 +19,7 @@ without口径 drift.
   7-item follow-up list.
 - B2–B6 action plans + CHANGELOGs read to confirm which seams are
   ship-stable vs. still evolving.
-- Round-1 `spikes/round-1-bare-metal/` tree surveyed to mirror
+- Round-1 `the historical round-1 bare-metal spikes tree` tree surveyed to mirror
   structure faithfully (readable diff between the two rounds).
 
 ### P1-02 — verdict vocabulary freeze

@@ -101,5 +101,5 @@ Downstream consumers (B2-B8) MUST read caveat C3 before citing F03 as "KV read-a
 - Action plan: `docs/action-plan/after-foundations/B1-spike-round-1-bare-metal.md`
 - Rollup spec: `docs/design/after-foundations/P0-spike-discipline-and-validation-matrix.md` §4.6
 - Related rollup (V2): `fake-bash-platform-findings.md`
-- Related spike output: `spikes/round-1-bare-metal/spike-do-storage/.out/2026-04-19T08-17-46Z.json`
+- Related spike output: `the historical round-1 storage spike workspace`
 - Phase 4 issue: `docs/issue/after-foundations/B1-phase-4-closure.md`

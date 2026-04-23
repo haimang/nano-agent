@@ -31,7 +31,7 @@
 - **本轮最关键的 3 个判断**：
   1. **认知完整性缺口**：B8 handoff pack 完全没有提到 nacp-1.3 的双轴矩阵冻结窗口、tenant wrapper "shipped 但未接线" 的 6 项占位清单、也没有提到 Contexter-as-upstream 的分层架构——这三项都是我们已经达成共识的 worker-matrix 前置认知，**不补齐等于让 worker matrix 走弯路**
   2. **技术细节准确度 OK**：9 个 shipped packages 版本号、15 finding state transition、LIVE 数字、模板 import symbols 都正确——handoff pack 的事实层面**可信**
-  3. **B8 本身的 doc-only 纪律守住**：零 packages/、零 spikes/ 修改；root tests 77/77 + cross 91/91 baseline 对齐——这个纪律表现**优秀**
+  3. **B8 本身的 doc-only 纪律守住**：零 packages/、零 the historical spikes tree  修改；root tests 77/77 + cross 91/91 baseline 对齐——这个纪律表现**优秀**
 
 ---
 
@@ -66,7 +66,7 @@
 
 ### 1.3 已确认的正面事实
 
-- **Scope 纪律**：B8 零 packages/ / 零 spikes/ 修改，符合 P7 §5.1 + B8 action-plan §0/§1.4 硬约束 ✅
+- **Scope 纪律**：B8 零 packages/ / 零 the historical spikes tree  修改，符合 P7 §5.1 + B8 action-plan §0/§1.4 硬约束 ✅
 - **Shipped package 版本核对准确**：9 个包的 `package.json` version + CHANGELOG head 记录真实，包括**诚实标注**的 `eval-observability` / `session-do-runtime` 两个包 "CHANGELOG head 超前于 package.json version" 的现状（B8-phase-1-closure §2 脚注）
 - **Round-2 finding state transition 表完整**：15 行，每行 evidence path 可 `ls` 到真实 `.out/*.json`
 - **LIVE 数字准确**：F08 `2,199,424 / 2,200,000 / 576` 和 unexpected-F01 `336/1310/2216/4383` (2026-04-20 final run) 与 B7 closure 数字一致
@@ -243,7 +243,7 @@
 | 编号 | Out-of-Scope 项 | 审查结论 | 说明 |
 |---|---|---|---|
 | O1 | 不改 `packages/` 任何文件 | `遵守` | `git diff -- packages` empty（B8-phase-3 §2 报告 + 我核对） |
-| O2 | 不改 `spikes/` 任何 probe 代码 | `遵守` | `git diff -- spikes` empty |
+| O2 | 不改 the historical spikes tree 任何 probe 代码 | `遵守` | `git diff -- the historical spikes tree` empty |
 | O3 | 不新增 / 不升 `@nano-agent/*` 包版本 | `遵守` | 9 个包 version 不变；CHANGELOG 不改 |
 | O4 | worker matrix 阶段的实际 worker shell 实现 | `遵守` | handoff pack 只有 proposal + template，无实装 |
 | O5 | binding catalog v2 接口签名 | `遵守` | §6 明确 "do not rewrite catalog; keep reserved posture" |
@@ -303,7 +303,7 @@
 > 回应范围: `R1–R7`
 
 - **总体回应**：`接受本轮审查结论；R1–R7 全部按代码事实与 smind §9/§10 新认知回填到了 B8 handoff pack。`
-- **本轮修改策略**：`不改 §0–§5，不碰 packages/ 与 spikes/；直接补 handoff memo 的 3 个缺失章节，补 naming/template/closure 的连带口径，再用现有校验命令把文档、模板与根测试重新跑一遍。`
+- **本轮修改策略**：`不改 §0–§5，不碰 packages/ 与 the historical spikes tree ；直接补 handoff memo 的 3 个缺失章节，补 naming/template/closure 的连带口径，再用现有校验命令把文档、模板与根测试重新跑一遍。`
 
 ### 6.2 逐项回应表
 

@@ -4,11 +4,11 @@
 > 审查时间: `2026-04-19`
 > 审查人: `GPT-5.4`
 > 审查范围:
-> - `docs/spikes/**`
+> - `docs/historical spike artifacts`
 > - `docs/issue/after-foundations/**`
 > - `docs/design/after-foundations/P1-storage-adapter-hardening.md`
 > - `docs/rfc/scoped-storage-adapter-v2.md`
-> - `spikes/round-1-bare-metal/{spike-do-storage,spike-binding-pair}/.gitignore`
+> - `the historical round-1 bare-metal spikes tree{spike-do-storage,spike-binding-pair}/.gitignore`
 > 文档状态: `changes-requested`
 
 ---
@@ -34,12 +34,12 @@
   - `docs/spikes/_DISCIPLINE-CHECK.md`
   - `docs/issue/after-foundations/{B1-final-closure,B1-handoff-to-B2-B6,B2-writeback-r2list-cursor-interface}.md`
 - **核查实现**：
-  - `spikes/round-1-bare-metal/spike-do-storage/.gitignore`
-  - `spikes/round-1-bare-metal/spike-binding-pair/.gitignore`
+  - `the historical round-1 storage spike workspace`
+  - `the historical round-1 binding spike workspace`
   - B1 相关 git history 与 tracked files
 - **执行过的验证**：
-  - `git --no-pager ls-files 'spikes/round-1-bare-metal/spike-do-storage/.out/*' 'spikes/round-1-bare-metal/spike-binding-pair/.out/*' 'docs/spikes/**' 'docs/issue/after-foundations/**'`
-  - `git check-ignore -v spikes/round-1-bare-metal/spike-do-storage/.out/2026-04-19T08-17-46Z.json spikes/round-1-bare-metal/spike-binding-pair/.out/2026-04-19T08-28-14Z.json`
+  - `git --no-pager ls-files 'the historical round-1 storage spike workspace*' 'the historical round-1 binding spike workspace*' 'docs/historical spike artifacts' 'docs/issue/after-foundations/**'`
+  - `git check-ignore -v the historical round-1 storage spike workspace the historical round-1 binding spike workspace`
   - `rg '\[x\]' docs/spikes --glob '**/*.md'`
   - 抽样对照 `.out` 原始输出与 per-finding / rollup / closure 文档
 
@@ -51,7 +51,7 @@
 
 ### 1.2 已确认的负面事实
 
-- 两个 spike 的 `.out/` 目录都被 `.gitignore` 忽略，但 rollup / final closure 仍把这些 ignored JSON 当作 repo 内 evidence 引用。`spikes/round-1-bare-metal/spike-do-storage/.gitignore:1-5`, `spikes/round-1-bare-metal/spike-binding-pair/.gitignore:1-5`, `docs/spikes/storage-findings.md:86-93`, `docs/spikes/binding-findings.md:94-101`, `docs/spikes/fake-bash-platform-findings.md:93-100`, `docs/issue/after-foundations/B1-final-closure.md:67-68`, `docs/issue/after-foundations/B1-final-closure.md:151-159`
+- 两个 spike 的 `.out/` 目录都被 `.gitignore` 忽略，但 rollup / final closure 仍把这些 ignored JSON 当作 repo 内 evidence 引用。`the historical round-1 storage spike workspace:1-5`, `the historical round-1 binding spike workspace:1-5`, `docs/spikes/storage-findings.md:86-93`, `docs/spikes/binding-findings.md:94-101`, `docs/spikes/fake-bash-platform-findings.md:93-100`, `docs/issue/after-foundations/B1-final-closure.md:67-68`, `docs/issue/after-foundations/B1-final-closure.md:151-159`
 - F02 per-finding doc 已把 “contract test added” 与 “Round 2 integrated spike passed” 勾成已完成，但对应 writeback issue 仍把这两项列为未完成 acceptance criteria。`docs/spikes/spike-do-storage/02-r2-list-cursor-required-pagination-confirmed.md:131-136`, `docs/issue/after-foundations/B2-writeback-r2list-cursor-interface.md:70-79`
 - B1 final closure 与 discipline check 都给出了强 closure verdict，但这些结论没有把“raw evidence 未入库”和“若干 finding status drift”显式反映出来。`docs/issue/after-foundations/B1-final-closure.md:15-25`, `docs/issue/after-foundations/B1-final-closure.md:163-175`, `docs/spikes/_DISCIPLINE-CHECK.md:11-16`, `docs/spikes/_DISCIPLINE-CHECK.md:199-203`
 
@@ -64,7 +64,7 @@
 - **严重级别**：`high`
 - **类型**：`delivery-gap`
 - **事实依据**：
-  - 两个 spike 的 `.gitignore` 都忽略 `.out/`。`spikes/round-1-bare-metal/spike-do-storage/.gitignore:1-5`, `spikes/round-1-bare-metal/spike-binding-pair/.gitignore:1-5`
+  - 两个 spike 的 `.gitignore` 都忽略 `.out/`。`the historical round-1 storage spike workspace:1-5`, `the historical round-1 binding spike workspace:1-5`
   - 三份 rollup 和 final closure 都直接引用 `.out/...json` 作为 evidence 或 deliverable。`docs/spikes/storage-findings.md:86-93`, `docs/spikes/binding-findings.md:94-101`, `docs/spikes/fake-bash-platform-findings.md:93-100`, `docs/issue/after-foundations/B1-final-closure.md:67-68`, `docs/issue/after-foundations/B1-final-closure.md:151-159`
   - `git --no-pager ls-files ...` 实际没有返回任何 `.out` 文件；`git check-ignore -v ...` 还明确表明它们被 `.gitignore:3` 排除。
 - **为什么重要**：
@@ -178,18 +178,18 @@
 
 | 审查编号 | 审查问题 | 处理结果 | 处理方式 | 修改文件 |
 |----------|----------|----------|----------|----------|
-| R1 | raw evidence 被 `.gitignore` 排除，仓内不可复核 | `fixed` | 两个 spike 的 `.gitignore` 去掉 `.out/` 排除；现有 `.out/2026-04-19T08-17-46Z.json`（storage）+ `.out/2026-04-19T08-28-14Z.json`（binding-pair 原版）+ `.out/2026-04-19T13-02-31Z.json`（binding-pair r2 后新版）三个 JSON 进仓 | `spikes/round-1-bare-metal/spike-do-storage/.gitignore`, `spikes/round-1-bare-metal/spike-binding-pair/.gitignore`, 3 个 `.out/*.json` |
+| R1 | raw evidence 被 `.gitignore` 排除，仓内不可复核 | `fixed` | 两个 spike 的 `.gitignore` 去掉 `.out/` 排除；现有 `.out/2026-04-19T08-17-46Z.json`（storage）+ `.out/2026-04-19T08-28-14Z.json`（binding-pair 原版）+ `.out/2026-04-19T13-02-31Z.json`（binding-pair r2 后新版）三个 JSON 进仓 | `the historical round-1 storage spike workspace`, `the historical round-1 binding spike workspace`, 3 个 `.out/*.json` |
 | R2 | per-finding doc 提前勾选 future writeback / Round 2 completion | `fixed` | audit 15 finding docs §5.2 "写回完成的判定" section；3 处 premature `[x]` 回收：F02 `contract test 已新增` + F02 `Round 2 integrated test 已跑通` + F03 `Round 2 cross-colo probe 必须跑`；全改为 `[ ]` 并加 "(B2/B7 future work)" 标注 | `docs/spikes/spike-do-storage/02-r2-list-cursor-required-pagination-confirmed.md`, `docs/spikes/spike-do-storage/03-kv-stale-read-not-observed-in-same-colo.md` |
 | R3 | final closure / discipline check 口径强于当前事实 | `fixed` | `B1-final-closure.md` status 从 `✅ closed (PASSED)` 降级到 `⚠️ ready-with-fixes`；header + headline 调整；新增 §Caveats section 列 6 项 C1-C6（4 项 fixed r2, 2 项 carried to B7）。`_DISCIPLINE-CHECK.md` verdict 从 `PASSED 7/7` 降级到 `READY-WITH-FIXES 7/7 + 6 closure caveats`；7 纪律仍成立；"Approved for B1 closure" 改为 "Approved for B1 ready-with-fixes closure" 带 downstream obligation note | `docs/issue/after-foundations/B1-final-closure.md`, `docs/spikes/_DISCIPLINE-CHECK.md` |
 
 ### 6.3 变更文件清单
 
 **R1 (raw evidence 入库)**：
-- `spikes/round-1-bare-metal/spike-do-storage/.gitignore` (去除 `.out/`)
-- `spikes/round-1-bare-metal/spike-binding-pair/.gitignore` (同款)
-- `spikes/round-1-bare-metal/spike-do-storage/.out/2026-04-19T08-17-46Z.json` (新入库)
-- `spikes/round-1-bare-metal/spike-binding-pair/.out/2026-04-19T08-28-14Z.json` (新入库)
-- `spikes/round-1-bare-metal/spike-binding-pair/.out/2026-04-19T13-02-31Z.json` (r2 新生成 + 新入库)
+- `the historical round-1 storage spike workspace` (去除 `.out/`)
+- `the historical round-1 binding spike workspace` (同款)
+- `the historical round-1 storage spike workspace` (新入库)
+- `the historical round-1 binding spike workspace` (新入库)
+- `the historical round-1 binding spike workspace` (r2 新生成 + 新入库)
 
 **R2 (premature checkbox 回收)**：
 - `docs/spikes/spike-do-storage/02-r2-list-cursor-required-pagination-confirmed.md` (§5.2 + §8 history)

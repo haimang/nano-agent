@@ -187,8 +187,8 @@ HTTP header names 在标准上 case-insensitive，但 Cloudflare Workers runtime
 
 ### 6.2 复现脚本位置
 
-- `spikes/round-1-bare-metal/spike-binding-pair/worker-a/src/probes/cross-seam-anchor.ts`
-- `spikes/round-1-bare-metal/spike-binding-pair/worker-b/src/handlers/header-dump.ts`
+- `the historical round-1 binding spike workspace`
+- `the historical round-1 binding spike workspace`
 
 ---
 
@@ -217,7 +217,7 @@ HTTP header names 在标准上 case-insensitive，但 Cloudflare Workers runtime
 
 > **Round-2 status**: `writeback-shipped` ✅ LIVE (2026-04-20)
 > **Writeback date**: 2026-04-20
-> **Driver**: `spikes/round-2-integrated/spike-binding-pair-r2/worker-a-r2/src/re-validation/binding.ts` via `/headers/dump` on worker-b-r2
+> **Driver**: `the historical round-2 integrated binding spike workspace` via `/headers/dump` on worker-b-r2
 
 ### Round-2 evidence summary
 

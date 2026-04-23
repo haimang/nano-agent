@@ -94,7 +94,7 @@ W2 不能把 W4 写成“只有 GitHub Packages 直装才算 closure”。
 1. `.github/workflows/publish-nacp.yml`
 2. `packages/nacp-core/package.json` 中的 publish metadata
 3. `packages/nacp-session/package.json` 中的 publish metadata
-4. `dogfood/` 下最小 consumer proof
+4. `the retired historical dogfood tree` 下最小 consumer proof
 5. 本文件（discipline）
 
 以上 5 项现在都应被视为 W2 mandatory skeleton 的实际交付面。

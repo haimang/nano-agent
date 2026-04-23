@@ -148,7 +148,7 @@ contrast: single 10 MiB put = 782 ms
 
 ### 6.2 复现脚本位置
 
-- `spikes/round-1-bare-metal/spike-do-storage/src/probes/r2-list-cursor.ts:23-35`
+- `the historical round-1 storage spike workspace:23-35`
 
 ---
 
@@ -178,7 +178,7 @@ contrast: single 10 MiB put = 782 ms
 > **Round-2 status**: `writeback-shipped` ✅
 > **Writeback date**: 2026-04-20
 > **Deploy**: `nano-agent-spike-do-storage-r2.haimang.workers.dev`
-> **Raw evidence**: `spikes/round-2-integrated/spike-do-storage-r2/.out/probe_follow-ups_r2-concurrent-put.json`
+> **Raw evidence**: `the historical round-2 integrated storage spike workspace`
 
 ### Round-2 concurrency curve (LIVE, 1 KiB payload per key, 2026-04-20 final run)
 

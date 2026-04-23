@@ -19,7 +19,7 @@ This review covered:
 
 - `docs/action-plan/after-foundations/B7-spike-round-2-integrated.md` (§11–§13)
 - `docs/issue/after-foundations/B7-final-closure.md`
-- `spikes/round-2-integrated/**`
+- `the historical round-2 integrated spikes tree**`
 - the shipped-package fixes B7 says it consumed:
   - `packages/session-do-runtime/`
   - `packages/capability-runtime/`
@@ -56,16 +56,16 @@ I do **not** think B7 needs a B5-B6 reopen. Those package repairs are real.
 
 This is the strongest part of B7.
 
-- worker-a resets worker-b’s sink, pushes fresh + duplicate + overflow batches across a real service binding, then reads back `/sink/stats` and `/sink/disclosure`: `spikes/round-2-integrated/spike-binding-pair-r2/worker-a-r2/src/follow-ups/binding-f04-true-callback.ts`
-- worker-b physically hosts the `BoundedEvalSink`: `spikes/round-2-integrated/spike-binding-pair-r2/worker-b-r2/src/worker.ts`
-- the raw live evidence shows the expected `duplicateDropCount = 3`, `capacityOverflowCount = 5`, `recordCount = 8`, `disclosure.count = 8`: `spikes/round-2-integrated/spike-binding-pair-r2/worker-a-r2/.out/probe_follow-ups_binding-f04-true-callback.json`
+- worker-a resets worker-b’s sink, pushes fresh + duplicate + overflow batches across a real service binding, then reads back `/sink/stats` and `/sink/disclosure`: `the historical round-2 integrated binding spike workspace`
+- worker-b physically hosts the `BoundedEvalSink`: `the historical round-2 integrated binding spike workspace`
+- the raw live evidence shows the expected `duplicateDropCount = 3`, `capacityOverflowCount = 5`, `recordCount = 8`, `disclosure.count = 8`: `the historical round-2 integrated binding spike workspace`
 
 I accept this as a real closure of the B6 “true callback push path” honesty test.
 
 ### 2.3 `binding-F01` and the two gated skips are also honest
 
-- caller-side abort was observed in the probe JSON, and worker-b tail evidence shows platform outcome `canceled`: `spikes/round-2-integrated/spike-binding-pair-r2/worker-a-r2/.out/probe_follow-ups_binding-f01-callee-abort.json`, `spikes/round-2-integrated/spike-binding-pair-r2/worker-b-r2/.out/binding-f01.tail.log`
-- F03 and F09 do not fake success when owner/platform prerequisites are missing; they return explicit gated skips instead: `spikes/round-2-integrated/spike-do-storage-r2/.out/probe_follow-ups_kv-cross-colo-stale.json`, `spikes/round-2-integrated/spike-do-storage-r2/.out/probe_follow-ups_curl-high-volume.json`
+- caller-side abort was observed in the probe JSON, and worker-b tail evidence shows platform outcome `canceled`: `the historical round-2 integrated binding spike workspace`, `the historical round-2 integrated binding spike workspace`
+- F03 and F09 do not fake success when owner/platform prerequisites are missing; they return explicit gated skips instead: `the historical round-2 integrated storage spike workspace`, `the historical round-2 integrated storage spike workspace`
 
 That honesty is important and should be preserved.
 
@@ -88,7 +88,7 @@ That honesty is important and should be preserved.
 
 `probeDoSizeCapBinarySearch()` exposes `samplesPerStep` and documents a minimum “≥3 samples per step” closure rubric, but the actual loop sends exactly **one** request per step, always with `body: { maxAttempts: 1 }`:
 
-- `samplesPerStep` setup: `spikes/round-2-integrated/spike-do-storage-r2/src/follow-ups/do-size-cap-binary-search.ts:51-53`
+- `samplesPerStep` setup: `the historical round-2 integrated storage spike workspace:51-53`
 - one fetch per loop iteration, `maxAttempts: 1`: `.../do-size-cap-binary-search.ts:65-72`
 
 The later `minSamples` computation does not count repeated runs of the **same** size. It merely takes the last `N` attempts overall:
@@ -105,7 +105,7 @@ does not mean what the code comment says it means.
 
 The live `.out` file shows a 14-attempt binary search and the correct `[lowBytes, highBytes]` bracket:
 
-- `spikes/round-2-integrated/spike-do-storage-r2/.out/probe_follow-ups_do-size-cap-binary-search.json`
+- `the historical round-2 integrated storage spike workspace`
 
 That is useful evidence for a **conservative** safe cap, but it is not evidence that each candidate size was sampled three times.
 
@@ -134,11 +134,11 @@ Pick one honest path:
 
 `checkMemVsDoParity()` builds a 5-step trace in **memory**, but on each `get` step it only calls `/native-do-roundtrip` with the in-memory value of that key:
 
-- `spikes/round-2-integrated/spike-do-storage-r2/src/re-validation/storage.ts:165-203`
+- `the historical round-2 integrated storage spike workspace:165-203`
 
 On the DO side, `/native-do-roundtrip` is a write → read → delete helper:
 
-- `spikes/round-2-integrated/spike-do-storage-r2/src/do/IntegratedProbeDO.ts:141-159`
+- `the historical round-2 integrated storage spike workspace:141-159`
 
 That means the probe does **not** preserve DO state across the five-step sequence. It never proves:
 
@@ -150,7 +150,7 @@ So the closure row:
 
 > `mem vs DO parity on a 5-step trace`
 
-is stronger than what the code actually did: `docs/issue/after-foundations/B7-final-closure.md:118-129`, `spikes/round-2-integrated/spike-do-storage-r2/.out/probe_re-validation_storage.json`.
+is stronger than what the code actually did: `docs/issue/after-foundations/B7-final-closure.md:118-129`, `the historical round-2 integrated storage spike workspace`.
 
 ### 5.2 Binding re-validation claims `@nano-agent/nacp-core` usage it does not actually have
 
@@ -161,12 +161,12 @@ The binding re-validation file imports only `result-shape.js` and performs:
 
 See:
 
-- `spikes/round-2-integrated/spike-binding-pair-r2/worker-a-r2/src/re-validation/binding.ts:1-120`
+- `the historical round-2 integrated binding spike workspace:1-120`
 
 But the result claims:
 
 - `usedPackages: ["@nano-agent/nacp-core"]`: `.../binding.ts:81-90`
-- the README describes the binding pair as being driven through `@nano-agent/nacp-core`, `@nano-agent/nacp-session`, `@nano-agent/session-do-runtime`, and `@nano-agent/eval-observability`: `spikes/round-2-integrated/README.md:22-26`
+- the README describes the binding pair as being driven through `@nano-agent/nacp-core`, `@nano-agent/nacp-session`, `@nano-agent/session-do-runtime`, and `@nano-agent/eval-observability`: `the historical round-2 integrated spikes treeREADME.md:22-26`
 
 For the **live binding re-validation route**, that is not true:
 
@@ -187,7 +187,7 @@ I am **not** saying these two routes are worthless. I am saying the current phra
 
 Raw evidence in:
 
-- `spikes/round-2-integrated/spike-do-storage-r2/.out/probe_follow-ups_r2-concurrent-put.json`
+- `the historical round-2 integrated storage spike workspace`
 
 currently reports:
 
@@ -231,7 +231,7 @@ Three separate places say B7 did not touch shipped packages:
 
 - `docs/issue/after-foundations/B7-final-closure.md:189-199`
 - `docs/issue/after-foundations/B7-phase-1-closure.md:52-53`
-- `spikes/round-2-integrated/README.md:81-85`
+- `the historical round-2 integrated spikes treeREADME.md:81-85`
 
 But B7 §11.1 explicitly records package-level fixes that were part of the same B7 entry/closure chain:
 
@@ -252,7 +252,7 @@ If the intended claim is narrower — e.g. “after the B5-B6 pre-entry fixes, t
 
 The file header says the probe will inspect colo identity and keep the finding open when only a single-colo run is observed:
 
-- `spikes/round-2-integrated/spike-do-storage-r2/src/follow-ups/kv-cross-colo-stale.ts:19-24`
+- `the historical round-2 integrated storage spike workspace:19-24`
 
 But the implementation contains:
 
@@ -263,7 +263,7 @@ But the implementation contains:
 
 Today this does **not** invalidate the current B7 result, because the live run stayed honestly gated:
 
-- `spikes/round-2-integrated/spike-do-storage-r2/.out/probe_follow-ups_kv-cross-colo-stale.json`
+- `the historical round-2 integrated storage spike workspace`
 
 But it does mean the probe is not trustworthy yet for the future owner-enabled rerun that B7/B8 still depend on.
 
@@ -313,21 +313,21 @@ What I would *not* do is treat the current B7 doc pack as an already-clean final
 
 | 审查编号 | 审查问题 | 处理结果 | 处理方式 | 修改文件 |
 |----------|----------|----------|----------|----------|
-| B7-R1 | F08 binary-search 没实际做 3 samples per step | `fixed` | DO 侧 `handleCapBinarySearch` 加真正的 `samplesPerStep` 循环，fail-fast on TOOBIG；caller 侧按 `attempts[].samples >= target` 验证，不满足时降级 caveat | `spikes/round-2-integrated/spike-do-storage-r2/src/do/IntegratedProbeDO.ts`, `.../src/follow-ups/do-size-cap-binary-search.ts` |
+| B7-R1 | F08 binary-search 没实际做 3 samples per step | `fixed` | DO 侧 `handleCapBinarySearch` 加真正的 `samplesPerStep` 循环，fail-fast on TOOBIG；caller 侧按 `attempts[].samples >= target` 验证，不满足时降级 caveat | `the historical round-2 integrated storage spike workspace`, `.../src/follow-ups/do-size-cap-binary-search.ts` |
 | B7-R2 (F05) | mem vs DO parity 用 `/native-do-roundtrip` 不能观察持久状态 | `fixed` | DO 新增 `/parity-apply` + `/parity-reset` 路由维护 `parity:` namespace；caller 对每步真比较 DO observed vs mem expected | `.../do/IntegratedProbeDO.ts`, `.../re-validation/storage.ts` |
-| B7-R2 (binding) | re-validation 声称 `usedPackages: ["@nano-agent/nacp-core"]` 但没导入 | `fixed` | `usedPackages: []` + 文件头显式说明为什么此 probe 不导入 nacp-core；spike README 同步 | `.../spike-binding-pair-r2/worker-a-r2/src/re-validation/binding.ts`, `spikes/round-2-integrated/README.md` |
-| B7-R3 | 文档 R2 并发数据错位、残留 "pending live deploy"、"did not modify shipped package" 过度声明 | `fixed` | 用最新 run `.out` 覆盖 `[336/1310/2216/4383]`；清理 3 处 "pending live deploy"；3 处 "did not modify shipped package" 改写为 "B7 phase itself 不改 packages；B5-B6 pre-entry round 已改" | `docs/spikes/unexpected/F01-*.md`, `docs/issue/after-foundations/B7-final-closure.md`, `B7-phase-1-closure.md`, `B7-phase-3-closure.md`, `docs/action-plan/after-foundations/B7-spike-round-2-integrated.md`, `spikes/round-2-integrated/README.md` |
+| B7-R2 (binding) | re-validation 声称 `usedPackages: ["@nano-agent/nacp-core"]` 但没导入 | `fixed` | `usedPackages: []` + 文件头显式说明为什么此 probe 不导入 nacp-core；spike README 同步 | `.../spike-binding-pair-r2/worker-a-r2/src/re-validation/binding.ts`, `the historical round-2 integrated spikes treeREADME.md` |
+| B7-R3 | 文档 R2 并发数据错位、残留 "pending live deploy"、"did not modify shipped package" 过度声明 | `fixed` | 用最新 run `.out` 覆盖 `[336/1310/2216/4383]`；清理 3 处 "pending live deploy"；3 处 "did not modify shipped package" 改写为 "B7 phase itself 不改 packages；B5-B6 pre-entry round 已改" | `docs/spikes/unexpected/F01-*.md`, `docs/issue/after-foundations/B7-final-closure.md`, `B7-phase-1-closure.md`, `B7-phase-3-closure.md`, `docs/action-plan/after-foundations/B7-spike-round-2-integrated.md`, `the historical round-2 integrated spikes treeREADME.md` |
 | B7-R4 | F03 probe 无 colo detection + verdict 逻辑与注释矛盾 | `fixed` | `worker.ts` 从 `request.cf.colo` / `cf-ray` 注入 observedColo；probe verdict 改为 `stale→still-open` / `clean+single-colo→still-open` / `clean+multi-colo→dismissed-with-rationale` | `.../spike-do-storage-r2/src/worker.ts`, `.../src/follow-ups/kv-cross-colo-stale.ts` |
 
 ### 6.3 变更文件清单
 
-- `spikes/round-2-integrated/spike-do-storage-r2/src/do/IntegratedProbeDO.ts` (新增 2 路由 + 真 samplesPerStep 循环)
-- `spikes/round-2-integrated/spike-do-storage-r2/src/follow-ups/do-size-cap-binary-search.ts` (真 rubric 验证)
-- `spikes/round-2-integrated/spike-do-storage-r2/src/follow-ups/kv-cross-colo-stale.ts` (verdict 逻辑修复 + colo 观察)
-- `spikes/round-2-integrated/spike-do-storage-r2/src/re-validation/storage.ts` (F05 真 persistent-state parity)
-- `spikes/round-2-integrated/spike-do-storage-r2/src/worker.ts` (把 `request.cf.colo` 注入 F03 probe)
-- `spikes/round-2-integrated/spike-binding-pair-r2/worker-a-r2/src/re-validation/binding.ts` (usedPackages 修正)
-- `spikes/round-2-integrated/README.md` (binding-pair 描述收窄 + "did not modify" 改写)
+- `the historical round-2 integrated storage spike workspace` (新增 2 路由 + 真 samplesPerStep 循环)
+- `the historical round-2 integrated storage spike workspace` (真 rubric 验证)
+- `the historical round-2 integrated storage spike workspace` (verdict 逻辑修复 + colo 观察)
+- `the historical round-2 integrated storage spike workspace` (F05 真 persistent-state parity)
+- `the historical round-2 integrated storage spike workspace` (把 `request.cf.colo` 注入 F03 probe)
+- `the historical round-2 integrated binding spike workspace` (usedPackages 修正)
+- `the historical round-2 integrated spikes treeREADME.md` (binding-pair 描述收窄 + "did not modify" 改写)
 - `docs/spikes/unexpected/F01-r2-put-273ms-per-key-during-preseed.md` (R2 数字替换为最新 run)
 - `docs/issue/after-foundations/B7-final-closure.md` (R2 table + "did not modify" 改写)
 - `docs/issue/after-foundations/B7-phase-1-closure.md` ("did not modify" 改写)

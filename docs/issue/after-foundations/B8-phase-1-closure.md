@@ -60,20 +60,20 @@ Downstream rule for B8:
 
 | finding | Round-1 status | Round-2 verdict | gate / caveat | evidence path |
 |---|---|---|---|---|
-| `spike-do-storage-F01` | `open` | `writeback-shipped` | validated through `R2Adapter.put` re-validation | `spikes/round-2-integrated/spike-do-storage-r2/.out/probe_re-validation_storage.json` |
-| `spike-do-storage-F02` | `open` | `writeback-shipped` | cursor/list contract re-validated through `R2Adapter.listAll` | `spikes/round-2-integrated/spike-do-storage-r2/.out/probe_re-validation_storage.json` |
-| `spike-do-storage-F03` | `open` | `still-open` | owner/platform gate: `F03-CROSS-COLO-DISABLED` | `spikes/round-2-integrated/spike-do-storage-r2/.out/probe_follow-ups_kv-cross-colo-stale.json` |
-| `spike-do-storage-F04` | `open` | `writeback-shipped` | DO transactional roundtrip re-validated | `spikes/round-2-integrated/spike-do-storage-r2/.out/probe_re-validation_storage.json` |
-| `spike-do-storage-F05` | `open` | `writeback-shipped` | current raw evidence now reports a persistent 5-step trace | `spikes/round-2-integrated/spike-do-storage-r2/.out/probe_re-validation_storage.json` |
-| `spike-do-storage-F06` | `open` | `dismissed-with-rationale` | D1 stays batch/query-only; no cross-query transaction contract introduced | `spikes/round-2-integrated/spike-do-storage-r2/.out/probe_re-validation_storage.json`, `docs/issue/after-foundations/B7-final-closure.md` §4 |
-| `spike-do-storage-F07` | `open` | `writeback-shipped` | 12-pack conservative fake-bash surface still holds | `spikes/round-2-integrated/spike-do-storage-r2/.out/probe_re-validation_bash.json` |
-| `spike-do-storage-F08` | `open` | `writeback-shipped` | measured cap ~2.1 MiB; B8 consumes **2 MiB safe default** | `spikes/round-2-integrated/spike-do-storage-r2/.out/probe_follow-ups_do-size-cap-binary-search.json` |
-| `spike-do-storage-F09` | `open` | `writeback-shipped` (conservative path) + `still-open` (high-volume) | owner/platform gate: `F09-OWNER-URL-MISSING` for high-volume rerun | `spikes/round-2-integrated/spike-do-storage-r2/.out/probe_re-validation_bash.json`, `spikes/round-2-integrated/spike-do-storage-r2/.out/probe_follow-ups_curl-high-volume.json` |
-| `spike-binding-pair-F01` | `open` | `writeback-shipped` | B1 latency baseline + B7 live callee abort evidence | `spikes/round-2-integrated/spike-binding-pair-r2/worker-a-r2/.out/probe_follow-ups_binding-f01-callee-abort.json`, `spikes/round-2-integrated/spike-binding-pair-r2/worker-b-r2/.out/binding-f01.tail.log` |
-| `spike-binding-pair-F02` | `open` | `writeback-shipped` | lowercase header law remains live binding truth | `spikes/round-2-integrated/spike-binding-pair-r2/worker-a-r2/.out/probe_re-validation_binding.json` |
-| `spike-binding-pair-F03` | `open` | `writeback-shipped` | cross-worker hook dispatch still viable | `spikes/round-2-integrated/spike-binding-pair-r2/worker-a-r2/.out/probe_re-validation_binding.json` |
-| `spike-binding-pair-F04` | `open` | `writeback-shipped` | true cross-worker sink push path closed in B7 | `spikes/round-2-integrated/spike-binding-pair-r2/worker-a-r2/.out/probe_follow-ups_binding-f04-true-callback.json` |
-| `unexpected-F01` | `open` | `writeback-shipped` | full concurrency curve captured; B8 safe default stays **50** | `spikes/round-2-integrated/spike-do-storage-r2/.out/probe_follow-ups_r2-concurrent-put.json` |
+| `spike-do-storage-F01` | `open` | `writeback-shipped` | validated through `R2Adapter.put` re-validation | `the historical round-2 integrated storage spike workspace` |
+| `spike-do-storage-F02` | `open` | `writeback-shipped` | cursor/list contract re-validated through `R2Adapter.listAll` | `the historical round-2 integrated storage spike workspace` |
+| `spike-do-storage-F03` | `open` | `still-open` | owner/platform gate: `F03-CROSS-COLO-DISABLED` | `the historical round-2 integrated storage spike workspace` |
+| `spike-do-storage-F04` | `open` | `writeback-shipped` | DO transactional roundtrip re-validated | `the historical round-2 integrated storage spike workspace` |
+| `spike-do-storage-F05` | `open` | `writeback-shipped` | current raw evidence now reports a persistent 5-step trace | `the historical round-2 integrated storage spike workspace` |
+| `spike-do-storage-F06` | `open` | `dismissed-with-rationale` | D1 stays batch/query-only; no cross-query transaction contract introduced | `the historical round-2 integrated storage spike workspace`, `docs/issue/after-foundations/B7-final-closure.md` §4 |
+| `spike-do-storage-F07` | `open` | `writeback-shipped` | 12-pack conservative fake-bash surface still holds | `the historical round-2 integrated storage spike workspace` |
+| `spike-do-storage-F08` | `open` | `writeback-shipped` | measured cap ~2.1 MiB; B8 consumes **2 MiB safe default** | `the historical round-2 integrated storage spike workspace` |
+| `spike-do-storage-F09` | `open` | `writeback-shipped` (conservative path) + `still-open` (high-volume) | owner/platform gate: `F09-OWNER-URL-MISSING` for high-volume rerun | `the historical round-2 integrated storage spike workspace`, `the historical round-2 integrated storage spike workspace` |
+| `spike-binding-pair-F01` | `open` | `writeback-shipped` | B1 latency baseline + B7 live callee abort evidence | `the historical round-2 integrated binding spike workspace`, `the historical round-2 integrated binding spike workspace` |
+| `spike-binding-pair-F02` | `open` | `writeback-shipped` | lowercase header law remains live binding truth | `the historical round-2 integrated binding spike workspace` |
+| `spike-binding-pair-F03` | `open` | `writeback-shipped` | cross-worker hook dispatch still viable | `the historical round-2 integrated binding spike workspace` |
+| `spike-binding-pair-F04` | `open` | `writeback-shipped` | true cross-worker sink push path closed in B7 | `the historical round-2 integrated binding spike workspace` |
+| `unexpected-F01` | `open` | `writeback-shipped` | full concurrency curve captured; B8 safe default stays **50** | `the historical round-2 integrated storage spike workspace` |
 | `unexpected-F02` | `open` | `dismissed-with-rationale` | treated as platform property rather than a new adapter contract | `docs/issue/after-foundations/B7-final-closure.md` §4 |
 
 **Aggregate now used by B8**

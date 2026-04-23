@@ -105,5 +105,5 @@ No C1-C6 caveat applies directly to fake-bash-platform findings; the only caveat
 - Rollup spec: `docs/design/after-foundations/P0-spike-discipline-and-validation-matrix.md` §4.6
 - V2 拆分 design: `docs/design/after-foundations/P0-spike-do-storage-design.md` r2 §4.7-4.9
 - GPT review推动 V2 拆分: `docs/design/after-foundations/P0-reviewed-by-GPT.md` §2.4
-- Related spike output: `spikes/round-1-bare-metal/spike-do-storage/.out/2026-04-19T08-17-46Z.json`
+- Related spike output: `the historical round-1 storage spike workspace`
 - Phase 4 issue: `docs/issue/after-foundations/B1-phase-4-closure.md`

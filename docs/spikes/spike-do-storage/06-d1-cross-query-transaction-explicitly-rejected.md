@@ -180,7 +180,7 @@ Cloudflare D1 是 SQLite-based serverless DB；client-driven `BEGIN/COMMIT` 在 
 
 ### 6.2 复现脚本位置
 
-- `spikes/round-1-bare-metal/spike-do-storage/src/probes/d1-transaction.ts`
+- `the historical round-1 storage spike workspace`
 
 ---
 
@@ -209,7 +209,7 @@ Cloudflare D1 是 SQLite-based serverless DB；client-driven `BEGIN/COMMIT` 在 
 
 > **Round-2 status**: `dismissed-with-rationale`
 > **Writeback date**: 2026-04-20
-> **Driver**: `spikes/round-2-integrated/spike-do-storage-r2/src/re-validation/storage.ts` via `D1Adapter.run("SELECT 1")`
+> **Driver**: `the historical round-2 integrated storage spike workspace` via `D1Adapter.run("SELECT 1")`
 
 ### Round-2 evidence summary
 

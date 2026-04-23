@@ -68,7 +68,7 @@
 ## Files created (Phase 2)
 
 ```
-spikes/round-1-bare-metal/spike-do-storage/
+the historical round-1 storage spike workspace/
 ├── src/
 │   ├── result-shape.ts                            (NEW)
 │   ├── probes/
@@ -94,7 +94,7 @@ spikes/round-1-bare-metal/spike-do-storage/
 
 | 纪律 | 状态 | Evidence |
 |---|---|---|
-| 1. spikes/ 顶级，不进 packages/ | ✅ | 仍位于 `spikes/round-1-bare-metal/` |
+| 1. the historical spikes tree  顶级，不进 packages/ | ✅ | 仍位于 `the historical round-1 bare-metal spikes tree` |
 | 2. expiration date | ✅ | 真实部署的 worker `vars.EXPIRATION_DATE` 仍为 2026-08-01 |
 | 3. 不接 CI 主链 | ✅ | spike 不在 pnpm workspace；P2 部署完全独立 |
 | 4. finding → design doc | ⏳ | Phase 4 才产出 per-finding docs；本 issue 是 Phase 2 closure，预览了 finding |
@@ -133,4 +133,4 @@ spikes/round-1-bare-metal/spike-do-storage/
 - Design (do-storage): `docs/design/after-foundations/P0-spike-do-storage-design.md` (r2)
 - Tracking policy: `docs/issue/README.md`
 - Previous issue: `docs/issue/after-foundations/B1-phase-1-closure.md`
-- Combined run output: `spikes/round-1-bare-metal/spike-do-storage/.out/2026-04-19T08-17-46Z.json`
+- Combined run output: `the historical round-1 storage spike workspace`

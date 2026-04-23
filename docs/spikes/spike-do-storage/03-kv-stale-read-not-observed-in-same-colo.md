@@ -160,7 +160,7 @@ KV write 路径在同 colo 内的 read-through cache 行为可能比公开文档
 
 ### 6.2 复现脚本位置
 
-- `spikes/round-1-bare-metal/spike-do-storage/src/probes/kv-stale-read.ts`
+- `the historical round-1 storage spike workspace`
 
 ---
 
@@ -191,7 +191,7 @@ KV write 路径在同 colo 内的 read-through cache 行为可能比公开文档
 > **Round-2 status**: `still-open` (gated on owner/platform capability)
 > **Writeback date**: 2026-04-20
 > **Gate**: `F03-CROSS-COLO-DISABLED`
-> **Driver**: `spikes/round-2-integrated/spike-do-storage-r2/src/follow-ups/kv-cross-colo-stale.ts`
+> **Driver**: `the historical round-2 integrated storage spike workspace`
 
 ### Round-2 evidence summary
 

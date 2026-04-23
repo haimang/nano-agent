@@ -145,7 +145,7 @@ average write: ~520 ms; average read: ~2.83 ms; ratio ~184x
 
 ### 6.2 复现脚本位置
 
-- `spikes/round-1-bare-metal/spike-do-storage/src/probes/kv-stale-read.ts`
+- `the historical round-1 storage spike workspace`
 
 ---
 

@@ -19,7 +19,7 @@ Cloudflare service-binding fetch transport **does not provide dedup** —— spi
 
 - spike worker live: `https://nano-agent-spike-binding-pair-a.haimang.workers.dev`
 - spike finding doc: `docs/spikes/spike-binding-pair/04-eval-fanin-app-layer-dedup-required.md`
-- Combined run output: `spikes/round-1-bare-metal/spike-binding-pair/.out/2026-04-19T08-28-14Z.json`
+- Combined run output: `the historical round-1 binding spike workspace`
 
 ## Required action
 
@@ -87,7 +87,7 @@ This is **doc-only** in the spec — no new NACP message kind required.
 ## References
 
 - Charter: `docs/plan-after-foundations.md` §6 Phase 4 + §11.1 Exit Criteria 5/6
-- Source finding: [binding-F04](../../spikes/spike-binding-pair/04-eval-fanin-app-layer-dedup-required.md)
+- Source finding: [binding-F04](../../the historical spikes tree spike-binding-pair/04-eval-fanin-app-layer-dedup-required.md)
 - Binding rollup: `docs/spikes/binding-findings.md` §3
-- Spike code: `spikes/round-1-bare-metal/spike-binding-pair/worker-a/src/probes/eval-fanin.ts`
+- Spike code: `the historical round-1 binding spike workspace`
 - Tracking policy: `docs/issue/README.md`

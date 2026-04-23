@@ -50,7 +50,7 @@
 
 | 纪律 | 状态 | Evidence |
 |---|---|---|
-| 1. spikes/ 顶级 | ✅ | rollup docs 在 `docs/spikes/` 顶级 |
+| 1. the historical spikes tree  顶级 | ✅ | rollup docs 在 `docs/spikes/` 顶级 |
 | 2. expiration date | ✅ | spike workers 仍持有 expiration |
 | 3. 不接 CI 主链 | ✅ | rollup docs 是 markdown |
 | 4. finding → design doc | ✅ | rollup 是 finding 的索引/总结层 |

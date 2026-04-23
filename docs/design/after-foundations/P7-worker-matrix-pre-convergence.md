@@ -357,7 +357,7 @@ If P6 Round 2 closure reveals that v1 `CAPABILITY_WORKER` / `HOOK_WORKER` / `FAK
 
 **Evidence**: charter §4.1 H 第 32 项 explicit; charter §4.2 第 2 项 (worker matrix shell out-of-scope); GPT review §2.2 修订.
 
-**Decision**: P7 仅产生 docs/ 与 docs/templates/ 文件; `packages/` 与 `spikes/` 都不变; 0 source code commits in P7.
+**Decision**: P7 仅产生 docs/ 与 docs/templates/ 文件; `packages/` 与 the historical spikes tree 都不变; 0 source code commits in P7.
 
 ### 5.2 决策：4 first-wave worker proposal (含 context.core upgrade)
 

@@ -134,7 +134,7 @@ GET  /healthz
 ### 3.3 解耦：两个 spike worker 的最小内部结构
 
 ```
-spikes/round-1-bare-metal/spike-binding-pair/
+the historical round-1 binding spike workspace/
 ├── README.md                       # 部署顺序说明
 ├── worker-a/
 │   ├── wrangler.jsonc              # bindings: WORKER_B service binding

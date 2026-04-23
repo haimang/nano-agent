@@ -20,7 +20,7 @@
 
 - spike worker live: `https://nano-agent-spike-do-storage.haimang.workers.dev`
 - spike finding doc: `docs/spikes/spike-do-storage/02-r2-list-cursor-required-pagination-confirmed.md`
-- Combined run output: `spikes/round-1-bare-metal/spike-do-storage/.out/2026-04-19T08-17-46Z.json`
+- Combined run output: `the historical round-1 storage spike workspace`
 
 ## Required action
 
@@ -88,8 +88,8 @@ Add test that:
 ## References
 
 - Charter: `docs/plan-after-foundations.md` §6 Phase 1 + §11.1 Exit Criteria 2
-- Source finding: [F02](../../spikes/spike-do-storage/02-r2-list-cursor-required-pagination-confirmed.md)
+- Source finding: [F02](../../the historical spikes tree spike-do-storage/02-r2-list-cursor-required-pagination-confirmed.md)
 - Storage rollup: `docs/spikes/storage-findings.md` §3
-- Spike code: `spikes/round-1-bare-metal/spike-do-storage/src/probes/r2-list-cursor.ts`
+- Spike code: `the historical round-1 storage spike workspace`
 - Discipline check: `docs/spikes/_DISCIPLINE-CHECK.md`
 - Tracking policy: `docs/issue/README.md`

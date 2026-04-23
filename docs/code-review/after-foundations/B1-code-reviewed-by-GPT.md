@@ -4,8 +4,8 @@
 > 审查时间: `2026-04-19`
 > 审查人: `GPT-5.4`
 > 审查范围:
-> - `spikes/round-1-bare-metal/spike-do-storage/**`
-> - `spikes/round-1-bare-metal/spike-binding-pair/**`
+> - `the historical round-1 storage spike workspace/**`
+> - `the historical round-1 binding spike workspace/**`
 > - `docs/design/after-foundations/P0-spike-do-storage-design.md`
 > - `docs/design/after-foundations/P0-spike-binding-pair-design.md`
 > - `packages/session-do-runtime/src/{remote-bindings,cross-seam}.ts`
@@ -33,30 +33,30 @@
   - `docs/design/after-foundations/P0-spike-do-storage-design.md`
   - `docs/design/after-foundations/P0-spike-binding-pair-design.md`
 - **核查实现**：
-  - `spikes/round-1-bare-metal/spike-do-storage/src/{worker.ts,do/ProbeDO.ts,probes/*.ts,scripts/*.sh,scripts/*.ts}`
-  - `spikes/round-1-bare-metal/spike-binding-pair/{worker-a,worker-b}/src/**`
+  - `the historical round-1 storage spike workspace{worker.ts,do/ProbeDO.ts,probes/*.ts,scripts/*.sh,scripts/*.ts}`
+  - `the historical round-1 binding spike workspace/{worker-a,worker-b}/src/**`
   - `packages/hooks/src/runtimes/service-binding.ts`
   - `packages/session-do-runtime/src/{remote-bindings,cross-seam}.ts`
   - `packages/session-do-runtime/src/do/nano-session-do.ts`
 - **执行过的验证**：
   - 读取两份 `.out` 原始输出，对照 13 个 finding 的主结论
-  - `git --no-pager log --oneline --decorate --no-merges -- docs/action-plan/after-foundations/B1-spike-round-1-bare-metal.md spikes/round-1-bare-metal docs/spikes docs/issue/after-foundations | head -n 40`
+  - `git --no-pager log --oneline --decorate --no-merges -- docs/action-plan/after-foundations/B1-spike-round-1-bare-metal.md the historical round-1 bare-metal spikes tree docs/spikes docs/issue/after-foundations | head -n 40`
   - `npm --prefix <spike-dir> install --package-lock=false --ignore-scripts`
-  - `npm exec --yes --package typescript -- tsc --noEmit -p spikes/round-1-bare-metal/spike-do-storage/tsconfig.json`
-  - `npm exec --yes --package typescript -- tsc --noEmit -p spikes/round-1-bare-metal/spike-binding-pair/worker-a/tsconfig.json`
-  - `npm exec --yes --package typescript -- tsc --noEmit -p spikes/round-1-bare-metal/spike-binding-pair/worker-b/tsconfig.json`
+  - `npm exec --yes --package typescript -- tsc --noEmit -p the historical round-1 storage spike workspace`
+  - `npm exec --yes --package typescript -- tsc --noEmit -p the historical round-1 binding spike workspace`
+  - `npm exec --yes --package typescript -- tsc --noEmit -p the historical round-1 binding spike workspace`
 
 ### 1.1 已确认的正面事实
 
-- `spike-do-storage` 的 9 个 route 与 `spike-binding-pair` 的 4 个 route 都已真实实现，且 `binding-pair` 从入口处就显式声明“只覆盖 fetch-based seam，不覆盖 handleNacp RPC transport”。`spikes/round-1-bare-metal/spike-do-storage/src/worker.ts:4-15`, `spikes/round-1-bare-metal/spike-binding-pair/worker-a/src/worker.ts:5-15`
-- binding 侧的 latency / payload scaling / caller-side cancellation、cross-seam-anchor、structured hook error body、dedup/overflow 这些核心观测并非文档脑补，原始 `.out` 与 probe 代码能基本对上。`spikes/round-1-bare-metal/spike-binding-pair/.out/2026-04-19T08-28-14Z.json:4-13`, `spikes/round-1-bare-metal/spike-binding-pair/worker-a/src/probes/latency-cancellation.ts:31-201`
-- 这批 spike 代码在安装其各自声明的 devDependencies 后可以通过 TypeScript 检查，说明它们不是语法层面的草稿。`spikes/round-1-bare-metal/spike-do-storage/package.json:7-16`, `spikes/round-1-bare-metal/spike-binding-pair/worker-a/package.json:7-16`, `spikes/round-1-bare-metal/spike-binding-pair/worker-b/package.json:7-16`
+- `spike-do-storage` 的 9 个 route 与 `spike-binding-pair` 的 4 个 route 都已真实实现，且 `binding-pair` 从入口处就显式声明“只覆盖 fetch-based seam，不覆盖 handleNacp RPC transport”。`the historical round-1 storage spike workspace:4-15`, `the historical round-1 binding spike workspace:5-15`
+- binding 侧的 latency / payload scaling / caller-side cancellation、cross-seam-anchor、structured hook error body、dedup/overflow 这些核心观测并非文档脑补，原始 `.out` 与 probe 代码能基本对上。`the historical round-1 binding spike workspace:4-13`, `the historical round-1 binding spike workspace:31-201`
+- 这批 spike 代码在安装其各自声明的 devDependencies 后可以通过 TypeScript 检查，说明它们不是语法层面的草稿。`the historical round-1 storage spike workspace:7-16`, `the historical round-1 binding spike workspace:7-16`, `the historical round-1 binding spike workspace:7-16`
 
 ### 1.2 已确认的负面事实
 
-- `V3-binding-eval-fanin` 的实现始终是 worker-a 主动 `fetch("/handle/eval-emit")` 拉回 records 再本地 ingest；设计里要求的 “worker-b 调 worker-a sink endpoint” 并没有发生。`docs/design/after-foundations/P0-spike-binding-pair-design.md:245-249`, `spikes/round-1-bare-metal/spike-binding-pair/worker-a/src/probes/eval-fanin.ts:81-93`, `spikes/round-1-bare-metal/spike-binding-pair/worker-b/src/handlers/eval-emit.ts:64-72`
-- `V3-binding-hooks-callback` 的 anchor 断言走的是 `/handle/header-dump`，不是 `/handle/hook-dispatch`；因此它并不能证明“hook callback path 上 anchor 透传成立”。`docs/design/after-foundations/P0-spike-binding-pair-design.md:228-235`, `spikes/round-1-bare-metal/spike-binding-pair/worker-a/src/probes/hooks-callback.ts:119-141`
-- `V1-storage-KV-stale-read` 没有实现设计里写的 `cacheTtl: 0` / 100 次 spread / strong-read option 相关验证；当前只能证明“同 worker、同 colo、当前样本规模下未观察到 stale”。`docs/design/after-foundations/P0-spike-do-storage-design.md:195-203`, `spikes/round-1-bare-metal/spike-do-storage/src/probes/kv-stale-read.ts:31-81`
+- `V3-binding-eval-fanin` 的实现始终是 worker-a 主动 `fetch("/handle/eval-emit")` 拉回 records 再本地 ingest；设计里要求的 “worker-b 调 worker-a sink endpoint” 并没有发生。`docs/design/after-foundations/P0-spike-binding-pair-design.md:245-249`, `the historical round-1 binding spike workspace:81-93`, `the historical round-1 binding spike workspace:64-72`
+- `V3-binding-hooks-callback` 的 anchor 断言走的是 `/handle/header-dump`，不是 `/handle/hook-dispatch`；因此它并不能证明“hook callback path 上 anchor 透传成立”。`docs/design/after-foundations/P0-spike-binding-pair-design.md:228-235`, `the historical round-1 binding spike workspace:119-141`
+- `V1-storage-KV-stale-read` 没有实现设计里写的 `cacheTtl: 0` / 100 次 spread / strong-read option 相关验证；当前只能证明“同 worker、同 colo、当前样本规模下未观察到 stale”。`docs/design/after-foundations/P0-spike-do-storage-design.md:195-203`, `the historical round-1 storage spike workspace:31-81`
 
 ---
 
@@ -68,7 +68,7 @@
 - **类型**：`correctness`
 - **事实依据**：
   - 设计要求是：worker-b 通过 binding callback 把 evidence emit 到 worker-a 的 sink，并验证 ordering / dedup / overflow。`docs/design/after-foundations/P0-spike-binding-pair-design.md:245-249`
-  - 实现中，worker-a 只是多次调用 `workerB.fetch("/handle/eval-emit")`，拿到 `body.records` 后本地 `ingest(sink, body.records)`；worker-b handler 也只是把 records 作为 JSON body 返回。`spikes/round-1-bare-metal/spike-binding-pair/worker-a/src/probes/eval-fanin.ts:81-93`, `spikes/round-1-bare-metal/spike-binding-pair/worker-a/src/probes/eval-fanin.ts:117-129`, `spikes/round-1-bare-metal/spike-binding-pair/worker-a/src/probes/eval-fanin.ts:155-167`, `spikes/round-1-bare-metal/spike-binding-pair/worker-a/src/probes/eval-fanin.ts:195-207`, `spikes/round-1-bare-metal/spike-binding-pair/worker-b/src/handlers/eval-emit.ts:64-72`
+  - 实现中，worker-a 只是多次调用 `workerB.fetch("/handle/eval-emit")`，拿到 `body.records` 后本地 `ingest(sink, body.records)`；worker-b handler 也只是把 records 作为 JSON body 返回。`the historical round-1 binding spike workspace:81-93`, `the historical round-1 binding spike workspace:117-129`, `the historical round-1 binding spike workspace:155-167`, `the historical round-1 binding spike workspace:195-207`, `the historical round-1 binding spike workspace:64-72`
 - **为什么重要**：
   - F04 直接驱动后续 `SessionInspector` / `defaultEvalRecords` 的 dedup 与 overflow writeback；如果 probe 只验证“单次 fetch response body 的顺序”，那它不能代表真实 callback fan-in path 的交付顺序、重入、回压与丢弃行为。
   - 当前实现仍然有价值，但它验证的是“response-batch ingest semantics”，不是设计文档承诺的“cross-worker sink callback semantics”。
@@ -84,7 +84,7 @@
 - **类型**：`test-gap`
 - **事实依据**：
   - 设计要求第 5 步明确写的是“测试 5 个 anchor header 在 hook callback 路径上的传播”。`docs/design/after-foundations/P0-spike-binding-pair-design.md:228-235`
-  - 代码里这一步实际上是直接 POST 到 `/handle/header-dump`，并没有穿过 `/handle/hook-dispatch`。`spikes/round-1-bare-metal/spike-binding-pair/worker-a/src/probes/hooks-callback.ts:119-141`
+  - 代码里这一步实际上是直接 POST 到 `/handle/header-dump`，并没有穿过 `/handle/hook-dispatch`。`the historical round-1 binding spike workspace:119-141`
 - **为什么重要**：
   - `hook-dispatch` handler 本身才是后续 `packages/hooks/src/runtimes/service-binding.ts` 对应的语义路径；header-dump 只能证明“另一条 handler 路径能看到 header”，不能证明 hook callback path 不会丢 header、改写 header，或在 body parsing/dispatch 阶段出现差异。
   - 这会直接影响 F03 文档里 “anchor headers 在 hook path 上同样透传” 的可信度。
@@ -100,7 +100,7 @@
 - **类型**：`test-gap`
 - **事实依据**：
   - P0 设计预期的是：立即读 ×100、不同 delay、并关注 `cacheTtl: 0` / strong-read option / stale-read window P99。`docs/design/after-foundations/P0-spike-do-storage-design.md:195-203`
-  - 当前实现只是在每个 delay 下做 10 次 `kv.get(KEY)`，没有 `cacheTtl` 变体，也没有更高采样或更广 locality 条件。`spikes/round-1-bare-metal/spike-do-storage/src/probes/kv-stale-read.ts:31-81`
+  - 当前实现只是在每个 delay 下做 10 次 `kv.get(KEY)`，没有 `cacheTtl` 变体，也没有更高采样或更广 locality 条件。`the historical round-1 storage spike workspace:31-81`
 - **为什么重要**：
   - 当前结果足以支持“same-colo baseline 暂未观察到 stale”这个保守结论，但还不足以支撑 `kvGet` 是否需要 freshness surface、是否存在 stronger read path 之类的接口判断。
   - 如果不把这条 finding 明确标成弱证据，后续 B2/B4 容易把它误读成“KV read-after-write 已被全面证明没问题”。
@@ -139,7 +139,7 @@
 | O1 | Round 2 integrated spike | `遵守` | 当前代码仍停留在 round-1 bare-metal，没有偷跑 B7。 |
 | O2 | packages/ 内正式 writeback 实施 | `遵守` | spike 没有把未来产品代码直接写进 `packages/`。 |
 | O3 | RPC `handleNacp` transport 验证 | `遵守` | binding 侧从 README 到 worker 入口都显式声明“不覆盖 RPC transport”。 |
-| O4 | spike 进 CI 主链 | `遵守` | spike 仍在 `spikes/` 顶层，不在 root workspace 主测试链里。 |
+| O4 | spike 进 CI 主链 | `遵守` | spike 仍在 the historical spikes tree 顶层，不在 root workspace 主测试链里。 |
 | O5 | spike 接生产数据 / 业务能力 | `遵守` | probe 仅处理 deterministic payload / platform truth，不承载业务能力。 |
 
 ---
@@ -182,19 +182,19 @@
 | 审查编号 | 审查问题 | 处理结果 | 处理方式 | 修改文件 |
 |----------|----------|----------|----------|----------|
 | R1 | `V3-binding-eval-fanin` 只验证 response-batch，不是 callback sink path | `deferred (downgrade + B7 add)` | F04 finding + binding-findings rollup 加 scope caveat 说明"response-batch simulation only"；真 callback path 验证追加到 P6 §4.4a (B7 round 2 新 follow-up) | `docs/spikes/spike-binding-pair/04-eval-fanin-app-layer-dedup-required.md`, `docs/spikes/binding-findings.md`, `docs/design/after-foundations/P6-spike-round-2-integration-plan.md` |
-| R2 | `V3-binding-hooks-callback` 的 anchor 检查绕过 hook path | `fixed` | worker-b `hook-dispatch.ts` 在 response body echo `receivedHeaders`；worker-a `hooks-callback.ts` probe 从 `/handle/header-dump` 改为 `/handle/hook-dispatch`；re-deploy 两个 worker；re-run probes；新 `.out/2026-04-19T13-02-31Z.json` 显示 `anchor_on_hook_dispatch_path: { traceSurvived: true, sessionSurvived: true, traceMatches: true, sessionMatches: true }` | `spikes/round-1-bare-metal/spike-binding-pair/worker-b/src/handlers/hook-dispatch.ts`, `spikes/round-1-bare-metal/spike-binding-pair/worker-a/src/probes/hooks-callback.ts`, `docs/spikes/spike-binding-pair/03-hooks-callback-latency-and-error-shape-confirmed.md` (§1.2 + §8), `spikes/round-1-bare-metal/spike-binding-pair/.out/2026-04-19T13-02-31Z.json` (new) |
+| R2 | `V3-binding-hooks-callback` 的 anchor 检查绕过 hook path | `fixed` | worker-b `hook-dispatch.ts` 在 response body echo `receivedHeaders`；worker-a `hooks-callback.ts` probe 从 `/handle/header-dump` 改为 `/handle/hook-dispatch`；re-deploy 两个 worker；re-run probes；新 `.out/2026-04-19T13-02-31Z.json` 显示 `anchor_on_hook_dispatch_path: { traceSurvived: true, sessionSurvived: true, traceMatches: true, sessionMatches: true }` | `the historical round-1 binding spike workspace`, `the historical round-1 binding spike workspace`, `docs/spikes/spike-binding-pair/03-hooks-callback-latency-and-error-shape-confirmed.md` (§1.2 + §8), `the historical round-1 binding spike workspace` (new) |
 | R3 | `KV stale-read` 只是 same-colo weak evidence | `deferred (downgrade + B7 add)` | F03 finding 在 §0 摘要 + §8 修订历史 明确标注 "reconnaissance-level weak evidence only"，禁止下游读成 freshness contract closure；真 probe (cacheTtl 变体 + 100-sample spread + strong-read + cross-colo) 追加到 P6 §4.1 + §4.4b | `docs/spikes/spike-do-storage/03-kv-stale-read-not-observed-in-same-colo.md`, `docs/design/after-foundations/P6-spike-round-2-integration-plan.md` |
 
 ### 6.3 变更文件清单
 
 **代码修改（R2 真修）**：
-- `spikes/round-1-bare-metal/spike-binding-pair/worker-b/src/handlers/hook-dispatch.ts` (echo receivedHeaders in response body)
-- `spikes/round-1-bare-metal/spike-binding-pair/worker-a/src/probes/hooks-callback.ts` (anchor probe routes to `/handle/hook-dispatch` + strict value-match asserts)
+- `the historical round-1 binding spike workspace` (echo receivedHeaders in response body)
+- `the historical round-1 binding spike workspace` (anchor probe routes to `/handle/hook-dispatch` + strict value-match asserts)
 
 **代码产物（re-deploy + re-run）**：
 - Worker version `a930271d-5bb6-40a8-b626-18fabd7baa80` (worker-b r2 fix)
 - Worker version `191f7abf-3c07-45a6-b470-359f18dc05d8` (worker-a r2 fix)
-- `spikes/round-1-bare-metal/spike-binding-pair/.out/2026-04-19T13-02-31Z.json` (new evidence)
+- `the historical round-1 binding spike workspace` (new evidence)
 
 **文档降级（R1/R3）**：
 - `docs/spikes/spike-binding-pair/04-eval-fanin-app-layer-dedup-required.md` (scope caveat + §8 history)

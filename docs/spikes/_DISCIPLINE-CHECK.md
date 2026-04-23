@@ -18,7 +18,7 @@
 
 ---
 
-## §1. 纪律 1：spike 代码放 `spikes/` 顶级目录，**不进** `packages/`
+## §1. 纪律 1：spike 代码放 the historical spikes tree 顶级目录，**不进** `packages/`
 
 ### Status: ✅ HOLDS
 
@@ -29,15 +29,15 @@
   packages:
     - "packages/*"
   ```
-- All spike code physically located under `spikes/round-1-bare-metal/`
-- `find packages/ -path '*/spikes/*' -o -name 'spike*'` returns 0 matches
+- All spike code physically located under `the historical round-1 bare-metal spikes tree`
+- `find packages/ -path '*/the historical spikes tree *' -o -name 'spike*'` returns 0 matches
 - 18 spike code files (Phase 1) + 14 spike code files (Phase 3) + scripts: **0 in packages/**
 
 ### Verification command
 
 ```bash
-find packages/ -name 'spike*' -o -path '*/spikes/*' | wc -l   # → 0
-find spikes/ -type f | wc -l                                  # → 45+
+find packages/ -name 'spike*' -o -path '*/the historical spikes tree *' | wc -l   # → 0
+find the historical spikes tree  -type f | wc -l                                  # → 45+
 ```
 
 ---
@@ -52,7 +52,7 @@ find spikes/ -type f | wc -l                                  # → 45+
 
 | File | Line | Value |
 |---|---|---|
-| `spikes/README.md` | (top) | "Default expiration: 2026-08-01" |
+| `the retired historical spikes README` | (top) | "Default expiration: 2026-08-01" |
 | `spike-do-storage/README.md` | (top) | "Expiration: 2026-08-01" |
 | `spike-do-storage/wrangler.jsonc` | `vars.EXPIRATION_DATE` | "2026-08-01" |
 | `spike-binding-pair/README.md` | (top) | "Expiration: 2026-08-01" |
@@ -69,12 +69,12 @@ find spikes/ -type f | wc -l                                  # → 45+
 
 ### Evidence
 
-- `spikes/` 不在 `pnpm-workspace.yaml` 的 `packages` 数组中
-- Repo root `package.json` 的 scripts 不引用 `spikes/`：
+- the historical spikes tree 不在 `pnpm-workspace.yaml` 的 `packages` 数组中
+- Repo root `package.json` 的 scripts 不引用 the historical spikes tree：
   - `test:contracts: node --test test/*.test.mjs`
   - `test:e2e: node --test test/e2e/*.test.mjs`
   - `test:cross: node --test test/*.test.mjs test/e2e/*.test.mjs`
-- Spike 自己有独立 deploy script (`spikes/.../scripts/deploy*.sh`)，未挂任何 CI workflow
+- Spike 自己有独立 deploy script (`historical spike artifactsscripts/deploy*.sh`)，未挂任何 CI workflow
 - Spike 失败不会阻塞主线 PR
 
 ---
@@ -126,7 +126,7 @@ docs/spikes/                       3 rollup docs (storage / binding / fake-bash-
 ### Evidence
 
 ```
-spikes/
+the historical spikes tree 
 ├── round-1-bare-metal/       ← B1 全部 spike 工作
 │   ├── spike-do-storage/
 │   └── spike-binding-pair/
@@ -146,8 +146,8 @@ spikes/
 ### Evidence (Part A — 不依赖 packages/ 运行时)
 
 ```bash
-grep -rn "from \"@nano-agent/" spikes/round-1-bare-metal/    # → 0 matches
-grep -rn "import.*@nano-agent" spikes/round-1-bare-metal/    # → 0 matches
+grep -rn "from \"@nano-agent/" the historical round-1 bare-metal spikes tree    # → 0 matches
+grep -rn "import.*@nano-agent" the historical round-1 bare-metal spikes tree    # → 0 matches
 ```
 
 所有 spike worker 仅依赖 `@cloudflare/workers-types` (devDep)；**0 个 `import "@nano-agent/*"` 语句**。
@@ -174,9 +174,9 @@ grep -rn "import.*@nano-agent" spikes/round-1-bare-metal/    # → 0 matches
 
 | # | 纪律 | Status | Notes |
 |---|---|---|---|
-| 1 | spikes/ 顶级，不进 packages/ | ✅ | physical isolation; pnpm workspace excludes |
+| 1 | the historical spikes tree  顶级，不进 packages/ | ✅ | physical isolation; pnpm workspace excludes |
 | 2 | EXPIRATION_DATE | ✅ | 2026-08-01 in 6 places (3 README + 3 wrangler.jsonc) |
-| 3 | 不接 CI 主链 | ✅ | spikes/ not in workspace, not in CI scripts |
+| 3 | 不接 CI 主链 | ✅ | the historical spikes tree  not in workspace, not in CI scripts |
 | 4 | finding → design doc | ✅ | 13+2 finding docs + 3 rollup docs + this discipline check |
 | 5 | 不接生产数据 / 业务能力 | ✅ | spike-only namespaces; no LLM key; no business logic |
 | 6 | round-1 与 round-2 分目录 | ✅ | round-1 fully populated; round-2 reserved for B7 |

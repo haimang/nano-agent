@@ -11,7 +11,7 @@
 >   - reality 锚点: `packages/nacp-core/src/messages/{context.ts,system.ts}` / `packages/nacp-core/src/evidence/{vocabulary.ts,sink-contract.ts}` / `packages/workspace-context-artifacts/src/namespace.ts` / `packages/session-do-runtime/src/workspace-runtime.ts`
 > - W2:
 >   - 代码: `packages/nacp-core/package.json` / `packages/nacp-session/package.json` / `.github/workflows/publish-nacp.yml` / `pnpm-workspace.yaml` / `.gitignore`
->   - dogfood: `dogfood/nacp-consume-test/{package.json,.npmrc,tsconfig.json,src/smoke.ts,README.md}`
+>   - dogfood: `the retired historical dogfood consumer{package.json,.npmrc,tsconfig.json,src/smoke.ts,README.md}`
 >   - 文档: `docs/design/pre-worker-matrix/W2-publishing-{pipeline,discipline}.md` / `docs/action-plan/pre-worker-matrix/W2-publishing-pipeline.md` §11 / `docs/issue/pre-worker-matrix/W2-closure.md`
 > - 扩大验证: 仓级 `pnpm -r run test` / `pnpm -r run typecheck` / `node --test test/*.test.mjs` / `node --test test/b7-round2-integrated-contract.test.mjs` / 双包 `pnpm publish --dry-run`
 > 文档状态: `reviewed`
@@ -45,11 +45,11 @@
   - 发布 metadata:`packages/nacp-core/package.json:45-48` + `packages/nacp-session/package.json:15-18`
   - workflow:`.github/workflows/publish-nacp.yml` (84 lines)
   - workspace / gitignore:`pnpm-workspace.yaml` (5 lines,含 dogfood 排除注释) + `.gitignore`(`.github/` 条目已删除)
-  - dogfood:`dogfood/nacp-consume-test/{package.json (19),.npmrc (3),tsconfig.json (12),src/smoke.ts (29),README.md (26)}`
+  - dogfood:`the retired historical dogfood consumer{package.json (19),.npmrc (3),tsconfig.json (12),src/smoke.ts (29),README.md (26)}`
   - W2 closure `docs/issue/pre-worker-matrix/W2-closure.md` (174 lines)
 - **执行过的验证**:
   - `git diff HEAD -- .gitignore` 确认 `.github/` 条目被删除(原 .gitignore 第 7 行 `.github/` 已移除)
-  - `git status --short` 确认工作树现状:16 modified(W1/W2 全部变更已落盘但尚未 commit)+ 4 untracked(`.github/`, `dogfood/`, W1 closure, W2 closure)
+  - `git status --short` 确认工作树现状:16 modified(W1/W2 全部变更已落盘但尚未 commit)+ 4 untracked(`.github/`, `the retired historical dogfood tree`, W1 closure, W2 closure)
   - `pnpm -r run test` 独立重跑:11 packages × 全绿,合计 **2177/2177 tests passed**(与 W0 §7.2 二次审查逐包数字一致 — 259+119+357+198+169+192+123+103+208+352+97 = 2177)
   - `pnpm -r run typecheck` 独立重跑:11/11 packages 绿
   - `node --test test/*.test.mjs` → 98/98 passed
@@ -94,7 +94,7 @@
     - 发布前执行 typecheck / build / test 双包
     - `NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}` + `pnpm publish --no-git-checks`
 11. **`.gitignore` 的 `.github/` 条目已删除**(`git diff HEAD -- .gitignore` 确认 "-.github/" diff),workflow 文件可以成为真实跟踪资产。
-12. **`pnpm-workspace.yaml` 未包含 `dogfood/`**(只有 `packages/*`),且含三行注释明确说明 "dogfood 必须留在 workspace 外" — 避免未来 `workers/*` 加入时误污染 dogfood install path。
+12. **`pnpm-workspace.yaml` 未包含 `the retired historical dogfood tree`**(只有 `packages/*`),且含三行注释明确说明 "dogfood 必须留在 workspace 外" — 避免未来 `workers/*` 加入时误污染 dogfood install path。
 13. **dogfood skeleton 5 文件齐备且自洽**:
     - `package.json` 声明固定版本 `@nano-agent/nacp-core@1.4.0 + @nano-agent/nacp-session@1.3.0`(与 discipline §3.3 "bundle tag 锚定 nacp-core.version / nacp-session 自身 semver" 对齐)
     - `.npmrc` 3 行:`@nano-agent:registry=https://npm.pkg.github.com` + `_authToken=${NODE_AUTH_TOKEN}` + `always-auth=true`
@@ -130,7 +130,7 @@
    - dogfood README 只是指南("Before the first real publish, validate the consumer path with local tarballs"),并未记录"此次 smoke 跑过,结果 X/Y"
    - 形式上与 W0 §6.4 closure 类似"命令列了但数字不全"的模式(W0 已修复);W2 本轮同样的纪律还没兑现
 4. **工作树 18 个 W1/W2 变更尚未 commit**:
-   - 16 modified + 4 untracked(`.github/`、`dogfood/`、W1 closure、W2 closure)
+   - 16 modified + 4 untracked(`.github/`、`the retired historical dogfood tree`、W1 closure、W2 closure)
    - W0 §7.4 N3 已经提过 17 个 §6 修复文件未 commit;本轮叠加又多出 18 个 W1/W2 文件
    - 两轮合计 **36 个文件** 处于 working tree 未提交状态;会影响后续 phase 的 git 溯源,也让 code-review 判定"到底本轮动了什么"必须依赖 `git status` 而非 `git log`
 5. **W1 `P1-03 workspace reality 核对` 的锚点 `packages/session-do-runtime/src/workspace-runtime.ts` 在 W1 closure §4.1 出现,但我本轮未展开核查其内容是否与 `evidence-envelope-forwarding.md` §5.2 所说的 "live runtime 已有 workspace evidence wiring" 真实对齐**。对比其他 5 个已深度核查的锚点,这第 6 个锚点仅验证了"文件存在"(`grep -l workspace-runtime` 在 `nano-session-do.ts:44` 命中),没有深入读 `composeWorkspaceWithEvidence()` 之类的声明来交叉比对 RFC 文本。
@@ -209,7 +209,7 @@
     >    - 对 `nacp-session -> @nano-agent/nacp-core` 的传递依赖追加 local tarball override
     >    - 运行 `pnpm build && pnpm smoke`
   - 未附:tarball 文件名 / pnpm override 命令示例 / `pnpm smoke` stdout / 任何 exit code / 任何 install log 摘要
-  - `dogfood/nacp-consume-test/README.md:17-26` 给了"如何做"的说明但没有"这次做过,结果是 X"的记录
+  - `the historical dogfood consumer README:17-26` 给了"如何做"的说明但没有"这次做过,结果是 X"的记录
   - action-plan §11.4 "本轮没有执行真实 registry publish" 但 **没有同等明确地说** "pre-publish tarball smoke 的 stdout / 数字"
   - 这与 W0 初审 §R4 "closure memo 验证面缺 hard numbers" 是**完全相同的模式** — W0 已经在 §7.3 中 closed,但 W2 没有继承那个教训
 - **为什么重要**:
@@ -455,7 +455,7 @@ W1 + W2 合计 8 条 Out-of-Scope **全部遵守**。W1 尤其值得表扬 — r
 - **修改文件**:`docs/issue/pre-worker-matrix/W2-closure.md` §5.3
 - **修改方式**:先真实执行一次端到端 tarball smoke,再把**实际结果数字**写进 closure,不是事后补描述。
   1. `pnpm pack` 双包 → `/tmp/nacp-dogfood-tarball/{nano-agent-nacp-core-1.4.0.tgz, nano-agent-nacp-session-1.3.0.tgz}`
-  2. 复制 `dogfood/nacp-consume-test/` 到 `/tmp/nacp-dogfood-smoke/`,并将其 `package.json` 的 `dependencies` 改成 `file:` tarball 路径 + 加 `pnpm.overrides` 统一指向 `core` tarball(避免 pnpm 回落公共 registry 拉取 transitive dep)
+  2. 复制 `the retired historical dogfood consumer` 到 `/tmp/nacp-dogfood-smoke/`,并将其 `package.json` 的 `dependencies` 改成 `file:` tarball 路径 + 加 `pnpm.overrides` 统一指向 `core` tarball(避免 pnpm 回落公共 registry 拉取 transitive dep)
   3. `pnpm install --ignore-workspace --no-frozen-lockfile` → `+ @nano-agent/nacp-core 1.4.0` + `+ @nano-agent/nacp-session 1.3.0` + 依赖就位,`Done in 1.2s`
   4. `pnpm build` → tsc 静默成功
   5. `pnpm smoke` 真实输出:
@@ -495,7 +495,7 @@ W1 + W2 合计 8 条 Out-of-Scope **全部遵守**。W1 尤其值得表扬 — r
 **R4 / 本 review 工作日志**:
 - `docs/code-review/pre-worker-matrix/W1-W2-reviewed-by-opus.md`(§8 append)
 
-> 其余 16 个 modified + 3 个 untracked(W1 closure、W2 closure、dogfood/、.github/)均是 GPT 本轮 W1/W2 原始产出的文件,**审查人只做 R1/R2/R3 的微调,不回滚不重写 W1/W2 本体**。
+> 其余 16 个 modified + 3 个 untracked(W1 closure、W2 closure、the retired historical dogfood tree、.github/)均是 GPT 本轮 W1/W2 原始产出的文件,**审查人只做 R1/R2/R3 的微调,不回滚不重写 W1/W2 本体**。
 
 ### 8.4 最终验证(本轮现场重跑)
 

@@ -400,7 +400,7 @@ npm run test:cross                     → 86/86  ✅
 
 - **packages/ 余 bug 敞口**：本轮 review 指出的 3 条 formal finding + 1 条 §7 nudge 全部处理完毕并上了 regression 测试；没有未处理的 review finding 留到 B7。
 - **observable evidence 的 wire-truth**：`NanoSessionDO.getDefaultEvalDisclosure()` 与 `.getDefaultEvalStats()` 现在是 binding-F04 的 runtime probe 点；B7 integrated spike 可以直接在 Worker 内读到 `duplicateDropCount / capacityOverflowCount`，不需要 back-door 私有字段。
-- **resource isolation**：B7 action-plan §3 明确规定 `spikes/round-2-integrated/*` 的 wrangler 名 / DO class 名 / R2 bucket 名都要和 Round-1 完全隔离，避免污染 baseline。
+- **resource isolation**：B7 action-plan §3 明确规定 `the historical round-2 integrated spikes tree*` 的 wrangler 名 / DO class 名 / R2 bucket 名都要和 Round-1 完全隔离，避免污染 baseline。
 - **脚本出口诚实度**：`extract-finding.ts` / `extract-finding.sh` 的 exit code 合约在 action-plan §5 中写清楚了（`0 = verdict + status 写回成功`，`≠0 = B7 phase 不收口`），符合 P0 spike discipline。
 
 ### 7.3 Go / No-Go 判断
@@ -411,7 +411,7 @@ npm run test:cross                     → 86/86  ✅
   2. B7 action-plan 的入场条件 E1–E10 全部 ✅，其中 E4 / E5 的底层前提正好是本轮修复的内容——修完之后 `binding-F04` 才有真正的 observable probe，`Setup / PermissionRequest` 的 producer 才是真的 session-traceful，B7 integrated spike 去验证这些 contract 才不会"自己测自己的 narrative"。
   3. B7 本身是"诚实度测试"（P6 / §10）；它的价值在于"把哪些真的被平台消化、哪些仍然没被消化说清楚"。本轮之前留在 packages/ 的这些 claim-vs-reality gap 如果带进 B7，会把 integrated spike 的 finding 污染成"packages bug 的 side-effect"。先在本 review 轮收口、让 B7 从 clean baseline 起跑，是最小风险路径。
 - **建议 B7 首批提交的 scope**：
-  - `spikes/round-2-integrated/README.md` + 两套 Wrangler skeleton（`spike-do-storage-r2`、`spike-binding-pair-r2`），先把 deploy-dry-run 的可执行面建起来，再实作 follow-ups / re-validation probes。
+  - `the historical round-2 integrated spikes treeREADME.md` + 两套 Wrangler skeleton（`spike-do-storage-r2`、`spike-binding-pair-r2`），先把 deploy-dry-run 的可执行面建起来，再实作 follow-ups / re-validation probes。
   - 在 Worker-B 的 eval sink probe 中直接 import `BoundedEvalSink`，读 `getStats().duplicateDropCount` / `capacityOverflowCount` 作为 binding-F04 的直接证据。
   - `extract-finding` 脚本在 B7 首次成功 deploy-and-tail 之前都**不要**把 B1 findings 的 `status` 字段写回——避免出现"spike 没真的跑，finding 状态已经被更新"的 review-surface drift。
 

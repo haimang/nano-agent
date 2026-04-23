@@ -60,7 +60,7 @@ That produced one explicit B8 rule:
 - [x] wrangler template carries B1/B7 evidence-backed comments
 - [x] composition template imports only real shipped package exports
 - [x] composition template passes path-mapped throwaway `tsconfig` validation
-- [x] B8 touched docs/templates/handoff only; no `packages/` or `spikes/` edits were required
+- [x] B8 touched docs/templates/handoff only; no `packages/` or the historical spikes tree edits were required
 
 ---
 

@@ -59,4 +59,4 @@ The worker-matrix phase now inherits two starter files that are:
 1. evidence-backed,
 2. explicit about current constraints,
 3. honest about what B8 did **not** freeze,
-4. and verified without changing any `packages/` or `spikes/` code.
+4. and verified without changing any `packages/` or the historical spikes tree code.

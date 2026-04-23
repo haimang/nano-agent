@@ -108,5 +108,5 @@ Downstream consumers (B2-B8) MUST read caveat C1 before citing F04 as "cross-wor
 - Action plan: `docs/action-plan/after-foundations/B1-spike-round-1-bare-metal.md`
 - Rollup spec: `docs/design/after-foundations/P0-spike-discipline-and-validation-matrix.md` §4.6
 - Transport scope source: `docs/design/after-foundations/P0-spike-binding-pair-design.md` §0
-- Related spike output: `spikes/round-1-bare-metal/spike-binding-pair/.out/2026-04-19T08-28-14Z.json`
+- Related spike output: `the historical round-1 binding spike workspace`
 - Phase 4 issue: `docs/issue/after-foundations/B1-phase-4-closure.md`

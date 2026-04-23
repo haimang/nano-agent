@@ -338,12 +338,12 @@
 
 继承 `before-worker-matrix-eval-with-Opus.md` §4.3 的 5 条纪律 + §8.5.3 的 2 条补充：
 
-1. spike 代码放 `spikes/` 顶级目录（**不进** `packages/`）
+1. spike 代码放 the historical spikes tree 顶级目录（**不进** `packages/`）
 2. spike 必须有 expiration date（推荐 2026-08-01 之前删除或转正式 worker）
 3. spike 不接 CI 主链
 4. spike 的发现必须落到 design doc，**不能只在代码注释里**
 5. spike 不接生产数据 / 不持有业务数据 / 不实现新业务能力
-6. 两轮 spike 分目录：`spikes/round-1-bare-metal/` 与 `spikes/round-2-integrated/`，互不污染
+6. 两轮 spike 分目录：`the historical round-1 bare-metal spikes tree` 与 `the historical round-2 integrated spikes tree`，互不污染
 7. **轮 1 spike 不依赖 packages/ 的运行时实现，但验证目标、finding 模板、回写任务必须显式对齐 packages/ 的 seam 与 contract**（GPT review §2.7 反馈：不是"完全不依赖 packages/"，而是"不绑架 packages/ 的现有 seam 实现，但所有 finding 必须可被 packages/ 消化"——避免 spike truth 与 package truth 双轨漂移）
 
 ### 5.2 Sequencing 方法论：Spike-First-Iteration
@@ -466,8 +466,8 @@ Phase 6 → 轮 2 spike, full integration
 
 #### 交付物
 
-1. `spikes/round-1-bare-metal/spike-do-storage/` 真实部署
-2. `spikes/round-1-bare-metal/spike-binding-pair/` 真实部署
+1. `the historical round-1 storage spike workspace/` 真实部署
+2. `the historical round-1 binding spike workspace/` 真实部署
 3. `docs/spikes/storage-findings.md`
 4. `docs/spikes/binding-findings.md`
 5. `docs/spikes/fake-bash-platform-findings.md`
@@ -669,7 +669,7 @@ Phase 6 → 轮 2 spike, full integration
 
 #### In-Scope
 
-1. `spikes/round-2-integrated/` 目录新建
+1. `the historical round-2 integrated spikes tree` 目录新建
 2. 接入 ship 后的 storage adapters / fake-bash 扩展 / context-management / hooks 1.0.0 / nacp 1.2.0
 3. 在 spike worker 跑 async compact 完整 lifecycle
 4. 在 spike worker 跑 hybrid storage tier 路由
@@ -678,7 +678,7 @@ Phase 6 → 轮 2 spike, full integration
 
 #### 交付物
 
-1. `spikes/round-2-integrated/` 真实部署
+1. `the historical round-2 integrated spikes tree` 真实部署
 2. `docs/spikes/integrated-findings.md`：列出每个 ship 的代码是否经过 platform 真实验证
 
 #### 收口标准

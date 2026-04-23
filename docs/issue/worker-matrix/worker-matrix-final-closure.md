@@ -163,7 +163,7 @@ worker-matrix 阶段以 `docs/plan-worker-matrix.md` r2 + `docs/design/worker-ma
    - `https://nano-agent-bash-core-preview.haimang.workers.dev/`(Version `50335742-e9e9-4f49-b6d7-ec58e0d1cfb4`)
 
 **release hygiene truth layer**:
-9. `.npmrc`(root,使用 `${NODE_AUTH_TOKEN}` 占位符,与 `dogfood/nacp-consume-test/.npmrc` 同模式)
+9. `.npmrc`(root,使用 `${NODE_AUTH_TOKEN}` 占位符,与 `the historical dogfood consumer npmrc` 同模式)
 10. `pnpm-lock.yaml` — 4 workers 对 nacp-* resolution 为 `1.4.0/1.3.0`(published path)
 11. GitHub Packages 发布 workflow run ID:`24814439569`(W2 W2-closure.md 记录);`@haimang/nacp-core@1.4.0` + `@haimang/nacp-session@1.3.0` 仍 listed
 

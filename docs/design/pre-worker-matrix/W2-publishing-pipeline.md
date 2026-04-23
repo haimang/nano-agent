@@ -197,7 +197,7 @@ v0.2 修正:
   - 即使手残推了错误 tag,也只发 2 包
 
 - **Dogfood 消费者项目独立于主 repo**
-  - 放 `dogfood/nacp-consume-test/`(本 repo 内)或独立 repo(本 design 选前者简化)
+  - 放 `the retired historical dogfood consumer`(本 repo 内)或独立 repo(本 design 选前者简化)
   - 独立 `package.json` + 独立 lockfile + 独立 `.npmrc`
   - `pnpm-workspace.yaml` **不**包含 dogfood 目录(否则会用 workspace link 而非 GitHub Packages — 违背 dogfood 初衷)
 
@@ -285,7 +285,7 @@ v0.2 修正:
 - **[S5]** Repository secret 确认(`GITHUB_TOKEN` 自动提供;若用 PAT 则手工创建)
 - **[S6]** Repository settings → Actions permissions(write packages)
 - **[S7]** 首次发布路径冻结:手动创建 git tag `nacp-v1.4.0` 时，workflow 已以 bundle 方式发布 `@haimang/nacp-core@1.4.0` + `@haimang/nacp-session@1.3.0`
-- **[S8]** Dogfood 消费者 `dogfood/nacp-consume-test/`:
+- **[S8]** Dogfood 消费者 `the retired historical dogfood consumer`:
   - 独立 `package.json` import `@haimang/nacp-core@1.4.0` + `@haimang/nacp-session@1.3.0`
   - 独立 `.npmrc` 配 GitHub Packages registry + `always-auth=true`
   - 独立 `pnpm-lock.yaml`(不加入主 workspace)
@@ -370,14 +370,14 @@ v0.2 修正:
    - **缓解**:W2 discipline doc 明确解释"1.3.0 只 shipped in repo 未发布;1.4.0 是首个 published version";CHANGELOG 也写
    - **重评条件**:若未来需要补发 1.3.0 作为 baseline,可 back-tag publish
 
-5. **取舍 5 — Dogfood 消费者放 `dogfood/` 本 repo 内,不独立 repo**
-   - **选择本 repo 内 `dogfood/`**
+5. **取舍 5 — Dogfood 消费者放 `the retired historical dogfood tree` 本 repo 内,不独立 repo**
+   - **选择本 repo 内 `the retired historical dogfood tree`**
    - **为什么**:
      - 独立 repo 增加 admin 成本(branch / PR / settings 都要配)
      - 本 repo 内有 git 历史可追溯
      - dogfood 用完可删文件
    - **接受的代价**:本 repo 的 `.gitignore` 或 workspace 配置要确保 dogfood 不误入主 workspace
-   - **缓解**:`pnpm-workspace.yaml` 里 **不** include `dogfood/`
+   - **缓解**:`pnpm-workspace.yaml` 里 **不** include `the retired historical dogfood tree`
    - **重评条件**:若多个 dogfood 场景共存,再独立 repo
 
 6. **取舍 6 — 发布时只跑 nacp 2 包 unit test,不跑 root/cross**
@@ -395,7 +395,7 @@ v0.2 修正:
 | Package scope 与 GitHub owner 名不匹配 | 若未来再次切换 namespace 而未同步 package name / workflow scope | publish 时 403 / 404 | 本次已通过 `@haimang/*` 收口；后续变更必须走新的 scope migration |
 | `GITHUB_TOKEN` 权限不足 | `permissions: packages: write` 遗漏 | publish 401 | workflow 头部显式 permissions block;首次手动 dry-run 验证 |
 | Tag push 到远端不触发 workflow | `.github/workflows/` 配置错误;repository actions 被禁 | 发布无动作 | repository settings 确认 actions enabled;用 `act` 本地模拟 |
-| Dogfood 误入 pnpm workspace | `pnpm-workspace.yaml` 通配错 | dogfood 用 workspace link 而非 GitHub Packages,违背 dogfood 意图 | 明确 `dogfood/` 不在 workspace;用 `pnpm install --ignore-workspace` |
+| Dogfood 误入 pnpm workspace | `pnpm-workspace.yaml` 通配错 | dogfood 用 workspace link 而非 GitHub Packages,违背 dogfood 意图 | 明确 `the retired historical dogfood tree` 不在 workspace;用 `pnpm install --ignore-workspace` |
 | 版本号与 tag 不一致 | 手工 tag 错误(`nacp-v1.4.0` 但 package.json 还是 1.3.0) | publish 成功但版本号错位 | workflow step `version-consistency-check` 比对 tag 与 package.json |
 | publish 成功但 dogfood install 失败 | consumer `.npmrc` auth 未配置 | 对外不可消费 | dogfood step 包含真实 install + build;任一失败立即暴露 |
 | 首次发布后被迫 unpublish | 发布后发现 bug | GitHub Packages unpublish 有 24h 窗口;过后永久无法删除 | S9 discipline doc 明确 unpublish 流程;必要时 publish 1.4.1 patch |
@@ -428,7 +428,7 @@ v0.2 修正:
 | **P2** | **mandatory** | `.github/workflows/publish-nacp.yml` 新建 | tag-triggered publish workflow | ✅ YAML 可被 GitHub Actions 识别;`nacp-v*` tag push 触发 |
 | **P3** | **mandatory** | Repository secrets + permissions | `GITHUB_TOKEN` + `packages: write` | ✅ workflow 有 permissions block;actions enabled |
 | **P4** | **optional (parallel OK)** | 首次发布 `nacp-v1.4.0` | 真实 publish | ✅ 若在 pre-phase 完成:GitHub Packages registry 可见 `nacp-core@1.4.0` + `nacp-session@1.3.0`;**若延到 worker-matrix,pre-phase 不 block** |
-| **P5** | **optional (parallel OK)** | Dogfood 消费者 | 独立 consumer 证明可 install | ✅ 若做:`dogfood/nacp-consume-test/` build + test 成功;**若延后,pre-phase 不 block** |
+| **P5** | **optional (parallel OK)** | Dogfood 消费者 | 独立 consumer 证明可 install | ✅ 若做:`the retired historical dogfood consumer` build + test 成功;**若延后,pre-phase 不 block** |
 | **P6** | **mandatory** | Publishing discipline doc | 纪律文档 | ✅ `W2-publishing-discipline.md` owner-approved;明确 workspace:* interim → published version 切换规则 |
 | **P7** | **mandatory** | W2 closure memo | 归档证据 | ✅ `W2-closure.md` 含 skeleton 就绪证据 + 首发状态(完成 OR 延后说明) |
 
@@ -551,11 +551,11 @@ v0.2 修正:
 - **边界情况**:若 workflow 失败,debug 后修 code / workflow → 删除 tag(`git tag -d` + `git push origin :nacp-v1.4.0`)→ 重新 tag 同一 version → 重跑
 - **一句话收口目标**:✅ **`@haimang/nacp-core@1.4.0` + `@haimang/nacp-session@1.3.0` 在 GitHub Packages 可见**
 
-#### P5: Dogfood 消费者 `dogfood/nacp-consume-test/`
+#### P5: Dogfood 消费者 `the retired historical dogfood consumer`
 
 - **目录结构**:
   ```
-  dogfood/
+  the retired historical dogfood tree
   └── nacp-consume-test/
       ├── package.json
       ├── .npmrc
@@ -608,7 +608,7 @@ v0.2 修正:
    ```
 - **执行步骤**:
   1. owner 或 CI 设置 env `NPM_AUTH_TOKEN`(PAT with `read:packages`)
-  2. `cd dogfood/nacp-consume-test && pnpm install --ignore-workspace`
+  2. `cd the retired historical dogfood consumer && pnpm install --ignore-workspace`
    3. `pnpm build && pnpm smoke`
    4. 所有 step 成功 → W2 closure memo 归档 build/smoke log
 - **一句话收口目标**:✅ **dogfood 消费者从 GitHub Packages install + build + smoke 成功,版本输出为 `1.4.0 / 1.3.0`**
@@ -701,7 +701,7 @@ W2 是 **"最小必要 DevOps 层"**:
 - **预期代码量级**:
   - `publish-nacp.yml` ~60-80 行 YAML
   - 2 个 `package.json` 修改 ~6 行
-  - `dogfood/nacp-consume-test/` ~80-100 行(package.json + tsconfig + 1 src + README + .npmrc)
+  - `the retired historical dogfood consumer` ~80-100 行(package.json + tsconfig + 1 src + README + .npmrc)
   - discipline doc ~300-400 行
   - closure memo ~50 行
 - **预期复杂度**:低 — 几乎纯 DevOps;零 runtime 风险
@@ -749,7 +749,7 @@ W2 是 **"最小必要 DevOps 层"**:
   - **理由**:预留多种 tag namespace 空间
   - **当前共识**:`nacp-v*`(§6.1 取舍 3)
 - **分歧 3**:dogfood 在本 repo 还是独立 repo
-  - **Opus 倾向**:本 repo `dogfood/`
+  - **Opus 倾向**:本 repo `the retired historical dogfood tree`
   - **理由**:简化 admin;git 历史可追溯
   - **当前共识**:本 repo(§6.1 取舍 5);注意 workspace exclusion
 
@@ -758,7 +758,7 @@ W2 是 **"最小必要 DevOps 层"**:
 - [ ] **Q1**:现有 `packages/nacp-core/package.json` + `packages/nacp-session/package.json` 是否有 `private: true`?如有,P1 step 里先删
 - [x] **Q2**:GitHub Packages scope 已确定为 `@haimang`
 - [ ] **Q3**:owner 是否已有 GitHub Packages 使用历史?(影响 first-time authorization flow)
-- [ ] **Q4**:`dogfood/` 是否需要加到 `.gitignore`(至少 `node_modules` / `dist`)?
+- [ ] **Q4**:`the retired historical dogfood tree` 是否需要加到 `.gitignore`(至少 `node_modules` / `dist`)?
 - [ ] **Q5**:pnpm workspace 已有配置,是否需 `!dogfood` exclusion?(需核查 `pnpm-workspace.yaml`)
 - [ ] **Q6**:unpublish 若超过 GitHub Packages 24h 窗口,recovery pattern 是发 1.4.1 patch 还是 deprecate 1.4.0 永久警告?
 - [ ] **Q7**:workflow 内 test step 是否需要 `--reporter=github-actions`(更友好 log)?

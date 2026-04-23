@@ -66,7 +66,7 @@ GET /healthz/binding → {"ok":true,"status":200,"workerB":{...}}
 ## Files created (Phase 3)
 
 ```
-spikes/round-1-bare-metal/spike-binding-pair/
+the historical round-1 binding spike workspace/
 ├── worker-a/
 │   ├── src/
 │   │   ├── result-shape.ts                   (NEW, BindingProbeResult shape)
@@ -96,7 +96,7 @@ spikes/round-1-bare-metal/spike-binding-pair/
 
 | 纪律 | 状态 | Evidence |
 |---|---|---|
-| 1. spikes/ 顶级，不进 packages/ | ✅ | 仍在 `spikes/round-1-bare-metal/` |
+| 1. the historical spikes tree  顶级，不进 packages/ | ✅ | 仍在 `the historical round-1 bare-metal spikes tree` |
 | 2. expiration date | ✅ | 两个 wrangler.jsonc + worker env 都含 `EXPIRATION_DATE=2026-08-01` |
 | 3. 不接 CI 主链 | ✅ | spike 不在 pnpm workspace |
 | 4. finding → design doc | ⏳ | Phase 4 才产出 per-finding docs；本 issue 是 Phase 3 closure |
@@ -138,4 +138,4 @@ Phase 1-3 已经累积了 9 + 4 = **13 个 required validation item 的 ProbeRes
 - Design (binding-pair): `docs/design/after-foundations/P0-spike-binding-pair-design.md` (r2)
 - Tracking policy: `docs/issue/README.md`
 - Previous issues: `B1-phase-1-closure.md`, `B1-phase-2-closure.md`
-- Combined run output: `spikes/round-1-bare-metal/spike-binding-pair/.out/2026-04-19T08-28-14Z.json`
+- Combined run output: `the historical round-1 binding spike workspace`

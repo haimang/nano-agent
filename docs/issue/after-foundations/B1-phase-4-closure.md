@@ -87,7 +87,7 @@ These are the `must-do` items that will gate B2-B6:
 
 | 纪律 | 状态 | Evidence |
 |---|---|---|
-| 1. spikes/ 顶级 | ✅ | finding docs 在 `docs/spikes/`，spike code 在 `spikes/` |
+| 1. the historical spikes tree  顶级 | ✅ | finding docs 在 `docs/spikes/`，spike code 在 the historical spikes tree |
 | 2. expiration date | ✅ | spike workers 仍持有 `EXPIRATION_DATE=2026-08-01` |
 | 3. 不接 CI 主链 | ✅ | finding docs 是纯 markdown |
 | 4. **finding → design doc** | ✅ | **本 Phase 主要交付物——15 finding docs 全 ship，每个含 §3 + §5 必填字段** |
@@ -120,4 +120,4 @@ These are the `must-do` items that will gate B2-B6:
 - Tracking policy: `docs/issue/README.md`
 - Previous issues: `B1-phase-1-closure.md`, `B1-phase-2-closure.md`, `B1-phase-3-closure.md`
 - Finding docs: `docs/spikes/spike-do-storage/`, `docs/spikes/spike-binding-pair/`, `docs/spikes/unexpected/`
-- Combined run outputs: `spikes/round-1-bare-metal/{spike-do-storage,spike-binding-pair}/.out/`
+- Combined run outputs: `the historical round-1 bare-metal spikes tree{spike-do-storage,spike-binding-pair}/.out/`

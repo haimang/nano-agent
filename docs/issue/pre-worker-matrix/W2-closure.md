@@ -40,7 +40,7 @@ W2 已从 **skeleton complete / first publish deferred** 升级为 **first publi
   - `scope: "@haimang"`
   - bundle version gate 仍锚定 `nacp-core@1.4.0`
   - 发布后追加 dogfood install/build/smoke
-- `dogfood/nacp-consume-test/*`
+- `historical dogfood consumer files`
   - 依赖切到 `@haimang/nacp-core@1.4.0` / `@haimang/nacp-session@1.3.0`
 
 ### 2.2 首发 release 资产

@@ -156,7 +156,7 @@ D08 把 `.npmrc` scope 写成了 “W2 + W4 已就绪”，并多处把 repo roo
 3. 当前仓库没有 root `.npmrc`
 4. 当前真实可见的 registry config 来源是：
    - `packages/nacp-core/package.json` / `packages/nacp-session/package.json` 的 `publishConfig.registry`
-   - `dogfood/nacp-consume-test/.npmrc`
+   - `the historical dogfood consumer npmrc`
    - GitHub Actions `setup-node` / `NODE_AUTH_TOKEN`
 
 **判断**

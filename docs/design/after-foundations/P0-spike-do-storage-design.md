@@ -45,7 +45,7 @@
 | 术语 | 定义 | 备注 |
 |---|---|---|
 | **Probe endpoint** | spike worker 暴露的 HTTP 路由，接受参数后执行特定 storage 操作 | 路由命名 `/probe/{validation-item-id}/{operation}` |
-| **Validation script** | 在本机调用 probe endpoint 并采集结果的 shell 脚本 | 放在 `spikes/round-1-bare-metal/spike-do-storage/scripts/` |
+| **Validation script** | 在本机调用 probe endpoint 并采集结果的 shell 脚本 | 放在 `the historical round-1 storage spike workspace` |
 | **Replay seed** | 让多次执行 probe 产生一致行为的固定 seed | 用于 stale-read window / consistency 验证 |
 | **Probe namespace** | spike 专用的 KV / R2 / D1 / DO namespace | 必须独立于 production；纪律 5 |
 
@@ -123,7 +123,7 @@ GET  /inspect/last-run                      — 最近一次 probe 的结果（d
 ### 3.3 解耦：spike worker 的最小内部结构
 
 ```
-spikes/round-1-bare-metal/spike-do-storage/
+the historical round-1 storage spike workspace/
 ├── wrangler.jsonc          # bindings: R2_PROBE / KV_PROBE / D1_PROBE / DO_PROBE
 ├── package.json            # type: module; deps: @cloudflare/workers-types only
 ├── src/
