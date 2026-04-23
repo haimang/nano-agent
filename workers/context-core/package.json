@@ -24,8 +24,8 @@
     "deploy:dry-run": "wrangler deploy --dry-run --env=\"\""
   },
   "dependencies": {
-    "@haimang/nacp-core": "workspace:*",
-    "@haimang/nacp-session": "workspace:*",
+    "@haimang/nacp-core": "1.4.0",
+    "@haimang/nacp-session": "1.3.0",
     "@nano-agent/storage-topology": "workspace:*",
     "@nano-agent/workspace-context-artifacts": "workspace:*",
     "zod": "^3.24.0"

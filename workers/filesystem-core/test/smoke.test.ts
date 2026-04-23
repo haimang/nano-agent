@@ -20,10 +20,19 @@ describe("filesystem-core shell smoke", () => {
   });
 
   it("returns NACP versions from the shell response", async () => {
-    const response = await worker.fetch(new Request("https://example.com"), {});
+    const response = await worker.fetch(new Request("https://example.com/health"), {});
     const body = await response.json();
 
     expect(body.nacp_core_version).toBe(NACP_VERSION);
     expect(body.nacp_session_version).toBe(NACP_SESSION_VERSION);
+  });
+
+  it("returns 404 for non-probe routes", async () => {
+    const response = await worker.fetch(
+      new Request("https://example.com/runtime", { method: "POST" }),
+      {},
+    );
+
+    expect(response.status).toBe(404);
   });
 });

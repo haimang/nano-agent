@@ -16,8 +16,8 @@
   },
   "dependencies": {
     "@haimang/context-core-worker": "workspace:*",
-    "@haimang/nacp-core": "workspace:*",
-    "@haimang/nacp-session": "workspace:*",
+    "@haimang/nacp-core": "1.4.0",
+    "@haimang/nacp-session": "1.3.0",
     "@nano-agent/workspace-context-artifacts": "workspace:*"
   },
   "devDependencies": {

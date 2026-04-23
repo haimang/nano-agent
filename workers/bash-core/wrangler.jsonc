@@ -7,12 +7,34 @@
   "observability": {
     "enabled": true
   },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "CAPABILITY_CALL_DO",
+        "class_name": "CapabilityCallDO"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_classes": ["CapabilityCallDO"]
+    }
+  ],
   "vars": {
     "ENVIRONMENT": "preview",
     "OWNER_TAG": "nano-agent"
   },
   "env": {
     "preview": {
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "CAPABILITY_CALL_DO",
+            "class_name": "CapabilityCallDO"
+          }
+        ]
+      },
       "vars": {
         "ENVIRONMENT": "preview",
         "OWNER_TAG": "nano-agent"

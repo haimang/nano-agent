@@ -32,6 +32,7 @@ import type { OrchestrationDeps, OrchestrationState } from "../orchestration.js"
 import { assertTraceLaw, type TraceContext } from "../traces.js";
 import { extractTurnInput } from "../turn-ingress.js";
 import { appendInitialContextLayer } from "@haimang/context-core-worker/context-api/append-initial-context-layer";
+import { peekPendingInitialContextLayers } from "@haimang/context-core-worker/context-api/append-initial-context-layer";
 import { transitionPhase as transitionPhaseImported } from "../actor-state.js";
 import { validateSessionCheckpoint } from "../checkpoint.js";
 import { createDefaultCompositionFactory } from "../composition.js";
@@ -440,6 +441,8 @@ export class NanoSessionDO {
             if (!this.traceUuid) this.traceUuid = crypto.randomUUID();
             return this.traceUuid;
           },
+          runVerification: (sessionId, body) =>
+            this.runPreviewVerification(sessionId, body),
         });
 
         // Optional JSON body from HTTP clients (start / input carry content).
@@ -1358,5 +1361,242 @@ export class NanoSessionDO {
    */
   getDefaultEvalStats(): EvalSinkStats {
     return this.defaultEvalSink.getStats();
+  }
+
+  private async runPreviewVerification(
+    _sessionId: string,
+    request: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const check = typeof request.check === "string" ? request.check : "";
+
+    switch (check) {
+      case "capability-call":
+        return this.verifyCapabilityCall(request);
+      case "capability-cancel":
+        return this.verifyCapabilityCancel(request);
+      case "initial-context":
+        return this.verifyInitialContext();
+      case "compact-posture":
+        return this.verifyCompactPosture();
+      case "filesystem-posture":
+        return this.verifyFilesystemPosture();
+      default:
+        return {
+          check,
+          error: "unknown-verify-check",
+          supported: [
+            "capability-call",
+            "capability-cancel",
+            "initial-context",
+            "compact-posture",
+            "filesystem-posture",
+          ],
+        };
+    }
+  }
+
+  private getCapabilityTransport():
+    | {
+        call: (input: {
+          requestId: string;
+          capabilityName: string;
+          body: unknown;
+          anchor?: CrossSeamAnchor;
+        }) => Promise<unknown>;
+        cancel?: (input: {
+          requestId: string;
+          body: unknown;
+          anchor?: CrossSeamAnchor;
+        }) => Promise<void>;
+      }
+    | undefined {
+    const capability = this.subsystems.capability as
+      | {
+          serviceBindingTransport?: {
+            call?: (input: unknown) => Promise<unknown>;
+            cancel?: (input: unknown) => Promise<void>;
+          };
+        }
+      | undefined;
+    const transport = capability?.serviceBindingTransport;
+    if (typeof transport?.call !== "function") {
+      return undefined;
+    }
+    return {
+      call: transport.call.bind(transport) as (input: {
+        requestId: string;
+        capabilityName: string;
+        body: unknown;
+        anchor?: CrossSeamAnchor;
+      }) => Promise<unknown>,
+      cancel:
+        typeof transport.cancel === "function"
+          ? transport.cancel.bind(transport) as (input: {
+              requestId: string;
+              body: unknown;
+              anchor?: CrossSeamAnchor;
+            }) => Promise<void>
+          : undefined,
+    };
+  }
+
+  private async verifyCapabilityCall(
+    request: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const transport = this.getCapabilityTransport();
+    if (!transport) {
+      return {
+        check: "capability-call",
+        error: "capability-transport-unavailable",
+      };
+    }
+
+    const toolName =
+      typeof request.toolName === "string" ? request.toolName : "pwd";
+    const toolInput =
+      request.toolInput && typeof request.toolInput === "object"
+        ? request.toolInput
+        : {};
+    const response = await transport.call({
+      requestId: `verify-call-${crypto.randomUUID()}`,
+      capabilityName: toolName,
+      body: {
+        tool_name: toolName,
+        tool_input: toolInput,
+      },
+      anchor: this.buildCrossSeamAnchor(),
+    });
+
+    return {
+      check: "capability-call",
+      toolName,
+      response,
+    };
+  }
+
+  private async verifyCapabilityCancel(
+    request: Record<string, unknown>,
+  ): Promise<Record<string, unknown>> {
+    const transport = this.getCapabilityTransport();
+    if (!transport?.cancel) {
+      return {
+        check: "capability-cancel",
+        error: "capability-cancel-unavailable",
+      };
+    }
+
+    const requestId = `verify-cancel-${crypto.randomUUID()}`;
+    const ms =
+      typeof request.ms === "number" && Number.isFinite(request.ms)
+        ? Math.max(50, Math.min(5_000, Math.trunc(request.ms)))
+        : 400;
+    const cancelAfterMs =
+      typeof request.cancelAfterMs === "number" && Number.isFinite(request.cancelAfterMs)
+        ? Math.max(1, Math.min(ms - 1, Math.trunc(request.cancelAfterMs)))
+        : 25;
+    const callPromise = transport.call({
+      requestId,
+      capabilityName: "__px_sleep",
+      body: {
+        tool_name: "__px_sleep",
+        tool_input: { ms },
+      },
+      anchor: this.buildCrossSeamAnchor(),
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, cancelAfterMs));
+    await transport.cancel({
+      requestId,
+      body: { reason: "preview verification cancel" },
+      anchor: this.buildCrossSeamAnchor(),
+    });
+
+    const response = await callPromise.catch((err) => ({
+      status: "error",
+      error: {
+        code: "transport-error",
+        message: err instanceof Error ? err.message : String(err),
+      },
+    }));
+    const cancelHonored =
+      response !== null &&
+      typeof response === "object" &&
+      "status" in response &&
+      (response as { status?: unknown }).status === "error" &&
+      "error" in response &&
+      typeof (response as { error?: unknown }).error === "object" &&
+      (response as { error?: { code?: unknown } }).error?.code === "cancelled";
+
+    return {
+      check: "capability-cancel",
+      requestId,
+      ms,
+      cancelAfterMs,
+      cancelRequested: true,
+      cancelHonored,
+      response,
+    };
+  }
+
+  private verifyInitialContext(): Record<string, unknown> {
+    const workspace = this.subsystems.workspace as
+      | {
+          assembler?: {
+            assemble: (layers: readonly unknown[]) => {
+              readonly assembled: Array<{ readonly kind: string }>;
+              readonly totalTokens: number;
+            };
+          };
+        }
+      | undefined;
+    const assembler = workspace?.assembler;
+    if (!assembler) {
+      return {
+        check: "initial-context",
+        error: "assembler-unavailable",
+      };
+    }
+
+    const pending = peekPendingInitialContextLayers(assembler as never);
+    const assembled = assembler.assemble(pending as never);
+    return {
+      check: "initial-context",
+      pendingCount: pending.length,
+      assembledKinds: assembled.assembled.map((layer) => layer.kind),
+      totalTokens: assembled.totalTokens,
+      defaultEvalRecordCount: this.getDefaultEvalRecords().length,
+      phase: this.state.actorState.phase,
+    };
+  }
+
+  private verifyCompactPosture(): Record<string, unknown> {
+    const kernel = this.subsystems.kernel as
+      | { phase?: string; reason?: string }
+      | undefined;
+    return {
+      check: "compact-posture",
+      compactDefaultMounted: false,
+      kernelPhase: kernel?.phase ?? null,
+      kernelReason: kernel?.reason ?? null,
+      profile: this.subsystems.profile,
+    };
+  }
+
+  private verifyFilesystemPosture(): Record<string, unknown> {
+    const storage = this.subsystems.storage as
+      | { phase?: string; reason?: string }
+      | undefined;
+    const env = this.env as
+      | { FILESYSTEM_CORE?: unknown; BASH_CORE?: unknown }
+      | undefined;
+    return {
+      check: "filesystem-posture",
+      hostLocalFilesystem: true,
+      filesystemBindingActive: Boolean(env?.FILESYSTEM_CORE),
+      capabilityBindingActive: Boolean(env?.BASH_CORE),
+      storagePhase: storage?.phase ?? null,
+      storageReason: storage?.reason ?? null,
+      profile: this.subsystems.profile,
+    };
   }
 }

@@ -22,6 +22,7 @@ const SUPPORTED_ACTIONS = new Set([
   "end",
   "status",
   "timeline",
+  "verify",
 ] as const);
 
 /** Response from the controller — status + JSON body. */
@@ -52,6 +53,11 @@ export interface HttpDispatchHost {
    * trace correlation.
    */
   readonly getTraceUuid?: () => string | null;
+  /** Preview-only verification seam for live deploy E2E and posture checks. */
+  readonly runVerification?: (
+    sessionId: string,
+    request: Record<string, unknown>,
+  ) => Promise<Record<string, unknown>>;
 }
 
 /** Outcome of an HTTP action, before it is serialised into a Response. */
@@ -107,6 +113,8 @@ export class HttpController {
         return this.handleStatus(sessionId);
       case "timeline":
         return this.handleTimeline(sessionId);
+      case "verify":
+        return this.handleVerify(sessionId, body);
       default:
         return { status: 404, body: { error: `Unknown action: ${action}` } };
     }
@@ -171,8 +179,12 @@ export class HttpController {
         body: { error: "start requires initial_input / text" },
       };
     }
+    const initialContext = body && typeof body === "object"
+      ? (body as Record<string, unknown>).initial_context
+      : undefined;
     const frame = this.buildClientFrame(sessionId, "session.start", {
       initial_input: initial,
+      ...(initialContext !== undefined ? { initial_context: initialContext } : {}),
     });
     await this.host.submitFrame(frame);
     return {
@@ -254,6 +266,29 @@ export class HttpController {
     return {
       status: 200,
       body: { ok: true, action: "timeline", events },
+    };
+  }
+
+  private async handleVerify(
+    sessionId: string,
+    body: unknown,
+  ): Promise<HttpActionOutcome> {
+    if (!this.host.runVerification) {
+      return {
+        status: 501,
+        body: {
+          error: "preview verification unavailable",
+        },
+      };
+    }
+    const request =
+      body && typeof body === "object" && !Array.isArray(body)
+        ? body as Record<string, unknown>
+        : {};
+    const result = await this.host.runVerification(sessionId, request);
+    return {
+      status: 200,
+      body: { ok: true, action: "verify", ...result },
     };
   }
 }

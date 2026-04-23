@@ -52,4 +52,11 @@ describe("HttpController", () => {
     const res = await ctrl.handleRequest("sess-1", "timeline");
     expect(Array.isArray((res.body as Record<string, unknown>).events)).toBe(true);
   });
+
+  it("`verify` returns 501 when no DO host is wired", async () => {
+    const ctrl = new HttpController();
+    const res = await ctrl.handleRequest("sess-1", "verify", { check: "initial-context" });
+    expect(res.status).toBe(501);
+    expect((res.body as Record<string, unknown>).error).toBe("preview verification unavailable");
+  });
 });

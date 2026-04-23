@@ -15,8 +15,16 @@ function createShellResponse(): FilesystemCoreShellResponse {
 }
 
 const worker = {
-  async fetch(_request: Request, _env: FilesystemCoreEnv): Promise<Response> {
-    return Response.json(createShellResponse());
+  async fetch(request: Request, _env: FilesystemCoreEnv): Promise<Response> {
+    const url = new URL(request.url);
+    const { pathname } = url;
+    const method = request.method.toUpperCase();
+
+    if (method === "GET" && (pathname === "/" || pathname === "/health")) {
+      return Response.json(createShellResponse());
+    }
+
+    return new Response("Not Found", { status: 404 });
   },
 };
 

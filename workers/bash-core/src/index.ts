@@ -183,10 +183,17 @@ export type {
 
 import { NACP_VERSION } from "@haimang/nacp-core";
 import { NACP_SESSION_VERSION } from "@haimang/nacp-session";
+import {
+  cancelCapabilityCall,
+  executeCapabilityCall,
+  parseCapabilityCallRequest,
+  parseCapabilityCancelRequest,
+} from "./worker-runtime.js";
 
 export interface BashCoreEnv {
   readonly ENVIRONMENT?: string;
   readonly OWNER_TAG?: string;
+  readonly CAPABILITY_CALL_DO?: DurableObjectNamespace;
 }
 
 export interface BashCoreProbeResponse {
@@ -209,8 +216,137 @@ function createProbeResponse(): BashCoreProbeResponse {
   };
 }
 
+function invalidJsonResponse(pathname: string): Response {
+  return Response.json(
+    {
+      error: "invalid-json",
+      message: `bash-core ${pathname} expects a JSON request body`,
+      worker: "bash-core",
+      phase: "worker-matrix-P1.B-absorbed",
+    },
+    { status: 400 },
+  );
+}
+
+function invalidShapeResponse(pathname: string, message: string): Response {
+  return Response.json(
+    {
+      error: "invalid-request-shape",
+      message,
+      worker: "bash-core",
+      phase: "worker-matrix-P1.B-absorbed",
+    },
+    { status: 400 },
+  );
+}
+
+async function handleCapabilityCall(raw: unknown, env: BashCoreEnv): Promise<Response> {
+  const parsed = parseCapabilityCallRequest(raw);
+  if (!parsed) {
+    return invalidShapeResponse(
+      "/capability/call",
+      "bash-core /capability/call expects { requestId, capabilityName?, body: { tool_name, tool_input } }",
+    );
+  }
+
+  const body = await executeCapabilityCall(parsed, {
+    previewMode: env.ENVIRONMENT === "preview",
+  });
+  return Response.json(body);
+}
+
+function handleCapabilityCancel(raw: unknown): Response {
+  const parsed = parseCapabilityCancelRequest(raw);
+  if (!parsed) {
+    return invalidShapeResponse(
+      "/capability/cancel",
+      "bash-core /capability/cancel expects { requestId, body?: { reason } }",
+    );
+  }
+
+  return Response.json(cancelCapabilityCall(parsed.requestId));
+}
+
+async function parseJsonBody(request: Request, pathname: string): Promise<
+  { ok: true; body: unknown } | { ok: false; response: Response }
+> {
+  try {
+    return { ok: true, body: await request.json() };
+  } catch {
+    return { ok: false, response: invalidJsonResponse(pathname) };
+  }
+}
+
+async function maybeForwardToCapabilityDo(
+  request: Request,
+  env: BashCoreEnv,
+  pathname: "/capability/call" | "/capability/cancel",
+  body: unknown,
+): Promise<Response | null> {
+  const namespace = env.CAPABILITY_CALL_DO;
+  if (!namespace) return null;
+
+  const parsed =
+    pathname === "/capability/call"
+      ? parseCapabilityCallRequest(body)
+      : parseCapabilityCancelRequest(body);
+  if (!parsed) {
+    return pathname === "/capability/call"
+      ? invalidShapeResponse(
+          pathname,
+          "bash-core /capability/call expects { requestId, capabilityName?, body: { tool_name, tool_input } }",
+        )
+      : invalidShapeResponse(
+          pathname,
+          "bash-core /capability/cancel expects { requestId, body?: { reason } }",
+        );
+  }
+
+  const id = namespace.idFromName(parsed.requestId);
+  const stub = namespace.get(id);
+  return stub.fetch(`https://bash-core-internal${pathname}`, {
+    method: "POST",
+    headers: {
+      "content-type": request.headers.get("content-type") ?? "application/json",
+      "x-bash-environment": env.ENVIRONMENT ?? "",
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+export class CapabilityCallDO {
+  constructor(
+    readonly state: DurableObjectState,
+    readonly env: BashCoreEnv,
+  ) {}
+
+  async fetch(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+    const { pathname } = url;
+
+    if (request.method.toUpperCase() !== "POST") {
+      return new Response("Method Not Allowed", { status: 405 });
+    }
+
+    const parsed = await parseJsonBody(request, pathname);
+    if (!parsed.ok) return parsed.response;
+
+    if (pathname === "/capability/call") {
+      return handleCapabilityCall(parsed.body, {
+        ENVIRONMENT: request.headers.get("x-bash-environment") ?? this.env.ENVIRONMENT,
+      });
+    }
+
+    if (pathname === "/capability/cancel") {
+      return handleCapabilityCancel(parsed.body);
+    }
+
+    return new Response("Not Found", { status: 404 });
+  }
+}
+
 const worker = {
-  async fetch(request: Request, _env: BashCoreEnv): Promise<Response> {
+  async fetch(request: Request, env: BashCoreEnv): Promise<Response> {
     const url = new URL(request.url);
     const { pathname } = url;
     const method = request.method.toUpperCase();
@@ -220,29 +356,19 @@ const worker = {
     }
 
     if (method === "POST" && pathname === "/capability/call") {
-      return Response.json(
-        {
-          error: "capability-call-not-wired",
-          message:
-            "bash-core /capability/call reached but runtime dispatch is not wired; D07/P2 activation pending.",
-          worker: "bash-core",
-          phase: "worker-matrix-P1.B-absorbed",
-        },
-        { status: 501 },
-      );
+      const parsed = await parseJsonBody(request, pathname);
+      if (!parsed.ok) return parsed.response;
+
+      const forwarded = await maybeForwardToCapabilityDo(request, env, "/capability/call", parsed.body);
+      return forwarded ?? handleCapabilityCall(parsed.body, env);
     }
 
     if (method === "POST" && pathname === "/capability/cancel") {
-      return Response.json(
-        {
-          error: "capability-cancel-not-wired",
-          message:
-            "bash-core /capability/cancel reached but runtime dispatch is not wired; D07/P2 activation pending.",
-          worker: "bash-core",
-          phase: "worker-matrix-P1.B-absorbed",
-        },
-        { status: 501 },
-      );
+      const parsed = await parseJsonBody(request, pathname);
+      if (!parsed.ok) return parsed.response;
+
+      const forwarded = await maybeForwardToCapabilityDo(request, env, "/capability/cancel", parsed.body);
+      return forwarded ?? handleCapabilityCancel(parsed.body);
     }
 
     return new Response("Not Found", { status: 404 });
