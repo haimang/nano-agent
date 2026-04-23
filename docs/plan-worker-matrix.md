@@ -1,1019 +1,573 @@
-# Plan Worker Matrix — First-Wave Worker Assembly with Verified Foundations
+# Plan Worker Matrix — Assembly & Absorption Charter
 
-> ⚠️ **NEEDS REWRITE R2 — r1 保留为历史审计稿**
+> **状态**:`active charter (r2 fresh rewrite after pre-worker-matrix closure)`
+> **日期**:`2026-04-23`
+> **作者**:`Claude Opus 4.7 (1M context)`
+> **文档性质**:`phase charter` — worker 边界冻结 / 吸收顺序 / 跨 worker 装配里程碑
 >
-> **状态**:`needs-rewrite-r2 / pre-worker-matrix closed on 2026-04-23`
-> **Deprecation 时间**:`2026-04-21`
-> **Deprecation 原因**:
+> **直接输入包(authoritative)**:
+> 1. `docs/issue/pre-worker-matrix/pre-worker-matrix-final-closure.md`
+> 2. `docs/handoff/pre-worker-matrix-to-worker-matrix.md`
+> 3. `docs/eval/worker-matrix/00-contexts/00-current-gate-truth.md`(Revision 4)
+> 4. `docs/eval/worker-matrix/index.md`(refreshed root index)
+> 5. `docs/eval/worker-matrix/00-contexts/03-evaluations/current-worker-reality.md`
+> 6. `docs/design/pre-worker-matrix/W3-absorption-map.md`
+> 7. `docs/design/pre-worker-matrix/W3-absorption-blueprint-capability-runtime.md`
+> 8. `docs/design/pre-worker-matrix/W3-absorption-blueprint-workspace-context-artifacts-split.md`
+> 9. `docs/design/pre-worker-matrix/W3-absorption-blueprint-session-do-runtime.md`
+> 10. `docs/design/pre-worker-matrix/W3-absorption-pattern.md`
+> 11. `docs/design/pre-worker-matrix/TEMPLATE-absorption-blueprint.md`
+> 12. `docs/rfc/nacp-workspace-rpc.md` / `docs/rfc/remote-compact-delegate.md` / `docs/rfc/evidence-envelope-forwarding.md`
+> 13. `docs/eval/worker-matrix/{agent-core,bash-core,context-core,filesystem-core}/index.md`
+> 14. `docs/eval/worker-matrix/cross-worker-interaction-matrix.md`
+> 15. `docs/eval/worker-matrix/worker-readiness-stratification.md`
+> 16. `docs/eval/worker-matrix/skill-core-deferral-rationale.md`
 >
-> r1 草稿完成后,经过 2 轮 owner 讨论,发现它在两个根本层面上的架构认知错误:
->
-> 1. **目录结构认知错误** — r1 默认 4 个 worker "以 host composition handle 形式 in-process 存在于 session-do-runtime";owner 纠正:每个 worker 应有独立 `workers/<name>/` 顶级目录,各自 wrangler.jsonc / package.json / src / test,获得 Cloudflare-native 的部署隔离与风险隔离
-> 2. **packages 定位认知错误** — r1 默认 `packages/` 是"永久共享 library";owner 纠正:**除 `nacp-core` 与 `nacp-session`** 之外,所有 packages 都是"验证 + 吸收上下文",随 worker 成熟而 phase out;只有 NACP 两个包会真实发布到 GitHub Packages
->
-> 这两个认知错误还推导出 r1 的第 3 个 gap:
->
-> 3. **前置阶段缺失** — r1 把 NACP 发布、跨 worker 协议设计(γ workspace RPC + β remote compact delegate + evidence envelope forwarding)、package 吸收 blueprint、`workers/` 目录脚手架等 5 类"完全不同种类的 risk"塞进 worker-matrix 的 P0 sub-phase,违反 nano-agent 一贯的"单 phase 单焦点"纪律
->
-> Owner 已确认需要一个独立的前置阶段 `pre-worker-matrix` 先处理上述 gap,本 r1 进入 deprecated 状态。
->
-> **当前 authoritative 输入包**:
-> - `docs/issue/pre-worker-matrix/pre-worker-matrix-final-closure.md`
-> - `docs/handoff/pre-worker-matrix-to-worker-matrix.md`
-> - `docs/eval/worker-matrix/00-contexts/00-current-gate-truth.md`
-> - `docs/plan-pre-worker-matrix.md` (作为已执行 charter 历史稿)
->
-> **Rewrite 时机**:pre-worker-matrix 阶段 W5 已完成;`plan-worker-matrix.md` 必须在开始 worker-matrix P0 之前完成 r2 rewrite
->
-> **r2 预期修订面(记录,待 pre-worker-matrix 闭合后执行)**:
-> - §0 / §1 / §2 重写(新起点:`@haimang/nacp-core@1.4.0` + `@haimang/nacp-session@1.3.0` 已发布、W1 RFC×3 已冻结、W3 absorption map + 3 份代表 blueprint 已存在、W4 `workers/*` shell 已 materialize)
-> - §4 In-Scope 重写为"按 blueprint 执行 absorption + 装配 live turn loop + 激活 cross-worker service-binding"
-> - §5 方法论新增"blueprint-driven absorption" / "protocol-based integration" / "progressive published-path cutover" / "gradual packages removal"
-> - §6 4 worker 章节基于 W3 blueprint + W4 shell reality 深化
-> - §8 Phase 数量从 3 扩到 6-7(并行 absorption + integration + deprecation)
-> - §11 Exit criteria 新增"live agent turn loop 端到端" / "Tier B packages 物理吸收完成" / "published-path cutover milestone"
->
-> r1 内容以下保留作为历史审计 / worker charter-level 边界参考(§6 / §7 的 worker 定位 + 不变量仍有长期参考价值),但不得作为 r2 rewrite 之前的 authoritative planning input。
->
-> ---
->
-> ## 以下为 r1 原文(deprecated)
->
-> ---
-
-> 文档对象:`nano-agent / worker-matrix phase charter`
-> 刷新日期:`2026-04-21 (r1)`
-> 作者:`Claude Opus 4.7 (1M context)`
-> 文档性质:`phase charter / scope freeze / worker boundary contract / cross-worker invariants / deferral register`
->
-> **修订历史:**
-> - **r1 (2026-04-21)**:初版,基于 `docs/eval/worker-matrix/` 上下文束与 B8/B9 shipped reality 编制。
-> - **r1 deprecated (2026-04-21)**:经 2 轮 owner 讨论,发现 workers 目录结构 + packages 定位两项根本认知错误;推导出 pre-worker-matrix 独立前置阶段缺失;等待 pre-worker-matrix 闭合后 r2 rewrite。替代文档:`docs/plan-pre-worker-matrix.md`。
->
-> **输入依据:**
-> - `docs/plan-after-foundations.md` (r2,已全部 phase 闭合 — 4 轮修正收口与 5 类 ship code 已落地)
-> - `docs/handoff/after-foundations-to-worker-matrix.md` (B8 handoff memo,含 §11/§12/§13 post-B9 回填)
-> - `docs/handoff/next-phase-worker-naming-proposal.md` (4 first-wave + 1 reserved 命名建议)
-> - `docs/issue/after-foundations/B9-final-closure.md` (B9 closed with revision §8)
-> - `docs/issue/after-foundations/after-foundations-final-closure.md` (Phase 0 gate OPEN 口径)
-> - `docs/rfc/nacp-core-1-3-draft.md` (双侧 matrix + error body provisional helper + initial_context wire hook)
-> - `docs/eval/worker-matrix/00-contexts/00-current-gate-truth.md` (rev 2 post-B9-integration)
-> - `docs/eval/worker-matrix/agent-core/` 5 份 worker 上下文(index + realized + internal-nacp + external-contract + cloudflare-study)
-> - `docs/eval/worker-matrix/bash-core/` 同上 5 份
-> - `docs/eval/worker-matrix/context-core/` 同上 5 份(含 §6.1-§6.3 第一波决策锚点)
-> - `docs/eval/worker-matrix/filesystem-core/` 同上 5 份(含 §6.1 ReferenceBackend 决策)
-> - `docs/eval/worker-matrix/context-space-examined-by-opus.md` (上下文束审查 + 4 项 patch)
-> - `docs/eval/worker-matrix/cross-worker-interaction-matrix.md` (patch-2:4×4 交互矩阵)
-> - `docs/eval/worker-matrix/worker-readiness-stratification.md` (patch-3:全局 readiness 分层)
-> - `docs/eval/worker-matrix/skill-core-deferral-rationale.md` (patch-4:skill.core 延后说明)
-> - `docs/eval/after-foundations/smind-contexter-learnings.md` (Contexter 分层架构辩证)
-> - 当前 `packages/**` 真实代码事实(详见 §2)
+> **ancestry-only 参考(不作为直接入口)**:after-foundations final closure / B8 handoff / B9 final closure / 更早的 worker-matrix-eval-with-{GPT,Opus}。
 
 ---
 
-## 0. 为什么这份文档要现在写
+## 0. 为什么这份 charter 是 "assembly + absorption" 而不是别的
 
-after-foundations 阶段已经闭合 — B1-B9 全部 shipped,5 类 code(context-management / storage-topology 2.0.0 / capability-runtime 扩展 / hooks / nacp 1.3.0)全部 ship,spike 双轮全部部署并 writeback 完成,B9 contract freeze 的 R1/R2/R3 三项 review finding 已在 2026-04-21 整改闭环。
+pre-worker-matrix 阶段(W0-W5)已经闭合。它 **不** 做任何 worker 业务能力,但它把下述 6 件事从纸面冻结成了代码事实:
 
-但**前一阶段建立的 conservative-first 基调意味着 nano-agent 的真实状态是**:
+1. **目录拓扑冻结**:`workers/{agent-core,bash-core,context-core,filesystem-core}/` 物理存在
+2. **包策略冻结**:`@haimang/nacp-core` + `@haimang/nacp-session` 是唯二永久外部包;其余 9 个 Tier B packages 是 "absorption 上下文",最终应被吸进 workers
+3. **import / publish 策略冻结**:GitHub Packages 已有真实首发(`@haimang/nacp-core@1.4.0` / `@haimang/nacp-session@1.3.0`);`workspace:*` 作为合法 interim 继续存在
+4. **方向性 RFC × 3 shipped**:`workspace.fs.*` / remote compact delegate / evidence forwarding — **directional,非 shipped runtime**
+5. **最小 scaffold 存在**:`agent-core` real preview deploy 已完成;其余 3 worker dry-run validated
+6. **`plan-worker-matrix.md` r2 起跑线被 handoff pack 重写清楚**
 
-> **foundations 已经典型地"seam-ready, assembly-partial"**——所有 substrate 包都存在,所有 protocol 契约都已冻结,所有 platform law 都已验证;但 **default composition 仍是 empty handle(`kernel: undefined, llm: undefined, …`)**,nano-agent 作为 agent 的主链并未真正跑通。
+因此 worker-matrix 阶段要解决的 **唯一剩余问题** 是:
 
-worker-matrix 阶段要解决的唯一问题就是这个 **substrate-to-assembly 的一次性过渡**。本阶段不再新建 substrate(那是 after-foundations 的事),也不再修改 protocol contract(那是 B9 的事),而是:
-
-> **用 4 个 first-wave worker (`agent.core / bash.core / context.core / filesystem.core`) 把已经 shipped 的 substrate 装配成真实 agent turn loop,并在此过程中建立 cross-worker 的稳定沟通管道。**
+> **把已 shipped 的 Tier B substrate 按 W3 absorption map 吸收进 `workers/*/src/`,并装配出 live agent turn loop;同时按 W1 RFC 方向激活首波真实需要的 cross-worker 传输,其余保持 host-local 或 deferred。**
 
 简称:
 
-> **Worker Matrix: Substrate-to-Assembly Transition with Frozen Contracts**
+> **Worker Matrix: Assembly + Absorption over Frozen Shells**
+
+本阶段 **不** 做:
+
+- 新建 substrate 包(那是 after-foundations)
+- 修改 NACP 协议契约(那是 W0 / B9)
+- 重新发明跨 worker 协议 family(W1 RFC 已冻结方向,不升级为 shipped code 直到 live loop 证据需要)
+- 重建 `workers/*` 目录或其 deploy shell(W4 已物化)
 
 ---
 
-## 1. 本轮已经确认的基石事实与 Owner Decisions
+## 1. 继承自 pre-worker-matrix 的冻结事实
 
-这是本阶段最高优先级输入,全部来自前一阶段的 shipped reality + eval 讨论的 owner 裁判。
+### 1.1 协议 / 包 真相层
 
-### 1.1 来自 after-foundations 的净产出(frozen truth)
-
-1. **nacp-core 1.3.0 / nacp-session 1.3.0 / session-do-runtime 0.3.0 已 shipped**
-   - 出处:`docs/issue/after-foundations/B9-final-closure.md` §1-§3
-   - worker-matrix 不得修改 `NACP_CORE_TYPE_DIRECTION_MATRIX` / `NACP_SESSION_TYPE_DIRECTION_MATRIX` / `SessionStartInitialContextSchema`
-   - worker-matrix 不得修改 `V1_BINDING_CATALOG`(charter §4.1 H 第 32 项,已是 nano-agent 长期纪律)
-
-2. **tenant plumbing 已在 `NanoSessionDO` 接线**
-   - 出处:`packages/session-do-runtime/src/do/nano-session-do.ts:487-535` (acceptClientFrame async + await verifyTenantBoundary);`packages/session-do-runtime/src/do/nano-session-do.ts:551-604` (getTenantScopedStorage)
-   - worker-matrix 不得绕过 tenant wrapper;任何新 storage use-site 必须经 `getTenantScopedStorage()` 代理
-
-3. **context-management 0.1.0 已 ship**
-   - 出处:`packages/context-management/` 含 `budget/` / `async-compact/` / `inspector-facade/` 三子模块
-   - `AsyncCompactOrchestrator` 的 armed → prepare → commit lifecycle 已实现(仅 `restoreVersion` 仍 honest stub)
-
-4. **`initial_context` wire hook 已冻结,consumer 侧 owner 确认归 agent.core host**
-   - 出处:`docs/eval/worker-matrix/context-core/index.md` §6.3 + `docs/eval/worker-matrix/agent-core/index.md` §4
-   - `SessionStartInitialContextSchema` 的解析由 `nacp-session` 承担;assembler 的 `appendInitialContextLayer(...)` API 由 `context.core` 提供;调用由 `NanoSessionDO.dispatchAdmissibleFrame` 在 `session.start` 分支执行
-
-5. **B7 LIVE deploy 契约仍 load-bearing**
-   - 出处:`test/b7-round2-integrated-contract.test.mjs` 5 tests 必须保持 green
-   - worker-matrix 对 `NanoSessionDO` 的任何改动必须保留:BoundedEvalSink dedup + overflow disclosure、cross-seam anchor lowercase header、`idFromName(sessionId)` per-session DO 身份
-
-### 1.2 来自 Opus/GPT worker-matrix eval 的 owner 裁判
-
-6. **4 first-wave worker 名单冻结**:`agent.core / bash.core / context.core / filesystem.core`
-   - 出处:`docs/handoff/next-phase-worker-naming-proposal.md:67`
-   - 这 4 个是 first wave,`skill.core` 明确延后(详见 §1.3 第 10 条)
-
-7. **`context.core` 升格为 first-wave worker,但保持薄做**
-   - 出处:`docs/eval/after-foundations/worker-matrix-eval-with-Opus.md` §3 + `context-management-eval-by-Opus.md` v2 §7.4
-   - "升格"的含义是 "有独立上下文包 + 独立 charter 章节",**不是** "立即独立部署为 remote worker"
-   - 参见 `docs/eval/worker-matrix/context-core/index.md` §0 一句话结论:"薄 context substrate,不是完整 context engine"
-
-8. **`agent.core` 不是 binding slot,是 host worker**
-   - 出处:`docs/handoff/after-foundations-to-worker-matrix.md` §4-§6
-   - host worker 的物理实体就是 `packages/session-do-runtime/src/do/nano-session-do.ts::NanoSessionDO`;worker-matrix 不应重建 host 壳
-
-9. **Conservative-first 基调贯穿所有 worker**:每个 worker 的第一波都要"薄做",不在 first wave 试图做到位
-   - 出处:`docs/eval/worker-matrix/context-space-examined-by-opus.md` §7.3
-   - 具体表现:`bash.core != full shell`、`filesystem.core != POSIX FS`、`context.core != semantic memory engine`、`agent.core != 长期记忆 orchestrator`
-
-### 1.3 来自 context-space 审查的 pre-construction 补丁
-
-10. **`skill.core` 明确延后,作为 reserved-name 保留**
-    - 出处:`docs/eval/worker-matrix/skill-core-deferral-rationale.md` + `docs/handoff/next-phase-worker-naming-proposal.md:126`
-    - 入场条件:(1) first-wave 4 workers 全部 closure;(2) 产品驱动浮现;(3) substrate 存在或 RFC 立项;(4) 下一轮 charter 周期
-
-11. **cross-worker 交互矩阵已作为基线输入**
-    - 出处:`docs/eval/worker-matrix/cross-worker-interaction-matrix.md`
-    - 4×4 矩阵的 8/12 cells 已 real;2/12 seam(agent↔bash 主链);1/12 partial(agent→context initial_context consumer);这是本 charter §7 的直接前置输入
-
-12. **readiness 分层已做**:4 workers 全部 A- 或更高
-    - 出处:`docs/eval/worker-matrix/worker-readiness-stratification.md` §3
-    - 唯一 Phase 0 critical path = D2 列(default composition wiring),全部落在**同一个文件**:`packages/session-do-runtime/src/composition.ts`
-
----
-
-## 2. 当前仓库的真实起点
-
-今天的仓库现实,是 "after-foundations shipped + worker-matrix 尚未开始" 的精确中间态。
-
-### 2.1 当前 readiness 真相:Frozen contracts + seam-complete substrate + assembly undone
-
-#### 2.1.1 已成立的 frozen truth
-
-1. **协议地基 1.3 frozen**
-   - `nacp-core 1.3.0` — 11 core types 的 `NACP_CORE_TYPE_DIRECTION_MATRIX` 已冻结并由 `validateEnvelope` Layer 6 强制
-   - `nacp-session 1.3.0` — 8 session types 的 `NACP_SESSION_TYPE_DIRECTION_MATRIX` 已冻结并由 `validateSessionFrame` 强制
-   - `NacpErrorBodySchema` + `NACP_ERROR_BODY_VERBS`(空 registry)+ `wrapAsError()` provisional helper 已 ship
-   - `SessionStartInitialContextSchema` + `SessionStartBodySchema.initial_context` 已冻结并 back-compat
-
-2. **Host tenant plumbing 已 materialize**
-   - `NanoSessionDO.acceptClientFrame()` async + `await verifyTenantBoundary()` + typed rejection(B9-R1 修复)
-   - 5 个 storage use-site 全部走 `getTenantScopedStorage()`(`wsHelperStorage` / `persistCheckpoint` / `restoreFromStorage` / `LAST_SEEN_SEQ_KEY put`)
-   - `http-controller.ts` 硬编码 `"1.1.0"` 已清除(B9-R4 修复)
-
-3. **4 worker substrate 全部 shipped**
-   - `agent.core` substrate = `@nano-agent/session-do-runtime 0.3.0` + `@nano-agent/agent-runtime-kernel` + `@nano-agent/llm-wrapper` + `@nano-agent/hooks`
-   - `bash.core` substrate = `@nano-agent/capability-runtime`(21-command registry + 6 类 handlers + `ServiceBindingTarget`)
-   - `context.core` substrate = `@nano-agent/context-management 0.1.0` + `@nano-agent/workspace-context-artifacts`
-   - `filesystem.core` substrate = `@nano-agent/workspace-context-artifacts` + `@nano-agent/storage-topology`
-
-4. **Regression baseline**
-   - Package-level:11 packages 共 2242+ tests 全绿
-   - Root:98 / 98 绿(含 17 新 B9 tests)
-   - Cross:112 / 112 绿
-   - B7 LIVE wire:5 / 5 绿
-
-#### 2.1.2 仍待 worker-matrix 完成的 3 处 assembly 缺口
-
-| 缺口 | 证据 | Phase 0 priority |
+| 项目 | 当前真相 | 来源 |
 |---|---|---|
-| **默认 composition 未装 kernel/llm/capability** | `packages/session-do-runtime/src/composition.ts:90-106` 仍返回 `{kernel: undefined, llm: undefined, capability: undefined, …}` | **P0 唯一必要里程碑** |
-| **Remote composition 未装 kernel/workspace/eval/storage** | `packages/session-do-runtime/src/remote-bindings.ts:385-395` 仍在 4 处 `undefined` | **P0 配套**(与 default 同 PR) |
-| **`initial_context` host consumer 未实现** | `packages/session-do-runtime/src/do/nano-session-do.ts:608-645` 当前只抽 turn_input,未读 `body.initial_context` | **P0 配套**(与 default 同 PR) |
+| NACP core | `@haimang/nacp-core@1.4.0`(已发布到 GitHub Packages) | W2 closure |
+| NACP session | `@haimang/nacp-session@1.3.0`(已发布) | W2 closure |
+| Publish registry | `https://npm.pkg.github.com`(scope `@haimang`) | W2 pipeline |
+| 永久对外包 | 仅 `nacp-core` + `nacp-session`;其余所有包 are absorption inputs | W3 map / charter |
+| W1 RFC(workspace-rpc) | `executed directional RFC`,**无 shipped runtime** | `docs/rfc/nacp-workspace-rpc.md` |
+| W1 RFC(remote-compact-delegate) | `executed directional RFC`,**继续复用 `context.compact.request/response`** | `docs/rfc/remote-compact-delegate.md` |
+| W1 RFC(evidence-forwarding) | `executed directional RFC`,**继续复用 `audit.record` 作 carrier** | `docs/rfc/evidence-envelope-forwarding.md` |
+| hooks catalog / evidence vocabulary / storage-law / cross-seam transport | W0 已吸收进 `@haimang/nacp-core` | W0 closure |
 
-**结论**:本阶段的工程量**不是** "4 个独立 worker 的 greenfield implementation",**而是** "用一个焦点 PR 把 default + remote composition factory 升级为真实装配"。4 个 worker 的其他工作都围绕这个 milestone 排布。
+### 1.2 部署真相层
 
-### 2.2 Cross-worker interaction matrix 真相(derived from §1.3 第 11 条)
+| 项目 | 当前真相 | 来源 |
+|---|---|---|
+| workers 目录 | `workers/{agent-core,bash-core,context-core,filesystem-core}/` 物理存在 | W4 closure |
+| agent-core preview deploy | `https://nano-agent-agent-core-preview.haimang.workers.dev` live;Version ID `05baa0b9-2f0a-4982-b036-1855ca97439a` | W4 closure §5.4 |
+| 其余 3 workers | dry-run validated,**未真实 deploy** | W4 closure §5.3 |
+| CI matrix workflow | `.github/workflows/workers.yml` matrix over 4 workers,`build → test → dry-run` | W4 closure |
+| pnpm workspace | `packages/* + workers/*` | W4 closure |
+| worker shell 依赖 | `@haimang/nacp-*` 当前走 `workspace:*` interim(故意) | W4 closure §4.3 |
+| agent-core service bindings | `SESSION_DO` active;`BASH_CORE / CONTEXT_CORE / FILESYSTEM_CORE` 保持 **注释态 future slots** | W4 closure §2.3 |
 
-| producer → consumer | `agent.core` | `bash.core` | `context.core` | `filesystem.core` |
+### 1.3 W3 absorption map(10 units / 4 workers)
+
+| Unit | 源对象 | 目标 worker | 复杂度 | 有无代表 blueprint |
 |---|---|---|---|---|
-| **`agent.core`** | — | `tool.call.*` via CAPABILITY_WORKER → **seam** + P0-required | `context.compact.*` + `initial_context` + in-process compact → **partial** + P0 | in-process `WorkspaceNamespace` → **real** + P0-maintain |
-| **`bash.core`** | `tool.call.response` → **seam** + P0 | — | `session.stream.event` (progress) → **real** + P0 | `WorkspaceFsLike` consumer → **real** + P0 |
-| **`context.core`** | `hook.outcome` + kernel compact delegate → **real** + P0 | N/A | — | `WorkspaceSnapshotBuilder` → **real** + P0 |
-| **`filesystem.core`** | evidence emission → **real** + P0 | N/A | evidence(assembly/artifact/snapshot)→ **real** + P0 | — |
+| A1 | `session-do-runtime` host shell | `agent-core` | 高 | 可选(已写)|
+| A2 | `agent-runtime-kernel` | `agent-core` | 中 | 否 |
+| A3 | `llm-wrapper` | `agent-core` | 中 | 否 |
+| A4 | `hooks` runtime residual | `agent-core` | 中 | 否 |
+| A5 | `eval-observability` runtime sink & inspector seam | `agent-core` | 中 | 否 |
+| B1 | `capability-runtime` | `bash-core` | 高 | **是(必写)** |
+| C1 | `context-management` | `context-core` | 中 | 否 |
+| C2 | `workspace-context-artifacts` context slice | `context-core` | 高 | **是(与 D1 成对)** |
+| D1 | `workspace-context-artifacts` filesystem slice | `filesystem-core` | 高 | **是(与 C2 成对)** |
+| D2 | `storage-topology` residual | `filesystem-core` | 中 | 否 |
 
-完整版矩阵参见 `docs/eval/worker-matrix/cross-worker-interaction-matrix.md`。
+7 份非代表 detailed blueprint 由 worker-matrix P0 在对应 absorb PR 开打之前用 `TEMPLATE-absorption-blueprint.md` copy-fill。
 
-### 2.3 四个 worker 的 readiness 分层真相(derived from §1.3 第 12 条)
+### 1.4 当前仓库代码真相(未完成项)
 
-| dimension | `agent.core` | `bash.core` | `context.core` | `filesystem.core` |
+以下是 `plan-worker-matrix` **必须认清** 的硬事实(均有直接代码锚点):
+
+1. `packages/session-do-runtime/src/composition.ts::createDefaultCompositionFactory()` 仍返回空 handle bag — `kernel / llm / capability / workspace / hooks / eval / storage = undefined`
+2. `packages/session-do-runtime/src/remote-bindings.ts::makeRemoteBindingsFactory()` 对 `kernel / workspace / eval / storage` 留未解析
+3. `packages/session-do-runtime/src/do/nano-session-do.ts::dispatchAdmissibleFrame` 在 `session.start` 分支 **未消费** `body.initial_context`(wire schema 已冻结,但 host 消费路径缺失)
+4. `workers/agent-core/src/index.ts` 仍为 version-probe shell,不是 live agent loop
+5. `workers/{bash-core,context-core,filesystem-core}/src/index.ts` 均为 version-probe shell,未吸收任何 substrate
+
+### 1.5 `skill.core` 状态
+
+**reserved + deferred**。name 保留在上游 naming / handoff 历史中;`skill.invoke.*` protocol family 已在 NACP;producer role `skill` 已存在;但 **无 substrate 包、无 workers/ shell、无 W3 absorption unit**。worker-matrix **禁止** 把 skill.core 扩成第 5 个 first-wave worker — 详细理由见 `docs/eval/worker-matrix/skill-core-deferral-rationale.md`。
+
+---
+
+## 2. 本阶段 charter 任务
+
+### 2.1 一句话任务
+
+> **按 W3 absorption map 把 10 个 absorption units 吸进 4 个 workers,在吸收过程中装出 live agent turn loop,并激活 first-wave 实际需要的 cross-worker service binding(首要是 `agent.core ↔ bash.core`);不扩 skill.core,不重开拓扑,不升级 W1 RFC 为 shipped runtime 除非 live loop 直接需要。**
+
+### 2.2 一句话产出
+
+- 4 个 workers 的 `src/` 内有真实吸收后的 runtime(非 version-probe shell)
+- default composition 装出 live agent turn loop(`kernel + llm + capability + workspace + hooks + eval` 全部接满)
+- `initial_context` 已有 host consumer 与 context.core 侧 API
+- `agent.core ↔ bash.core` `tool.call.*` service-binding 首波 live
+- `context.core` / `filesystem.core` 的首波 posture 决策落地(host-local 继续 vs 独立 live service)
+- `workspace:*` → published path 切换 milestone 执行或明确推迟
+- 吸收后的 Tier B packages 打上 `DEPRECATED`;物理删除由后续阶段决定
+- W3 pattern spec 3 个 placeholder 节被首批 absorb PR 回填
+
+### 2.3 边界约束
+
+1. **不新增 substrate 包**
+2. **不修改 NACP wire vocabulary / session message matrix / tenant law**(W0 + B9 契约)
+3. **不把 W1 RFC 升级为 shipped cross-worker protocol family** 除非 live loop 证据要求;若要升级,走单独 RFC revision
+4. **不重命名 4 个 first-wave workers**
+5. **不引入第 5 个 first-wave worker**(`skill.core` 保持 reserved)
+6. **不绕过 tenant wrapper**(B9 契约);所有 storage use-site 须经 `getTenantScopedStorage()`
+7. **不破坏 B7 LIVE 契约**(5 tests,load-bearing):BoundedEvalSink dedup / overflow disclosure、cross-seam anchor lowercase header、`idFromName(sessionId)` per-session DO 身份
+
+---
+
+## 3. In-Scope / Out-of-Scope
+
+### 3.1 In-Scope
+
+| 编号 | 工作项 | 归属 Phase |
+|---|---|---|
+| I1 | A1-A5 absorption(`agent.core`) | P1 |
+| I2 | B1 absorption(`bash.core`) | P1(可与 I1 并行) |
+| I3 | `createDefaultCompositionFactory()` 升级为 live 装配 | P2 |
+| I4 | `makeRemoteBindingsFactory()` 对 `kernel / workspace / eval / storage` 补全处理 | P2 |
+| I5 | `initial_context` host consumer 接线(`dispatchAdmissibleFrame` → `context.core.appendInitialContextLayer`) | P2 |
+| I6 | `agent.core ↔ bash.core` `tool.call.*` service-binding 首波 live | P2 |
+| I7 | C1 + C2 absorption(`context.core`) | P3 |
+| I8 | `context.core` 默认 compact posture 决策(host-local 保留 / 走远端 delegate / opt-in)| P3 |
+| I9 | D1 + D2 absorption(`filesystem.core`) | P4 |
+| I10 | `filesystem.core` connected-mode / remote posture 决策 | P4 |
+| I11 | `workspace:*` → `@haimang/*` published 切换 milestone | P5 |
+| I12 | 吸收完成的 Tier B packages 打 `DEPRECATED` | P5 |
+| I13 | W3 pattern spec 3 个 placeholder 回填("LOC→时长系数" / "可执行流水线样板" / "循环引用解决 pattern")| 随首批 absorb PR |
+| I14 | agent-core 以外其余 3 worker 升级到 real preview deploy | P2-P4 各自触发 |
+| I15 | worker-matrix 阶段 final closure + handoff memo | P5 |
+
+### 3.2 Out-of-Scope
+
+| 编号 | 项目 | 为什么不做 |
+|---|---|---|
+| O1 | 新建 `skill.core` worker / 任何第 5 个 first-wave worker | 见 §1.5 |
+| O2 | 升级 W1 RFC × 3 为 shipped runtime API / helper / message matrix 条目 | RFC-only direction 成立的前提是 live loop 没有直接需要;若证据出现再另起 RFC revision |
+| O3 | 修改 NACP wire vocabulary / session message matrix / tenant wrapper 强制 | W0 + B9 契约 |
+| O4 | Tier B packages **物理删除** | 本阶段只打 `DEPRECATED` banner;物理删除等消费者全切 + 共存期 ~3 个月 满足后在后续阶段 |
+| O5 | Worker-matrix P5 之外的 production env flip | 本阶段 preview 即可;production 升级属于后续 release charter |
+| O6 | `browser-rendering` / `python3` / `sqlite3` / mutating git / high-volume curl 等 bash.core 成熟度扩面 | 当前治理真相明确拒绝或延后 |
+| O7 | 独立 remote compact worker transport / 独立 remote filesystem RPC family 的 shipped code | first-wave 不需要;`workspace.fs.*` 与 remote-compact 都留在 RFC direction |
+| O8 | 对 W3 代表 blueprint 以外的 7 个 units 预先写 detailed blueprint | 按 pattern + map 外推即可;必要时 on-demand 补 |
+
+---
+
+## 4. 4 个 first-wave worker 的 charter-level 定位
+
+> 本节只讲 **charter-level** 纲领:身份、Design 特质、入/出站沟通管道、首波 In-/Out-Scope、关键代码锚点。不进入 design 细节或 action-plan checklist。
+
+### 4.1 `agent.core` — Host Worker
+
+- **身份**:**host worker**,不是 binding slot。物理 DO:`packages/session-do-runtime/src/do/nano-session-do.ts::NanoSessionDO`。Worker entry 壳已在 `workers/agent-core/src/index.ts`,当前只是 version-probe + DO stub。
+- **不承担**:user memory / intent routing / cross-session state — 这些由 upstream(`initial_context` 的 producer)负责。
+- **Design 特质**:
+  - 单 DO per session(`idFromName(sessionId)`),不做 per-user DO
+  - 薄 Worker + 厚 DO:Worker entry 只路由;所有业务在 `NanoSessionDO` 内
+  - 只有 agent.core 向 client 发 `session.stream.event`;其余 worker 通过 host stream seam 参与
+  - host 负责 upstream 调度:`dispatchAdmissibleFrame` 在 `session.start` 时调用 `context.core` 的 `appendInitialContextLayer`
+  - honest degrade:缺 kernel / llm 时用空 `{snapshot, events: [], done: true}` 降级,但 P2 完成后不应再触发此路径
+- **入站通道(agent.core 作为 consumer)**:
+
+  | 来源 | 协议 | 当前状态 | 本阶段动作 |
+  |---|---|---|---|
+  | client WS frame | `nacp-session::NacpSessionFrame` + `validateSessionFrame` | real | 不变 |
+  | client HTTP fallback | `HttpController` + `acceptIngress` | real | 不变 |
+  | `tool.call.response` from bash-core | `nacp-core::ToolCallResponseBodySchema` + `CAPABILITY_WORKER` service-binding reply | seam | **P2 装配活化** |
+  | `hook.outcome` | `HookOutcomeBodySchema` + `HOOK_WORKER` service-binding | real | 不变 |
+  | `context.compact.response` | in-process via `createKernelCompactDelegate` | real(opt-in)| 保持 opt-in |
+  | `initial_context` payload | 嵌 `SessionStartInitialContextSchema` | **shipped wire + missing consumer** | **P2 补 consumer** |
+
+- **出站通道(agent.core 作为 producer)**:
+
+  | 目标 | 协议 | 当前状态 | 本阶段动作 |
+  |---|---|---|---|
+  | client(WS)| `session.stream.event` | real | 不变 |
+  | `bash.core` | `tool.call.request` / `tool.call.cancel` via `serviceBindingTransport` | seam | **P2 kernel dispatcher 走 transport 活化** |
+  | `hook.*` worker | `hook.emit` via `HOOK_WORKER` | real | 不变 |
+  | `fake.provider` | direct `Fetcher` binding | real | 不变 |
+  | DO storage(自身)| `getTenantScopedStorage` + `tenantDoStorage*` | real | 不变 |
+
+- **首波 In-Scope**:A1-A5 absorption + default / remote composition 装配完成 + `initial_context` consumer 接线 + `agent-core service bindings` 活化 + `workers/agent-core/src/` 升级到 live host runtime(非 version-probe)+ charter-level 边界在本 §4.1 冻结
+- **首波 Out-of-Scope**:不新建独立 `agent-core-worker` 2nd directory;不引入 user-level DO / cross-session store;不拆 `NanoSessionDO` 为多 DO;不自造 session 层 message types;不放宽 tenant wrapper
+- **关键代码锚点**:
+  - `packages/session-do-runtime/src/worker.ts:72-88` — Worker entry
+  - `packages/session-do-runtime/src/do/nano-session-do.ts:130-280` — DO constructor
+  - `packages/session-do-runtime/src/do/nano-session-do.ts:466-535` — WS ingress + `acceptClientFrame` async
+  - `packages/session-do-runtime/src/do/nano-session-do.ts:608-645` — `dispatchAdmissibleFrame`(initial_context consumer 落点)
+  - `packages/session-do-runtime/src/composition.ts:82-106` — P2 主改点(default composition)
+  - `packages/session-do-runtime/src/remote-bindings.ts:324-399` — P2 配套改点(remote composition)
+  - `workers/agent-core/src/index.ts` — 本阶段升级目标
+  - `workers/agent-core/wrangler.jsonc:26-32` — `BASH_CORE / CONTEXT_CORE / FILESYSTEM_CORE` 注释态 slots,P2 逐步取消注释
+
+### 4.2 `bash.core` — Governed Capability Worker
+
+- **身份**:**governed fake-bash execution engine**,不是 Linux shell 也不是 full just-bash。当前 substrate:`packages/capability-runtime/`。shell:`workers/bash-core/`,dry-run validated。
+- **Design 特质**:
+  - governed subset:21 commands 在 `commands.ts`,每个带 `policy: allow/ask/deny` + `executionTarget: local-ts/service-binding/browser-rendering`
+  - no-silent-success:`FakeBashBridge` 任何 unsupported / narrow-violation 都走 structured error,不静默通过
+  - bash-narrow:`curl` 与 `ts-exec` 在 bash path 下严格收窄
+  - `tool.call.*` body bridge:只负责 body 层;envelope 在 `nacp-core`
+  - honest partial:`mkdir` / `git diff|log` / `ts-exec` 明确标记 partial,不 paper over
+  - bash.core 不拥有 `session.*`;对 client 无话语权,只与 host / capability transport 交互
+  - capability-runtime 实测 `dependencies: {}`;代表性来自 semantic coupling(fake-bash 外形 + typed runtime + honest-partial 纪律)+ ~9473 LOC,**不是循环引用样本**
+- **入站通道**:
+
+  | 来源 | 协议 | 当前状态 | 本阶段动作 |
+  |---|---|---|---|
+  | `agent.core` kernel | `ToolCallRequestBodySchema` via `CAPABILITY_WORKER` service-binding | seam | **P2 活化** |
+  | `agent.core` cancel | `ToolCallCancelBodySchema` via transport | seam | **P2 cancel propagation** |
+  | workspace | `WorkspaceFsLike` + `resolveWorkspacePath`(in-process)| real | 不变,但由 `filesystem.core` 吸收后 workspace 来源改为 worker-local / shared substrate |
+  | capability policy gate | `AllowAskDenyPolicy`(`policy.ts`)| real | 不变 |
+
+- **出站通道**:
+
+  | 目标 | 协议 | 当前状态 | 本阶段动作 |
+  |---|---|---|---|
+  | `agent.core` | `ToolCallResponseBodySchema` via `ServiceBindingTarget` | seam | **P2 response 闭环** |
+  | `session.stream.event`(via agent.core)| `tool.call.progress` adapter | real | 不变 |
+  | workspace write | `namespace.write(...)` | real | 不变 |
+  | network(curl)| `fetch` + budget guard | real(low-volume)| 不变;high-volume 由 owner 单独 gate |
+
+- **首波 In-Scope**:B1 absorption 进 `workers/bash-core/src/` + 作为 agent.core default composition 的 `capability` handle 被装配 + `tool.call.*` 双向闭环在装配后 runtime 跑通 + charter-level 边界在本 §4.2 冻结
+- **首波 Out-of-Scope**:不扩 21-command registry(新 verb 走 capability-runtime RFC);不解除 `curl` budget 或 `ts-exec` not-connected;不引入 python3 / sqlite3 / browser target;不做 "full shell"(管道嵌套 / redirect / heredoc / process substitution);不把 hook.* / skill.* / context.* 混入 bash 的 tool.call 面
+- **关键代码锚点**:
+  - `packages/capability-runtime/src/fake-bash/commands.ts:16-315` — 21-command registry
+  - `packages/capability-runtime/src/fake-bash/bridge.ts:82-167` — no-silent-success bridge
+  - `packages/capability-runtime/src/tool-call.ts:20-160` — tool.call.* body bridge
+  - `packages/capability-runtime/src/executor.ts:121-320` — requestId / cancel / timeout / progress
+  - `packages/capability-runtime/src/targets/service-binding.ts:90-215` — remote transport target
+  - `packages/capability-runtime/src/policy.ts:17-48` — allow/ask/deny policy
+  - `packages/session-do-runtime/src/remote-bindings.ts:329-390` — `CAPABILITY_WORKER` 装配入口
+  - `workers/bash-core/src/index.ts` — B1 absorption 落点
+  - W3 代表 blueprint:`docs/design/pre-worker-matrix/W3-absorption-blueprint-capability-runtime.md`
+
+### 4.3 `context.core` — Thin Context Substrate
+
+- **身份**:**薄 context substrate**,不是 "完整 context engine"。当前 substrate:`packages/context-management/`(C1)+ `packages/workspace-context-artifacts/` 的 context slice(C2)。shell:`workers/context-core/`,dry-run validated。
+- **首波运行位置**:**host 进程内**(session DO 的 composition);不独立 Worker 流量,除非 §4.3 In-Scope I8 的 posture 决策选择独立 service。
+- **Design 特质**:
+  - opt-in async compact:`AsyncCompactOrchestrator` 存在 testable,但 **不默认自动装**
+  - in-process compact(首波):`context.compact.*` 在 host 进程内 via `createKernelCompactDelegate`
+  - inspector facade opt-in:默认 OFF;env gate + auth 由 deploy-time wrangler 控制
+  - honest partial:`restoreVersion` 仍 throw `not implemented`,保留 stub 诚实度
+  - evidence vocabulary:4 类 `assembly / compact / artifact / snapshot` 经 `evidence-emitters.ts` 统一发 `BoundedEvalSink`
+  - `initial_context` API 归属:schema 由 `nacp-session` 定义,API(`appendInitialContextLayer`)由 context.core 提供,**调用由 agent.core host 承担**
+- **入站通道**:
+
+  | 来源 | 协议 | 当前状态 | 本阶段动作 |
+  |---|---|---|---|
+  | agent.core host(initial_context 调度)| `appendInitialContextLayer(payload)` | **missing** | **P2 新增 API + 被 host 调用** |
+  | agent.core kernel(compact 请求)| `createKernelCompactDelegate` → `tryCommit / forceSyncCompact` | real(opt-in)| 保持 opt-in |
+  | agent.core host(assembly)| `ContextAssembler.assemble(layers, budget)` | real | 不变 |
+  | agent.core host(snapshot)| `WorkspaceSnapshotBuilder.buildFragment()` | real | 不变 |
+
+- **出站通道**:
+
+  | 目标 | 协议 | 当前状态 | 本阶段动作 |
+  |---|---|---|---|
+  | agent.core kernel(compact 结果)| `{tokensFreed}` return via delegate | real(opt-in)| 保持 opt-in |
+  | `BoundedEvalSink` | 4 类 evidence 记录 | real | 不变 |
+  | agent.core host(layers)| `AssembledPrompt` | real | 不变 |
+  | inspector HTTP/WS(opt-in)| `InspectorFacade` `/inspect/...` | seam(opt-in)| 不启用默认 |
+
+- **首波 In-Scope**:C1 + C2 absorption 进 `workers/context-core/src/` + 新增 `appendInitialContextLayer` API + 作为 host composition 的 `workspace` handle 被装配 + 默认 compact posture 决策(host-local 保留 / 走远端 delegate / opt-in opt-out 哪个做默认)+ charter-level 边界在本 §4.3 冻结
+- **首波 Out-of-Scope**:不升级为厚 semantic engine(slot / reranker / intent-routing 不做);不提前冻结完整 remote compact worker protocol(W1 RFC 保持 direction);不默认打开 inspector facade;不 force `restoreVersion` 实装
+- **关键代码锚点**:
+  - `packages/context-management/src/{budget,async-compact,inspector-facade}/` — C1 三子模块
+  - `packages/workspace-context-artifacts/src/{context-layers,context-assembler,compact-boundary,redaction,snapshot}.ts` — C2 context slice
+  - `packages/workspace-context-artifacts/src/evidence-emitters.ts` — mixed helper(build/emit × 4 类 + 2 结构类型);C2 拿 assembly/compact/snapshot,D1 拿 artifact
+  - `packages/session-do-runtime/src/do/nano-session-do.ts:608-645` — `initial_context` consumer 落点(host side)
+  - `workers/context-core/src/index.ts` — C1+C2 absorption 落点
+  - W3 代表 blueprint:`docs/design/pre-worker-matrix/W3-absorption-blueprint-workspace-context-artifacts-split.md`
+
+### 4.4 `filesystem.core` — Typed Workspace / Storage Substrate Worker
+
+- **身份**:**typed workspace / path / ref / storage substrate**,不是 Linux/POSIX 文件系统。当前 substrate:`packages/workspace-context-artifacts/` 的 filesystem slice(D1)+ `packages/storage-topology/`(D2)。shell:`workers/filesystem-core/`,dry-run validated。
+- **首波运行位置**:**host 进程内**(通过共享 workspace truth 参与 composition);独立 remote service 延后,不是首波硬要求。
+- **Design 特质**:
+  - `MountRouter + WorkspaceNamespace + backends + refs + promotion + adapters` 已是真实 substrate
+  - workspace truth 单一源:agent.core / bash.core / context.core / filesystem.core **共用同一套 workspace law**,不得 fork
+  - `ReferenceBackend.connected` mode 默认保持 memory-only(`connected: false`);切换到 connected 由 owner gate
+  - honest partial:`mkdir` / 跨 backend 某些特殊路径保持 partial;不 paper over
+  - storage law 遵守 `storage-topology::tenant*` 全局约束(B9 契约);吸收后 tenant wrapper 不得绕过
+  - evidence vocabulary:`artifact` 类 build/emit helper 归 filesystem.core
+- **入站通道**:
+
+  | 来源 | 协议 | 当前状态 | 本阶段动作 |
+  |---|---|---|---|
+  | agent.core host workspace use-site | `WorkspaceNamespace` / `MountRouter` / `backends/*` API(in-process)| real | 吸收后改为 worker-local,但 API shape 不漂移 |
+  | bash.core workspace consumer | 同上(共用 substrate)| real | 不变;**不引入 filesystem→bash 反向 wire** |
+  | context.core workspace / snapshot / artifact 消费 | 同上 | real | 不变 |
+  | storage backends(DO/KV/R2)| `storage-topology::tenant*` | real | 不变 |
+
+- **出站通道**:
+
+  | 目标 | 协议 | 当前状态 | 本阶段动作 |
+  |---|---|---|---|
+  | agent.core eval sink | `artifact` evidence | real | 不变 |
+  | context.core snapshot / compact 消费路径 | `WorkspaceSnapshotBuilder` / `CompactBoundaryManager` 输入 | real | 不变 |
+
+- **首波 In-Scope**:D1 + D2 absorption 进 `workers/filesystem-core/src/` + connected-mode / remote posture 决策(host-local 继续 / 局部 remoteize / 全部 host-local 保留 host 进程内)+ `evidence-emitters.ts` mixed helper 的 filesystem slice 归 filesystem-core + charter-level 边界在本 §4.4 冻结
+- **首波 Out-of-Scope**:不写 "完整 Linux/POSIX 文件系统";不提前冻结 `workspace.fs.*` remote family 为 shipped runtime(继续保持 W1 RFC direction);不新建独立 `filesystem-core-worker` remote live path 除非 posture 决策明确要求;不 fork workspace law
+- **关键代码锚点**:
+  - `packages/workspace-context-artifacts/src/{types,paths,refs,artifacts,prepared-artifacts,promotion,mounts,namespace}.ts`
+  - `packages/workspace-context-artifacts/src/backends/{memory,reference,types}.ts`
+  - `packages/storage-topology/src/{tenant*,placement,adapters,calibration}/**`
+  - `packages/workspace-context-artifacts/src/evidence-emitters.ts`(filesystem slice:artifact)
+  - `workers/filesystem-core/src/index.ts` — D1+D2 absorption 落点
+  - W3 代表 blueprint:`docs/design/pre-worker-matrix/W3-absorption-blueprint-workspace-context-artifacts-split.md`
+
+---
+
+## 5. Phase 规划
+
+### 5.1 Phase 总表
+
+| Phase | 名称 | 目标一句话 | 预估工作量 | 依赖前序 |
 |---|---|---|---|---|
-| D1 核心 package | **real** | **real** | **real** | **real** |
-| D2 默认 composition | **seam** | **seam** | **partial** | **real** |
-| D3 独立 Worker shell | missing | missing | missing | missing |
-| D4 remote service-binding | **seam** | **seam** | not-yet | not-yet |
-| D5 regression tests | **real** | **real** | **real** | **real** |
-| D6 协议 contract alignment | **real** | **real** | **real** | partial |
-| **aggregate** | **A-** | **A-** | **B+** | **A-** |
+| **P0** | Absorption Prep & Charter Freeze | 固化代表性 blueprint 外的 7 份 detailed blueprint、owner 决策、代表性 blueprint reality check | `S` | pre-worker-matrix closed |
+| **P1** | A1-A5 + B1 Absorption | `agent.core` 与 `bash.core` 的 src/ 变成真实吸收后的 runtime(未 wire)| `L`(可并行)| P0 |
+| **P2** | Live Turn Loop + `initial_context` + agent↔bash Binding | default composition 装出真正的 live agent turn loop;补 `initial_context` consumer;激活 `CAPABILITY_WORKER` service-binding | `L` | P1 |
+| **P3** | C1+C2 Absorption + Context Posture | `context.core` src/ 吸收完成;首波 compact / assembly posture 落地 | `M` | P2 |
+| **P4** | D1+D2 Absorption + Filesystem Posture | `filesystem.core` src/ 吸收完成;首波 connected-mode / remote posture 落地 | `M` | P2(可与 P3 并行)|
+| **P5** | Cutover + Deprecation + Closure | `workspace:*` → published 切换 milestone;吸收完成的 Tier B 打 `DEPRECATED`;worker-matrix closure | `M` | P3 + P4 |
 
-完整版参见 `docs/eval/worker-matrix/worker-readiness-stratification.md`。
+### 5.2 Phase 推进原则
 
----
+- **P0 是 design-only**:不改任何 `packages/*` 或 `workers/*` 代码。目的是让 P1 可以机械执行。
+- **P1 中 A1-A5 与 B1 可并行**,但两组之间保持 PR 独立;A1(host shell → agent-core)内部按 W3 blueprint 执行;B1 严格按 `W3-absorption-blueprint-capability-runtime.md` 执行
+- **P2 必须在 P1 全绿后开始**:因为 default composition 需要 kernel / llm / capability / workspace / hooks / eval 都已物理吸收
+- **P3 / P4 可并行**:C 与 D 的 split 已经在 W3 blueprint 中明确分清;mixed helper(evidence-emitters.ts)按 C2 / D1 owner 表分配
+- **P5 要求 P3+P4 全绿 + P2 活锁回归通过**
 
-## 3. 本阶段的一句话目标
+### 5.3 Phase 内部 sub-phase 建议
 
-> **用一次焦点性 default-composition 升级,把 `session-do-runtime` 的空柄装成由 `KernelRunner + LLMExecutor + capability transport + workspace + context-management + evidence sink` 组成的真实 agent turn loop;在此过程中冻结 4 个 first-wave worker(`agent.core / bash.core / context.core / filesystem.core`)的**设计特质、沟通管道、in-scope/out-of-scope**;保留 `skill.core` 为 reserved-name 但不做;产出物是 live agent runtime + 4 worker charter-level boundary + `initial_context` consumer + 下一阶段 handoff memo。**
-
----
-
-## 4. 本阶段边界:In-Scope / Out-of-Scope
-
-### 4.1 In-Scope(本阶段必须完成)
-
-#### A. 默认 Composition 装配(Phase 0 唯一必要里程碑)
-
-1. `packages/session-do-runtime/src/composition.ts::createDefaultCompositionFactory()` 从 `{kernel: undefined, …}` 升级为实例化:
-   - `kernel: new KernelRunner(...)` 消费 `@nano-agent/agent-runtime-kernel`
-   - `llm: new LLMExecutor(...)` 消费 `@nano-agent/llm-wrapper`
-   - `capability: {serviceBindingTransport}` 消费已有 `makeRemoteBindingsFactory` 路径
-   - `workspace: composeWorkspaceWithEvidence(...)` 已在默认 DO 路径装配,现在显式进入 composition handle
-   - `eval: BoundedEvalSink` 已在默认 DO 路径装配,同上显式化
-2. `packages/session-do-runtime/src/remote-bindings.ts::makeRemoteBindingsFactory()` 对 4 处 `undefined`(`kernel / workspace / eval / storage`)给出相应处理
-3. `session-do-runtime/package.json` dependencies 显式收齐(目前 `hooks / storage-topology / llm-wrapper / capability-runtime / eval-observability` 不全是 runtime dep)
-
-#### B. `initial_context` Host Consumer 实现
-
-4. `NanoSessionDO.dispatchAdmissibleFrame` 的 `session.start` 分支,在 `extractTurnInput` 之前新增 `body.initial_context` 的消费路径:
-   - 验证(已由 `validateSessionFrame` 完成)
-   - 转发:`workspaceComposition.assembler.appendInitialContextLayer(body.initial_context)` 或等价 API
-   - 失败处理:如果 layer 注入失败,应作为 warning event 而非 fatal(因为 `initial_context` 是 optional)
-5. `context.core` 侧新增 `assembler.appendInitialContextLayer(payload: SessionStartInitialContext): void` API,保证 host 不需要感知 context internals
-
-#### C. 4 Worker 边界契约冻结(本 charter §6 内容落地)
-
-6. 每个 worker 的 **design特质、沟通管道、in-scope、out-of-scope** 在本文件 §6 冻结
-7. 每个 worker 的 **cross-worker invariants** 在 §7 冻结
-8. 冻结的含义:后续 design / action-plan 文档必须引用并服从这里的边界;任何越界提议需要新的 charter 周期
-
-#### D. Worker-Matrix 收口 Handoff
-
-9. 输出 `docs/handoff/worker-matrix-to-skill-core.md`(或同等命名),列出 first-wave 4 worker closure 状态 + `skill.core` 解锁前置条件
-10. 回填 `docs/eval/worker-matrix/` 的 `00-contexts/00-current-gate-truth.md` 到 "worker-matrix closure" 状态(再次 rev)
-11. 更新 `docs/issue/after-foundations/after-foundations-final-closure.md` §6 的 "Phase 0 gate OPEN" 语句为 "Phase 0 已完成" + 指向新 handoff memo
-
-### 4.2 Out-of-Scope(本阶段明确不做)
-
-#### A. 独立 Worker Shell / Remote Transport
-
-1. 4 个 worker 的独立 wrangler entry / deploy shell — 本阶段不做;`session-do-runtime` 仍是唯一 deploy-shaped worker
-2. `context.compact.*` 的 remote service-binding transport — 本阶段保持 in-process
-3. `filesystem.core` 的 remote service-binding — 本阶段保持 host-local workspace mount
-4. 为 `bash.core` 单独部署的 wrangler entry(即使 `CAPABILITY_WORKER` 作为 env 绑定名存在,也不创建新的 wrangler project)
-
-#### B. Skill / Reserved Names
-
-5. `skill.core` 的任何 substrate / registry / handler / worker 实装(出处:§1.3 第 10 条)
-6. `browser.core` / `scraper.core` / `search.core` 等 reserved 范畴的命名扩展
-
-#### C. Protocol / Schema 扩展
-
-7. 任何 NACP 1.3.0 范围外的新 message type 或 body schema(包括但不限于:`orchestrator.*` namespace 落地、`context.slot.*`、`hook.reranker.*`)
-8. `wrapAsError()` provisional helper 的 migration PR(即将 `tool.call.response` / `context.compact.response` / `skill.invoke.response` 的 body 从 `{status, error?}` 迁到 `NacpErrorBodySchema`) — 这需要独立 owner-approved PR,不在 worker-matrix 内夹带
-9. `SessionStartInitialContextSchema` 的 4 子字段(`user_memory / intent / warm_slots / realm_hints`)的字段扩展 — 冻结状态,任何扩张需新 nacp RFC
-
-#### D. Context Engine 厚做
-
-10. `context.reranker` 独立 worker 立项(post-worker-matrix,需 eval findings)
-11. slot / semantic memory engine 的完整实现(smind-contexter-learnings §10 已明确 defer)
-12. `AsyncCompactOrchestrator.restoreVersion()` 的真实实装(honest stub 保留)
-13. `context-management` 的 inspector 默认 public mount(`mountInspectorFacade` helper 保留,默认 OFF)
-
-#### E. Filesystem / Storage 终态
-
-14. `ReferenceBackend.connected` mode 作为默认(保持 memory-only,详见 filesystem-core/index.md §6.1)
-15. D1 / KV full runtime placement 固定(保持 evidence-driven)
-16. `mkdir` / `git diff` / `git log` 从 honest partial 升级为 full(保持 disclosure)
-17. `ts-exec` 从 honest partial 升级为真实执行(保持 not-connected 标记)
-
-#### F. 平台 Gate
-
-18. F03(cross-colo KV)/ F09(high-volume curl)两项 platform gate 的 probe 重跑 — owner-side action,非 charter scope
-19. `DOStorageAdapter.maxValueBytes` 从 1 MiB 升到 2 MiB — B8 Phase 0 candidate,可在本阶段**顺手**做但不是 charter 核心
-
-#### G. 生产化
-
-20. SLO / on-call / runbook / dashboard(post-worker-matrix)
-21. billing / tenant operations / per-tenant rate limiting(post-worker-matrix)
-22. 真实 LLM provider 生产对接(本阶段可用 fake provider + service-binding-test harness 验证)
-
-### 4.3 一个必须写明的例外
-
-虽然本阶段不做独立 worker shell,但必须承认:**default composition 升级完成后,`session-do-runtime` 作为 host worker 在事实上已经担当了 `agent.core` 的完整角色**。
-
-所以准确表述是:
-
-> **本阶段不新建 4 个独立 Worker deploy shell;但 `agent.core` 作为 host 角色在 `session-do-runtime` 内部已 live,其余 3 个 worker(`bash.core / context.core / filesystem.core`)通过 in-process 组件或 `CAPABILITY_WORKER` 等 binding seam 参与其中。独立 wrangler entry 是 worker-matrix 后续的演进项,不是本阶段的里程碑。**
+- **P1.A** A1-A5 按 W3 map 顺序(host shell → kernel → llm → hooks → eval)
+- **P1.B** B1 一次到位
+- **P2.A** `appendInitialContextLayer` API shipped(即使 host 还没开始 call)
+- **P2.B** `dispatchAdmissibleFrame` consumer 补全
+- **P2.C** `createDefaultCompositionFactory()` 升级
+- **P2.D** `makeRemoteBindingsFactory()` 补全 4 个 nullable
+- **P2.E** `CAPABILITY_WORKER` service-binding wrangler 激活(`workers/agent-core/wrangler.jsonc` 注释态 slot 开启)+ agent-core preview redeploy
+- **P2.F** live `tool.call.*` 闭环验证(root e2e test 新增)
+- **P3.A** C1 吸收
+- **P3.B** C2 context slice 吸收(WCA split)
+- **P3.C** 默认 compact posture 决策 PR
+- **P4.A** D1 filesystem slice 吸收(WCA split)
+- **P4.B** D2 storage-topology residual 吸收
+- **P4.C** connected-mode / remote posture 决策 PR
+- **P5.A** 4 个 worker `package.json` 的 `@haimang/nacp-*` 从 `workspace:*` 切到 `1.4.0` / `1.3.0`,重跑 build/test/dry-run,redeploy agent-core
+- **P5.B** 已完成 absorb 的 Tier B packages(先 capability-runtime 与 workspace-context-artifacts,再 context-management 与 storage-topology)打 `DEPRECATED` banner + CHANGELOG
+- **P5.C** worker-matrix final closure + handoff memo(若有下一阶段)
 
 ---
 
-## 5. 本阶段的方法论
+## 6. Milestones & Definition of Done
 
-### 5.1 Assembly-First-Iteration — Substrate 已就绪,只做组装
+### 6.1 P1 DoD
 
-继承 `plan-after-foundations.md` §5.2 "Spike-First-Iteration" 的纪律但调整焦点:
+- `workers/agent-core/src/` 含吸收后的 host / kernel / llm / hooks / eval runtime(非 version-probe);`pnpm --filter workers/agent-core test` 全绿
+- `workers/bash-core/src/` 含吸收后的 capability-runtime;`pnpm --filter workers/bash-core test` 全绿
+- 两个 worker 的 `deploy:dry-run` 全绿
+- 全仓 `pnpm -r run test` 绿;root `test/*.test.mjs` 98/98 绿;`npm run test:cross` 112/112 绿
+- 首批 absorb PR 的其中一个已回填 W3 pattern spec "LOC→时长系数" + "可执行流水线样板" 两节
+- 被吸收的 Tier B packages(`session-do-runtime` / `agent-runtime-kernel` / `llm-wrapper` / `hooks` / `eval-observability` / `capability-runtime`)保留物理存在,**未打 DEPRECATED**(P5 才打)
 
-- ❌ 错误姿态:把 worker-matrix 执行成 "继续扩 substrate"(4 个包仓库已经够)
-- ❌ 错误姿态:把 worker-matrix 执行成 "边装边改 substrate"(这会污染 B9 冻结的契约)
-- ✅ 正确姿态:**substrate 已冻结,worker-matrix 只做 composition wiring + 消费端集成**
+### 6.2 P2 DoD
 
-具体反模式清单:
+- `createDefaultCompositionFactory()` 不再返回空 handle bag;`kernel / llm / capability / workspace / hooks / eval` 全部非 `undefined`
+- `makeRemoteBindingsFactory()` 对 `kernel / workspace / eval / storage` 4 个 nullable 有显式处理(不 panic,honest 降级或真实装配)
+- `SessionStartBodySchema.initial_context` 的 host consumer 接线完成:`dispatchAdmissibleFrame` 在 `session.start` 分支消费 body.initial_context 并调 `context.core.appendInitialContextLayer`
+- `workers/agent-core/wrangler.jsonc` 中 `BASH_CORE` service binding 取消注释并 active
+- `agent-core` preview redeploy 成功;live probe 返回包含 `live_loop: true`(或类似 non-version-probe 判断键)的 JSON
+- 至少 1 个 end-to-end root test 验证:发起 `tool.call.request` → 经 transport 到 bash-core → response 返回 agent-core → stream back to client
+- B7 LIVE 5 tests 仍全绿
 
-1. 反对在 worker-matrix 阶段 bump `nacp-core` / `nacp-session` / `capability-runtime` / `context-management` / `storage-topology` 的 minor version(patch 允许,但不应出现于本阶段 primary 路径)
-2. 反对在 worker-matrix 阶段新建 `@nano-agent/*` package(skill.core 的任何雏形、reranker 的 prototyping 都违反此条)
-3. 反对把 workspace-context-artifacts / capability-runtime 里已有的 primitive 在 composition 层"重写一份轻量版"(如重写 assembler / re-implement tool-call bridge)
-4. 允许并鼓励:在 `session-do-runtime/src/composition.ts` 内做 wiring 级 changes + 在 `do/nano-session-do.ts` 内做 `initial_context` consumer 级 changes
+### 6.3 P3 DoD
 
-### 5.2 Thin-First Discipline — 每个 worker 都只做能闭合的最小 slice
+- `workers/context-core/src/` 含吸收后的 C1 + C2 runtime
+- `appendInitialContextLayer` API 在 context-core 可调;P2 的 host consumer 仍绿
+- compact posture PR merged:选项 A(host-local 保留 opt-in)/ 选项 B(remote delegate helper + opt-in env flag)/ 选项 C(其他)之一明确落地
+- `context-core` preview deploy 成功(或明确记录 defer 到 P5)
+- `packages/workspace-context-artifacts` context slice(assembly / compact-boundary / redaction / snapshot + mixed helper 的 context 部分)在 workers/context-core 内成立;package 版本内 slice 仍 re-export 直到 P5 deprecation
 
-继承 after-foundations 的 conservative-first 基调:
+### 6.4 P4 DoD
 
-| worker | 第一波姿态 | 禁止越界 |
+- `workers/filesystem-core/src/` 含吸收后的 D1 + D2 runtime
+- connected-mode / remote posture 决策 PR merged:host-local 继续 / 局部 remoteize / 全部 host-local 明确三选一
+- workspace truth 仍单一:bash.core / context.core / filesystem.core / agent.core 均消费同一套 `WorkspaceNamespace` 行为,无 fork
+- `filesystem-core` preview deploy 成功(若 posture 选择真 remote)或明确记录 defer
+- `storage-topology::tenant*` 仍 load-bearing;tenant wrapper 约束未被绕过
+
+### 6.5 P5 DoD
+
+- 4 个 worker 的 `package.json` 中 `@haimang/nacp-core` / `@haimang/nacp-session` 从 `workspace:*` 切到 `1.4.0` / `1.3.0`;`deploy:dry-run` 仍绿;agent-core preview redeploy 成功
+- 已吸收的 Tier B packages(至少:`capability-runtime` / `session-do-runtime` / `workspace-context-artifacts` / `storage-topology` / `context-management` / `hooks` / `agent-runtime-kernel` / `llm-wrapper` / `eval-observability`)READMEs 顶部加 `⚠️ DEPRECATED — absorbed into workers/<dest>/`;CHANGELOG 更新
+- Tier B packages **物理保留**(不删文件);物理删除由后续 charter 决定 trigger
+- `docs/issue/worker-matrix/worker-matrix-final-closure.md` shipped
+- `docs/handoff/worker-matrix-to-<next>.md` shipped(若有下一阶段)
+
+---
+
+## 7. Owner decisions(必须在 P0 / 对应 Phase 开工前落)
+
+### Q1 — absorption 首批 PR 粒度
+
+- **影响范围**:P1
+- **候选**:(a) 每个 absorption unit 一个 PR(10 PRs)/ (b) 按 worker 组 PR(4 PRs)/ (c) 按 sub-phase 序列 PR(P1.A / P1.B)
+- **当前建议**:(a);PR 小 + 粒度对齐 W3 map + 易回滚;每个 PR 独立跑 build/test/dry-run
+- **Q**:owner 是否接受 "每个 absorption unit 一个 PR" 的 P1 粒度?
+- **A**:`待回答`
+
+### Q2 — `tool.call.*` default transport 选择
+
+- **影响范围**:P2
+- **候选**:(a) 默认走 `serviceBindingTransport`(远端)/ (b) 默认走 `local-ts` + 远端作 opt-in / (c) 按 command policy 分流
+- **当前建议**:(a);因为 bash-core 的远端路径是 first-wave 唯一清晰 cross-worker loop,默认走远端能立即 battle-test 该路径
+- **Q**:owner 是否接受默认 `tool.call.*` 走 `CAPABILITY_WORKER` service-binding?
+- **A**:`待回答`
+
+### Q3 — 默认 compact posture
+
+- **影响范围**:P3
+- **候选**:(a) host-local compact + opt-in remote delegate / (b) remote compact delegate helper shipped 作默认 / (c) 保持当前 opt-in 不默认装
+- **当前建议**:(c);首波不需要强制 compact 进入 live loop;保持 opt-in 让 context.core 吸收工作更窄
+- **Q**:owner 是否接受 "compact 保持 opt-in,首波不自动装"?
+- **A**:`待回答`
+
+### Q4 — filesystem first-wave remote posture
+
+- **影响范围**:P4
+- **候选**:(a) host-local 继续(默认不 remoteize)/ (b) 局部 remoteize(artifact promotion / reference backend 到 `filesystem-core` remote,其余 host-local)/ (c) 全部 remoteize(在首波做完整 filesystem RPC)
+- **当前建议**:(a);与 cross-worker-interaction-matrix §3.3 和 worker-readiness-stratification §4.3 的 "非 first-wave remote" 立场一致
+- **Q**:owner 是否接受 "filesystem.core 首波 host-local 继续"?
+- **A**:`待回答`
+
+### Q5 — `workspace:*` → published cutover trigger
+
+- **影响范围**:P5
+- **候选**:(a) 首批 absorb merge 并稳定 1 周后 / (b) 4 workers 全部完成 preview deploy 升级后 / (c) 独立 release PR schedule
+- **当前建议**:(a);把 cutover 绑在首批 absorption 稳定作为触发条件,避免 interim 变 permanent
+- **Q**:owner 是否接受 "首批 absorb 稳定 1 周后触发 cutover"?
+- **A**:`待回答`
+
+### Q6 — Tier B deprecation banner 时机
+
+- **影响范围**:P5
+- **候选**:(a) 对应 absorb PR merge 当日 / (b) P5 统一一次打 / (c) 每 worker 完成后逐个打
+- **当前建议**:(c);最诚实 — 吸收稳定了再贴,避免误导消费者
+- **Q**:owner 是否接受 "逐 worker 逐个打 deprecated"?
+- **A**:`待回答`
+
+### Q7 — skill.core 是否在 worker-matrix 内被 admit
+
+- **影响范围**:全阶段
+- **当前建议**:**否**。保持 `docs/eval/worker-matrix/skill-core-deferral-rationale.md` 的 reserved + deferred 口径
+- **Q**:owner 是否接受 "skill.core 在本阶段保持 reserved,不做"?
+- **A**:`待回答`
+
+---
+
+## 8. 风险 & 依赖
+
+| 风险 / 依赖 | 当前判断 | 应对 |
 |---|---|---|
-| `agent.core` | host 装配完整 turn loop | 不引入长期记忆 orchestrator / intent routing |
-| `bash.core` | 21-command governed subset + CAPABILITY_WORKER transport seam | 不做 full shell / full POSIX / python / ts-exec 真实执行 |
-| `context.core` | assembly + compact boundary + snapshot + evidence,async-compact 保持 opt-in | 不做 slot / reranker / semantic memory engine / restoreVersion 真实实现 |
-| `filesystem.core` | host-local workspace + memory/DO backend + fake-bash consumer 一致 | 不做独立远端 FS / POSIX 完整语义 / ReferenceBackend connected 默认 |
-
-这条纪律本身是 `docs/eval/worker-matrix/{agent,bash,context,filesystem}-core/index.md` §1.2 "Out-of-Scope" 表的自然延伸。
-
-### 5.3 Contract-First-Change — Protocol 已冻,改 runtime 不改协议
-
-B9 已建立并冻结了 NACP 1.3 contract surface。worker-matrix 的所有 worker 都必须:
-
-1. 发 envelope 时**不**绕过 `validateEnvelope()` / `validateSessionFrame()`
-2. 用已 registered 的 message_type;不自造新 type 即使为了"内部 shortcut"
-3. 如果某个需求需要扩展协议,走 **"先写 RFC,再决定是否在 charter 内"** 的节奏,而非先偷偷扩再补文档
-4. `wrapAsError()` 作为 provisional helper 使用时,必须显式标记 `target_message_type` 并接受"产物在当前 1.3 surface 下不通过 `validateEnvelope`"的现实;消费者应预期非 validated envelope
-
-### 5.4 Cross-Worker Invariants — 跨 worker 不变量必须 load-bearing
-
-继承 `docs/eval/worker-matrix/cross-worker-interaction-matrix.md` §4 五条不变量,并在本 charter §7 完整列出。所有 worker 的任何 PR 都要经过 "是否违反 §7 不变量" 的 self-check。
+| A1 host shell 吸收破坏 B7 LIVE 5 tests | `high` | 每个 A1 sub-PR 都跑 `node --test test/*.test.mjs`;若红,回滚 sub-PR |
+| `workspace:*` interim 漂移成 permanent | `medium` | P5 DoD 含明确 cutover;Q5 owner 决策锁 trigger |
+| `initial_context` consumer 装错层导致 schema 解析泄漏到 agent-core | `medium` | consumer API 由 context.core 拥有;agent-core 只 call;P2.A 先 ship context 侧 API 再改 host |
+| WCA split 时 mixed helper 归属被误判 | `high` | 严格遵循 W3 blueprint §3.3 的 helper owner 表;context / filesystem evidence helpers 分别归 C2 / D1 |
+| B1 吸收时误扩 21-command registry | `medium` | PR review gate:任何新 verb 触发 capability-runtime RFC,不得搭车 B1 absorption |
+| `packages/` 与 `workers/` 共存期 bug 双修漂移 | `medium` | 按 W3 pattern spec §6 纪律:共存期 bug 先修原包,再同步 workers 侧;P5 cutover 后 flip |
+| agent-core preview deploy 因 `CAPABILITY_WORKER` binding 活化失败(bash-core 未 deploy)| `high` | P2.E 前必须先把 bash-core real preview deploy 完成,再在 agent-core 激活该 binding |
+| W1 RFC 被误升级为 shipped code 以"方便"first-wave | `medium` | charter §2.3 / §3.2 O2 硬约束:除非 live loop 直接要求,否则保持 direction-only;升级走独立 RFC revision |
+| skill.core 在 PR review 中被偷偷 admit | `low` | charter §1.5 / §3.2 O1 硬约束 + `skill-core-deferral-rationale.md` 引用 |
 
 ---
 
-## 6. 4 个 First-Wave Worker 专属章节
+## 9. Exit Criteria(primary,本阶段 6 条硬闸)
 
-本节是本 charter 的核心。每个 worker 一节,**只讲 charter-level 纲领**(design 特质、沟通管道、in-scope、out-of-scope),不进入 design 或 action-plan 的细节。
+本阶段 **NOT** 退出若以下任一未满足:
 
-每节结构统一为:
-- **§x.1 身份定位**
-- **§x.2 Design 特质**
-- **§x.3 沟通管道 — 入站**
-- **§x.4 沟通管道 — 出站**
-- **§x.5 In-Scope(本阶段)**
-- **§x.6 Out-of-Scope(本阶段)**
-- **§x.7 关键代码锚点**
+1. **live agent turn loop 端到端运行**:从 client WS `session.start` 开始,经 `initial_context` consumer → context.core assembly → kernel tool_call → bash-core service-binding → response → session.stream.event 回到 client 的完整链路在 preview env 真实跑通(含至少 1 个新增 root e2e test)
+2. **4 workers 的 src/ 全部非 version-probe**:每个 worker 的 `src/index.ts` 暴露的都是吸收后的真实 runtime,不是 NACP version probe 壳
+3. **`@haimang/nacp-*` published path cutover 完成**:4 个 worker `package.json` 的 nacp 依赖从 `workspace:*` 切到具体版本号(`1.4.0` / `1.3.0`);agent-core preview 仍绿
+4. **已吸收 Tier B packages 全部打 `DEPRECATED`**:README + CHANGELOG;物理保留
+5. **B7 LIVE 5 tests 仍全绿**;`pnpm -r run test` 仍全绿;`npm run test:cross` 仍全绿
+6. **worker-matrix final closure + handoff memo shipped**:含 4 workers 最终状态、3 个 W3 pattern placeholder 回填状态、下一阶段 rewrite trigger
 
-### 6.1 `agent.core` — Host Worker
+### Secondary outcomes(非硬闸,但属 charter 价值)
 
-#### 6.1.1 身份定位
+- W3 pattern spec 3 个 placeholder 节全部已回填
+- 其余 3 workers(bash / context / filesystem)各自至少 1 次 real preview deploy
+- `docs/design/worker-matrix/` 新增 charter-level boundary 子 design(可选)
 
-- **host worker,不是 binding slot**
-- **物理实体**:`packages/session-do-runtime/src/do/nano-session-do.ts::NanoSessionDO`
-- **外层 Worker entry**:`packages/session-do-runtime/src/worker.ts`(薄壳,作 `idFromName(sessionId)` 路由)
-- **定位约束**:`agent.core != 上游 orchestrator`;它不承担 user memory / intent routing / cross-session state,这些由 upstream(如 `initial_context` 的 producer)负责
-- 依据:`docs/eval/worker-matrix/agent-core/index.md` §0 + §4 第 1 判断
-
-#### 6.1.2 Design 特质
-
-| 特质 | 说明 |
-|---|---|
-| 单 DO per session | `idFromName(sessionId)` — 每个 session 一个 DO;不做 per-user DO |
-| 真实 session actor | `SessionOrchestrator` 驱动 `unattached → attached → turn_running → ...` 状态机 |
-| 薄 Worker + 厚 DO | Worker entry 只做路由;所有业务在 `NanoSessionDO` 内 |
-| host 负责 upstream 调度 | `dispatchAdmissibleFrame` 在 `session.start` 时调用 `context.core` 的 `appendInitialContextLayer`;consumer 职责归 host |
-| host 产生 session.stream.event | 只有 agent.core 向 client 推 `session.stream.event`;其他 worker 通过 host 的 stream seam 参与 |
-| honest degrade | 缺 kernel / llm 时用空 `{snapshot, events: [], done: true}` 降级,不 panic — 但 Phase 0 完成后不应再触发此路径 |
-
-#### 6.1.3 沟通管道 — 入站(agent.core 作为 consumer)
-
-| 来源 | 协议 / 接口 | 当前状态 | 本阶段动作 |
-|---|---|---|---|
-| client WebSocket frame | `nacp-session` `NacpSessionFrame` + `validateSessionFrame` | real | 不变 |
-| client HTTP fallback action | `HttpController` + `acceptIngress` | real | 不变 |
-| `tool.call.response` from bash remote | `nacp-core` `ToolCallResponseBodySchema` + `CAPABILITY_WORKER` service-binding reply | seam | **P0 装配:消费 kernel 发起的 tool call 的返回路径** |
-| `hook.outcome` from hook remote | `nacp-core` `HookOutcomeBodySchema` + `HOOK_WORKER` service-binding reply | real(已接) | 不变 |
-| `context.compact.response` | in-process via `createKernelCompactDelegate` | real(opt-in) | 保持 opt-in,不强制 |
-| `initial_context` payload | `SessionStartInitialContextSchema` 嵌在 `session.start.body` | shipped wire + missing consumer | **P0 补 consumer** |
-
-#### 6.1.4 沟通管道 — 出站(agent.core 作为 producer)
-
-| 目标 | 协议 / 接口 | 当前状态 | 本阶段动作 |
-|---|---|---|---|
-| client(WS) | `session.stream.event` | real | 不变 |
-| `bash.core` | `tool.call.request` / `tool.call.cancel` via `serviceBindingTransport` | seam | **P0 装配:kernel tool dispatcher 走 transport** |
-| `hook.*` worker(remote) | `hook.emit` via `HOOK_WORKER` | real | 不变 |
-| `fake.provider` | direct `Fetcher` binding | real | 不变 |
-| DO storage(自身) | `getTenantScopedStorage` + `tenantDoStorage*` | real | 不变 |
-| R2(artifact promotion) | via `workspace-context-artifacts` promotion 路径 | seam | 保持 seam;不激活 connected `ReferenceBackend` |
-
-#### 6.1.5 In-Scope(本阶段)
-
-1. `createDefaultCompositionFactory()` 升级为真实装配 kernel / llm / capability / workspace / eval
-2. `makeRemoteBindingsFactory()` 对 `kernel / workspace / eval / storage` 给出合理处理(至少统一 null 处理路径或小包装)
-3. `session-do-runtime/package.json` dependencies 补齐
-4. `initial_context` consumer 接线(见 §4.1 B)
-5. `agent.core` charter-level 边界在本 §6.1 冻结
-
-#### 6.1.6 Out-of-Scope(本阶段)
-
-1. 新建独立 `agent-core-worker` 目录 / wrangler entry(host worker 就是 session-do-runtime)
-2. 引入 user-level DO 或 cross-session state store(架构上反对)
-3. 将 `NanoSessionDO` 拆分为多个 DO 类(保持单 DO 简洁)
-4. 自造 session 层 message types(已由 `nacp-session` 冻结)
-5. 放宽 tenant wrapper 强制(B9 契约)
-
-#### 6.1.7 关键代码锚点
-
-- `packages/session-do-runtime/src/worker.ts:72-88` — Worker entry
-- `packages/session-do-runtime/src/do/nano-session-do.ts:130-280` — DO 构造函数
-- `packages/session-do-runtime/src/do/nano-session-do.ts:466-535` — WS ingress + `acceptClientFrame` async
-- `packages/session-do-runtime/src/do/nano-session-do.ts:608-645` — `dispatchAdmissibleFrame`(initial_context consumer 落点)
-- `packages/session-do-runtime/src/composition.ts:90-106` — P0 主改点
-- `packages/session-do-runtime/src/remote-bindings.ts:385-395` — P0 配套改点
-- 上下文包:`docs/eval/worker-matrix/agent-core/{index,realized-code-evidence,internal-nacp-compliance,external-contract-surface,cloudflare-study-evidence}.md`
-
----
-
-### 6.2 `bash.core` — Governed Capability Worker
-
-#### 6.2.1 身份定位
-
-- **governed fake-bash execution engine**,不是 Linux shell,也不是 full just-bash
-- **物理形态**:`@nano-agent/capability-runtime` 包内的 `FakeBashBridge + 21-command registry + CapabilityExecutor + handlers + ServiceBindingTarget`
-- **远端 seam**:通过 `CAPABILITY_WORKER` binding 向 agent.core 暴露 `tool.call.*` 消费面
-- 依据:`docs/eval/worker-matrix/bash-core/index.md` §0 + §4 第 1 判断
-
-#### 6.2.2 Design 特质
-
-| 特质 | 说明 |
-|---|---|
-| governed subset | 21 commands 注册在 `commands.ts`,每个带 `policy: allow/ask/deny` + `executionTarget: local-ts/service-binding/browser-rendering` |
-| no-silent-success | `FakeBashBridge` 的 bridge 层,任何 unsupported / narrow-violation 都走 structured error,不静默通过 |
-| bash-narrow | `curl` 与 `ts-exec` 在 bash path 下严格收窄(见 `planner.ts:130-248`) |
-| tool.call.* body bridge | 只负责 body 层;envelope(`nacp-core`)不由 bash.core 直接拥有 |
-| honest partial | `mkdir` / `git diff|log` / `ts-exec` 均明确标记 partial,不 paper over |
-| bash.core 不拥有 session.* | 对 client 无话语权;只与 host/capability transport 交互 |
-
-#### 6.2.3 沟通管道 — 入站
-
-| 来源 | 协议 / 接口 | 当前状态 | 本阶段动作 |
-|---|---|---|---|
-| agent.core kernel | `ToolCallRequestBodySchema` via `CAPABILITY_WORKER` service-binding | seam | **P0 配套:kernel dispatch 通过 transport 到达** |
-| agent.core cancel | `ToolCallCancelBodySchema` via transport | seam | **P0 配套:cancel propagation 打通** |
-| workspace | `WorkspaceFsLike` + `resolveWorkspacePath`(in-process) | real | 不变 |
-| capability policy gate | `AllowAskDenyPolicy`(`policy.ts`) | real | 不变 |
-
-#### 6.2.4 沟通管道 — 出站
-
-| 目标 | 协议 / 接口 | 当前状态 | 本阶段动作 |
-|---|---|---|---|
-| agent.core | `ToolCallResponseBodySchema` via `ServiceBindingTarget` | seam | **P0 配套:response 返回闭环** |
-| `session.stream.event`(via agent.core) | `tool.call.progress` adapter in `nacp-session/src/adapters/tool.ts` | real | 不变 |
-| workspace filesystem | 写路径:`namespace.write(...)` | real | 不变 |
-| network(curl) | `fetch` with budget guard | real(low-volume) | 不变;high-volume 由 owner F09 gate |
-
-#### 6.2.5 In-Scope(本阶段)
-
-1. 作为 `agent.core` default composition 的 `capability` handle 被正确装配(通过 `serviceBindingTransport`)
-2. 确认 `tool.call.*` 双向闭环在装配后的 runtime 中跑通(`CapabilityRunner` / `ServiceBindingTarget` / `tool-call.ts` bridge)
-3. bash.core charter-level 边界在本 §6.2 冻结
-4. (可选)对 `@nano-agent/capability-runtime` 的 `executor.ts` 在 runtime 装配中的行为加一个端到端 smoke test,证明 kernel 能经 transport 发起 tool call 并收到 response
-
-#### 6.2.6 Out-of-Scope(本阶段)
-
-1. 新建独立 `bash-core-worker` 目录 / wrangler entry(transport seam 已经足够)
-2. 扩展 21-command registry(任何新 verb 需经 capability-runtime RFC)
-3. 解除 `curl` low-volume budget 或 `ts-exec` not-connected 标记
-4. 引入 `python3 / sqlite3 / browser` 执行 target(保持 not-connected)
-5. 把 `bash.core` 做成 "full shell"(管道嵌套 / redirect / heredoc / process substitution 全部 out)
-6. 把 `hook.*` / `skill.*` / `context.*` 请求混入 bash.core 的 tool.call 面
-
-#### 6.2.7 关键代码锚点
-
-- `packages/capability-runtime/src/fake-bash/commands.ts:16-315` — 21-command registry
-- `packages/capability-runtime/src/fake-bash/bridge.ts:82-167` — no-silent-success bridge
-- `packages/capability-runtime/src/tool-call.ts:20-160` — tool.call.* body bridge
-- `packages/capability-runtime/src/executor.ts:121-320` — requestId / cancel / timeout / progress
-- `packages/capability-runtime/src/targets/service-binding.ts:90-215` — remote transport target
-- `packages/capability-runtime/src/policy.ts:17-48` — allow/ask/deny policy
-- `packages/session-do-runtime/src/remote-bindings.ts:329-390` — `CAPABILITY_WORKER` 装配入口
-- 上下文包:`docs/eval/worker-matrix/bash-core/{index,realized-code-evidence,internal-nacp-compliance,external-contract-surface,cloudflare-study-evidence}.md`
-
----
-
-### 6.3 `context.core` — Thin Context Substrate
-
-#### 6.3.1 身份定位
-
-- **薄 context substrate**,不是 "完整 context engine"
-- **物理形态**:`@nano-agent/context-management 0.1.0` 的 3 子模块 + `@nano-agent/workspace-context-artifacts` 的 assembly / compact-boundary / snapshot / evidence
-- **运行位置**:host 进程内(session DO 的 composition),不独立 Worker
-- **第一波角色**:为 `agent.core` 提供 context assembly + compact boundary + snapshot + evidence 能力,为 `initial_context` 提供 consumer API
-- 依据:`docs/eval/worker-matrix/context-core/index.md` §0 + §4 第 1 判断
-
-#### 6.3.2 Design 特质
-
-| 特质 | 说明 |
-|---|---|
-| opt-in async compact | `AsyncCompactOrchestrator` 存在并 testable,但**不默认自动装**(charter 决策 §6.2 Option A — 见 context-core/index.md §6.2) |
-| in-process compact | `context.compact.*` 在 host 进程内 via `createKernelCompactDelegate`,不跨 worker |
-| inspector facade opt-in | `mountInspectorFacade` 是显式 helper,默认 OFF;env gate + auth 由 deploy-time wrangler 控制 |
-| honest partial | `restoreVersion` 仍 throw `not implemented`,保留 stub 诚实度 |
-| evidence vocabulary | 4 类:`assembly / compact / artifact / snapshot`,统一经 `evidence-emitters.ts` 发至 host 的 `BoundedEvalSink` |
-| initial_context API 归属 | schema 由 `nacp-session` 定义,API(`appendInitialContextLayer`)由 context.core 提供,**调用由 agent.core host 承担** |
-
-#### 6.3.3 沟通管道 — 入站
-
-| 来源 | 协议 / 接口 | 当前状态 | 本阶段动作 |
-|---|---|---|---|
-| agent.core host(initial_context 调度) | `assembler.appendInitialContextLayer(payload)` API | **missing** | **P0 新增 API + 被 host 调用** |
-| agent.core kernel(compact 请求) | `createKernelCompactDelegate` → `tryCommit / forceSyncCompact` | real(opt-in) | 保持 opt-in |
-| agent.core host(assembly 请求) | `ContextAssembler.assemble(layers, budget)` | real | 不变 |
-| agent.core host(snapshot 触发) | `WorkspaceSnapshotBuilder.buildFragment()` | real(在 persistCheckpoint 调用) | 不变 |
-
-#### 6.3.4 沟通管道 — 出站
-
-| 目标 | 协议 / 接口 | 当前状态 | 本阶段动作 |
-|---|---|---|---|
-| agent.core kernel(compact 结果) | `{tokensFreed}` return via delegate | real(opt-in) | 保持 opt-in |
-| evidence sink(`BoundedEvalSink`) | 4 类 evidence 记录 | real | 不变 |
-| agent.core host(layers 返回) | `AssembledPrompt` | real | 不变 |
-| inspector HTTP/WS(opt-in) | `InspectorFacade` 的 `/inspect/...` 路由 | seam(opt-in) | 不变;charter 不启用默认 |
-
-#### 6.3.5 In-Scope(本阶段)
-
-1. 新增 `appendInitialContextLayer(payload: SessionStartInitialContext): void` API(或等价 shape),暴露到 composition factory 可消费的层级
-2. 作为 host composition 的 `workspace` handle 被装配(已由 `composeWorkspaceWithEvidence` 事实上装配,本阶段显式化)
-3. 配合 agent.core P0 装配 — 如果 kernel 要求 compact delegate,必须能无缝插上(不是 P0 硬要求,但要 ensure 可以接)
-4. context.core charter-level 边界在本 §6.3 冻结
-
-#### 6.3.6 Out-of-Scope(本阶段)
-
-1. 独立 `context-core-worker` deploy(post-worker-matrix)
-2. `context.compact.*` 的 remote service-binding(保持 in-process)
-3. `AsyncCompactOrchestrator` 自动装入默认 composition(保持 opt-in — 见 context-core/index.md §6.2)
-4. slot / reranker / semantic memory engine 的实装
-5. `restoreVersion` 真实实现(honest stub 保留)
-6. inspector facade 默认启用(保持 opt-in — 见 context-core/index.md §6.1)
-7. `SessionStartInitialContextSchema` 4 子字段(`user_memory / intent / warm_slots / realm_hints`)的字段扩展
-8. 与 smind-contexter 的直接对接 / 借入 `contexts / vec_history / vec_intents` schema(定位:future-direction input,非当前 code)
-
-#### 6.3.7 关键代码锚点
-
-- `packages/context-management/README.md:3-15` — 包 scope
-- `packages/context-management/src/async-compact/index.ts:159-245` — orchestrator lifecycle
-- `packages/context-management/src/async-compact/kernel-adapter.ts:57-88` — kernel delegate
-- `packages/context-management/src/async-compact/index.ts:613-620` — restoreVersion stub
-- `packages/context-management/src/inspector-facade/index.ts:313-371` — mount helper
-- `packages/workspace-context-artifacts/src/context-assembler.ts:66-167` — assembly truth
-- `packages/workspace-context-artifacts/src/compact-boundary.ts:119-213` — compact boundary
-- `packages/workspace-context-artifacts/src/snapshot.ts:84-232` — snapshot builder
-- `packages/workspace-context-artifacts/src/evidence-emitters.ts:24-282` — 4 类 evidence
-- `packages/session-do-runtime/src/workspace-runtime.ts:75-101` — runtime compose
-- `packages/nacp-session/src/upstream-context.ts:1-42` — `SessionStartInitialContextSchema`
-- 上下文包:`docs/eval/worker-matrix/context-core/{index(含 §6.1/§6.2/§6.3 决策锚点),realized-code-evidence,internal-nacp-compliance,external-contract-surface,cloudflare-study-evidence}.md`
-
----
-
-### 6.4 `filesystem.core` — Host-Local Workspace Substrate
-
-#### 6.4.1 身份定位
-
-- **mount-based workspace/storage substrate**,不是 POSIX 文件系统,也不是独立的远端文件系统 Worker
-- **物理形态**:`@nano-agent/workspace-context-artifacts` 的 `MountRouter + WorkspaceNamespace + Memory/ReferenceBackend` + `@nano-agent/storage-topology` 的 adapters/placement/calibration
-- **消费者**:`bash.core` 的 file/search/vcs handlers、`context.core` 的 snapshot builder、`agent.core` 的 workspace composition 出口
-- 依据:`docs/eval/worker-matrix/filesystem-core/index.md` §0 + §4 第 1 判断
-
-#### 6.4.2 Design 特质
-
-| 特质 | 说明 |
-|---|---|
-| longest-prefix mount | `MountRouter.routePath` 是 FS universe 的基础抽象;`_platform/` 为 reserved namespace |
-| tenant/key law | 所有 ref / key 必须 `tenants/<team>/...` 前缀(由 `storage-topology/src/keys.ts` + `refs.ts` 强制) |
-| memory-only default | 第一波默认用 `MemoryBackend`(与 DO 1 MiB cap 对齐);`ReferenceBackend.connected` mode 保持 opt-in |
-| evidence-driven placement | `placement.ts` + `calibration.ts` 仍 provisional;不预先冻结 KV/D1/R2 topology |
-| shared workspace truth | fake-bash / snapshot / assembler 共用同一份 workspace truth;无并行实现 |
-| honest partial | `mkdir` / `git diff|log` 明确 partial;不 paper over |
-
-#### 6.4.3 沟通管道 — 入站
-
-| 来源 | 协议 / 接口 | 当前状态 | 本阶段动作 |
-|---|---|---|---|
-| bash.core handlers | `WorkspaceFsLike` + `resolveWorkspacePath`(in-process) | real | 不变 |
-| context.core snapshot builder | `listMounts / listDir / artifactStore.list` | real | 不变 |
-| agent.core composition | `composeWorkspaceWithEvidence(...)` | real | 不变;**P0 显式化到 composition handle** |
-| host(checkpoint restore) | `WorkspaceSnapshotBuilder.restoreFragment` | real | 不变 |
-
-#### 6.4.4 沟通管道 — 出站
-
-| 目标 | 协议 / 接口 | 当前状态 | 本阶段动作 |
-|---|---|---|---|
-| evidence sink(`BoundedEvalSink`) | `assembly / artifact / snapshot` evidence via emitters | real | 不变 |
-| `do storage`(checkpoint 等) | `tenantDoStorage*` via host `getTenantScopedStorage` | real | 不变 |
-| R2(artifact promotion) | via `promotion.ts`(only when connected `ReferenceBackend` 启用) | seam(默认 OFF) | 不变 |
-
-#### 6.4.5 In-Scope(本阶段)
-
-1. 作为 `agent.core` default composition 的 `workspace` handle 被装配(从 `composeWorkspaceWithEvidence` 的 eventual handle 升级为显式 composition.workspace 项)
-2. 确认 `bash.core` / `context.core` 消费的是同一个 workspace 实例(no divergence)
-3. filesystem.core charter-level 边界在本 §6.4 冻结
-
-#### 6.4.6 Out-of-Scope(本阶段)
-
-1. 独立 `filesystem-core-worker` deploy(post-worker-matrix)
-2. Remote service-binding workspace transport(保持 host-local)
-3. `ReferenceBackend.connected` mode 启用 / R2 promotion 默认化(保持 opt-in — 见 filesystem-core/index.md §6.1)
-4. `mkdir` / `git diff|log` 从 partial 升级为 full
-5. POSIX 语义 / symlink / cross-mount traversal / HTTPFS 等 just-bash FS universe 特性
-6. D1 schema / KV production placement 冻结(保持 evidence-driven)
-7. `_platform/` namespace 的 scope 扩张(只允许 `KV_KEYS.featureFlags()` 这一极窄 escape hatch)
-
-#### 6.4.7 关键代码锚点
-
-- `packages/workspace-context-artifacts/src/mounts.ts:58-85` — routePath + `_platform/` reserved
-- `packages/workspace-context-artifacts/src/namespace.ts:17-120` — WorkspaceNamespace
-- `packages/workspace-context-artifacts/src/backends/memory.ts` — MemoryBackend(1 MiB cap)
-- `packages/workspace-context-artifacts/src/backends/reference.ts:7-29,58-80,120-140` — ReferenceBackend(connected mode shipped 但不默认)
-- `packages/workspace-context-artifacts/src/refs.ts:68-96` — artifact refs
-- `packages/workspace-context-artifacts/src/promotion.ts:21-143` — R2 promotion(opt-in)
-- `packages/workspace-context-artifacts/src/snapshot.ts:122-232` — snapshot capture
-- `packages/storage-topology/src/keys.ts:38-64` — key law + `_platform/` exception
-- `packages/storage-topology/src/refs.ts:31-79` — ref law
-- `packages/storage-topology/src/placement.ts:22-120` — placement(provisional)
-- `packages/storage-topology/src/adapters/do-storage-adapter.ts:73-178` — DO adapter
-- `packages/storage-topology/src/adapters/r2-adapter.ts:63-187` — R2 adapter
-- `packages/capability-runtime/src/capabilities/filesystem.ts:102-237` — fake-bash consumer
-- `packages/capability-runtime/src/capabilities/workspace-truth.ts:11-157` — shared workspace consumer
-- `packages/session-do-runtime/src/workspace-runtime.ts:75-101` — runtime compose
-- 上下文包:`docs/eval/worker-matrix/filesystem-core/{index(含 §6.1 决策锚点),realized-code-evidence,internal-nacp-compliance,external-contract-surface,cloudflare-study-evidence}.md`
-
----
-
-## 7. Cross-Worker 不变量与沟通管道汇总
-
-本章把 `docs/eval/worker-matrix/cross-worker-interaction-matrix.md` §4 的 5 条不变量升级为 charter-level 强约束。所有 worker 的任何 PR,若违反这 5 条之一,视为越界。
-
-### 7.1 不变量 1 — Tenant Boundary
-
-- 每一次 cross-seam 调用都必须经 `verifyTenantBoundary()`(B9-R1 已将其从 fire-and-forget 升级为 `await` gate)
-- 所有 DO storage 访问都必须走 `getTenantScopedStorage()`(前缀:`tenants/<team>/...`)
-- `source-code white-list` 由 `test/tenant-plumbing-contract.test.mjs` 强制:只有 `getTenantScopedStorage / wsHelperStorage / alarm / handleWebSocketUpgrade` 4 个函数允许出现 raw `this.doState.storage.*`
-- **违反示例**:在新 worker 代码中直接写 `state.storage.put("foo", bar)` 而不经 wrapper
-
-### 7.2 不变量 2 — Matrix Legality
-
-- 每个向 wire 发出的 envelope 必须通过 `NACP_CORE_TYPE_DIRECTION_MATRIX`(core)或 `NACP_SESSION_TYPE_DIRECTION_MATRIX`(session)
-- 不得绕过 `validateEnvelope()` / `validateSessionFrame()`,即便是"临时 shortcut"
-- 不得发非法 `(type, delivery_kind)` 组合,例如 `tool.call.request + event`(Layer 6 会 throw `NACP_TYPE_DIRECTION_MISMATCH`)
-- **违反示例**:在 worker 内部 send 一条 `session.end + delivery_kind: command` 的帧
-
-### 7.3 不变量 3 — Evidence Dedup + Overflow Disclosure
-
-- `BoundedEvalSink` 按 `messageUuid` 去重;emitter 必须附带 `messageUuid`,否则会落入 overflow ring
-- overflow 不得 silent;必须通过 `getDefaultEvalDisclosure()` 可见
-- **违反示例**:新 worker 在 emit evidence 时故意不带 `messageUuid`,或自己维护并行 sink
-
-### 7.4 不变量 4 — Stream Replay 单源真相
-
-- `SessionWebSocketHelper` 是 replay / ack / heartbeat 的唯一 source-of-truth
-- 其他 worker / subsystem 不得维护并行 replay state 或 ack 计数
-- **违反示例**:`context.core` 自建一份 "已收 turn 记录" 来做 compact 判断
-
-### 7.5 不变量 5 — Checkpoint 对称性
-
-- `persistCheckpoint` 拒绝在 `sessionUuid === null` 或 `teamUuid` 为空时写入
-- `validateSessionCheckpoint` 对 checkpoint shape 做 symmetry guard,writer 必须先过 validator 才 persist
-- **违反示例**:新 worker 通过"侧门"直接写 checkpoint 而不经 DO host 路径
-
----
-
-## 8. Phase 拆分
-
-本阶段 Phase 极少,因为 scope 非常收敛。
-
-| Phase | 名称 | 核心目标 | 主要产出 |
-|---|---|---|---|
-| **Phase 0** | Default Composition Assembly + `initial_context` Consumer | 把 `composition.ts` 的空柄升级为真实装配;让 host 消费 `initial_context` | session-do-runtime 0.4.0(shipped),live agent turn loop,`assembler.appendInitialContextLayer` API,P0 regression tests |
-| **Phase 1** | 4-Worker Boundary Contract Freeze | 本文件 §6 的 4 个 worker 章节在各 worker 的 `README.md` 或 charter-aligned doc 里得到 cross-link;修订任何与本 charter §6 冲突的下游文档 | doc 同步 PR;若出现冲突需要修 charter 本身,则本 charter r2 |
-| **Phase 2** | Worker-Matrix Closure & Handoff | 输出 closure memo;更新 meta-doc 到 "worker-matrix closed" 状态;准备 skill.core 解锁 checklist | `docs/handoff/worker-matrix-to-next-phase.md`、meta-doc rev、after-foundations-final-closure §6 再次更新 |
-
-### 8.1 DAG
-
-```text
-Phase 0 (Default Composition Assembly + initial_context consumer)
-   │
-   ├─ 必要前置:B9 已 closed、context-space 4 patches 已 landed (都已完成)
-   │
-   └─→ Phase 1 (4-Worker Boundary Contract Freeze)
-          │
-          └─→ Phase 2 (Worker-Matrix Closure & Handoff)
-```
-
-### 8.2 为什么不排更多 Phase
-
-- Phase 0 就是本阶段 99% 的工程量;后续都是 doc-shaped
-- 任何试图把 Phase 拆多(如"独立 bash-core worker Phase"、"context async-compact 默认装 Phase")都违反 §5.2 Thin-First Discipline
-- 如果 Phase 0 完成后发现某 worker 有 additional 真实需求,应开新 charter 周期,不在本阶段扩
-
-### 8.3 估计时长
-
-| Phase | 时长 | 累计 |
-|---|---|---|
-| Phase 0 | 1-2 周(composition wiring 是主要工作;regression 面已有 2242+ tests 作支撑) | 2 周 |
-| Phase 1 | 0.5 周(大部分文档已在 `docs/eval/worker-matrix/` 就绪,只需 cross-link) | 2.5 周 |
-| Phase 2 | 0.5 周(纯 closure) | 3 周 |
-
-**总时长:3 周左右**。远短于 after-foundations 阶段 — 这是 conservative-first 基调的直接回报。
-
----
-
-## 9. 执行方法
-
-### 9.1 Phase 0 的三道 Gate
-
-#### Start Gate
-
-1. 本 charter 已冻结(r1 已 owner-approved)
-2. `docs/eval/worker-matrix/` 13 份文档 + 4 patches 已 landed(已完成)
-3. `docs/issue/after-foundations/after-foundations-final-closure.md` §6 已反映"Phase 0 gate OPEN"(已完成)
-4. regression baseline:packages 全绿 + root 98/98 + cross 112/112(已核验)
-
-#### Build Gate
-
-1. `composition.ts` 与 `remote-bindings.ts` 的 diff plan 已写出(design doc or action-plan)
-2. `assembler.appendInitialContextLayer` API 的 schema/behavior 已在 context-core 侧定义
-3. 新增 regression test 清单已列出(至少:turn loop 端到端 smoke + initial_context 消费 smoke + 不变量 1-5 各一条 negative case)
-4. B7 LIVE 契约 `test/b7-round2-integrated-contract.test.mjs` 5/5 保留
-
-#### Closure Gate
-
-1. `pnpm -r run test` 全绿
-2. `node --test test/*.test.mjs` 保持当前 98+ 通过(允许 delta 为新增 worker-matrix-P0 contract test)
-3. `npm run test:cross` 保持当前 112+ 通过
-4. B7 LIVE 契约 test 全绿
-5. closure note 写入 `docs/issue/worker-matrix/P0-closure.md`
-6. `session-do-runtime 0.4.0` shipped(或相应 minor/patch bump)
-
-### 9.2 Phase 1 的执行姿态
-
-- 仅做**文档同步**,不做代码变更
-- 对下游文档做 cross-link(从 per-worker README / CHANGELOG 引用 charter §6 相应小节)
-- 若出现"下游文档与 charter §6 冲突"的情况,**修 charter**(r2 revision)而不是 silently 让下游漂移
-
-### 9.3 Phase 2 的执行姿态
-
-- 收口 ritual:每个 Phase 出 closure note;最终 handoff memo
-- 更新 meta-doc + after-foundations-final-closure
-- 为 `skill.core` 写一份 "unlock checklist"(入场条件已由 `docs/eval/worker-matrix/skill-core-deferral-rationale.md` §4 定义,此处做可执行化)
-
----
-
-## 10. 测试与验证策略
-
-### 10.1 继承 plan-after-foundations §10 的五层测试结构
-
-1. Package tests — 保持 all green
-2. Root contract tests — 扩展新 worker-matrix contract
-3. Cross-package E2E — 扩展 live turn loop end-to-end
-4. Spike-shaped real-Cloudflare verification — **不新做 spike**;继承 B7 LIVE findings
-5. Chaos / failure injection — 不在本阶段
-
-### 10.2 本阶段必须新增的验证(最小集)
-
-| 验证项 | 测试位置 | 说明 |
-|---|---|---|
-| default composition 装配成功 | `packages/session-do-runtime/test/integration/` | 断言 `kernel / llm / capability / workspace / eval` 全部 non-undefined |
-| live turn loop smoke | `test/worker-matrix-live-turn-contract.test.mjs`(新) | 一次完整 `session.start → kernel advance step → tool.call.request → response → session.stream.event → session.end` |
-| `initial_context` consumer | `test/worker-matrix-initial-context-consumer.test.mjs`(新) | 构造带 `body.initial_context` 的 session.start,断言 assembler 收到 layer |
-| tenant violation 仍 gate | 已在 `test/tenant-plumbing-contract.test.mjs`(保持 green) | 回归保护 |
-| matrix legality 仍 gate | 已在 `test/nacp-1-3-matrix-contract.test.mjs`(保持 green) | 回归保护 |
-
-### 10.3 拒绝的验证项
-
-- 不做 production-grade 性能测试(post-worker-matrix)
-- 不做 chaos / fault injection(post-worker-matrix)
-- 不做新的 Cloudflare LIVE deploy(继承 B7);如 Phase 0 出现真实需要再 owner-approve
-
-### 10.4 Spike / LIVE 续验证策略
-
-- B7 LIVE deploy 已 shipped,本阶段**不要求 re-deploy**
-- 如果 Phase 0 改动触及 `NanoSessionDO` 的 wire-level 行为,需在 PR 里证明 `test/b7-round2-integrated-contract.test.mjs` 仍 green;这已足够
-- owner 可以选择性 re-deploy(完全 out of charter scope)
-
----
-
-## 11. 本阶段的退出条件(Exit Criteria)
-
-本阶段 exit criteria 必须同时满足,否则本阶段 NOT 成功关闭。
-
-### 11.1 Primary Exit Criteria(能力成熟度)
-
-1. **Default composition 已真实装配**:`createDefaultCompositionFactory()` 与 `makeRemoteBindingsFactory()` 均能产出 `kernel / llm / capability / workspace / eval` 的真实实例,`undefined` 从 5 个减少到 ≤ 1(storage 允许保留 undefined)
-2. **live turn loop 已跑通**:至少一个 end-to-end smoke test 证明 `session.start → kernel → LLMExecutor → tool.call → response → session.stream.event → session.end` 在默认 composition 下成立
-3. **`initial_context` consumer 已接线**:`NanoSessionDO.dispatchAdmissibleFrame` 的 `session.start` 分支消费 `body.initial_context`;`context.core` 侧提供 `assembler.appendInitialContextLayer` API;有 smoke test 证明 layer 到达
-4. **4 worker charter-level 边界已冻结**:本 charter §6 的 4 小节被下游 per-worker 文档 cross-link;任何后续与 §6 冲突的提议视为 out-of-scope
-5. **cross-worker 5 条不变量**被新 regression tests 锁住;已有的 9 条 contract tests(`tenant-plumbing / nacp-matrix / initial-context-schema`)保持 green
-6. **B9 契约无回退**:`nacp-core 1.3.0` / `nacp-session 1.3.0` / `session-do-runtime ≥ 0.3.0` 保持;`V1_BINDING_CATALOG` 未改
-7. **B7 LIVE 契约无回退**:`test/b7-round2-integrated-contract.test.mjs` 全绿
-8. **`skill.core` 保持 reserved**:没有引入任何 `skill.*` 新 substrate、registry、worker shell、env binding
-9. **Closure ritual 已完成**:3 个 Phase 的 closure note 已写回;下一阶段 handoff memo 已输出
-
-### 11.2 Secondary Outcomes(结果非锚点)
-
-- `session-do-runtime` 0.3.0 → 0.4.0 或适当 minor/patch bump
-- `agent-runtime-kernel` / `llm-wrapper` / `context-management` / `workspace-context-artifacts` / `capability-runtime` 可能出现小 patch(bug fix 级),不要求 minor bump
-- 若 Phase 0 发现某个不变量需要新 regression test,新增 test 是合理产物但不强制 bump
-
-### 11.3 NOT-成功退出的识别
+### NOT-成功退出识别
 
 若出现以下任一,本阶段 NOT 退出:
 
-- primary 1-9 任一未满足
-- 任一 worker 出现 "独立 deploy shell"(out-of-scope A.1-4 violation)
-- 任一 worker 出现 NACP / matrix / binding catalog 修改(out-of-scope C.7-9 violation)
-- 任一 `skill.*` 代码实体出现(out-of-scope B.5-6 violation)
-- `wrapAsError()` 在任何非 provisional 用法下被调用(违反 §5.3 Contract-First-Change)
+- primary 1-6 任一未满足
+- tenant wrapper 被绕过(B9 契约破坏)
+- `NACP_CORE_TYPE_DIRECTION_MATRIX` / `NACP_SESSION_TYPE_DIRECTION_MATRIX` / `SessionStartInitialContextSchema` 任一被私修
+- 出现第 5 个 first-wave worker
+- W1 RFC 被升级为 shipped code 而无独立 RFC revision
+- Tier B packages 在 absorb 未稳定前就物理删除
 
 ---
 
-## 12. 下一阶段:什么会成为正式 In-Scope
+## 10. 下一阶段触发条件
 
-worker-matrix 关闭后,**下一阶段**候选切换为:
+worker-matrix 结束后,下一阶段应由以下 2 类 trigger 之一启动:
 
-> **Skill-Core Opening Phase** OR **Reranker / Semantic Memory Phase** OR **Remote-Worker Split Phase**
+1. **live loop stability trigger**:worker-matrix 收口后的 preview live loop 连续稳定 2-4 周 → 触发 production env flip 的 release charter
+2. **scope expansion trigger**:owner 明确 admit `skill.core` 或其他第 5 个 worker → 触发 `plan-<next>.md` rewrite(类似本次 r2 的 clean rewrite)
 
-哪个成为下一阶段,取决于本阶段闭合时的真实发现与 owner 决策。
-
-### 12.1 下一阶段的三条候选路径
-
-#### 路径 A — `skill.core` 入场
-
-- 触发条件:本阶段闭合 + 产品驱动浮现 + substrate RFC 提出
-- 前置输入:`docs/eval/worker-matrix/skill-core-deferral-rationale.md` §4 四条
-- 工作内容:定义 "什么是 skill"、ship `@nano-agent/skill-runtime`、打开 `SKILL_WORKER` binding
-
-#### 路径 B — `context.reranker` / semantic memory engine
-
-- 触发条件:本阶段完成 + compact / assembly 在真实 turn loop 下暴露语义层真实需求
-- 前置输入:`docs/eval/after-foundations/smind-contexter-learnings.md` §4.4 / §10
-- 工作内容:把 context.core 从薄 substrate 升级为 "slot-aware context engine"
-
-#### 路径 C — Remote-Worker Split
-
-- 触发条件:本阶段完成 + LIVE deploy 真实压力数据表明 in-process assembly 过重
-- 前置输入:本阶段 P0 composition 的性能数据 + `docs/issue/after-foundations/B8-phase-1-closure.md` platform cap
-- 工作内容:把 `bash.core` / `context.core` / `filesystem.core` 中的一个或多个独立为 remote worker(有独立 wrangler entry)
-
-### 12.2 为什么不预先承诺
-
-- 本阶段 exit 之前所有路径都是投机;必须先让 turn loop 真跑起来,才能有 evidence 驱动选择
-- nano-agent 一贯的 "freeze biggest cognition range" 纪律不支持在 substrate 之外预先冻结下一阶段
+在 worker-matrix 内 **不** 触发 production flip / 第 5 worker 扩 scope。
 
 ---
 
-## 13. 最终 Verdict
+## 11. 维护规则
 
-### 13.1 对当前阶段的最终定义
+本 charter 在以下任一发生时必须在 **同 PR** 内同步修订:
 
-本阶段不应被表述为:
-
-> "实现 4 个 worker"
-
-而应被表述为:
-
-> **"在 after-foundations 阶段已冻结的 substrate 与协议之上,用一次焦点性 default composition 升级把空柄装成真实 agent turn loop;在此过程中冻结 4 个 first-wave worker 的 charter-level 边界(design 特质 + 沟通管道 + in-scope + out-of-scope);保留 `skill.core` 为 reserved-name 但不做;产出物是 live agent runtime + 4 worker charter-level boundary + `initial_context` consumer + 下一阶段 handoff memo。"**
-
-### 13.2 一句话总结
-
-> **Worker-matrix is not about building workers. It is about completing the one focused assembly pass that turns the shipped substrate into a live agent turn loop, while freezing the cross-worker boundary contract that governs everything built on top of it after the closure.**
-
-### 13.3 对前一阶段 after-foundations 的承接关系
-
-after-foundations 给 worker-matrix 留下了:
-
-- 11 个 shipped package(全绿 2242+ tests)
-- NACP 1.3 frozen contract surface(双侧 matrix + error body provisional + initial_context wire hook)
-- tenant plumbing materialized(B9-R1 post-fix)
-- B7 LIVE wire contract(5 tests 锁住 platform 真实行为)
-- 13 份 `docs/eval/worker-matrix/` 上下文 + 4 份 patch 文档
-- 1 份 pre-construction 审查(`context-space-examined-by-opus.md`)
-
-worker-matrix 阶段不需要再回头问 "substrate 是否成立"——after-foundations 已经答完。worker-matrix 阶段只需做一件事:**把 substrate 组装成 live agent,并把此时能冻结的所有 boundary 冻结干净**。
+1. 4 个 worker 中任一完成 real preview deploy 或 production flip
+2. `@haimang/nacp-core` / `@haimang/nacp-session` 任一发新版
+3. W3 pattern spec 有 placeholder 节被回填
+4. owner 决策 Q1-Q7 的任一回答
+5. W1 RFC 任一升级为 shipped code(需独立 RFC revision 作前置)
+6. `workspace:*` → published cutover 触发
+7. `skill.core` scope posture 改变(从 reserved 变为 admitted)
 
 ---
 
-## 14. 后续文档生产清单与撰写顺序
+## 12. 一句话总结
 
-本阶段文档产出非常收敛(Phase 数量只有 3),但仍保持"design → action-plan → closure"的节奏。
-
-### 14.1 Design / Decision 文档
-
-路径:`docs/design/worker-matrix/`
-
-| 对应 Phase | 文件路径 | 类型 | 说明 |
-|---|---|---|---|
-| Phase 0 | `docs/design/worker-matrix/W0-default-composition-assembly.md` | Design | 4 subsystem(kernel / llm / capability / workspace / eval)装配细节、env gating、local vs remote profile 决策 |
-| Phase 0 | `docs/design/worker-matrix/W0-initial-context-consumer.md` | Design | host 消费 `initial_context` 的时序、`assembler.appendInitialContextLayer` API shape、失败降级策略 |
-| Phase 1 | `docs/design/worker-matrix/W1-boundary-crosslink-plan.md` | Design | 哪些下游文档要反向 cross-link 本 charter §6、冲突解决 |
-| 跨阶段 | `docs/design/worker-matrix/WX-cross-worker-invariants-enforcement.md` | Spec | §7 五条不变量的 test 执行计划 |
-
-### 14.2 Action-Plan 文档
-
-路径:`docs/action-plan/worker-matrix/`
-
-| 对应 Phase | 文件路径 | 说明 |
-|---|---|---|
-| Phase 0 | `docs/action-plan/worker-matrix/C1-default-composition-assembly.md` | 装配的 Phase 内多批次执行 |
-| Phase 0 | `docs/action-plan/worker-matrix/C2-initial-context-consumer.md` | 消费路径的多批次执行 |
-| Phase 1 | `docs/action-plan/worker-matrix/C3-boundary-crosslink-execution.md` | 文档同步 PR 清单 |
-| Phase 2 | `docs/action-plan/worker-matrix/C4-closure-and-handoff.md` | closure memo + handoff memo |
-
-### 14.3 撰写顺序建议
-
-1. 先写 `W0-default-composition-assembly.md` + `W0-initial-context-consumer.md`(决定 Phase 0 scope)
-2. 再写 `WX-cross-worker-invariants-enforcement.md`(决定 test 补足范围)
-3. 再写 `C1 + C2`(动代码前)
-4. 动完代码后 Phase 1 的 `W1 + C3` 几乎是机械的 cross-link 工作
-5. Phase 2 的 closure + handoff 是最后产出
-
-### 14.4 如果要先控制文档数量,优先看哪几份
-
-如果希望先收敛产出密度,优先推进下面 3 份:
-
-1. `W0-default-composition-assembly.md` — 决定 Phase 0 能否按计划闭合
-2. `W0-initial-context-consumer.md` — 决定 orphan 责任是否真落地
-3. `WX-cross-worker-invariants-enforcement.md` — 决定 charter §7 是否有 test 背书
-
-这 3 份基本决定本阶段成败;其他文档都是 cross-link / closure 型,依赖这 3 份。
-
----
-
-## 15. 思维链承接表(Reference Traceability)
-
-为了让本 charter 的每个决策都能反向追溯到原始上下文,下面给出 traceability:
-
-| 本 charter 章节 | 决策内容 | 来源文档 | 来源章节 / 行 |
-|---|---|---|---|
-| §0 | worker-matrix 定位是 substrate-to-assembly | `docs/eval/worker-matrix/worker-readiness-stratification.md` §4;`docs/eval/worker-matrix/context-space-examined-by-opus.md` §7.3 | 全文 |
-| §1.1 第 1 条 | nacp 1.3.0 frozen | `docs/issue/after-foundations/B9-final-closure.md` | §1-§3 + §8 |
-| §1.1 第 2 条 | tenant plumbing materialized | B9-R1 post-fix | `nano-session-do.ts:487-535` |
-| §1.1 第 4 条 | `initial_context` consumer 归 agent.core | `docs/eval/worker-matrix/context-core/index.md` §6.3 + `agent-core/index.md` §4 | 两侧交叉 |
-| §1.2 第 6 条 | 4 first-wave 名单 | `docs/handoff/next-phase-worker-naming-proposal.md:67` | naming proposal |
-| §1.2 第 7 条 | context.core 升格但薄做 | `worker-matrix-eval-with-Opus.md` §3 + context-management-eval-by-Opus v2 §7.4 | 两份 eval |
-| §1.2 第 8 条 | agent.core 是 host worker | `docs/handoff/after-foundations-to-worker-matrix.md` §4-§6 | handoff memo |
-| §1.3 第 10 条 | skill.core 延后 | `docs/eval/worker-matrix/skill-core-deferral-rationale.md` | 整份 |
-| §1.3 第 11-12 条 | 4×4 matrix + readiness | `cross-worker-interaction-matrix.md` + `worker-readiness-stratification.md` | 整份 |
-| §2.1 | foundations 现状 | 4 份 per-worker `realized-code-evidence.md` | 逐份 |
-| §4.1 A | default composition 升级 | `agent-core/index.md` §4(升级后的 Phase 0 唯一必要里程碑口径)+ `worker-readiness-stratification.md` §2.2 | 两份 |
-| §4.1 B | `initial_context` consumer | `context-core/index.md` §6.3 + `agent-core/index.md` §6 | 两份 |
-| §4.2 | out-of-scope | 4 份 per-worker `index.md` §1.2 + context-space §4.2 | 逐份 |
-| §5.1 | assembly-first-iteration | `context-space-examined-by-opus.md` §7.3 | context-space review |
-| §5.2 | thin-first | `context-space-examined-by-opus.md` §7.3 | context-space review |
-| §5.3 | contract-first-change | `docs/rfc/nacp-core-1-3-draft.md` §3.1.1 consumer guidance | RFC |
-| §6.1 | agent.core 细则 | `docs/eval/worker-matrix/agent-core/` 5 份 | 整个目录 |
-| §6.2 | bash.core 细则 | `docs/eval/worker-matrix/bash-core/` 5 份 | 整个目录 |
-| §6.3 | context.core 细则 | `docs/eval/worker-matrix/context-core/` 5 份(含 §6.1-§6.3 决策锚点) | 整个目录 |
-| §6.4 | filesystem.core 细则 | `docs/eval/worker-matrix/filesystem-core/` 5 份(含 §6.1 决策锚点) | 整个目录 |
-| §7 | 5 条不变量 | `cross-worker-interaction-matrix.md` §4 | matrix §4 |
-| §11 | exit criteria | 继承 `plan-after-foundations.md` §11 方法论,内容基于本 charter | — |
-| §12 | 下一阶段候选 | `skill-core-deferral-rationale.md` §4 + smind-contexter-learnings §10 | 两份 |
-
-每一条决策都可以从本 charter 反向追溯到原始上下文或代码事实,确保**没有未经辩证的设计选择被塞进 charter**。
-
----
-
-## 16. 结语
-
-本 charter 的诞生本身是 nano-agent 项目 "先思考后执行" 纪律的又一轮体现。从 after-foundations 的 spike-driven validation,到 B9 post-review integration,再到 `docs/eval/worker-matrix/` 4 worker × 5 doc 的上下文准备,再到 Opus 的 pre-construction 审查与 4 项 patch,再到本 charter——每一步都把下一阶段的起点推得更稳一点。
-
-> **Worker Matrix 不是 after-foundations 的下一个阶段;它是 after-foundations 与真实 agent 运行之间的最后一道组装 gate。它不引入新能力,但它把 substrate 与 contract 组装成一个真正能跑 agent turn 的 runtime。**
-
-进入下一阶段(skill.core / reranker / remote-worker split 中的某一条路径),我们将拥有:
-
-- 已装配的 default composition(kernel + llm + capability + workspace + eval 全部 live)
-- 已消费的 `initial_context`(upstream orchestrator 的 seam 真实闭合)
-- 已冻结的 4 worker charter-level 边界(任何下游 design 都必须守住 §6 + §7)
-- 已 reserved 的 `skill.core` 与已记录的 unlock checklist
-- 已保留的 after-foundations 所有 substrate + contract 不回退
-
-worker-matrix 阶段不会再问 "substrate 是否成立"——after-foundations 已经答完。worker-matrix 阶段只回答一件事:**把 substrate 装成 live agent 的那一次焦点组装,是否干净闭合了**。
-
----
-
-## 17. 维护约定
-
-- 本 charter 一旦 owner-approved 后不再频繁修订;任何修订需明确触发源(owner decision / patch doc / downstream conflict)
-- 修订时必须在顶部 "修订历史" 列出(r1 → r2 → ...)
-- 下游文档若与本 charter 冲突,以本 charter 为准;除非下游文档是 owner 新决策的载体,此时应修本 charter
-- 本 charter 是 `docs/eval/worker-matrix/` 上下文束的 charter-level 投影;`docs/eval/worker-matrix/` 是代码级 truth,本 charter 是边界级 truth
-- 本 charter closure 条件之一:Phase 2 的 handoff memo 落地时,meta-doc `docs/eval/worker-matrix/00-contexts/00-current-gate-truth.md` 应再次 rev 到 "worker-matrix closed" 状态
+> **Worker-matrix 不是 "worker 的重新定义阶段",而是 "用已冻结的拓扑 + 已发布的协议包 + 已写好的 absorption map,把 Tier B substrate 吸进 4 个 worker 壳,装出 live agent turn loop,激活 first-wave 真实需要的 cross-worker 服务绑定,并把 `workspace:*` interim 切换到 published path" 的一次性装配 + 吸收阶段。skill.core 保持 reserved;W1 RFC 保持 direction-only;Tier B packages 保持物理存在直到下一个阶段决定删除时机。**
