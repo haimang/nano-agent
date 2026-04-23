@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "Pre-worker-matrix shell for agent-core",
+  "description": "agent-core worker — absorbed runtime (P1.A: host / kernel / llm / hooks / eval)",
   "scripts": {
     "build": "tsc",
     "typecheck": "tsc --noEmit",
@@ -13,12 +13,19 @@
   },
   "dependencies": {
     "@haimang/nacp-core": "workspace:*",
-    "@haimang/nacp-session": "workspace:*"
+    "@haimang/nacp-session": "workspace:*",
+    "@nano-agent/workspace-context-artifacts": "workspace:*"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20251101.0",
+    "@nano-agent/eval-observability": "workspace:*",
+    "tsx": "^4.19.0",
     "typescript": "^5.6.0",
     "vitest": "^2.1.0",
-    "wrangler": "^4.83.0"
+    "wrangler": "^4.83.0",
+    "zod": "^3.24.0"
+  },
+  "peerDependencies": {
+    "zod": ">=3.22.0"
   }
 }

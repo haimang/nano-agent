@@ -1,0 +1,9 @@
+{
+  "name": "azure-openai",
+  "baseUrl": "https://example.openai.azure.com/openai/deployments/gpt-4o",
+  "apiKeys": ["az-key-a"],
+  "keyRotationPolicy": "round-robin",
+  "defaultHeaders": { "api-version": "2024-10-21" },
+  "retryConfig": { "maxRetries": 3, "baseDelayMs": 25 },
+  "notes": "v1 fixture — single-key Azure profile for integration tests"
+}

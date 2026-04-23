@@ -12,7 +12,7 @@ describe("agent-core shell smoke", () => {
     expect(typeof NanoSessionDO).toBe("function");
   });
 
-  it("returns NACP versions from the worker shell", async () => {
+  it("returns NACP versions + absorbed-runtime flag from the worker shell", async () => {
     const response = await worker.fetch(new Request("https://example.com"), {
       SESSION_DO: {} as DurableObjectNamespace,
     });
@@ -22,18 +22,7 @@ describe("agent-core shell smoke", () => {
     expect(body.nacp_core_version).toBe(NACP_VERSION);
     expect(body.nacp_session_version).toBe(NACP_SESSION_VERSION);
     expect(body.status).toBe("ok");
-  });
-
-  it("returns the DO stub response", async () => {
-    const stub = new NanoSessionDO(
-      {} as DurableObjectState,
-      { SESSION_DO: {} as DurableObjectNamespace },
-    );
-    const response = await stub.fetch(new Request("https://example.com/sessions/demo"));
-    const body = await response.json();
-
-    expect(body.worker).toBe("agent-core");
-    expect(body.role).toBe("session-do-stub");
-    expect(body.status).toBe("shell");
+    expect(body.absorbed_runtime).toBe(true);
+    expect(body.phase).toBe("worker-matrix-P1.A-absorbed");
   });
 });

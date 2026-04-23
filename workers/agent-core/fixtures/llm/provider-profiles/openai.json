@@ -1,0 +1,8 @@
+{
+  "name": "openai",
+  "baseUrl": "https://api.openai.com/v1",
+  "apiKeys": ["sk-test-1", "sk-test-2"],
+  "keyRotationPolicy": "on-429",
+  "retryConfig": { "maxRetries": 2, "baseDelayMs": 10 },
+  "notes": "v1 fixture — on-429 rotation across 2 keys"
+}
