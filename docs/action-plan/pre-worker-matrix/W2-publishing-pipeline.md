@@ -11,7 +11,7 @@
 > - `docs/design/pre-worker-matrix/W2-publishing-pipeline.md`
 > - `docs/design/pre-worker-matrix/W2-publishing-discipline.md`
 > - `docs/action-plan/pre-worker-matrix/W5-closure-and-handoff.md`
-> 文档状态: `draft`
+> 文档状态: `executed`
 
 ---
 
@@ -121,7 +121,7 @@ W2 Publishing Pipeline
 | P1-01 | Phase 1 | 双包 publishConfig | `update` | `packages/nacp-core/package.json` `packages/nacp-session/package.json` | 固化 registry/access truth | `medium` |
 | P1-02 | Phase 1 | discipline 收口 | `update` | `docs/design/pre-worker-matrix/W2-publishing-discipline.md` | 固化 publish rules | `low` |
 | P2-01 | Phase 2 | publish workflow | `add` | `.github/workflows/publish-nacp.yml` | 让 tag-publish 可执行 | `medium` |
-| P2-02 | Phase 2 | dogfood consumer | `add` | `dogfood/nacp-consume-test/{package.json,.npmrc,src/smoke.ts,README.md}` | 证明 consumer path 可走通 | `medium` |
+| P2-02 | Phase 2 | dogfood consumer | `add` | `dogfood/nacp-consume-test/{package.json,.npmrc,tsconfig.json,src/smoke.ts,README.md}` | 证明 consumer path 可走通 | `medium` |
 | P2-03 | Phase 2 | auth/permission 文档 | `update` | workflow docs / closure notes | 记录 packages:write 与 token 约定 | `low` |
 | P2-04 | Phase 2 | workspace 排除 dogfood | `update` | `pnpm-workspace.yaml` | 明确 dogfood 不进入主 workspace | `medium` |
 | P3-01 | Phase 3 | optional 首发 | `update` | git tag / workflow run / registry evidence | 若 owner 开窗则完成首次发布 | `medium` |
@@ -197,8 +197,9 @@ W2 Publishing Pipeline
   - `.github/workflows/publish-nacp.yml`
   - `dogfood/nacp-consume-test/package.json`
   - `dogfood/nacp-consume-test/.npmrc`
-  - `dogfood/nacp-consume-test/src/smoke.ts`
-  - `dogfood/nacp-consume-test/README.md`
+   - `dogfood/nacp-consume-test/tsconfig.json`
+   - `dogfood/nacp-consume-test/src/smoke.ts`
+   - `dogfood/nacp-consume-test/README.md`
 - **本 Phase 修改文件**：
   - `pnpm-workspace.yaml`
   - `相关文档说明`
@@ -354,3 +355,53 @@ W2 Publishing Pipeline
 ## 10. 结语
 
 这份 action-plan 以 **把“只发 2 个 NACP 包”从设计文本变成可执行流水线** 为第一优先级，采用 **先 skeleton、再 dogfood、最后 optional first publish** 的推进方式，优先解决 **发布路径不存在、consumer path 不清、W4/W5 dual-path 口径漂移** 的问题，并把 **不扩大发布范围、不过度阻塞 first-wave、closure 必须诚实** 作为主要约束。整个计划完成后，`pre-worker-matrix / W2` 应达到 **publish-ready skeleton complete** 的状态，从而为后续的 **worker shell 安装路径与未来 published cutover** 提供稳定基础。
+
+---
+
+## 11. GPT 工作日志回填
+
+### 11.1 本轮完成范围
+
+1. 给 `packages/nacp-core/package.json` 与 `packages/nacp-session/package.json` 补齐 GitHub Packages `publishConfig`，冻结 W2 的最小 publish metadata。
+2. 新建 `.github/workflows/publish-nacp.yml`，固定 `nacp-v*.*.*` tag-trigger、`packages: write` 权限、双包 typecheck/build/test，以及 bundle-version check。
+3. 新建 `dogfood/nacp-consume-test/` 最小 consumer skeleton，并保持它在 workspace 外部，避免误走 workspace link。
+4. 新建 `docs/issue/pre-worker-matrix/W2-closure.md`，把 W2 收口到 **skeleton complete / first publish deferred** 的真实状态。
+5. 同步修正 `W2-publishing-pipeline.md` / `W2-publishing-discipline.md` / `W4-workers-scaffolding.md` / `W5-closure-and-handoff.md` 中与 W0 当前版本现实直接冲突的口径。
+
+### 11.2 代码与文档改动清单
+
+- **新增文件**
+  - `.github/workflows/publish-nacp.yml`
+  - `dogfood/nacp-consume-test/package.json`
+  - `dogfood/nacp-consume-test/.npmrc`
+  - `dogfood/nacp-consume-test/tsconfig.json`
+  - `dogfood/nacp-consume-test/src/smoke.ts`
+  - `dogfood/nacp-consume-test/README.md`
+  - `docs/issue/pre-worker-matrix/W2-closure.md`
+- **修改文件**
+  - `.gitignore`
+  - `pnpm-workspace.yaml`
+  - `packages/nacp-core/package.json`
+  - `packages/nacp-session/package.json`
+  - `docs/design/pre-worker-matrix/W2-publishing-pipeline.md`
+  - `docs/design/pre-worker-matrix/W2-publishing-discipline.md`
+  - `docs/action-plan/pre-worker-matrix/W2-publishing-pipeline.md`
+  - `docs/design/pre-worker-matrix/W4-workers-scaffolding.md`
+  - `docs/design/pre-worker-matrix/W5-closure-and-handoff.md`
+
+### 11.3 关键事实与收口判断
+
+1. W2 当前最重要的 reality 不是“双包同步到 1.4.0”，而是 **`nacp-core@1.4.0` 已 shipped、`nacp-session@1.3.0` 仍未引入新的 published surface**；因此 workflow 的 version gate 必须锚定 `nacp-core`，不能继续假造双包同版本。
+2. `.github/` 原先被 `.gitignore` 忽略，若不先解除，W2 的 workflow skeleton 根本无法成为真实仓库资产；这个问题已与 W2 一并修复。
+3. `pnpm-workspace.yaml` 当前天然未包含 `dogfood/`，因此 dogfood exclusion 的正确做法不是新增复杂 negate pattern，而是保留 `packages/*` 单路径并补清注释。
+4. 真实 GitHub Packages 首发仍未执行；当前 repo owner 与 package scope 之间仍存在 owner-aligned namespace 风险。因此本轮 closure 必须是 **skeleton complete / first publish deferred**，不能冒进宣称 registry 已 ready。
+
+### 11.4 验证与结果摘要
+
+1. 现有 NACP 双包 validation 与 publish dry-run 通过后，W2 skeleton 可以视为工程上成立。
+2. dogfood published-path 安装没有在本轮宣称完成；closure 只记录了 tarball-consumer smoke 与 future published-path gate。
+3. W5 后续应把 W2 视为“import/publish skeleton 已完成、真实首发状态已诚实归档”的 phase，而不是“GitHub Packages 已确定对外可安装”的 phase。
+
+### 11.5 最终收口意见
+
+**结论**：W2 已可按 narrowed scope 收口为 **executed**。本阶段要求的 mandatory skeleton（publish metadata / workflow / discipline / dogfood skeleton / closure）已经齐备；首次真实发布与 published-path dogfood 继续保持 optional parallel，并受 owner-aligned namespace / release window 约束。这一状态足以支撑后续 W4/W5 消费，不需要再把 W2 误写成 pre-worker-matrix 的剩余 blocker。

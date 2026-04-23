@@ -1,6 +1,6 @@
 # W2 Publishing Discipline（设计级纪律文档）
 
-> 状态：pre-worker-matrix / W2 配套子文档  
+> 状态：pre-worker-matrix / W2 executed 配套子文档  
 > 配套主文：`docs/design/pre-worker-matrix/W2-publishing-pipeline.md`
 
 ## 1. 文档目标
@@ -11,9 +11,10 @@
 
 当前仓内已存在的硬事实：
 
-- `packages/nacp-core/package.json`：已是独立 package，当前版本 `1.3.0`
+- `packages/nacp-core/package.json`：已是独立 package，当前版本 `1.4.0`
 - `packages/nacp-session/package.json`：已是独立 package，当前版本 `1.3.0`
 - `pnpm-workspace.yaml`：当前 workspace 只包含 `packages/*`
+- 当前 package 名称仍是 `@nano-agent/*`，而仓库 owner 现实是 `haimang/nano-agent`；因此 **workflow skeleton 可以先按当前 package truth 落盘，但真实首发仍需 owner-aligned namespace / publish venue 最终确认**
 
 因此，W2 的最小真实任务不是“发明 publish 概念”，而是把**已有双包**的 publish skeleton、discipline、dogfood 路径写成稳定约束。
 
@@ -43,6 +44,12 @@ W2 的 publish scope 只覆盖：
 
 publish 行为不能脱离 contract freeze 独立发生。版本 bump、tag、CHANGELOG 都应服务于 frozen baseline，而不是“先发再说”。
 
+当前已冻结的 publish baseline 是：
+
+1. bundle tag 锚定 `nacp-core@1.4.0`
+2. `nacp-session` 保持 `1.3.0` 直到它真实引入新的 published surface
+3. 因此 W2 的版本一致性检查应是 **`tag == nacp-core.version`**，而不是强行要求双包同步 version
+
 ### 3.4 `workspace:*` 是合法 interim path
 
 如果真实首发未做，`workers/*` 的 install/build 成功可以暂时建立在 `workspace:*` 上；这不是失败，而是 W2 设计明确允许的过渡路径。
@@ -71,8 +78,8 @@ W2 不能把 W4 写成“只有 GitHub Packages 直装才算 closure”。
 |---|---|
 | package owner | 仅 `nacp-core` / `nacp-session` |
 | registry path | owner 决定 scope，但两个包必须一致 |
-| versioning | 两包保持 owner 决定的 freeze baseline |
-| workflow trigger | tag / manual dispatch 二选一，由 action-plan 冻结 |
+| versioning | bundle tag 锚定 `nacp-core` 当前 published baseline；`nacp-session` 可在同一 run 内按自身 semver 发布 |
+| workflow trigger | `nacp-v*.*.*` tag only |
 | consumer install | 支持 `workspace:*` 与 published dual-path |
 | dogfood proof | 必须有至少一个真实 import/build 证明 |
 
@@ -86,6 +93,8 @@ W2 不能把 W4 写成“只有 GitHub Packages 直装才算 closure”。
 4. `dogfood/` 下最小 consumer proof
 5. 本文件（discipline）
 
+以上 5 项现在都应被视为 W2 mandatory skeleton 的实际交付面。
+
 ## 6. 首发发生时的最低检查表
 
 1. `nacp-core` / `nacp-session` 版本号与 CHANGELOG 对齐  
@@ -93,6 +102,8 @@ W2 不能把 W4 写成“只有 GitHub Packages 直装才算 closure”。
 3. dry-run 或 preview publish 记录保留  
 4. dogfood import 成功  
 5. publish 失败时的回退路径写明（回退到 `workspace:*` 或撤 tag）
+
+补充：若当前 repo owner 与 package scope 仍不对齐，closure 必须把真实首发标记为 **deferred**,不能把 skeleton complete 误写为 registry-ready published。
 
 ## 7. 若本阶段不首发，应如何写 closure
 

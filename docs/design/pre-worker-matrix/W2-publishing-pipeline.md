@@ -8,13 +8,14 @@
 > - Owner 决策:`docs/plan-pre-worker-matrix.md` §1.5(NACP 必须发布到 GitHub Packages)
 > - 前置 design:
 >   - `docs/design/pre-worker-matrix/W0-nacp-consolidation.md`(ship 1.4.0 shape)
->   - `docs/design/pre-worker-matrix/W1-cross-worker-protocols.md`(ship 1.4.0 新协议)
+>   - `docs/design/pre-worker-matrix/W1-cross-worker-protocols.md`(RFC-only executed；不新增 publish symbol)
 > - 后继 design(W2 阻塞):`W4-workers-scaffolding.md`(4 worker 从 GitHub Packages import NACP)
-> 文档状态:`draft (v0.2 post-GPT-review: publishing as parallel track)`
+> 文档状态:`executed (v0.3 skeleton shipped)`
 >
 > **修订历史**:
 > - v0.1 (2026-04-21):初稿
 > - v0.2 (2026-04-21):Post-GPT-review narrowing(GPT review 盲点 2 整改)— publishing 从"硬 blocker"降级为 **parallel track**。pipeline skeleton(publishConfig + workflow + auth)仍在 pre-phase 完成;首次真实发布可 parallel 到 worker-matrix first-wave 期间完成。worker-matrix first-wave 允许 workers 用 `workspace:*` 作为 interim 依赖。
+> - v0.3 (2026-04-22):executed / shipped — 落下双包 `publishConfig`、`publish-nacp.yml`、dogfood skeleton 与 W2 closure；同时按 W0 reality 校准版本纪律为 `nacp-core@1.4.0` bundle tag anchor + `nacp-session@1.3.0` follow。
 
 ---
 
@@ -49,7 +50,7 @@ owner 在 `packages 定位辩证` 讨论中明确:**`nacp-core` 与 `nacp-sessio
 **推荐节奏**:
 
 1. W2 先搭 pipeline skeleton(publishConfig / workflow / secret / permission)— 可与 W1 并行
-2. 等 W0 shipped code ready → 可选择 tag `nacp-v1.4.0` 触发首发
+2. 等 W0 shipped code ready → 可选择 tag `nacp-v1.4.0` 触发首发（bundle tag 锚定 `nacp-core@1.4.0`；`nacp-session` 当前保持 `1.3.0`）
 3. Dogfood 验证 → 反馈到 discipline doc → W2 closure
 
 ### 0.3 前置共识(v0.2 调整)
@@ -57,7 +58,7 @@ owner 在 `packages 定位辩证` 讨论中明确:**`nacp-core` 与 `nacp-sessio
 - **仅 2 个包发布**:`nacp-core` + `nacp-session`;其他 9 个 Tier B 包**绝不**发布(决策不变)
 - **GitHub Packages 而非 npm 公共 registry**:owner 决策(不变)
 - **publish-on-tag 纪律**:只有 `nacp-v*.*.*` 格式 git tag 触发发布(不变)
-- **Additive versioning**:继承 W0 的 1.4.0 additive 纪律;首发版本号 = W0 shipped 的 1.4.0(**v0.3 W1 RFC-only 不新增 symbol,所以 1.4.0 即可;不含原 v0.1 写的 "W0+W1 合并"**)
+- **Additive versioning**:继承 W0 的 1.4.0 additive 纪律;bundle tag 锚定 `nacp-core@1.4.0`。`nacp-session` 当前 published baseline 仍是 `1.3.0`，直到它真实引入新的 published surface；W2 不强造同步 bump
 - **Access 模式**:`restricted`(private)— 初期仅 nano-agent 组织内部消费(不变)
 - **【v0.2 调整】Consumer 是 workers/\*,但不是 blocker**:worker-matrix first-wave 期间 workers 允许用 `workspace:*` 作 interim;首次发布可 parallel 到 worker-matrix;切换到 published version 的动作属 worker-matrix 的 scope,不属 pre-phase hard gate
 
@@ -94,7 +95,7 @@ v0.2 修正:
 - **一句话定义(v0.2 parallel)**:一条**可 tag-trigger 即发布** 的 publishing pipeline,pipeline skeleton(publishConfig + workflow + auth + discipline)在 pre-phase **必做**;首次真实发布 + dogfood 为 **optional / parallel**,可在 pre-phase 或 worker-matrix first-wave 期间完成
 - **边界描述(v0.2 两层)**:
   - **Mandatory skeleton(pre-phase 必做)**:2 个 `package.json` 的 `publishConfig`、`.github/workflows/publish-nacp.yml`、repo secrets / permissions、publishing discipline 文档
-  - **Optional first publish + dogfood(可 parallel 到 worker-matrix)**:首次 `nacp-v1.4.0` tag 触发 + dogfood 消费者验证;若 pre-phase 内完成最好,若未完成,由 worker-matrix 阶段在某 owner-决定 milestone 前触发
+  - **Optional first publish + dogfood(可 parallel 到 worker-matrix)**:首次 `nacp-v1.4.0` tag 触发 + dogfood 消费者验证;当前 bundle 形状是 `nacp-core@1.4.0` + `nacp-session@1.3.0`。若 pre-phase 内完成最好,若未完成,由 worker-matrix 阶段在某 owner-决定 milestone 前触发
   - **不包含**:runtime 行为(W0)、发布 beta / canary tag、发布其他 9 个包、npm 公共 registry、nacp 1.3.0 补发
 
 ### 1.2 关键术语对齐
@@ -102,7 +103,7 @@ v0.2 修正:
 | 术语 | 定义 | 备注 |
 |---|---|---|
 | publishConfig | `package.json` 内的 field,指向特定 registry + access 模式 | GitHub Packages 需要这个 |
-| `nacp-v*` tag | 专属 git tag 格式,形如 `nacp-v1.4.0`,只为 NACP 发布触发 | 与其他 tag 正交 |
+| `nacp-v*` tag | 专属 git tag 格式,形如 `nacp-v1.4.0`,只为 NACP bundle 发布触发；tag 版本锚定 `nacp-core` | 与其他 tag 正交 |
 | scope | npm scope,格式 `@<name>/pkg`(如 `@nano-agent/nacp-core`) | GitHub Packages 要求 scope |
 | restricted access | npm / GitHub Packages 的 private 模式,仅授权 user 可 install | 初版选此 |
 | dogfood consumer | 一个仅用于证明发布可用性的消费者项目(一次性) | W2 验证手段 |
@@ -181,7 +182,7 @@ v0.2 修正:
 | Workflow input parameter | `workflow_dispatch.inputs` | 不用(只 tag-trigger) | 未来可加 `dry-run / pre-release / skip-tests` 入参 |
 | Package 可发布列表 | workflow 里 `matrix.package` | `[nacp-core, nacp-session]` 2 个 | 未来若新协议包入场,append;但 Tier B 永不加 |
 | `.npmrc` scope 映射 | dogfood 消费者示例 | 示例用 `@nano-agent:registry=...` | 其他 consumers 按此模板配置 |
-| Version consistency check | workflow step | 断言 package.json version 与 tag 一致 | 未来可加多种检查(`CHANGELOG head` 匹配等) |
+| Version consistency check | workflow step | 断言 `tag == nacp-core.version`，并记录同 run 内发布的 `nacp-session.version` | 未来可加多种检查(`CHANGELOG head` 匹配等) |
 
 ### 3.3 完全解耦点(必须独立)
 
@@ -205,7 +206,7 @@ v0.2 修正:
 - **聚合形式**:
   - 代码:`.github/workflows/publish-nacp.yml`(单一 workflow)
   - 文档:`docs/design/pre-worker-matrix/W2-publishing-discipline.md`(专门的纪律 spec)
-  - 版本:nacp-core + nacp-session 同步 bump,同一 tag 同时发布
+  - 版本:同一 tag 同时发布 2 个包，但 tag 版本锚定 `nacp-core`; `nacp-session` 可在同一 run 内保持自己的 semver
 - **为什么不能分散**:两个 NACP 包在语义上严格绑定(nacp-session 依赖 nacp-core);发布也应同步避免 consumer resolve 到 mismatched 版本
 
 ---
@@ -282,9 +283,9 @@ v0.2 修正:
   - steps: checkout → setup-node(+ `NODE_AUTH_TOKEN=GITHUB_TOKEN`)→ setup-pnpm → install → build → version-consistency-check → publish nacp-core → publish nacp-session
 - **[S5]** Repository secret 确认(`GITHUB_TOKEN` 自动提供;若用 PAT 则手工创建)
 - **[S6]** Repository settings → Actions permissions(write packages)
-- **[S7]** 首次发布:手动创建 git tag `nacp-v1.4.0`(在 W0+W1 代码全 merge 之后);workflow 触发;验证 GitHub Packages registry 上能看到
+- **[S7]** 首次发布路径冻结:手动创建 git tag `nacp-v1.4.0` 时，workflow 将以 bundle 方式发布 `@<scope>/nacp-core@1.4.0` + `@<scope>/nacp-session@1.3.0`；若 owner 不在 pre-phase 开窗，closure 必须诚实标注 deferred
 - **[S8]** Dogfood 消费者 `dogfood/nacp-consume-test/`:
-  - 独立 `package.json` import `@<scope>/nacp-core@1.4.0` + `@<scope>/nacp-session@1.4.0`
+  - 独立 `package.json` import `@<scope>/nacp-core@1.4.0` + `@<scope>/nacp-session@1.3.0`
   - 独立 `.npmrc` 配 GitHub Packages registry + `always-auth=true`
   - 独立 `pnpm-lock.yaml`(不加入主 workspace)
   - 最小 build + 最小 test(如 import `validateEnvelope` + 构造一个 envelope pass)
@@ -317,7 +318,7 @@ v0.2 修正:
 
 | 项目 | 判定 | 理由 |
 |---|---|---|
-| 首发 version 是否用 1.4.0 还是重起 0.1.0 | **1.4.0** | 与 in-repo ship 版本一致;避免"发布号与代码版本号错位" |
+| 首发 bundle tag 是否用 1.4.0 还是重起 0.1.0 | **1.4.0** | 与 `nacp-core` in-repo shipped version 一致;避免 bundle tag 与 core 版本号错位 |
 | GitHub Packages scope 是 `@nano-agent` 还是 repo owner 名 | **Q2 待 owner 确认** | 取决于 GitHub org 实际名;本 design 暂用 `@nano-agent` 占位符 |
 | workflow 是否发布时跑完整 test | **in-scope(但只跑 nacp-core/session 的 unit test)** | 快速确认 dist 可用;不跑 root/cross tests(那是 CI 职责) |
 | `access: "restricted"` vs `"public"` | **in-scope restricted** | 第一版保守;owner 决策转 public 后改 1 个字段即可 |
@@ -425,7 +426,7 @@ v0.2 修正:
 | **P1** | **mandatory** | `publishConfig` 加入 2 package.json | GitHub Packages registry + restricted | ✅ 2 个 `package.json` 有 publishConfig;本地 `pnpm publish --dry-run` 能识别 target |
 | **P2** | **mandatory** | `.github/workflows/publish-nacp.yml` 新建 | tag-triggered publish workflow | ✅ YAML 可被 GitHub Actions 识别;`nacp-v*` tag push 触发 |
 | **P3** | **mandatory** | Repository secrets + permissions | `GITHUB_TOKEN` + `packages: write` | ✅ workflow 有 permissions block;actions enabled |
-| **P4** | **optional (parallel OK)** | 首次发布 `nacp-v1.4.0` | 真实 publish | ✅ 若在 pre-phase 完成:GitHub Packages registry 可见 2 个包;**若延到 worker-matrix,pre-phase 不 block** |
+| **P4** | **optional (parallel OK)** | 首次发布 `nacp-v1.4.0` | 真实 publish | ✅ 若在 pre-phase 完成:GitHub Packages registry 可见 `nacp-core@1.4.0` + `nacp-session@1.3.0`;**若延到 worker-matrix,pre-phase 不 block** |
 | **P5** | **optional (parallel OK)** | Dogfood 消费者 | 独立 consumer 证明可 install | ✅ 若做:`dogfood/nacp-consume-test/` build + test 成功;**若延后,pre-phase 不 block** |
 | **P6** | **mandatory** | Publishing discipline doc | 纪律文档 | ✅ `W2-publishing-discipline.md` owner-approved;明确 workspace:* interim → published version 切换规则 |
 | **P7** | **mandatory** | W2 closure memo | 归档证据 | ✅ `W2-closure.md` 含 skeleton 就绪证据 + 首发状态(完成 OR 延后说明) |
@@ -508,10 +509,7 @@ v0.2 修正:
               echo "::error::Tag $TAG_VERSION != nacp-core package.json $CORE_VERSION"
               exit 1
             fi
-            if [ "$TAG_VERSION" != "$SESSION_VERSION" ]; then
-              echo "::error::Tag $TAG_VERSION != nacp-session package.json $SESSION_VERSION"
-              exit 1
-            fi
+            echo "Publishing bundle: nacp-core@$CORE_VERSION + nacp-session@$SESSION_VERSION"
 
         - name: Publish nacp-core
           run: pnpm --filter @nano-agent/nacp-core publish --no-git-checks --access=restricted
@@ -527,7 +525,7 @@ v0.2 修正:
   - Version mismatch → step `Version consistency check` fail-fast,不到发布步骤
   - Unit test fail → step `Test ...` fail,不到发布
   - `--no-git-checks` 必要(pnpm publish 默认要求 clean git state,但 tag workflow 下 HEAD 就是 tag commit,不 dirty;加 flag 防跨平台差异)
-- **一句话收口目标**:✅ **`nacp-v1.4.0` tag push 后,workflow 自动跑完 8 个 step 并在 GitHub Packages 上发布 2 个包**
+- **一句话收口目标**:✅ **`nacp-v1.4.0` tag push 后,workflow 自动跑完 8 个 step，并以 `nacp-core@1.4.0` 为 bundle anchor 发布 2 个包**
 
 #### P3: Repository secrets + permissions
 
@@ -539,7 +537,7 @@ v0.2 修正:
 
 #### P4: 首次发布 `nacp-v1.4.0`
 
-- **前置条件**:W0 shipped 代码 ready;`package.json` version = 1.4.0;CHANGELOG 1.4.0 entry landed
+- **前置条件**:W0 shipped 代码 ready;`nacp-core.package.json.version = 1.4.0`;`nacp-session.package.json.version = 1.3.0`;对应 CHANGELOG entry 已 landed
 - **执行步骤**:
   1. `git tag nacp-v1.4.0`
   2. `git push origin nacp-v1.4.0`
@@ -550,7 +548,7 @@ v0.2 修正:
   - GitHub Packages registry 上 2 包可见
   - 首发 tag 与 workflow run 的 URL 归档进 W2 closure
 - **边界情况**:若 workflow 失败,debug 后修 code / workflow → 删除 tag(`git tag -d` + `git push origin :nacp-v1.4.0`)→ 重新 tag 同一 version → 重跑
-- **一句话收口目标**:✅ **`@nano-agent/nacp-core@1.4.0` + `@nano-agent/nacp-session@1.4.0` 在 GitHub Packages 可见**
+- **一句话收口目标**:✅ **`@nano-agent/nacp-core@1.4.0` + `@nano-agent/nacp-session@1.3.0` 在 GitHub Packages 可见**
 
 #### P5: Dogfood 消费者 `dogfood/nacp-consume-test/`
 
@@ -562,9 +560,8 @@ v0.2 修正:
       ├── .npmrc
       ├── tsconfig.json
       ├── src/
-      │   └── consume.ts
-      └── test/
-          └── import-smoke.test.ts
+      │   └── smoke.ts
+      └── README.md
   ```
 - **`package.json`**:
   ```json
@@ -575,16 +572,15 @@ v0.2 修正:
     "type": "module",
     "dependencies": {
       "@nano-agent/nacp-core": "1.4.0",
-      "@nano-agent/nacp-session": "1.4.0"
+      "@nano-agent/nacp-session": "1.3.0"
     },
     "devDependencies": {
       "typescript": "^5.6.0",
-      "vitest": "^2.1.0",
       "zod": "^3.24.0"
     },
     "scripts": {
       "build": "tsc",
-      "test": "vitest run"
+      "smoke": "node dist/smoke.js"
     }
   }
   ```
@@ -594,38 +590,27 @@ v0.2 修正:
   //npm.pkg.github.com/:_authToken=${NPM_AUTH_TOKEN}
   always-auth=true
   ```
-- **`src/consume.ts`**:
+- **`src/smoke.ts`**:
   ```ts
-  import { validateEnvelope, NACP_VERSION, NACP_CORE_TYPE_DIRECTION_MATRIX } from "@nano-agent/nacp-core";
-  import { validateSessionFrame, NACP_SESSION_VERSION } from "@nano-agent/nacp-session";
-  
-  export function probe() {
-    console.log("nacp-core version:", NACP_VERSION);
-    console.log("nacp-session version:", NACP_SESSION_VERSION);
-    console.log("matrix type count:", Object.keys(NACP_CORE_TYPE_DIRECTION_MATRIX).length);
-  }
-  ```
-- **`test/import-smoke.test.ts`**:
-  ```ts
-  import { describe, it, expect } from "vitest";
-  import { NACP_VERSION } from "@nano-agent/nacp-core";
-  import { NACP_SESSION_VERSION } from "@nano-agent/nacp-session";
-  
-  describe("dogfood import smoke", () => {
-    it("nacp-core 1.4.0 from GitHub Packages", () => {
-      expect(NACP_VERSION).toBe("1.4.0");
-    });
-    it("nacp-session 1.4.0 from GitHub Packages", () => {
-      expect(NACP_SESSION_VERSION).toBe("1.4.0");
-    });
-  });
-  ```
+   import { NACP_VERSION, NACP_CORE_TYPE_DIRECTION_MATRIX, validateEnvelope } from "@nano-agent/nacp-core";
+   import { NACP_SESSION_VERSION, validateSessionFrame } from "@nano-agent/nacp-session";
+
+   if (typeof validateEnvelope !== "function" || typeof validateSessionFrame !== "function") {
+     throw new Error("public validators are not available");
+   }
+
+   console.log(JSON.stringify({
+     nacpCoreVersion: NACP_VERSION,
+     nacpSessionVersion: NACP_SESSION_VERSION,
+     coreTypeCount: Object.keys(NACP_CORE_TYPE_DIRECTION_MATRIX).length,
+   }, null, 2));
+   ```
 - **执行步骤**:
   1. owner 或 CI 设置 env `NPM_AUTH_TOKEN`(PAT with `read:packages`)
   2. `cd dogfood/nacp-consume-test && pnpm install --ignore-workspace`
-  3. `pnpm build && pnpm test`
-  4. 所有 step 成功 → W2 closure memo 归档 build log
-- **一句话收口目标**:✅ **dogfood 消费者从 GitHub Packages install + build + test 成功,version 断言返回 1.4.0**
+   3. `pnpm build && pnpm smoke`
+   4. 所有 step 成功 → W2 closure memo 归档 build/smoke log
+- **一句话收口目标**:✅ **dogfood 消费者从 GitHub Packages install + build + smoke 成功,版本输出为 `1.4.0 / 1.3.0`**
 
 #### P6: Publishing discipline doc
 
@@ -710,12 +695,12 @@ W2 是 **"最小必要 DevOps 层"**:
 - **覆盖范围**:仅 2 个 NACP 包的发布;不涉及 runtime 行为
 - **耦合形态**:
   - 与 W0 强耦合(发布对象就是 W0 的 consolidated nacp-core 1.4.0)
-  - 与 W1 软耦合(首发内容包含 W1 的新 symbol,但 W2 流水线逻辑不依赖 W1)
+  - 与 W1 软耦合(W1 RFC-only;W2 只消费其“不新增 publish symbol”的结论)
   - 与 W4 解耦(W4 workers 在 W2 完成后才能 import from GitHub Packages,但 W2 不需要等 W4)
 - **预期代码量级**:
   - `publish-nacp.yml` ~60-80 行 YAML
   - 2 个 `package.json` 修改 ~6 行
-  - `dogfood/nacp-consume-test/` ~80-100 行(package.json + tsconfig + 1 src + 1 test + .npmrc)
+  - `dogfood/nacp-consume-test/` ~80-100 行(package.json + tsconfig + 1 src + README + .npmrc)
   - discipline doc ~300-400 行
   - closure memo ~50 行
 - **预期复杂度**:低 — 几乎纯 DevOps;零 runtime 风险
@@ -739,14 +724,14 @@ W2 是 **"最小必要 DevOps 层"**:
   - §6.1 取舍 3(tag format `nacp-v*`)是否接受?
   - **Q2**:GitHub org / scope 实际名(目前占位 `@nano-agent`)
   - §5.2 [O9] 是否接受保持 restricted(如 owner 已决策转 public,提前告知)
-- [ ] **关联 action-plan**:`docs/action-plan/pre-worker-matrix/D3-publishing-pipeline.md`(7 个 P1-P7 的执行批次化)
+- [ ] **关联 action-plan**:`docs/action-plan/pre-worker-matrix/W2-publishing-pipeline.md`(7 个 P1-P7 的执行批次化)
 - [ ] **关联 policy doc 拆出**:`docs/design/pre-worker-matrix/W2-publishing-discipline.md`(本 design owner-approve 后,P6 产出作为独立 policy doc,charter §14.1 有 placeholder)
 - [ ] **依赖下游**:
   - W4 的 `workers/*/package.json` 写法等着 W2 发布完成(W4 消费 `@<scope>/nacp-core@1.4.0`)
 - [ ] **待深入调查的子问题**:
-  - repo 是否已有 `.gitignore` 保护 `dogfood/` 的 node_modules?
-  - pnpm workspace 是否已有 exclude pattern?需加 `!dogfood`?
-  - 现有 `packages/nacp-core/package.json` 是否有 `private: true` 字段需先删?
+  - 真实首发是否在 owner-aligned namespace / 仓库内执行?
+  - 是否需要在第一次真实发布前补 dogfood published-path lockfile?
+  - `@nano-agent/*` scope 是否在 worker-matrix 前切到最终 owner namespace?
 
 ---
 

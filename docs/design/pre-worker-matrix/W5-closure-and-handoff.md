@@ -7,8 +7,8 @@
 > - Charter: `docs/plan-pre-worker-matrix.md` §4.1 F / §7.6
 > - 前置 design(全部消费对象):
 >   - `W0-nacp-consolidation.md`(**v0.2 narrower** — BoundedEvalSink class 不搬;hooks wire-shape only)
->   - `W1-cross-worker-protocols.md`(**v0.3 RFC-only**)
->   - `W2-publishing-pipeline.md`(**v0.2 parallel** — skeleton 必做,首发/dogfood optional)
+>   - `W1-cross-worker-protocols.md`(**v0.4 executed RFC-only**)
+>   - `W2-publishing-pipeline.md`(**v0.3 executed parallel** — skeleton 已落地,首发/dogfood optional)
 >   - `W3-absorption-blueprint-and-dryrun.md`(**v0.2 map + 2-3 blueprint + optional capability-runtime dry-run**)
 >   - `W4-workers-scaffolding.md`(**v0.2 1 real(agent-core)+ 3 dry-run**)
 > - 消费对象(W5 触发其 rewrite):`docs/plan-worker-matrix.md`(currently deprecated)
@@ -248,7 +248,7 @@ W5 的全部产出都是**文档 + 元文档更新**:
   - `docs/issue/pre-worker-matrix/W3-closure.md`
   - `docs/issue/pre-worker-matrix/W4-closure.md`
 - **[X2 v0.2]** **横向一致性检查**(5 条对角线,v0.2 内容微调以匹配 narrower scope):
-  - (a)W0 吸收的 evidence vocabulary Zod schema 与 W1 **RFC 文档**里描述的 wrapping pattern shape 是否一致?(v0.2 — W1 无 helper 代码;检查 RFC 描述的 shape 是否引用 W0 shipped 的 EvidenceAnchorSchema)
+  - (a)W0 吸收的 evidence vocabulary Zod schema 与 W1 **RFC 文档 + W1 closure**里描述的 wrapping pattern shape 是否一致?(v0.2 — W1 无 helper 代码;检查 RFC 描述的 shape 是否引用 W0 shipped 的 EvidenceAnchorSchema)
   - (b v0.2)若 W2 已完成首发:`@<scope>/nacp-core@1.4.0` 是否包含 W0 所有 shipped 新 symbol(不再期望包含 W1 的 — W1 RFC-only 无代码);**若 W2 未完成首发,跳过此检查,改查 publishConfig + workflow 就绪状态**
   - (c v0.2)**W3 absorption map + 2-3 代表 blueprint** 里引用的 NACP import path 是否与 W0 实际 shipped 路径一致?(不再是 10 份 blueprint)
   - (d v0.2)W4 的 agent-core 是否能:(i) 若 W2 已发首发,从 GitHub Packages resolve `@<scope>/nacp-core@1.4.0`;(ii) 若未发,用 `workspace:*` resolve 成功;**两者任一 pass 即可**
@@ -411,7 +411,7 @@ W5 的全部产出都是**文档 + 元文档更新**:
   - **检查**:W1 `evidence-envelope-forwarding.md` RFC 中引用的 evidence payload / anchor / `audit.record` wrapping 语义,是否与 W0 shipped 的 `packages/nacp-core/src/evidence/vocabulary.ts` 一致
   - **执行**:对照 RFC 文本与 W0 shipped code,确认 W1 没有重新定义第二套 evidence record shape
   - **Pass 条件**:RFC 只引用 W0 的 discriminated union / anchor 语义,不存在私有字段集或平行 vocabulary
-  - **Evidence 附录**:W0 code anchor + W1 RFC 引用段落
+  - **Evidence 附录**:W0 code anchor + W1 RFC 引用段落 + `docs/issue/pre-worker-matrix/W1-closure.md`
 
   **(b)W0 ↔ W2 — Published Symbol / Skeleton Completeness**
   - **检查**:若 W2 已首发,发布的 `@<scope>/nacp-core@1.4.0` 是否包含 W0 shipped 新 symbol;若 W2 未首发,则检查 publishConfig + workflow + discipline 是否齐备

@@ -1,0 +1,91 @@
+name: Publish NACP
+
+on:
+  push:
+    tags:
+      - "nacp-v*.*.*"
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          registry-url: https://npm.pkg.github.com
+          scope: "@nano-agent"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify publish bundle versions
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TAG_VERSION="${GITHUB_REF#refs/tags/nacp-v}"
+          CORE_VERSION="$(node --input-type=module -e "import fs from 'node:fs'; console.log(JSON.parse(fs.readFileSync('packages/nacp-core/package.json', 'utf8')).version)")"
+          SESSION_VERSION="$(node --input-type=module -e "import fs from 'node:fs'; console.log(JSON.parse(fs.readFileSync('packages/nacp-session/package.json', 'utf8')).version)")"
+          CORE_NAME="$(node --input-type=module -e "import fs from 'node:fs'; console.log(JSON.parse(fs.readFileSync('packages/nacp-core/package.json', 'utf8')).name)")"
+          SESSION_NAME="$(node --input-type=module -e "import fs from 'node:fs'; console.log(JSON.parse(fs.readFileSync('packages/nacp-session/package.json', 'utf8')).name)")"
+          CORE_SCOPE="${CORE_NAME%%/*}"
+          SESSION_SCOPE="${SESSION_NAME%%/*}"
+
+          if [ "${TAG_VERSION}" != "${CORE_VERSION}" ]; then
+            echo "::error::Tag ${TAG_VERSION} must match nacp-core version ${CORE_VERSION}"
+            exit 1
+          fi
+
+          if [ "${CORE_SCOPE}" != "${SESSION_SCOPE}" ]; then
+            echo "::error::Scope mismatch: ${CORE_NAME} vs ${SESSION_NAME}"
+            exit 1
+          fi
+
+          # W2 discipline §3.3: nacp-session follows its own semver.
+          # Intentional asymmetric version gate — session version is NOT required to match the bundle tag.
+          # Emit a non-fatal warning so the divergence is visible on every publish run.
+          if [ "${SESSION_VERSION}" != "${CORE_VERSION}" ]; then
+            echo "::warning::nacp-session version (${SESSION_VERSION}) differs from bundle tag / nacp-core (${TAG_VERSION}). Verify this is intentional per W2 discipline §3.3."
+          fi
+
+          echo "Publishing bundle ${TAG_VERSION}: ${CORE_NAME}@${CORE_VERSION} + ${SESSION_NAME}@${SESSION_VERSION}"
+
+      - name: Typecheck NACP packages
+        run: |
+          pnpm --filter @nano-agent/nacp-core typecheck
+          pnpm --filter @nano-agent/nacp-session typecheck
+
+      - name: Build NACP packages
+        run: |
+          pnpm --filter @nano-agent/nacp-core build
+          pnpm --filter @nano-agent/nacp-session build
+
+      - name: Test NACP packages
+        run: |
+          pnpm --filter @nano-agent/nacp-core test
+          pnpm --filter @nano-agent/nacp-session test
+
+      - name: Publish nacp-core
+        run: pnpm --filter @nano-agent/nacp-core publish --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish nacp-session
+        run: pnpm --filter @nano-agent/nacp-session publish --no-git-checks
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

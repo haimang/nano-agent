@@ -1,2 +1,5 @@
 packages:
   - "packages/*"
+
+# W2 dogfood consumer must stay outside the workspace so installs prove
+# published/tarball paths instead of resolving through workspace links.

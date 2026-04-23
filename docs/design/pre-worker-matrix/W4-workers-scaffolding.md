@@ -539,10 +539,10 @@ owner 的 `workers/` 顶级目录决策(`plan-pre-worker-matrix.md` §1.2)要求
   ```jsonc
   {
     // ... 同上 ...
-    "dependencies": {
-      "@nano-agent/nacp-core": "1.4.0",
-      "@nano-agent/nacp-session": "1.4.0"
-    },
+      "dependencies": {
+        "@nano-agent/nacp-core": "1.4.0",
+        "@nano-agent/nacp-session": "1.3.0"
+      },
     "devDependencies": {
       "@cloudflare/workers-types": "^4.0.0",
       "typescript": "^5.6.0",
