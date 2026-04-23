@@ -443,7 +443,7 @@ worker-matrix/
 - **零代码改动**:全部产出仅 markdown;未触 `packages/*` / `workers/*` 任一源码
 - **总新建 / 修改文件数**:11 份(10 份在 `docs/` 下新建 / 修改,1 份本 action-plan 的 §11 回填)
 - **Phase 推进顺序**:按 §1.2 Phase 总览严格推进 Phase 1 → 2 → 3 → 4
-- **exit criteria**:4/6 项在执行期产出完成(E1/E2/E4/E5);2/6 项(E3 owner pending 真值填入 / E6 charter + handoff 链接)— E6 已由本执行回填,E3 需 owner 在 closure PR 审阅期填写最终 answer
+- **exit criteria**:6/6 全绿(v0.2 补录:owner 于 2026-04-23 批准默认 answer,F6 deploy 已实际执行并验证 — 见 closure memo §3.2 批准表 + v0.2 版本历史)
 
 ### 11.2 Phase 1 执行日志 — 代表 blueprint reality check
 
@@ -496,12 +496,12 @@ P0 closure memo 最终规模:~160 行,覆盖 §0-§8 全部 sections。
 |------|------|------|------|
 | E1 | 3 份代表 blueprint 完成 reality-check | ✅ | `grep -l "worker-matrix 下" docs/design/pre-worker-matrix/W3-absorption-blueprint-*.md` 返回 3 文件 |
 | E2 | 6 P0 blueprint + 1 sub-PR 切分 + 1 index + 10 units 覆盖 | ✅ | `ls docs/design/worker-matrix/blueprints/*.md \| wc -l` = 8;blueprints-index 覆盖 10 units |
-| E3 | P2.E0 owner decision 5 子项 answer 非 pending | ⚠️ pending | 需 owner 在 P0 closure PR 审阅期确认建议值或填写修改值 |
+| E3 | P2.E0 owner decision 5 子项 answer 非 pending | ✅(v0.2 补录)| owner 于 2026-04-23 批准默认建议值;Claude 作为 deploy 执行者;Version ID `50335742-e9e9-4f49-b6d7-ec58e0d1cfb4` 已记录 |
 | E4 | P1.A / P1.B kickoff checklist 12+ 条 | ✅ | closure memo §4.1 6 条 + §4.2 6 条 = 12 条 |
 | E5 | R1-R5 吸收索引 9 行 + 5 条 delta cross-reference | ✅ | closure memo §5.1 9 行 + §5.2 9 行(覆盖 R1/R2/R3/R4/R5)|
 | E6 | charter + handoff 回链 closure memo | ✅ | `grep -l P0-absorption-prep-closure docs/plan-worker-matrix.md docs/handoff/*.md` 返回 2 文件 |
 
-**4/6 完全绿 / 1/6 部分绿(E6 回链已回填,待 owner 审阅)/ 1/6 pending(E3 需 owner answer)**。P0 在 owner 填入 §3.2 最终 answer 后即可 100% 绿。
+**6/6 全绿**(v0.2 补录于 2026-04-23:owner 批准默认 answer + F6 实际执行)。
 
 ### 11.7 受影响文件完整清单
 

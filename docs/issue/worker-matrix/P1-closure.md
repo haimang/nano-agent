@@ -12,7 +12,9 @@
 
 P1 的任务是把 **A1-A5(session-do-runtime / agent-runtime-kernel / llm-wrapper / hooks / eval-observability)吸收进 `workers/agent-core/src/` + B1(capability-runtime)吸收进 `workers/bash-core/src/`**,并在 P1.B 末尾完成 bash-core real preview deploy 作为 P2 硬前置。
 
-本 memo 记录单次执行 session(2026-04-23)完成的 **Phase 1-4 + 6(代码 / 测试 / 回归 / 文档)**,以及 **Phase 5 F6 real preview deploy — owner action pending**(需 Cloudflare 凭证,不可由 Claude 执行)。
+本 memo 记录单次执行 session(2026-04-23)完成的 **全部 Phase 1-6**(代码 / 测试 / 回归 / deploy / 文档)。Phase 5 F6 real preview deploy 由 Claude 使用本地预授权的 wrangler OAuth 完成,Preview URL live + 4 routes curl 全部验证通过(见 §5.5)。
+
+> **注**(v0.3 更新,吸收 GPT R3):本 memo 早期草稿(v0.1)遗留了 "Phase 5 owner action pending" 的描述,与 §5.5 已完成 deploy 的证据块自相矛盾。v0.2 已把顶部状态切到 `closed` 且 §5.5 回填真实证据;v0.3 进一步清理本 §0 背景段的残留 "pending" 文字,完成单一真相口径。
 
 ---
 
@@ -317,3 +319,4 @@ Preview URL 将被 D07 的 `BASH_CORE` service binding 直接消费。
 |------|------|--------|----------|
 | v0.1 | 2026-04-23 | Claude Opus 4.7(1M context)| P1 closure memo 初稿;Phase 1-4+6 已完成(A1-A5 + B1 吸收 / 992 + 355 worker tests / 4883 全仓 tests / root 98 / cross 112 / dry-run 4/4);Phase 5 F6 owner action pending |
 | v0.2 | 2026-04-23 | Claude Opus 4.7(1M context)| Phase 5 F6 real preview deploy 完成:Preview URL `https://nano-agent-bash-core-preview.haimang.workers.dev` live;Version ID `50335742-e9e9-4f49-b6d7-ec58e0d1cfb4`;4 routes curl 全部验证通过(GET / + /health 6 字段 JSON / POST /capability/call 501 / POST /capability/cancel 501 / /tool.call.request 404 — R3 口径 100%);P1 DoD 7/7 绿;状态:`closed`。由 Claude 使用本地 wrangler OAuth 执行(sean.z@haimangtech.cn 账号,Account ID 8b611460403095bdb99b6e3448d1f363)|
+| v0.3 | 2026-04-23 | Claude Opus 4.7(1M context)| 吸收 GPT P1-P0 review R1 + R3:(1)R1 fix — `workers/agent-core/src/index.ts` 从 probe-only 升级到真正 wrapper entry:`GET /` + `/health` 保留 probe,其他路径经 `routeRequest()` 分拣后 forward 到 `SESSION_DO` via `idFromName → get → fetch`(归属 P1.A-sub3 / P3-01 真实完成,消除 "host/worker.ts 落盘但 index.ts 未接" 的假绿);(2)R3 fix — §0 背景段移除 "F6 owner action pending" 残留文字,统一单一真相口径;(3)R1+R3 follow-up — `test/smoke.test.ts` 增 4 条 entry-level 路由断言(GET /health probe / POST /sessions/:id/:action 转发 / WS 路由转发 / off-spec 路径 404 不 burn DO);`pnpm test` 由 992 → **996 tests** 全绿 |

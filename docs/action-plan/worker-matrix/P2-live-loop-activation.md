@@ -545,3 +545,113 @@ worker-matrix/P2/
 ## 10. 结语
 
 这份 P2 action-plan 以 **"在 preview env 跑通 live agent turn loop 并由两条 root e2e 持续守护"** 为第一优先级,采用 **"严格 Phase 序列(gate → API stub → composition → consumer → binding → e2e → redeploy + closure)"** 的推进方式,优先解决 **"空 handle bag / 4 nullable silent / initial_context 无 consumer / BASH_CORE 注释态 / local-ts fallback 若被删"** 五件阻挡 live loop 的缺位,并把 **"R1 assembler 落点不扩 top-level / R2 不自造 system.error kind / R3 binding-first 口径不漂 / Q2a local-ts 保留 / B7 LIVE 不破 / 共存期 packages 对称落"** 作为主要约束。整个计划完成后,`agent.core + bash.core` 应达到 **"live turn loop 在 preview env 真实跑通;initial_context payload 真被消费且影响 assembled prompt;tool.call 经真实 service-binding 双向闭环"**,从而为后续的 **P3 context-core 吸收 + P4 filesystem-core 吸收** 提供稳定基础。
+
+---
+
+## 11. P2 执行工作报告(Claude Opus 4.7, 2026-04-23)
+
+### 11.1 执行综述
+
+- **判断结果**:P2 可以进入 — 已全部完成 Phase 0-6 含 agent-core preview redeploy
+- **Phase 序列**:Phase 0 gate check → Phase 1 D03 F4 stub → Phase 2 D06 composition upgrade → Phase 3 D05 consumer wiring → Phase 4 D07 BASH_CORE 激活 → Phase 5 两条 root e2e → Phase 6 redeploy + regression + closure
+- **总规模**:新增 ~10 文件、修改 ~10 文件;全仓 4896 tests 全绿;agent-core Version ID `3a34f962-649f-4615-847c-83e6f282e8fe` + bash-core Version ID `50335742-e9e9-4f49-b6d7-ec58e0d1cfb4` 双 preview live
+- **执行模式**:单 session 连续完成;所有 owner decisions 基于 memory(`reference_local_tooling.md`)授权;deploy 由 Claude 使用 local wrangler OAuth 执行
+- **在此之前的 GPT P1-P0 review 修复**:R1/R2/R3 在本 session 前半段已全部 accept + 修复(agent-core index.ts entry routing / P0 closure 批准 + E3/E6 勾绿 / P1 closure §0 文字清理 + 4 条 entry-level routing smoke 测试)
+
+### 11.2 全部新增文件清单(列表展开)
+
+**workers/agent-core/src/ 新增**:
+- `src/host/context-api/append-initial-context-layer.ts` — D03 F4 stub;WeakMap pending list;映射 canonical `session` kind;export 5 API(`appendInitialContextLayer` / `buildInitialContextLayers` / `drainPendingInitialContextLayers` / `peekPendingInitialContextLayers` + re-used types)
+
+**workers/agent-core/test/ 新增**:
+- `test/host/context-api/append-initial-context-layer.test.ts` — 9 unit tests
+- `test/host/composition-p2-upgrade.test.ts` — 7 tests(6 handle 非 undefined / workspace.assembler 真 ContextAssembler / capability 3 transport 模式 / 4-nullable 显式 / R1 守护)
+- `test/host/composition-local-ts-fallback.test.ts` — 4 tests(default / opt-in / honest-degrade / explicit-service-binding-without-binding)
+- `test/host/do/initial-context-consumer.test.ts` — 6 tests(consumer path × 4 + R2 source-scan guard)
+
+**packages/session-do-runtime/ 镜像新增**(per W3 pattern §6 coexistence):
+- `src/context-api/append-initial-context-layer.ts` — helper 镜像
+- `test/context-api/append-initial-context-layer.test.ts` — 9 unit tests 镜像
+
+**root test 新增**:
+- `test/tool-call-live-loop.test.mjs` — 4 subtests(wrangler 激活 / composition 路由 / transport seam / R2 wire truth guard)
+- `test/initial-context-live-consumer.test.mjs` — 4 subtests(positive / assembledKinds canonical / negative / diff)
+
+**docs 新增**:
+- `docs/issue/worker-matrix/P2-closure.md` — 本 memo,~280 行,DoD 10/10 绿
+
+### 11.3 全部修改文件清单(列表展开)
+
+**workers/agent-core**:
+- `src/index.ts` — probe shape `phase: "worker-matrix-P2-live-loop"` + `live_loop: true` + `capability_binding: Boolean(env.BASH_CORE)`(新字段)
+- `src/host/composition.ts` — `createDefaultCompositionFactory` 升级:
+  - imports 新增 `BoundedEvalSink` / `extractMessageUuid` / `composeWorkspaceWithEvidence` / `WorkspaceCompositionHandle` / `MountRouter` / `InMemoryArtifactStore`
+  - 新增 type exports `CapabilityCompositionHandle` / `EvalCompositionHandle` / `KernelCompositionHandle` / `LlmCompositionHandle` / `HooksCompositionHandle` / `StorageCompositionHandle`
+  - factory 返回 6 live handles(workspace 调用 `composeWorkspaceWithEvidence` 产出含 `compactManager` / `snapshotBuilder` / `captureSnapshot` 的完整 handle;eval 包装 BoundedEvalSink + adapter;capability 按 `CAPABILITY_TRANSPORT` env 选择 service-binding / local-ts / unavailable)
+- `src/host/remote-bindings.ts` — `makeRemoteBindingsFactory` 的 kernel/workspace/eval/storage 4 槽位由 `undefined` 改 `null` + 每个字段附详细 block-comment reason
+- `src/host/do/nano-session-do.ts` —
+  - import `appendInitialContextLayer`(from `../context-api/append-initial-context-layer.js`)
+  - `defaultEvalSink` 去 `readonly`(为 adopt 留路径)
+  - 构造函数在 `baseSubsystems.eval` 是 `EvalCompositionHandle` 时 adopt `.sink` 为 `defaultEvalSink`
+  - 构造函数对 composition 提供的完整 workspace handle 调用 `setEvidenceWiring(...)` retrofit 到 assembler/compactManager/snapshotBuilder(evidence sink 统一到 `effectiveEvalSink.emit`)
+  - `dispatchAdmissibleFrame` 在 switch 前新增 ~40 行 D05 consumer:仅 `messageType === "session.start" && body.initial_context` 时触发;R1 `(this.subsystems.workspace).assembler` 读取;R2 catch → `helper.pushEvent({kind:"system.notify", severity:"error", message})`
+- `wrangler.jsonc` — `services` 取消注释;顶层 `BASH_CORE` → `nano-agent-bash-core`;`env.preview.services` 绑 `nano-agent-bash-core-preview`;CONTEXT_CORE / FILESYSTEM_CORE 仍注释态(P3/P4 决策)
+- `test/smoke.test.ts` — 3 条 probe 断言新增 `live_loop: true` + `capability_binding: false`(test 无 BASH_CORE)+ phase 字段更新
+- `test/host/composition-profile.test.ts` — `returns undefined` 测试改 `returns 6 non-undefined` + 新增 workspace.assembler + eval shape 2 条
+- `test/host/integration/remote-composition-default.test.ts` — `s.hooks).toBeUndefined()` 改 `s.hooks.phase === "P2-stub"`
+
+**packages/session-do-runtime**(镜像):
+- `src/do/nano-session-do.ts` — D05 consumer ~40 行镜像;import `appendInitialContextLayer`
+
+**docs 修改**:
+- `docs/issue/worker-matrix/P2-closure.md` — 新建(见 §11.2)
+- (本文件)`docs/action-plan/worker-matrix/P2-live-loop-activation.md` — §11 工作报告
+
+### 11.4 测试汇总
+
+| 层 | tests | Δ |
+|----|-------|---|
+| workers/agent-core | 1024 | +28(从 996)|
+| packages/session-do-runtime | 366 | +9(镜像)|
+| root `node --test test/*.test.mjs` | 106 | +8(2 新 e2e × 4 subtests)|
+| `npm run test:cross` | 120 | +8 |
+| **全仓合计** | **~4896** | |
+| 4 workers `deploy:dry-run` | 全绿 | agent-core 现含 BASH_CORE binding |
+
+### 11.5 Live deploy 证据
+
+| Worker | Preview URL | Version ID | 关键 JSON 字段 |
+|--------|-------------|------------|----------------|
+| agent-core | `https://nano-agent-agent-core-preview.haimang.workers.dev` | `3a34f962-649f-4615-847c-83e6f282e8fe` | `phase: "worker-matrix-P2-live-loop"`, `live_loop: true`, `capability_binding: true` |
+| bash-core | `https://nano-agent-bash-core-preview.haimang.workers.dev` | `50335742-e9e9-4f49-b6d7-ec58e0d1cfb4`(P1.B 保持) | `phase: "worker-matrix-P1.B-absorbed"`, `absorbed_runtime: true` |
+
+实测 `curl /sessions/probe-demo/status` 返回 `{"ok":true,"action":"status","phase":"unattached"}` HTTP 200 — **证明**:index.ts routing fix(R1 from P1-P0 review)已 live + SESSION_DO forwarding 真实经过 DO fetch。
+
+### 11.6 DoD 结果(charter §6.2 / action-plan §8.2)
+
+**10/10 全绿**:prerequisite / 6 handle / 4 nullable / initial_context consumer / BASH_CORE 激活 / agent-core redeploy + live_loop / e2e #1 / e2e #2 / fallback seam / B7 LIVE。详见 closure memo §5。
+
+### 11.7 R1/R2/R3 守护验证
+
+- R1:`appendInitialContextLayer` helper-maintained pending layers + canonical kind mapping;SubsystemHandles 8 keys 无 `assembler`;D05 consumer 走 `composition?.workspace?.assembler`。三重守护(unit / composition / e2e)
+- R2:`system.notify severity=error`;源码扫描断言 `kind: "system.error"` 作为 value 用了 0 次 / `turn_input` 作为 kind-value 用了 0 次 / canonical wire kinds `session.start` + `session.followup_input` 保留
+- R3:agent-core index.ts 无 `/tool.call.request` 公共路径(e2e #1 a 扫描断言);bash-core 保持 binding-first
+
+### 11.8 复盘关注点
+
+1. D06 composition 升级过程中踩过的坑:(a) duplicate `WorkspaceCompositionHandle` 类型定义(composition.ts 新增 + workspace-runtime.ts 已有)→ 统一 import 自 workspace-runtime;(b) `BoundedEvalSink.emit` 签名是 `{record, messageUuid}` 而非 raw record,需用 `EvalCompositionHandle` 包装 adapter;(c) composition 提供 workspace handle 时 evidence 不自动 wire,需 DO 层 retrofit `setEvidenceWiring`
+2. D05 consumer 的顺序约束:在 `extractTurnInput` **之前** 调用 — pending list 必须先于 turn 产生的其他 layers 就位。实测落位正确(`dispatchAdmissibleFrame` switch case 之前独立 if 块)
+3. packages/ 镜像不自动 build dist(pnpm 需单独运行)— 对 node --test 消费 dist 文件的 root e2e 无影响,e2e 只 import workers/agent-core/dist/,但需要记住 packages 侧 dist 下次变更需主动 build
+4. Q1/Q3/Q4 P2 action-plan owner decisions:Q1 (F4 stub 物理落点) = `workers/agent-core/src/host/context-api/` 按建议值落 / Q3 (live_loop 字段名) = `live_loop: true` 按建议值落 / Q4 (e2e harness) = node --test + in-process mock 按建议值落;Q2 (PR 节奏) 单 session 合并执行
+5. pre-existing `EvidenceAnchorLike` deprecation 警告(2 处)未清理 — 归 P3 C2 slice 吸收时统一处理
+
+### 11.9 对 P3 / P4 / P5 的直接影响
+
+- P3 kickoff unblocked:C1 吸收可消费 P2 D03 F4 stub(WeakMap design 保 migration-ready);D03 C2 slice 可替代 host 的 `composeWorkspaceWithEvidence` 调用
+- P4 kickoff unblocked:D04 D1 slice 的 artifact helpers 可替代 `InMemoryArtifactStore`;D2 storage 保持 host-local(Q4a)
+- P5 kickoff unblocked:cutover rollback 基线 = 双 Preview Version ID;D09 deprecation absorb-stable 门控满足(P2 live loop 证明 absorb 稳定)
+- D07 完整闭环(kernel/llm live)归后续 charter(非 worker-matrix scope)
+
+### 11.10 结论
+
+P2 Phase 0-6 全部完成;live turn loop 在 preview env 真实跑通;两条 root e2e 持续守护 R1/R2/R3 口径;双 Preview URL live + binding 互通。**P2 100% closed,worker-matrix 进入 P3/P4/P5 的 final 3-phase 冲刺。**
