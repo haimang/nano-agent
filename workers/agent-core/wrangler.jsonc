@@ -1,0 +1,51 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "nano-agent-agent-core",
+  "main": "dist/index.js",
+  "compatibility_date": "2026-04-23",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "ENVIRONMENT": "preview",
+    "OWNER_TAG": "nano-agent"
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "SESSION_DO",
+        "class_name": "NanoSessionDO"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_classes": ["NanoSessionDO"]
+    }
+  ],
+  // Future service bindings stay commented until the downstream workers
+  // have real deploy targets. W4 only proves the host shell shape.
+  // "services": [
+  //   { "binding": "BASH_CORE", "service": "nano-agent-bash-core" },
+  //   { "binding": "CONTEXT_CORE", "service": "nano-agent-context-core" },
+  //   { "binding": "FILESYSTEM_CORE", "service": "nano-agent-filesystem-core" }
+  // ],
+  "env": {
+    "preview": {
+      "vars": {
+        "ENVIRONMENT": "preview",
+        "OWNER_TAG": "nano-agent"
+      },
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "SESSION_DO",
+            "class_name": "NanoSessionDO"
+          }
+        ]
+      }
+    }
+  }
+}

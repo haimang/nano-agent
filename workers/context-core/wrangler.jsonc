@@ -1,0 +1,22 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "nano-agent-context-core",
+  "main": "dist/index.js",
+  "compatibility_date": "2026-04-23",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "ENVIRONMENT": "preview",
+    "OWNER_TAG": "nano-agent"
+  },
+  "env": {
+    "preview": {
+      "vars": {
+        "ENVIRONMENT": "preview",
+        "OWNER_TAG": "nano-agent"
+      }
+    }
+  }
+}
