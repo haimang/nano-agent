@@ -117,6 +117,99 @@ blueprint 必须回答：
 
 这些属于后续 action-plan。
 
-## 12. 一句话 verdict
+## 12. Pattern 11 — LOC → 时长经验系数(P1.A 实测回填,2026-04-23)
 
-这份 pattern spec 的价值，是让 worker-matrix 的实现从第一天起就建立在统一迁移方法上：**同一套 owner discipline、同一套 test discipline、同一套 partial disclosure discipline、同一套 deprecated timing discipline。**
+由 worker-matrix P1.A 批次 5 个 A-unit(A1-A5)的实测搬迁数据汇总:
+
+| unit | src LOC | test LOC | 合计 LOC | 实测搬迁耗时(含 import 改写)|
+|------|---------|----------|-----------|-----------------------------|
+| A1 session-do-runtime | ~3000+(22 flat + do/ subdir)| ~3500+ | ~6500 | ~5 min(含 sed 双 pattern 路径 bug 修复)|
+| A2 agent-runtime-kernel | ~1659 | ~1358(含 scenarios/)| ~3017 | ~3 min |
+| A3 llm-wrapper | ~1483(含 adapters/ + registry/)| ~1638(含 integration/)| ~3121 | ~4 min(fixtures 需单独 copy + path refix)|
+| A4 hooks | ~1598(含 runtimes/)| ~2839 | ~4437 | ~3 min |
+| A5 eval-observability | ~2916(含 sinks/)| ~3895 | ~6811 | ~5 min(含 scripts/ + `TextDecoder ignoreBOM` 微调)|
+
+**合计 P1.A 批次**:~23886 LOC / ~173 文件 / ~20 min 机械搬迁时长(不含 pair review)。
+
+经验系数结论:
+1. **机械 cp -r + sed 阶段**:单 session 可在 **~20 min / 20000 LOC** 内完成零跨包 import 的搬家
+2. **加 ~30 min test drift 修复**(fixture / scripts / Workers 类型严格性)基本可达 "typecheck + test 全绿"
+3. **PR review 往返**:按方案 2(2 sub-PR)估 ~1.5 周;按方案 3(3 sub-PR)估 ~2 周
+4. **LOC→时长公式**(仅机械搬家):`≈ LOC × 0.05 ms/line`(cp + sed)+ `≈ LOC × 0.5 ms/line`(config / type drift)
+5. **B1(capability-runtime, ~9473 LOC)预估**:机械搬家 ~10 min + fix ~30 min;PR review ~3-5 天(review 负担占大头)
+
+## 13. Pattern 12 — 可执行流水线样板(P1.A 实测回填,2026-04-23)
+
+三段式流水线(bulk copy → sed rewrite → verify):
+
+### 13.1 Stage 1 — bulk copy
+
+```bash
+cd /workspace/repo/nano-agent/workers/agent-core
+# 删除 W4 stub(仅首 sub-PR,一次性)
+rm src/nano-session-do.ts src/types.ts
+mkdir -p src/{host,kernel,llm,hooks,eval} test/{host,kernel,llm,hooks,eval}
+# 整包 cp -r(保持子目录 do/ adapters/ registry/ runtimes/ sinks/)
+cp -r ../../packages/session-do-runtime/src/*   src/host/
+cp -r ../../packages/agent-runtime-kernel/src/* src/kernel/
+cp -r ../../packages/llm-wrapper/src/*          src/llm/
+cp -r ../../packages/hooks/src/*                src/hooks/
+cp -r ../../packages/eval-observability/src/*   src/eval/
+# tests 对称
+cp -r ../../packages/session-do-runtime/test/*   test/host/
+# ... (kernel/llm/hooks/eval 同构)
+# fixtures + scripts(若原包有)
+mkdir -p fixtures/llm && cp -r ../../packages/llm-wrapper/fixtures/* fixtures/llm/
+mkdir -p scripts/eval && cp -r ../../packages/eval-observability/scripts/* scripts/eval/
+```
+
+### 13.2 Stage 2 — sed 路径改写(避免双 apply)
+
+```bash
+# 每个 subdir 独立跑两步 + 修复
+for sub in host kernel llm hooks eval; do
+  find test/$sub -name "*.ts" -exec sed -i "s|from \"\.\./src/|from \"../../src/$sub/|g" {} +
+  find test/$sub -name "*.ts" -exec sed -i "s|from \"\.\./\.\./src/|from \"../../../src/$sub/|g" {} +
+  # 修复双 apply 的 $sub/$sub/ 重复
+  find test/$sub -name "*.ts" -exec sed -i "s|src/$sub/$sub/|src/$sub/|g" {} +
+  # flat 级被误升 3 dots 的场景
+  find test/$sub -maxdepth 1 -name "*.test.ts" -exec sed -i "s|\.\./\.\./\.\./src/$sub/|../../src/$sub/|g" {} +
+done
+# 跨包 import → published scope
+find test -name "*.test.ts" -exec sed -i '
+  s|from "\.\./\.\./\.\./nacp-session/src/stream-event.js"|from "@haimang/nacp-session"|g
+  s|from "\.\./\.\./nacp-session/src/stream-event.js"|from "@haimang/nacp-session"|g
+  s|from "\.\./\.\./\.\./nacp-core/src/messages/\(system\|hook\).js"|from "@haimang/nacp-core"|g
+  s|from "\.\./\.\./nacp-core/src/messages/\(system\|hook\).js"|from "@haimang/nacp-core"|g
+  s|from "\.\./\.\./\.\./workspace-context-artifacts/src/refs.js"|from "@nano-agent/workspace-context-artifacts"|g
+' {} +
+# fixture / external-seams 根目录引用按深度 +1
+sed -i 's|"\.\./\.\./\.\./\.\./test/fixtures/|"../../../../../test/fixtures/|g' test/*/integration/*.test.ts
+```
+
+### 13.3 Stage 3 — verify
+
+```bash
+cd /workspace/repo/nano-agent && pnpm install          # deps 收敛
+cd workers/agent-core
+pnpm typecheck                                          # 必须绿
+pnpm test                                               # P1.A 实测 92 test files / 992 tests
+pnpm deploy:dry-run                                     # wrangler shape + bindings 合法
+cd /workspace/repo/nano-agent
+node --test test/*.test.mjs                            # root guardians(per R4 不搬)
+npm run test:cross && pnpm -r run test                 # 全仓回归
+```
+
+### 13.4 P1.A 实测踩坑清单
+
+| 坑 | 症状 | 修复 |
+|----|------|------|
+| sed 双 pattern 顺序错位 | `src/sub/sub/` 或 flat 级升 3 dots | 分两步 sed + 单独修 flat 级回退 |
+| Workers 类型严格性 | `TextDecoder` 少 `ignoreBOM` | 补参数,不改语义 |
+| fixtures/scripts 没 cp | `ENOENT fixtures/stream/...` | 单独 cp 到 worker-level |
+| smoke test hardcoded W4 shape | `role: session-do-stub` 断言失败 | 更新到 absorbed shape + `absorbed_runtime: true` |
+| 跨包 relative path 失效 | `../../../nacp-session/src/...js` | 改 `@haimang/nacp-session` published scope |
+
+## 14. 一句话 verdict
+
+这份 pattern spec 的价值，是让 worker-matrix 的实现从第一天起就建立在统一迁移方法上：**同一套 owner discipline、同一套 test discipline、同一套 partial disclosure discipline、同一套 deprecated timing discipline。** Pattern 11 + 12(P1.A 实测回填)证明该方法论在真实代码层可机械化执行;Pattern 10(循环引用)保留由 P3/P4 WCA split 回填。
