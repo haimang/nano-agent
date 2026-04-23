@@ -1,309 +1,179 @@
 # agent.core — realized code evidence
 
-> 目标：只基于**当前仓库代码与当前测试**，回答 `agent.core` 已经实现了什么、还缺什么、哪些只是 handle。
+> 目标：只基于当前代码与当前 closure truth，回答 `agent.core` 现在已经有什么、还缺什么。
 
 ---
 
 ## 0. 先给结论
 
-**`agent.core` 现在最准确的代码判断是：已有真实 host shell，已有真实 session ingress / orchestration / checkpoint / replay / hook / evidence 骨架，但默认装配仍未把 `KernelRunner + LLMExecutor + capability/workspace` 接成真正的 agent turn loop。**
-
-也就是说，它已经不是 greenfield；但它也还不是“默认可发布的完整 agent”。
+**`agent.core` 现在最准确的代码判断是：worker shell 已 materialize 并已完成 real preview deploy；host runtime substrate 仍主要停留在 `@nano-agent/session-do-runtime`；默认 live turn loop 仍未装配完成。**
 
 ---
 
-## 1. 原始素材召回表
+## 1. 当前最重要的代码锚点
 
-### 1.1 host 核心代码
-
-| 类型 | 原始路径 | 关键行 | 用途 |
-|---|---|---|---|
-| Worker entry | `packages/session-do-runtime/src/worker.ts` | `55-88` | 证明 Worker entry 已存在且是薄壳 |
-| DO host | `packages/session-do-runtime/src/do/nano-session-do.ts` | `130-280, 466-715, 906-1124` | 证明真实宿主、ingress、dispatch、checkpoint、tenant、evidence 均已存在 |
-| composition | `packages/session-do-runtime/src/composition.ts` | `82-106` | 证明默认 composition 仍返回空柄 |
-| remote composition | `packages/session-do-runtime/src/remote-bindings.ts` | `330-397` | 证明 remote seams 已存在，但 kernel/workspace/eval/storage 未接 |
-| runtime env | `packages/session-do-runtime/src/env.ts` | `55-121` | 证明 runtime catalog 与 profile switch 已存在 |
-| HTTP fallback | `packages/session-do-runtime/src/http-controller.ts` | `127-237` | 证明 host 的 HTTP action surface 真实存在 |
-| orchestrator | `packages/session-do-runtime/src/orchestration.ts` | `55-96, 132-220` | 证明 Session orchestration 是真实代码而不是概念图 |
-
-### 1.2 现成子系统代码
-
-| 类型 | 原始路径 | 关键行 | 用途 |
-|---|---|---|---|
-| kernel | `packages/agent-runtime-kernel/src/runner.ts` | `35-111, 133-220` | 证明 `KernelRunner` 已真实实现 |
-| llm | `packages/llm-wrapper/src/executor.ts` | `44-198` | 证明 `LLMExecutor` 已真实实现 |
-| hooks remote runtime | `packages/hooks/src/runtimes/service-binding.ts` | `34-153` | 证明 remote hooks seam 已真实实现 |
-
-### 1.3 直接证明行为的测试
-
-| 类型 | 原始路径 | 关键行 | 用途 |
-|---|---|---|---|
-| worker 路由 | `packages/session-do-runtime/test/worker.test.ts` | `30-65` | 证明 Worker entry 确实在按 `/sessions/:id/...` 转发 |
-| remote composition | `packages/session-do-runtime/test/integration/remote-composition-default.test.ts` | `16-85` | 证明默认 remote hook/capability 选择路径是真实存在的 |
-| stream schema | `packages/session-do-runtime/test/integration/stream-event-schema.test.ts` | `43-135` | 证明 orchestrator 输出能被 `SessionStreamEventBodySchema` 直接消费 |
-| checkpoint | `packages/session-do-runtime/test/integration/checkpoint-roundtrip.test.ts` | `47-114` | 证明 checkpoint roundtrip 真实成立 |
-| upstream context contract | `test/initial-context-schema-contract.test.mjs` | `13-68` | 证明 `initial_context` wire hook 已冻结 |
-| tenant plumbing | `test/tenant-plumbing-contract.test.mjs` | `46-218` | 证明 tenant ingress / tenant key prefix / raw storage white-list 的核心 contract 已锁 |
+| 层 | 路径 | 当前用途 |
+|---|---|---|
+| worker shell | `workers/agent-core/package.json`; `wrangler.jsonc`; `src/index.ts`; `src/nano-session-do.ts`; `test/smoke.test.ts` | 证明 deploy-shaped shell、DO stub、preview shape、shell smoke |
+| host runtime | `packages/session-do-runtime/src/worker.ts`; `env.ts`; `composition.ts`; `remote-bindings.ts`; `do/nano-session-do.ts` | 证明真实 host runtime substrate |
+| phase truth | `docs/issue/pre-worker-matrix/W4-closure.md`; `docs/design/pre-worker-matrix/W3-absorption-map.md` | 证明 shell 已存在、A1-A5 仍待吸收 |
 
 ---
 
-## 2. 已经真实存在的 host shell
+## 2. 已经真实存在的 worker shell
 
-## 2.1 Worker entry 已存在，而且故意很薄
+### 2.1 `workers/agent-core` 已经是 deploy-shaped 目录
 
-当前 `worker.ts` 的核心行为只有：
+直接证据：
 
-```ts
-const route = routeRequest(request);
-if (route.type === "not-found") return 404;
-const sessionId = extractSessionId(request);
-const stub = env.SESSION_DO.get(env.SESSION_DO.idFromName(sessionId));
-return stub.fetch(request);
-```
+- `workers/agent-core/package.json:1-24`
+- `workers/agent-core/wrangler.jsonc:1-51`
+- `workers/agent-core/src/index.ts:1-24`
+- `workers/agent-core/src/nano-session-do.ts:1-17`
+- `workers/agent-core/test/smoke.test.ts:1-39`
 
-见：`packages/session-do-runtime/src/worker.ts:72-88`
+当前 shell 已经真实具备：
 
-这说明两件事：
+1. `build / typecheck / test / deploy:dry-run / deploy:preview` 脚本
+2. `SESSION_DO` binding
+3. Worker fetch handler
+4. `NanoSessionDO` stub
+5. 对 NACP published truth 的 probe 输出
 
-1. `agent.core` 的外层 Worker 壳已经存在；
-2. 当前设计明确把“真正的 runtime”放在 DO 里，而不是在 Worker entry 写业务主链。
+### 2.2 `agent-core` preview deploy 已不是文档猜想
 
-## 2.2 `NanoSessionDO` 已经是 load-bearing host
+当前 closure / handoff 已明确：
 
-`NanoSessionDO` 构造函数里已经包含这些真实职责：
+1. preview deploy 已完成：`docs/issue/pre-worker-matrix/W4-closure.md:18-27`
+2. live probe URL 已存在：`docs/handoff/pre-worker-matrix-to-worker-matrix.md:112-115`
 
-- 选择 composition factory；
-- 组装 subsystems；
-- 安装默认 eval sink；
-- 装配 workspace composition；
-- 装配 orchestrator、HTTP controller、WS controller；
-- 维护 session UUID、trace UUID、stream seq、heartbeat/ack tracker：`packages/session-do-runtime/src/do/nano-session-do.ts:130-280`。
-
-这意味着当我们说 `agent.core` 时，当前仓库中的真实物体就是：
-
-> **`packages/session-do-runtime/src/do/nano-session-do.ts::NanoSessionDO`**
-
-而不是某个未来要新建的 `AgentHostWorker` 类。
+所以从代码+部署角度看，`agent.core` 当前已经跨过了“是否具备 deploy shell”这个问题。
 
 ---
 
-## 3. 已经真实存在的 session host path
+## 3. 当前 shell 还没有承接的 runtime 真相
 
-## 3.1 client ingress 已经走正式 session profile，而不是手搓 JSON
+### 3.1 当前 shell 仍只是 version probe + DO stub
 
-当前 WS 主路径是：
+`workers/agent-core/src/index.ts:6-24` 当前只返回：
 
-1. `webSocketMessage()` 收 raw；
-2. `acceptClientFrame(raw)`；
-3. `acceptIngress(...)`；
-4. `normalizeClientFrame(...)`；
-5. `validateSessionFrame(...)`；
-6. `await verifyTenantBoundary(...)`；
-7. `dispatchAdmissibleFrame(...)`。
+- `worker`
+- `nacp_core_version`
+- `nacp_session_version`
+- `status`
+- `phase`
 
-关键代码位点：
+`workers/agent-core/src/nano-session-do.ts:3-17` 当前只返回：
 
-- `packages/session-do-runtime/src/do/nano-session-do.ts:466-533`
-- `packages/nacp-session/src/ingress.ts:25-74`
-- `packages/nacp-session/src/frame.ts:66-136`
+- `worker`
+- `role`
+- `status`
 
-这意味着 `agent.core` 当前不是“自己 parse 一下 JSON 再说”，而是已经有正式 session ingress 闸口。
+因此当前 shell 还**没有**：
 
-## 3.2 session lifecycle orchestration 已经是真实代码
-
-`SessionOrchestrator` 不是空壳：
-
-- `startTurn()` 会发 `Setup / SessionStart / UserPromptSubmit` hooks，并推进 actor phase：`packages/session-do-runtime/src/orchestration.ts:171-220`
-- `advanceStep` / `emitTrace` / `pushStreamEvent` 都通过 `OrchestrationDeps` 连接子系统：`packages/session-do-runtime/src/orchestration.ts:55-96`
-
-而 `NanoSessionDO.buildOrchestrationDeps()` 已经把 host-side glue 接起来：
-
-- `emitHook(...)` 透传 cross-seam anchor；
-- `emitTrace(...)` 经过 eval sink；
-- `pushStreamEvent(...)` 优先走 `SessionWebSocketHelper.pushEvent(...)`：`packages/session-do-runtime/src/do/nano-session-do.ts:906-1005`。
-
-所以“host 负责 turn orchestration”这件事，已经是代码真相。
-
-## 3.3 replay / ack / heartbeat / checkpoint 已经接进宿主
-
-`dispatchAdmissibleFrame()` 当前已经真正处理：
-
-- `session.resume`
-- `session.stream.ack`
-- `session.heartbeat`
-
-见：`packages/session-do-runtime/src/do/nano-session-do.ts:662-709`
-
-而 `wsHelperStorage()`、`persistCheckpoint()`、`restoreFromStorage()` 也已经存在：`packages/session-do-runtime/src/do/nano-session-do.ts:1042-1124`。
-
-对应 roundtrip test 也在证明 checkpoint 不是写着玩的：`packages/session-do-runtime/test/integration/checkpoint-roundtrip.test.ts:47-114`。
-
-因此如果只问“host 壳、session actor、checkpoint/replay 是否存在”，答案是：
-
-> **存在，而且已经不是 stub。**
+1. WebSocket upgrade
+2. HTTP fallback actions
+3. checkpoint / replay / ack / heartbeat
+4. runtime composition
 
 ---
 
-## 4. 已经接通的 remote seam 与 evidence seam
+## 4. 已真实存在的 host substrate 仍在 `session-do-runtime`
 
-## 4.1 local/remote profile switch 已存在
+### 4.1 Worker/DO host 原型仍在 package 内
 
-`env.ts` 已定义：
+最直接的当前代码真相仍是：
 
-- `CAPABILITY_WORKER`
-- `HOOK_WORKER`
-- `FAKE_PROVIDER_WORKER`
-- `CompositionProfile = { capability, hooks, provider }`
+- `packages/session-do-runtime/src/worker.ts:1-89`
+- `packages/session-do-runtime/src/do/nano-session-do.ts`
+- `packages/session-do-runtime/package.json:1-40`
 
-并提供 `readCompositionProfile()`：`packages/session-do-runtime/src/env.ts:55-121`
+它说明：
 
-这证明 host 侧对 local/remote seam 的 profile switch 已不是文档概念。
+1. `@nano-agent/session-do-runtime@0.3.0` 仍是当前 host substrate
+2. Worker entry + DO host + runtime env catalog + composition helpers 依然都在这个 package 中
 
-## 4.2 remote hooks / capability / fake-provider seam 已存在
+### 4.2 default composition 仍是空 handle bag
 
-`makeRemoteBindingsFactory()` 当前能根据 env 组出：
+当前最关键的 readiness 证据仍是：
 
-- remote hooks handle；
-- capability transport；
-- provider fetcher；
+- `packages/session-do-runtime/src/composition.ts:82-106`
 
-见：`packages/session-do-runtime/src/remote-bindings.ts:330-397`
+其中：
 
-对应 remote hook 行为也被 integration test 证明：
+- `kernel: undefined`
+- `llm: undefined`
+- `capability: undefined`
+- `workspace: undefined`
+- `hooks: undefined`
+- `eval: undefined`
+- `storage: undefined`
 
-- 有 `HOOK_WORKER` 时，`emitHook` 会真的打到 fake binding：`packages/session-do-runtime/test/integration/remote-composition-default.test.ts:28-63`
-- 只有 `CAPABILITY_WORKER` 时，会真的暴露 capability transport：`packages/session-do-runtime/test/integration/remote-composition-default.test.ts:65-84`
+这意味着当前 host substrate 仍不能被写成“默认 live agent loop 已闭合”。
 
-## 4.3 evidence sink 已经不是 test-only 幻觉
+### 4.3 remote composition 仍只接了部分 seam
 
-`NanoSessionDO` 构造函数现在会在 factory 没提供 `eval` 时，自动安装 bounded in-memory default sink：`packages/session-do-runtime/src/do/nano-session-do.ts:148-174, 256-280`
+当前真实状态：
 
-而 `persistCheckpoint()` 还会通过 `workspaceComposition.captureSnapshot()` 触发 `snapshot.capture` evidence：`packages/session-do-runtime/src/do/nano-session-do.ts:1061-1072`
+- `packages/session-do-runtime/src/remote-bindings.ts:324-399`
 
-这意味着：
+已经接上的：
 
-> 当前 host 至少已经进入“默认路径也会产 evidence”的阶段，而不是只有测试工厂才看得见 evidence。
+1. `llm` fake-provider fetcher
+2. `capability` service-binding transport
+3. `hooks` minimal remote handle
 
----
+仍未接上的：
 
-## 5. 当前仍然只是 handle，而不是默认主链的部分
+1. `kernel`
+2. `workspace`
+3. `eval`
+4. `storage`
 
-## 5.1 默认 composition 仍然是空柄
+### 4.4 `initial_context` 仍没有 host consumer
 
-`createDefaultCompositionFactory()` 目前返回的是：
+当前代码搜索结果仍是：
 
-```ts
-return {
-  kernel: undefined,
-  llm: undefined,
-  capability: undefined,
-  workspace: undefined,
-  hooks: undefined,
-  eval: undefined,
-  storage: undefined,
-  profile,
-};
-```
+1. `packages/session-do-runtime/src/` 中无 `initial_context` / `appendInitialContextLayer`
+2. `packages/context-management/src/` 中也无当前 host consumer 接线
 
-见：`packages/session-do-runtime/src/composition.ts:90-106`
+因此 `initial_context` 仍只能被写成：
 
-这几乎是判断 `agent.core` 当前 readiness 的单一最重要证据。
-
-## 5.2 remote composition 也没有把 kernel / workspace / eval / storage 接进去
-
-`makeRemoteBindingsFactory()` 现在虽然比 default factory 前进很多，但返回值依然是：
-
-```ts
-return {
-  kernel: undefined,
-  llm: providerFetcher ? { fetcher: providerFetcher } : undefined,
-  capability: capabilityTransport ? { serviceBindingTransport: capabilityTransport } : undefined,
-  workspace: undefined,
-  hooks: hooksHandle,
-  eval: undefined,
-  storage: undefined,
-  profile,
-};
-```
-
-见：`packages/session-do-runtime/src/remote-bindings.ts:385-395`
-
-所以当前最准确的说法不是“remote factory 已把主链打通”，而是：
-
-> **它已经把 3 条 remote transport seam 组出来了，但主链上的 `kernel/workspace/eval/storage` 仍未默认接通。**
-
-## 5.3 `buildOrchestrationDeps()` 对“没有 kernel”采取 honest degrade，而不是 fatal
-
-当前 host 在没有 kernel 的情况下，会这样降级：
-
-```ts
-if (kernel?.advanceStep) return kernel.advanceStep(snapshot, signals);
-return { snapshot, events: [], done: true };
-```
-
-见：`packages/session-do-runtime/src/do/nano-session-do.ts:910-921`
-
-这说明：
-
-1. 当前 host shell 允许 standalone / empty composition 跑起来；
-2. 但这也意味着默认路径并不代表“真实 agent loop 已闭合”。
+> **wire 已冻结，host assembly 仍待实现。**
 
 ---
 
-## 6. 明明已经存在、但还未装进默认 host 的子系统
+## 5. W3/W4 之后，`agent.core` 的代码真相应如何描述
 
-## 6.1 `KernelRunner` 已真实存在
-
-`KernelRunner` 当前已经能：
-
-- 调 scheduler；
-- 做 `llm_call / tool_exec / compact / wait / finish / hook_emit`；
-- 产出 runtime events；
-
-见：`packages/agent-runtime-kernel/src/runner.ts:35-111, 133-220`
-
-因此 host 侧“没有 kernel”绝不是因为仓库里没有 kernel，而只是因为 composition 还没实例化它。
-
-## 6.2 `LLMExecutor` 已真实存在
-
-`LLMExecutor` 当前已经能：
-
-- 发 chat/completions；
-- 管 timeout / retry / exponential backoff；
-- 处理 `Retry-After`；
-- 做 stream normalization；
-
-见：`packages/llm-wrapper/src/executor.ts:44-198`
-
-所以 host 侧“没有 llm”也不是因为仓库里没有 llm 层，而只是因为它还没被装到 `subsystems.llm` 里。
-
-## 6.3 `initial_context` 只有 wire hook，没有消费实现
-
-虽然 root contract test 已锁住 `SessionStartInitialContextSchema`：`test/initial-context-schema-contract.test.mjs:13-68`，但 host dispatch 现在只抽 turn input：`packages/session-do-runtime/src/do/nano-session-do.ts:612-645`。
-
-所以这条必须诚实记录为：
-
-| 项目 | 当前状态 |
-|---|---|
-| `initial_context` schema | 已冻结 |
-| `initial_context` host consumer | 未实现 |
+| 维度 | 当前真相 | 不应写成什么 |
+|---|---|---|
+| worker shell | 已存在，且 preview deploy 已完成 | 还没有 deploy baseline |
+| DO slot | 已存在 | 还要先论证 host 是否用 DO |
+| host substrate | 已存在于 `session-do-runtime` | 还是纯概念图 |
+| live turn loop | 仍未闭合 | 已默认具备 kernel+llm+workspace mainline |
+| cross-worker assembly | 仍未激活 | 已 live 连到 `bash.core / context.core / filesystem.core` |
 
 ---
 
-## 7. “历史 review”与“当前代码真相”的交叉判断
+## 6. 对 r2 的直接含义
 
-| 议题 | 历史 review 常见印象 | 当前代码真相 | 这里的判断 |
-|---|---|---|---|
-| tenant verify | 还停留在 fire-and-forget | 已变成 `await verifyTenantBoundary(...)` gate：`packages/session-do-runtime/src/do/nano-session-do.ts:487-533` | 以当前代码为准 |
-| host evidence | 默认路径不产 evidence | 默认构造已安装 bounded sink，checkpoint 还会触发 snapshot evidence：`packages/session-do-runtime/src/do/nano-session-do.ts:148-174, 256-280, 1061-1072` | 以当前代码为准 |
-| agent loop | host 已经是完整 agent | `KernelRunner` 与 `LLMExecutor` 虽然存在，但 default/remote factory 仍未装配：`packages/session-do-runtime/src/composition.ts:90-106`; `packages/session-do-runtime/src/remote-bindings.ts:385-395` | **不能过度宣称** |
+从 realized code evidence 角度看，`agent.core` 现在最合理的工作描述应是：
+
+1. **吸收 A1 host shell substrate**
+2. **接入 A2 kernel**
+3. **接入 A3 llm**
+4. **接入 A4 hooks residual**
+5. **接入 A5 eval / trace seam**
+6. **把当前 shell 从 probe/stub 提升为 live host runtime**
+
+这与 W3 map 完全一致：`docs/design/pre-worker-matrix/W3-absorption-map.md:31-39,46-77`
 
 ---
 
-## 8. 本文件的最终判断
+## 7. 本文件的最终判断
 
-如果只基于当前代码来下结论，`agent.core` 最准确的表述是：
+**`agent.core` 现在已经拥有“可部署的外壳”和“可吸收的宿主原型”，但还没有拥有“默认闭合的 live runtime”。**
 
-> **一个已经存在的 session host runtime，具备真实 Worker/DO/ingress/orchestration/replay/checkpoint/remote seam/evidence 壳，但默认 composition 仍未把 kernel、llm、workspace 与 capability 主链装配成完整 agent。**
+因此 worker-matrix r2 不应再纠缠于“是否先造壳”，而应明确把主任务写成：
 
-所以 worker-matrix 阶段对 `agent.core` 的主任务，应理解为 **assembly / wiring / closure**，而不是 **greenfield implementation**。
+> **host substrate absorption + default composition closure + downstream seam activation sequencing。**

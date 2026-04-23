@@ -1,150 +1,177 @@
 # agent.core 上下文索引
 
-> 状态：`curated / rewritten`
-> 目标：作为 `docs/eval/worker-matrix/agent-core/` 的入口索引，同时提供**原始素材召回路径**、**范围边界**、**当前结论**与**阅读顺序**。
+> 状态：`refreshed after pre-worker-matrix closure`
+> 用途：服务 `worker-matrix` **rewrite r2**
+> 当前主入口：先读 `docs/eval/worker-matrix/00-contexts/00-current-gate-truth.md`
 
 ---
 
 ## 0. 一句话结论
 
-**`agent.core` 不是一个待发明的 future worker，而是一个已经以 `session-do-runtime + NanoSessionDO` 形式存在的 host worker；worker-matrix 阶段真正要做的，不是“再造 host 壳”，而是把已有的 session host、kernel、llm、hooks、capability、workspace、evidence 主链接成默认运行真相。**
+**`agent.core` 现在不是“待发明 worker”，而是一个已经同时拥有 `workers/agent-core` deploy shell 与 `@nano-agent/session-do-runtime` host substrate 的目标 worker。`worker-matrix` r2 要做的是 A1-A5 的 assembly / absorption，不是重新发明 host 拓扑。**
 
 ---
 
-## 1. In-Scope / Out-of-Scope
+## 1. 这组文档现在应该依赖什么
 
-### 1.1 In-Scope
+先把下面这些当成 **direct input pack**：
 
-本目录只负责回答下面四类问题：
+| 类型 | 路径 | 当前用途 |
+|---|---|---|
+| pre-worker final closure | `docs/issue/pre-worker-matrix/pre-worker-matrix-final-closure.md` | 定义 pre-worker 已闭环、worker-matrix 只剩 rewrite + assembly |
+| handoff | `docs/handoff/pre-worker-matrix-to-worker-matrix.md` | 定义 r2 rewrite 该继承什么、不该重开什么 |
+| W4 closure | `docs/issue/pre-worker-matrix/W4-closure.md` | 冻结 `workers/agent-core` 已真实存在且 preview deploy 已完成 |
+| W3 map | `docs/design/pre-worker-matrix/W3-absorption-map.md` | 冻结 `agent-core = A1-A5` 这组 absorption units |
+| W3 blueprint | `docs/design/pre-worker-matrix/W3-absorption-blueprint-session-do-runtime.md` | 定义 A1 host-shell → worker 的代表落点 |
+| condensed truth | `docs/eval/worker-matrix/00-contexts/03-evaluations/current-worker-reality.md` | 提供当前 4-worker 代码真相总表 |
+| shell code | `workers/agent-core/*` | 提供当前 deploy-shaped shell 的直接证据 |
+| host substrate | `packages/session-do-runtime/src/*` | 提供真正的 host runtime 代码真相 |
+
+上游 after-foundations 文档仍有价值，但现在只应作为 **ancestry** 使用，不再是直接 gate。
+
+---
+
+## 2. In-Scope / Out-of-Scope
+
+### 2.1 In-Scope
+
+本目录现在只回答四件事：
 
 | 项目 | 说明 |
 |---|---|
-| `agent.core` 的定位 | 它是不是 host worker、是不是 binding slot、是不是上游 orchestrator |
-| `agent.core` 的协议责任 | 它必须遵守哪些 `NACP-Core / NACP-Session / tenant / trace / replay` 法则 |
-| `agent.core` 的当前代码真相 | 当前仓库里已经有什么、还缺什么、哪些只是 transport handle |
-| `agent.core` 的平台边界 | Cloudflare / Durable Object / service binding / DO storage cap / header law 对它的直接约束 |
+| `agent.core` 当前身份 | host worker 还是 binding slot |
+| `agent.core` 当前真相层 | worker shell 已到什么程度；runtime substrate 已到什么程度 |
+| `agent.core` 协议责任 | `nacp-session` / `nacp-core` / tenant / replay / stream law 由谁负责 |
+| `agent.core` 对 r2 的含义 | rewrite 应继承什么，第一批 assembly 不该再重开什么 |
 
-### 1.2 Out-of-Scope
+### 2.2 Out-of-Scope
 
-本目录**不**承担下面这些工作：
+本目录不再承担：
 
 | 项目 | 为什么不在这里做 |
 |---|---|
-| 设计 `bash.core / filesystem.core / context.core` 的全部细节 | 它们各自需要独立上下文包 |
-| 重写 B8/B9 原始历史文档 | 原始文档仍是历史审计路径，本目录只做聚合与裁判 |
-| 先行决定 worker-matrix v2 binding catalog | `agent.core != binding slot`，binding catalog 是另一层决策 |
-| 把 `agent.core` 重新提升成“长期记忆 / 意图路由 / 用户画像 orchestrator” | 这与 `initial_context` 的 upstream seam 相冲突 |
+| 重新论证 4-worker 拓扑 | W4 已把目录、名字、deploy shell 变成物理事实 |
+| 重写 B8/B9 历史文档 | `00-contexts` 已把它们降级为 ancestry summaries |
+| 把 `agent.core` 写成长期记忆 orchestrator | `initial_context` 已冻结为 upstream→host seam，而不是 host 自吞所有上游职责 |
+| 把 `agent.core` 当成普通 remote worker | handoff 已明确 `agent.core` 继续是 host worker |
 
 ---
 
-## 2. 证据优先级
+## 3. 当前应冻结的六个判断
 
-本目录采用下面这条优先级，解决 B8/B9 历史文档之间的口径漂移：
-
-1. **当前仓库源码与当前测试**
-2. **原始 handoff / review / evaluation 文档**
-3. **`context/` 下的参考实现**
-4. **较早的 closure 口径**
-
-这条优先级在 `agent.core` 上尤其关键，因为：
-
-- 早期 B9 review 曾经记录过 `verifyTenantBoundary()` 是 fire-and-forget；
-- 当前代码已经前进到 `NanoSessionDO.acceptClientFrame()` 显式 `await verifyTenantBoundary(...)` 并在失败时阻止 dispatch：`packages/session-do-runtime/src/do/nano-session-do.ts:481-533`；
-- 因此本目录必须以**当前代码真相**作为最终裁判，而不能只复述历史 review。
-
----
-
-## 3. 原始素材总索引
-
-> 下面列的都是**原始路径**，不是 `docs/eval/worker-matrix/00-context/` 里的复制品。
-
-### 3.1 原始文档素材
-
-| 类型 | 原始路径 | 关键行 / 章节 | 为什么必读 |
-|---|---|---|---|
-| handoff | [`docs/handoff/after-foundations-to-worker-matrix.md`](../../../handoff/after-foundations-to-worker-matrix.md) | `§4-§6, §9-§11` / `76-135, 176-242, 250-260` | 定义 `agent.core != binding slot`、worker naming、binding catalog policy、B9 pre-req |
-| action-plan | [`docs/action-plan/after-foundations/B8-worker-matrix-pre-convergence.md`](../../../action-plan/after-foundations/B8-worker-matrix-pre-convergence.md) | `46-66, 74-85, 152-188` | B8 对 worker-matrix 的原始目标、边界与不变量 |
-| closure | [`docs/issue/after-foundations/B8-phase-1-closure.md`](../../../issue/after-foundations/B8-phase-1-closure.md) | `38-56, 59-118` | B1-B7 到 B8 的平台事实盘点，尤其是 binding / DO cap / R2 并发数字 |
-| review | [`docs/code-review/after-foundations/B9-plan-reviewed-by-GPT.md`](../../../code-review/after-foundations/B9-plan-reviewed-by-GPT.md) | `37-61, 77-110, 173-220` | 为什么 B9 必须存在，以及它应该如何缩 scope |
-| review | [`docs/code-review/after-foundations/B9-reviewed-by-GPT.md`](../../../code-review/after-foundations/B9-reviewed-by-GPT.md) | `41-70, 84-167` | B9 初始实现 review；需与当前代码真相交叉阅读 |
-| evaluation | [`docs/eval/after-foundations/worker-matrix-eval-with-GPT.md`](../../../eval/after-foundations/worker-matrix-eval-with-GPT.md) | `132-177` | GPT 对 `agent.core` “最成熟 first-wave worker”的原始判断 |
-| evaluation | [`docs/eval/after-foundations/worker-matrix-eval-with-Opus.md`](../../../eval/after-foundations/worker-matrix-eval-with-Opus.md) | `78-84, 171-198` | Opus 对 `agent.core READY`、`kernel: undefined` 的原始判断 |
-| evaluation | [`docs/eval/after-foundations/smind-contexter-learnings.md`](../../../eval/after-foundations/smind-contexter-learnings.md) | `31-45, 136-145, 214-229, 241-257` | 说明为什么要把 upstream orchestrator 与 host runtime 分层理解 |
-
-### 3.2 当前仓库代码素材
-
-| 类型 | 原始路径 | 关键行 | 为什么必读 |
-|---|---|---|---|
-| host entry | [`packages/session-do-runtime/src/worker.ts`](../../../../packages/session-do-runtime/src/worker.ts) | `15-18, 72-88` | 证明 Worker entry 已存在，而且是薄转发壳 |
-| host core | [`packages/session-do-runtime/src/do/nano-session-do.ts`](../../../../packages/session-do-runtime/src/do/nano-session-do.ts) | `130-280, 466-715, 906-1112` | 证明真实宿主就是 `NanoSessionDO`，并展示 ingress / dispatch / checkpoint / evidence / tenant 实现 |
-| composition | [`packages/session-do-runtime/src/composition.ts`](../../../../packages/session-do-runtime/src/composition.ts) | `82-106` | 证明默认 composition 仍返回空柄 |
-| remote composition | [`packages/session-do-runtime/src/remote-bindings.ts`](../../../../packages/session-do-runtime/src/remote-bindings.ts) | `330-397` | 证明 remote factory 已接 hooks/capability/provider transport，但仍未接 kernel/workspace/eval/storage |
-| env contract | [`packages/session-do-runtime/src/env.ts`](../../../../packages/session-do-runtime/src/env.ts) | `36-82, 95-121` | 证明 v1 binding catalog 只有 3 active + 1 reserved |
-| HTTP fallback | [`packages/session-do-runtime/src/http-controller.ts`](../../../../packages/session-do-runtime/src/http-controller.ts) | `39-55, 127-157, 160-237` | 证明 HTTP fallback 是真实 surface，但它比完整 WS/NACP 面更窄 |
-| session protocol | [`packages/nacp-session/src/ingress.ts`](../../../../packages/nacp-session/src/ingress.ts) / [`frame.ts`](../../../../packages/nacp-session/src/frame.ts) / [`stream-event.ts`](../../../../packages/nacp-session/src/stream-event.ts) | `25-74` / `66-136` / `10-96` | 证明 authority stamping、session-owned matrix、canonical 9-kind stream event |
-| internal protocol | [`packages/nacp-core/src/envelope.ts`](../../../../packages/nacp-core/src/envelope.ts) / [`type-direction-matrix.ts`](../../../../packages/nacp-core/src/type-direction-matrix.ts) / [`tenancy/boundary.ts`](../../../../packages/nacp-core/src/tenancy/boundary.ts) | `1-10, 255-372` / `17-40` / `20-98` | 证明 `agent.core` 对下游 remote seam 仍必须遵守 Core 契约 |
-| runtime kernel | [`packages/agent-runtime-kernel/src/runner.ts`](../../../../packages/agent-runtime-kernel/src/runner.ts) | `35-111, 133-220` | 证明 `KernelRunner` 已真实存在，不是未来想象 |
-| llm | [`packages/llm-wrapper/src/executor.ts`](../../../../packages/llm-wrapper/src/executor.ts) | `44-198` | 证明 `LLMExecutor` 已真实存在 |
-| hooks | [`packages/hooks/src/runtimes/service-binding.ts`](../../../../packages/hooks/src/runtimes/service-binding.ts) | `34-153` | 证明 remote hook runtime 已真实存在 |
-
-### 3.3 `context/` 参考实现素材
-
-| 类型 | 原始路径 | 关键行 | 为什么必读 |
-|---|---|---|---|
-| gateway code | [`context/smind-contexter/src/chat.ts`](../../../../context/smind-contexter/src/chat.ts) | `13-18, 118-125, 183-210` | 证明“无状态 gateway + user-level DO”这一分层是现实存在的 |
-| director code | [`context/smind-contexter/context/director.ts`](../../../../context/smind-contexter/context/director.ts) | `139-189, 201-279` | 证明上游 orchestrator 可以是 one-shot intent→route→gen，而不是 host turn loop |
-| producer code | [`context/smind-contexter/context/producer.ts`](../../../../context/smind-contexter/context/producer.ts) | `328-357, 364-392` | 证明 context 组装与状态持久化可以独立于 host runtime |
-| DO storage code | [`context/smind-contexter/core/db_do.ts`](../../../../context/smind-contexter/core/db_do.ts) | `123-183, 186-220` | 证明 DO 内 SQLite / 状态表是可行现实，而不是抽象想象 |
-| gateway memo | [`context/smind-contexter/app/plan-chat.ts.txt`](../../../../context/smind-contexter/app/plan-chat.ts.txt) | `9-22, 25-44, 82-98` | 说明 gateway / DO / service binding 的外部面如何分层 |
-| engine memo | [`context/smind-contexter/app/plan-engine_do.ts.txt`](../../../../context/smind-contexter/app/plan-engine_do.ts.txt) | `8-21, 24-43, 47-56, 90-108` | 说明 user-level stateful orchestrator 的 Actor 心智模型 |
-| engineering design | [`context/smind-contexter/app/design.txt`](../../../../context/smind-contexter/app/design.txt) | `7-21, 23-50, 71-107` | 说明 edge-native、DO actor、KV/R2/D1 技术组合的长期形态 |
-
----
-
-## 4. 当前应冻结的五个判断
-
-| 判断 | 结论 | 主证据 |
+| 判断 | 当前结论 | 主证据 |
 |---|---|---|
-| `agent.core` 的身份 | **host worker，不是 binding slot** | `docs/handoff/after-foundations-to-worker-matrix.md:92-135`; `packages/session-do-runtime/src/worker.ts:72-88`; `packages/session-do-runtime/src/env.ts:72-82` |
-| host shell 是否已存在 | **已存在，而且真实宿主是 `NanoSessionDO`** | `packages/session-do-runtime/src/do/nano-session-do.ts:130-280`; `packages/session-do-runtime/test/worker.test.ts:30-65` |
-| client-facing 协议谁负责 | **`nacp-session` 负责 session profile；`nacp-core` 不是替身** | `packages/nacp-session/src/ingress.ts:25-74`; `packages/nacp-session/src/frame.ts:66-136`; `packages/nacp-core/src/envelope.ts:1-10, 279-372` |
-| `initial_context` 的现状 | **wire contract 已冻结,consumer 归 `agent.core` (host),但尚未实装**。责任划分:`nacp-session` 负责 shape,`context.core` 提供 `assembler.appendInitialContextLayer(...)` 等 API,**但由 `NanoSessionDO.dispatchAdmissibleFrame` 在处理 `session.start` 时负责调用**(host 为 upstream→substrate 的调度者)。详见 `context-core/index.md §6.3`。 | `packages/nacp-session/src/upstream-context.ts:1-42`; `packages/nacp-session/src/messages.ts:17-25`; `packages/session-do-runtime/src/do/nano-session-do.ts:608-645` (当前只抽 turn_input,未消费 initial_context — 这是 Phase 0 必补点) |
-| 当前最大技术债 = **worker-matrix Phase 0 的唯一必要里程碑** | **默认 composition 必须把 `KernelRunner + LLMExecutor + (CAPABILITY_WORKER 下的 capability transport)` 装成真实 agent turn loop**。这不是"改进项"或"可选加强",而是 **Phase 0 退出的必要且充分条件**;在此之前 host 只能跑 session shell,不能跑真正的 agent。具体落点:`packages/session-do-runtime/src/composition.ts::createDefaultCompositionFactory()` 从当前 all-undefined 状态升级为实例化 kernel + llm + capability。 | `packages/session-do-runtime/src/composition.ts:82-106` (当前默认工厂返回全 undefined——必须升级为真实装配); `packages/session-do-runtime/src/remote-bindings.ts:385-395` (remote 工厂仍未接 kernel/workspace/eval/storage——同样必须升级); `packages/session-do-runtime/src/do/nano-session-do.ts:906-921` (kernel 缺席时当前 honest degrade——Phase 0 后不应再触发此路径); `packages/agent-runtime-kernel/src/runner.ts:35-111` (Kernel 已真实实现,等着被装); `packages/llm-wrapper/src/executor.ts:44-198` (LLMExecutor 已真实实现,等着被装) |
+| `agent.core` 身份 | **host worker，不是 binding slot** | `docs/handoff/pre-worker-matrix-to-worker-matrix.md:47-50`; `docs/eval/worker-matrix/00-contexts/00-current-gate-truth.md:118-128` |
+| worker shell 是否存在 | **存在，而且已完成 real preview deploy** | `docs/issue/pre-worker-matrix/W4-closure.md:18-27,63-71,140-145`; `workers/agent-core/src/index.ts:1-24` |
+| 当前 shell 是否等于 live host runtime | **不是**；它现在仍是 version-probe shell + DO stub | `workers/agent-core/src/index.ts:6-24`; `workers/agent-core/src/nano-session-do.ts:1-17` |
+| 真实 host substrate 在哪里 | **仍在 `@nano-agent/session-do-runtime@0.3.0`** | `packages/session-do-runtime/package.json:1-40`; `docs/design/pre-worker-matrix/W3-absorption-blueprint-session-do-runtime.md:20-25,39-48` |
+| 当前最大 runtime 缺口 | **default / remote composition 仍未把 kernel/workspace/eval/storage 接满** | `packages/session-do-runtime/src/composition.ts:82-106`; `packages/session-do-runtime/src/remote-bindings.ts:324-399` |
+| worker-matrix 组装范围 | **A1-A5 都归 `agent-core` 组** | `docs/design/pre-worker-matrix/W3-absorption-map.md:31-42,46-77` |
+
+---
+
+## 4. 现在最该怎么理解 `agent.core`
+
+### 4.1 它已经同时有“壳”和“原型”
+
+今天的 `agent.core` 不是单点事实，而是两层真相同时存在：
+
+| 层 | 当前真实物体 | 现在能说明什么 |
+|---|---|---|
+| deploy shell | `workers/agent-core/` | W4 已证明 worker 目录、wrangler shape、DO slot、preview deploy path 都真实存在 |
+| host substrate | `packages/session-do-runtime/` | 真正的 Worker/DO host、session ingress、HTTP/WS controller、checkpoint/replay、remote seam wiring 仍在这里 |
+
+因此 r2 不应再写成：
+
+> “先定义 agent-core 是什么。”
+
+而应写成：
+
+> **“agent-core 已有 shell 与 substrate；下一步是把 A1-A5 吸收并装成 live host runtime。”**
+
+### 4.2 当前的 worker shell 是诚实收窄，不是假装完成
+
+`workers/agent-core` 当前只做三件事：
+
+1. 暴露 `fetch()` 并返回版本探针 JSON：`workers/agent-core/src/index.ts:6-24`
+2. 导出 `NanoSessionDO` stub：`workers/agent-core/src/nano-session-do.ts:11-17`
+3. 保持 `SESSION_DO` active，而把 `BASH_CORE / CONTEXT_CORE / FILESYSTEM_CORE` 留在注释态 future slots：`workers/agent-core/wrangler.jsonc:14-34`
+
+这正是 W4 想证明的东西：
+
+> **deploy-shaped host shell 已落地，但 live cross-worker assembly 还没有开始。**
+
+### 4.3 当前的 host substrate 已经远超“概念草图”
+
+`session-do-runtime` 仍是 `agent.core` 最重要的当前代码证据，因为它已经真实拥有：
+
+1. Worker entry → DO forwarding：`packages/session-do-runtime/src/worker.ts:1-89`
+2. Session runtime env / remote seam catalog：`packages/session-do-runtime/src/env.ts:36-121`
+3. default composition / remote composition：`packages/session-do-runtime/src/composition.ts:82-106`; `packages/session-do-runtime/src/remote-bindings.ts:324-399`
+4. 真正的 DO host、本地 checkpoint/replay、session lifecycle glue：`packages/session-do-runtime/src/do/nano-session-do.ts`
+
+这意味着 `agent.core` 的主任务已经从“有没有 host runtime”变成了：
+
+> **如何把现成 substrate 吸进 `workers/agent-core/src/` 并接成默认真相。**
 
 ---
 
 ## 5. 推荐阅读顺序
 
 1. **先读** `realized-code-evidence.md`  
-   先把“现在仓库里到底已经有什么”读清楚，避免先入为主把 `agent.core` 当成 greenfield。
+   先把 shell、substrate、runtime gaps 的当前事实读清。
 
 2. **再读** `internal-nacp-compliance.md`  
-   它定义 `agent.core` 作为 host 的协议底线，尤其是 `Session profile vs Core envelope` 的 ownership。
+   看清 `agent.core` 作为 host 继续要遵守的双协议边界。
 
 3. **再读** `external-contract-surface.md`  
-   它定义 `client / upstream / downstream / platform` 四层外部面，避免把所有职责吞成一个“万能 controller”。
+   把当前 shell surface、未来 host surface、upstream/downstream seam 区分开。
 
 4. **最后读** `cloudflare-study-evidence.md`  
-   它把 B1-B7/B8 的 Cloudflare 证据与 `context/smind-contexter` 的 edge-native 经验放到一起，给出平台侧边界。
+   把 W4 deploy reality、DO host law、service-binding activation 边界放回平台层理解。
 
 ---
 
-## 6. 当前仍然开放的关键缺口
+## 6. r2 现在不该再犯的三种错误
 
-| 缺口 | 当前状态 | 是否阻止 `agent.core` 作为 first-wave 研究对象 | Phase 0 charter 建议 |
-|---|---|---|---|
-| 默认 composition 未实例化 `KernelRunner` | 仍未接通 | **不阻止研究，但阻止"已完成"判断** | **Phase 0 唯一必要里程碑**(见 §4 最后一行) |
-| 默认 composition 未实例化真实 `LLMExecutor` | 仍未接通 | 同上 | 同上 (与 kernel 同一 PR) |
-| **`initial_context` consumer 在 host 侧缺失**(责任已明确归 agent.core host) | schema 冻结,host 侧未接 | **不阻止 host 定位冻结，但阻止 upstream integration 宣称完成** | **Phase 0 必补,与 kernel/llm 同一 PR**;`NanoSessionDO.dispatchAdmissibleFrame` 的 `session.start` 分支新增 `if (body.initial_context) { workspaceComposition.assembler.appendInitialContextLayer(...); }` 调用。详细决策见 `context-core/index.md §6.3`。|
-| `TEAM_UUID / SESSION_UUID` 仍未完全成为显式公开 env contract | 部分隐式存在 | **不阻止方向判断，但需要后续文档/类型收口** | **defer to Phase 1** — 与 wrangler deploy 文档一起收口 |
-| F03/F09 两个 owner/platform gate | 仍 open | **不阻止 `agent.core` 建模，但阻止把 cross-colo/high-volume network 当成已验证事实** | **owner-side action** — 非 charter scope |
+1. **把 `agent.core` 当成 greenfield worker**  
+   W4 shell 与 `session-do-runtime` substrate 都已经存在。
+
+2. **把 `agent.core` 写成 binding slot**  
+   handoff 已把 host 身份冻结。
+
+3. **把 W1/W4 未交付的内容写成“已 live”**  
+   service bindings 还未在 `workers/agent-core` 激活；remote protocol families 仍是 RFC-only direction，不是已 ship runtime API。
 
 ---
 
-## 7. 本索引的使用方式
+## 7. ancestry-only 参考
 
-如果后续要继续编写 `worker-matrix` 的 `agent.core` 设计文档，建议把本目录当成下面这三件事的 SSOT：
+若需要追溯更早的论证背景，再回去看：
 
-1. **原始素材召回入口**：先沿着这里的原始路径回到 handoff / code / context 本体；
-2. **当前真相裁判**：遇到 B8/B9 旧口径冲突时，以这里列出的当前代码锚点为准；
-3. **边界保护器**：任何把 `agent.core` 写成“普通 remote worker”“binding slot”“长期记忆 orchestrator”的设计，都应视为越界。
+1. `docs/handoff/after-foundations-to-worker-matrix.md`
+2. `docs/issue/after-foundations/B8-phase-1-closure.md`
+3. `docs/eval/after-foundations/worker-matrix-eval-with-GPT.md`
+4. `docs/eval/after-foundations/worker-matrix-eval-with-Opus.md`
+
+但在 r2 写作时，这些只应用来保留：
+
+- host vs remote 心智模型
+- 平台 law
+- 早期 readiness rationale
+
+不应用来覆盖：
+
+- pre-worker W3/W4/W5 的当前入口口径
+- 当前 `workers/agent-core` shell reality
+- 当前 `@haimang/nacp-*` 发布事实
+
+---
+
+## 8. 本索引的最终判断
+
+**今天的 `agent.core` 应被写成：一个已经拥有 deploy shell 与 host substrate 的目标 host worker。**
+
+所以 `worker-matrix` r2 的正确问题不是“要不要先建 agent-core”，而是：
+
+> **如何按 A1-A5 吸收顺序，把现有 `session-do-runtime`、kernel、llm、hooks、eval seam 组装进 `workers/agent-core/`，并把当前 shell 提升成 live host runtime。**

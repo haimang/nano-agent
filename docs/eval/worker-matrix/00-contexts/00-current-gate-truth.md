@@ -1,113 +1,142 @@
 # Worker Matrix — Current Gate Truth
 
 > **Snapshot date**: `2026-04-23`
-> **Revision 3**: `2026-04-23` — integrated pre-worker-matrix final closure / handoff state (see §7 below)
+> **Revision 4**: `2026-04-23` — `00-contexts` rebuilt around pre-worker-matrix closure + current repo reality
 > **Use this file before consuming the rest of the bundle.**
 
 ---
 
-## 1. One-line verdict (revised)
+## 1. One-line verdict
 
-**Worker-matrix planning should now start from the pre-worker-matrix final closure and handoff pack. B8 handoff and B9 contract freeze remain stable upstream truths, but the direct gate is no longer “B8 + B9 alone”; it is “after-foundations completed → pre-worker-matrix closed → worker-matrix rewrite r2”.**
+**Worker-matrix planning may start now, but only as `plan-worker-matrix.md` rewrite r2. The direct kickoff pack is pre-worker-matrix W5 closure/handoff plus current code truth; B8/B9 remain upstream ancestry, not the immediate gate.**
 
 ---
 
-## 2. What is stable enough to plan against
+## 2. Direct planning pack
 
-### 2.1 B8 handoff and B9 freeze remain valid upstream inputs
-
-The following are still good upstream planning inputs:
-
-1. `B8-phase-1-closure.md` as the consolidated truth inventory
-2. `after-foundations-to-worker-matrix.md` as the main handoff memo
-3. `next-phase-worker-naming-proposal.md` as the naming seed
-4. `wrangler-worker.toml` and `composition-factory.ts` as starter shapes
-5. `docs/issue/after-foundations/B9-final-closure.md` as the reconciled contract-freeze closure
-
-### 2.2 worker-matrix architecture evaluations remain useful
-
-The GPT / Opus worker-matrix evaluations and the `smind-contexter` learnings are still direct design inputs for:
-
-- first-wave worker boundaries
-- host vs remote worker split
-- `context.core` scope and timing
-- `skill.core` reservation posture
-
-### 2.3 pre-worker-matrix is now the authoritative downstream handoff pack
-
-The new direct planning pack is:
+Treat the following as the actual rewrite input set:
 
 1. `docs/issue/pre-worker-matrix/pre-worker-matrix-final-closure.md`
 2. `docs/handoff/pre-worker-matrix-to-worker-matrix.md`
 3. `docs/issue/pre-worker-matrix/W5-closure.md`
 4. `docs/issue/pre-worker-matrix/W4-closure.md`
+5. `docs/design/pre-worker-matrix/W3-absorption-map.md`
+6. `docs/design/pre-worker-matrix/W3-absorption-blueprint-capability-runtime.md`
+7. `docs/design/pre-worker-matrix/W3-absorption-blueprint-workspace-context-artifacts-split.md`
+8. `docs/design/pre-worker-matrix/W3-absorption-blueprint-session-do-runtime.md`
+9. `03-evaluations/current-worker-reality.md`
+
+These are the files that answer:
+
+- what is already frozen,
+- what still belongs to worker-matrix,
+- what code truth exists today,
+- and what the first absorption / assembly PRs must inherit.
 
 ---
 
-## 3. What was not yet stable — and is now repaired
+## 3. Current repo truth that r2 must assume
 
-The 2026-04-21 first-pass snapshot of this meta-doc flagged three B9 correctness items as blockers/high. **All three have been materially repaired in-place** via the B9 review §6 response. The original findings and their current status:
+### 3.1 Protocol / package truth
 
-| original finding | severity | status as of rev 2 | repaired how |
-|---|---|---|---|
-| `NanoSessionDO.acceptClientFrame()` wires `verifyTenantBoundary()` as fire-and-forget — tenant violation recorded but dispatch still runs | blocker | **fixed** | `acceptClientFrame` changed to `async`; `await verifyTenantBoundary(...)`; boundary failure converted to typed `IngressEnvelope` rejection; `webSocketMessage`'s `if (!envelope.ok) return;` now actually gates dispatch. Negative-case test `test/tenant-plumbing-contract.test.mjs` ("tenant violation blocks dispatch") added to lock behavior. |
-| `wrapAsError()` cannot produce a legal per-verb error envelope for the advertised request-to-error flow under 1.3 surface | high | **fixed via scope narrow + API upgrade** | Helper explicitly labeled **provisional** across JSDoc / RFC §3.1 / CHANGELOG / closure. Added `NACP_ERROR_BODY_VERBS: ReadonlySet<string>` registry (empty at B9; populated by migration PR). Added `WrapAsErrorOverrides.target_message_type` override so callers can target the response verb. Two new root tests lock honest reality: registry-empty + "output NOT yet valid under 1.3 surface." |
-| `packages/nacp-session/README.md` still carries one stale Core-owned phase-gate statement | low | **fixed** | README §"Relationship to NACP-Core" rewritten to state session owns its own `SESSION_PHASE_ALLOWED` matrix; only imports `SessionPhase` *type* from Core. |
+1. `@haimang/nacp-core` is now **`1.4.0`**
+2. `@haimang/nacp-session` is now **`1.3.0`**
+3. GitHub Packages first publish is already real, not theoretical
+4. only those two packages remain permanent external package truth; Tier B packages are absorption inputs, not forever-libraries
 
-For full integration response, see `docs/code-review/after-foundations/B9-reviewed-by-GPT.md` §6 and `docs/issue/after-foundations/B9-final-closure.md` §8.
+### 3.2 Runtime truth
+
+1. `@nano-agent/session-do-runtime@0.3.0` is still the host-runtime substrate
+2. `createDefaultCompositionFactory()` still returns `kernel / llm / capability / workspace / hooks / eval / storage = undefined` in the default path
+3. remote composition still leaves `kernel / workspace / eval / storage` unresolved in `remote-bindings.ts`
+4. `initial_context` still exists as shipped wire schema, but there is still **no host-side consumer wiring**
+
+### 3.3 Worker-shell truth
+
+1. `workers/agent-core`, `workers/bash-core`, `workers/context-core`, `workers/filesystem-core` physically exist
+2. all 4 shells are in the pnpm workspace
+3. `agent-core` has a real preview deploy:
+   - `https://nano-agent-agent-core-preview.haimang.workers.dev`
+4. the other 3 workers are still shell-only / dry-run validated
+5. current worker shell dependency posture is `workspace:*` for the two published NACP packages, by deliberate interim choice
+
+### 3.4 Scope truth
+
+1. `skill.core` remains reserved / deferred
+2. workspace RPC / remote compact delegate / evidence forwarding remain **RFC-frozen directions**, not shipped runtime APIs
+3. W3 blueprints and map are now the execution baseline for Tier B absorption
 
 ---
 
-## 4. Practical reading law for this bundle
+## 4. Practical reading law
 
-Use the following precedence:
+Use this precedence:
 
-1. **latest review truth**
-2. **then action-plan intent**
-3. **then older closure posture**
+1. **pre-worker final closure / handoff**
+2. **current code truth condensed inside `00-contexts`**
+3. **B8/B9 ancestry summaries**
+4. **historical templates**
 
 In practice, that means:
 
-| topic | use this as current truth | do not blindly inherit |
+| question | read this first | do not start from |
 |---|---|---|
-| direct worker-matrix rewrite input | `docs/issue/pre-worker-matrix/pre-worker-matrix-final-closure.md` + `docs/handoff/pre-worker-matrix-to-worker-matrix.md` + this file | the deprecated `docs/plan-worker-matrix.md` r1 banner text alone |
-| B8 worker-matrix handoff ancestry | `01-b8-handoff/*` | scattered older phase docs |
-| B9 contract freeze readiness | `02-b9-contract/B9-reviewed-by-GPT.md` §6 response + `docs/issue/after-foundations/B9-final-closure.md` §8 (revision) | B9 review §1-5 without the §6 integration |
-| overall stage-chain readiness | this file rev 3 + pre-worker final closure/handoff + B9 post-integration closure | the old direct “after-foundations → worker-matrix Phase 0 OPEN” wording |
+| what is the immediate kickoff pack? | pre-worker final closure + handoff | old B8/B9 copies alone |
+| what code exists today? | `03-evaluations/current-worker-reality.md` | early exploratory evaluations or stale detailed indexes |
+| what must remain immutable from after-foundations? | `01-b8-handoff/*` + `02-b9-contract/*` summaries + canonical source docs they cite | deprecated direct gate wording |
+| what should r2 inherit as implementation order? | W3 map + representative blueprints + W4 closure | the old deprecated r1 worker charter |
 
 ---
 
-## 5. What worker matrix should do with this (revised)
+## 5. What counts as ancestry only
 
-1. Start charter/design from the pre-worker handoff memo and final closure, not from the deprecated r1 worker charter.
-2. Consume B8/B9 as **upstream shipped truth** through that pack — especially the reconciled session/core contract, tenant-boundary gating, and naming/binding ancestry.
-3. The `wrapAsError()` helper is **provisional** — do NOT rely on it producing a valid envelope for existing verbs until the per-verb migration PR (RFC §3.3) lands.
-4. Use the W3 absorption map + representative blueprints as the first concrete execution baseline for Tier B absorption.
-5. Use W4 shells as already-materialized topology; `agent-core` real preview deploy proves one live shell path, while the other three remain honest dry-run shells.
-6. Keep the dual import reality explicit: published `@haimang/*` exists, and `workspace:*` remains a legal interim path until worker-matrix chooses its cutover milestone.
+The following remain important, but are no longer the direct entry gate:
+
+1. B8 platform findings and B7-derived platform law
+2. B9 contract-freeze rationale and implementation review history
+3. early GPT / Opus worker-matrix evaluations
+4. historical TOML / composition starter templates
+
+Use them to preserve:
+
+- platform constraints,
+- contract law,
+- host-vs-remote mental model,
+- and evaluation rationale.
+
+Do **not** use them to override:
+
+- pre-worker W0-W5 closure truth,
+- current package versions,
+- current shell topology,
+- or the current “rewrite first, execute next” stage gate.
 
 ---
 
-## 6. Revision 2 provenance (2026-04-21)
+## 6. Immediate rewrite consequences
 
-This revision was triggered by the Opus context-space review at `docs/eval/worker-matrix/context-space-examined-by-opus.md` §6 "Patch-1", which identified that the first-pass snapshot of this meta-doc had become stale relative to:
+`plan-worker-matrix.md` r2 should therefore:
 
-1. The B9 review integration response at `docs/code-review/after-foundations/B9-reviewed-by-GPT.md` §6
-2. The B9 final closure revision at `docs/issue/after-foundations/B9-final-closure.md` top-of-file + §8
-3. The per-worker `index.md` files, which already reflected the post-fix state
-
-The underlying asymmetry — meta-doc lagging per-worker docs — is tracked as a future curation risk. Any subsequent per-worker doc update must synchronize this meta-doc in the same PR.
+1. **not** reopen topology or package-destiny debates
+2. **not** pretend remote protocol families already shipped in code
+3. **not** rebuild worker shells from scratch
+4. **not** treat `agent.core` as a binding slot
+5. **must** explicitly schedule:
+   - first real absorption order,
+   - `workspace:*` → published-path cutover milestone,
+   - live service-binding activation sequence,
+   - and W3 pattern-placeholder backfill
 
 ---
 
-## 7. Revision 3 provenance (2026-04-23)
+## 7. Revision 4 provenance
 
-This revision was triggered by W5 closure and handoff, which converted pre-worker-matrix from an active gating phase into a closed predecessor stage. The concrete inputs are:
+This revision was triggered because the old `00-contexts` bundle still centered B8/B9 and early evaluations as if pre-worker-matrix had not already finished W0-W5.
 
-1. `docs/issue/pre-worker-matrix/pre-worker-matrix-final-closure.md`
-2. `docs/handoff/pre-worker-matrix-to-worker-matrix.md`
-3. `docs/issue/pre-worker-matrix/W5-closure.md`
-4. `docs/issue/pre-worker-matrix/W4-closure.md`
-5. `docs/plan-worker-matrix.md` top-of-file state flip to `needs-rewrite-r2`
+The rebuild uses:
 
-The key meta change is simple: B8/B9 remain upstream truth, but worker-matrix should no longer read them as the *direct* kickoff gate. Pre-worker-matrix is now the immediate predecessor stage and must mediate that handoff.
+1. pre-worker final closure and handoff,
+2. W0-W4 closures,
+3. current package / worker code truth,
+4. the current worker-index docs under `docs/eval/worker-matrix/`,
+5. and B8/B9 only as mediated ancestry.

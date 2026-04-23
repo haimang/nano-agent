@@ -1,180 +1,162 @@
 # filesystem.core — external contract surface
 
-> 目标：回答 `filesystem.core` 今天实际暴露给哪些外部消费者；哪些 surface 已真实存在，哪些仍只是 seam 或 reserved slot。
+> 目标：回答 `filesystem.core` 今天到底向外暴露了什么，以及哪些 surface 仍未落到 worker shell。
 
 ---
 
 ## 0. 先给结论
 
-**`filesystem.core` 当前最真实的 external surface 不是独立 Worker API，而是三层组合：**
+**今天的 `filesystem.core` 外部面也必须拆成两层来看：**
 
-1. **workspace package API**：`MountRouter / WorkspaceNamespace / MemoryBackend / ReferenceBackend / ArtifactRef / SnapshotBuilder`
-2. **fake-bash consumer API**：`pwd/ls/cat/write/mkdir/rm/mv/cp/rg/git`
-3. **runtime assembly seam**：`composeWorkspaceWithEvidence(...)`
+1. **当前真实 worker shell**：`workers/filesystem-core`
+2. **当前真实 workspace/storage substrate 外部面**：D1 `workspace-context-artifacts` filesystem slice + D2 `storage-topology`
 
-而**独立 remote / service-binding filesystem worker surface 目前仍不存在**。
-
----
-
-## 1. 原始素材召回表
-
-| 类型 | 原始路径 | 关键行 | 用途 |
-|---|---|---|---|
-| workspace package contract | [`packages/workspace-context-artifacts/README.md`](../../../../packages/workspace-context-artifacts/README.md) | `17-64,68-115` | 证明 workspace package 当前对外承诺了什么、没承诺什么 |
-| storage package contract | [`packages/storage-topology/README.md`](../../../../packages/storage-topology/README.md) | `18-63,66-100` | 证明 storage-topology 的 external face 仍是 semantics library |
-| capability contract | [`packages/capability-runtime/README.md`](../../../../packages/capability-runtime/README.md) | `20-93,153-197` | 证明 fake-bash 对 filesystem/search/vcs 的 current surface |
-| workspace runtime seam | [`packages/session-do-runtime/src/workspace-runtime.ts`](../../../../packages/session-do-runtime/src/workspace-runtime.ts) | `1-18,45-62,75-100` | 证明 runtime 侧存在正式 workspace composition seam |
-| default/local assembly | [`packages/session-do-runtime/src/do/nano-session-do.ts`](../../../../packages/session-do-runtime/src/do/nano-session-do.ts) | `282-307` | 证明默认 DO 路径会本地构造 workspace handle |
-| non-ready remote seam | [`packages/session-do-runtime/src/composition.ts`](../../../../packages/session-do-runtime/src/composition.ts) / [`remote-bindings.ts`](../../../../packages/session-do-runtime/src/remote-bindings.ts) | `82-106` / `385-395` | 证明 remote/default composition 仍没有 `workspace` remote surface |
+而 **live standalone filesystem-core worker API** 仍未在当前 shell 中落地。
 
 ---
 
-## 2. 第一层 external surface：workspace package API
+## 1. 当前最该看的直接证据
 
-当前 `workspace-context-artifacts` README 已经把 v1 对外面收得很明确：
-
-- core types：`WorkspacePath`、`MountConfig`、`ArtifactRef`、`PreparedArtifactRef`、`WorkspaceSnapshotFragment`：`README.md:17-23`
-- mount/router/namespace：`MountRouter + WorkspaceNamespace`：`24-27`
-- backends：`MemoryBackend + ReferenceBackend seam`：`27`
-- artifact/promotion/context/snapshot：`28-47`
-
-这意味着 today 的 `filesystem.core` 不是“写死在 session DO 里的隐式实现”，而是已经有一层可直接 import 的 package-level contract。
-
-但同一份 README 也非常明确它**不承诺**：
-
-- final DO/KV/R2/D1 topology：`49-54`
-- production backend adapters：`53-54`
-- Git-style repository semantics：`55`
-- general `/_platform/` access：`63-64`
-
-因此，这层 external contract 的正确说法是：
-
-> **它已经是一套可复用 library surface，但还不是一个完成了 deploy wiring 的 external worker surface。**
-
----
-
-## 3. 第二层 external surface：fake-bash / capability consumer face
-
-## 3.1 当前被正式注册并文档化的 filesystem family
-
-`capability-runtime/README.md` 当前把 minimal command pack 与 target state 写得很直接：
-
-- filesystem：`pwd / ls / cat / write / mkdir / rm / mv / cp`：`20-41`
-- search：canonical `rg`：`38`
-- vcs：`git`：`41`
-- execution target 仍以 `local-ts` 为 reference target，`service-binding` 和 `browser-rendering` 都还是 not-connected slots：`84-93`
-
-## 3.2 file/search/vcs 三面已经在共享一套 workspace truth
-
-当前真实 surface 不是若干孤立 handler，而是一套共用 substrate：
-
-- `filesystem.ts`：`ls/cat/write/mkdir/rm/mv/cp` 都通过 `resolveWorkspacePath()` 与 `WorkspaceFsLike`：`packages/capability-runtime/src/capabilities/filesystem.ts:8-20,102-237`
-- `search.ts`：`rg` 在 namespace 内递归遍历 `listDir/readFile`，并对 `/_platform/**` 做跳过：`packages/capability-runtime/src/capabilities/search.ts:7-20,74-205`
-- `vcs.ts`：`git status/diff/log` 只读基线也走同一 workspace truth：`packages/capability-runtime/src/capabilities/vcs.ts:65-99,117-170`
-
-这意味着 `filesystem.core` 当前最成熟的“用户可感知” external surface，其实是：
-
-> **fake-bash compatibility surface。**
-
-## 3.3 但这层 surface 仍有三条必须诚实标注的限制
-
-1. `mkdir` 仍是 partial-with-disclosure，不代表真实目录实体：`filesystem.ts:12-16,176-188`
-2. `rg` 是 minimal subset，不是 full ripgrep：`search.ts:4-25`
-3. `git` 只有 `status/diff/log`，其中 `diff/log` 仍是 honest partial：`vcs.ts:4-23,34-50,135-166`
-
-所以它已经“可被 LLM 消费”，但并不等于“已经提供传统 Linux 文件系统体验”。
-
----
-
-## 4. 第三层 external surface：runtime assembly seam
-
-`session-do-runtime` 里，`filesystem.core` 当前真实暴露出来的运行时接线点是：
-
-## 4.1 `composeWorkspaceWithEvidence(...)`
-
-`workspace-runtime.ts` 已经给出正式 composition seam：
-
-- 输入：`namespace`、`artifactStore`、可选 `assemblerConfig`、`evidenceSink`、`evidenceAnchor`：`45-62`
-- 输出：`assembler / compactManager / snapshotBuilder / captureSnapshot`：`32-43,75-100`
-
-这说明 runtime 侧真正需要的 external contract，不是“把所有 filesystem 细节全暴露出来”，而是一个**装配好的 workspace business object bundle**。
-
-## 4.2 默认 DO 路径已经会本地构造 workspace handle
-
-`NanoSessionDO` 当前在 composition factory 没给 `workspace` 时，会自己装：
-
-- `new WorkspaceNamespace(new MountRouter())`
-- `new InMemoryArtifactStore()`
-- `composeWorkspaceWithEvidence(...)`
-
-见：`packages/session-do-runtime/src/do/nano-session-do.ts:282-307`
-
-这说明 `filesystem.core` 当前已经进入默认 deploy-shaped host 路径，但形式是：
-
-> **host-local composition，而不是独立 remote worker。**
-
----
-
-## 5. 当前不存在的 external surface
-
-## 5.1 不存在独立 remote filesystem worker contract
-
-`createDefaultCompositionFactory()` 仍返回 `workspace: undefined`：`packages/session-do-runtime/src/composition.ts:82-106`
-
-而 `makeRemoteBindingsFactory()` 也同样返回：
-
-```ts
-workspace: undefined
-```
-
-见：`packages/session-do-runtime/src/remote-bindings.ts:385-395`
-
-也就是说：
-
-- hooks/capability/provider 已经有 remote seam
-- **workspace/filesystem 还没有**
-
-所以今天不能把 `filesystem.core` 说成一个已经被 service binding 接出的 worker。
-
-## 5.2 storage-topology 也不是 runtime I/O surface
-
-`storage-topology/README.md` 已明确：
-
-- 它是 semantics library：`9-14`
-- 不直接执行 storage I/O：`9-12`
-- deploy-layer 才负责 wiring implementation：`58-59`
-
-因此它提供的是：
-
-- key builders
-- ref builders
-- placement/calibration helpers
-
-而不是一个“文件读写 RPC API”。
-
----
-
-## 6. 当前最合理的 surface 分层
-
-把今天的 `filesystem.core` external surface 用一句话收起来，大致是：
-
-| 层 | 当前真实 surface | readiness |
+| 类型 | 路径 | 用途 |
 |---|---|---|
-| package/library | `MountRouter / WorkspaceNamespace / backends / refs / snapshot` | **高** |
-| fake-bash consumer | `pwd/ls/cat/write/mkdir/rm/mv/cp/rg/git` | **中** |
-| host runtime composition | `composeWorkspaceWithEvidence(...)` + default local assembly | **中** |
-| remote worker / service binding | 独立 filesystem worker contract | **低 / 未接线** |
+| shell code | `workers/filesystem-core/package.json`; `wrangler.jsonc`; `src/index.ts`; `test/smoke.test.ts` | 证明当前 deploy shell surface |
+| package surface | `packages/workspace-context-artifacts/README.md`; `packages/storage-topology/README.md` | 证明当前真正的 library-level external API |
+| consumer face | `packages/capability-runtime/README.md`; `src/capabilities/filesystem.ts`; `search.ts`; `vcs.ts` | 证明当前最真实的 user-visible consumer surface |
+| runtime seam | `packages/session-do-runtime/src/workspace-runtime.ts`; `src/do/nano-session-do.ts` | 证明当前 host-local composition seam |
 
 ---
 
-## 7. 结论
+## 2. 第一层 external surface：当前 worker shell
 
-**`filesystem.core` 当前对外最成熟的是 package API 与 fake-bash consumer face；最不成熟的是独立 remote worker face。**
+### 2.1 `workers/filesystem-core` 现在真实暴露了什么
 
-所以 worker-matrix 第一波最推荐的姿态不是：
+当前 shell 行为非常窄：
 
-> “先定义一个巨大的 filesystem worker API”
+- `fetch()` 返回 `worker / nacp_core_version / nacp_session_version / status / phase`：`workers/filesystem-core/src/index.ts:5-22`
+- smoke test 只验证 fetch handler 与版本探针：`workers/filesystem-core/test/smoke.test.ts:1-26`
 
-而是：
+因此当前 shell 对外最准确的表述是：
 
-> **先沿现有 package surface 和 host-local composition 把 workspace truth 用起来，再在真正需要 remoteize 时，把 composition seam 升级成 binding surface。**
+> **一个 deploy-shaped probe shell，不是 live filesystem worker API。**
+
+### 2.2 W4 已把“没有 worker 壳”这个问题关闭
+
+当前 closure truth：
+
+- `docs/issue/pre-worker-matrix/W4-closure.md:18-27,47-48`
+
+这意味着 r2 不应再写“filesystem-core 还没有独立 worker 目录/配置/CI”。
+
+---
+
+## 3. 第二层 external surface：当前 package / substrate API
+
+当前真正成熟的外部面仍是两个 package 的组合：
+
+1. `@nano-agent/workspace-context-artifacts@0.1.0` 的 filesystem slice
+2. `@nano-agent/storage-topology@2.0.0`
+
+它们当前对外提供的真实 surface 包括：
+
+| 面 | 当前真实 surface |
+|---|---|
+| workspace namespace | `MountRouter`、`WorkspaceNamespace` |
+| backends | `MemoryBackend`、`ReferenceBackend` |
+| artifact identity | refs / promotion |
+| snapshot fragment | workspace/context fragment builder |
+| storage semantics | key builders、ref builders、placement/calibration、DO/R2 adapters |
+
+因此现在的 `filesystem.core` 不是“写死在 host 里的隐式 helper”，而是：
+
+> **已经拥有单独 package-level public surface 的 workspace/storage substrate。**
+
+---
+
+## 4. 当前最真实的 consumer face：fake-bash / capability layer
+
+当前最成熟、最用户可感知的 external surface，其实不是 worker shell，而是：
+
+1. `pwd / ls / cat / write / mkdir / rm / mv / cp`
+2. `rg`
+3. `git` readonly subset
+
+也就是 fake-bash / capability-runtime 对 D1/D2 truth 的消费面。
+
+这意味着 external surface 的正确写法是：
+
+> **filesystem-core today is already visible through fake-bash consumer paths**
+
+而不是：
+
+> “只有未来 remote worker 才会暴露 filesystem truth”
+
+---
+
+## 5. 当前最真实的 runtime external seam：host-local composition
+
+### 5.1 `composeWorkspaceWithEvidence(...)` 仍是当前最真实的 runtime 接缝
+
+当前 host runtime 侧最正式的接缝仍是：
+
+- `packages/session-do-runtime/src/workspace-runtime.ts`
+
+它输出：
+
+1. `assembler`
+2. `compactManager`
+3. `snapshotBuilder`
+4. `captureSnapshot()`
+
+这说明 runtime 侧今天真正需要的 external contract 不是“巨大的 filesystem worker API”，而是：
+
+> **一个装配好的 workspace business-object bundle。**
+
+### 5.2 默认 DO 路径仍是 local-compose，而不是 remote filesystem worker
+
+`NanoSessionDO` 当前仍会在 fallback path 本地装：
+
+1. `MountRouter`
+2. `WorkspaceNamespace`
+3. `InMemoryArtifactStore`
+4. `composeWorkspaceWithEvidence(...)`
+
+因此今天的 runtime reality 仍是：
+
+> **host-local workspace composition**
+
+而不是：
+
+> “已经通过 remote worker 在调用 filesystem-core”
+
+---
+
+## 6. 当前明确不存在的 external surface
+
+当前仍然**不存在**：
+
+1. live standalone filesystem-core fetch API（除了 probe JSON）
+2. default remote workspace service-binding path
+3. full KV/D1/R2 filesystem service
+4. Linux/POSIX/overlay/full FS runtime
+
+所以把今天的 `filesystem.core` 写成“独立 filesystem service 已上线”会明显过头。
+
+---
+
+## 7. 对 r2 的直接要求
+
+1. **承认 `workers/filesystem-core` shell 已存在。**
+2. **把 D1/D2 组合视为当前真正的语义本体。**
+3. **把 fake-bash consumer face 视为 today 最真实的 user-visible external surface。**
+4. **把 host-local composition 视为当前真实 runtime seam，而不是空白。**
+5. **在 D1/D2 吸收完成前，不把 probe shell 写成 live worker API。**
+
+---
+
+## 8. 本文件的最终判断
+
+**今天 `filesystem.core` 的外部面最成熟的是 package/substrate API、fake-bash consumer face、以及 host-local composition seam；最不成熟的是“吸收进 worker shell 后的 live remote worker API”。**
+
+所以 worker-matrix r2 最合理的写法是：
+
+> **以现有 D1/D2 package surface、fake-bash consumer path、host-local composition 为语义基线，把 `workers/filesystem-core` 从 deploy shell 提升为真正的 filesystem worker，而不是另起一套巨大 API 设计。**

@@ -1,151 +1,124 @@
 # Worker Matrix — Cross-Worker Interaction Matrix
 
-> Status: `patch-2 from context-space-examined-by-opus.md §6`
-> Author: Claude Opus 4.7 (1M context)
-> Date: 2026-04-21
-> Purpose: give worker-matrix charter authors a single N×N interaction view so they can derive dependency graphs, first-wave ordering, and deploy-shape wiring without re-reading 4 worker `external-contract-surface.md` files.
->
-> This file is **derived** from (and must stay consistent with) the per-worker docs at `docs/eval/worker-matrix/{agent,bash,context,filesystem}-core/`. If a cell here disagrees with its source, the per-worker doc is authoritative and this matrix must be updated.
+> **Status**: `refreshed derived matrix`
+> **Purpose**: summarize the cross-worker seams that worker-matrix r2 must preserve, wire, or deliberately defer
+> **Last refreshed**: `2026-04-23`
 
 ---
 
-## 0. How to read this
+## 0. One-line verdict
 
-- **Rows** = producer (who initiates the call)
-- **Columns** = consumer (who is called)
-- **Each cell**: the seam type + the current code status + first-wave necessity
-- **Seam type tags**:
-  - `tool.call.*` — NACP-Core tool-call envelope family
-  - `hook.emit/outcome` — NACP-Core hook event family
-  - `context.compact.*` — NACP-Core compact request/response
-  - `session.stream.event` — NACP-Session server-push stream channel
-  - `initial_context` — `session.start.body.initial_context` wire hook
-  - `in-process handle` — subsystem injected via composition factory, no wire
-  - `tenant-scoped storage` — DO storage via `getTenantScopedStorage()`
-- **Status tags**:
-  - `real` — deploy-shaped code path exists + regression-tested
-  - `seam` — transport/composition slot exists but no default consumer
-  - `missing` — no code, no seam
-  - `not-applicable` — interaction is architecturally excluded
-- **First-wave necessity**:
-  - `P0-required` — must ship before worker-matrix Phase 0 closes
-  - `P0-optional` — can ship as early as Phase 0 but not blocking
-  - `P1-defer` — scheduled for Phase 1 or later
-  - `NA` — no interaction needed
+**The current first-wave interaction model is not “4 already-live remote workers talking to each other.” It is `agent.core` as host/session edge, `bash.core` as the main remote execution seam to activate, and `context.core` / `filesystem.core` as mostly host-local substrate truths that must be absorbed without inventing unnecessary new wire paths.**
 
 ---
 
-## 1. The 4×4 matrix
+## 1. How to read this matrix
 
-> Diagonal (`X → X`) is elided because the question "how does agent.core call itself" is meaningless at the worker-matrix level.
+- **Rows** = producer / initiator
+- **Columns** = consumer / callee / dependency owner
+- each cell answers 3 questions:
+  1. what seam or dependency exists,
+  2. what the current truth is,
+  3. what r2 should do with it
+
+### Status legend
+
+| tag | meaning |
+|---|---|
+| **real-local** | live current path exists, but mostly as host-local / package-local substrate |
+| **seam** | boundary slot exists, but the default live path is not yet assembled |
+| **partial** | some real pieces exist, but a key consumer/policy decision is still missing |
+| **defer** | intentionally not a first-wave remote interaction |
+| **na** | not a meaningful first-wave interaction |
+
+---
+
+## 2. The current 4×4 interaction matrix
 
 | producer ↓ / consumer → | `agent.core` | `bash.core` | `context.core` | `filesystem.core` |
 |---|---|---|---|---|
-| **`agent.core`** | — | `tool.call.request` via `CAPABILITY_WORKER` serviceBindingTransport → **seam** + **P0-required** (must install kernel→capability wiring) | `context.compact.request` + `initial_context` consumer + in-process compact manager → **partial** (compact manager live; initial_context consumer **missing**) + **P0-required for initial_context** | in-process `WorkspaceNamespace` handle via `composeWorkspaceWithEvidence` → **real** (default DO path auto-mounts) + **P0-required** (stays real, must not regress) |
-| **`bash.core`** | `tool.call.response` (delivery_kind=response or error) back to agent host → **seam** (transport exists; response path flows back through `ServiceBindingTarget`) + **P0-required** | — | `session.stream.event` (tool progress) → routed through agent.core host, consumed by `SessionInspector` → **real** (via host stream seam) + **P0-required** | calls `WorkspaceFsLike` + `resolveWorkspacePath` — handlers consume the **same** workspace truth agent.core mounts → **real** + **P0-required** (never diverge) |
-| **`context.core`** | `hook.outcome` back into agent loop after compact completes; and compact-triggered kernel signal via `createKernelCompactDelegate` → **real** (delegate seam live in `agent-runtime-kernel`) + **P0-required for live compact loop** | **not-applicable** — context.core does not originate tool calls in v1 | — | reads `WorkspaceSnapshotBuilder.buildFragment()` for snapshot capture → **real** + **P0-required** (stays real) |
-| **`filesystem.core`** | emits `snapshot.capture` / `assembly` evidence into eval sink supplied by agent.core → **real** (default DO path installs sink) + **P0-required** (stays real) | **not-applicable** — filesystem.core does not originate tool calls; bash.core is the consumer | emits `assembly` / `artifact` / `snapshot` evidence into the same sink context.core reads → **real** + **P0-required** (stays real) | — |
-
-### 1.1 Summary statistics
-
-- **Live (real) cells**: 8 / 12
-- **Seam-only cells**: 2 / 12 (both on the `agent ↔ bash` axis — the kernel→capability wiring loop)
-- **Partial cells**: 1 / 12 (`agent → context.core initial_context consumer`)
-- **Not-applicable cells**: 2 / 12 (context.core and filesystem.core do not originate outgoing `tool.call.*` in v1)
-
-**Interpretation**: the bottleneck for worker-matrix Phase 0 closure is **not** the 4 workers individually — they are all `real` or close. The bottleneck is the **`agent.core ↔ bash.core` loop** (default composition must install kernel + capability wiring) and the **`agent.core → context.core initial_context`** seam (schema frozen, consumer missing).
+| **`agent.core`** | — | **`tool.call.*` dispatch** — `CAPABILITY_WORKER` / service-binding seam exists, but default composition does not yet install the live kernel→capability path. **Status: seam.** **r2 action:** make this the first real absorbed execution loop. | **`context.compact.*` + `initial_context` handoff** — compact substrate exists, but `initial_context` still has no host-side consumer and compact remains host-local. **Status: partial.** **r2 action:** close the host ingress → context assembly path and decide default compact posture. | **workspace / snapshot / evidence substrate** — host already depends on filesystem truth through local composition. **Status: real-local.** **r2 action:** preserve the shared substrate; do not invent a fake filesystem wire protocol for first wave. |
+| **`bash.core`** | **tool response / progress return path** — bash work returns to the host; only `agent.core` owns `session.stream.event`. **Status: seam** for remote default path, **real-local** for package/runtime truth. **r2 action:** activate the remote/default route without moving session wire ownership. | — | **no first-wave direct bash→context worker call** — any context-visible consequence should go through host stream/evidence paths, not a new bash→context protocol. **Status: defer.** | **shared workspace consumer path** — file/search/vcs handlers already consume the same workspace/path truth as filesystem-core. **Status: real-local.** **r2 action:** keep one workspace law; no duplicated path model. |
+| **`context.core`** | **compact result / evidence / hook effect back into host loop** — host remains the session edge and receives context-side consequences. **Status: real-local.** **r2 action:** keep host ownership explicit. | **no default context→bash tool loop** — context does not originate tool execution in first wave. **Status: defer.** | — | **snapshot / artifact / assembly dependency** — context-side compaction and assembly depend on the same workspace/artifact substrate owned by filesystem-core. **Status: real-local.** **r2 action:** preserve the C2↔D1 split, not a new RPC. |
+| **`filesystem.core`** | **workspace + evidence fan-in to host** — filesystem-side evidence and mounted workspace feed the host composition and eval sink. **Status: real-local.** **r2 action:** keep this as a substrate dependency, not a second session edge. | **bash is the main external consumer** — filesystem does not initiate `tool.call.*`; bash consumes filesystem truth. **Status: real-local.** | **context consumes filesystem artifacts/snapshots** — this is a shared substrate relationship, not a remote worker conversation. **Status: real-local.** | — |
 
 ---
 
-## 2. Protocol surfaces consumed per interaction
+## 3. What this matrix means for r2
 
-### 2.1 `tool.call.*` family (agent ↔ bash)
+### 3.1 Only one cross-worker loop is clearly first-wave critical
 
-- `tool.call.request` — agent.core → bash.core (command kind)
-- `tool.call.response` — bash.core → agent.core (response or error kind)
-- `tool.call.cancel` — agent.core → bash.core (command kind)
-- Role gate: `session` (producer of request/cancel) / `capability` or `skill` (producer of response). See `packages/nacp-core/src/messages/tool.ts:19-30`.
-- Matrix: `tool.call.request=command`, `tool.call.response=response|error`, `tool.call.cancel=command`. See `packages/nacp-core/src/type-direction-matrix.ts:20-24`.
+The main first-wave boundary that still needs real activation is:
 
-### 2.2 `context.compact.*` family (agent ↔ context)
+1. **`agent.core ↔ bash.core`**
 
-- `context.compact.request` — agent.core/kernel → context.core (via `createKernelCompactDelegate`)
-- `context.compact.response` — context.core → agent.core/kernel (response or error kind)
-- Role gate: request from `session`; response from `capability` or `skill`. See `packages/nacp-core/src/messages/context.ts`.
-- Today: in-process only. **No cross-worker transport** for compact exists in v1 (see `context-core/realized-code-evidence.md:294`).
+Why:
 
-### 2.3 `session.stream.event` family (agent produces; everyone feeds)
+1. the seam already exists,
+2. the worker shell already exists,
+3. the product need is immediate,
+4. and the missing piece is assembly, not invention.
 
-- Only `agent.core`'s host (`NanoSessionDO`) produces `session.stream.event` on the WS wire.
-- `bash.core` contributes `tool.call.progress` kind events; they are converted to stream events by the host (see `packages/nacp-session/src/adapters/tool.ts`).
-- `context.core` does NOT emit stream events directly; it emits evidence records that the host may optionally surface.
-- Matrix: `session.stream.event = event` (only). See `packages/nacp-session/src/type-direction-matrix.ts`.
+### 3.2 The most important non-remote gap is still `initial_context`
 
-### 2.4 Evidence vocabulary (filesystem + context → eval sink)
+The highest-value unresolved cross-worker responsibility is still:
 
-- 4 evidence kinds: `assembly`, `compact`, `artifact`, `snapshot`. See `packages/workspace-context-artifacts/src/evidence-emitters.ts:24-84, 120-175, 222-282`.
-- Consumer: `BoundedEvalSink` installed by default host in `NanoSessionDO` (see `packages/session-do-runtime/src/do/nano-session-do.ts:148-174, 256-305`).
-- This is the one truly N→1 fan-in (filesystem + context + bash + agent all contribute).
+1. `session.start.body.initial_context`
+2. host ingress consumption in `agent.core`
+3. handoff into `context.core` assembly
 
-### 2.5 `initial_context` wire hook (upstream → agent → context)
+This is cross-worker in responsibility, but not yet a separate remote wire.
 
-- Schema: `SessionStartInitialContextSchema` in `packages/nacp-session/src/upstream-context.ts`
-- Producer: an upstream orchestrator (e.g. Contexter gateway) — **not** in worker-matrix scope
-- Consumer: should be `agent.core` (host) at session-start time, which should hand the payload to `context.core`'s assembler
-- **Current status**: schema frozen + validated in `session.start` body, but **no consumer in session-do-runtime**. This is the single most important `P0-required` gap.
+### 3.3 `context.core` and `filesystem.core` are first-wave workers without first-wave remote chatter
+
+That is the core nuance this matrix is meant to preserve:
+
+1. they are real workers in the W3/W4/W5 plan
+2. their shells now physically exist
+3. but their most important current truths are still **substrate truths**
+4. so r2 should absorb and compose them first, not rush to invent extra worker-to-worker RPC
 
 ---
 
-## 3. First-wave ordering derived from this matrix
+## 4. Cross-cutting invariants
 
-If you read only the seam / partial / missing cells, the minimum viable Phase 0 wiring order is:
+Every cell above depends on these shared laws:
 
-1. **Mount kernel + llm + capability into default composition** (fixes `agent → bash` P0-required cell). This is the `agent.core` Phase 0 milestone.
-2. **Wire `initial_context` consumer into `buildIngressContext`'s session-start handling** (fixes `agent → context.core` partial cell). Hand the parsed payload to `context.core`'s assembler as the first `contextLayer` entry.
-3. **Lock `bash → context` stream-event path** via progress→`session.stream.event` adapter (already `real`, but must be regression-tested once kernel wiring is live).
-4. **Lock evidence fan-in** — filesystem + context emit to `BoundedEvalSink`; confirm no silent drop after live turn loop runs.
-
-**Deliberately NOT on the Phase 0 critical path**:
-
-- Independent `bash.core` Worker deploy shell — transport seam is live; a separate wrangler entry is a later bolt-on
-- Independent `context.core` Worker deploy shell — no remote `context.compact.*` transport in v1
-- `filesystem.core` remote service-binding — host-local workspace mount is sufficient for first wave
-- `wrapAsError()` usage in any interaction — helper is provisional; existing `{status, error?}` shape still governs
+1. **`agent.core` remains the only session edge owner** — only the host should own WebSocket / replay / stream legality
+2. **workspace/path truth stays singular** — bash, context, and filesystem must keep consuming the same workspace law
+3. **evidence vocabulary stays shared** — assembly / compact / artifact / snapshot evidence should keep converging into the same eval/evidence path
+4. **tenant-scoped storage law stays global** — absorption must not fork ref/key semantics across workers
+5. **remote seams should be added only when they solve a real first-wave problem** — shell existence alone is not sufficient justification
 
 ---
 
-## 4. Cross-cutting invariants that must hold across ALL cells
+## 5. Derived first-wave ordering
 
-These are orthogonal to any single interaction but every cell above depends on them:
+Reading the matrix strictly from highest-value unresolved cells:
 
-1. **Tenant boundary**: every cross-seam call must pass `verifyTenantBoundary()` (now `await`ed per B9-R1 fix). DO storage must route through `getTenantScopedStorage()` (per B9 ship).
-2. **Matrix legality**: every envelope emitted on wire must pass `NACP_CORE_TYPE_DIRECTION_MATRIX` (core) or `NACP_SESSION_TYPE_DIRECTION_MATRIX` (session). No `delivery_kind: event` on a `tool.call.request`, ever.
-3. **Evidence dedup**: `BoundedEvalSink` dedups on `messageUuid`; emitters that do not carry a message_uuid will drop into the overflow ring.
-4. **Stream replay**: `SessionWebSocketHelper` owns replay/ack; workers MUST NOT maintain parallel replay state.
-5. **Checkpoint contract**: `persistCheckpoint` refuses to persist when `sessionUuid` is null or `teamUuid` is missing — this is load-bearing symmetry with `validateSessionCheckpoint`.
+1. **activate `agent.core ↔ bash.core` default execution path**
+2. **close `initial_context` host-consumer → context-assembly path**
+3. **preserve filesystem/shared workspace truth while deciding connected-mode policy**
+4. **keep context/filesystem evidence and snapshot fan-in intact when absorption begins**
 
----
+Deliberately **not** first-wave critical:
 
-## 5. Uncertainties / next-charter-decisions
-
-These are questions this matrix raises but does not (yet) answer:
-
-1. Who owns the `initial_context → warm_slots` mapping logic? (agent.core as stuffing director, or context.core as assembler?) — see also `context-core/index.md:138` open gap.
-2. Should `bash.core` be allowed to emit `audit.record` directly, or only via the host? — current code has handlers for both but no policy statement.
-3. Does `context.core` ever need to call `bash.core`? (e.g. for a "read more of file X" mid-compact) — currently `not-applicable`, but a future semantic memory phase may change this.
-4. If `filesystem.core` is promoted to a remote worker, does it become a `tool.call.*` producer (like `bash.core`) or does it stay as in-process substrate? — architectural decision, not urgent for Phase 0.
-
-Charter authors should treat these as decisions to make, not facts to inherit.
+1. a new remote `context.compact.*` worker transport
+2. a new remote filesystem RPC family
+3. direct `context.core ↔ bash.core` conversations
+4. any attempt to give non-host workers ownership of `session.*` wire behavior
 
 ---
 
 ## 6. Maintenance rule
 
-This matrix is derived truth. The per-worker `external-contract-surface.md` files are primary truth. Any discrepancy must be resolved by updating this matrix, not the per-worker docs. This file is re-derivable from:
+This file is derived truth.
 
-- `docs/eval/worker-matrix/agent-core/external-contract-surface.md`
-- `docs/eval/worker-matrix/bash-core/external-contract-surface.md`
-- `docs/eval/worker-matrix/context-core/external-contract-surface.md`
-- `docs/eval/worker-matrix/filesystem-core/external-contract-surface.md`
+Primary sources remain:
 
-If those 4 files change, this file must be re-reviewed within the same PR.
+1. the 4 worker `index.md` files
+2. the 4 worker `external-contract-surface.md` files
+3. `00-contexts/00-current-gate-truth.md`
+4. pre-worker final closure / handoff + W3 map / blueprints
+
+If those move, this matrix should move in the same PR.

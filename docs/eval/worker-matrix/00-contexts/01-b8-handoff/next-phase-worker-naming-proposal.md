@@ -1,138 +1,47 @@
-# Next-phase worker naming proposal
+# Next-phase worker naming proposal — current status after pre-worker-matrix
 
-> **This is a proposal, not a frozen decision.**
-> **Worker matrix phase may adjust.**
-> **B8 does not modify `V1_BINDING_CATALOG`; it only proposes next-phase worker names.**
-
----
-
-## 1. Why this proposal exists
-
-After-foundations proved enough substrate reality to talk about first-wave workers, but B8 is still a handoff phase:
-
-1. it does **not** decide the next phase’s full charter;
-2. it does **not** rewrite the current binding catalog;
-3. it does **not** force a provider/skill split before product demand exists.
-
-What B8 *does* provide is a naming proposal the next phase can accept, reject, or refine without re-reading the whole B1-B7 stack.
+> **Status**: `proposal partly materialized`
+> **Canonical ancestry**: `docs/handoff/next-phase-worker-naming-proposal.md`
+> **Current truth sources**: `workers/*`, `docs/issue/pre-worker-matrix/W4-closure.md`, `docs/handoff/pre-worker-matrix-to-worker-matrix.md`
 
 ---
 
-## 2. Current reality that remains unchanged in B8
+## 1. What is now frozen enough to use
 
-Current shipped binding reality:
+The following logical names remain the correct first-wave mental model:
 
-| current reality | source | B8 posture |
-|---|---|---|
-| `CAPABILITY_WORKER` | `packages/session-do-runtime/src/env.ts` | unchanged |
-| `HOOK_WORKER` | `packages/session-do-runtime/src/env.ts` | unchanged |
-| `FAKE_PROVIDER_WORKER` | `packages/session-do-runtime/src/env.ts` | unchanged |
-| `SKILL_WORKERS` reserved slot | `packages/session-do-runtime/src/env.ts` | still reserved-only |
-| 3 service bindings declared in `wrangler.jsonc` | `packages/session-do-runtime/wrangler.jsonc` | unchanged |
-
-Therefore this proposal should be read as:
-
-> “Here are the **worker names** the next phase is likely to want,”  
-> not  
-> “Here is the **binding catalog** B8 already changed.”
-
----
-
-## 3. Proposed first-wave workers
-
-| proposed worker | role | form | why it is first-wave |
-|---|---|---|---|
-| `agent.core` | host worker | session DO’s next assembly form | the host still owns session lifecycle, routing, replay, and composition |
-| `bash.core` | remote worker | capability-runtime-first execution shell | fake-bash / capability execution is already a distinct shipped substrate |
-| `filesystem.core` | remote worker | storage/workspace-heavy shell | B2/B7 proved the storage substrate is independently valuable and evidence-backed |
-| `context.core` | remote worker | async compact + inspection shell | owner decision already upgraded context/core from “reserved maybe later” to first-wave |
-
-### 3.1 Suggested deployment names
-
-| logical name | suggested worker service name |
+| logical worker | current physical reality |
 |---|---|
-| `agent.core` | `nano-agent-agent-core` |
-| `bash.core` | `nano-agent-bash-core` |
-| `filesystem.core` | `nano-agent-filesystem-core` |
-| `context.core` | `nano-agent-context-core` |
+| `agent.core` | `workers/agent-core/`, service name family `nano-agent-agent-core` |
+| `bash.core` | `workers/bash-core/`, service name family `nano-agent-bash-core` |
+| `context.core` | `workers/context-core/`, service name family `nano-agent-context-core` |
+| `filesystem.core` | `workers/filesystem-core/`, service name family `nano-agent-filesystem-core` |
 
-These names are only there to reduce startup friction in worker matrix phase 1. They are not a protocol freeze.
+And:
 
----
-
-## 4. Reserved-only name
-
-| proposed worker | status | reason |
-|---|---|---|
-| `skill.core` | reserved only | current repo has no dedicated shipped skill substrate and no current product requirement forcing the split |
-
-B8 recommendation:
-
-- keep the name visible,
-- keep the slot reserved,
-- do **not** spend first-wave charter budget implementing it.
+| logical worker | status |
+|---|---|
+| `skill.core` | reserved / deferred |
 
 ---
 
-## 5. Critical distinction — `agent.core` is not a binding slot
+## 2. What remains proposal-only
 
-This is the easiest mistake for the next phase to make, so B8 keeps it explicit:
+These points are still proposal-level rather than runtime law:
 
-> **`agent.core ≠ binding slot`.**
+1. whether worker-matrix r2 keeps exactly the same deploy/service names forever
+2. whether any future binding-catalog revision is needed
+3. how far `context.core` and `filesystem.core` go in first-wave live remote activation
 
-`agent.core` is the **host worker**. It is the thing that:
+But one rule is already stable:
 
-- owns the session DO lifecycle,
-- consumes remote workers,
-- coordinates replay/checkpoint/handoff,
-- and decides composition.
-
-It is **not** one more entry in the same category as:
-
-- `CAPABILITY_WORKER`
-- `HOOK_WORKER`
-- `FAKE_PROVIDER_WORKER`
-
-Those are remote seams. `agent.core` is the host.  
-Worker matrix should preserve that abstraction boundary even if the host later exposes callback endpoints of its own.
-
-### 5.1 `agent.core` has an upstream
-
-The host/runtime distinction is only half of the story:
-
-1. `agent.core` is the host worker,
-2. but it is also the **downstream runtime** of some upstream orchestrator,
-3. and that upstream may already ship intent classification, user memory, and conversation-history logic of its own.
-
-Therefore worker matrix should assume `agent.core` must be ready to consume:
-
-- `session.start.body.initial_context`
-- upstream-stamped `authority.*`
-- session-scoped input that was already routed by an orchestrator layer
-
-B8 does **not** freeze the upstream worker’s name. It only freezes the posture:
-
-> `agent.core` should be designed as an orchestrator-ready runtime, not as the place that re-implements upstream orchestration responsibilities.
+> **`agent.core` is still the host worker. It is not a binding slot.**
 
 ---
 
-## 6. Naming migration posture for worker matrix
+## 3. How to use this naming file during r2 rewrite
 
-Recommended policy:
-
-1. keep current runtime/catalog names untouched until worker matrix has real shell code,
-2. use these names first at the **deployment/service** layer,
-3. only discuss a v2 binding catalog if first-wave shell reality actually demands it,
-4. do not let `skill.core` consume scope before the first four names are grounded.
-
----
-
-## 7. Verdict
-
-**Recommended proposal for worker matrix kickoff**
-
-1. host: `agent.core`
-2. remotes: `bash.core`, `filesystem.core`, `context.core`
-3. reserve only: `skill.core`
-
-Use this as a naming seed, not as a frozen law.
+1. keep the four first-wave logical names
+2. keep `skill.core` deferred
+3. keep deploy/service names aligned with the W4 shell reality unless r2 explicitly chooses to rename them
+4. do not reopen naming as a free-form debate before absorbing the W3/W4 pack

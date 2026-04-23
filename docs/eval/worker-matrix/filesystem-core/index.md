@@ -1,174 +1,173 @@
 # filesystem.core 上下文索引
 
-> 状态：`curated / rewritten`
-> 目标：作为 `docs/eval/worker-matrix/filesystem-core/` 的入口索引，同时提供**原始素材召回路径**、**范围边界**、**当前结论**与**阅读顺序**。
+> 状态：`refreshed after pre-worker-matrix closure`
+> 用途：服务 `worker-matrix` **rewrite r2**
+> 当前主入口：先读 `docs/eval/worker-matrix/00-contexts/00-current-gate-truth.md`
 
 ---
 
 ## 0. 一句话结论
 
-**`filesystem.core` 不是一个已经独立部署完成的 filesystem worker，而是一组已经真实存在、且相当有力的 filesystem substrate：它今天最可信的核心是 `MountRouter + WorkspaceNamespace + Memory/ReferenceBackend + tenant/ref/key law + fake-bash file/search/vcs consumer`；第一波应把它当作 host-local workspace/storage foundation，而不是误写成“完整 KV/D1/R2 文件系统服务”。**
+**`filesystem.core` 现在不是“还没有 worker 壳的 workspace/storage foundation”，而是一个已经拥有 `workers/filesystem-core` deploy shell、同时拥有 `@nano-agent/workspace-context-artifacts` filesystem slice + `@nano-agent/storage-topology` 的目标 worker。r2 要做的是 D1+D2 absorption，不是重开 filesystem worker 的存在性讨论。**
 
 ---
 
-## 1. In-Scope / Out-of-Scope
+## 1. 这组文档现在应该依赖什么
 
-### 1.1 In-Scope
+| 类型 | 路径 | 当前用途 |
+|---|---|---|
+| pre-worker final closure | `docs/issue/pre-worker-matrix/pre-worker-matrix-final-closure.md` | 说明 worker-matrix 现在只剩 rewrite + assembly |
+| handoff | `docs/handoff/pre-worker-matrix-to-worker-matrix.md` | 说明 W4 shell 已 materialize，W3 blueprints 才是后续执行基线 |
+| W4 closure | `docs/issue/pre-worker-matrix/W4-closure.md` | 冻结 `workers/filesystem-core` shell 已存在且 dry-run 已过 |
+| W3 map | `docs/design/pre-worker-matrix/W3-absorption-map.md` | 冻结 `D1=workspace-context-artifacts filesystem slice`、`D2=storage-topology residual` |
+| W3 blueprint | `docs/design/pre-worker-matrix/W3-absorption-blueprint-workspace-context-artifacts-split.md` | 定义 D1 与 C2 的正确 split |
+| condensed truth | `docs/eval/worker-matrix/00-contexts/03-evaluations/current-worker-reality.md` | 说明 shell exists，但 runtime 尚未吸收 |
+| shell code | `workers/filesystem-core/*` | 当前 deploy shell 的直接证据 |
+| current packages | `packages/workspace-context-artifacts/*`; `packages/storage-topology/*` | 当前真实 workspace/storage substrate |
 
-本目录只负责回答下面四类问题：
+旧的 after-foundations 评估、B2/B3/A8、just-bash 仍有价值，但现在只应作为 **ancestry / rationale**，不再是直接 gate。
+
+---
+
+## 2. In-Scope / Out-of-Scope
+
+### 2.1 In-Scope
+
+本目录现在只回答：
 
 | 项目 | 说明 |
 |---|---|
-| `filesystem.core` 的定位 | 它到底是独立 worker，还是 mount-based workspace/storage substrate |
-| `filesystem.core` 的协议责任 | 它今天拥有哪些 `NacpRef / tenant / path / reserved namespace` 法则 |
-| `filesystem.core` 的当前代码真相 | 当前仓库里已经有哪些 namespace/backend/adapter/consumer/runtime use-site |
-| `filesystem.core` 的平台边界 | DO / R2 / KV / `_platform/` / service binding / just-bash 对它的直接约束 |
+| `filesystem.core` 当前身份 | mount-based workspace/storage worker 候选体，还是真 POSIX FS |
+| `filesystem.core` 当前真相层 | worker shell 已到哪一步；D1/D2 代码已到哪一步 |
+| `filesystem.core` 协议责任 | 今天真正 formal 的 ref/key/path law 由谁拥有 |
+| `filesystem.core` 对 r2 的含义 | D1/D2 absorption 该继承什么，不该误写什么 |
 
-### 1.2 Out-of-Scope
-
-本目录**不**承担下面这些工作：
+### 2.2 Out-of-Scope
 
 | 项目 | 为什么不在这里做 |
 |---|---|
-| 设计 `agent.core / context.core / bash.core` 的全部细节 | 它们各自需要独立上下文包 |
-| 把 `filesystem.core` 写成完整 POSIX/Linux 文件系统 | 这与当前 Worker/V8 isolate 路线和 fake-bash 边界冲突 |
-| 重写 B2/B3/A8-A10 原始历史文档 | 原始文档仍是历史审计路径，本目录只做聚合与裁判 |
-| 提前冻结完整 KV/D1/R2 production topology | 当前代码和原始评估都表明这仍应保持 evidence-driven / provisional |
+| 重开 `filesystem.core` 是否该存在 | W4 壳与 W3 map 已经把存在性问题关闭 |
+| 把 `filesystem.core` 写成完整 Linux/POSIX 文件系统 | 当前代码与平台路线都不支持这么写 |
+| 重写 B2/B3/A8-A10 原始历史文档 | 它们现在是 ancestry，不是直接规划入口 |
+| 提前冻结完整 KV/D1/R2 production topology | handoff 仍要求 evidence-driven / staged assembly |
 
 ---
 
-## 2. 证据优先级
+## 3. 当前应冻结的六个判断
 
-本目录采用下面这条优先级：
-
-1. **当前仓库源码与当前测试**
-2. **原始 action-plan / review / evaluation 文档**
-3. **`context/` 下的参考实现**
-4. **较早的 closure 口径**
-
-这条优先级在 `filesystem.core` 上尤其重要，因为：
-
-- GPT/Opus 的 worker-matrix 原始评估都把它写成“可做，但平台适配层未闭合”：`docs/eval/after-foundations/worker-matrix-eval-with-GPT.md:230-295`; `docs/eval/after-foundations/worker-matrix-eval-with-Opus.md:226-248`
-- 但这些评估写作时，`ReferenceBackend` 还没有今天这么前进；当前代码已经具备 connected mode + R2 promotion：`packages/workspace-context-artifacts/src/backends/reference.ts:7-29,58-80,120-140`
-- 因此这里必须以**当前代码真相**裁判“哪些已经成立、哪些仍不能写满”。
-
----
-
-## 3. 原始素材总索引
-
-> 下面列的都是**原始路径**，不是 `docs/eval/worker-matrix/00-context/` 里的复制品。
-
-### 3.1 原始文档素材
-
-| 类型 | 原始路径 | 关键行 / 章节 | 为什么必读 |
-|---|---|---|---|
-| evaluation | [`docs/eval/after-foundations/worker-matrix-eval-with-GPT.md`](../../../eval/after-foundations/worker-matrix-eval-with-GPT.md) | `230-295` | GPT 对 `filesystem.core` 的原始判断：必要，但真实状态仍是“需要补平台适配层” |
-| evaluation | [`docs/eval/after-foundations/worker-matrix-eval-with-Opus.md`](../../../eval/after-foundations/worker-matrix-eval-with-Opus.md) | `226-248` | Opus 的原始判断：第一波只建议做 memory + R2，不要把 KV/D1 写满 |
-| action-plan | [`docs/action-plan/after-foundations/B2-storage-adapter-hardening.md`](../../../action-plan/after-foundations/B2-storage-adapter-hardening.md) | `41-59,153-167,207-214` | B2 说明 filesystem foundations 的平台侧来源：DO/R2/KV/D1 adapters、ReferenceBackend、MemoryBackend cap 对齐 |
-| action-plan | [`docs/action-plan/after-foundations/B3-fake-bash-extension-and-port.md`](../../../action-plan/after-foundations/B3-fake-bash-extension-and-port.md) | `40-57,148-173` | B3 说明 fake-bash 如何正式消费 filesystem truth，而不是重新发明 shell FS |
-| action-plan | [`docs/action-plan/after-skeleton/A8-minimal-bash-search-and-workspace.md`](../../../action-plan/after-skeleton/A8-minimal-bash-search-and-workspace.md) | `24-39,88-112,142-167` | A8 冻结 workspace truth、canonical `rg`、`grep -> rg`、`mkdir` partial、reserved namespace |
-| action-plan | [`docs/action-plan/after-nacp/workspace-context-artifacts.md`](../../../action-plan/after-nacp/workspace-context-artifacts.md) | `28-50,145-159,163-184,224-242,248-250` | workspace data plane 的原始 scope、`/_platform/` 保留位、artifact/context/snapshot 责任边界 |
-| action-plan | [`docs/action-plan/after-nacp/storage-topology.md`](../../../action-plan/after-nacp/storage-topology.md) | `29-47,154-175,181-187,229-242` | storage semantics 的原始 scope、`NacpRef`/tenant law、provisional placement、evidence calibration |
-
-### 3.2 当前仓库代码素材
-
-| 类型 | 原始路径 | 关键行 | 为什么必读 |
-|---|---|---|---|
-| workspace package README | [`packages/workspace-context-artifacts/README.md`](../../../../packages/workspace-context-artifacts/README.md) | `17-64` | 证明 workspace package 的 in-scope / out-of-scope 已冻结 |
-| storage package README | [`packages/storage-topology/README.md`](../../../../packages/storage-topology/README.md) | `18-63` | 证明 storage-topology 是 semantics library，不是 runtime orchestrator |
-| capability package README | [`packages/capability-runtime/README.md`](../../../../packages/capability-runtime/README.md) | `20-93` | 证明 fake-bash 当前真实消费面与 target readiness |
-| mount router | [`packages/workspace-context-artifacts/src/mounts.ts`](../../../../packages/workspace-context-artifacts/src/mounts.ts) | `1-10,58-85,115-157` | 证明 longest-prefix routing + `/_platform/` reserved namespace 已真实存在 |
-| namespace | [`packages/workspace-context-artifacts/src/namespace.ts`](../../../../packages/workspace-context-artifacts/src/namespace.ts) | `17-27,33-39,45-56,62-80,86-120` | 证明统一 file ops surface 已存在 |
-| backends | [`packages/workspace-context-artifacts/src/backends/memory.ts`](../../../../packages/workspace-context-artifacts/src/backends/memory.ts) / [`reference.ts`](../../../../packages/workspace-context-artifacts/src/backends/reference.ts) | `9-19,29-39,68-78` / `7-29,58-80,120-140,180-197` | 证明 memory backend 对齐 DO cap；ReferenceBackend 现已支持 connected mode + R2 promotion |
-| artifact refs | [`packages/workspace-context-artifacts/src/refs.ts`](../../../../packages/workspace-context-artifacts/src/refs.ts) / [`promotion.ts`](../../../../packages/workspace-context-artifacts/src/promotion.ts) | `4-21,68-96,113-166` / `21-33,107-143` | 证明 artifact refs 已对齐 `NacpRef` 语义，promotion 会在 `do-storage` 与 `r2` 间按大小分层 |
-| snapshot | [`packages/workspace-context-artifacts/src/snapshot.ts`](../../../../packages/workspace-context-artifacts/src/snapshot.ts) | `122-184,188-232` | 证明 snapshot builder 真实读取 mount/fileIndex/artifactRefs |
-| storage keys/refs | [`packages/storage-topology/src/keys.ts`](../../../../packages/storage-topology/src/keys.ts) / [`refs.ts`](../../../../packages/storage-topology/src/refs.ts) | `17-32,38-64,70-85` / `31-53,67-79,128-166` | 证明 key/ref/tenant law 已冻结，且 `_platform` 例外只在 `KV_KEYS.featureFlags()` |
-| placement/calibration | [`packages/storage-topology/src/placement.ts`](../../../../packages/storage-topology/src/placement.ts) / [`calibration.ts`](../../../../packages/storage-topology/src/calibration.ts) | `22-57,98-120,157-207` / `14-18,75-171,177-240` | 证明 placement 仍是 provisional + MIME-gated + evidence-driven |
-| real adapters | [`packages/storage-topology/src/adapters/do-storage-adapter.ts`](../../../../packages/storage-topology/src/adapters/do-storage-adapter.ts) / [`r2-adapter.ts`](../../../../packages/storage-topology/src/adapters/r2-adapter.ts) | `73-178` / `63-187` | 证明 DO size guard/transaction 与 R2 cursor walk/parallel put 已真实实现 |
-| fake-bash consumers | [`packages/capability-runtime/src/capabilities/filesystem.ts`](../../../../packages/capability-runtime/src/capabilities/filesystem.ts) / [`workspace-truth.ts`](../../../../packages/capability-runtime/src/capabilities/workspace-truth.ts) / [`search.ts`](../../../../packages/capability-runtime/src/capabilities/search.ts) / [`vcs.ts`](../../../../packages/capability-runtime/src/capabilities/vcs.ts) | `4-20,102-237` / `11-30,32-57,60-157` / `4-25,74-205` / `4-23,34-50,110-170` | 证明 file/search/vcs 已真实消费同一 workspace/path universe |
-| runtime use-site | [`packages/session-do-runtime/src/workspace-runtime.ts`](../../../../packages/session-do-runtime/src/workspace-runtime.ts) / [`packages/session-do-runtime/src/do/nano-session-do.ts`](../../../../packages/session-do-runtime/src/do/nano-session-do.ts) | `1-18,45-62,75-100` / `282-307` | 证明默认 DO 路径会本地装配 workspace trio，而不是完全空缺 |
-| non-ready remote seam | [`packages/session-do-runtime/src/composition.ts`](../../../../packages/session-do-runtime/src/composition.ts) / [`remote-bindings.ts`](../../../../packages/session-do-runtime/src/remote-bindings.ts) | `82-106` / `385-395` | 证明 `filesystem.core` 仍未形成独立 remote worker 默认接线 |
-
-### 3.3 当前测试素材
-
-| 类型 | 原始路径 | 关键行 | 为什么必读 |
-|---|---|---|---|
-| mount routing | [`packages/workspace-context-artifacts/test/mounts.test.ts`](../../../../packages/workspace-context-artifacts/test/mounts.test.ts) | `71-139,160-192` | 证明 longest-prefix + `/_platform/` reserved namespace 已被回归锁定 |
-| namespace CRUD | [`packages/workspace-context-artifacts/test/namespace.test.ts`](../../../../packages/workspace-context-artifacts/test/namespace.test.ts) | `33-109,112-212,214-220` | 证明 read/write/list/stat/delete 与 readonly law 已被锁定 |
-| memory cap | [`packages/workspace-context-artifacts/test/backends/memory.test.ts`](../../../../packages/workspace-context-artifacts/test/backends/memory.test.ts) | `196-217` | 证明 MemoryBackend 1 MiB mirror cap 与 `ValueTooLargeError` 真实成立 |
-| reference backend | [`packages/workspace-context-artifacts/test/backends/reference.test.ts`](../../../../packages/workspace-context-artifacts/test/backends/reference.test.ts) | `114-141,144-210,213-278` | 证明 not-connected 占位模式、connected CRUD、R2 promotion、cleanup 都有测试 |
-| integration | [`packages/workspace-context-artifacts/test/integration/fake-workspace-flow.test.ts`](../../../../packages/workspace-context-artifacts/test/integration/fake-workspace-flow.test.ts) | `36-78` | 证明 mount + namespace + artifact ref + snapshot 已形成端到端闭环 |
-| DO adapter | [`packages/storage-topology/test/adapters/do-storage-adapter.test.ts`](../../../../packages/storage-topology/test/adapters/do-storage-adapter.test.ts) | `133-197,199-264` | 证明 DO size pre-check 与 transaction semantics 已锁定 |
-| R2 adapter | [`packages/storage-topology/test/adapters/r2-adapter.test.ts`](../../../../packages/storage-topology/test/adapters/r2-adapter.test.ts) | `137-195,198-243` | 证明 R2 cursor walking、`listAll()`、`putParallel()` 已锁定 |
-
-### 3.4 `context/` 参考实现素材
-
-| 类型 | 原始路径 | 关键行 | 为什么必读 |
-|---|---|---|---|
-| mountable fs README | [`context/just-bash/README.md`](../../../../context/just-bash/README.md) | `151-220` | 说明 `MountableFs` 的统一命名空间心智与它的本地/overlay/readwrite 设定 |
-| mount router 实现 | [`context/just-bash/src/fs/mountable-fs/mountable-fs.ts`](../../../../context/just-bash/src/fs/mountable-fs/mountable-fs.ts) | `49-62,85-99,181-221` | 说明 longest-prefix routePath 的原始来源 |
-| mount tests | [`context/just-bash/src/fs/mountable-fs/mountable-fs.test.ts`](../../../../context/just-bash/src/fs/mountable-fs/mountable-fs.test.ts) | `66-123,126-167,169-233` | 说明它还包含 root/baseFs/nested mount/virtual dir/mkdir 等更完整 FS 心智 |
-| security tests | [`context/just-bash/src/fs/mountable-fs/mountable-fs.security.test.ts`](../../../../context/just-bash/src/fs/mountable-fs/mountable-fs.security.test.ts) | `18-67,70-154` | 说明 just-bash 的 mount model 还处理 symlink/cross-mount/path traversal 风险 |
-| threat model | [`context/just-bash/THREAT_MODEL.md`](../../../../context/just-bash/THREAT_MODEL.md) | `279-304` | 说明 just-bash 还包含 Python/HTTPFS `/host`/`/_jb_http` 这类我们当前不应照搬的执行模型 |
-
----
-
-## 4. 当前应冻结的五个判断
-
-| 判断 | 结论 | 主证据 |
+| 判断 | 当前结论 | 主证据 |
 |---|---|---|
-| `filesystem.core` 的身份 | **mount-based workspace/storage substrate，不是已独立部署的 filesystem worker** | `docs/eval/after-foundations/worker-matrix-eval-with-GPT.md:234-295`; `packages/session-do-runtime/src/composition.ts:82-106`; `packages/session-do-runtime/src/remote-bindings.ts:385-395` |
-| 当前最扎实的代码面 | **`MountRouter + WorkspaceNamespace + MemoryBackend + ReferenceBackend`** | `packages/workspace-context-artifacts/src/mounts.ts:58-85`; `namespace.ts:17-120`; `backends/memory.ts:54-78`; `backends/reference.ts:120-140` |
-| 当前最真实的外部消费面 | **fake-bash 的 file/search/vcs handlers 已经统一消费同一 workspace/path truth** | `packages/capability-runtime/src/capabilities/filesystem.ts:4-20,102-237`; `workspace-truth.ts:11-30,60-157`; `search.ts:4-25,74-205`; `vcs.ts:4-23,110-170` |
-| 当前平台/storage 判断 | **DO/R2 adapters 真实存在，但 placement/topology 仍是 provisional/evidence-driven；`_platform` 只允许极窄例外** | `packages/storage-topology/src/adapters/do-storage-adapter.ts:73-178`; `r2-adapter.ts:63-187`; `placement.ts:22-57,98-120`; `keys.ts:38-64` |
-| 第一波 worker-matrix 建议 | **按“host-local workspace + memory/DO/R2 seam + fake-bash consumer”推进，先不要把 KV/D1/独立 remote filesystem worker 写满** | `docs/eval/after-foundations/worker-matrix-eval-with-Opus.md:226-248`; `packages/workspace-context-artifacts/README.md:49-64`; `packages/storage-topology/README.md:52-63` |
+| worker shell 是否存在 | **存在，而且已完成 W4 dry-run 验证** | `docs/issue/pre-worker-matrix/W4-closure.md:18-27,47-48`; `workers/filesystem-core/src/index.ts:1-22` |
+| 当前 shell 是否已吸收 D1/D2 | **没有**；当前仍是 version-probe shell | `workers/filesystem-core/src/index.ts:5-22`; `docs/eval/worker-matrix/00-contexts/03-evaluations/current-worker-reality.md:20-22` |
+| 当前真实 filesystem substance 在哪里 | **仍在 `@nano-agent/workspace-context-artifacts@0.1.0` 的 filesystem slice + `@nano-agent/storage-topology@2.0.0`** | `packages/workspace-context-artifacts/package.json:1-39`; `packages/storage-topology/package.json:1-43` |
+| worker-matrix 吸收范围 | **D1 + D2 都归 `filesystem-core` 组** | `docs/design/pre-worker-matrix/W3-absorption-map.md:40-42,90-102` |
+| 当前最扎实的 substrate | **`MountRouter + WorkspaceNamespace + backends + refs + promotion + adapters`** | `packages/workspace-context-artifacts/src/mounts.ts`; `namespace.ts`; `backends/*`; `promotion.ts`; `packages/storage-topology/src/*` |
+| 当前最大缺口 | **shell 已在，但 absorbed runtime code、live remote service、worker-era workspace authority implementation 都还没在 `workers/filesystem-core/` 内闭合** | `docs/eval/worker-matrix/00-contexts/03-evaluations/current-worker-reality.md:20-22`; `packages/session-do-runtime/src/remote-bindings.ts:385-395` |
+
+---
+
+## 4. 现在最该怎么理解 `filesystem.core`
+
+### 4.1 它已经同时有“壳”和“substrate”
+
+今天的 `filesystem.core` 也要分两层看：
+
+| 层 | 当前真实物体 | 现在能说明什么 |
+|---|---|---|
+| deploy shell | `workers/filesystem-core/` | W4 已把 worker 名字、wrangler shape、dry-run pipeline 变成物理事实 |
+| workspace/storage substrate | `packages/workspace-context-artifacts/` 的 filesystem slice + `packages/storage-topology/` | D1/D2 的真实语义、adapters、refs、backends 都仍在 package 中 |
+
+因此 r2 不应再写成：
+
+> “先定义 filesystem-core 要不要成为一个 worker。”
+
+而应写成：
+
+> **“filesystem-core 已有 shell 与 substrate；下一步是完成 D1/D2 absorption，并决定 first-wave 是否继续 host-local / staged remoteize。”**
+
+### 4.2 当前 shell 是诚实收窄，不是假装已经成形
+
+`workers/filesystem-core` 当前只做：
+
+1. 返回版本探针 JSON：`workers/filesystem-core/src/index.ts:5-22`
+2. 保持 plain fetch shell：`workers/filesystem-core/README.md:1-26`
+3. 维持 stateless shell，不激活 durable/service bindings：`workers/filesystem-core/wrangler.jsonc:1-22`
+
+因此当前 deploy reality 只能写成：
+
+> **filesystem-core shell exists, but authority/runtime absorption has not started inside that shell**
+
+### 4.3 当前真正要被吸收的是 D1 + D2，不是“完整文件系统幻想”
+
+W3 map 与 split blueprint 已经把这条路线冻结得很清楚：
+
+1. `D1 = workspace-context-artifacts filesystem slice -> filesystem-core`
+2. `D2 = storage-topology residual -> filesystem-core`
+3. first-wave 不是把 KV/D1/R2 全部包装成完整 remote filesystem service
+
+这意味着 r2 最不该做的 drift 是：
+
+> 把 `filesystem.core` 从 “typed workspace/storage substrate” 拉回到一个 Linux/POSIX/全平台文件系统工程。
 
 ---
 
 ## 5. 推荐阅读顺序
 
 1. **先读** `realized-code-evidence.md`  
-   先把“现在仓库里到底已经有什么”读清楚，避免把 `filesystem.core` 当成 greenfield。
+   先把 shell、D1/D2 substrate、runtime gaps 的当前事实读清。
 
 2. **再读** `internal-nacp-compliance.md`  
-   它解释 filesystem 相关的 `NacpRef / tenant / key / reserved namespace` 法则到底由谁拥有。
+   看清它今天真正 formal 的 ref/key/path law 由谁拥有。
 
 3. **再读** `external-contract-surface.md`  
-   它解释 fake-bash、workspace package、storage package、session runtime 之间的真正接线关系。
+   把 workspace package、fake-bash consumer、runtime seam、remote gap 区分开。
 
 4. **最后读** `cloudflare-study-evidence.md`  
-   它把 B2/B3/A8 与 `just-bash`/Cloudflare 约束结合起来，说明为什么第一波必须薄做。
+   把 shell reality、DO/R2/KV law、以及 just-bash 的 ancestry 放回平台层理解。
 
 ---
 
-## 6. 当前仍然开放的关键缺口
+## 6. r2 现在不该再犯的三种错误
 
-| 缺口 | 当前状态 | 是否阻止 `filesystem.core` 继续建模 | Phase 0 charter 建议 |
-|---|---|---|---|
-| 独立 `filesystem.core` worker deploy shell | 仍不存在 | **不阻止建模，但阻止"已独立部署"判断** | **defer to Phase 1+** — 第一波保持 host-local workspace |
-| remote/service-binding workspace seam | `remote-bindings` 仍返回 `workspace: undefined` | **不阻止 host-local first-wave，但阻止 remote closure 宣称** | **defer to Phase 1+** — 独立 worker 化前不需要 remote seam |
-| `mkdir` fully supported | 仍是 `partial-with-disclosure` | **不阻止基础 substrate 成立，但阻止把 fake-bash FS 写成完整 POSIX** | **honest partial 维持** — 不在第一波升级;LLM 面保留当前 disclosure |
-| `git` baseline | 只读 `status/diff/log`，且 `diff/log` 仍是 honest partial | **不阻止 filesystem substrate 建模，但阻止把 VCS 当成成熟子系统** | **honest partial 维持** — 不在第一波升级 |
-| KV/D1 full runtime placement | 仍应保持 provisional / evidence-driven | **不阻止继续推进，但阻止过早冻结"完整文件系统服务"叙事** | **defer to evidence calibration** — 依然 evidence-driven,不冻结 topology |
-| **`ReferenceBackend` connected mode 启用策略** (新) | connected mode + R2 promotion 已是真实代码 (`packages/workspace-context-artifacts/src/backends/reference.ts:7-29,58-80,120-140`),但 **默认 DO 路径目前用 memory backend 而非 connected ReferenceBackend** | **不阻止** | **Phase 0 推荐:保持 memory-only default;connected mode 作为 opt-in per-env 配置**。理由:(1) memory backend 已和 DO 1 MiB cap 对齐;(2) connected mode 涉及 R2 bucket binding 与 promotion 语义,第一波引入会把 R2 promotion 风险卷入默认 path;(3) 一旦 agent turn loop 跑起来,真正的 workspace size pressure 才能被评估,那时再激活 connected mode 是有证据的决策 |
+1. **把 `filesystem.core` 当成还没有 worker 壳的概念物**  
+   `workers/filesystem-core` 已经存在。
 
-### 6.1 关于 `ReferenceBackend.connected` 的第一波决策锚点
+2. **把 `filesystem.core` 写成完整 Linux/POSIX 文件系统**  
+   当前 D1/D2 基线不支持这么写。
 
-这是 Opus context-space review 明确指出的 charter 决策空白,特别补注:
-
-- **当前现实**:`ReferenceBackend` 已具备两种模式(not-connected 占位 / connected CRUD + R2 promotion),实码在 `packages/workspace-context-artifacts/src/backends/reference.ts`。
-- **默认 DO 路径**:`composeWorkspaceWithEvidence` 使用的是 `MemoryBackend`,不是 connected `ReferenceBackend`。
-- **第一波建议**:
-  1. Phase 0 不切换默认;memory-only 是可预测、可回归的起点;
-  2. Phase 0 完成后(即 agent turn loop 跑起来后),把"是否需要 promotion 到 R2"作为 evidence-driven calibration 决策;
-  3. 任何把 connected mode 当成默认的 PR 都必须附带 R2 binding + team-scoped bucket layout 的 wiring 证据;第一波不承担这个。
+3. **把当前 shell 写成“已吸收并已 remoteized 的 filesystem worker”**  
+   当前仓库里仍不成立。
 
 ---
 
-## 7. 本索引的使用方式
+## 7. ancestry-only 参考
 
-如果后续要继续编写 `worker-matrix` 的 `filesystem.core` 设计文档，建议把本目录当成下面这三件事的 SSOT：
+需要补更早理由时，再回去看：
 
-1. **原始素材召回入口**：先沿着这里的原始路径回到 evaluation / action-plan / code / context 本体；
-2. **当前真相裁判**：遇到旧评估口径与当前代码冲突时，以这里列出的当前代码锚点为准；
-3. **边界保护器**：任何把 `filesystem.core` 写成“已经拥有完整 KV/D1/R2 runtime filesystem”“已经独立 remote 化”的设计，都应视为越界。
+1. `docs/action-plan/after-foundations/B2-storage-adapter-hardening.md`
+2. `docs/action-plan/after-foundations/B3-fake-bash-extension-and-port.md`
+3. `docs/action-plan/after-skeleton/A8-minimal-bash-search-and-workspace.md`
+4. `docs/eval/after-foundations/worker-matrix-eval-with-GPT.md`
+5. `docs/eval/after-foundations/worker-matrix-eval-with-Opus.md`
+6. `context/just-bash/*`
+
+这些现在主要用来保留：
+
+- 为什么 first-wave 必须薄做
+- 为什么 workspace truth 必须是 typed mount universe
+- 为什么不能把 overlay/full FS/Python/HTTPFS 心智直接照搬进来
+
+不应用来覆盖：
+
+- W3/W4/W5 之后的当前 shell reality
+- D1/D2 absorption 作为当前执行基线的事实
+
+---
+
+## 8. 本索引的最终判断
+
+**今天的 `filesystem.core` 应被写成：一个已经有 deploy shell、但真实语义仍主要在 D1/D2 packages 中的目标 worker。**
+
+所以 `worker-matrix` r2 的正确问题不是“filesystem-core 是否存在”，而是：
+
+> **如何把 `workspace-context-artifacts` 的 filesystem slice 与 `storage-topology` 吸收到 `workers/filesystem-core/`，同时保持 typed workspace/path/ref law、以及薄 worker 边界不漂移。**

@@ -1,19 +1,19 @@
 /**
- * docs/templates/composition-factory.ts
+ * Historical starter sketch for worker-matrix r2.
  *
- * Worker-matrix starter template. This is intentionally a typed sketch:
- * it demonstrates how the already-shipped B2-B7 surfaces fit together
- * without pretending B8 already made the next phase's shell decisions.
+ * Current primary runtime truth now lives in:
+ * - packages/session-do-runtime/src/composition.ts
+ * - packages/session-do-runtime/src/remote-bindings.ts
+ * - workers/*/src/
  *
- * Evidence-backed constraints:
- * - Keep `agent.core` as the host worker; it is NOT a binding slot.
- * - Keep the shipped DOStorageAdapter default explicit. B7 measured a safe
- *   2 MiB planning value, but raising the package default is still a next-phase
- *   decision, not something B8 silently bakes in.
- * - B7 proved cross-worker eval sink dedup + overflow disclosure on the true
- *   push path; keep `BoundedEvalSink` explicit instead of falling back to an
- *   invisible array sink.
- * - All `x-nacp-*` binding headers must be treated as lowercase on the wire.
+ * Keep this file as a typed reminder of the target assembly shape, not as a
+ * claim that worker-matrix is already wired.
+ *
+ * Carry-over constraints:
+ * - `agent.core` stays the host worker, not a binding slot.
+ * - DO size policy stays explicit; do not silently raise package defaults.
+ * - `BoundedEvalSink` must remain explicit so dedup / overflow stay visible.
+ * - `x-nacp-*` headers must be treated as lowercase on binding seams.
  */
 
 import {
@@ -43,11 +43,11 @@ import { HookDispatcher, HookRegistry } from "@nano-agent/hooks";
 import {
   ServiceBindingTransport,
   type ServiceBindingTarget,
-} from "@nano-agent/nacp-core";
+} from "@haimang/nacp-core";
 import {
   hookBroadcastToStreamEvent,
   toolResultToStreamEvent,
-} from "@nano-agent/nacp-session";
+} from "@haimang/nacp-session";
 import {
   BoundedEvalSink,
   readCompositionProfile,
@@ -110,60 +110,31 @@ export function createWorkerMatrixTemplate(
   const kv = new KvAdapter(env.KV_CONFIG);
   const d1 = env.D1_PRIMARY ? new D1Adapter(env.D1_PRIMARY) : undefined;
 
-  // Keep the shipped package default visible. Worker matrix may later
-  // choose to opt into `2_097_152` per B7 F08, but B8 does not silently
-  // bake that policy into the starter template.
   const doStorage = env.DO_STORAGE ? new DOStorageAdapter(env.DO_STORAGE) : undefined;
 
   const registry = new InMemoryCapabilityRegistry();
   const policy = new CapabilityPolicyGate(registry);
   const localTsTarget = new LocalTsTarget();
+  const executor = new CapabilityExecutor(registry, policy, localTsTarget);
 
-  // Worker matrix phase 1 decides which minimal handlers belong in the
-  // host and which move behind remote workers. Keep the executor shape
-  // explicit without pretending B8 already made that split.
-  const executor = new CapabilityExecutor(new Map(), policy);
+  const hookRegistry = new HookRegistry();
+  const hooks = new HookDispatcher(hookRegistry, options.hookRuntimes);
 
-  const hooks = new HookDispatcher(
-    new HookRegistry(),
-    options.hookRuntimes ?? new Map(),
-  );
-
-  // B7 proved the real cross-worker path. Keep the bounded sink explicit.
-  const evalSink = new BoundedEvalSink({ capacity: 1024 });
-
-  // When `r2` is wired, the orchestrator may spill oversize summaries to R2
-  // instead of failing at the DO cap boundary. Without `r2`, summaries above
-  // `DOStorageAdapter.maxValueBytes` fail, so worker matrix should choose that
-  // fallback behavior explicitly per worker profile.
-  const compact =
-    doStorage && options.llmProvider
-      ? new AsyncCompactOrchestrator({
-          sessionUuid: options.sessionUuid,
-          doStorage,
-          r2,
-          llmProvider: options.llmProvider,
-          compactPolicy: DEFAULT_COMPACT_POLICY,
-        })
-      : undefined;
-
+  const evalSink = new BoundedEvalSink({ maxRecords: 256 });
+  const compact = options.llmProvider
+    ? new AsyncCompactOrchestrator({
+        llmProvider: options.llmProvider,
+        policy: DEFAULT_COMPACT_POLICY,
+      })
+    : undefined;
   const inspector = options.inspectorConfig
     ? new InspectorFacade(options.inspectorConfig)
     : undefined;
 
   return {
     compositionProfile,
-    storage: {
-      r2,
-      kv,
-      d1,
-      doStorage,
-    },
-    capability: {
-      registry,
-      localTsTarget,
-      executor,
-    },
+    storage: { r2, kv, d1, doStorage },
+    capability: { registry, localTsTarget, executor },
     hooks,
     evalSink,
     compact,
