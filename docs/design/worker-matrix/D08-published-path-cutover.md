@@ -49,7 +49,7 @@ charter Q5 最终决策是 **(c) 独立 release PR schedule**(not `(a) 首批 ab
 | `1.4.0` / `1.3.0` | 已发布到 GitHub Packages 的版本号 |
 | release PR | 专门负责 cutover 的 PR,独立于 P2-P4 任何 absorb PR |
 | live probe | `curl` agent-core preview 返回的 JSON;cutover 后 `nacp_core_version` / `nacp_session_version` 字段 value 不变 |
-| `.npmrc` scope | `@haimang:registry=https://npm.pkg.github.com`(W2 + W4 已就绪) |
+| `.npmrc` scope | `@haimang:registry=https://npm.pkg.github.com`(**当前仓库 root 尚未落仓 `.npmrc`**;现有可见的 scope/registry 真相只在 `packages/nacp-core/package.json` / `packages/nacp-session/package.json` 的 `publishConfig.registry`、`dogfood/nacp-consume-test/.npmrc`、`.github/workflows` 的 `setup-node` + `NODE_AUTH_TOKEN` 三处;cutover PR **要先验证** pnpm/CI 现有 registry resolution 是否已足够 install published tarball,**仅在不足时**才在 root 或 worker 侧补 `.npmrc`)|
 
 ### 1.2 参考调查报告
 
@@ -104,7 +104,7 @@ charter Q5 最终决策是 **(c) 独立 release PR schedule**(not `(a) 首批 ab
 | 扩展点 | 表现形式 | 第一版行为 | 未来演进 |
 |--------|----------|------------|----------|
 | 版本 pin 方式 | 精确 `1.4.0` / `1.3.0` | 不用 caret `^1.4.0` | 可按需切 caret / semver range |
-| registry | `.npmrc` scope `@haimang` | W2 已固 | 若未来迁到其他 org 走独立 migration |
+| registry | `@haimang` scope 指向 `https://npm.pkg.github.com` | 当前真相:`publishConfig.registry` + `dogfood/.npmrc` + GitHub Actions `setup-node`;**root `.npmrc` 尚未落仓**,cutover PR 需 trial-and-error 确认 pnpm/CI 是否需要新增 | 若未来迁到其他 org 走独立 migration |
 | cutover 回滚 | revert PR 即可 | workspace:* 完全可恢复 | — |
 
 ### 3.3 完全解耦点
@@ -161,7 +161,7 @@ charter Q5 最终决策是 **(c) 独立 release PR schedule**(not `(a) 首批 ab
 - **[S2]** 4 个 `workers/*/package.json` 批量 diff:
   - `"@haimang/nacp-core": "workspace:*"` → `"@haimang/nacp-core": "1.4.0"`
   - `"@haimang/nacp-session": "workspace:*"` → `"@haimang/nacp-session": "1.3.0"`
-- **[S3]** `.npmrc`(repo root / workers/ 内若有)验证 scope 注册指向 GitHub Packages;若 worker 目录没 `.npmrc` 且 pnpm 未继承 root 的配置,补一份
+- **[S3]** `.npmrc` readiness 诚实化(吸收 GPT R4):**当前仓库 root 尚未落 `.npmrc`**;cutover PR 需要 **先验证** pnpm/CI 能否在不额外补 `.npmrc` 的情况下 install `@haimang/nacp-*` published tarball(依靠 `publishConfig.registry` + `NODE_AUTH_TOKEN`);若 `pnpm install` 报 `registry / auth` 失败,再按需补:优先级 `workers/<name>/.npmrc` → `workers/.npmrc` → 最后才 `root/.npmrc`。PR body 必须记录实际走的路径(`.npmrc` **保持未落仓** / `.npmrc` **在 X 位置补了 Y 行**)作为 hygiene 真相
 - **[S4]** `NODE_AUTH_TOKEN` 在本地 / CI 可用(W2 pipeline 验证过)
 - **[S5]** `pnpm install` 更新 `pnpm-lock.yaml`;lockfile diff 应反映 4 个 worker 对 `@haimang/nacp-*` 的 resolution path 从 `link:../../packages/nacp-core` 切到 registry tarball
 - **[S6]** 全仓回归:
@@ -259,7 +259,7 @@ charter Q5 最终决策是 **(c) 独立 release PR schedule**(not `(a) 首批 ab
 |------|--------|------|----------------|
 | F1 | prerequisite 验证 | P2/P3/P4 DoD 全绿 + published path 真实 | ✅ PR body 引用 DoD 与 `gh` query 证明 |
 | F2 | 4 package.json cutover | workspace:* → 1.4.0 / 1.3.0 | ✅ diff 精确 4 files × 2 lines |
-| F3 | `.npmrc` 验证 | scope + auth 可用 | ✅ `.npmrc` 含 `@haimang:registry` + auth 可读;若缺失则补 |
+| F3 | `.npmrc` readiness 诚实化 | **当前仓库 root 未落 `.npmrc`**;先 trial-and-error 验证 pnpm/CI 是否足够 | ✅ PR body 记录实际路径:"root `.npmrc` 保持未落仓 — pnpm 能从 `publishConfig.registry` + `NODE_AUTH_TOKEN` install" **或** "在 `<path>` 补了 `<content>` 才通" |
 | F4 | `pnpm install` | lockfile 更新 | ✅ `pnpm-lock.yaml` resolution 由 workspace link 切 tarball |
 | F5 | 全仓回归 | typecheck / test / dry-run / root tests / cross tests | ✅ S6 所有命令绿 |
 | F6 | agent-core redeploy | preview redeploy + live probe | ✅ `curl` 返回合法 JSON;Version ID 记录 PR body |
@@ -289,14 +289,18 @@ charter Q5 最终决策是 **(c) 独立 release PR schedule**(not `(a) 首批 ab
 - **核心逻辑**:sed / 手工 edit;4 files 完全一致
 - **一句话收口目标**:✅ **diff 最小、精确,4 文件各 2 行**
 
-#### F3: `.npmrc` 验证
+#### F3: `.npmrc` readiness 诚实化(吸收 GPT R4)
 
-- **输入**:repo root `.npmrc`(W2 已配 `@haimang:registry=https://npm.pkg.github.com`)
-- **输出**:no-op 或在 workers/ 补一份(若 pnpm 不继承)
+- **输入**:当前仓库事实 — **root `.npmrc` 尚未落仓**;现有可见 registry 真相来源三处:
+  1. `packages/nacp-core/package.json` 与 `packages/nacp-session/package.json` 的 `publishConfig.registry`
+  2. `dogfood/nacp-consume-test/.npmrc`(external consumer 专用)
+  3. `.github/workflows/publish-nacp.yml` 的 `setup-node` + `NODE_AUTH_TOKEN`
+- **输出**:no-op(若现有 resolution 足够)**或** 最小补丁(若不足;优先级 `workers/<name>/.npmrc` → `workers/.npmrc` → 最后才 `root/.npmrc`)
 - **核心逻辑**:
-  - 试跑 `pnpm --filter workers/agent-core install` 看是否能 resolve `@haimang/nacp-core@1.4.0`
-  - 若报 `registry not found` → 补 `workers/.npmrc` 或 `workers/agent-core/.npmrc`
-- **一句话收口目标**:✅ **install 能 authenticate + resolve**
+  1. 不预设 root `.npmrc` 已就绪 — 先 `pnpm --filter workers/agent-core install` 做 trial,看是否能 resolve `@haimang/nacp-core@1.4.0`
+  2. 若报 `registry not found` / `ENOTTY auth` → 按 minimal-surface 补一处 `.npmrc`;PR body 记录 reason + 落点
+  3. PR body 必须包含一行 **"`.npmrc` readiness verdict"**:未落仓 / 已落仓 / 补了哪里 / 补了什么内容
+- **一句话收口目标**:✅ **install 能 authenticate + resolve;PR body 如实记录 `.npmrc` readiness verdict,不假设 root `.npmrc` 已存在**
 
 #### F4: `pnpm install`
 
@@ -399,7 +403,7 @@ D08 是 P5 的 release hygiene 交付物:独立 release PR 切 4 个 worker 的 
 - [ ] **决策确认**:owner approve P5 release PR schedule
 - [ ] **关联 PR**:P2/P3/P4 closure closure 完成后开 release PR
 - [ ] **待深入调查**:
-  - `workers/` 目录下是否需要补独立 `.npmrc`(pnpm 不继承 root)?(建议:PR 执行时 trial-and-error)
+  - `workers/` 目录下是否需要补独立 `.npmrc`(pnpm 不继承 root)?(吸收 GPT R4:当前仓库 **root `.npmrc` 未落仓**;trial-and-error 验证 `publishConfig.registry` + `NODE_AUTH_TOKEN` 是否足够,不足再按 minimal-surface 补)
   - agent-core preview redeploy 后,`nacp_core_version` 字段来源是 runtime import 还是 build-time embed?(若是 build-time,cutover 后应从 registry tarball 的 package.json 读;F6 验证)
 
 ### C. 版本历史
@@ -407,3 +411,4 @@ D08 是 P5 的 release hygiene 交付物:独立 release PR 切 4 个 worker 的 
 | 版本 | 日期 | 修改者 | 主要变更 |
 |------|------|--------|----------|
 | v0.1 | 2026-04-23 | Claude Opus 4.7 | 初稿;基于 charter Q5c + GPT §5.5 编制 |
+| v0.2 | 2026-04-23 | Claude Opus 4.7 | 吸收 D01-D09 GPT review R4:收紧 `.npmrc` readiness 口径 — 当前仓库 root `.npmrc` 未落仓,cutover PR trial-and-error 后按 minimal-surface 补,PR body 记录 readiness verdict |

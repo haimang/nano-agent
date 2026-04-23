@@ -192,7 +192,7 @@ grep "initial_context" packages/session-do-runtime/src/
 | 项目 | 判定 | 理由 |
 |------|------|------|
 | consumer 调用在 `extractTurnInput` 之前还是之后 | `in-scope 之前` | layer push 要在 kernel turn 启动前完成;否则 assembler 已被 kernel 消费 |
-| 若 `appendInitialContextLayer` throw(异常 payload),host 如何处理 | `in-scope 降级` | catch + honest error frame(`system.error`)返回;不 abort DO |
+| 若 `appendInitialContextLayer` throw(异常 payload),host 如何处理 | `in-scope 降级` | catch + honest error frame(`{kind: "system.notify", severity: "error"}`)返回;不 abort DO |
 | `extractTurnInput` 原签名改动 | `out-of-scope` | byte-identical 纪律 |
 | e2e 是否走真实 preview deploy | `out-of-scope` | root e2e 用 in-process mock runtime(Miniflare / local DO stub)即可 |
 | 本设计是否在 PR 内 flip D03 `appendInitialContextLayer` 为 real implementation | `out-of-scope` | D03 PR owner 实现 |
@@ -223,7 +223,7 @@ grep "initial_context" packages/session-do-runtime/src/
 
 | 风险 | 触发条件 | 影响 | 缓解 |
 |------|----------|------|------|
-| `appendInitialContextLayer` 异常 payload → host DO 崩 | payload 形状意外 | session 启动失败 | catch + `system.error` honest frame;DO 不崩 |
+| `appendInitialContextLayer` 异常 payload → host DO 崩 | payload 形状意外 | session 启动失败 | catch + `system.notify` severity=error honest frame;DO 不崩 |
 | consumer 在 D03 F4 ship 前提前写 | D05 PR 先于 D03 PR | API 未冻结 | PR review gate:D05 PR 必须 reference 已 merged 的 D03 F4 commit |
 | root e2e 依赖 preview deploy(重) | e2e 要求 live env | CI 变慢 | 用 Miniflare / in-process DO stub;无 preview 依赖 |
 | `extractTurnInput` 被 initial_context 消费污染(顺序错位)| consumer 在 turn_input 之后 | 初始 layer 被 kernel 忽略 | code review + test 覆盖调用顺序 |
@@ -251,25 +251,28 @@ grep "initial_context" packages/session-do-runtime/src/
 | F2 | host consumer 接线(packages 侧,共存期) | 同 logic 落 `packages/session-do-runtime/src/do/nano-session-do.ts` | ✅ 两处 consumer 行为一致 |
 | F3 | dedicated root e2e(per GPT R2) | `test/initial-context-live-consumer.test.mjs`(或等价) | ✅ 3 条断言全绿;in-process runtime 足矣,不依赖 preview deploy |
 | F4 | package-local unit tests | 覆盖 consumer 行为:正常 payload / 缺字段 / 异常 payload | ✅ 3 个 case package-local test 全绿 |
-| F5 | honest error 处理 | `appendInitialContextLayer` throw 时返回 `system.error` frame | ✅ 断言:DO 不崩;client 收到 `system.error` body |
+| F5 | honest error 处理 | `appendInitialContextLayer` throw 时走 `system.notify` severity=error frame(`session.stream.event` 9-kind 合法 union;不自造 kind) | ✅ 断言:DO 不崩;client 收到 `system.notify` 且 `severity === "error"` body |
 | F6 | 调用顺序固化 | consumer 在 `extractTurnInput` 之前 | ✅ code review + test 明确顺序 |
 
 ### 7.2 详细阐述
 
 #### F1: host consumer 接线(workers 侧)
 
-- **输入**:`body` 已由 `validateSessionFrame` 解析(含 optional `initial_context: SessionStartInitialContext`);composition handle(assembler)来自 `this.composition.assembler`(D06 提供)
+- **输入**:`body` 已由 `validateSessionFrame` 解析(含 optional `initial_context: SessionStartInitialContext`);composition handle(assembler)来自 `this.composition?.workspace?.assembler`(D06 提供,实际由 `WorkspaceCompositionHandle.assembler` 暴露,挂在 `subsystems.workspace` 下,不是顶层 handle)
 - **输出**:新增约 10-25 行代码在 `dispatchAdmissibleFrame` `session.start` 分支
 - **核心逻辑**:
   ```ts
-  if (body.initial_context && this.composition?.assembler) {
+  const assembler = this.composition?.workspace?.assembler;
+  if (body.initial_context && assembler) {
     try {
-      appendInitialContextLayer(this.composition.assembler, body.initial_context);
+      appendInitialContextLayer(assembler, body.initial_context);
     } catch (err) {
-      await this.emitSystemError({
-        scope: "session.start",
-        reason: "initial_context_consumer_error",
-        detail: serializeError(err),
+      // 走合法的 9-kind `session.stream.event`:`system.notify` + severity=error
+      // 不自造 `system.error` kind(nacp-session schema 里不存在)
+      await this.pushStreamEvent({
+        kind: "system.notify",
+        severity: "error",
+        message: `initial_context_consumer_error: ${serializeError(err)}`,
       });
       // 不 abort turn;continue with empty initial context
     }
@@ -315,9 +318,9 @@ grep "initial_context" packages/session-do-runtime/src/
 #### F5: honest error 处理
 
 - **输入**:F1 catch 分支
-- **输出**:`system.error` frame 发给 client;DO 继续 session
-- **核心逻辑**:复用现有 `emitSystemError` 路径;scope = `session.start`,reason = `initial_context_consumer_error`
-- **一句话收口目标**:✅ **DO 不崩;client 收到 `system.error` body 可诊断**
+- **输出**:`system.notify` severity=error frame 发给 client;DO 继续 session
+- **核心逻辑**:走合法 9-kind 的 `system.notify`(`severity: "error"` + 描述性 `message`);**不**自造 `system.error` kind(`SessionStreamEventBodySchema` 中不存在);scope / reason 由 `message` 文本承载(例如 `initial_context_consumer_error: <detail>`)
+- **一句话收口目标**:✅ **DO 不崩;client 收到 `{kind: "system.notify", severity: "error"}` body 可诊断;9-kind schema 合法**
 
 #### F6: 调用顺序固化
 
@@ -387,7 +390,7 @@ D05 是 P2 的小而关键交付物:约 30-80 行 consumer 代码 + 1 个 dedica
 - [ ] **决策确认**:owner approve;D05 PR 作者 claim(建议与 D06 同期作者)
 - [ ] **关联 PR**:D03 F4 先 merge → D06 composition 升级 → D05 PR merge(最后到 packages 侧同步)
 - [ ] **待深入调查**:
-  - D06 composition 升级前,degrade 路径(`this.composition?.assembler === undefined`)是否需要特殊处理?(建议:F1 中 no-op + evidence 即可;P2 完成前 degrade 可容忍)
+  - D06 composition 升级前,degrade 路径(`this.composition?.workspace?.assembler === undefined`)是否需要特殊处理?(建议:F1 中 no-op + evidence 即可;P2 完成前 degrade 可容忍)
   - 多次 `session.start` 重发(边缘重连场景)是否会多 push layer?(建议:重发在 DO 层已有 de-dup;本设计不额外处理)
 
 ### C. 版本历史
@@ -395,3 +398,4 @@ D05 是 P2 的小而关键交付物:约 30-80 行 consumer 代码 + 1 个 dedica
 | 版本 | 日期 | 修改者 | 主要变更 |
 |------|------|--------|----------|
 | v0.1 | 2026-04-23 | Claude Opus 4.7 | 初稿;基于 charter + GPT R2 + 交互矩阵 §3.2 编制 |
+| v0.2 | 2026-04-23 | Claude Opus 4.7 | 吸收 D01-D09 GPT review R1(assembler 落点 `this.composition?.workspace?.assembler`,不新增 top-level handle)+ R2(`system.error` → `system.notify` severity=error,按 `SessionStreamEventBodySchema` 9-kind 合法 union 落地)|

@@ -7,7 +7,7 @@
 > - `docs/plan-worker-matrix.md` §3 I3/I4、§5.3 P2.C/P2.D、§6.2 P2 DoD
 > - `docs/design/worker-matrix/D01-agent-core-absorption.md`(host shell 落点)
 > - `docs/design/worker-matrix/D03-context-core-absorption-and-posture.md`(workspace/assembler handle)
-> - `docs/design/worker-matrix/D05-initial-context-host-consumer.md`(composition assembler 被 consumer 消费)
+> - `docs/design/worker-matrix/D05-initial-context-host-consumer.md`(composition assembler 被 consumer 消费 — 实际暴露在 `workspace` handle 内,**不是** top-level handle)
 > - `docs/design/worker-matrix/D07-agent-bash-tool-call-activation.md`(capability handle 来源 / local-ts fallback)
 > 文档状态: `draft`
 
@@ -86,7 +86,7 @@
 | D02 B1 bash runtime | 上游 | 强 | capability handle 的 **local** 来源;D07 激活后切 remote 默认 |
 | D03 C1/C2 context | 上游 | 强 | workspace / assembler handle 来源 |
 | D04 D1/D2 filesystem | 上游 | 强 | workspace substrate 来源;host-local posture(Q4a)|
-| D05 initial_context consumer | 下游 | 强 | consumer 调 `this.composition.assembler` |
+| D05 initial_context consumer | 下游 | 强 | consumer 调 `this.composition?.workspace?.assembler`(assembler 挂在 `WorkspaceCompositionHandle` 内;`SubsystemHandles` 不新增 top-level `assembler` 字段)|
 | D07 agent↔bash activation | 同周期 | 强 | capability handle default 从 `local-ts` 切 `serviceBindingTransport`(Q2a);本设计提供 local-ts fallback 路径保留 |
 | W0 nacp-core hooks-catalog | 参考 | 中 | hooks handle 的 wire vocabulary import |
 | B7 LIVE | 非破坏 | 强 | BoundedEvalSink dedup / overflow disclosure 在 eval handle 内不漂移 |
@@ -194,7 +194,7 @@
   - `local-ts` opt-in 可通过 env 切换
   - `compact` 保持 opt-in(default composition 不自动挂 `createKernelCompactDelegate`)
 - **[S6]** `packages/session-do-runtime/src/composition.ts` 与 `workers/agent-core/src/host/composition/index.ts` 共存期两处保持一致;diff 在 PR 内 pair
-- **[S7]** 与 D05 F1 协调:`this.composition.assembler` 在 composition 升级后非 undefined(workspace handle 提供 assembler),让 D05 consumer 路径真实生效
+- **[S7]** 与 D05 F1 协调:升级后 `this.composition?.workspace?.assembler` 非 undefined(`WorkspaceCompositionHandle.assembler` 在 `composeWorkspaceWithEvidence` 内已经返回 `ContextAssembler` 实例),让 D05 consumer 路径真实生效;**本设计不新增 top-level `assembler` handle**,`SubsystemHandles` 仍是 `{kernel, llm, capability, workspace, hooks, eval, storage, profile}` 8 槽位
 
 ### 5.2 Out-of-Scope
 
@@ -254,7 +254,7 @@
 | `CAPABILITY_WORKER` binding 缺失,silent undefined capability | remote binding 未配 + 无 fallback | tool.call 死循环 / silent success | honest degrade path + evidence `capability_missing_binding_fell_back_local_ts` |
 | workspace handle 与 D04 host-local import 漂移 | D04 共存期 re-export 断裂 | composition 找不到 workspace | 共存期保持 WCA / workers/filesystem-core 双 import;grep 验证 |
 | local-ts fallback 被意外激活 | env flag 默认值 | 远端路径未 battle-test | env flag default = `serviceBinding`;flag 缺失也 default 远端 |
-| D06 merge 时 D05 consumer 刚好 composition.assembler 为 undefined | D05 先于 D06 merge | initial_context consumer 被 degrade 跳过 | D05 F1 degrade 路径已覆盖;但建议 D06 先于 D05 merge |
+| D06 merge 时 D05 consumer 刚好 `composition.workspace.assembler` 为 undefined | D05 先于 D06 merge | initial_context consumer 被 degrade 跳过 | D05 F1 degrade 路径已覆盖(`const assembler = this.composition?.workspace?.assembler; if (!assembler) no-op`);但建议 D06 先于 D05 merge |
 | compact 被 env flag 开启后 silent memory leak | opt-in 但不清理 | 长 session 内存膨胀 | 保留现有 compact 治理;不在本设计内扩散 |
 
 ### 6.3 价值
@@ -300,7 +300,7 @@
 - **边界情况**:
   - 任一 handle 无法装配 → honest degrade + evidence + 不 panic
   - compact 不默认挂(Q3c)
-- **一句话收口目标**:✅ **composition 6 handle 非 undefined;B7 LIVE 全绿;D05 consumer 能 `composition.assembler` 拿到**(`workspace` 含 assembler 引用)
+- **一句话收口目标**:✅ **composition 6 handle 非 undefined;B7 LIVE 全绿;D05 consumer 能通过 `composition.workspace.assembler` 拿到 `ContextAssembler` 实例**(`WorkspaceCompositionHandle.assembler`;不新增 top-level handle)
 
 #### F2: `makeRemoteBindingsFactory` 4 nullable 补全
 
@@ -452,3 +452,4 @@ D06 是 P2 核心装配交付物:把 composition 从空 bag 升级到真实 6-tu
 | 版本 | 日期 | 修改者 | 主要变更 |
 |------|------|--------|----------|
 | v0.1 | 2026-04-23 | Claude Opus 4.7 | 初稿;基于 charter I3/I4 + Q2a/Q3c/Q4a 编制 |
+| v0.2 | 2026-04-23 | Claude Opus 4.7 | 吸收 D01-D09 GPT review R1:assembler 挂在 `WorkspaceCompositionHandle` 内,不新增 top-level `assembler` handle;`SubsystemHandles` 保持现有 8 槽位 |
