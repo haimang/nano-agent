@@ -15,12 +15,14 @@
 >   - `docs/templates/wrangler-worker.toml`(B8 shipped,evidence-backed 注释;W4 转 `.jsonc` 格式)
 >   - `docs/templates/composition-factory.ts`(B8 shipped,真实 composition factory 时复用)
 > - 后继 design:`W5-closure-and-handoff.md`(消费 W4 的 4 workers 就绪状态)
-> 文档状态:`draft (v0.3 post-GPT-R5-review: body fully aligned — §7 S-table / §9 verdict / §0 relation 均为 1 real + 3 dry-run)`
+> 文档状态:`executed (v0.5 real preview deploy completed)`
 >
 > **修订历史**:
 > - v0.1 (2026-04-21):初稿。4 workers 真实 deploy 到 Cloudflare
 > - v0.2 (2026-04-21):Post-GPT-review narrowing(顶部 / §0 / §5.1 In-Scope / §5.5 纪律):4 real deploy 降为 **1 real(agent-core)+ 3 dry-run(bash-core / context-core / filesystem-core 各自 `wrangler deploy --dry-run`)**;配合 W2 parallel publishing 允许 `workspace:*` interim
 > - v0.3 (2026-04-21):Post-GPT-R5 body-level narrowing。§7.1 S7/S8 功能表、§7.2 S7 执行步骤 / S8 closure memo、§9.1 画像 / §9.2 verdict、§0.4 显式排除 / §2.2 interaction matrix / §5.3 边界 / §0.3 前置共识 全部与 §0.2 空壳表保持 "agent-core 1 real + 3 workers dry-run" 一致;W3 协同从 llm-wrapper / agent-core/src/llm/ 改为 capability-runtime / bash-core/src/
+> - v0.4 (2026-04-23):implementation closed — `workers/*` 四个 shell、workspace 接线、matrix CI、4 worker build/test/dry-run 全部落地；当前执行环境无 `CLOUDFLARE_*` 凭据，因此 `agent-core` real preview deploy 按 action-plan fallback 记为 pending owner credentials，详见 `docs/issue/pre-worker-matrix/W4-closure.md`
+> - v0.5 (2026-04-23):wrangler auth verified + live deploy completed — `npx wrangler whoami` 证明当前环境已登录 OAuth token 且具备 `workers (write)` 权限；`workers/agent-core` 已成功 deploy 到 `https://nano-agent-agent-core-preview.haimang.workers.dev`
 
 ---
 

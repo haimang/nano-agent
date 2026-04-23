@@ -12,7 +12,7 @@
 > - `docs/design/pre-worker-matrix/W2-publishing-pipeline.md`
 > - `docs/design/pre-worker-matrix/W3-absorption-blueprint-and-dryrun.md`
 > - `docs/action-plan/pre-worker-matrix/W5-closure-and-handoff.md`
-> 文档状态: `draft`
+> 文档状态: `executed`
 
 ---
 
@@ -363,3 +363,113 @@ W4 workers scaffolding
 ## 10. 结语
 
 这份 action-plan 以 **把 `workers/` 顶级目录与 deploy-shaped shell 从设计文字变成真实仓库结构** 为第一优先级，采用 **先 shell、再 workspace/CI、最后做 1 real + 3 dry-run deploy validation** 的推进方式，优先解决 **目录不存在、壳不统一、Cloudflare 链路未验证** 的问题，并把 **不提前塞业务逻辑、不强绑 W2 首发、不越界到真实 cross-worker wiring** 作为主要约束。整个计划完成后，`pre-worker-matrix / W4` 应达到 **worker-matrix P0 可直接复用的脚手架 ready 状态**，从而为后续的 **真实吸收、cross-worker wiring、live loop 装配** 提供稳定基础。
+
+---
+
+## 11. 工作日志回填
+
+> 日期:`2026-04-23`
+> 执行者:`GPT-5.4`
+> 对应 closure:`docs/issue/pre-worker-matrix/W4-closure.md`
+
+### 11.1 本轮完成范围
+
+1. **Phase 1 — 目录与 shell 模板**:
+   - 新建 `workers/` 顶级目录
+   - 为 `agent-core` / `bash-core` / `context-core` / `filesystem-core` 四个 worker 新建统一 shell 结构:`package.json` / `tsconfig.json` / `wrangler.jsonc` / `README.md` / `.gitignore` / `src/` / `test/`
+   - 为 `agent-core` 额外补齐 `src/nano-session-do.ts`，将 `SESSION_DO` slot 落成真正可被 Wrangler 识别的 stub class
+2. **Phase 2 — workspace 与 CI**:
+   - 更新 `pnpm-workspace.yaml` 纳入 `workers/*`
+   - 新建 `.github/workflows/workers.yml` matrix workflow
+   - 选择 **`workspace:*` 作为 W4 首轮依赖解析路径**；不把 W4 再强绑到 GitHub Packages install，虽然 W2 的 `@haimang/*` published path 已经成立
+3. **Phase 3 — deploy validation / fallback**:
+   - 完成 4 个 worker 的 `wrangler deploy --dry-run`
+   - 通过 `npx wrangler whoami` 确认当前环境已登录 Wrangler OAuth token，具备 `workers (write)` 等权限
+   - 真实完成 `agent-core` preview deploy，并通过 `curl` 验证 live JSON 响应
+4. **Closure / handoff**:
+   - 新建 `docs/issue/pre-worker-matrix/W4-closure.md`
+   - 在本 action-plan 底部回填本轮工作日志与收口判断
+
+### 11.2 代码与文档改动清单
+
+#### 新增文件
+
+- `.github/workflows/workers.yml`
+- `workers/agent-core/.gitignore`
+- `workers/agent-core/README.md`
+- `workers/agent-core/package.json`
+- `workers/agent-core/tsconfig.json`
+- `workers/agent-core/wrangler.jsonc`
+- `workers/agent-core/src/index.ts`
+- `workers/agent-core/src/nano-session-do.ts`
+- `workers/agent-core/src/types.ts`
+- `workers/agent-core/test/smoke.test.ts`
+- `workers/bash-core/.gitignore`
+- `workers/bash-core/README.md`
+- `workers/bash-core/package.json`
+- `workers/bash-core/tsconfig.json`
+- `workers/bash-core/wrangler.jsonc`
+- `workers/bash-core/src/index.ts`
+- `workers/bash-core/src/types.ts`
+- `workers/bash-core/test/smoke.test.ts`
+- `workers/context-core/.gitignore`
+- `workers/context-core/README.md`
+- `workers/context-core/package.json`
+- `workers/context-core/tsconfig.json`
+- `workers/context-core/wrangler.jsonc`
+- `workers/context-core/src/index.ts`
+- `workers/context-core/src/types.ts`
+- `workers/context-core/test/smoke.test.ts`
+- `workers/filesystem-core/.gitignore`
+- `workers/filesystem-core/README.md`
+- `workers/filesystem-core/package.json`
+- `workers/filesystem-core/tsconfig.json`
+- `workers/filesystem-core/wrangler.jsonc`
+- `workers/filesystem-core/src/index.ts`
+- `workers/filesystem-core/src/types.ts`
+- `workers/filesystem-core/test/smoke.test.ts`
+- `docs/issue/pre-worker-matrix/W4-closure.md`
+
+#### 修改文件
+
+- `pnpm-workspace.yaml` — workspace 从 `packages/*` 扩展到 `packages/* + workers/*`
+- `pnpm-lock.yaml` — 记录 workers shell 所需 `wrangler` / `@cloudflare/workers-types` 等依赖
+- `docs/action-plan/pre-worker-matrix/W4-workers-scaffolding.md` — 顶部状态 `draft` → `executed`，并回填本工作日志
+
+### 11.3 关键事实与收口判断
+
+1. **W3 并没有提前创建 `workers/*`**。Opus 在 W3 中明确把 optional capability-runtime dry-run defer 到 worker-matrix P0，因此 W4 需要第一次把 `workers/agent-core` / `bash-core` / `context-core` / `filesystem-core` 作为物理目录建立出来。
+2. **W4 首轮选择 `workspace:*` 是有意为之**。W2 的 `@haimang/*` 首发已经完成，但在当前 monorepo 内，先用 workspace path 搭好 shell / CI / dry-run 能减少 registry auth 与 clean-checkout build-order 的额外耦合；published path 继续作为已存在、可切换的后续选项保留在 closure 中。
+3. **agent-core 的 service bindings 在 W4 中保持注释态**。如果在只有 1 real deploy、其余 3 个 worker 仅 dry-run 的前提下直接启用 service binding，agent-core preview deploy 会依赖尚未真实存在的 downstream Worker 服务名。W4 的真实交付是 deploy-shaped host shell，而不是 cross-worker wiring，因此本轮只激活 `SESSION_DO`，把服务绑定保留为 documented future slots。
+4. **Wrangler 登录态可以替代显式 `CLOUDFLARE_*` 环境变量**。本轮一开始我误把“没有 `CLOUDFLARE_*` env”解释成“没有 deploy credentials”；但 `npx wrangler whoami` 证明当前环境已经存在可用的 OAuth token，且具备 `workers (write)` 权限。因此 W4 不应继续沿用 fallback 口径，而应升级为 real preview deploy completed。
+
+### 11.4 验证与结果摘要
+
+| 验证维度 | 命令 / 方式 | 结果 |
+|---|---|---|
+| 依赖安装 | `pnpm install` | 成功；workspace 扫描扩展到 16 个项目 |
+| W4 本地 typecheck | `pnpm --filter './workers/*' typecheck` | 4/4 worker 通过 |
+| W4 本地 build | `pnpm --filter './workers/*' build` | 4/4 worker 通过 |
+| W4 本地 smoke tests | `pnpm --filter './workers/*' test` | 4/4 worker 通过 |
+| W4 deploy-shaped 验证 | `pnpm --filter './workers/*' deploy:dry-run` | 4/4 worker 通过；agent-core 识别 `SESSION_DO` binding |
+| 全仓 typecheck/test 回归 | `pnpm -r run typecheck && pnpm -r run test` | 通过 |
+| root contract 回归 | `node --test test/*.test.mjs` | 通过 |
+| root cross 回归 | `npm run test:cross` | 通过 |
+| Wrangler 权限检查 | `npx wrangler whoami` | 已登录 OAuth token；具备 `workers (write)` 等 deploy 权限 |
+| agent-core real deploy | `cd workers/agent-core && pnpm deploy:preview` | 成功；URL=`https://nano-agent-agent-core-preview.haimang.workers.dev` |
+| agent-core live probe | `curl -fsSL https://nano-agent-agent-core-preview.haimang.workers.dev` | 返回 `{"worker":"agent-core","nacp_core_version":"1.4.0","nacp_session_version":"1.3.0","status":"ok","phase":"pre-worker-matrix-W4-shell"}` |
+
+### 11.5 最终收口意见
+
+**结论**:W4 可以收口为 `closed (real preview deploy completed)`。本阶段要求的硬交付——`workers/` 目录、4 个统一 shell、agent-core DO slot、workspace 接线、matrix CI、4 个 worker 的 build/test/dry-run 证据、以及 W4 closure memo——已经齐备；此前的 “pending owner credentials” 判断已被真实的 Wrangler 登录态与 preview deploy 成功所推翻。
+
+**对 W5 / worker-matrix P0 的直接影响**:
+
+1. **W5** 可以直接引用 `W4-closure.md`，把 W4 判定为“目录与 deploy-shaped shell ready，agent-core real preview deploy completed”。
+2. **worker-matrix P0** 不需要再重建任何 `workers/*` 壳；可以直接在现有目录内吸收业务代码。
+3. **后续若需要刷新 preview 或升级到 production env**，只需要在现有 `workers/agent-core` 壳上继续部署，不需要再改壳结构。
+
+### 11.6 未解决 / 待跟进项
+
+1. `agent-core` 的 `BASH_CORE / CONTEXT_CORE / FILESYSTEM_CORE` service bindings 当前只是 documented future slots；等 worker-matrix P0 真正把 downstream workers 变成 live services 后再激活。
+2. 若后续决定把 workers 的依赖路径从 `workspace:*` 切到已发布的 `@haimang/*`，需要在 W5 或 worker-matrix P0 明确执行 cutover，并据此更新 `workers.yml` 的 install assumptions。
