@@ -214,10 +214,19 @@ importers:
       '@haimang/nacp-session':
         specifier: workspace:*
         version: link:../../packages/nacp-session
+      '@nano-agent/workspace-context-artifacts':
+        specifier: workspace:*
+        version: link:../../packages/workspace-context-artifacts
     devDependencies:
       '@cloudflare/workers-types':
         specifier: ^4.20251101.0
         version: 4.20260423.1
+      '@nano-agent/eval-observability':
+        specifier: workspace:*
+        version: link:../../packages/eval-observability
+      tsx:
+        specifier: ^4.19.0
+        version: 4.21.0
       typescript:
         specifier: ^5.6.0
         version: 5.9.3
@@ -227,6 +236,9 @@ importers:
       wrangler:
         specifier: ^4.83.0
         version: 4.84.1(@cloudflare/workers-types@4.20260423.1)
+      zod:
+        specifier: ^3.24.0
+        version: 3.25.76
 
   workers/bash-core:
     dependencies:
@@ -249,6 +261,9 @@ importers:
       wrangler:
         specifier: ^4.83.0
         version: 4.84.1(@cloudflare/workers-types@4.20260423.1)
+      zod:
+        specifier: ^3.24.0
+        version: 3.25.76
 
   workers/context-core:
     dependencies:
