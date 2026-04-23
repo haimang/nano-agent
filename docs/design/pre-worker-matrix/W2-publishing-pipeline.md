@@ -60,7 +60,7 @@ owner 在 `packages 定位辩证` 讨论中明确:**`nacp-core` 与 `nacp-sessio
 - **GitHub Packages 而非 npm 公共 registry**:owner 决策(不变)
 - **publish-on-tag 纪律**:只有 `nacp-v*.*.*` 格式 git tag 触发发布(不变)
 - **Additive versioning**:继承 W0 的 1.4.0 additive 纪律;bundle tag 锚定 `nacp-core@1.4.0`。`nacp-session` 当前 published baseline 仍是 `1.3.0`，直到它真实引入新的 published surface；W2 不强造同步 bump
-- **Access 模式**:`restricted`(private)— 初期仅 nano-agent 组织内部消费(不变)
+- **Access 模式**:`restricted`(private)— 当前以 `haimang` owner namespace 消费(不变)
 - **【v0.2 调整】Consumer 是 workers/\*,但不是 blocker**:worker-matrix first-wave 期间 workers 允许用 `workspace:*` 作 interim;首次发布可 parallel 到 worker-matrix;切换到 published version 的动作属 worker-matrix 的 scope,不属 pre-phase hard gate
 
 ### 0.4 v0.2 MAJOR CHANGE — Publishing 降为 parallel track
@@ -105,11 +105,11 @@ v0.2 修正:
 |---|---|---|
 | publishConfig | `package.json` 内的 field,指向特定 registry + access 模式 | GitHub Packages 需要这个 |
 | `nacp-v*` tag | 专属 git tag 格式,形如 `nacp-v1.4.0`,只为 NACP bundle 发布触发；tag 版本锚定 `nacp-core` | 与其他 tag 正交 |
-| scope | npm scope,格式 `@<name>/pkg`(如 `@nano-agent/nacp-core`) | GitHub Packages 要求 scope |
+| scope | npm scope,格式 `@<name>/pkg`(如 `@haimang/nacp-core`) | GitHub Packages 要求 scope |
 | restricted access | npm / GitHub Packages 的 private 模式,仅授权 user 可 install | 初版选此 |
 | dogfood consumer | 一个仅用于证明发布可用性的消费者项目(一次性) | W2 验证手段 |
 | publish-on-tag | 发布只被 git tag 触发,不由 commit / branch 触发 | 本 design §6.1 取舍 3 |
-| NACP_PACKAGE_SCOPE | `.npmrc` / workflow 里引用的 scope 占位符 | owner 决策填入具体值 |
+| NACP_PACKAGE_SCOPE | `.npmrc` / workflow 里引用的 scope 占位符 | 当前固定为 `@haimang` |
 
 ### 1.3 参考上下文
 
@@ -182,7 +182,7 @@ v0.2 修正:
 | `nacp-v*` tag namespace | git tag 规则 | 专属触发 publish-nacp.yml | 未来可加 `worker-v*` 专属其他工作流,互不冲突 |
 | Workflow input parameter | `workflow_dispatch.inputs` | 不用(只 tag-trigger) | 未来可加 `dry-run / pre-release / skip-tests` 入参 |
 | Package 可发布列表 | workflow 里 `matrix.package` | `[nacp-core, nacp-session]` 2 个 | 未来若新协议包入场,append;但 Tier B 永不加 |
-| `.npmrc` scope 映射 | dogfood 消费者示例 | 示例用 `@nano-agent:registry=...` | 其他 consumers 按此模板配置 |
+| `.npmrc` scope 映射 | dogfood 消费者示例 | 示例用 `@haimang:registry=...` | 其他 consumers 按此模板配置 |
 | Version consistency check | workflow step | 断言 `tag == nacp-core.version`，并记录同 run 内发布的 `nacp-session.version` | 未来可加多种检查(`CHANGELOG head` 匹配等) |
 
 ### 3.3 完全解耦点(必须独立)
@@ -277,16 +277,16 @@ v0.2 修正:
   }
   ```
 - **[S2]** `packages/nacp-session/package.json` 同上
-- **[S3]** Owner 与 Opus 共同对齐 **package scope**(推荐 `@nano-agent`;若 GitHub org 名不同需 owner 确认)
+- **[S3]** Owner 与 Opus 共同对齐 **package scope**（已收口为 `@haimang`）
 - **[S4]** `.github/workflows/publish-nacp.yml` 新建,含:
   - trigger: `on: push: tags: - 'nacp-v*.*.*'`
   - permissions: `packages: write`, `contents: read`
   - steps: checkout → setup-node(+ `NODE_AUTH_TOKEN=GITHUB_TOKEN`)→ setup-pnpm → install → build → version-consistency-check → publish nacp-core → publish nacp-session
 - **[S5]** Repository secret 确认(`GITHUB_TOKEN` 自动提供;若用 PAT 则手工创建)
 - **[S6]** Repository settings → Actions permissions(write packages)
-- **[S7]** 首次发布路径冻结:手动创建 git tag `nacp-v1.4.0` 时，workflow 将以 bundle 方式发布 `@<scope>/nacp-core@1.4.0` + `@<scope>/nacp-session@1.3.0`；若 owner 不在 pre-phase 开窗，closure 必须诚实标注 deferred
+- **[S7]** 首次发布路径冻结:手动创建 git tag `nacp-v1.4.0` 时，workflow 已以 bundle 方式发布 `@haimang/nacp-core@1.4.0` + `@haimang/nacp-session@1.3.0`
 - **[S8]** Dogfood 消费者 `dogfood/nacp-consume-test/`:
-  - 独立 `package.json` import `@<scope>/nacp-core@1.4.0` + `@<scope>/nacp-session@1.3.0`
+  - 独立 `package.json` import `@haimang/nacp-core@1.4.0` + `@haimang/nacp-session@1.3.0`
   - 独立 `.npmrc` 配 GitHub Packages registry + `always-auth=true`
   - 独立 `pnpm-lock.yaml`(不加入主 workspace)
   - 最小 build + 最小 test(如 import `validateEnvelope` + 构造一个 envelope pass)
@@ -320,7 +320,7 @@ v0.2 修正:
 | 项目 | 判定 | 理由 |
 |---|---|---|
 | 首发 bundle tag 是否用 1.4.0 还是重起 0.1.0 | **1.4.0** | 与 `nacp-core` in-repo shipped version 一致;避免 bundle tag 与 core 版本号错位 |
-| GitHub Packages scope 是 `@nano-agent` 还是 repo owner 名 | **Q2 待 owner 确认** | 取决于 GitHub org 实际名;本 design 暂用 `@nano-agent` 占位符 |
+| GitHub Packages scope 是 `@haimang` 还是 repo owner 名 | **已确认 `@haimang`** | `nano-agent` namespace 已被外部用户占用；本次首发走当前仓库 owner 对齐路径 |
 | workflow 是否发布时跑完整 test | **in-scope(但只跑 nacp-core/session 的 unit test)** | 快速确认 dist 可用;不跑 root/cross tests(那是 CI 职责) |
 | `access: "restricted"` vs `"public"` | **in-scope restricted** | 第一版保守;owner 决策转 public 后改 1 个字段即可 |
 | 是否发 `nacp-v1.4.0-rc.1` 等预发布 | **out-of-scope** | 加复杂度;tag 只认 `nacp-v<major>.<minor>.<patch>` |
@@ -392,7 +392,7 @@ v0.2 修正:
 
 | 风险 | 触发条件 | 影响 | 缓解 |
 |---|---|---|---|
-| Package scope(`@nano-agent`)与 GitHub org 名不匹配 | owner 的 GitHub org 不是 "nano-agent" | publish 时 403 / 404 | **S3 owner-approve 之前不触发首发**;用 github-org 实际名 |
+| Package scope 与 GitHub owner 名不匹配 | 若未来再次切换 namespace 而未同步 package name / workflow scope | publish 时 403 / 404 | 本次已通过 `@haimang/*` 收口；后续变更必须走新的 scope migration |
 | `GITHUB_TOKEN` 权限不足 | `permissions: packages: write` 遗漏 | publish 401 | workflow 头部显式 permissions block;首次手动 dry-run 验证 |
 | Tag push 到远端不触发 workflow | `.github/workflows/` 配置错误;repository actions 被禁 | 发布无动作 | repository settings 确认 actions enabled;用 `act` 本地模拟 |
 | Dogfood 误入 pnpm workspace | `pnpm-workspace.yaml` 通配错 | dogfood 用 workspace link 而非 GitHub Packages,违背 dogfood 意图 | 明确 `dogfood/` 不在 workspace;用 `pnpm install --ignore-workspace` |
@@ -441,7 +441,7 @@ v0.2 修正:
 - **具体 diff**:
   ```json
   {
-    "name": "@nano-agent/nacp-core",
+    "name": "@haimang/nacp-core",
     "version": "1.4.0",
     ...
     "publishConfig": {
@@ -451,7 +451,7 @@ v0.2 修正:
   }
   ```
 - **边界情况**:
-  - `name` 前缀(`@nano-agent/`)必须与 repo 的 GitHub owner 匹配(Q2 待 owner 确认)
+  - `name` 前缀(`@haimang/`)必须与 repo 的 GitHub owner 匹配（当前已对齐）
   - `private: true` 不能存在(GitHub Packages 不允许发布 private 标记的包)— 需核查现有 package.json
 - **一句话收口目标**:✅ **2 个 package.json 含 publishConfig;`pnpm publish --dry-run` 在 2 包目录下均能识别 target registry**
 
@@ -484,22 +484,22 @@ v0.2 修正:
           with:
             node-version: 20
             registry-url: 'https://npm.pkg.github.com'
-            scope: '@nano-agent'
+            scope: '@haimang'
 
         - name: Install dependencies
           run: pnpm install --frozen-lockfile
 
         - name: Build nacp-core
-          run: pnpm --filter @nano-agent/nacp-core build
+          run: pnpm --filter @haimang/nacp-core build
 
         - name: Build nacp-session
-          run: pnpm --filter @nano-agent/nacp-session build
+          run: pnpm --filter @haimang/nacp-session build
 
         - name: Test nacp-core (unit only)
-          run: pnpm --filter @nano-agent/nacp-core test
+          run: pnpm --filter @haimang/nacp-core test
 
         - name: Test nacp-session (unit only)
-          run: pnpm --filter @nano-agent/nacp-session test
+          run: pnpm --filter @haimang/nacp-session test
 
         - name: Version consistency check
           run: |
@@ -513,12 +513,12 @@ v0.2 修正:
             echo "Publishing bundle: nacp-core@$CORE_VERSION + nacp-session@$SESSION_VERSION"
 
         - name: Publish nacp-core
-          run: pnpm --filter @nano-agent/nacp-core publish --no-git-checks --access=restricted
+          run: pnpm --filter @haimang/nacp-core publish --no-git-checks --access=restricted
           env:
             NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
         - name: Publish nacp-session
-          run: pnpm --filter @nano-agent/nacp-session publish --no-git-checks --access=restricted
+          run: pnpm --filter @haimang/nacp-session publish --no-git-checks --access=restricted
           env:
             NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   ```
@@ -549,7 +549,7 @@ v0.2 修正:
   - GitHub Packages registry 上 2 包可见
   - 首发 tag 与 workflow run 的 URL 归档进 W2 closure
 - **边界情况**:若 workflow 失败,debug 后修 code / workflow → 删除 tag(`git tag -d` + `git push origin :nacp-v1.4.0`)→ 重新 tag 同一 version → 重跑
-- **一句话收口目标**:✅ **`@nano-agent/nacp-core@1.4.0` + `@nano-agent/nacp-session@1.3.0` 在 GitHub Packages 可见**
+- **一句话收口目标**:✅ **`@haimang/nacp-core@1.4.0` + `@haimang/nacp-session@1.3.0` 在 GitHub Packages 可见**
 
 #### P5: Dogfood 消费者 `dogfood/nacp-consume-test/`
 
@@ -572,8 +572,8 @@ v0.2 修正:
     "version": "0.0.0",
     "type": "module",
     "dependencies": {
-      "@nano-agent/nacp-core": "1.4.0",
-      "@nano-agent/nacp-session": "1.3.0"
+      "@haimang/nacp-core": "1.4.0",
+      "@haimang/nacp-session": "1.3.0"
     },
     "devDependencies": {
       "typescript": "^5.6.0",
@@ -587,14 +587,14 @@ v0.2 修正:
   ```
 - **`.npmrc`**:
   ```
-  @nano-agent:registry=https://npm.pkg.github.com
+  @haimang:registry=https://npm.pkg.github.com
   //npm.pkg.github.com/:_authToken=${NPM_AUTH_TOKEN}
   always-auth=true
   ```
 - **`src/smoke.ts`**:
   ```ts
-   import { NACP_VERSION, NACP_CORE_TYPE_DIRECTION_MATRIX, validateEnvelope } from "@nano-agent/nacp-core";
-   import { NACP_SESSION_VERSION, validateSessionFrame } from "@nano-agent/nacp-session";
+   import { NACP_VERSION, NACP_CORE_TYPE_DIRECTION_MATRIX, validateEnvelope } from "@haimang/nacp-core";
+   import { NACP_SESSION_VERSION, validateSessionFrame } from "@haimang/nacp-session";
 
    if (typeof validateEnvelope !== "function" || typeof validateSessionFrame !== "function") {
      throw new Error("public validators are not available");
@@ -636,7 +636,7 @@ v0.2 修正:
   - 首次 workflow run URL
   - GitHub Packages registry URL
   - Dogfood build log(quote)
-  - 实际 scope 确认(`@nano-agent` 或其他)
+  - 实际 scope 已确认为 `@haimang`
   - Owner sign-off
 - **一句话收口目标**:✅ **closure memo 内所有证据 URL 有效**
 
@@ -723,16 +723,16 @@ W2 是 **"最小必要 DevOps 层"**:
   - §6.1 取舍 1(2 包白名单)是否接受?
   - §6.1 取舍 4(首发用 1.4.0 而非 0.1.0)是否接受?
   - §6.1 取舍 3(tag format `nacp-v*`)是否接受?
-  - **Q2**:GitHub org / scope 实际名(目前占位 `@nano-agent`)
+  - scope 已收口为 `@haimang`
   - §5.2 [O9] 是否接受保持 restricted(如 owner 已决策转 public,提前告知)
 - [ ] **关联 action-plan**:`docs/action-plan/pre-worker-matrix/W2-publishing-pipeline.md`(7 个 P1-P7 的执行批次化)
 - [ ] **关联 policy doc 拆出**:`docs/design/pre-worker-matrix/W2-publishing-discipline.md`(本 design owner-approve 后,P6 产出作为独立 policy doc,charter §14.1 有 placeholder)
 - [ ] **依赖下游**:
-  - W4 的 `workers/*/package.json` 写法等着 W2 发布完成(W4 消费 `@<scope>/nacp-core@1.4.0`)
+  - W4 的 `workers/*/package.json` 写法应对齐当前已发布的 `@haimang/nacp-core@1.4.0`
 - [ ] **待深入调查的子问题**:
   - 真实首发是否在 owner-aligned namespace / 仓库内执行?
   - 是否需要在第一次真实发布前补 dogfood published-path lockfile?
-  - `@nano-agent/*` scope 是否在 worker-matrix 前切到最终 owner namespace?
+  - 当前 `@haimang/*` published path 是否在 worker-matrix 前继续保持为默认消费面?
 
 ---
 
@@ -756,7 +756,7 @@ W2 是 **"最小必要 DevOps 层"**:
 ### B. 开放问题清单
 
 - [ ] **Q1**:现有 `packages/nacp-core/package.json` + `packages/nacp-session/package.json` 是否有 `private: true`?如有,P1 step 里先删
-- [ ] **Q2**:GitHub org 实际名?假设 `@nano-agent`;若不同,本 design §5.1 S3 处换
+- [x] **Q2**:GitHub Packages scope 已确定为 `@haimang`
 - [ ] **Q3**:owner 是否已有 GitHub Packages 使用历史?(影响 first-time authorization flow)
 - [ ] **Q4**:`dogfood/` 是否需要加到 `.gitignore`(至少 `node_modules` / `dist`)?
 - [ ] **Q5**:pnpm workspace 已有配置,是否需 `!dogfood` exclusion?(需核查 `pnpm-workspace.yaml`)

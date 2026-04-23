@@ -9,12 +9,13 @@
 > - 前置 design:`W0-nacp-consolidation.md`(Tier A 吸收 shape)
 > - 并行 design:`W1-cross-worker-protocols.md`(跨 worker 协议)、`W2-publishing-pipeline.md`(NACP 发布)
 > - 后继 design:`W4-workers-scaffolding.md`(消费 W3 的 optional capability-runtime dry-run 结果,若执行)
-> 文档状态:`draft (v0.3 post-GPT-R4-review: body fully narrowed — §2.3 / §3 / §4 / §6 / §7.3 / §9 all reflect map + 2-3 representative + optional capability-runtime dry-run)`
+> 文档状态:`executed (v0.3 reality-calibrated 2026-04-23: Phase 1 reality pass findings wired through §0.2 / §1.4 / §6.1 取舍 2 / §7.2 T3; optional dry-run deferred per owner Q1)`
 >
 > **修订历史**:
 > - v0.1 (2026-04-21):初稿。10 份 detailed blueprint + llm-wrapper dry-run(gate)
 > - v0.2 (2026-04-21):Post-GPT-review narrowing(GPT review 盲点 5-6 整改)。收窄为 **1 份 absorption map + 2-3 份代表性 detailed blueprint + dry-run 可选**。若做 dry-run,目标从 llm-wrapper 改为 capability-runtime(更代表跨 worker 吸收复杂度)。§0 / §5.1 / §7.2 T2/T3/T4 已重写;顶部 + §7.1 T-table 已更新。
 > - v0.3 (2026-04-21):Post-GPT-R4 body-level narrowing。GPT 指出 v0.2 仅改顶部/In-Scope/T-table;§2.2/§2.3/§3/§4/§6.1 取舍 1-2/§6.2 风险表/§6.3 价值/§9.1 画像/§9.3 下一步/附录 A/B 仍按 v0.1 表述 "10 份 blueprint / llm-wrapper dry-run / 强制 gate"。本版:标题改为 "Absorption Map + Representative Blueprints + Optional capability-runtime Dry-Run";§2.2 interaction matrix、§2.3 一句话定位、§3.1-§3.4 精简/接口/解耦/聚合、§4.2-§4.4 对比(Strangler Fig / monorepo / speed table)、§6.1 取舍 1-2(重写 map-ratio 取舍 + capability-runtime 候选对比)、§6.2 风险表、§6.3 价值、§7.2 T1/T6 收口目标、§7.3 非功能、§9.1 画像、§9.3 下一步决策 / 关联链接 / 深入调查、附录 A 分歧、附录 B 开放问题 全文与 v0.2 顶部一致。
+> - **v0.3 reality-calibrated (2026-04-23)**:Phase 1 reality verification pass 实测发现 `capability-runtime` 真实 `dependencies: {}` + src/test 零跨包 import(原 v0.2 声称 "中 (nacp / hooks)"),触发 §0.2 / §1.4 候选对比表 / §6.1 取舍 2 候选对比表 / §7.2 T3 step 1 审计说明 / T3 收口目标 / T4 循环引用节 6 处级联修正;同时把 NACP scope 占位符 `@<scope>/nacp-core` 统一改为 `@haimang/nacp-core`(3 处)以对齐 W2 首发真相层。关闭裁定:`closed per docs/issue/pre-worker-matrix/W3-closure.md`,optional dry-run 按 owner Q1 deferred 到 worker-matrix P0。
 
 ---
 
@@ -47,7 +48,7 @@ v0.2 立场:
 
 - **Dry-run 非必要**:1 份 map + 2-3 份 detailed blueprint 已足够 worker-matrix P0 启动
 - **Dry-run 可选**:若 owner / team 时间充裕,可做 dry-run;但不作为 W3 exit gate
-- **若做,目标改 `capability-runtime`**(非 llm-wrapper)— 它有真实跨包依赖 + 复杂测试 + 对应 bash.core absorption,dry-run 的 lessons 外推价值更高
+- **若做,目标改 `capability-runtime`**(非 llm-wrapper)— 它有复杂测试 + 深度 semantic coupling(fake-bash surface + typed runtime + honest-partial 纪律)+ 对应 bash.core absorption;**v0.3 reality pass 实测其 `dependencies: {}` 且 src/test 零跨包 import**,因此 dry-run 真正能 battle-test 的是"搬 + build + test 流水线",而不是循环引用拆解 — 后者的代表样本是 `workspace-context-artifacts` split
 - Dry-run 产出的 pattern doc 可部分回写到代表 blueprint(非强制)
 
 ### 0.3 前置共识(v0.2 narrower — 不再辩论)
@@ -114,20 +115,25 @@ v0.2 立场:
 
 **v0.2 新选择(capability-runtime)对比表**:
 
-| 维度 | llm-wrapper(v0.1 旧选)| **capability-runtime(v0.2 新选)** |
+| 维度 | llm-wrapper(v0.1 旧选)| **capability-runtime(v0.2 新选 — 已按实测校准,v0.3 Phase 1 reality pass)** |
 |---|---|---|
 | source 文件数 | 12 | **30+**(handlers + bridge + executor + targets) |
 | source 总行数 | ~1090 | **~3500+** |
 | test 文件数 | 7 | **15+** |
 | test 总行数 | ~1424(103 tests) | **~4000+**(352 tests) |
-| 包依赖 | 零(仅 peer zod) | **多个** nacp-core / workspace-context-artifacts 引用 |
-| 消费者数 | 1 | 1(session-do-runtime;未来 bash.core) |
-| 循环引用风险 | 无 | **有**(多层)— 这是 pattern spec 需要捕获的关键 lesson |
-| 与 NACP 关系 | 完全独立 | 深度依赖 `tool.call.*` family |
+| 包依赖(package.json `dependencies`)| 零(仅 peer zod) | **零**(实测 `dependencies: {}`;`zod` 仅在 devDependencies)|
+| src/test 中的 cross-package import | 零 | **零**(实测 `grep -r "from ['\"]@nano-agent" packages/capability-runtime/{src,test}` 无命中)|
+| 消费者数 | 1 | 1(session-do-runtime 间接 / agent-runtime-kernel;未来 bash.core) |
+| 循环引用风险 | 无 | **无**(package graph)— pattern spec 不需要因 capability-runtime 捕获循环 lesson;真正的循环引用样本在 worker-matrix P0 WCA split 才会出现 |
+| 与 NACP 关系 | 完全独立 | wire-level 对齐 `tool.call.*` family,但 **源码层不直接 import** NACP symbol |
 | platform-specific seam | 无 | **有**(ServiceBindingTarget / remote-bindings seam) |
-| 代表性 | **低** | **高** — 代表真正的跨 worker absorption 复杂度 |
+| 代表性 | **低** | **高** — 但 representativeness 来自 **fake-bash surface + typed capability runtime + honest-partial discipline + 体量**,不是 "跨包依赖最复杂" |
 
-**v0.2 结论**:若 owner 决定执行 optional dry-run,**选 capability-runtime**;若不做,pattern spec 由未来 worker-matrix P0 首次 absorb 回写(推迟到 live evidence-driven 时机)。
+**v0.3 reality-calibrated 结论**:
+
+1. capability-runtime 的代表性真相是 **"单包内 semantic coupling 重于 source coupling"**:外形要保住 fake-bash,内核要保住 typed capability runtime,partial/unsupported 纪律要原封保留。这是 `bash-core` 吸收的真实难点。
+2. 它 **不代表** worker-matrix 中的循环引用样本;真正的循环/跨 worker 难点样本在 `workspace-context-artifacts` split blueprint(已由 C2/D1 split blueprint 承载)。
+3. 若 owner 决定执行 optional dry-run,**仍选 capability-runtime**,因为它是最能单独验证"搬 src + 搬 test + build 绿"流水线的样本 — 不牵扯 session-do-runtime 等 live consumer。若不做,pattern spec 由未来 worker-matrix P0 首次 absorb 回写。
 
 ---
 
@@ -147,9 +153,9 @@ v0.2 立场:
 
 | 相邻功能簇 | 交互方向 | 耦合强度 | 说明 |
 |---|---|---|---|
-| W0 已 ship 的 nacp-core 1.4.0 | W3 blueprint 引用 | 强 | blueprint 里 import path 从 Tier B 内部 symbol 改为 `@nano-agent/nacp-core` |
+| W0 已 ship 的 nacp-core 1.4.0 | W3 blueprint 引用 | 强 | blueprint 里 import path 从 Tier B 内部 symbol 改为 `@haimang/nacp-core` |
 | W1 新协议 RFC(`workspace.fs.*` 等) | W3 代表 blueprint 可引用 | 弱-中 | 若代表 blueprint 涉及跨 worker 通信,可引用 W1 RFC;W1 RFC-only 无 code |
-| W2 publishing pipeline skeleton | W3 blueprint 假设 import 形式 | 中 | blueprint 描述 `workspace:*` OR `@<scope>/nacp-core` 任一 path |
+| W2 publishing pipeline skeleton | W3 blueprint 假设 import 形式 | 中 | blueprint 描述 `workspace:*` OR `@haimang/nacp-core` 任一 path |
 | W4 workers/ 目录 | W3 blueprint 描述目的地 | 强 | blueprint 指向 `workers/<name>/src/...`,该目录由 W4 建立 |
 | worker-matrix P0 | W3 被消费 | 强 | P0 按 map 执行全 Tier B;按 2-3 代表 blueprint 外推 |
 | `packages/capability-runtime/` | W3 **optional** dry-run 目标(如执行) | 弱-中 | capability-runtime 相较 llm-wrapper 更具代表性;dry-run 属 optional 增强 |
@@ -336,19 +342,19 @@ v0.2 立场:
    - **接受的代价**:非代表包的 detailed blueprint 推给 worker-matrix P0 on-demand 补写;若 P0 执行某包时发现模板外推不够,要临时深化
    - **缓解**:pattern spec 作为 meta-index;map 显式标注每行"外推风险"(高/中/低),高风险项 P0 补写 detailed
 
-2. **取舍 2(v0.2 调整)— Optional dry-run 目标选 `capability-runtime`,不选 llm-wrapper 也不强制做**
-   - **候选比较**(v0.2 重评估):
-     | 候选 | 源/测试 LOC | 跨 package 依赖 | 消费者数 | Platform seam | 代表性 | 适合度 |
-     |---|---|---|---|---|---|---|
-     | `capability-runtime` | ~2400 / ~3400 | 中(nacp / hooks) | 1(agent-runtime-kernel) | 有(bash.core seam) | **高**(覆盖 seam / 跨包 dep / policy 组合) | ★★★★★ |
-     | `llm-wrapper` | 1090 / 1424 | 0(仅 peer zod) | 1 | 无 | 低 | ★★ |
-     | `agent-runtime-kernel` | ~600 / ~400 | nacp-core | 1 | 低 | 中 | ★★★ |
-     | 其他 | — | 各异 | — | — | — | — |
+2. **取舍 2(v0.2 调整 / v0.3 reality-calibrated)— Optional dry-run 目标选 `capability-runtime`,不选 llm-wrapper 也不强制做**
+   - **候选比较**(v0.3 实测校准):
+     | 候选 | 源/测试 LOC | `dependencies` | src/test 中跨包 import | 消费者数 | Platform seam | 代表性 | 适合度 |
+     |---|---|---|---|---|---|---|---|
+     | `capability-runtime` | ~2400 / ~3400(合计 ~9473)| **`{}`(零)** | **零实测命中** | 1(agent-runtime-kernel)| 有(bash.core seam)| **高**(fake-bash surface + typed runtime + honest-partial 纪律 + 体量)| ★★★★★ |
+     | `llm-wrapper` | 1090 / 1424 | 0(仅 peer zod)| 零 | 1 | 无 | 低 | ★★ |
+     | `agent-runtime-kernel` | ~600 / ~400 | 有(nacp-core)| 有 | 1 | 低 | 中 | ★★★ |
+     | 其他 | — | 各异 | — | — | — | — | — |
    - **选择 capability-runtime(if executed)**
-   - **为什么**:v0.1 选 llm-wrapper 因零 dep 最干净,但 GPT review 盲点 6 指出"零 dep = pattern 样本无跨包 lessons",代表性过低;capability-runtime 有 seam + 跨包 dep,更能 battle-test pattern
+   - **为什么(v0.3 reality-calibrated)**:v0.1 选 llm-wrapper 因零 dep 最干净;GPT review 盲点 6 曾指出 "零 dep = 无跨包 lessons";v0.3 实测发现 **capability-runtime 也同样零跨包 dep**,但它与 llm-wrapper 的本质区别是 **semantic coupling 极重**(fake-bash 外形 + typed runtime 内核 + honest-partial 纪律),且 LOC 近十倍。因此代表性仍然 **高**,但代表的是 "单包内 semantic coupling" 而非 "跨包循环引用"。循环引用样本真实落在 `workspace-context-artifacts` split(C2/D1 blueprint)
    - **为什么 optional**:dry-run 本身 = 真正动代码;若时窗紧则作为 follow-on,不 block W3 closure
-   - **接受的代价**:若不做,pattern spec 某些节(循环引用/seam 处理)无实证 lessons
-   - **缓解**:pattern spec 节留 placeholder;worker-matrix P0 执行首个复杂包后回填
+   - **接受的代价**:若不做,pattern spec 的 "LOC→时长系数" 与 "可执行流水线样板" 无实证 lessons
+   - **缓解**:pattern spec 节留 placeholder;worker-matrix P0 执行首个 absorb 后回填
 
 3. **取舍 3 — Blueprint 颗粒度到 "file"(不到 line,也不到 module)**
    - **选择 per-file 映射**,不是 **per-line diff** / **per-module 概括**
@@ -469,7 +475,7 @@ v0.2 立场:
      - 原包是否发 patch bump(推荐:发 0.X.1 patch 只加 README 贴纸)
   
   ## §6. 与 NACP 1.4.0 的 import 改写
-      - 原包内 shared protocol imports,absorb 后仍应指向 `@nano-agent/nacp-core` / `@nano-agent/nacp-session`
+      - 原包内 shared protocol imports,absorb 后仍应指向 `@haimang/nacp-core` / `@haimang/nacp-session`
       - workers package-level resolution 可暂用 `workspace:*` 或 published version,由 W2/W4 当时状态决定
   
   ## §7. Worker-matrix P0 执行 checklist
@@ -512,25 +518,25 @@ v0.2 立场:
 
 - **前置条件(若做)**:W4 `workers/bash-core/` 目录创建
 - **执行步骤(若做)**:
-  1. **审计 import**:`grep -r "@nano-agent" packages/capability-runtime/` — 识别跨包依赖(期望发现 nacp-core / workspace-context-artifacts 引用);这些跨包 import 的解决 pattern 是 dry-run 的**主要 learning**
+  1. **审计 import**:`grep -r "from ['\"]@nano-agent\|from ['\"]@haimang" packages/capability-runtime/{src,test}` — **v0.3 reality pass 已实测:capability-runtime `dependencies: {}`,src/test 均零跨包 import**。因此 dry-run 不会遇到循环/跨包依赖解 pattern;dry-run 的主要 learning 改为 **"搬 src + 搬 test + `pnpm --filter workers/bash-core build test` 全绿的可执行路径"**,而不是循环引用拆解。真正的循环引用 lesson 要等 `workspace-context-artifacts` split 才会出现
   2. **建 destination 目录**:`mkdir -p workers/bash-core/src workers/bash-core/test`
   3. **搬 source**:`cp -r packages/capability-runtime/src/* workers/bash-core/src/`(copy 不 move)
   4. **搬 test**:`cp -r packages/capability-runtime/test/* workers/bash-core/test/`
-  5. **调 import**:`nacp-core` 引用改 `@<scope>/nacp-core`(若 W2 首发)或保持 `workspace:*`;workspace-context-artifacts 引用 — **这里会遇到 circular / cross-worker 依赖问题**,按 pattern doc §2 解决方案处理(dependency inversion / interface extraction / relocation)
+  5. **调 import**:`nacp-core` 引用改 `@haimang/nacp-core`(若 W2 首发)或保持 `workspace:*`;workspace-context-artifacts 引用 — **这里会遇到 circular / cross-worker 依赖问题**,按 pattern doc §2 解决方案处理(dependency inversion / interface extraction / relocation)
   6. **build 验证**:`cd workers/bash-core && pnpm build`
   7. **test 验证**:`cd workers/bash-core && pnpm test`(目标是 package-local tests 全绿)
-  8. **记录 lessons**:跨包依赖解决路径 + 实际 LOC + 实际时长 → 写 pattern doc(T4)
+  8. **记录 lessons**:`pnpm --filter workers/bash-core build test` 可执行流水线样板 + 实际 LOC + 实际时长 → 写 pattern doc(T4)。跨包依赖解决路径由 **WCA split dry-run**(若后续 worker-matrix P0 做)才会真正产生
 - **共存期**:`packages/capability-runtime/` 完全不动;共存
 - **回归**:`pnpm -r run test` 全绿
-- **一句话收口目标(v0.2 若做)**:✅ **workers/bash-core/src/ 有真实代码 + package-local tests 全绿;packages/capability-runtime/ 未改;主 regression 全绿;pattern doc 循环引用节已回写**
-- **若不做**:pattern doc 的 LOC 系数 / 循环引用具体 pattern 保留 placeholder,等 worker-matrix P0 首次 absorb 回写
+- **一句话收口目标(v0.3 若做)**:✅ **workers/bash-core/src/ 有真实代码 + package-local tests 全绿;packages/capability-runtime/ 未改;主 regression 全绿;pattern doc "搬 + build + test 可执行流水线" 节已回写**。循环引用节无论 dry-run 做或不做都保留 placeholder(因 capability-runtime 实测零跨包 dep,循环样本要等 WCA split)
+- **若不做**:pattern doc 的 LOC 系数 / "可执行流水线" 节保留 placeholder,等 worker-matrix P0 首次 absorb 回写;循环引用节同样保留 placeholder 等 WCA split
 
 #### T4 (v0.2): Pattern Spec
 
 - **文件**:`docs/design/pre-worker-matrix/W3-absorption-pattern.md`
 - **v0.2 必含节**(若有 dry-run 则数据充实;若无 dry-run 则 generic 部分先写,placeholder 留给 P0):
   1. **背景**:capability-runtime dry-run lessons(若做)或 generic pattern description
-  2. **循环引用解决 pattern**(若做 dry-run,基于实测;若不做,留 placeholder)
+  2. **循环引用解决 pattern**(**v0.3 reality pass 修正**:capability-runtime 实测零跨包 dep,因此此节 placeholder **与 dry-run 是否执行无关**,必须等 WCA split 真实发生时回填 — WCA 有 `@haimang/nacp-core` + `@nano-agent/storage-topology` 两条真实跨包边,是 pre-worker-matrix 内唯一真实跨 Tier A/B 的包)
   3. **LOC → 时长 经验系数**(若做 dry-run,基于 ~3500 source + ~4000 test LOC 实测;若不做,留 placeholder)
   4. **Test 迁移典型动作**:generic(vitest config / fixture / mock 处理)
   5. **Deprecated 贴纸标准 wording**(templating,不依赖 dry-run):
@@ -622,7 +628,7 @@ W3(v0.2)是 **"设计桥梁 — map + 代表样本"** phase:
 - **耦合形态**:
   - 与 W0 强耦合(blueprint 引用 W0 已吸收的 nacp-core path)
   - 与 W1 弱-中耦合(代表 blueprint 可引用 W1 RFC;W1 RFC-only 无 code)
-  - 与 W2 中耦合(blueprint 假设 `workspace:*` OR `@<scope>/nacp-core` 任一 import path)
+  - 与 W2 中耦合(blueprint 假设 `workspace:*` OR `@haimang/nacp-core` 任一 import path)
   - 与 W4 强耦合(若做 dry-run 需要 `workers/bash-core/` 目录存在;若 W4 晚,dry-run 先建 stub)
   - 与 worker-matrix P0 强耦合(直接消费 map + 代表 blueprint + pattern spec)
 - **预期代码量级**:

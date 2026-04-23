@@ -64,8 +64,8 @@ workers/<worker-name>/
 
 ### 4.1 保留为 package dependency 的内容
 
-- `@nano-agent/nacp-core`
-- `@nano-agent/nacp-session`
+- `@haimang/nacp-core`
+- `@haimang/nacp-session`
 - 其他仍不应 absorb 的共享包
 
 ### 4.2 跟随 absorb 一起内化的内容

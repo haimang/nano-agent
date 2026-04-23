@@ -34,7 +34,7 @@ owner 的 `workers/` 顶级目录决策(`plan-pre-worker-matrix.md` §1.2)要求
 
 1. **DevOps 链路验证(收窄到 agent-core 1 次)**:agent-core 1 次真实 `wrangler deploy --env preview` 验证完整 DevOps 链路(wrangler / CF account / TS build / NACP bundle);其他 3 workers `wrangler deploy --dry-run` 验证同构 shape;**不需要 4 次真实 deploy**(GPT review 盲点 1)
 2. **W3 代表性 dry-run(若做)目的地依赖**:若 W3 执行 optional capability-runtime dry-run,需要 `workers/bash-core/` 目录存在;W4 先建比 W3 先建 stub 更一致(v0.2 调整:原 W3 目标从 llm-wrapper 改 capability-runtime)
-3. **GitHub Packages 非硬依赖(v0.2 parallel)**:workers `package.json` 可用 `workspace:*` interim;若 W2 首发已完成,可切 `@<scope>/nacp-core@1.4.0`;W4 不 block 在 W2 首发上
+3. **GitHub Packages 非硬依赖(v0.2 parallel)**:workers `package.json` 可用 `workspace:*` interim;当前 W2 首发已完成,可直接切 `@haimang/nacp-core@1.4.0`;W4 仍不 block 在 published path 采用时机上
 4. **空壳即脚手架**:worker-matrix P0 absorb 时直接填 `src/`,不需再建 `wrangler.jsonc` / `package.json`,架构一致性
 
 ### 0.2 空壳(shell) vs 实装 worker 的严格区分
@@ -58,7 +58,7 @@ owner 的 `workers/` 顶级目录决策(`plan-pre-worker-matrix.md` §1.2)要求
 - **4 个 worker,skill.core 保持 reserved**:charter §4.2 F [O14] 明确 skill.core 不在本阶段
 - **目录命名用 kebab-case**:`workers/agent-core/`(因为 npm / wrangler 命名规范 + pnpm workspace glob 友好);NACP producer_key 语义可保留 `agent.core`
 - **`wrangler.jsonc` 而非 `.toml`**:charter §7.5 item 41 明确 `jsonc`
-- **NACP 包 import 策略(v0.2 parallel)**:workers 允许 `workspace:*` interim(若 W2 未首发)或 `@<scope>/nacp-core@1.4.0`(若已首发);二者任一 build 通即可;切换时机由 worker-matrix 阶段决定
+- **NACP 包 import 策略(v0.2 parallel)**:workers 允许 `workspace:*` interim，或直接使用当前已发布的 `@haimang/nacp-core@1.4.0` / `@haimang/nacp-session@1.3.0`;二者任一 build 通即可;切换时机由 worker-matrix 阶段决定
 - **agent-core 真实 deploy + 3 workers dry-run(v0.2)**:继承 charter §5.5 Empty-Shell-Deploy-Discipline 但**只对 agent-core 做 1 次真实 deploy**;其他 3 workers `wrangler deploy --dry-run` 即可
 - **CI 采用 matrix workflow(单 YAML 跑 4 workers)**:charter §7.5 item 44 方案 B
 - **空壳阶段 DO binding / KV / R2 / D1 暂不实际绑定**:只声明 slot;具体资源创建在 worker-matrix P0
@@ -282,7 +282,7 @@ owner 的 `workers/` 顶级目录决策(`plan-pre-worker-matrix.md` §1.2)要求
 - **[S2]** 更新 `pnpm-workspace.yaml` 加 `workers/*`(保留 `packages/*`)
 - **[S3]** 为 4 workers 各建:
   - `workers/<name>/wrangler.jsonc`
-  - `workers/<name>/package.json`(deps 指向 `@<scope>/nacp-core` + `@<scope>/nacp-session`;解析方式依 W2 状态为 `workspace:*` 或 published version)
+  - `workers/<name>/package.json`(deps 指向 `@haimang/nacp-core` + `@haimang/nacp-session`;解析方式依 W2 状态为 `workspace:*` 或 published version)
   - `workers/<name>/src/index.ts`(hello-world fetch handler,含 NACP version probe)
   - `workers/<name>/src/types.ts`(env binding types,初期 empty interface)
   - `workers/<name>/test/smoke.test.ts`(3-5 个 shell-level unit test)
@@ -324,7 +324,7 @@ owner 的 `workers/` 顶级目录决策(`plan-pre-worker-matrix.md` §1.2)要求
 | 项目 | 判定 | 理由 |
 |---|---|---|
 | agent-core 的 SESSION_DO stub class 是否算"业务逻辑" | **不算**,in-scope | stub 只 return shell 响应,用于验证 DO binding resolve;无 state 无业务 |
-| workers 下是否放 `package.json.name` = `@<scope>/agent-core-worker` | **in-scope**,但不发布 | 命名一致性;`private: true` 防止误发 |
+| workers 下是否放 `package.json.name` = `@haimang/agent-core-worker` | **in-scope**,但不发布 | 命名一致性;`private: true` 防止误发 |
 | `wrangler.jsonc` 里 KV / R2 / D1 的 ID 占位用 `"replace-me"` 还是真 ID | **in-scope 占位**,用 `"replace-me-by-<owner>"`; `wrangler deploy` 会失败 — 但空壳阶段 deploy 不依赖这些 | 若 owner 提供真 ID,替换;否则**从 wrangler.jsonc 注释掉** KV / R2 bindings 以 deploy 通过 |
 | 是否立即给 4 个 worker 加 observability: enabled | **in-scope** | 继承 B8 template 惯例;不增加复杂度 |
 | `workers/bash-core/src/`(W3 optional dry-run 落点,若执行)与 W4 shell 的关系 | **in-scope 预留空间** | W4 建 `workers/bash-core/src/` 目录;若 W3 执行 dry-run,则在其下直接填 capability-runtime 代码;W4 的 `index.ts` 不 import 那些(至少空壳阶段);P0 absorb 时接 |
@@ -530,8 +530,8 @@ owner 的 `workers/` 顶级目录决策(`plan-pre-worker-matrix.md` §1.2)要求
       "deploy:dry-run": "wrangler deploy --dry-run"
     },
     "dependencies": {
-      "@nano-agent/nacp-core": "workspace:*",
-      "@nano-agent/nacp-session": "workspace:*"
+      "@haimang/nacp-core": "workspace:*",
+      "@haimang/nacp-session": "workspace:*"
     },
   ```
 
@@ -540,8 +540,8 @@ owner 的 `workers/` 顶级目录决策(`plan-pre-worker-matrix.md` §1.2)要求
   {
     // ... 同上 ...
       "dependencies": {
-        "@nano-agent/nacp-core": "1.4.0",
-        "@nano-agent/nacp-session": "1.3.0"
+        "@haimang/nacp-core": "1.4.0",
+        "@haimang/nacp-session": "1.3.0"
       },
     "devDependencies": {
       "@cloudflare/workers-types": "^4.0.0",
@@ -553,7 +553,7 @@ owner 的 `workers/` 顶级目录决策(`plan-pre-worker-matrix.md` §1.2)要求
   ```
 - **`.npmrc`**(配 GitHub Packages):
   ```
-  @nano-agent:registry=https://npm.pkg.github.com
+  @haimang:registry=https://npm.pkg.github.com
   always-auth=true
   ```
   (若 repo root 有全局 .npmrc,可继承)
@@ -625,8 +625,8 @@ owner 的 `workers/` 顶级目录决策(`plan-pre-worker-matrix.md` §1.2)要求
 
 - **agent-core `src/index.ts`**:
   ```ts
-  import { NACP_VERSION } from "@nano-agent/nacp-core";
-  import { NACP_SESSION_VERSION } from "@nano-agent/nacp-session";
+  import { NACP_VERSION } from "@haimang/nacp-core";
+  import { NACP_SESSION_VERSION } from "@haimang/nacp-session";
 
   export interface Env {
     SESSION_DO: DurableObjectNamespace;
@@ -670,7 +670,7 @@ owner 的 `workers/` 顶级目录决策(`plan-pre-worker-matrix.md` §1.2)要求
   ```ts
   import { describe, it, expect } from "vitest";
   import worker, { NanoSessionDO } from "../src/index.js";
-  import { NACP_VERSION } from "@nano-agent/nacp-core";
+  import { NACP_VERSION } from "@haimang/nacp-core";
 
   describe("agent-core shell smoke", () => {
     it("exports default fetch handler", () => {
@@ -732,7 +732,7 @@ owner 的 `workers/` 顶级目录决策(`plan-pre-worker-matrix.md` §1.2)要求
           with:
             node-version: 20
             registry-url: 'https://npm.pkg.github.com'
-            scope: '@nano-agent'
+            scope: '@haimang'
 
         - name: Install dependencies
           run: pnpm install --frozen-lockfile
@@ -839,7 +839,7 @@ W4 是 **"脚手架 + 一次 DevOps 贯通验证"** phase:
 - **存在形式(v0.2)**:`workers/` 顶级目录 + 4 workers 空壳 + 1 matrix CI workflow + **1 agent-core real deploy URL + 3 workers dry-run build log**
 - **覆盖范围**:每 worker 目录结构一致;agent-core 独立 real deploy;其余 3 workers dry-run;CI 覆盖 build + test + dry-run deploy 全 4 workers
 - **耦合形态**:
-  - 与 W2 **弱-中依赖**(workers import NACP 用 `workspace:*` OR `@<scope>/nacp-core` 任一;不强制 first publish)
+  - 与 W2 **弱-中依赖**(workers import NACP 用 `workspace:*` OR `@haimang/nacp-core` 任一;不强制首发时机成为 blocker)
   - 与 W3 **弱协同**(若 W3 执行 optional capability-runtime dry-run,落点 `workers/bash-core/src/`;W3 不做 dry-run 则该协同不触发)
   - 与 worker-matrix P0 **强下游**(P0 直接填 src/,不建脚手架;3 workers real deploy 推迟到 P0)
 - **预期代码量级**:

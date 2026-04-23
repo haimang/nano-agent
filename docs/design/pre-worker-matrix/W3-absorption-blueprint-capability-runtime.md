@@ -34,8 +34,15 @@
 - `packages/capability-runtime/package.json`
   - 当前版本：`0.1.0`
   - scripts：`build` / `typecheck` / `test`
+  - **`dependencies: {}`(实测零跨包运行时依赖)**；`devDependencies` 只有 `typescript` / `vitest` / `zod`
 - public surface 由 `src/index.ts` 汇总导出
-- direct `@nano-agent/*` import 极少；复杂度主要来自 capability surface 与行为纪律，而不是源码级跨包 graph
+- **实测:`packages/capability-runtime/src/**` 与 `test/**` 均无任何 `@nano-agent/*` 或 `@haimang/*` 形式的 cross-package import**
+- 这意味着 capability-runtime 的代表性来源 **不是** "跨包依赖最复杂",而是:
+  1. fake-bash compatibility surface(外形维持)
+  2. typed capability runtime 内核(policy / permission / executor)
+  3. honest partial / unsupported / risk-blocked disclosure 纪律
+  4. ~9473 LOC (src + test) 的体量(足以 battle-test pattern)
+- 因此它代表的是 **单包内部的 "semantic coupling 重于 source coupling"**,而不是 "循环引用 / cross-worker seam 最复杂" 样本
 
 ### 2.2 关键源码锚点
 

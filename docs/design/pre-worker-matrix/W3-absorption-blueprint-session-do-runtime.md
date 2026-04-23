@@ -31,7 +31,7 @@
 
 - `packages/session-do-runtime/package.json`
   - 当前版本：`0.3.0`
-  - 直接依赖：`@nano-agent/nacp-core`、`@nano-agent/nacp-session`、`@nano-agent/workspace-context-artifacts`
+  - 直接依赖：`@haimang/nacp-core`、`@haimang/nacp-session`、`@nano-agent/workspace-context-artifacts`
 - `wrangler.jsonc`
   - 已有 deploy-shaped binding skeleton
   - 已声明 `SESSION_DO`、fake hook / capability / fake-provider services、KV/R2 预留

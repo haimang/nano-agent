@@ -30,9 +30,9 @@
 pre-worker-matrix 前 5 个 phase(W0-W4)各自产出独立交付物(**W0 narrower NACP 吸收 / W1 方向 RFC / W2 publishing skeleton / W3 map + 2-3 blueprint / W4 脚手架 + 1 real deploy**),但它们之间存在**横向一致性需求**(v0.2 版本):
 
 1. **W0 吸收的 evidence vocabulary shape** 必须与 **W1 RFC 里描述的 wrapping pattern** 一致(W1 RFC-only 无 helper 代码,但 shape reference 要对齐)
-2. **W2 pipeline skeleton** 的 workflow 能正确打包 W0 shipped 1.4.0 symbols(首发若未完成,skeleton dry-run 能过即可)
+2. **W2 published path** 的 workflow 能正确打包并发布 W0 shipped 1.4.0 symbols（当前现实：`@haimang/*` 已首发）
 3. **W3 map + 代表 blueprint** 里引用的 NACP import path 必须与 W0 shipped 路径一致
-4. **W4 workers package.json** 的 NACP deps 能 resolve 成功(`workspace:*` 或 `@<scope>/nacp-core@1.4.0` 任一 path)
+4. **W4 workers package.json** 的 NACP deps 能 resolve 成功(`workspace:*` 或 `@haimang/nacp-core@1.4.0` 任一 path)
 5. **若 W3 做 optional capability-runtime dry-run**,目的地 `workers/bash-core/src/` 需要 W4 先建;若不做,此横向依赖不存在
 
 这些**横向依赖不会被单个 W0-W4 phase 的 closure 自动验证**。W5 存在的本质:
@@ -249,9 +249,9 @@ W5 的全部产出都是**文档 + 元文档更新**:
   - `docs/issue/pre-worker-matrix/W4-closure.md`
 - **[X2 v0.2]** **横向一致性检查**(5 条对角线,v0.2 内容微调以匹配 narrower scope):
   - (a)W0 吸收的 evidence vocabulary Zod schema 与 W1 **RFC 文档 + W1 closure**里描述的 wrapping pattern shape 是否一致?(v0.2 — W1 无 helper 代码;检查 RFC 描述的 shape 是否引用 W0 shipped 的 EvidenceAnchorSchema)
-  - (b v0.2)若 W2 已完成首发:`@<scope>/nacp-core@1.4.0` 是否包含 W0 所有 shipped 新 symbol(不再期望包含 W1 的 — W1 RFC-only 无代码);**若 W2 未完成首发,跳过此检查,改查 publishConfig + workflow 就绪状态**
-  - (c v0.2)**W3 absorption map + 2-3 代表 blueprint** 里引用的 NACP import path 是否与 W0 实际 shipped 路径一致?(不再是 10 份 blueprint)
-  - (d v0.2)W4 的 agent-core 是否能:(i) 若 W2 已发首发,从 GitHub Packages resolve `@<scope>/nacp-core@1.4.0`;(ii) 若未发,用 `workspace:*` resolve 成功;**两者任一 pass 即可**
+  - (b v0.2)W2 已完成首发:`@haimang/nacp-core@1.4.0` 是否包含 W0 所有 shipped 新 symbol(不再期望包含 W1 的 — W1 RFC-only 无代码)
+  - (c v0.2)**W3 absorption map + 2-3 代表 blueprint** 里引用的 NACP import path 是否与 W0 / W2 当前 shipped 路径一致?(不再是 10 份 blueprint)
+  - (d v0.2)W4 的 agent-core 是否能:(i) 从 GitHub Packages resolve `@haimang/nacp-core@1.4.0`;或(ii) 继续用 `workspace:*` resolve 成功;**两者任一 pass 即可**
   - (e v0.2)W4 的 `workers/agent-core/src/` 结构与 W3 **optional capability-runtime dry-run**(若执行)落点 `workers/bash-core/src/` 是否兼容?若未做 dry-run,(e) 检查降为"workers/ 4 个目录结构统一"
 - **[X3]** 产出 **`docs/issue/pre-worker-matrix/pre-worker-matrix-final-closure.md`**(§7.2 X3 详述)
 - **[X4]** 产出 **`docs/handoff/pre-worker-matrix-to-worker-matrix.md`**(§7.2 X4 详述)
@@ -414,12 +414,11 @@ W5 的全部产出都是**文档 + 元文档更新**:
   - **Evidence 附录**:W0 code anchor + W1 RFC 引用段落 + `docs/issue/pre-worker-matrix/W1-closure.md`
 
   **(b)W0 ↔ W2 — Published Symbol / Skeleton Completeness**
-  - **检查**:若 W2 已首发,发布的 `@<scope>/nacp-core@1.4.0` 是否包含 W0 shipped 新 symbol;若 W2 未首发,则检查 publishConfig + workflow + discipline 是否齐备
+  - **检查**:当前已发布的 `@haimang/nacp-core@1.4.0` 是否包含 W0 shipped 新 symbol
   - **执行**:
-    - 若已首发:`npm view @<scope>/nacp-core@1.4.0 --json` + dogfood import W0 shipped symbols
-    - 若未首发:检查 `package.json publishConfig`、`publish-nacp.yml`、`W2-publishing-discipline.md`
-  - **Pass 条件**:已首发时 W0 shipped symbols 可 import;未首发时 skeleton 完整且触发路径清晰
-  - **Evidence 附录**:dogfood build log 或 skeleton 文件清单
+    - `npm view @haimang/nacp-core@1.4.0 --json` + dogfood import W0 shipped symbols
+  - **Pass 条件**:W0 shipped symbols 可 import
+  - **Evidence 附录**:dogfood build log + publish run evidence
 
   **(c v0.2)W2 ↔ W3 — Import Path Consistency**
   - **检查(v0.2 narrower)**:W3 **absorption map + 2-3 代表 blueprint** 里引用的 NACP import path 是否与 W0 实际 shipped 路径一致
@@ -430,7 +429,7 @@ W5 的全部产出都是**文档 + 元文档更新**:
   - **Evidence 附录**:grep 输出
 
   **(d v0.2)W2 ↔ W4 — Install Reality**
-  - **检查(v0.2 narrower)**:W4 agent-core `package.json` 能用 `workspace:*` 或 `@<scope>/nacp-core@1.4.0`(二者之一)成功 install + build
+  - **检查(v0.2 narrower)**:W4 agent-core `package.json` 能用 `workspace:*` 或 `@haimang/nacp-core@1.4.0`(二者之一)成功 install + build
   - **执行**:
     - 若 W2 首发已完成:`cd workers/agent-core && pnpm install` + build 成功(published)
     - 若 W2 首发未完成:同上,但 deps 用 `workspace:*`,也成功

@@ -105,7 +105,7 @@
 
 ### 5.1 直接源码级耦合最明显的对象
 
-1. `session-do-runtime` → `@nano-agent/nacp-core` / `@nano-agent/nacp-session` / `@nano-agent/workspace-context-artifacts`
+1. `session-do-runtime` → `@haimang/nacp-core` / `@haimang/nacp-session` / `@nano-agent/workspace-context-artifacts`
 2. `workspace-context-artifacts` → `@nano-agent/storage-topology`
 
 ### 5.2 语义耦合重于源码耦合的对象

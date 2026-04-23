@@ -5,7 +5,7 @@
 
 ## 1. 文档目标
 
-`W2-publishing-pipeline.md` 负责说明“为什么 W2 需要 skeleton、为什么首发是 optional parallel track”；本文件只负责把 **publish 行为纪律** 写清楚，避免后续 action-plan 在 release、dogfood、interim `workspace:*` 与 published version 之间来回摇摆。
+`W2-publishing-pipeline.md` 负责说明“为什么 W2 需要 skeleton、为什么首发最初被设计为 optional parallel track”；本文件负责把 **publish 行为纪律** 写清楚，并记录当前已经完成的 `@haimang/*` 首发事实，避免后续 action-plan 在 release、dogfood、interim `workspace:*` 与 published version 之间来回摇摆。
 
 ## 2. 当前代码事实
 
@@ -16,11 +16,11 @@
 - `pnpm-workspace.yaml`：当前 workspace 只包含 `packages/*`
 - 当前真实发布面已对齐为 `@haimang/*`，并已通过 `nacp-v1.4.0` 完成首次 GitHub Packages 发布
 
-因此，W2 的最小真实任务不是“发明 publish 概念”，而是把**已有双包**的 publish skeleton、discipline、dogfood 路径写成稳定约束，并在 owner 决策落地后把它变成实际可消费的 published path。
+因此，W2 的最小真实任务不是“发明 publish 概念”，而是把**已有双包**的 publish skeleton、discipline、dogfood 路径写成稳定约束，并把它维持成实际可消费的 published path。
 
 ## 3. W2 必须坚持的 6 条纪律
 
-### 3.1 skeleton mandatory，首发 optional
+### 3.1 skeleton mandatory，首发已完成
 
 W2 必须产出：
 
@@ -29,14 +29,18 @@ W2 必须产出：
 3. consumer / dogfood 安装纪律
 4. 失败回退纪律
 
-但**不强制**在 pre-worker-matrix 阶段完成真实首发。若 owner 决定不在本阶段首发，workers 仍可先用 `workspace:*`。
+历史上，设计允许不在 pre-worker-matrix 阶段完成真实首发，workers 也可以先用 `workspace:*`。但当前真实状态已经升级为：
+
+1. `@haimang/nacp-core@1.4.0` 已发布
+2. `@haimang/nacp-session@1.3.0` 已发布
+3. published-path dogfood 已验证
 
 ### 3.2 只服务 `nacp-core` 与 `nacp-session`
 
 W2 的 publish scope 只覆盖：
 
-1. `@nano-agent/nacp-core`
-2. `@nano-agent/nacp-session`
+1. `@haimang/nacp-core`
+2. `@haimang/nacp-session`
 
 本阶段不把 `agent-runtime-kernel`、`llm-wrapper`、`capability-runtime`、`workspace-context-artifacts` 等 Tier B 包一并拉入发布面。
 
@@ -77,7 +81,7 @@ W2 不能把 W4 写成“只有 GitHub Packages 直装才算 closure”。
 | 项目 | 纪律 |
 |---|---|
 | package owner | 仅 `nacp-core` / `nacp-session` |
-| registry path | owner 决定 scope，但两个包必须一致 |
+| registry path | 当前 scope 为 `@haimang`，两个包保持一致 |
 | versioning | bundle tag 锚定 `nacp-core` 当前 published baseline；`nacp-session` 可在同一 run 内按自身 semver 发布 |
 | workflow trigger | `nacp-v*.*.*` tag only |
 | consumer install | 支持 `workspace:*` 与 published dual-path |
@@ -85,7 +89,7 @@ W2 不能把 W4 写成“只有 GitHub Packages 直装才算 closure”。
 
 ## 5. 推荐的 skeleton 文件集合
 
-> 说明：这里描述的是 W2 **应拥有**的文件面；并不声称这些文件此刻都已存在。
+> 说明：这里描述的是 W2 **当前拥有**的文件面。
 
 1. `.github/workflows/publish-nacp.yml`
 2. `packages/nacp-core/package.json` 中的 publish metadata
@@ -103,7 +107,7 @@ W2 不能把 W4 写成“只有 GitHub Packages 直装才算 closure”。
 4. dogfood import 成功  
 5. publish 失败时的回退路径写明（回退到 `workspace:*` 或撤 tag）
 
-补充：若当前 repo owner 与 package scope 仍不对齐，closure 必须把真实首发标记为 **deferred**,不能把 skeleton complete 误写为 registry-ready published。
+补充：owner / scope 对齐问题已经通过 `@haimang/*` 收口；未来若再次切换 namespace，应视为新的 release migration，而不是沿用本次首发假设。
 
 ## 7. 若本阶段不首发，应如何写 closure
 

@@ -34,8 +34,12 @@
 
 - `packages/workspace-context-artifacts/package.json`
   - 当前版本：`0.1.0`
-  - 当前直接依赖：`@nano-agent/storage-topology`
+  - **实测当前直接依赖**(`dependencies` 字段):
+    - `@haimang/nacp-core`(workspace:\*)— 协议层 wire vocabulary 与 evidence anchor
+    - `@nano-agent/storage-topology`(workspace:\*)— tenant/ref/key law 与 storage placement
+  - 这是 pre-worker-matrix 阶段唯一一个**同时跨 Tier A(NACP)与 Tier B(storage-topology)**的 Tier B 包,也是 split 难点集中来源
 - `src/index.ts` 已把整个 package public surface 汇总成一个统一出口
+- 实测 LOC:src ~2543,evidence-emitters.ts 含 `buildAssemblyEvidence / buildCompactEvidence / buildSnapshotEvidence / buildArtifactEvidence` 四类(+ 各自 `emit*Evidence` 包装)+ `EvidenceAnchorLike / EvidenceSinkLike` 结构类型
 
 ### 2.2 直接跨包依赖事实
 
