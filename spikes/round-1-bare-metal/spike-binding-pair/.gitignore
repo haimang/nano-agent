@@ -1,9 +1,0 @@
-node_modules/
-.wrangler/
-.dev.vars
-dist/
-
-# .out/ is intentionally tracked so rollups and finding docs can reference
-# raw evidence audit-grade (B1-docs-reviewed-by-GPT §R1 fix, 2026-04-19).
-# Local re-runs will update these files — commit each captured run
-# intentionally after review.
