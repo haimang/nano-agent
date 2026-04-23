@@ -19,7 +19,7 @@
 > - `docs/design/worker-matrix/blueprints/C1-context-management-absorption-blueprint.md`(P0 补齐)
 > - `docs/issue/worker-matrix/P2-closure.md`(P3 kickoff gate)
 > - `docs/eval/worker-matrix/context-core/index.md`
-> 文档状态: `draft`
+> 文档状态: `executed(P3 absorbed runtime landed; context-core owner moved for initial_context helper; dry-run green)`
 
 ---
 
@@ -490,3 +490,32 @@ worker-matrix/P3/
 ## 10. 结语
 
 这份 P3 action-plan 以 **"context-core runtime ownership 从 packages/ 迁到 workers/ + initial_context API owner 归位 + compact Q3c 显式"** 为第一优先级,采用 **"Phase 序列(gate → C1 → C2 → API migrate → posture → deploy → closure)"** 的推进方式,优先解决 **"workers/context-core 仍是 probe / appendInitialContextLayer 临时挂 agent-core / WCA 未 split / mixed helper 未切 / compact posture 非显式"** 五件欠账,并把 **"B7 LIVE 不破 / P2 e2e 不破 / InspectorFacade 默认 OFF / restoreVersion 诚实度 / Q3c opt-in 不漂"** 作为主要约束。整个计划完成后,`context.core` 应达到 **"host-local thin substrate 有真实 ownership + API owner 归位 + compact 默认不挂"**,从而为后续的 **P4 filesystem-core 吸收(含 WCA filesystem slice + mixed helper artifact 部分迁)** 提供稳定基础。
+
+---
+
+## 11. GPT 实施记录（2026-04-23）
+
+### 11.1 实际落地
+
+1. C1 已吸收到 `workers/context-core/src/{budget,async-compact,inspector-facade}/**`，对应 tests 一并迁入。
+2. C2 已吸收到 `workers/context-core/src/{context-layers,context-assembler,compact-boundary,redaction,snapshot}.ts`，并新增 `src/evidence-emitters-context.ts` 作为 context-only mixed-helper 落点。
+3. `appendInitialContextLayer` 已迁到 `workers/context-core/src/context-api/append-initial-context-layer.ts`；`workers/agent-core/src/host/do/nano-session-do.ts` 现在经 `@haimang/context-core-worker/context-api/append-initial-context-layer` 消费该 helper，`workers/agent-core/src/host/context-api/append-initial-context-layer.ts` 保留 shim re-export。
+4. 为保证 worker 内部跨包消费稳定，`workers/context-core/package.json` 已补齐 subpath export；`workers/agent-core/package.json` 增加 `pretypecheck/prebuild/pretest` 先构建 context-core；`workers/agent-core/src/context-core-worker.d.ts` 提供该 subpath 的本地声明，避免 agent-core 把 context-core 源文件直接拖入自身编译根。
+5. `workers/context-core` probe 已从 W4 shell 口径升级为 `phase: "worker-matrix-P3-absorbed"` + `absorbed_runtime: true`，对应 smoke test 已同步。
+6. compact posture 本轮按当前代码事实显式化为：`createDefaultCompositionFactory()` 的 kernel reason 现在明确写出 **默认不自动装 compact delegate**，并新增 test 守护这一点；未引入新的 remote compact delegate wiring。
+
+### 11.2 验证结果
+
+| target | 结果 |
+|--------|------|
+| `pnpm --filter @haimang/context-core-worker typecheck build test` | **19 files / 170 tests 绿** |
+| `pnpm --filter @haimang/context-core-worker run deploy:dry-run` | 绿 |
+| `pnpm --filter @haimang/agent-core-worker typecheck build test` | **96 files / 1027 tests 绿** |
+| `node --test test/*.test.mjs` | **107 绿** |
+| `npm run test:cross` | **121 绿** |
+
+### 11.3 收口判断
+
+- **P3 in-scope 已闭合**：C1 / C2 吸收、mixed-helper context 切分、`appendInitialContextLayer` owner 归位、agent-core consumer 改线、probe truth 校准全部完成。
+- **P3 posture 结论**：`context-core` 已成为真实 absorbed worker，但在 first-wave runtime 中仍保持 host-local / non-remote posture；本轮只做 dry-run，不宣称 agent-core 已启用 `CONTEXT_CORE` service binding。
+- **遗留到后续 phase 的事项**：packages 共存期清理 / deprecation 仍归 P5；更厚的 compact delegate 远端化不在 P3 范围内。

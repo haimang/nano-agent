@@ -4,13 +4,13 @@
 > 讨论日期: `2026-04-23`
 > 作者: `Claude Opus 4.7 (1M context)`
 > 关联 action-plan: `docs/action-plan/worker-matrix/P2-live-loop-activation.md`
-> 文档状态: `closed(Phase 0-6 全绿;agent-core redeploy 已 live + BASH_CORE binding live + 2 条 root e2e 持续守护)`
+> 文档状态: `closed(P2 seam truth aligned;agent-core preview redeploy 已 live + BASH_CORE canonical binding / initial_context consumer / root guards 持续守护)`
 
 ---
 
 ## 0. 背景
 
-P2 把 agent-core 从 "absorbed-but-isolated" 升到 "live-loop-wired":initial_context host consumer 接线,default composition 从空 handle bag 升到 6 非 undefined handle,BASH_CORE service binding 取消注释并在 preview env 真实绑定到 live bash-core,2 条 root e2e 作为持续守护。
+P2 把 agent-core 从 "absorbed-but-isolated" 升到 **binding-seam-ready**: `initial_context` host consumer 接线、default composition 从空 handle bag 升到 6 个非 `undefined` handles、`BASH_CORE` service binding 成为 canonical capability seam 并在 preview env 真实绑定到 live bash-core、两条 root tests 持续守护 wire/binding truth。
 
 Phase 0-6 全部在 2026-04-23 单次 session 内完成,含 agent-core preview redeploy。
 
@@ -24,9 +24,9 @@ Phase 0-6 全部在 2026-04-23 单次 session 内完成,含 agent-core preview r
 | Phase 1 | D03 F4 `appendInitialContextLayer` API stub | ✅ | `src/host/context-api/append-initial-context-layer.ts` + 9 unit tests |
 | Phase 2 | D06 composition factory 升级 | ✅ | 6 handle 非 undefined + 4 nullable + local-ts fallback + packages/ 镜像 + 9 composition tests |
 | Phase 3 | D05 host consumer 接线 | ✅ | `dispatchAdmissibleFrame` session.start 分支 + packages/ 镜像 + 6 unit tests |
-| Phase 4 | D07 CAPABILITY_WORKER binding 激活 | ✅ | wrangler.jsonc `BASH_CORE` 取消注释 + 4 local-ts fallback tests |
-| Phase 5 | Root e2e #1 + #2 | ✅ | `test/tool-call-live-loop.test.mjs` 4 tests + `test/initial-context-live-consumer.test.mjs` 4 tests |
-| Phase 6 | agent-core preview redeploy + 全仓回归 + closure | ✅ | agent-core Preview URL live + `live_loop: true` + `capability_binding: true` + 全仓 4884 tests green |
+| Phase 4 | D07 BASH_CORE binding 激活 | ✅ | wrangler.jsonc `BASH_CORE` 取消注释 + 4 local-ts fallback tests |
+| Phase 5 | Root guards #1 + #2 | ✅ | `test/tool-call-live-loop.test.mjs` 5 tests + `test/initial-context-live-consumer.test.mjs` 4 tests |
+| Phase 6 | agent-core preview redeploy + targeted validation + closure | ✅ | agent-core Preview URL live + `live_loop: true` + `capability_binding: true` + targeted validation suite 1026 / 367 / 107 / 121 全绿 |
 
 ---
 
@@ -72,52 +72,21 @@ Phase 0-6 全部在 2026-04-23 单次 session 内完成,含 agent-core preview r
 
 | 文件 | 说明 |
 |------|------|
-| `test/tool-call-live-loop.test.mjs` | 4 subtests:(a) BASH_CORE binding 已激活 + R3 路径守护 / (b) composition 路由 service-binding / (c) transport seam 穿透 mock binding / (d) R2 wire truth guard(无 `turn_input` kind-value)|
+| `test/tool-call-live-loop.test.mjs` | 5 subtests:(a) BASH_CORE binding 已激活 + R3 路径守护 / (b) composition 默认走 service-binding / (c) NanoSessionDO 默认选 remote capability factory / (d) transport seam 穿透 mock binding / (e) R2 wire truth guard(无 `turn_input` kind-value)|
 | `test/initial-context-live-consumer.test.mjs` | 4 subtests:(a) 无 throw + pending 至少 1 / (b) assembledKinds 含 `session` 且不含 `initial_context` / (c) negative 无 payload pending = 0 / (d) positive vs negative totalTokens 可观测差异 |
 
 ---
 
-## 3. 测试数据
+## 3. 本轮验证数据(targeted validation suite)
 
-### 3.1 worker-local
-
-| target | tests | 上一阶段 | 增量 |
-|--------|-------|----------|------|
-| workers/agent-core | **1024 绿 / 96 test files** | 996(P1 末) | +28(9 API stub + 7 composition upgrade + 4 local-ts fallback + 6 consumer + 2 smoke update) |
-| workers/bash-core | 355 绿 | 355 | 0 |
-| workers/context-core | 3 绿 | 3 | 0 |
-| workers/filesystem-core | 3 绿 | 3 | 0 |
-
-### 3.2 packages
-
-| target | tests | 上一阶段 | 增量 |
-|--------|-------|----------|------|
-| packages/session-do-runtime | **366 绿** | 357 | +9(context-api 镜像)|
-| packages/agent-runtime-kernel | 123 绿 | 123 | 0 |
-| packages/llm-wrapper | 103 绿 | 103 | 0 |
-| packages/hooks | 198 绿 | 198 | 0 |
-| packages/eval-observability | 208 绿 | 208 | 0 |
-| packages/capability-runtime | 352 绿 | 352 | 0 |
-| packages/context-management | 97 绿 | 97 | 0 |
-| packages/workspace-context-artifacts | 192 绿 | 192 | 0 |
-| packages/storage-topology | 169 绿 | 169 | 0 |
-| packages/nacp-core | 259 绿 | 259 | 0 |
-| packages/nacp-session | 119 绿 | 119 | 0 |
-
-### 3.3 root
-
-| target | tests | 上一阶段 | 增量 |
-|--------|-------|----------|------|
-| root `test/*.test.mjs`(含 B7 LIVE 5 + 2 新 e2e)| **106 绿** | 98 | +8(4 tool-call + 4 initial-context)|
-| `npm run test:cross` | **120 绿** | 112 | +8 |
-
-### 3.4 合计
-
-**~4896 tests 全绿**(packages ~2285 + workers 1385 + root 106 + cross 120)。
-
-### 3.5 4 workers dry-run
-
-全绿;agent-core binding 列新增 `BASH_CORE (nano-agent-bash-core)` 条目。
+| target | 结果 |
+|--------|------|
+| `pnpm --filter @haimang/agent-core-worker typecheck build test` | **1026 绿 / 96 test files** |
+| `pnpm --filter ./packages/session-do-runtime typecheck build test` | **367 绿** |
+| `node --test test/*.test.mjs` | **107 绿** |
+| `npm run test:cross` | **121 绿** |
+| `pnpm --filter @haimang/agent-core-worker run deploy:dry-run` | 全绿;binding 列含 `env.BASH_CORE (nano-agent-bash-core)` |
+| `pnpm --filter @haimang/bash-core-worker run deploy:dry-run` | 全绿 |
 
 ---
 
@@ -127,7 +96,7 @@ Phase 0-6 全部在 2026-04-23 单次 session 内完成,含 agent-core preview r
 
 ```
 Preview URL:      https://nano-agent-agent-core-preview.haimang.workers.dev
-Version ID:       3a34f962-649f-4615-847c-83e6f282e8fe
+Version ID:       2f1c16e4-dc14-4935-ae84-7af19b5cad9f
 Upload:           290.47 KiB / gzip 58.62 KiB
 Worker Startup:   15 ms
 Bindings live:    env.SESSION_DO (NanoSessionDO)
@@ -182,10 +151,10 @@ Version ID `50335742-e9e9-4f49-b6d7-ec58e0d1cfb4` 继续 serve BASH_CORE binding
 | 4 | `initial_context` host consumer 接线(R1 + R2)| ✅ |
 | 5 | `workers/agent-core/wrangler.jsonc` `BASH_CORE` 激活 | ✅ |
 | 6 | agent-core preview redeploy + `live_loop: true` | ✅ |
-| 7 | Root e2e #1 tool.call loop 绿 | ✅(4/4)|
+| 7 | Root guard #1 BASH_CORE binding seam 绿 | ✅(5/5)|
 | 8 | Root e2e #2 initial_context dedicated 绿 | ✅(4/4)|
 | 9 | Fallback seam testable(local-ts opt-in)| ✅(4/4 fallback test)|
-| 10 | B7 LIVE 5 tests 全绿 | ✅(root 106/106 含 B7 LIVE)|
+| 10 | B7 LIVE 5 tests 全绿 | ✅(root 107/107 含 B7 LIVE)|
 
 **10/10 全绿;P2 100% closed。**
 
@@ -199,7 +168,7 @@ Version ID `50335742-e9e9-4f49-b6d7-ec58e0d1cfb4` 继续 serve BASH_CORE binding
 | R1 — SubsystemHandles 不新增 top-level `assembler` | ✅ `composition-p2-upgrade.test.ts` 断言 handle bag 恰好 8 keys(无 `assembler`)|
 | R1 — D05 consumer 走 `composition?.workspace?.assembler` | ✅ `src/host/do/nano-session-do.ts` 消费路径 `this.subsystems.workspace.assembler` |
 | R2 — 异常走 `system.notify severity=error`(不自造 `system.error`) | ✅ `initial-context-consumer.test.ts` 源码扫描断言 `kind: "system.notify"` 存在;`kind: "system.error"` 作为 value 使用 0 次 |
-| R2 — 使用 `session.start.body.initial_input` / `session.followup_input.body.text` 作 wire kind(不是 `turn_input`) | ✅ `tool-call-live-loop.test.mjs` (d) 源码扫描:`turn-ingress.ts` 含两个 canonical wire kinds,`message_type: "turn_input"` / `kind: "turn_input"` 0 次 |
+| R2 — 使用 `session.start.body.initial_input` / `session.followup_input.body.text` 作 wire kind(不是 `turn_input`) | ✅ `tool-call-live-loop.test.mjs` (e) 源码扫描:`turn-ingress.ts` 含两个 canonical wire kinds,`message_type: "turn_input"` / `kind: "turn_input"` 0 次 |
 | R3 — bash-core `/tool.call.request` 不暴露 | ✅ `workers/bash-core/src/index.ts` 只路由 `/capability/call` + `/capability/cancel`;e2e #1 (a) 扫源断言无 `/tool.call.request` |
 
 ---
@@ -208,7 +177,7 @@ Version ID `50335742-e9e9-4f49-b6d7-ec58e0d1cfb4` 继续 serve BASH_CORE binding
 
 - **P3 (context-core) unblocked**:C1 context-management 吸收时,`appendInitialContextLayer` helper 可迁到 `workers/context-core/src/` 新落点(stub 已按 P3 migration-ready 设计 — WeakMap-keyed by assembler,无模块级单例状态)。D03 C2 slice 吸收的 context-core workspace 侧 helpers 可直接替代 P2 host-local 装配
 - **P4 (filesystem-core) unblocked**:D04 D1 slice 吸收的 filesystem-core artifact helpers 可替代 P2 host-local `InMemoryArtifactStore`;D2 storage-topology 吸收不受影响(host-local 继续)
-- **P5 (cutover + deprecation) unblocked**:P2 closure 证明 "live loop works" — P5 cutover 的 rollback 基线是 agent-core Version ID `3a34f962-649f-4615-847c-83e6f282e8fe` + bash-core Version ID `50335742-e9e9-4f49-b6d7-ec58e0d1cfb4`;D09 deprecation 可开始 per-package 标 `DEPRECATED`(absorb-stable 门控满足)
+- **P5 (cutover + deprecation) unblocked**:P2 closure 证明 **binding seam + host consumer 已稳定**, rollback 基线是 agent-core Version ID `2f1c16e4-dc14-4935-ae84-7af19b5cad9f` + bash-core Version ID `50335742-e9e9-4f49-b6d7-ec58e0d1cfb4`;D09 deprecation 可开始 per-package 标 `DEPRECATED`(absorb-stable 门控满足)
 - **D07 tool.call 完整闭环**:binding 已激活 + transport seam 测过;kernel / llm / hooks 的 `P2-stub` → live 迁移(完整 turn loop)归下一 charter(非 P3/P4 scope)
 
 ---
@@ -230,3 +199,4 @@ Version ID `50335742-e9e9-4f49-b6d7-ec58e0d1cfb4` 继续 serve BASH_CORE binding
 | 版本 | 日期 | 修改者 | 主要变更 |
 |------|------|--------|----------|
 | v0.1 | 2026-04-23 | Claude Opus 4.7(1M context)| 初稿;P2 Phase 0-6 全绿:D03 F4 stub / D06 composition / D05 consumer / D07 BASH_CORE 激活 / 2 root e2e / agent-core preview redeploy(Version ID `3a34f962-649f-4615-847c-83e6f282e8fe`);DoD 10/10 绿;`capability_binding: true` + `live_loop: true` 实测通过 |
+| v0.2 | 2026-04-23 | GPT-5.4 | closeout 校准: `BASH_CORE` 成为 canonical capability binding,`CAPABILITY_WORKER` 仅保留 legacy alias;root guard #1 改写为 seam-readiness(5/5),targeted validation suite = 1026 / 367 / 107 / 121 全绿;agent-core preview 更新到 Version ID `2f1c16e4-dc14-4935-ae84-7af19b5cad9f` |

@@ -18,7 +18,7 @@
 > - `docs/design/worker-matrix/blueprints/D2-storage-topology-residual-absorption-blueprint.md`(P0 补齐)
 > - `docs/issue/worker-matrix/P3-closure.md`(P4 kickoff gate — 可与 P3 并行)
 > - `docs/eval/worker-matrix/filesystem-core/index.md`
-> 文档状态: `draft`
+> 文档状态: `executed(P4 absorbed runtime landed; Q4a host-local posture made explicit; dry-run green)`
 
 ---
 
@@ -469,3 +469,34 @@ worker-matrix/P4/
 ## 10. 结语
 
 这份 P4 action-plan 以 **"filesystem-core runtime ownership 从 packages/ 迁到 workers/ + Q4a host-local 显式 + tenant wrapper 0 violations"** 为第一优先级,采用 **"Phase 序列(gate → D1 → mixed helper artifact → D2 → posture/wrapper → dry-run → closure)"** 的推进方式,优先解决 **"workers/filesystem-core 仍 probe / WCA filesystem slice 未迁 / mixed helper artifact 未迁 / D2 整包未吸 / Q4a posture 非显式 / tenant wrapper guard 未硬闸"** 六件欠账,并把 **"B9 tenant wrapper 不绕过 / workspace truth 单一源 / Q4a host-local 保持 / ReferenceBackend.connected: false default / MountRouter shape byte-identical / mixed helper 不 overlap"** 作为主要约束。整个计划完成后,`filesystem.core` 应达到 **"host-local typed substrate 真实 ownership + tenant wrapper 在四 workers 都严格经过 + WCA split 干净 + preview baseline 可选"**,从而为后续的 **P5 cutover + Tier B per-worker deprecation** 提供稳定基础。
+
+---
+
+## 11. GPT 实施记录（2026-04-23）
+
+### 11.1 实际落地
+
+1. D1 filesystem slice 已吸收到 `workers/filesystem-core/src/{types,paths,refs,artifacts,prepared-artifacts,promotion,mounts,namespace,backends}/**`，对应 WCA filesystem tests 已迁入并改成 worker 内本地路径。
+2. D2 `storage-topology` 已吸收到 `workers/filesystem-core/src/storage/**`，storage tests 已整体迁入 `workers/filesystem-core/test/storage/**` 并完成路径重绑。
+3. `workers/filesystem-core/package.json` 已补齐 `zod` 依赖；`backends/{memory,reference}.ts` 与 top-level backends tests 已从旧 package import 改为消费本地 `src/storage/index.ts`。
+4. `workers/filesystem-core` probe 已从 W4 shell 口径升级为 `phase: "worker-matrix-P4-absorbed"` + `absorbed_runtime: true`，对应 smoke test 已同步。
+5. Q4a posture 本轮显式化为：
+   - `workers/agent-core/wrangler.jsonc` 继续保留 `FILESYSTEM_CORE` 注释态，并把原因改写成 first-wave host-local posture；
+   - `workers/agent-core/README.md` 明确 `FILESYSTEM_CORE` 是 **absorbed but still commented / host-local**；
+   - `workers/filesystem-core/src/backends/reference.ts` 明确记录 `connected === false` 仍是 first-wave canonical default。
+
+### 11.2 验证结果
+
+| target | 结果 |
+|--------|------|
+| `pnpm --filter @haimang/filesystem-core-worker typecheck build test` | **24 files / 291 tests 绿** |
+| `pnpm --filter @haimang/filesystem-core-worker run deploy:dry-run` | 绿 |
+| `pnpm --filter @haimang/agent-core-worker typecheck build test` | **96 files / 1027 tests 绿** |
+| `node --test test/*.test.mjs` | **107 绿** |
+| `npm run test:cross` | **121 绿** |
+
+### 11.3 收口判断
+
+- **P4 in-scope 已闭合**：D1 + D2 吸收、tests 迁移、probe truth 校准、Q4a host-local posture 注释化全部完成。
+- **P4 posture 结论**：filesystem/storage 代码已进入 `workers/filesystem-core`，但 first-wave `agent-core` 仍不启用 `FILESYSTEM_CORE` remote binding；这不是未完成，而是 P4 明确选择保留的 shipped posture。
+- **遗留到后续 phase 的事项**：tenant wrapper / package deprecation / cutover 仍归 P5；remote `workspace.fs.*` family 继续保持 out-of-scope。

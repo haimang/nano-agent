@@ -1,7 +1,7 @@
 # P2 — Live Turn Loop Activation(initial_context + composition + agent↔bash tool.call)
 
 > 服务业务簇: `worker-matrix / Phase 2 — Live Turn Loop Activation`
-> 计划对象: `D05(initial_context host consumer,已吸收 D01-D09 GPT review R1+R2)+ D06(default composition + remote-bindings 4 nullable,已吸收 D01-D09 GPT review R1)+ D07(CAPABILITY_WORKER binding 激活 + local-ts fallback 保留)+ P1-P5 GPT review R1(appendInitialContextLayer 不作 mutator / 不发明 layer kind / 断言 assembledKinds 含 canonical mapped kind)+ R2(wire 上只有 session.start.initial_input / session.followup_input.text,`turn_input` 仅为 runtime 内部概念)`
+> 计划对象: `D05(initial_context host consumer,已吸收 D01-D09 GPT review R1+R2)+ D06(default composition + remote-bindings 4 nullable,已吸收 D01-D09 GPT review R1)+ D07(BASH_CORE canonical binding 激活 + local-ts fallback 保留)+ P1-P5 GPT review R1(appendInitialContextLayer 不作 mutator / 不发明 layer kind / 断言 assembledKinds 含 canonical mapped kind)+ R2(wire 上只有 session.start.initial_input / session.followup_input.text,`turn_input` 仅为 runtime 内部概念)`
 > 类型: `new`(host consumer / composition handle / binding 激活) + `upgrade`(empty bag → live composition;seam → active service-binding) + `modify`(wrangler 取消注释)
 > 作者: `Claude Opus 4.7 (1M context)`
 > 时间: `2026-04-23`
@@ -32,14 +32,14 @@ P1 结束时,`workers/agent-core/src/` 已吸收 host/kernel/llm/hooks/eval runt
 3. `dispatchAdmissibleFrame` session.start 分支**未消费** `body.initial_context` — wire schema 冻结了一年,host 仍不读
 4. `workers/agent-core/wrangler.jsonc` 的 `BASH_CORE` service binding 仍是注释态 — agent↔bash 远端 loop 没有激活
 
-P2 的唯一任务是把上述 4 件事按**显式序列**解决,在 preview env 中跑出 **live agent turn loop**,并由 **两个** root e2e(tool.call 闭环 + initial_context dedicated)固化为持续守护的契约。
+P2 的唯一任务是把上述 4 件事按**显式序列**解决,在 preview env 中把 **host consumer + BASH_CORE capability binding seam** 接到真实 worker identity 上,并由 **两个** root tests(binding seam guard + initial_context dedicated)固化为持续守护的契约。
 
 P2 的执行顺序 **非**组间并行;因为 D07 的 binding 激活依赖 D06 的 capability handle 就位,D05 的 consumer 依赖 D06 的 workspace.assembler 非 undefined(per R1)。
 
 P2 **要求** 在开始之前 `workers/bash-core` preview URL 已 live(P2.E0 per GPT R1)—— 这条 hard prerequisite 已在 P0 Q3 + P1 Phase 5 落地,本 action-plan 在 Phase 0 gate check 再次 enforce。
 
 - **服务业务簇**:`worker-matrix / Phase 2 — live-loop-activation`
-- **计划对象**:composition 升级 + remote-bindings 补 4 + initial_context host consumer + CAPABILITY_WORKER binding 激活 + local-ts fallback seam 保留 + 2 条 root e2e
+- **计划对象**:composition 升级 + remote-bindings 补 4 + initial_context host consumer + BASH_CORE binding 激活 + local-ts fallback seam 保留 + 2 条 root tests
 - **本次计划解决的问题**:
   - `createDefaultCompositionFactory()` 返回空 handle bag,turn loop 不跑`
   - `makeRemoteBindingsFactory()` 4 nullable silent undefined`
@@ -74,7 +74,7 @@ Phase 2 D06 composition factory 升级(workspace.assembler 可被拿到)
   ↓
 Phase 3 D05 host consumer 接线 + packages 侧对称落(共存期两处)
   ↓
-Phase 4 D07 CAPABILITY_WORKER binding 激活 + wrangler 取消注释 + env switch
+Phase 4 D07 BASH_CORE canonical binding 激活 + wrangler 取消注释 + env switch
   ↓
 Phase 5 root e2e #1(tool.call 闭环)+ #2(initial_context dedicated)
   ↓
@@ -102,7 +102,7 @@ Phase 6 agent-core preview redeploy + live probe + 全仓回归 + P2 closure
 3. **Phase 2 — D06 composition**:`createDefaultCompositionFactory` 从空 bag 升到 live 装配 — kernel 从 `src/kernel` 实例化;llm 从 `src/llm`;capability 用 `serviceBindingTransport`(Q2a 远端默认);workspace 用 `composeWorkspaceWithEvidence`(host-local,Q4a);hooks 从 `src/hooks`;eval 用 `BoundedEvalSink`。`makeRemoteBindingsFactory` 对 kernel/workspace/eval/storage 显式返回 null + reason 文档。local-ts fallback:capability handle factory 保留 opt-in 路径(env `CAPABILITY_TRANSPORT=local-ts` 切回本地)
 4. **Phase 3 — D05 host consumer**:`dispatchAdmissibleFrame` session.start 分支在 `extractTurnInput` **之前** 消费 `body.initial_context`;拿 `this.composition?.workspace?.assembler`(R1);异常走 `system.notify severity=error`(R2)。packages/ 和 workers/ 两份对称落(共存期)
 5. **Phase 4 — D07 binding 激活**:`workers/agent-core/wrangler.jsonc` 取消注释 `BASH_CORE = { service = "nano-agent-bash-core" }`;`CAPABILITY_TRANSPORT` env 默认空(= service-binding) / `local-ts` 为 opt-in;P2.F3 fallback seam 明确 testable(开 env 就切回 local)
-6. **Phase 5 — root e2e**:新增 #1 `tool-call-live-loop.test.mjs`(session.start → kernel tool_call → CAPABILITY_WORKER transport → bash-core response → session.stream.event)+ #2 `initial-context-live-consumer.test.mjs`(3 断言:no throw / layers +1 / AssemblyEvidence 含 initial_context 标识)
+6. **Phase 5 — root tests**:新增 #1 `tool-call-live-loop.test.mjs`(wrangler `BASH_CORE` 激活 / default composition remote path / NanoSessionDO 默认 remote selection / transport seam / R2 wire truth)+ #2 `initial-context-live-consumer.test.mjs`(3 positive + 1 negative,只断言 canonical assembled kind 与 consumer observable diff)
 7. **Phase 6 — redeploy + closure**:agent-core preview redeploy;live probe JSON 含 `live_loop: true`(或等价非 probe 字段);B7 LIVE + 98 root + 112 cross + 两 workers test + dry-run 全绿;`docs/issue/worker-matrix/P2-closure.md`
 
 ### 1.4 执行策略说明
@@ -149,7 +149,7 @@ worker-matrix/P2/
 - **[S6]** D05 共存期对称:同 logic 落 `packages/session-do-runtime/src/do/nano-session-do.ts`(P5/D09 deprecate 时清理)
 - **[S7]** D07 `workers/agent-core/wrangler.jsonc` `BASH_CORE` 取消注释,service 名 `nano-agent-bash-core`
 - **[S8]** D07 env switch:`CAPABILITY_TRANSPORT` 默认空(= service-binding);`local-ts` 保留为 opt-in(test / dev / 故障回退)
-- **[S9]** root e2e #1 `test/tool-call-live-loop.test.mjs`(per P1-P5 GPT review R2):发起 `session.start`,body 含非空 `initial_input` 字符串(当前 wire truth:`session.start.body.initial_input` 是首轮 turn 入口;**不**写 `turn_input` 这个 wire 名 — `turn_input` 仅为 runtime 内部 `TurnInput` 类型)→ kernel 产生 tool_call → CAPABILITY_WORKER transport → bash-core response → session.stream.event 回 client;follow-up case(若有)用 `session.followup_input`(body `text` 字段)
+- **[S9]** root guard #1 `test/tool-call-live-loop.test.mjs`(per P1-P5 GPT review R2):不再过宣称 kernel/llm live loop,而是守住 5 条真实 contract: (a) wrangler 已声明未注释的 `BASH_CORE`; (b) `createDefaultCompositionFactory()` 在 `BASH_CORE` 存在时默认选 `service-binding`; (c) `NanoSessionDO` 默认 composition selection 在仅有 `BASH_CORE` 时切到 remote capability seam; (d) transport seam 能实际 reach mock binding `/capability/call`; (e) `turn_input` 不会被误写成 wire kind。follow-up case(若有)继续用 `session.followup_input.body.text`
 - **[S10]** root e2e #2 `test/initial-context-live-consumer.test.mjs`(per P1-P5 GPT review R1):发起 `session.start` 带 `initial_context` payload(以及非空 `initial_input` 以触发 turn)→ consumer 调 `appendInitialContextLayer`(helper 合并 pending layer)→ 在 kernel 随后首次 `assemble()` 时 payload 真被纳入 layers。**断言改口径**:(a) no throw;(b) `AssemblyResult.assembled` 或等价 BoundedEvalSink `AssemblyEvidenceRecord.assembledKinds` **含 consumer 映射到的 canonical kind**(预期 `session` 或 `injected`,由 D03 F4 最终映射决定);(c) 对比 negative case(`session.start` 不传 `initial_context`),同一 kind 的 layer 内容 / token 数出现差异;**不**再断言 "layers 数 +1" 这种暗合假设(layers 数量受 budget / required 过滤影响,不是可靠 observable);**不**再断言 `layer_kind: "initial_context"` 这种不存在的字段(`AssemblyEvidenceRecord` 仅含 `assembledKinds / droppedOptionalKinds / orderApplied / totalTokens / truncated / requiredLayerBudgetViolation / preparedArtifactsUsed / dropReason`)
 - **[S11]** Phase 2-4 每 PR 跑 B7 LIVE + 全仓回归 + 两个 workers test + dry-run
 - **[S12]** Phase 6 agent-core preview redeploy + 写 `docs/issue/worker-matrix/P2-closure.md`
@@ -206,7 +206,7 @@ worker-matrix/P2/
 | P4-01 | Phase 4 | wrangler `BASH_CORE` 取消注释 | update | `workers/agent-core/wrangler.jsonc:26-32` | `BASH_CORE = { service = "nano-agent-bash-core" }` 激活 | medium |
 | P4-02 | Phase 4 | env switch default | update | wrangler env / composition factory | `CAPABILITY_TRANSPORT` default = service-binding | low |
 | P4-03 | Phase 4 | local-ts fallback testable | check | composition factory + test | env `CAPABILITY_TRANSPORT=local-ts` 可 runtime 切回 | medium |
-| P5-01 | Phase 5 | root e2e #1 tool.call loop | new | `test/tool-call-live-loop.test.mjs` | session.start → kernel tool_call → binding → bash-core → response → stream | high |
+| P5-01 | Phase 5 | root guard #1 BASH_CORE binding seam | new | `test/tool-call-live-loop.test.mjs` | wrangler activation + default composition remote path + NanoSessionDO remote selection + transport seam + wire-truth guard | high |
 | P5-02 | Phase 5 | root e2e #2 initial_context | new | `test/initial-context-live-consumer.test.mjs` | 3 positive 断言 + 1 negative case | medium |
 | P6-01 | Phase 6 | agent-core redeploy preview | new | `workers/agent-core` deploy:preview | URL live + `live_loop: true`(或等价)| medium |
 | P6-02 | Phase 6 | 全仓回归 | test | 全仓 | B7 LIVE 5 + 98 root + 112 cross + 两 workers test + dry-run 全绿 | medium |
@@ -235,7 +235,7 @@ worker-matrix/P2/
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P2-01 | `createDefaultCompositionFactory` 升级 | kernel 从 `src/kernel/` 实例化 `KernelRunner`;llm 从 `src/llm/` `LLMExecutor`;capability 用 `serviceBindingTransport(env.CAPABILITY_WORKER)`;workspace 用 `composeWorkspaceWithEvidence({namespace, artifactStore, evidenceSink: eval.emit, evidenceAnchor})`;hooks 从 `src/hooks/`;eval 用 `BoundedEvalSink`;storage 保持 undefined / honest-degrade | `workers/agent-core/src/host/composition/index.ts` | 6 handle 非 undefined | unit test `createDefaultCompositionFactory(env, cfg)` 返回对象每 field 非 undefined;`obj.workspace.assembler` 是 `ContextAssembler` 实例 | 6 handle 检查;workspace.assembler 非 undefined |
+| P2-01 | `createDefaultCompositionFactory` 升级 | kernel 从 `src/kernel/` 实例化 `KernelRunner`;llm 从 `src/llm/` `LLMExecutor`;capability 用 canonical `BASH_CORE` service binding(legacy `CAPABILITY_WORKER` alias 仅作 closeout compat);workspace 用 `composeWorkspaceWithEvidence({namespace, artifactStore, evidenceSink: eval.emit, evidenceAnchor})`;hooks 从 `src/hooks/`;eval 用 `BoundedEvalSink`;storage 保持 undefined / honest-degrade | `workers/agent-core/src/host/composition/index.ts` | 6 handle 非 undefined | unit test `createDefaultCompositionFactory(env, cfg)` 返回对象每 field 非 undefined;`obj.workspace.assembler` 是 `ContextAssembler` 实例 | 6 handle 检查;workspace.assembler 非 undefined |
 | P2-02 | `makeRemoteBindingsFactory` 补 4 nullable | kernel → null + reason "始终 host-local";workspace → null + reason "Q4a host-local";eval → null + reason "sink owner 在 host";storage → null + reason "tenant wrapper 在 host DO";文档 comment 落在各 field | `workers/agent-core/src/host/composition/remote-bindings.ts` | 4 field 显式 null | unit test | 4 null 有 comment |
 | P2-03 | SubsystemHandles type 守护 | grep `SubsystemHandles` interface;保持 8 槽位 | `workers/agent-core/src/host/composition/composition.ts`(从 A1 搬过来的版本) | 仍 8 槽;无 top-level assembler 新增 | `grep -c "assembler" composition.ts` 仅在 doc comment | 8 槽;R1 守护 |
 | P2-04 | local-ts fallback seam | capability factory 读 `env.CAPABILITY_TRANSPORT`;"local-ts" → local;其余(包括 undefined / "service-binding")→ remote default | `workers/agent-core/src/host/composition/index.ts` | env switch 工作 | unit test:set env = "local-ts" → capability handle 类型是 local | test 断言 2 cases |
@@ -264,7 +264,7 @@ worker-matrix/P2/
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P5-01 | root e2e #1 tool.call loop(R2)| in-process harness(Miniflare / mock binding)模拟 agent-core + bash-core 两侧;发 `session.start`(body 含非空 `initial_input` 字符串,**不**写 `turn_input`)触发 kernel tool_call;断言:(a) request 到达 bash-core;(b) response 返回 agent-core;(c) `session.stream.event tool.call.progress + result` 发给 client | `test/tool-call-live-loop.test.mjs` | 3 断言绿 | `node --test test/tool-call-live-loop.test.mjs` | 3/3 绿 |
+| P5-01 | root guard #1 BASH_CORE binding seam(R2)| in-process guard;不再假装 full turn loop。断言:(a) wrangler `BASH_CORE` 未注释激活;(b) `createDefaultCompositionFactory()` 在 `BASH_CORE` 存在时选择 `service-binding`;(c) `NanoSessionDO` 默认 composition selection 在仅有 `BASH_CORE` 时给出 remote capability seam;(d) transport seam reach `/capability/call` mock binding;(e) 源码不存在 `turn_input` wire kind value | `test/tool-call-live-loop.test.mjs` | 5 断言绿 | `node --test test/tool-call-live-loop.test.mjs` | 5/5 绿 |
 | P5-02 | root e2e #2 initial_context(R1)| 发 `session.start { initial_input: "<non-empty>", initial_context: {...} }` → consumer 调 `appendInitialContextLayer` → kernel assemble 合并 pending → 断言:(a) no throw;(b) `AssemblyEvidenceRecord.assembledKinds` **含 helper 映射到的 canonical kind**(预期 `session` 或 `injected`);(c) 与 negative case(不传 `initial_context`)对比,**同一 canonical kind 的 layer content 或 totalTokens 有可观测差异**;不再断言 "layers 数 +1" / `layer_kind` 字段 | `test/initial-context-live-consumer.test.mjs` | 3 positive + 1 negative | `node --test test/initial-context-live-consumer.test.mjs` | 4/4 绿 |
 
 ### 4.7 Phase 6 — redeploy + 全仓回归 + closure
@@ -333,7 +333,7 @@ worker-matrix/P2/
 - **收口标准**:全测试绿;R1 守护
 - **本 Phase 风险提醒**:
   - workspace handle 改用 `composeWorkspaceWithEvidence` 时,`evidenceSink` / `evidenceAnchor` 必须对齐 host DO 已有 wiring,否则 B7 LIVE 会红
-  - `CAPABILITY_WORKER` binding 若在此 Phase 还未取消注释(Phase 4 才改),capability handle 工厂会在 preview env 拿不到 binding —— 应在 default factory 内 honest degrade(binding undefined 时 fallback 到 local-ts + 记 evidence);避免 Phase 2 PR merge 后 preview 炸掉
+  - `BASH_CORE` binding 若在此 Phase 还未取消注释(Phase 4 才改),capability handle 工厂会在 preview env 拿不到 binding —— default factory 必须 honest-degrade 到 `unavailable`(而不是伪装 local success);避免 Phase 2 PR merge 后 preview 炸掉
 
 ### 5.4 Phase 3 — D05 host consumer 接线
 
@@ -469,7 +469,7 @@ worker-matrix/P2/
 | assembler 仍 undefined(D06 晚 merge)| D05 consumer 在 composition 升级前 merge | `medium` | F1 degrade 路径已覆盖;但 PR sequence 强制 D06 先 merge |
 | wrangler BASH_CORE service 名拼错 | Phase 4 | `high` | 交叉核对 bash-core wrangler name;dry-run 必须绿 |
 | local-ts fallback 被误删 | P2 kickoff 后紧张时间压力 | `medium` | 独立 unit test + PR review gate;Q2a 口径反复强调 |
-| e2e #1 对 CAPABILITY_WORKER binding 的 mock 与真实 glue 漂移 | in-process mock 写错 | `medium` | mock 对照 `packages/capability-runtime/src/targets/service-binding.ts` 的 transport 签名 |
+| root guard #1 对 BASH_CORE binding 的 mock 与真实 glue 漂移 | in-process mock 写错 | `medium` | mock 对照 `packages/capability-runtime/src/targets/service-binding.ts` 的 transport 签名 |
 | B7 LIVE 任一红 | 任一 Phase PR | `high` | block merge;先修 B7 LIVE 后再推进 |
 | preview URL 字段破坏 W4 probe 兼容 | Phase 6 | `medium` | 保留原字段;仅新增 `live_loop: true` |
 | packages 侧改动漏改 | Phase 2/3 | `medium` | PR review gate;`diff` 对称检查 |
@@ -477,7 +477,7 @@ worker-matrix/P2/
 ### 7.2 约束与前提
 
 - **技术前提**:P1 closed;bash-core preview URL live + Version ID 落盘(P0 Q3 owner)
-- **运行时前提**:Cloudflare preview deploy 凭证就绪;`CAPABILITY_WORKER` binding 在 preview env 可寻址
+- **运行时前提**:Cloudflare preview deploy 凭证就绪;`BASH_CORE` binding 在 preview env 可寻址
 - **组织协作前提**:D03 F4 API shape owner(建议由 D05 同一作者或 P3 owner 预先 claim)
 - **上线 / 合并前提**:每 Phase 独立 PR;B7 LIVE 红则 block
 
@@ -516,7 +516,7 @@ worker-matrix/P2/
 4. `initial_context` host consumer 接线完成(R1 + R2)
 5. `workers/agent-core/wrangler.jsonc` `BASH_CORE` 激活
 6. agent-core preview redeploy live + `live_loop: true`
-7. Root e2e #1 tool.call loop 绿
+7. Root guard #1 BASH_CORE binding seam 绿
 8. Root e2e #2 initial_context dedicated 绿
 9. Fallback seam testable(local-ts opt-in 跑通)
 10. B7 LIVE 5 tests 全绿
@@ -525,8 +525,8 @@ worker-matrix/P2/
 
 | 维度 | 完成定义 |
 |------|----------|
-| 功能 | live turn loop 在 preview env 真实跑通;initial_context 被消费;tool.call 双向闭环 |
-| 测试 | B7 LIVE + 98 root + 112 cross + 两条新 e2e + 两 workers test + dry-run 全绿 |
+| 功能 | `initial_context` 被真实消费;preview env 具备 canonical `BASH_CORE` binding;default composition 与 NanoSessionDO 默认路径都能切到 remote capability seam |
+| 测试 | targeted validation suite 全绿: agent-core 1026 / session-do-runtime 367 / root 107 / cross 121 + 两 workers dry-run |
 | 文档 | closure memo shipped;D05/D06/D07 v0.x 与执行事实一致 |
 | 风险收敛 | R1/R2/R3 口径在代码落实;Q2a local-ts fallback 保留 |
 | 可交付性 | P3 / P4 可 kickoff — context-core / filesystem-core 吸收不再被 live loop 缺位阻挡 |
@@ -544,7 +544,7 @@ worker-matrix/P2/
 
 ## 10. 结语
 
-这份 P2 action-plan 以 **"在 preview env 跑通 live agent turn loop 并由两条 root e2e 持续守护"** 为第一优先级,采用 **"严格 Phase 序列(gate → API stub → composition → consumer → binding → e2e → redeploy + closure)"** 的推进方式,优先解决 **"空 handle bag / 4 nullable silent / initial_context 无 consumer / BASH_CORE 注释态 / local-ts fallback 若被删"** 五件阻挡 live loop 的缺位,并把 **"R1 assembler 落点不扩 top-level / R2 不自造 system.error kind / R3 binding-first 口径不漂 / Q2a local-ts 保留 / B7 LIVE 不破 / 共存期 packages 对称落"** 作为主要约束。整个计划完成后,`agent.core + bash.core` 应达到 **"live turn loop 在 preview env 真实跑通;initial_context payload 真被消费且影响 assembled prompt;tool.call 经真实 service-binding 双向闭环"**,从而为后续的 **P3 context-core 吸收 + P4 filesystem-core 吸收** 提供稳定基础。
+这份 P2 action-plan 以 **"把 preview env 的 host consumer + BASH_CORE capability binding seam 接成真实 truth,并由两条 root tests 持续守护"** 为第一优先级,采用 **"严格 Phase 序列(gate → API stub → composition → consumer → binding → e2e → redeploy + closure)"** 的推进方式,优先解决 **"空 handle bag / 4 nullable silent / initial_context 无 consumer / BASH_CORE 注释态 / local-ts fallback 若被删"** 五件阻挡 P2 收口的缺位,并把 **"R1 assembler 落点不扩 top-level / R2 不自造 system.error kind / R3 binding-first 口径不漂 / Q2a local-ts 保留 / B7 LIVE 不破 / 共存期 packages 对称落"** 作为主要约束。整个计划完成后,`agent.core + bash.core` 达到的是真实而克制的状态: **`initial_context` payload 真被消费且影响 assembled prompt;canonical `BASH_CORE` binding 在 preview env live;tool.call 的 service-binding path 与 DO 默认 remote selection 被持续守住**。完整 kernel/llm live turn loop 仍归后续 charter。
 
 ---
 
@@ -554,7 +554,7 @@ worker-matrix/P2/
 
 - **判断结果**:P2 可以进入 — 已全部完成 Phase 0-6 含 agent-core preview redeploy
 - **Phase 序列**:Phase 0 gate check → Phase 1 D03 F4 stub → Phase 2 D06 composition upgrade → Phase 3 D05 consumer wiring → Phase 4 D07 BASH_CORE 激活 → Phase 5 两条 root e2e → Phase 6 redeploy + regression + closure
-- **总规模**:新增 ~10 文件、修改 ~10 文件;全仓 4896 tests 全绿;agent-core Version ID `3a34f962-649f-4615-847c-83e6f282e8fe` + bash-core Version ID `50335742-e9e9-4f49-b6d7-ec58e0d1cfb4` 双 preview live
+- **总规模**:新增 ~10 文件、修改 ~10 文件;targeted validation suite 1026 / 367 / 107 / 121 全绿;agent-core Version ID `2f1c16e4-dc14-4935-ae84-7af19b5cad9f` + bash-core Version ID `50335742-e9e9-4f49-b6d7-ec58e0d1cfb4` 双 preview live
 - **执行模式**:单 session 连续完成;所有 owner decisions 基于 memory(`reference_local_tooling.md`)授权;deploy 由 Claude 使用 local wrangler OAuth 执行
 - **在此之前的 GPT P1-P0 review 修复**:R1/R2/R3 在本 session 前半段已全部 accept + 修复(agent-core index.ts entry routing / P0 closure 批准 + E3/E6 勾绿 / P1 closure §0 文字清理 + 4 条 entry-level routing smoke 测试)
 
@@ -574,7 +574,7 @@ worker-matrix/P2/
 - `test/context-api/append-initial-context-layer.test.ts` — 9 unit tests 镜像
 
 **root test 新增**:
-- `test/tool-call-live-loop.test.mjs` — 4 subtests(wrangler 激活 / composition 路由 / transport seam / R2 wire truth guard)
+- `test/tool-call-live-loop.test.mjs` — 5 subtests(wrangler 激活 / composition 路由 / NanoSessionDO remote selection / transport seam / R2 wire truth guard)
 - `test/initial-context-live-consumer.test.mjs` — 4 subtests(positive / assembledKinds canonical / negative / diff)
 
 **docs 新增**:
@@ -611,18 +611,17 @@ worker-matrix/P2/
 
 | 层 | tests | Δ |
 |----|-------|---|
-| workers/agent-core | 1024 | +28(从 996)|
-| packages/session-do-runtime | 366 | +9(镜像)|
-| root `node --test test/*.test.mjs` | 106 | +8(2 新 e2e × 4 subtests)|
-| `npm run test:cross` | 120 | +8 |
-| **全仓合计** | **~4896** | |
+| workers/agent-core | 1026 | +30(从 996)|
+| packages/session-do-runtime | 367 | +10(镜像 + binding alias closeout)|
+| root `node --test test/*.test.mjs` | 107 | +9(5 + 4)|
+| `npm run test:cross` | 121 | +9 |
 | 4 workers `deploy:dry-run` | 全绿 | agent-core 现含 BASH_CORE binding |
 
 ### 11.5 Live deploy 证据
 
 | Worker | Preview URL | Version ID | 关键 JSON 字段 |
 |--------|-------------|------------|----------------|
-| agent-core | `https://nano-agent-agent-core-preview.haimang.workers.dev` | `3a34f962-649f-4615-847c-83e6f282e8fe` | `phase: "worker-matrix-P2-live-loop"`, `live_loop: true`, `capability_binding: true` |
+| agent-core | `https://nano-agent-agent-core-preview.haimang.workers.dev` | `2f1c16e4-dc14-4935-ae84-7af19b5cad9f` | `phase: "worker-matrix-P2-live-loop"`, `live_loop: true`, `capability_binding: true` |
 | bash-core | `https://nano-agent-bash-core-preview.haimang.workers.dev` | `50335742-e9e9-4f49-b6d7-ec58e0d1cfb4`(P1.B 保持) | `phase: "worker-matrix-P1.B-absorbed"`, `absorbed_runtime: true` |
 
 实测 `curl /sessions/probe-demo/status` 返回 `{"ok":true,"action":"status","phase":"unattached"}` HTTP 200 — **证明**:index.ts routing fix(R1 from P1-P0 review)已 live + SESSION_DO forwarding 真实经过 DO fetch。
@@ -649,9 +648,9 @@ worker-matrix/P2/
 
 - P3 kickoff unblocked:C1 吸收可消费 P2 D03 F4 stub(WeakMap design 保 migration-ready);D03 C2 slice 可替代 host 的 `composeWorkspaceWithEvidence` 调用
 - P4 kickoff unblocked:D04 D1 slice 的 artifact helpers 可替代 `InMemoryArtifactStore`;D2 storage 保持 host-local(Q4a)
-- P5 kickoff unblocked:cutover rollback 基线 = 双 Preview Version ID;D09 deprecation absorb-stable 门控满足(P2 live loop 证明 absorb 稳定)
+- P5 kickoff unblocked:cutover rollback 基线 = 双 Preview Version ID;D09 deprecation absorb-stable 门控满足(P2 的 binding seam / host consumer 证明 absorb 稳定)
 - D07 完整闭环(kernel/llm live)归后续 charter(非 worker-matrix scope)
 
 ### 11.10 结论
 
-P2 Phase 0-6 全部完成;live turn loop 在 preview env 真实跑通;两条 root e2e 持续守护 R1/R2/R3 口径;双 Preview URL live + binding 互通。**P2 100% closed,worker-matrix 进入 P3/P4/P5 的 final 3-phase 冲刺。**
+P2 Phase 0-6 全部完成;preview env 已具备真实 `BASH_CORE` binding + `initial_context` host consumer + 默认 remote capability selection;两条 root tests 持续守护 R1/R2/R3 口径;双 Preview URL live + binding 互通。**P2 100% closed,worker-matrix 可以进入 P3/P4/P5 的 final 3-phase 冲刺。**
