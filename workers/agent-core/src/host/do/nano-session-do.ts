@@ -31,6 +31,7 @@ import { SessionOrchestrator } from "../orchestration.js";
 import type { OrchestrationDeps, OrchestrationState } from "../orchestration.js";
 import { assertTraceLaw, type TraceContext } from "../traces.js";
 import { extractTurnInput } from "../turn-ingress.js";
+import { appendInitialContextLayer } from "../context-api/append-initial-context-layer.js";
 import { transitionPhase as transitionPhaseImported } from "../actor-state.js";
 import { validateSessionCheckpoint } from "../checkpoint.js";
 import { createDefaultCompositionFactory } from "../composition.js";
@@ -169,7 +170,11 @@ export class NanoSessionDO {
    * produces a disclosure observable via `getDefaultEvalDisclosure()`.
    */
   private static readonly DEFAULT_SINK_MAX = 1024;
-  private readonly defaultEvalSink: BoundedEvalSink = new BoundedEvalSink({
+  // P2 Phase 2 (D06 upgrade): if composition provides a `BoundedEvalSink`
+  // on `eval`, the DO adopts that instance so getRecords/getDisclosure/
+  // getStats read from the same sink the host writes into. Otherwise
+  // the DO falls back to its own instance (W4 / backward-compat path).
+  private defaultEvalSink: BoundedEvalSink = new BoundedEvalSink({
     capacity: NanoSessionDO.DEFAULT_SINK_MAX,
   });
 
@@ -253,13 +258,22 @@ export class NanoSessionDO {
       this.config,
     );
 
-    // 3rd-round R2: when the composition factory did not supply an
-    // `eval` handle, install the DO's bounded in-memory default
-    // sink. This guarantees the default deploy assembly produces
-    // evidence records instead of silently dropping them — the
-    // failure mode GPT's third-round review pinned at the "default
-    // sink still missing" boundary. Production override remains
-    // possible by supplying a richer factory.
+    // 3rd-round R2 + P2 Phase 2: when the composition factory
+    // supplied an `EvalCompositionHandle` whose `.sink` is a
+    // `BoundedEvalSink`, adopt that same sink as the DO's
+    // `defaultEvalSink` so `getRecords / getDisclosure / getStats`
+    // read from the same instance that `composition.eval.emit()`
+    // writes into. Non-matching eval handles (e.g. future remote
+    // sink adapters) keep the DO's original default sink; the inline
+    // fallback still wraps records into `{record, messageUuid}`
+    // before calling the adopted sink.
+    const evalCandidate = baseSubsystems.eval as
+      | { sink?: unknown; emit?: (e: unknown) => void | Promise<void> }
+      | undefined;
+    if (evalCandidate?.sink instanceof BoundedEvalSink) {
+      this.defaultEvalSink = evalCandidate.sink;
+    }
+
     const baseEvalSink = baseSubsystems.eval as
       | { emit?: (e: unknown) => void | Promise<void> }
       | undefined;
@@ -288,7 +302,14 @@ export class NanoSessionDO {
     // both trace events and evidence records.
     let workspaceHandle: WorkspaceCompositionHandle | undefined =
       baseSubsystems.workspace as WorkspaceCompositionHandle | undefined;
-    if (!workspaceHandle) {
+    const hasFullWorkspaceShape =
+      workspaceHandle !== undefined &&
+      workspaceHandle !== null &&
+      typeof (workspaceHandle as { assembler?: unknown })?.assembler === "object" &&
+      typeof (workspaceHandle as { compactManager?: unknown })?.compactManager === "object" &&
+      typeof (workspaceHandle as { snapshotBuilder?: unknown })?.snapshotBuilder === "object" &&
+      typeof (workspaceHandle as { captureSnapshot?: unknown })?.captureSnapshot === "function";
+    if (!hasFullWorkspaceShape) {
       const evidenceSink = effectiveEvalSink.emit
         ? { emit: (record: unknown) => effectiveEvalSink.emit!(record) }
         : undefined;
@@ -298,13 +319,36 @@ export class NanoSessionDO {
         evidenceSink,
         evidenceAnchor: () => this.buildEvidenceAnchor(),
       });
+    } else if (effectiveEvalSink.emit) {
+      // P2 Phase 2: the composition factory provided a full workspace
+      // handle but did not wire evidence emission (it cannot — the
+      // anchor builder depends on DO state it doesn't have access to).
+      // Retrofit evidence wiring on the assembler / compactManager /
+      // snapshotBuilder so `snapshot.capture / compact.* / assembly.*`
+      // records land in the DO's (possibly adopted) default eval sink.
+      const evidenceSink = {
+        emit: (record: unknown) => effectiveEvalSink.emit!(record),
+      };
+      const evidenceAnchor = () => this.buildEvidenceAnchor();
+      workspaceHandle!.assembler.setEvidenceWiring({
+        evidenceSink,
+        evidenceAnchor,
+      });
+      workspaceHandle!.compactManager.setEvidenceWiring({
+        evidenceSink,
+        evidenceAnchor,
+      });
+      workspaceHandle!.snapshotBuilder.setEvidenceWiring({
+        evidenceSink,
+        evidenceAnchor,
+      });
     }
     this.subsystems = {
       ...baseSubsystems,
       eval: effectiveEvalSink,
       workspace: workspaceHandle,
     };
-    this.workspaceComposition = workspaceHandle;
+    this.workspaceComposition = workspaceHandle!;
 
     const deps = this.buildOrchestrationDeps();
     this.orchestrator = new SessionOrchestrator(deps, this.config);
@@ -609,6 +653,54 @@ export class NanoSessionDO {
     messageType: string,
     body: Record<string, unknown> | undefined,
   ): Promise<void> {
+    // P2 Phase 3 (D05 R1 + R2) — session.start initial_context consumer.
+    //
+    // BEFORE `extractTurnInput` so the helper-maintained pending layers
+    // list is populated in time for the upcoming turn's `assemble()`
+    // call. Reads the load-bearing entry per R1:
+    //     this.subsystems.workspace?.assembler
+    // (NOT a top-level `assembler` handle — R1 forbids that shape.)
+    //
+    // `appendInitialContextLayer` is a helper-maintained pending layer
+    // manager; it does NOT mutate `ContextAssembler` directly and it
+    // does NOT invent an `initial_context` layer kind. The host will
+    // drain the pending list at `assemble()` time (future kernel
+    // integration — stub pass-through for P2).
+    //
+    // Any error surfaces via `system.notify severity=error` (R2:
+    // canonical kind; do NOT invent `system.error`). The turn is
+    // allowed to continue.
+    if (messageType === "session.start" && body?.["initial_context"]) {
+      const assembler = (
+        this.subsystems.workspace as
+          | { assembler?: import("@nano-agent/workspace-context-artifacts").ContextAssembler }
+          | undefined
+      )?.assembler;
+      if (assembler) {
+        try {
+          const payload = body["initial_context"] as import("@haimang/nacp-session").SessionStartInitialContext;
+          appendInitialContextLayer(assembler, payload);
+        } catch (err) {
+          const message =
+            err instanceof Error
+              ? `initial_context_consumer_error: ${err.message}`
+              : `initial_context_consumer_error: unknown error`;
+          const helper = this.ensureWsHelper();
+          if (helper) {
+            try {
+              helper.pushEvent(this.streamUuid, {
+                kind: "system.notify",
+                severity: "error",
+                message,
+              } as unknown as Parameters<typeof helper.pushEvent>[1]);
+            } catch {
+              // pushEvent failure is non-fatal — the turn continues.
+            }
+          }
+        }
+      }
+    }
+
     switch (messageType) {
       case "session.start":
       case "session.followup_input": {

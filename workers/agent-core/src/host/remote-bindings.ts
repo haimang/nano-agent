@@ -382,16 +382,38 @@ export function makeRemoteBindingsFactory(
           }
         : undefined;
 
+      // P2 Phase 2 / D06 R1: 4 nullable handles that are ALWAYS
+      // host-local (never remote) — make the null-ness explicit with
+      // documented reasons so downstream code knows these are not
+      // accidentally-undefined but intentionally host-local.
+      //
+      //   kernel    — always host-local; kernel runner is the DO's own
+      //               turn loop driver, no remote transport is coherent.
+      //   workspace — host-local per Q4a (storage-topology + WCA both
+      //               host-local in first wave; tenant wrapper lives on
+      //               the DO).
+      //   eval      — sink owner is the host (`BoundedEvalSink` lives
+      //               inside the DO); remote eval worker is a future
+      //               charter, not covered by v1 binding catalog.
+      //   storage   — tenant wrapper + storage-topology adapter are DO
+      //               members (`getTenantScopedStorage`), not transport.
+      //
+      // Returning `null` (not `undefined`) per P2 S3: `undefined` would
+      // look like "forgot to wire it", `null` with reason means "we
+      // considered it and deliberately chose host-local". Default
+      // factory already provides the live host-local handle; this
+      // factory layer leaves those slots empty so the caller merges
+      // them with the default-factory output.
       return {
-        kernel: undefined,
+        kernel: null as unknown as SubsystemHandles["kernel"], // kernel is always host-local; see block comment above
         llm: providerFetcher ? { fetcher: providerFetcher } : undefined,
         capability: capabilityTransport
           ? { serviceBindingTransport: capabilityTransport }
           : undefined,
-        workspace: undefined,
+        workspace: null as unknown as SubsystemHandles["workspace"], // workspace is host-local per Q4a
         hooks: hooksHandle,
-        eval: undefined,
-        storage: undefined,
+        eval: null as unknown as SubsystemHandles["eval"], // eval sink owner is the host DO
+        storage: null as unknown as SubsystemHandles["storage"], // storage-topology is host-local; tenant wrapper in DO
         profile,
       };
     },
