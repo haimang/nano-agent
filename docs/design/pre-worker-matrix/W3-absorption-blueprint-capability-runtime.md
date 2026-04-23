@@ -111,9 +111,9 @@ workers/bash-core/
 
 以下 truth 继续保持外部依赖或上游 contract，不内联复制：
 
-1. `nacp-core` / `nacp-session` 的 canonical wire truth
-2. worker-matrix 之后可能形成的 service-binding transport profile
-3. workspace path / ref / tenant law 的 canonical上位约束
+1. `@haimang/nacp-core@1.4.0` / `@haimang/nacp-session@1.3.0`(W2 shipped;published under `@haimang/*` scope due to GitHub namespace 冲突)的 canonical wire truth
+2. worker-matrix 之后可能形成的 service-binding transport profile(D07 激活时按 `CAPABILITY_WORKER` binding 形态落地;本 blueprint 不涉及 binding 激活)
+3. workspace path / ref / tenant law 的 canonical上位约束(workspace-context-artifacts 的 split 由 D03/D04 / C2+D1 处理)
 
 ### 5.2 跟随 absorb 的内容
 
@@ -160,10 +160,19 @@ workers/bash-core/
 
 若 owner 决定在 pre-worker-matrix 做 optional dry-run，则这份 blueprint 可直接作为落点说明：
 
-1. `workers/bash-core/` 先建 deploy-shaped shell
+1. `workers/bash-core/` 先建 deploy-shaped shell(W4 已完成)
 2. `capability-runtime` 按本 blueprint 的目标目录落入 `src/`
 3. package-local tests 与 worker-local build 证明结构可承载
 4. 旧 `packages/capability-runtime/` 保持不删，只作为共存期来源
+
+### 8.1 worker-matrix 下 P1.B / D02 消费本 blueprint 的要点(reality-check)
+
+worker-matrix 阶段本 blueprint 是 P1.B / D02 的执行基线。进入 worker-matrix 后需在以下事实锚点上保持一致,blueprint 本身不改结构:
+
+1. **real preview deploy 是 P2.E0 硬前置(per GPT R1)** — D02 §7.1 F6 已把 `pnpm --filter workers/bash-core run deploy:preview` 落为 B1 PR 收尾必过 gate,`curl <preview-url>/` 应返回含 `worker: "bash-core"` / `absorbed_runtime: true` / `nacp_core_version: "1.4.0"` / `nacp_session_version: "1.3.0"` 的合法 JSON。
+2. **index.ts binding-first,不暴露 public HTTP RPC(per GPT R3 / D02 v0.2 F3)** — 本 blueprint §2.2 的 `fake-bash bridge` 与 `tool-call.ts` 仍保留 NACP `tool.call.*` body schema;但 bash-core 的 HTTP 入口固定为 `/capability/call` + `/capability/cancel`(与 `remote-bindings.ts::callBindingJson` byte-identical 对齐);不得自造 `/tool.call.request` 公开路径。
+3. **`ServiceBindingTarget` 默认 service name 保持 `CAPABILITY_WORKER`** — D07 激活时不改字符串;本 blueprint §2.2 中 `targets/service-binding.ts` 的搬迁保持原常量。
+4. **workspace substrate 共存期 import 保留 `@nano-agent/workspace-context-artifacts`** — D04 合并之前不切换来源;本 blueprint §5.3 的"新 consumer 切换" 归 D04 / C2+D1。
 
 ## 9. 一句话 verdict
 

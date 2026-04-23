@@ -175,3 +175,15 @@ workers/filesystem-core/src/
 ## 8. 一句话 verdict
 
 这份 blueprint 已经把 `workspace-context-artifacts` 这个最危险的 split-package 收窄成了可执行方案：**按职责切 context/filesystem，mixed evidence helper 分拆处理，agent-core consumer 走 staged cut-over，而不是一次性大爆破。**
+
+## 9. worker-matrix 下 D03 / D04 / D05 消费本 blueprint 的要点(reality-check)
+
+进入 worker-matrix 后,本 blueprint 作为 C2/D1 split 代表样本被 D03(context-core)、D04(filesystem-core)、D05(initial-context host consumer)直接引用。以下事实锚点需要对齐,本 blueprint §3.3 mixed helper 表 / §4 目标目录不改结构:
+
+1. **mixed helper 所有 context 侧 helper + 2 个结构类型归 `workers/context-core/src/evidence/`(per D03 §7 F3)** — 具体行映射:`buildAssemblyEvidence/emitAssemblyEvidence → evidence/assembly.ts`,`buildCompactEvidence/emitCompactEvidence → evidence/compact.ts`,`buildSnapshotEvidence/emitSnapshotEvidence → evidence/snapshot.ts`;`EvidenceAnchorLike / EvidenceSinkLike` 保持极薄 structural seam,随 context-core 落地但不阻塞 D04 split。
+2. **mixed helper 的 artifact 侧 helper 归 `workers/filesystem-core/src/evidence/artifact.ts`(per D04 §4 D1 slice)** — `buildArtifactEvidence/emitArtifactEvidence` 在 D04 PR 合并时才搬;D03 先合并的共存期内原文件保留 artifact helper 行,不提前剔除。
+3. **`appendInitialContextLayer(assembler, payload)` helper 归 context-core(per D03 §7 F4 / P1-P5 GPT review R1)** — 本 blueprint §3.1 context-core 主文件清单扩一条:顶层 `appendInitialContextLayer` helper 不挂在 `ContextAssembler` 上,也不发明 `initial_context` layer kind;helper 维护 assembler 之外的 pending layers list,把 payload 映射成 canonical `session` / `injected` ContextLayer;host 在 `assemble(...)` 入参合并 pending list。
+4. **`ContextAssembler` public API 当前仅 `assemble(layers: ContextLayer[]): AssemblyResult` + `setEvidenceWiring()`** — 无 `appendLayer()` mutator;本 blueprint §3.1 "context-assembler.ts" 搬迁保持现有 API 形态不扩面,加 helper 不等于扩 assembler surface。
+5. **`ContextLayerKindSchema` 合法枚举为 6 项:`system / session / workspace_summary / artifact_summary / recent_transcript / injected`** — 本 blueprint §3.1 "context-layers.ts" 搬迁保持现有枚举不扩;D05 consumer / F4 helper 不得自造 `initial_context` 等新 kind,必须映射到已有 6 项中的合法一项。
+6. **D04 side 的 D1 slice 依赖 `@nano-agent/storage-topology`** — 本 blueprint §2.1 的 "跨 Tier A + Tier B" 事实在 D04 合并后通过 `workers/filesystem-core/src/storage/` 内部化(storage-topology D2 unit 同批搬);本 blueprint §4 filesystem-core 目标目录结构保持不变,D04 action-plan 负责 storage substrate 的 tenant wrapper 边界。
+7. **session-do-runtime 侧 live consumer path** — `packages/session-do-runtime/src/workspace-runtime.ts` + `.../do/nano-session-do.ts` 的 consumer 切换采用 staged cut-over;D03 / D04 合并后 host shell 共存期通过薄 adapter 指向新位置,共存期不删 `packages/workspace-context-artifacts/`;物理删除归 D09 deprecation。

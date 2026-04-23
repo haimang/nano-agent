@@ -86,3 +86,13 @@ workers/agent-core/
 ## 6. 一句话 verdict
 
 这份 optional blueprint 的价值，是给 `agent-core` 提前准备一份**真实 host shell 如何从 package 形态迁入 worker 形态**的样板；它不是 gate，但对后续 action-plan 很有参考价值。
+
+## 7. worker-matrix 下 D01 / D05 / D06 消费本 blueprint 的要点(reality-check)
+
+进入 worker-matrix 后,本 blueprint 作为 A1(host shell)代表样本被 D01 F1-F5 与 D05 / D06 直接引用。以下事实锚点需要对齐,本 blueprint 不改结构:
+
+1. **A1 host shell 落点 = `workers/agent-core/src/host/do/nano-session-do.ts`(per D01 F1)** — `packages/session-do-runtime/src/do/nano-session-do.ts` 的搬迁目标是 host/do/,保留原文件名;同期 session-edge / http-controller / ws-controller / composition / remote-bindings / workspace-runtime / worker.ts 分别落 host/controllers/ / host/composition/ / host/routes/ / host/workspace/。
+2. **host consumer 读 assembler 的正确入口是 `composition?.workspace?.assembler`(per D05 v0.2 R1)** — 本 blueprint §2.2 的 "composition" 源锚点保留;但 D05 host consumer 不得用 top-level `assembler` 句柄(不存在),也不得通过 `appendLayer` 直接 mutate assembler(assembler 只有 `assemble(layers)` + `setEvidenceWiring()`)。consumer 必须维护 helper-level pending layers,在 `assemble()` 调用时合并。
+3. **initial context payload 的 wire truth 是 `session.start.body.initial_input`(per D05 v0.2 R2)** — `turn_input` 只是 `TurnInput` runtime internal 类型,不是 NACP wire kind;consumer 读 `initial_input` + `session.followup_input.body.text` 两个 wire 字段,输出映射到 canonical `session` / `injected` 层 kind(不是自造 `initial_context` kind)。
+4. **依赖事实**:`packages/session-do-runtime/package.json` 当前直接依赖 `@haimang/nacp-core`(workspace:\*)、`@haimang/nacp-session`(workspace:\*)、`@nano-agent/workspace-context-artifacts`(workspace:\*);host shell 搬入 workers/agent-core 后,前两者继续保留作为 published 协议依赖,`@nano-agent/workspace-context-artifacts` 的 consumer 切换归 D04 / C2+D1 共存期处理。
+5. **D01 F4 A4 hooks residual / F5 A5 eval observability residual 需复用本 blueprint 的 host shell 骨架** — hooks / eval observability 的 runtime sink 落在 agent-core host 内(非 package 内),共同驻留 host shell 的 "composition-time wire" 层。

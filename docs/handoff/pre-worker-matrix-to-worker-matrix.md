@@ -187,3 +187,25 @@ final closure §3 item 4 把这个归属写成 "frozen at charter/design level",
 worker-matrix r2 作者在动笔前应显式消化 **§7.4 的 4 个软观察(O1-O4)**,把它们在 r2 正文 / r2 Phase DoD / r2 milestone 中落实成具体表述;其余事实可以按 §5 input pack 直接进入 rewrite。
 
 ---
+
+## §8 worker-matrix P0 已收口索引(2026-04-23 追记)
+
+pre-worker-matrix handoff 交付后,worker-matrix 的 **P0 Absorption Prep** 阶段已在 `docs/action-plan/worker-matrix/P0-absorption-prep.md` 下执行完毕并落盘一份 closure memo:
+
+- **P0 closure memo**:[`docs/issue/worker-matrix/P0-absorption-prep-closure.md`](../issue/worker-matrix/P0-absorption-prep-closure.md)
+
+P0 闭环后产出 / 索引:
+
+| 项目 | 位置 | 说明 |
+|------|------|------|
+| 10 units × blueprint 映射 | `docs/design/worker-matrix/blueprints/blueprints-index.md` | A1-A5 / B1 / C1-C2 / D1-D2 全覆盖 |
+| 6 份 P0 补齐 blueprint | `docs/design/worker-matrix/blueprints/{A2,A3,A4,A5,C1,D2}-*-absorption-blueprint.md` | 每份含 §源/§目标/§文件映射/§deps/§tests/§risk/§LOC/§verdict 8 要素 |
+| A1-A5 sub-PR 切分方案 | `docs/design/worker-matrix/blueprints/A1-A5-sub-pr-granularity.md` | 3 方案对比(1/2/3 PR)+ 默认推荐方案 2 |
+| 3 份代表 blueprint reality-check | `docs/design/pre-worker-matrix/W3-absorption-blueprint-{capability-runtime,session-do-runtime,workspace-context-artifacts-split}.md` | 新增 §7/§8.1/§9 worker-matrix 消费要点节 |
+| D01-D09 R1-R5 吸收索引 | P0 closure memo §5 | 9 份 design v0.2 版本历史 + 5 条 delta cross-reference |
+| P2.E0 owner decision | P0 closure memo §3 | bash-core real preview deploy owner / schedule / rollback / probe |
+| P1.A / P1.B kickoff checklist | P0 closure memo §4 | P1 kickoff PR body 可直接引用 |
+
+worker-matrix P1 开工以 P0 closure memo §4 checklist 为 kickoff gate。
+
+---

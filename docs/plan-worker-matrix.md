@@ -608,6 +608,10 @@ worker-matrix 结束后,下一阶段应由以下 2 类 trigger 之一启动:
 6. `workspace:*` → published cutover 触发
 7. `skill.core` scope posture 改变(从 reserved 变为 admitted)
 
+### 11.1 已收口 Phase 索引
+
+- **P0 Absorption Prep**(2026-04-23 收口) — 见 [`docs/issue/worker-matrix/P0-absorption-prep-closure.md`](./issue/worker-matrix/P0-absorption-prep-closure.md)。含 P2.E0 owner decision、P1.A/P1.B kickoff checklist、D01-D09 R1-R5 吸收索引、10 units 映射 index。P1 kickoff PR 的 body 直接引用本 memo。
+
 ---
 
 ## 12. 一句话总结

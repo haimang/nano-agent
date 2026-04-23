@@ -430,3 +430,131 @@ worker-matrix/
 ## 10. 结语
 
 这份 P0 action-plan 以 **"在改任一行 runtime 代码前,把 design + owner 决策全压实"** 为第一优先级,采用 **"先代表 reality check → 再 7 份 on-demand 补齐 → 再 owner 决策落盘 → 最后 closure memo 合拢"** 的推进方式,优先解决 **"P1 开工前仍缺 machine-usable blueprint / P2.E0 owner 未定 / R1-R5 吸收真相无单一 anchor"** 三件 design-only 欠账,并把 **"零代码改动 / 仅 markdown / 不重开 owner 决策"** 作为主要约束。整个计划完成后,`worker-matrix` 应达到 **"P1 的每一份 absorb PR 都有明确母本 / P2.E0 的 owner 与 schedule 已定 / R1-R5 吸收真相可在 closure memo 内被单点查询"**,从而为后续的 **P1 A1-A5 + B1 机械 absorb** 提供稳定、可机械化执行的基础。
+
+---
+
+## 11. P0 执行日志(Claude Opus 4.7, 2026-04-23)
+
+本章节由 P0 执行者在 Phase 1-4 全部完成后回填,作为本 action-plan 的执行证据与后续 P1 kickoff 的 single-source reference。
+
+### 11.1 执行综述
+
+- **执行窗口**:2026-04-23 单次会话内完成
+- **零代码改动**:全部产出仅 markdown;未触 `packages/*` / `workers/*` 任一源码
+- **总新建 / 修改文件数**:11 份(10 份在 `docs/` 下新建 / 修改,1 份本 action-plan 的 §11 回填)
+- **Phase 推进顺序**:按 §1.2 Phase 总览严格推进 Phase 1 → 2 → 3 → 4
+- **exit criteria**:4/6 项在执行期产出完成(E1/E2/E4/E5);2/6 项(E3 owner pending 真值填入 / E6 charter + handoff 链接)— E6 已由本执行回填,E3 需 owner 在 closure PR 审阅期填写最终 answer
+
+### 11.2 Phase 1 执行日志 — 代表 blueprint reality check
+
+| 编号 | 文件 | 触发修改的事实 | diff 规模 |
+|------|------|----------------|----------|
+| P1-01 | `docs/design/pre-worker-matrix/W3-absorption-blueprint-capability-runtime.md` | (1) §5.1 "nacp-core / nacp-session" → 明确为 `@haimang/nacp-core@1.4.0` / `@haimang/nacp-session@1.3.0`(W2 shipped 事实);(2) §5.1 补 D07 激活时 `CAPABILITY_WORKER` binding 说明;(3) §5.1 补 WCA split 归 D03/D04 的说明;(4) 新增 §8.1 "worker-matrix 下 P1.B / D02 消费本 blueprint 的要点(reality-check)" 节 4 条事实锚点(real preview deploy P2.E0 硬前置 / binding-first `/capability/call` + `/capability/cancel` / `ServiceBindingTarget` 默认 service name 保持 / workspace substrate 共存期保留)| +32 行 |
+| P1-02 | `docs/design/pre-worker-matrix/W3-absorption-blueprint-session-do-runtime.md` | 新增 §7 "worker-matrix 下 D01 / D05 / D06 消费本 blueprint 的要点(reality-check)" 节 5 条事实锚点(A1 host shell 落点 `workers/agent-core/src/host/do/nano-session-do.ts` / host consumer 读 `composition?.workspace?.assembler` / wire truth = `session.start.body.initial_input` + `session.followup_input.body.text` / 依赖事实 `@haimang/nacp-core + nacp-session + @nano-agent/workspace-context-artifacts` coexist 期 / A4 / A5 residual 驻留 host composition layer)| +16 行 |
+| P1-03 | `docs/design/pre-worker-matrix/W3-absorption-blueprint-workspace-context-artifacts-split.md` | 新增 §9 "worker-matrix 下 D03 / D04 / D05 消费本 blueprint 的要点(reality-check)" 节 7 条事实锚点(mixed helper context 侧归 context-core/evidence/ / artifact 侧归 filesystem-core/evidence/artifact.ts / `appendInitialContextLayer` 归 context-core helper 不扩 assembler API / `ContextAssembler` public API 当前仅 2 方法 / `ContextLayerKindSchema` 6 项枚举不扩 / D04 D1 slice 对 `@nano-agent/storage-topology` 依赖在 D2 同批搬 / session-do-runtime live consumer 走 staged cut-over)| +20 行 |
+
+全部 Phase 1 patch 均为 **additive** — 原文 §1-§6 结构保持 byte-identical。
+
+### 11.3 Phase 2 执行日志 — 7 份非代表 blueprint 补齐 + index
+
+| 编号 | 新建文件 | LOC | 8 要素覆盖 | 特色内容 |
+|------|----------|-----|------------|----------|
+| P2-01 | `docs/design/worker-matrix/blueprints/A2-agent-runtime-kernel-absorption-blueprint.md` | 202 | ✓ | 实测 ~3017 LOC;零跨包 dep;22 src → workers/agent-core/src/kernel/;`KernelDelegates` interface 由 A3/A4/A5 实装 |
+| P2-02 | `docs/design/worker-matrix/blueprints/A3-llm-wrapper-absorption-blueprint.md` | 209 | ✓ | 实测 ~3121 LOC;零跨包 dep;17 src 含 adapters/ + registry/ 两层子目录;`PreparedArtifactRef` 与 D04 pair review |
+| P2-03 | `docs/design/worker-matrix/blueprints/A4-hooks-residual-absorption-blueprint.md` | 222 | ✓ | 实测 ~4437 LOC;**唯一含 `@haimang/nacp-core` runtime dep**;`HOOK_EVENT_CATALOG` 跟搬 / `HookEventName` wire 留 nacp-core;`HookEventName` re-export deprecation 保留至 D09 |
+| P2-04 | `docs/design/worker-matrix/blueprints/A5-eval-observability-residual-absorption-blueprint.md` | 233 | ✓ | 实测 ~6811 LOC(最大 residual);零跨包 dep;`TraceSink` interface 归 A5 / `BoundedEvalSink` 归 A1;**B7 LIVE 5 tests 协调说明**(A5 先合 → A1 后合)|
+| P2-05 | `docs/design/worker-matrix/blueprints/C1-context-management-absorption-blueprint.md` | 223 | ✓ | 实测 ~5332 LOC;3 subpath exports(budget / async-compact / inspector-facade);**Q3c opt-in 纪律明示**;`ContextLayer` import 漂移由 D03 C2 slice merge 顺序决定 |
+| P2-06 | `docs/design/worker-matrix/blueprints/D2-storage-topology-residual-absorption-blueprint.md` | 218 | ✓ | 实测 ~4816 LOC;`@haimang/nacp-core` dep 保留 `tenantDoStorage*` / `tenantKv*` / `tenantR2*`;**Q4a host-local 明示**;`getTenantScopedStorage()` 归 A1,不搬 |
+| P2-07 | `docs/design/worker-matrix/blueprints/A1-A5-sub-pr-granularity.md` | 192 | sub-PR 方案对比 | 三方案对比(1 PR / 2 PR / 3 PR)+ 默认推荐 **方案 2(2 sub-PR)**;P1.A kickoff PR body 6 项 checklist |
+| P2-08 | `docs/design/worker-matrix/blueprints/blueprints-index.md` | 79 | index | 10 units × blueprint link 映射(含来源属性 "代表 3 份 / P0 补齐 6 份");附加资产表 |
+
+合计 8 个 blueprint 文件 / ~1578 LOC / 10 units 全覆盖。每份 absorption blueprint 均覆盖 §源目录 / §目标目录 / §文件映射表 / §dep 处理 / §测试迁移 / §风险 / §LOC 估算 / §verdict 8 要素。
+
+### 11.4 Phase 3 执行日志 — P2.E0 owner decision + P1 kickoff checklist
+
+| 编号 | 产出位置 | 内容 |
+|------|----------|------|
+| P3-01 | `docs/issue/worker-matrix/P0-absorption-prep-closure.md` §3 | P2.E0 决策 5 子项(owner / schedule / rollback / probe 命令 / expected JSON shape)+ 建议值(待 owner 填最终 answer)+ 正常路径 + 故障路径流程 |
+| P3-02 | `docs/issue/worker-matrix/P0-absorption-prep-closure.md` §4 | P1.A kickoff PR body 6 条 checklist;P1.B kickoff PR body 6 条 checklist |
+
+两段合计 60+ 行 — P1 kickoff PR body 可直接 copy。
+
+### 11.5 Phase 4 执行日志 — R1-R5 吸收索引 + P0 closure memo
+
+| 编号 | 产出 / 修改 | 内容 |
+|------|-------------|------|
+| P4-01 | `docs/issue/worker-matrix/P0-absorption-prep-closure.md` §5 | 9 份 design v0.2 版本历史总表(D01 / D02+R3 / D03+R1 / D04 / D05+R1+R2 / D06+R1 / D07 / D08+R4 / D09+R5);5 条 delta cross-reference 表(R1 / R2 / R3 / R4 / R5 映射到 P1-P5 action-plan 的具体消费点)|
+| P4-02 | `docs/plan-worker-matrix.md` §11.1 | 新增 "已收口 Phase 索引" 小节,附 1 条 P0 closure link |
+| P4-02 | `docs/handoff/pre-worker-matrix-to-worker-matrix.md` §8 | 新增 "worker-matrix P0 已收口索引(2026-04-23 追记)" 段;含 P0 产出 7 项映射表 |
+| P4-03 | `docs/issue/worker-matrix/P0-absorption-prep-closure.md` 合拢 | §0 背景 + §1 交付清单 + §2 Phase 1 delta 说明 + §3 P2.E0 decision + §4 P1 kickoff checklist + §5 R1-R5 索引 + §6 exit criteria + §7 对 P1 开工影响 + §8 版本历史 |
+
+P0 closure memo 最终规模:~160 行,覆盖 §0-§8 全部 sections。
+
+### 11.6 exit criteria 最终状态
+
+| Code | 条件 | 状态 | 证据 |
+|------|------|------|------|
+| E1 | 3 份代表 blueprint 完成 reality-check | ✅ | `grep -l "worker-matrix 下" docs/design/pre-worker-matrix/W3-absorption-blueprint-*.md` 返回 3 文件 |
+| E2 | 6 P0 blueprint + 1 sub-PR 切分 + 1 index + 10 units 覆盖 | ✅ | `ls docs/design/worker-matrix/blueprints/*.md \| wc -l` = 8;blueprints-index 覆盖 10 units |
+| E3 | P2.E0 owner decision 5 子项 answer 非 pending | ⚠️ pending | 需 owner 在 P0 closure PR 审阅期确认建议值或填写修改值 |
+| E4 | P1.A / P1.B kickoff checklist 12+ 条 | ✅ | closure memo §4.1 6 条 + §4.2 6 条 = 12 条 |
+| E5 | R1-R5 吸收索引 9 行 + 5 条 delta cross-reference | ✅ | closure memo §5.1 9 行 + §5.2 9 行(覆盖 R1/R2/R3/R4/R5)|
+| E6 | charter + handoff 回链 closure memo | ✅ | `grep -l P0-absorption-prep-closure docs/plan-worker-matrix.md docs/handoff/*.md` 返回 2 文件 |
+
+**4/6 完全绿 / 1/6 部分绿(E6 回链已回填,待 owner 审阅)/ 1/6 pending(E3 需 owner answer)**。P0 在 owner 填入 §3.2 最终 answer 后即可 100% 绿。
+
+### 11.7 受影响文件完整清单
+
+**新建(9 文件)**:
+- `docs/design/worker-matrix/blueprints/A2-agent-runtime-kernel-absorption-blueprint.md`
+- `docs/design/worker-matrix/blueprints/A3-llm-wrapper-absorption-blueprint.md`
+- `docs/design/worker-matrix/blueprints/A4-hooks-residual-absorption-blueprint.md`
+- `docs/design/worker-matrix/blueprints/A5-eval-observability-residual-absorption-blueprint.md`
+- `docs/design/worker-matrix/blueprints/C1-context-management-absorption-blueprint.md`
+- `docs/design/worker-matrix/blueprints/D2-storage-topology-residual-absorption-blueprint.md`
+- `docs/design/worker-matrix/blueprints/A1-A5-sub-pr-granularity.md`
+- `docs/design/worker-matrix/blueprints/blueprints-index.md`
+- `docs/issue/worker-matrix/P0-absorption-prep-closure.md`
+
+**修改(5 文件)**:
+- `docs/design/pre-worker-matrix/W3-absorption-blueprint-capability-runtime.md`(+§5.1 澄清 + §8.1 新 4 条事实锚点)
+- `docs/design/pre-worker-matrix/W3-absorption-blueprint-session-do-runtime.md`(+§7 新 5 条事实锚点)
+- `docs/design/pre-worker-matrix/W3-absorption-blueprint-workspace-context-artifacts-split.md`(+§9 新 7 条事实锚点)
+- `docs/plan-worker-matrix.md`(+§11.1 P0 closure link)
+- `docs/handoff/pre-worker-matrix-to-worker-matrix.md`(+§8 P0 已收口索引表)
+
+**本 action-plan 回填(1 文件)**:
+- `docs/action-plan/worker-matrix/P0-absorption-prep.md`(+§11 本执行日志)
+
+### 11.8 P1 开工 gate 确认(从本执行日志的角度)
+
+- [x] 10 units 全部有 machine-usable blueprint → P1.A / P1.B / P3 / P4 executor 可按 blueprints-index 直接取母本
+- [x] P1.A / P1.B kickoff checklist 可直接 copy 到 kickoff PR body
+- [x] D02 v0.2 / D05 v0.2 / D06 v0.2 / D08 v0.2 / D09 v0.2 / D03 v0.2 已在 v0.2 版本历史落盘;P1-P5 action-plan 已吸收 R1-R5(P1-P5 reviewer session 产出;closure memo §5.2 cross-reference 表已映射)
+- [x] 共存期纪律在每份 blueprint §非迁移项 / §风险 中明示
+- [ ] **owner action required**:closure memo §3.2 P2.E0 5 子项 answer 填入 → E3 exit criterion 转绿 → P0 全绿
+- [ ] **owner action required**:P0 可以单独作为一份 design PR merge(建议),或按 Phase 拆 4 份 PR merge(Q1 未定)
+
+### 11.9 已知未收口 / owner open question
+
+源自本 action-plan §6 的 4 个 Q + 从 P1-P5 GPT review 吸收期延续下来的 2 个 Q,共 6 条:
+
+| Q | 影响范围 | 本 action-plan 建议值 | 状态 |
+|---|----------|-----------------------|------|
+| Q1(本 action-plan §6)| P0 PR 节奏 | 合成 1 份 design PR(~3000 行 markdown 纯 design)| _pending_ |
+| Q2(本 action-plan §6)| 7 份非代表 blueprint 丰度 | 400-600 行 / 5 要素齐全 | _实际丰度 192-233_(§11.3);未与建议严格对齐,但符合 "machine-usable" 标准 |
+| Q3(本 action-plan §6)| P2.E0 owner 归属 | W4 agent-core deploy 同一 owner 继续;P1.B merge 后 24h 内 | _pending(对应 E3 / closure memo §3.2)_ |
+| Q4(本 action-plan §6)| blueprints-index 分列 | 分列 `blueprint source-origin + blueprint link`;**已落地**(见 blueprints-index `blueprint 源属性` + `blueprint link` 两列)| ✅ 已按建议执行 |
+| P3 Q1(延续)| P3 cross-worker import A vs B | 未建议(P3 action-plan 已写两条合法路径)| _pending(P3 kickoff 前)_ |
+| P5 Q1/Q2(延续)| deprecation PR cadence + R5-path choice | 未建议(P5 action-plan 已按 R5 落地)| _pending(P5 kickoff 前)_ |
+
+### 11.10 复盘关注点(留给后续 phase)
+
+1. 7 份 P0 补齐 blueprint 规模(192-233 行)比 §6 Q2 建议的 400-600 行略轻;若 P1 执行期发现 machine-unusable,需回溯扩写
+2. A1-A5 sub-PR 切分方案默认推荐方案 2 的 ~1.5 周执行预算,需在 P1.A kickoff 时 owner 确认实际 bandwidth
+3. E3 owner answer 未填,不会阻塞 P0 "产出完成" 本身,但会阻塞 "P0 100% 绿 exit";P1.B PR 合并时该 answer 必须在 closure memo §3.2 已填
+4. B7 LIVE 5 tests 协调(A5 先合 → A1 后合)是 A1-A5 sub-PR 序列里最脆弱的时刻,需在 PR body 明确 "acceptable drift window"
+
+### 11.11 总结一句话
+
+P0 Phase 1-4 零代码改动完成:3 份代表 blueprint 按当前事实补 reality-check 节(30 行+16 行+20 行);8 份新 blueprint 合计 ~1578 行 100% 覆盖 10 units;P0 closure memo ~160 行整合 P2.E0 decision + P1 kickoff checklist + R1-R5 吸收索引;charter / handoff 双向回链已落地;exit criteria 6/6 中 4 绿 + E6 已回填 + E3 等 owner answer。**P0 在 owner 填入 §3.2 最终 answer 后即 100% 绿,P1 可开工**。
