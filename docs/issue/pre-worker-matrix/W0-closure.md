@@ -13,13 +13,13 @@
 
 W0 已达到 action-plan 约定的关闭条件。
 
-这次实现成功把 **Tier A protocol-adjacent truth** 收束进 `@nano-agent/nacp-core@1.4.0`，同时维持旧 import path 的 additive / non-breaking 行为。W1-W4 后续可以直接围绕 `nacp-core` 的 consolidated surface 继续推进，不再需要从多个相邻 package 反推同一份 vocabulary。
+这次实现成功把 **Tier A protocol-adjacent truth** 收束进 `@haimang/nacp-core@1.4.0`，同时维持旧 import path 的 additive / non-breaking 行为。W1-W4 后续可以直接围绕 `nacp-core` 的 consolidated surface 继续推进，不再需要从多个相邻 package 反推同一份 vocabulary。
 
 ---
 
 ## 2. 实际交付
 
-### 2.1 新增到 `@nano-agent/nacp-core` 的 surface
+### 2.1 新增到 `@haimang/nacp-core` 的 surface
 
 1. `transport/cross-seam.ts`
 2. `evidence/sink-contract.ts`
@@ -36,8 +36,8 @@ W0 已达到 action-plan 约定的关闭条件。
 
 ### 2.3 version 决策
 
-1. `@nano-agent/nacp-core`: `1.3.0 → 1.4.0`
-2. `@nano-agent/nacp-session`: 维持 `1.3.0`
+1. `@haimang/nacp-core`: `1.3.0 → 1.4.0`
+2. `@haimang/nacp-session`: 维持 `1.3.0`
 
 `nacp-session` 未跟随 bump 的原因很直接：W0 没有让它新增 import，也没有改变 package 自身的 public/session wire surface。
 
@@ -63,8 +63,8 @@ W0 已达到 action-plan 约定的关闭条件。
 
 以下基线在启动 W0 前已通过：
 
-1. `pnpm --filter @nano-agent/nacp-core typecheck build test`
-2. `pnpm --filter @nano-agent/nacp-session typecheck build test`
+1. `pnpm --filter @haimang/nacp-core typecheck build test`
+2. `pnpm --filter @haimang/nacp-session typecheck build test`
 3. `pnpm --filter @nano-agent/session-do-runtime typecheck build test`
 4. `pnpm --filter @nano-agent/hooks typecheck build test`
 5. `pnpm --filter @nano-agent/storage-topology typecheck build test`
@@ -74,8 +74,8 @@ W0 已达到 action-plan 约定的关闭条件。
 
 ### 4.2 W0 实施后的直接验证
 
-1. `pnpm --filter @nano-agent/nacp-core typecheck build test` → `18/18` test files, `259/259` tests passed
-2. `pnpm --filter @nano-agent/nacp-session typecheck build test` → `14/14` test files, `119/119` tests passed
+1. `pnpm --filter @haimang/nacp-core typecheck build test` → `18/18` test files, `259/259` tests passed
+2. `pnpm --filter @haimang/nacp-session typecheck build test` → `14/14` test files, `119/119` tests passed
 3. `pnpm --filter @nano-agent/session-do-runtime typecheck build test` → `29/29` test files, `357/357` tests passed
 4. `pnpm --filter @nano-agent/hooks typecheck build test` → `16/16` test files, `198/198` tests passed
 5. `pnpm --filter @nano-agent/storage-topology typecheck build test` → `15/15` test files, `169/169` tests passed
