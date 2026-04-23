@@ -1,25 +1,26 @@
 # W5 — Closure & Handoff
 
 > 功能簇:`pre-worker-matrix / W5 / closure-and-handoff`
-> 讨论日期:`2026-04-21`
+> 讨论日期:`2026-04-23`
 > 讨论者:`Claude Opus 4.7 (1M context)` + owner pending review
 > 关联文档:
 > - Charter: `docs/plan-pre-worker-matrix.md` §4.1 F / §7.6
 > - 前置 design(全部消费对象):
 >   - `W0-nacp-consolidation.md`(**v0.2 narrower** — BoundedEvalSink class 不搬;hooks wire-shape only)
 >   - `W1-cross-worker-protocols.md`(**v0.4 executed RFC-only**)
->   - `W2-publishing-pipeline.md`(**v0.3 executed parallel** — skeleton 已落地,首发/dogfood optional)
+>   - `W2-publishing-pipeline.md`(**executed** — first publish completed at `@haimang/*`)
 >   - `W3-absorption-blueprint-and-dryrun.md`(**v0.2 map + 2-3 blueprint + optional capability-runtime dry-run**)
->   - `W4-workers-scaffolding.md`(**v0.2 1 real(agent-core)+ 3 dry-run**)
+>   - `W4-workers-scaffolding.md`(**executed** — `agent-core` real preview deploy completed)
 > - 消费对象(W5 触发其 rewrite):`docs/plan-worker-matrix.md`(currently deprecated)
 > - 消费对象(W5 更新):`docs/eval/worker-matrix/00-contexts/00-current-gate-truth.md`
 > - 消费对象(W5 更新):`docs/issue/after-foundations/after-foundations-final-closure.md`
-> 文档状态:`draft (v0.3 post-GPT-R6-review: body fully aligned with charter r2 6 exit criteria & narrower W1/W3/W4)`
+> 文档状态:`executed (v0.4 post-W5 execution closure)`
 >
 > **修订历史**:
 > - v0.1 (2026-04-21):初稿。X1-X7 + 横向一致性 5 对角线
 > - v0.2 (2026-04-21):Post-GPT-review narrowing(charter r2 scope 收窄的 downstream)。横向一致性检查内容微调以匹配 W0 narrower + W1 RFC-only + W2 parallel + W3 narrower + W4 1-deploy;final closure 结构描述 6 个 phase 的**收窄后**产出;exit criteria 继承 charter r2 §11 的 6 条收窄版。
 > - v0.3 (2026-04-21):Post-GPT-R6 body-level narrowing。GPT 指出 v0.2 仅改顶部/概要,§7.2 X3 "5 大产出" 与 X4 "4 就绪" 仍为旧 W1 shipped protocol / W2 1.4.0 首发 / W3 10 blueprint + llm-wrapper / W4 4 URL 写法。本版:§7.2 X3 "5 大产出" 改为 "6 大产出" 对应 charter r2 §11 exit criteria;§7.2 X4 "4 就绪 table" 扩到 6 就绪(协议 topology / package 策略 / import-publish / orphan 决定 / scaffold / handoff);全文 "4 就绪 / 10 blueprint / llm-wrapper / 4 URL" 系统改为 narrower 表述;§7.2 X5 rev 3 新 §N、§4.1 亮点、§4.3 借鉴、§6.3 三大方向杠杆 一并同步。
+> - v0.4 (2026-04-23):W5 executed。当前真相层以 `W2 first publish completed` + `W4 real preview deploy completed` 为准；本 design 已被 `docs/issue/pre-worker-matrix/pre-worker-matrix-final-closure.md`、`docs/handoff/pre-worker-matrix-to-worker-matrix.md` 与 `docs/issue/pre-worker-matrix/W5-closure.md` 消费，`plan-worker-matrix.md` 顶部状态已翻到 `needs-rewrite-r2`。
 
 ---
 

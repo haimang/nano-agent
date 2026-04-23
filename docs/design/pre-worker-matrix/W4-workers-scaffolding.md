@@ -21,7 +21,7 @@
 > - v0.1 (2026-04-21):初稿。4 workers 真实 deploy 到 Cloudflare
 > - v0.2 (2026-04-21):Post-GPT-review narrowing(顶部 / §0 / §5.1 In-Scope / §5.5 纪律):4 real deploy 降为 **1 real(agent-core)+ 3 dry-run(bash-core / context-core / filesystem-core 各自 `wrangler deploy --dry-run`)**;配合 W2 parallel publishing 允许 `workspace:*` interim
 > - v0.3 (2026-04-21):Post-GPT-R5 body-level narrowing。§7.1 S7/S8 功能表、§7.2 S7 执行步骤 / S8 closure memo、§9.1 画像 / §9.2 verdict、§0.4 显式排除 / §2.2 interaction matrix / §5.3 边界 / §0.3 前置共识 全部与 §0.2 空壳表保持 "agent-core 1 real + 3 workers dry-run" 一致;W3 协同从 llm-wrapper / agent-core/src/llm/ 改为 capability-runtime / bash-core/src/
-> - v0.4 (2026-04-23):implementation closed — `workers/*` 四个 shell、workspace 接线、matrix CI、4 worker build/test/dry-run 全部落地；当前执行环境无 `CLOUDFLARE_*` 凭据，因此 `agent-core` real preview deploy 按 action-plan fallback 记为 pending owner credentials，详见 `docs/issue/pre-worker-matrix/W4-closure.md`
+> - v0.4 (2026-04-23):implementation closed — `workers/*` 四个 shell、workspace 接线、matrix CI、4 worker build/test/dry-run 全部落地；当时仅基于环境变量检查误判为“无 Cloudflare credentials”，这一中间判断随后被 v0.5 的 Wrangler OAuth 验证纠正
 > - v0.5 (2026-04-23):wrangler auth verified + live deploy completed — `npx wrangler whoami` 证明当前环境已登录 OAuth token 且具备 `workers (write)` 权限；`workers/agent-core` 已成功 deploy 到 `https://nano-agent-agent-core-preview.haimang.workers.dev`
 
 ---
@@ -405,7 +405,7 @@ owner 的 `workers/` 顶级目录决策(`plan-pre-worker-matrix.md` §1.2)要求
 
 | 风险 | 触发条件 | 影响 | 缓解 |
 |---|---|---|---|
-| Cloudflare account 未 owner-approved / 权限不足 | owner 未提供 credentials | wrangler deploy 失败 | **Q3 owner-gate**;W4 启动前必须 owner 提供 account ID + API token |
+| 当前执行环境缺少可用的 Wrangler 认证 | `wrangler whoami` 不可用或无 `workers (write)` | wrangler deploy 失败 | 在 real deploy 前先跑 `npx wrangler whoami`；权限不足则停留 dry-run 并显式记录 |
 | workers 的 NACP 解析路径配置错误 | `workspace:*` / published version 选择与当下 W2 状态不匹配 | build 失败 | 在 W4 closure 里显式记录当前采用的解析路径;CI 按该路径验证 |
 | DO binding stub 在 agent-core 未正确 export | NanoSessionDO class 未 export | wrangler deploy 报错 "no class NanoSessionDO" | §7.2 S4 明确 stub class export 要求 |
 | 4 worker 的 `wrangler.jsonc.name` 冲突 or 重名 | 命名策略漂移 | deploy 覆盖 / refused | W4 冻结命名:`nano-agent-<name>`(如 `nano-agent-agent-core`);4 名字互不冲突 |
@@ -852,7 +852,7 @@ W4 是 **"脚手架 + 一次 DevOps 贯通验证"** phase:
   - `tsconfig.json` / README / .gitignore × 4:~50 行 each → ~200 行合计
   - `.github/workflows/workers.yml`:~60 行
   - **总计**:~850 行 YAML/JSON/TS + **1 agent-core real deploy URL + 3 workers dry-run build log**
-- **预期复杂度**:中 — 脚手架本身简单;但 Cloudflare real deploy 依赖 owner credentials(仅 1 次 for agent-core);dry-run 3 份降低 DevOps 坑 exposure
+- **预期复杂度**:中 — 脚手架本身简单;但 Cloudflare real deploy 依赖当前执行环境具备可用 Wrangler 认证(仅 1 次 for agent-core);dry-run 3 份降低 DevOps 坑 exposure
 
 ### 9.2 Value Verdict
 

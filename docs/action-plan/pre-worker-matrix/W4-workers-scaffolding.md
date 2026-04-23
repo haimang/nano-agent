@@ -153,7 +153,7 @@ W4 workers scaffolding
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P3-01 | agent-core real deploy / fallback | 若凭据可用则真实 deploy 到 preview/workers.dev；否则至少 dry-run 并在 closure 记为 shell-deployable pending credentials | `workers/agent-core` | 至少 1 个 live URL，或 deployable fallback 状态明确 | wrangler deploy + curl / wrangler dry-run | live JSON 可访问，或 fallback 证据完整 |
+| P3-01 | agent-core real deploy | 以 preview/workers.dev 完成 1 次真实 deploy，并把 deploy URL / curl 响应写入 closure | `workers/agent-core` | 至少 1 个 live URL | wrangler deploy + curl | live JSON 可访问 |
 | P3-02 | 3 workers dry-run | `wrangler deploy --dry-run` | bash/context/filesystem | 其余 3 个 shell 可 bundle/deploy-shaped | wrangler dry-run | 日志可归档 |
 | P3-03 | W4 closure | 写 deploy evidence 与 dual-path reality | `docs/issue/pre-worker-matrix/W4-closure.md` | W5 可直接引用 | 文档 review | evidence 完整 |
 
@@ -232,21 +232,20 @@ W4 workers scaffolding
 - **本 Phase 修改文件**：
   - `workers/*`（按 deploy 反馈微调）
 - **具体功能预期**：
-  1. 若 owner 提供凭据，`agent-core` 至少有 1 个 live URL
-  2. 若凭据不可用，`agent-core` 也至少达到 shell-deployable + dry-run 成功的 fallback 状态
-  3. 其余 3 workers 至少 dry-run 成功
-  4. evidence 能被 W5 与 future charter 使用
+  1. `agent-core` 至少有 1 个 live URL
+  2. 其余 3 workers 至少 dry-run 成功
+  3. evidence 能被 W5 与 future charter 使用
 - **具体测试安排**：
   - **单测**：`shell smoke`
   - **集成测试**：`wrangler deploy --dry-run`
   - **回归测试**：`pnpm --filter './workers/*' build/test`
   - **手动验证**：`curl agent-core preview URL`
 - **收口标准**：
-  - `agent-core` 达成 real deploy，或 fallback 为 shell-deployable pending credentials
+  - `agent-core` 达成 real deploy
   - 其余 3 workers dry-run 达成
   - W4 closure 记录 dual-path install reality
 - **本 Phase 风险提醒**：
-  - owner-side Cloudflare account / token 是外部 gate
+  - wrangler auth / preview deploy 配置是本 Phase 唯一真正的外部耦合面
 
 ---
 
@@ -257,10 +256,10 @@ W4 workers scaffolding
 #### Q1
 
 - **影响范围**：`Phase 3`
-- **为什么必须确认**：`agent-core real deploy 需要 Cloudflare account / token / preview 策略`
-- **当前建议 / 倾向**：`使用 preview env 完成 1 次真实 deploy；若凭据不可用则按 shell-deployable fallback closure`
-- **Q**：`owner 是否提供 W4 阶段 agent-core preview deploy 所需的 Cloudflare 账户与凭据？`
-- **A**：`若能及时提供，则按 preview env 完成 1 次真实 deploy；若不能及时提供，W4 允许按 "agent-core shell deployable, pending owner credentials" 的 fallback 路径 closure。`
+- **为什么必须确认**：`agent-core real deploy 需要当前执行环境具备可用的 Wrangler 认证与 preview 策略`
+- **当前建议 / 倾向**：`使用 preview env 完成 1 次真实 deploy，并在 closure 记录 URL / version / curl 证据`
+- **Q**：`W4 是否应以 preview env 完成 1 次真实 deploy，而不是只停留在 dry-run？`
+- **A**：`是。当前执行环境已通过 Wrangler OAuth 认证验证，W4 按 1 次真实 preview deploy 收口。`
 
 #### Q2
 
@@ -283,7 +282,7 @@ W4 workers scaffolding
 
 | 风险 / 依赖 | 描述 | 当前判断 | 应对方式 |
 |-------------|------|----------|----------|
-| Cloudflare 凭据 | W4 real deploy 受 owner 环境约束 | `high` | 先完成 shell/CI，最后再做 real deploy |
+| Wrangler 认证与 preview 环境 | W4 real deploy 依赖当前执行环境的 Wrangler 权限与预览配置 | `medium` | 先完成 shell/CI，再用 `wrangler whoami` 验证后做 real deploy |
 | dual-path 漂移 | W2/W4/W5 口径不一致会误导后续 cutover | `medium` | closure 必写当前解析路径 |
 | shell 结构不统一 | 会直接增加 worker-matrix P0 吸收成本 | `high` | Phase 1 统一模板化 |
 | `agent-core` DO slot 漏声明 | 会让唯一 real deploy worker 在 wrangler 阶段直接失败 | `high` | Phase 1 单拆 `P1-03`，把 stub export + bindings + migrations 一次写清 |
@@ -292,7 +291,7 @@ W4 workers scaffolding
 
 - **技术前提**：`W2 skeleton 就绪，W1 worker naming 可读`
 - **运行时前提**：`agent-core real deploy 只验证最小 hello-world fetch path`
-- **组织协作前提**：`owner 可提供 deploy 窗口与账号`
+- **组织协作前提**：`当前执行环境具备可用的 Wrangler OAuth 认证`
 - **上线 / 合并前提**：`matrix CI 与 shell smoke 通过`
 
 ### 7.3 文档同步要求
@@ -334,7 +333,7 @@ W4 workers scaffolding
 1. `workers/` 目录成为物理事实
 2. 4 个 shell 项目结构统一
 3. `agent-core` DO slot 预留完整
-4. `agent-core` 完成 1 次真实 deploy，或 fallback 为 shell-deployable pending credentials
+4. `agent-core` 完成 1 次真实 deploy
 5. 其余 3 个 shell 至少 dry-run 成功
 6. W5 可直接引用 W4 deploy evidence
 

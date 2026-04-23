@@ -14,7 +14,7 @@
 > - `docs/action-plan/pre-worker-matrix/W2-publishing-pipeline.md`
 > - `docs/action-plan/pre-worker-matrix/W3-absorption-blueprint-and-dryrun.md`
 > - `docs/action-plan/pre-worker-matrix/W4-workers-scaffolding.md`
-> 文档状态: `draft`
+> 文档状态: `executed`
 
 ---
 
@@ -115,7 +115,7 @@ W5 Closure & Handoff
 | W0-W4 closure memo 聚合 | `in-scope` | 这是 W5 的核心职责 | `W5 执行期` |
 | 横向 5 对角线检查 | `in-scope` | 单个 phase closure 不会自动完成 | `W5 执行期` |
 | `plan-worker-matrix.md` 全文重写 | `out-of-scope` | W5 只触发 rewrite，不直接代写 | `worker-matrix charter r2` |
-| 因 W4 凭据缺失而补一次真实 deploy | `out-of-scope` | W5 只记录 fallback 或 real 事实，不反向执行 W4 | `worker-matrix P0` |
+| 因历史条件分支而反向补做 W0-W4 实施 | `out-of-scope` | W5 只消费并记录最终事实，不反向重开上游 phase | `不适用` |
 
 ---
 
@@ -189,7 +189,7 @@ W5 Closure & Handoff
   - 6 就绪状态表可直接写进 handoff
 - **本 Phase 风险提醒**：
   - 最容易把“局部完成”误写成“阶段完成”
-  - 最容易忽略 W2 optional 首发、W4 credentials fallback 这类条件分支
+  - 最容易把 design 中的条件分支误当成当前真相，而忽略 W2/W4 已经分别落到首发完成与 real deploy 完成
 
 ### 5.2 Phase 2 — final closure 与 handoff
 
@@ -265,10 +265,10 @@ W5 Closure & Handoff
 #### Q2
 
 - **影响范围**：`Phase 1 / Phase 2`
-- **为什么必须确认**：`关系到 W4 credentials fallback 与 W2 first-publish optional 如何进入最终 verdict`
-- **当前建议 / 倾向**：`W5 应接受条件完成态，只要 closure 诚实、evidence 完整即可`
-- **Q**：`W5 是否接受 W2 “skeleton complete / first publish deferred” 与 W4 “shell-deployable pending credentials” 作为合法 handoff 状态？`
-- **A**：`是。W5 接受这两类条件完成态，只要求 closure 和 handoff 明确写清当前路径与后续触发条件。`
+- **为什么必须确认**：`关系到 W5 写 final verdict 时，是按 design 历史分支写，还是按当前真实已收口状态写`
+- **当前建议 / 倾向**：`按当前真实状态写：W2 first publish completed；W4 real preview deploy completed`
+- **Q**：`W5 是否仍需要把 W2/W4 作为“条件完成态”写入最终真相层？`
+- **A**：`否。历史分支可以保留在 design/action-plan 作为审计背景，但当前 final closure / handoff / meta-doc 一律按已完成事实写。`
 
 ### 6.2 问题整理建议
 
@@ -349,14 +349,74 @@ W5 Closure & Handoff
 
 ## 9. 执行后复盘关注点
 
-- **哪些 Phase 的工作量估计偏差最大**：`待执行后回填`
-- **哪些编号的拆分还不够合理**：`待执行后回填`
-- **哪些问题本应更早问架构师**：`待执行后回填`
-- **哪些测试安排在实际执行中证明不够**：`待执行后回填`
-- **模板本身还需要补什么字段**：`待执行后回填`
+- **哪些 Phase 的工作量估计偏差最大**：`Phase 3。真正耗时的不是 banner flip，而是清理 gate-truth / after-foundations 里残留的旧直连叙事。`
+- **哪些编号的拆分还不够合理**：`P1-02 与 P1-03 实际强耦合；下次可合并成一个“diagonal + readiness audit”工作项。`
+- **哪些问题本应更早问架构师**：`“是否需要同步更新 plan-pre-worker-matrix 本 charter 状态”应更早裁定；本轮最终按 W5 既定边界不改 charter 本体。`
+- **哪些测试安排在实际执行中证明不够**：`文档 phase 不需要代码回归，但需要把“stale wording grep”写成显式校验动作，而不是只写“文档 review”。`
+- **模板本身还需要补什么字段**：`建议补一个“truth-layer docs to synchronize”字段，以及一个“historical branch vs active reality”字段。`
 
 ---
 
 ## 10. 结语
 
 这份 action-plan 以 **把 W0-W4 的 narrowed 成果压成一个真正可交付的阶段终局** 为第一优先级，采用 **先核对、再聚合、最后解锁下游 charter** 的推进方式，优先解决 **局部完成无法自动推出整体完成、handoff 缺少执行路径、meta-doc 与真实 gate 状态脱节** 的问题，并把 **不重跑实现、不越位代写 worker-matrix、接受条件完成态但必须诚实记录** 作为主要约束。整个计划完成后，`pre-worker-matrix / W5` 应达到 **阶段闭环完成且 worker-matrix charter r2 可被正式启动** 的状态。
+
+---
+
+## 11. 工作日志回填（executed）
+
+### 11.1 执行结果总览
+
+W5 已按 action-plan 完成，且当前判断是：
+
+> **pre-worker-matrix 可以正式收口；项目可以转入 worker-matrix 的 charter rewrite r2 与后续执行准备。**
+
+本轮没有新增任何代码实现，全部工作都发生在 closure / handoff / meta-doc / charter state 这一层。
+
+### 11.2 本轮新增文件
+
+1. `docs/issue/pre-worker-matrix/pre-worker-matrix-final-closure.md`
+2. `docs/handoff/pre-worker-matrix-to-worker-matrix.md`
+3. `docs/issue/pre-worker-matrix/W5-closure.md`
+
+### 11.3 本轮修改文件
+
+1. `docs/eval/worker-matrix/00-contexts/00-current-gate-truth.md`
+2. `docs/issue/after-foundations/after-foundations-final-closure.md`
+3. `docs/plan-worker-matrix.md`
+4. `docs/action-plan/pre-worker-matrix/W5-closure-and-handoff.md`
+5. `docs/design/pre-worker-matrix/W5-closure-and-handoff.md`
+
+### 11.4 W5 实际完成的工作项
+
+1. **P1-01 / P1-02 / P1-03**
+   - 复核 W0-W4 五份 closure 的最终状态
+   - 完成横向 5 对角线检查
+   - 产出与 charter §11.1 对齐的 6 条 readiness table
+2. **P2-01 / P2-02 / P2-03**
+   - 新增 pre-worker-matrix final closure
+   - 新增 pre-worker → worker-matrix handoff memo
+   - 新增 W5 自身 closure
+3. **P3-01 / P3-02**
+   - 更新 `00-current-gate-truth.md` 到 rev 3
+   - 更新 `after-foundations-final-closure.md` 的下游 gate 叙事
+   - 将 `plan-worker-matrix.md` 从 `deprecated / awaiting-rewrite-after-pre-worker-matrix-closes` 翻到 `needs-rewrite-r2 / pre-worker-matrix closed`
+
+### 11.5 关键发现与裁定
+
+1. W5 原 action-plan / design 中保留的 **W2 optional 首发** 与 **W4 credentials fallback**，已经不是当前真相层；本轮 final closure / handoff / meta-doc 全部按已完成事实回写。
+2. 当前最重要的风险已经不再是代码缺失，而是 **跨阶段元文档仍沿用旧 gate 叙事**；本轮 Phase 3 的价值主要就在于把这个误导消掉。
+3. `plan-worker-matrix.md` 现在已经被明确解锁，但 **r2 正文仍未写**；这不是 W5 的未完成项，而是 handoff 后的下一阶段工作。
+
+### 11.6 最终收口意见
+
+本阶段已满足 `docs/plan-pre-worker-matrix.md` §11.1 的 6 条 exit criteria：
+
+1. 目录拓扑已冻结
+2. 包策略已冻结
+3. import / publish 策略已冻结
+4. orphan 决策已冻结
+5. 最小 worker scaffold 已存在
+6. worker-matrix r2 起跑线已重写清楚（以 handoff pack + banner flip 的形式）
+
+因此，W5 与整个 pre-worker-matrix 一并收口成立。
