@@ -13,7 +13,7 @@
 > - `docs/rfc/remote-compact-delegate.md`
 > - `docs/rfc/evidence-envelope-forwarding.md`
 > - `docs/action-plan/pre-worker-matrix/W5-closure-and-handoff.md`
-> 文档状态: `draft`
+> 文档状态: `executed`
 
 ---
 
@@ -353,3 +353,59 @@ W1 Cross-Worker Protocol Design
 ## 10. 结语
 
 这份 action-plan 以 **冻结 future cross-worker seam 的方向，而不是抢先实装远端协议** 为第一优先级，采用 **先 reality、再 RFC、最后做 cross-doc consistency** 的推进方式，优先解决 **workspace/compact/evidence 三条 seam 后续实现可能各自发明协议** 的问题，并把 **RFC-only、不得偷渡代码、必须引用现有 contract reality** 作为主要约束。整个计划完成后，`pre-worker-matrix / W1` 应达到 **3 份可直接被后续 phase 消费的方向性 RFC baseline**，从而为后续的 **remote split / service binding code path** 提供稳定参考。
+
+---
+
+## 11. GPT 工作日志回填（2026-04-22）
+
+### 11.1 总体结果
+
+- **结论**：W1 已按 action-plan 以 **RFC-only** 方式完成收口。
+- **核心变化**：3 份 cross-worker RFC 已基于 W0 `@nano-agent/nacp-core@1.4.0` reality 完成 revise / verify；W1 不新增任何代码、schema、matrix entry 或 helper。
+
+### 11.2 新增文件
+
+1. `docs/issue/pre-worker-matrix/W1-closure.md`
+
+### 11.3 修改文件
+
+1. `docs/rfc/nacp-workspace-rpc.md`
+2. `docs/rfc/remote-compact-delegate.md`
+3. `docs/rfc/evidence-envelope-forwarding.md`
+4. `docs/design/pre-worker-matrix/W1-cross-worker-protocols.md`
+5. `docs/design/pre-worker-matrix/W3-absorption-blueprint-and-dryrun.md`
+6. `docs/design/pre-worker-matrix/W5-closure-and-handoff.md`
+7. `docs/action-plan/pre-worker-matrix/W1-cross-worker-protocols.md`
+
+### 11.4 关键实施点
+
+1. **Phase 1 — reality 核对**
+   - 以 `packages/nacp-core/src/messages/context.ts` 确认 remote compact 继续复用 canonical `context.compact.request/response`
+   - 以 `packages/nacp-core/src/messages/system.ts` 确认 evidence forwarding 继续复用 `audit.record`
+   - 以 `packages/workspace-context-artifacts/src/namespace.ts` 与 `packages/session-do-runtime/src/workspace-runtime.ts` 确认 workspace / evidence 的当前 in-process substrate
+2. **Phase 2 — RFC revise / verify**
+   - `nacp-workspace-rpc.md` 改为明确的 future `workspace.fs.*` direction baseline，并显式说明为什么 W1 不实装代码
+   - `remote-compact-delegate.md` 明确 remote compact 是部署拓扑变化，不是新协议本体；坚持复用现有 compact family
+   - `evidence-envelope-forwarding.md` 明确 forwarding 只补 carrier / attribution metadata，EvidenceRecord payload 与 anchor truth 必须保持 W0 shipped shape
+3. **Phase 3 — 一致性收口**
+   - 创建 `docs/issue/pre-worker-matrix/W1-closure.md`
+   - 将 W1 design / action-plan 状态翻转到 executed
+   - 修正 W3/W5 对 W1 的引用口径，使其明确消费的是 **3 份 RFC + W1 closure**，而不是任何 W1 code-ship surface
+
+### 11.5 验证与结果
+
+本轮为文档 phase，按 action-plan 约定执行 **文档/代码对照** 与 **cross-doc consistency**，不新增代码测试。实际完成的核对面：
+
+1. `packages/nacp-core/src/messages/context.ts` ↔ `docs/rfc/remote-compact-delegate.md`
+2. `packages/nacp-core/src/messages/system.ts` ↔ `docs/rfc/evidence-envelope-forwarding.md`
+3. `packages/nacp-core/src/evidence/vocabulary.ts` / `src/transport/cross-seam.ts` ↔ `docs/rfc/evidence-envelope-forwarding.md`
+4. `packages/workspace-context-artifacts/src/namespace.ts` ↔ `docs/rfc/nacp-workspace-rpc.md`
+5. `packages/session-do-runtime/src/workspace-runtime.ts` ↔ `docs/rfc/evidence-envelope-forwarding.md`
+6. `docs/design/pre-worker-matrix/W3-absorption-blueprint-and-dryrun.md` / `W5-closure-and-handoff.md` ↔ W1 RFC-only 口径
+
+### 11.6 最终收口意见
+
+1. W1 的目标已经兑现：3 条 future cross-worker seam 都有可直接引用的方向性 RFC baseline。
+2. W1 没有越界：未偷渡 message family、helper、matrix 注册或 contract test。
+3. W1 与 W0/W3/W5 的引用关系已成闭环：W0 提供 truth，W1 冻结方向，W3/W5 消费 RFC 与 closure 作为后续输入。
+4. 下一阶段可按 DAG 继续进入 `W2-publishing-pipeline`，同时保留 W1 作为 worker-matrix 后续 remote split 的 reference baseline。

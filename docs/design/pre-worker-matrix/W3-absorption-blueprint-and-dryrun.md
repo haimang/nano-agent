@@ -139,7 +139,7 @@ v0.2 立场:
 - **服务于**:worker-matrix 阶段的 absorption sub-phases(P0.A agent.core / P0.B bash.core / P0.C context.core / P0.D filesystem.core 各自的 blueprint 执行)
 - **依赖**:
   - W0 完成(Tier A 吸收后 nacp-core 的 final shape)
-  - W1 完成(新协议定义,blueprint 内对应 import 路径可确定)
+  - W1 完成(3 份 RFC shipped,blueprint 内对应协议 reference 可确定)
   - W4 开始(blueprint 里的"目的地"即 `workers/<name>/src/...`,需要该目录存在)
 - **被谁依赖**:worker-matrix P0 所有 absorption sub-phase(blueprint 是直接消费对象)
 

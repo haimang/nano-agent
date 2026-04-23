@@ -8,13 +8,14 @@
 > - 前置决策:`docs/plan-pre-worker-matrix.md` §1.4(γ / β 路线 owner 接受)
 > - Tier 映射:`docs/plan-pre-worker-matrix.md` §1.3
 > - Cross-worker 交互矩阵:`docs/eval/worker-matrix/cross-worker-interaction-matrix.md`
-> - 当前 NACP contract:`docs/rfc/nacp-core-1-3-draft.md` + `packages/nacp-core/src/messages/`
-> 文档状态:`draft (v0.3 major downgrade post-GPT-review)`
+> - 当前 NACP contract:`docs/rfc/nacp-core-1-4-consolidation.md` + `packages/nacp-core/src/messages/`
+> 文档状态:`executed (v0.4 shipped)`
 >
 > **修订历史:**
 > - **v0.1 (2026-04-21)**:初稿
 > - **v0.2 (2026-04-21)**:W0 design 完成后的回顾性修订 3 处 —— §4 新增 §4.5 引用 W0 sibling design pattern;§7.2 F7 的 `wrapEvidenceAsAudit` 签名基于 W0 §7.2 C3 的 `EvidenceAnchorSchema` 精确化(ctx 冗余消除);§9.3 Q1 标记为 resolved by W0 §7.2 C5。
 > - **v0.3 (2026-04-21) — MAJOR DOWNGRADE**:Post-GPT-review narrowing。GPT review 盲点 4 明确指出 3 条跨 worker 新协议属 Layer 3 远期工作(依 live loop 证据驱动),不应作为 first-wave 硬前置。本 design 整体从 "code-ship + RFC" 降级为 **"RFC-only"**:workspace.fs.* 不实装 Zod schema + 不注册 matrix + 不 ship helper;β compact delegate 确认现有 `context.compact.*` family 足够,不新增 message + 不实装 remote delegate helper;evidence forwarding 不实装 `wrapEvidenceAsAudit` / `extractEvidenceFromAudit` helpers。3 份 RFC 作为 worker-matrix 后续 phase 的 input 仍要写。所有原 v0.2 的 schema 草案保留作为 RFC 起草 reference material。
+> - **v0.4 (2026-04-22)**:executed / shipped — 基于 W0 `@nano-agent/nacp-core@1.4.0` 已落地 reality，对 3 份 RFC 完成 revise / verify，并补齐 W1 closure、W3/W5 cross-doc consistency 与执行状态翻转。
 
 ---
 
@@ -22,22 +23,29 @@
 
 ### 0.1 为什么现在要设计这 3 条协议
 
-pre-worker-matrix 阶段 W0 正在把 5 类 cross-worker 契约吸收进 `nacp-core`(evidence sink / cross-seam anchor / evidence vocabulary / hooks catalog / storage law);但 **W0 只搬移已有契约,不新增跨 worker 行为**。而 owner 在 `plan-worker-matrix.md` r1 讨论中明确:
+pre-worker-matrix 阶段里，W0 已经把 5 类 cross-worker 契约吸收进 `nacp-core`(evidence sink / cross-seam anchor / evidence vocabulary / hooks catalog / storage law)；但 **W0 只搬移已有契约,不新增跨 worker 行为**。而 owner 在 `plan-worker-matrix.md` r1 讨论中明确:
 
 - γ — `filesystem.core` 是**所有文件操作的起点与终点**;其他 worker 必须通过协议调 filesystem.core,禁止本地副本
 - β — `context.core` 是**所有上下文工作的抽象工具**;其他 worker 必须通过协议调 context.core,禁止本地 compact
 
-这两条决策**新产生了跨 worker 通讯面**:
+这两条决策会在 worker-matrix 后续 phase 中稳定导出 3 条跨 worker 通讯面:
 1. `bash.core → filesystem.core` 的全部文件 I/O(今天 in-process)
 2. `agent.core kernel → context.core` 的 compact delegate(今天 in-process)
 3. `filesystem.core / bash.core / context.core → agent.core sink` 的 evidence 流转(今天 in-process + 默认 sink)
 
-这 3 条通讯面在 `nacp-core 1.3.0` 下都**无现成协议承载**(或现有 family 尚未经 live evidence 验证)。W1 v0.3 的定位:**为这 3 条通讯写 3 份方向性 RFC,冻结设计方向供 worker-matrix 后续 phase 在 live loop 证据驱动下实装**;**不在本阶段 ship 代码、不新增 message family、不实装 helper、不注册 matrix entries**。
+W1 的关键判断不是“3 条 seam 都缺协议”，而是：
 
-**事实核查(v0.3 关键支撑)**:
+1. `workspace.fs.*` **今天没有**现成 NACP family，需要 RFC 冻结未来方向
+2. `remote compact delegate` **已有**可复用的 `context.compact.request/response`
+3. `evidence forwarding` **已有**可复用的 `audit.record` carrier，而 payload truth 在 W0 已收口到 `@nano-agent/nacp-core@1.4.0`
+
+因此，W1 的定位是：**为这 3 条通讯写 3 份方向性 RFC，冻结未来 remote split 方向供 worker-matrix 后续 phase 在 live loop 证据驱动下实装**；**不在本阶段 ship 代码、不新增 message family、不实装 helper、不注册 matrix entries**。
+
+**事实核查(v0.4 executed 关键支撑)**:
 - `context.compact.*` 在 `packages/nacp-core/src/messages/context.ts:18-29` 已 shipped — β remote compact delegate 路线 **无需新 message family**,只需 RFC 层文档化跨 worker 调用 pattern
 - `audit.record` 在 `packages/nacp-core/src/messages/system.ts:10-27` 已 shipped — cross-worker evidence forwarding 可 wrap 在 audit.record 内,**无需新 evidence.* family**
-- workspace.fs.* 目前 **无** 现成协议承载 — RFC 冻结未来 shape,实装等 live loop evidence
+- `packages/nacp-core/src/evidence/vocabulary.ts` 与 `src/transport/cross-seam.ts` 已在 W0 收口到 `@nano-agent/nacp-core@1.4.0` — evidence forwarding RFC 必须直接引用这套 shipped truth
+- workspace.fs.* 目前 **无** 现成协议承载 — RFC 冻结未来 shape,实装等待 live loop evidence
 
 ### 0.2 前置共识(v0.3 post-GPT-review 更新)
 
@@ -46,7 +54,7 @@ pre-worker-matrix 阶段 W0 正在把 5 类 cross-worker 契约吸收进 `nacp-c
 - **1.3.0 消费者零破坏**:即使 W1 RFC-only,原则保留以防未来实装时违反
 - **Layer 6 matrix 约定**:未来实装时新 message types 必须在 matrix 注册(RFC 里描述即可,不实装)
 - **tenant boundary 强制**:未来实装时新 message 必须经 `verifyTenantBoundary` gate(同上)
-- **RFC 不依赖 W0 完成**:本 design 产 RFC 文档,可与 W0 实装并行;不阻塞 W0 进度
+- **W1 以 W0 completed baseline 为前提**:executed 版本直接引用 W0 `@nano-agent/nacp-core@1.4.0` shipped truth,不再按“与 W0 并行起草”的口径表述
 
 ### 0.5 v0.3 MAJOR DOWNGRADE 说明
 

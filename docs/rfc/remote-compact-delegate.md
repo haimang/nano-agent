@@ -1,7 +1,11 @@
-# RFC: Remote Compact Delegate（方向性草案）
+# RFC: Remote Compact Delegate（方向性执行版）
 
-> 状态：Directional RFC / pre-worker-matrix 输入  
-> 直接上游：`docs/design/pre-worker-matrix/W1-cross-worker-protocols.md`  
+> 状态：`executed directional RFC`
+> 当前阶段：**W1 只冻结 delegate 方向，不冻结 helper 实装**
+> 直接上游：`docs/design/pre-worker-matrix/W1-cross-worker-protocols.md`
+> 关联 RFC：
+> - `docs/rfc/nacp-workspace-rpc.md`
+> - `docs/rfc/evidence-envelope-forwarding.md`
 > 直接下游：worker-matrix `context-core` 设计、`agent-core` ↔ `context-core` binding profile
 
 ## 1. 问题定义
@@ -10,9 +14,9 @@
 
 **当 compact 从 host-local helper 演进成远端 `context-core` worker 能力时，应该沿用哪一层 contract。**
 
-当前事实锚点：
+当前事实锚点（W1 实施时实际对照）：
 
-- `packages/nacp-core/` 中现有 `context.compact.request/response` reality
+- `packages/nacp-core/src/messages/context.ts`
 - `packages/workspace-context-artifacts/src/compact-boundary.ts`
 - `packages/workspace-context-artifacts/src/context-assembler.ts`
 - `packages/session-do-runtime/src/workspace-runtime.ts`
@@ -28,6 +32,14 @@
 2. `context-core` 作为远端执行者消费该 request  
 3. 返回 canonical compact response  
 4. transport 可以是 service binding，但 message family 仍然是原有 compact contract
+
+当前 shipped reality 已经足够支撑这个判断：
+
+- `context.compact.request` body = `{ history_ref, target_token_budget }`
+- `context.compact.response` body = `{ status, summary_ref?, tokens_before?, tokens_after?, error? }`
+- 现有 allowed producer roles 已经匹配 `session/platform -> capability`
+
+因此，W1 需要冻结的不是新 schema，而是**远端执行位置变化不构成新协议本体**这一纪律。
 
 ## 3. 为什么不发明第二套 family
 
@@ -68,14 +80,20 @@ agent-core
 - 把 `history_ref` / `summary_ref` 私下换成另一套 internal-only body
 - 先转成 shell-ish text 再发给远端 worker
 
-## 5. 本 RFC 对 `context-core` 的最低要求
+## 5. 为什么 W1 不实装 remote compact helper
+
+1. **现有码面已经证明 canonical compact family 足够表达语义，但没有 live remote worker 证据证明 helper 应该长什么样。**
+2. **一旦现在提前写 `createRemoteCompactDelegate()`，就等于把 transport / retry / timeout / queueing 细节过早固化。**
+3. **W1 要冻结的是“继续复用 existing compact family”，不是把 `context-core` 的 first-wave deploy 逻辑偷渡进 pre-worker-matrix。**
+
+## 6. 本 RFC 对 `context-core` 的最低要求
 
 1. `context-core` 必须把 compact 当成 typed contract，不是字符串处理任务  
 2. 远端执行失败时返回 explicit failure，不允许 success-shaped empty summary  
 3. compact 前后的 evidence / audit 记录继续保留原有 vocabulary，不因为 remote hop 而换 shape  
 4. 若后续加入 rerank / layered selection，它们是 **compact planner** 的前后处理，不是本 RFC 的 wire 变更理由
 
-## 6. 明确不支持 / 不冻结的部分
+## 7. 明确不支持 / 不冻结的部分
 
 本 RFC 当前**不冻结**：
 
@@ -87,7 +105,7 @@ agent-core
 
 这些都属于 worker-matrix 与后续 action-plan 再决定的执行问题，而不是 pre-worker-matrix 的协议边界问题。
 
-## 7. 与现有代码事实的对应关系
+## 8. 与现有代码事实的对应关系
 
 | 事实 | 当前代码锚点 | 这份 RFC 的含义 |
 |---|---|---|
@@ -95,6 +113,6 @@ agent-core
 | runtime compact seam 已存在 | `compact-boundary.ts` / `context-assembler.ts` | 远端只改变执行位置 |
 | live runtime 已有 evidence wiring | `session-do-runtime/src/workspace-runtime.ts` | remote compact 也要继续保留 evidence truth |
 
-## 8. 最终判断
+## 9. 最终判断
 
 `remote compact delegate` 是一个**部署拓扑决定**，不是一个**新协议本体**。这份 RFC 的最终价值，就是提前堵住“为了 context-core worker 化而再造一套 compact 私有消息”的冲动，把 worker-matrix 之后的实现，强制收敛在现有 compact canonical contract 上。
