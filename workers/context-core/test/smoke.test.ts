@@ -16,6 +16,7 @@ describe("context-core shell smoke", () => {
     expect(body.status).toBe("ok");
     expect(body.phase).toBe("worker-matrix-P3-absorbed");
     expect(body.absorbed_runtime).toBe(true);
+    expect(body.library_worker).toBe(true);
   });
 
   it("returns NACP versions from the shell response", async () => {

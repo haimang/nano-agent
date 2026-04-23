@@ -10,6 +10,7 @@ function createShellResponse(): ContextCoreShellResponse {
     status: "ok",
     phase: "worker-matrix-P3-absorbed",
     absorbed_runtime: true,
+    library_worker: true,
   };
 }
 

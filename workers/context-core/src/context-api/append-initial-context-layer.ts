@@ -25,10 +25,9 @@
  * 不调 assembler 任何 mutator(也没有 mutator 可调)。
  */
 
+import type { ContextAssembler } from "../context-assembler.js";
 import type { ContextLayer } from "../context-layers.js";
 import type { SessionStartInitialContext } from "@haimang/nacp-session";
-
-type InitialContextTarget = object;
 
 /**
  * Rough 4-bytes-per-token estimator; intentionally cheap — D03 F4 final
@@ -87,7 +86,7 @@ export function buildInitialContextLayers(
  * once the DO instance drops its `composition.workspace.assembler`, the
  * pending buffer disappears too. No module-level leak.
  */
-const PENDING: WeakMap<InitialContextTarget, ContextLayer[]> = new WeakMap();
+const PENDING: WeakMap<ContextAssembler, ContextLayer[]> = new WeakMap();
 
 /**
  * Host consumer entry point. Called from `NanoSessionDO.dispatchAdmissibleFrame`
@@ -103,7 +102,7 @@ const PENDING: WeakMap<InitialContextTarget, ContextLayer[]> = new WeakMap();
  *     and feeds it to `assemble()` at turn time.
  */
 export function appendInitialContextLayer(
-  assembler: InitialContextTarget,
+  assembler: ContextAssembler,
   payload: SessionStartInitialContext,
 ): void {
   const list = PENDING.get(assembler) ?? [];
@@ -133,7 +132,7 @@ export function appendInitialContextLayer(
  * it must re-call `appendInitialContextLayer` explicitly.
  */
 export function drainPendingInitialContextLayers(
-  assembler: InitialContextTarget,
+  assembler: ContextAssembler,
 ): ContextLayer[] {
   const list = PENDING.get(assembler);
   if (!list || list.length === 0) {
@@ -148,7 +147,7 @@ export function drainPendingInitialContextLayers(
  * tests assert pending-list state without running a full assemble().
  */
 export function peekPendingInitialContextLayers(
-  assembler: InitialContextTarget,
+  assembler: ContextAssembler,
 ): readonly ContextLayer[] {
   return PENDING.get(assembler) ?? [];
 }

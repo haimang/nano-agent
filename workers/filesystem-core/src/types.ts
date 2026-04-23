@@ -63,4 +63,5 @@ export interface FilesystemCoreShellResponse {
   readonly status: "ok";
   readonly phase: "worker-matrix-P4-absorbed";
   readonly absorbed_runtime: true;
+  readonly library_worker: true;
 }

@@ -10,6 +10,7 @@ function createShellResponse(): FilesystemCoreShellResponse {
     status: "ok",
     phase: "worker-matrix-P4-absorbed",
     absorbed_runtime: true,
+    library_worker: true,
   };
 }
 

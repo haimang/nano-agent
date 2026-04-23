@@ -52,6 +52,9 @@ export type {
 } from "./refs.js";
 
 // ── Context layers ──
+// Coexistence export: context-core now carries the worker-side canonical
+// copy, but WCA keeps these exports during the overlap period so current
+// consumers do not break before P5 cutover/deprecation.
 export {
   ContextLayerKindSchema,
   ContextLayerSchema,
@@ -133,6 +136,10 @@ export type { Mount, RouteResult } from "./mounts.js";
 export { WorkspaceNamespace } from "./namespace.js";
 
 // ── A7 Phase 6 evidence emitters ──
+// Coexistence export: assembly/compact/snapshot now also exist in
+// `workers/context-core/src/evidence-emitters-context.ts`, and artifact
+// lifecycle helpers now also exist in
+// `workers/filesystem-core/src/evidence-emitters-filesystem.ts`.
 export {
   buildAssemblyEvidence,
   emitAssemblyEvidence,

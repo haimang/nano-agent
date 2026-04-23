@@ -181,6 +181,14 @@ export function emitCompactEvidence(
 // Artifact lifecycle evidence
 // ─────────────────────────────────────────────────────────────────────
 
+/**
+ * Coexistence duplicate:
+ * canonical first-wave worker ownership now also lives in
+ * `workers/filesystem-core/src/evidence-emitters-filesystem.ts`.
+ * The package keeps these artifact helpers during the P3/P4→P5 overlap
+ * so existing WCA consumers do not break before cutover/deprecation.
+ */
+
 export interface ArtifactEvidenceInput {
   readonly artifactName: string;
   readonly stage: ArtifactLifecycleStage;
