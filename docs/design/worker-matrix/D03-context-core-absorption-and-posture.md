@@ -282,26 +282,29 @@
 - **边界情况**:原 `evidence-emitters.ts` 保留整体原位作 re-export,避免 consumer 突然红
 - **一句话收口目标**:✅ **3 类 evidence helper(assembly/compact/snapshot)+ 2 结构类型迁入 workers/context-core/src/evidence/;artifact helper 留在原文件供 D04 搬**
 
-#### F4: `appendInitialContextLayer` API
+#### F4: `appendInitialContextLayer` API(per P1-P5 GPT review R1 校准)
 
 - **输入**:D05 的 caller 期望
-- **输出**:
+- **输出**(仅顶层 helper;**不**在 `ContextAssembler` 上加 method):
   ```ts
   export function appendInitialContextLayer(
     assembler: ContextAssembler,
     payload: SessionStartInitialContext
   ): void;
   ```
-  或 assembler method:`assembler.appendInitialContextLayer(payload: SessionStartInitialContext): void`
 - **主要调用者**:D05 在 host `dispatchAdmissibleFrame` 内 `session.start` 分支
-- **核心逻辑**:
-  1. payload 已由 `nacp-session::SessionStartInitialContextSchema` 解析
-  2. 按 payload 内容 push 对应 layer 到 assembler 的 layers stack;保留既有 `layer priority / redaction` 规则
-  3. 无副作用 evidence(evidence 由 host composition 在 assemble 时统一发)
+- **核心逻辑(R1 校准)**:
+  1. `ContextAssembler` 当前 public API 仅 `assemble(layers: ContextLayer[]): AssemblyResult` + `setEvidenceWiring()`;**不存在** `appendLayer()` mutator,**不存在**可 push 的内部 layers stack — 因此本 helper 不能改 assembler 内部状态
+  2. `ContextLayerKindSchema` 当前合法枚举 **仅** `system / session / workspace_summary / artifact_summary / recent_transcript / injected` 6 个;**`initial_context` 不是合法 layer kind**,本 helper 不得发明该 kind
+  3. 本 helper 的实装策略:**维护 assembler 之外的 pending layers list**(按 DO instance / assembler ref 作 key 的模块级或 anchor-scoped 存储),把 `payload` 映射成 1 条或多条合法 canonical `ContextLayer`(**首选 `session`**,或当 payload 形态明确是"前端一次性注入上下文片段"时走 `injected`)
+  4. payload 已由 `nacp-session::SessionStartInitialContextSchema` 解析;生成 layer 的 `required` 默认 `false`,`priority` 按 canonical 层级 + 稳定 offset,`tokenEstimate` 由 helper 估算
+  5. host 在 kernel turn 组装 `assemble(layers)` 入参时把 pending list 与既有 turn-level layers **合并**传入;pending 推荐 per-session 持久,避免 follow-up turn 丢失 initial context
+  6. 无副作用 evidence(evidence 由 host composition 在 assemble 时统一发;`AssemblyEvidenceRecord.assembledKinds` 会自然反映该 layer 是否被纳入;**不发明** `layer_kind` 字段 — 该字段不存在于 `AssemblyEvidenceRecord`)
 - **边界情况**:
-  - payload 为空 / undefined → no-op
-  - payload 含多 layer 时 → 按 schema 顺序依次 append
-- **一句话收口目标**:✅ **API 签名冻结;package-local test 覆盖空 payload / 单 layer / 多 layer 三类;D05 作者可直接按该 shape 消费**
+  - payload 为空 / undefined → helper no-op
+  - payload 含多字段 → helper 可生成多条 layer(同 kind 允许多条,`priority` 间距保证 tiebreaker 稳定)
+  - pending list 若未被 host 合并到 `assemble()` 入参 → layer 不会出现在 `AssemblyResult`;这是 "consumer 调了 helper 但 host 漏合并" 的 bug,不由本 helper 自行补救
+- **一句话收口目标**:✅ **helper 签名冻结(顶层 function,不扩 assembler 公共 API);映射到 canonical layer kinds(`session` / `injected`);pending list 由 host 在 assemble 时合并;package-local test 覆盖空 payload / 单 layer / 多 layer 三类;D05 consumer 直接按该 shape 消费;e2e 断言基于 `AssemblyEvidenceRecord.assembledKinds` 含 mapped canonical kind,而非 `layer_kind`**
 
 #### F5: tests 迁移
 
@@ -402,3 +405,4 @@ D03 在 P3 phase 提供 context runtime 的物理所有权迁移 + `appendInitia
 | 版本 | 日期 | 修改者 | 主要变更 |
 |------|------|--------|----------|
 | v0.1 | 2026-04-23 | Claude Opus 4.7 | 初稿;基于 charter + W3 C2/D1 blueprint + Q3c 编制 |
+| v0.2 | 2026-04-23 | Claude Opus 4.7 | 吸收 P1-P5 GPT review R1:F4 `appendInitialContextLayer` 改为 helper-maintained pending layers,不扩 assembler API / 不发明 `initial_context` layer kind / 映射到 canonical `session` 或 `injected`;e2e 断言基于 `assembledKinds` 而非 `layer_kind` |
