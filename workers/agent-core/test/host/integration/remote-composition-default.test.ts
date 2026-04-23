@@ -22,7 +22,12 @@ describe("NanoSessionDO default composition selection (A4-A5 review R3)", () => 
       hooks: "local",
       provider: "local",
     });
-    expect(s.hooks).toBeUndefined();
+    // P2 Phase 2 upgrade: default-factory hooks is a non-undefined
+    // `P2-stub` placeholder (full live wiring is a later charter).
+    // The assertion was "undefined" under W4 shell; now it's an object
+    // with `phase: "P2-stub"`.
+    expect(s.hooks).not.toBeUndefined();
+    expect((s.hooks as { phase?: string })?.phase).toBe("P2-stub");
   });
 
   it("picks the remote factory when HOOK_WORKER is bound, and emitHook goes through the fake binding", async () => {

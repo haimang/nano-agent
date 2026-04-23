@@ -127,11 +127,38 @@ describe("createDefaultCompositionFactory", () => {
     expect(handles.profile.provider).toBe("local");
   });
 
-  it("returns undefined subsystem handles (no-op default)", () => {
+  it("P2 Phase 2: returns 6 non-undefined subsystem handles (D06 live default)", () => {
     const factory = createDefaultCompositionFactory();
     const handles = factory.create(makeEnv(), DEFAULT_RUNTIME_CONFIG);
-    expect(handles.kernel).toBeUndefined();
-    expect(handles.llm).toBeUndefined();
-    expect(handles.hooks).toBeUndefined();
+    // All 6 live handles must be non-undefined so the turn loop can
+    // consume them without null-gymnastics (P2 DoD #2).
+    expect(handles.kernel).not.toBeUndefined();
+    expect(handles.llm).not.toBeUndefined();
+    expect(handles.capability).not.toBeUndefined();
+    expect(handles.workspace).not.toBeUndefined();
+    expect(handles.hooks).not.toBeUndefined();
+    expect(handles.eval).not.toBeUndefined();
+    // Storage too (P2 Phase 2 adds it honestly as 'host-local' marker).
+    expect(handles.storage).not.toBeUndefined();
+    // profile still survives (existing contract).
+    expect(handles.profile).toBeDefined();
+  });
+
+  it("P2 Phase 2: workspace.assembler is a ContextAssembler with assemble() method (load-bearing for D05 R1 consumer)", () => {
+    const factory = createDefaultCompositionFactory();
+    const handles = factory.create(makeEnv(), DEFAULT_RUNTIME_CONFIG);
+    const ws = handles.workspace as { assembler?: { assemble?: unknown } };
+    expect(ws).toBeDefined();
+    expect(ws.assembler).toBeDefined();
+    expect(typeof ws.assembler?.assemble).toBe("function");
+  });
+
+  it("P2 Phase 2: eval handle wraps a BoundedEvalSink (record-shaped emit + exposed sink)", () => {
+    const factory = createDefaultCompositionFactory();
+    const handles = factory.create(makeEnv(), DEFAULT_RUNTIME_CONFIG);
+    const evalHandle = handles.eval as { emit?: unknown; sink?: unknown };
+    expect(evalHandle).toBeDefined();
+    expect(typeof evalHandle.emit).toBe("function");
+    expect(evalHandle.sink).toBeDefined();
   });
 });

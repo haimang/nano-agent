@@ -25,13 +25,16 @@
       "new_classes": ["NanoSessionDO"]
     }
   ],
-  // Future service bindings stay commented until the downstream workers
-  // have real deploy targets. W4 only proves the host shell shape.
-  // "services": [
-  //   { "binding": "BASH_CORE", "service": "nano-agent-bash-core" },
-  //   { "binding": "CONTEXT_CORE", "service": "nano-agent-context-core" },
-  //   { "binding": "FILESYSTEM_CORE", "service": "nano-agent-filesystem-core" }
-  // ],
+  // P2 Phase 4 (D07 activation): BASH_CORE service binding activated
+  // — the downstream worker `nano-agent-bash-core-preview` is live
+  // (P1.B Phase 5 deploy; Version ID 50335742-e9e9-4f49-b6d7-ec58e0d1cfb4).
+  // CONTEXT_CORE / FILESYSTEM_CORE stay commented until P3 / P4 posture
+  // decisions.
+  "services": [
+    { "binding": "BASH_CORE", "service": "nano-agent-bash-core" }
+    // { "binding": "CONTEXT_CORE", "service": "nano-agent-context-core" },
+    // { "binding": "FILESYSTEM_CORE", "service": "nano-agent-filesystem-core" }
+  ],
   "env": {
     "preview": {
       "vars": {
@@ -45,7 +48,10 @@
             "class_name": "NanoSessionDO"
           }
         ]
-      }
+      },
+      "services": [
+        { "binding": "BASH_CORE", "service": "nano-agent-bash-core-preview" }
+      ]
     }
   }
 }
