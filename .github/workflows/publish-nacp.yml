@@ -65,14 +65,14 @@ jobs:
 
           echo "Publishing bundle ${TAG_VERSION}: ${CORE_NAME}@${CORE_VERSION} + ${SESSION_NAME}@${SESSION_VERSION}"
 
-      - name: Typecheck NACP packages
+      - name: Typecheck and build nacp-core
         run: |
           pnpm --filter @haimang/nacp-core typecheck
-          pnpm --filter @haimang/nacp-session typecheck
-
-      - name: Build NACP packages
-        run: |
           pnpm --filter @haimang/nacp-core build
+
+      - name: Typecheck and build nacp-session
+        run: |
+          pnpm --filter @haimang/nacp-session typecheck
           pnpm --filter @haimang/nacp-session build
 
       - name: Test NACP packages
