@@ -109,7 +109,7 @@
 | `ReferenceBackend.connected` | constructor 参数 / env | `false` | 切 `true` 走 owner gate |
 | tenant wrapper API | `tenantR2* / tenantKv* / tenantDoStorage*` | B9 契约保持 | 按 nacp-core storage-law 演进 |
 | `MountRouter` 注册 | `register(mount, backend)` | 不改 | 新 backend 走独立 RFC |
-| `buildArtifactEvidence / emitArtifactEvidence` | evidence helper | 迁入 filesystem.core/evidence | 随 filesystem.core 共演 |
+| `buildArtifactEvidence / emitArtifactEvidence` | evidence helper | 迁入 `filesystem-core/evidence-emitters-filesystem.ts` | 随 filesystem.core 共演 |
 | `WorkspaceNamespace` public API | `readFile / writeFile / listDir / stat / deleteFile` | byte-identical | 新 op(如 mkdir proper)走 W1 RFC revision |
 
 ### 3.3 完全解耦点
@@ -120,8 +120,8 @@
 
 ### 3.4 聚合点
 
-- **聚合对象**:`workers/filesystem-core/src/` 作为 workspace/storage substrate 唯一物理归属
-- **聚合形式**:W3 C2/D1 blueprint §4 目标目录(`types.ts / paths.ts / refs.ts / artifacts.ts / prepared-artifacts.ts / promotion.ts / mounts.ts / namespace.ts / backends/{memory,reference,types}.ts / evidence/artifact.ts`)+ D2 所有 tenant* + placement + adapters + calibration
+- **聚合对象**:`workers/filesystem-core/src/` 作为 workspace/storage substrate 的 worker-side canonical copy
+- **聚合形式**:W3 C2/D1 blueprint §4 目标目录(`types.ts / paths.ts / refs.ts / artifacts.ts / prepared-artifacts.ts / promotion.ts / mounts.ts / namespace.ts / backends/{memory,reference,types}.ts / evidence-emitters-filesystem.ts`)+ D2 所有 tenant* + placement + adapters + calibration
 - **为什么不能分散**:workspace truth 单一源 — path / ref / tenant law 散落会让 agent/bash/context 拿不同版本的 workspace
 
 ---
@@ -163,10 +163,10 @@
 
 - **[S1]** WCA filesystem slice(D1)搬进 `workers/filesystem-core/src/`:`types.ts / paths.ts / refs.ts / artifacts.ts / prepared-artifacts.ts / promotion.ts / mounts.ts / namespace.ts / backends/{memory.ts, reference.ts, types.ts}`
 - **[S2]** `storage-topology` 全包(D2)搬进 `workers/filesystem-core/src/storage/`:`tenant*` helpers + `placement/` + `adapters/{do,kv,r2}/*` + `calibration/`
-- **[S3]** evidence-emitters **artifact 侧** helper(`build/emitArtifactEvidence`)迁入 `workers/filesystem-core/src/evidence/artifact.ts`
+- **[S3]** evidence-emitters **artifact 侧** helper(`build/emitArtifactEvidence`)迁入 `workers/filesystem-core/src/evidence-emitters-filesystem.ts`
 - **[S4]** `EvidenceAnchorLike / EvidenceSinkLike` 结构类型在 filesystem.core 内部各自 copy(保持薄 structural seam,对齐 D03 F3)
 - **[S5]** tests(WCA filesystem 相关 + storage-topology 全部)迁到 `workers/filesystem-core/test/`
-- **[S6]** `workers/filesystem-core/src/index.ts` 从 version-probe 升级为 workspace/storage substrate entry(暴露 public API;保留 version-probe JSON shape 兼容)
+- **[S6]** `workers/filesystem-core/src/index.ts` 从 W4 version-probe 升级为 **probe-only library worker entry**(`absorbed_runtime: true` + `library_worker: true`);不把 filesystem/storage runtime 作为远端 HTTP API 暴露
 - **[S7]** `workers/filesystem-core/package.json` 补齐 devDependencies;`dependencies` 保持 `@haimang/nacp-core workspace:*` + 必要 Tier B(如果 D2 helpers 依赖 nacp-core storage-law 则保持)
 - **[S8]** Posture 冻结:host-local first-wave(Q4a)— 代码层 + 文档层显式声明
 - **[S9]** `ReferenceBackend.connected` 默认 `false` 不变
@@ -254,7 +254,7 @@
 | F2 | D2 storage-topology 全包搬家 | `storage-topology` → workers/filesystem-core/src/storage/ | ✅ `tenant*` / `placement/` / `adapters/` / `calibration/` 完整搬;B9 契约不变 |
 | F3 | evidence-emitters artifact 侧分拣 | artifact helper + 结构类型 copy → workers/filesystem-core/src/evidence/ | ✅ `build/emitArtifactEvidence` + 2 结构类型迁入 |
 | F4 | tests 迁移 | WCA filesystem 相关 + storage-topology 全部 | ✅ `pnpm --filter workers/filesystem-core test` 全绿;B7 LIVE 5 tests 全绿 |
-| F5 | `workers/filesystem-core/src/index.ts` 升级 | 从 probe 升为 substrate entry | ✅ public API 完整;版本 probe JSON 兼容 |
+| F5 | `workers/filesystem-core/src/index.ts` 升级 | 从 probe 升为 probe-only library worker entry | ✅ `absorbed_runtime: true` + `library_worker: true`;不对外暴露 filesystem/storage runtime HTTP API |
 | F6 | package.json 更新 | devDeps 补 | ✅ `pnpm install` 绿;B9 tenant 依赖继续指 `@haimang/nacp-core` |
 | F7 | posture 冻结 | host-local 显式声明 | ✅ 文档 + 代码层 asserting;`FILESYSTEM_CORE` binding 仍注释态 |
 | F8 | `ReferenceBackend.connected` 默认 false 保证 | 不改 default | ✅ test 断言 `connected === false`;env gate 可 opt-in |
@@ -284,7 +284,7 @@
 #### F3: evidence-emitters artifact 侧分拣
 
 - **输入**:`packages/workspace-context-artifacts/src/evidence-emitters.ts`(mixed)
-- **输出**:`workers/filesystem-core/src/evidence/artifact.ts`;2 结构类型各自 copy
+- **输出**:`workers/filesystem-core/src/evidence-emitters-filesystem.ts`;2 结构类型各自 copy
 - **核心逻辑**:按 W3 blueprint §3.3 抽 `buildArtifactEvidence / emitArtifactEvidence`;`EvidenceAnchorLike / EvidenceSinkLike` 结构类型在 filesystem.core 也有一份(与 D03 F3 镜像)
 - **边界情况**:原 evidence-emitters.ts 保持原位作共存期 re-export
 - **一句话收口目标**:✅ **artifact 类 build/emit helper + 2 结构类型迁入 workers/filesystem-core/src/evidence;D03 context 侧不受影响**
@@ -300,8 +300,8 @@
 
 - **输入**:F1-F3 aggregate
 - **输出**:升级后的 `workers/filesystem-core/src/index.ts`
-- **核心逻辑**:保留 fetch handler 默认返回 version-probe JSON;export public API(`MountRouter` / `WorkspaceNamespace` / `InMemoryArtifactStore` / `ReferenceBackend` / `promoteArtifact` / `tenant*` helpers)
-- **一句话收口目标**:✅ **public API 全暴露;index.ts 形状服从 host-local posture(不需独立 fetch 路由到 tool.call)**
+- **核心逻辑**:保留 fetch handler 默认返回 version-probe JSON，并把 worker 明确标为 `library_worker: true`;不要求把 D1/D2 API 聚合进 deploy entry
+- **一句话收口目标**:✅ **library worker 身份清晰;index.ts 形状服从 host-local posture(不需独立 fetch 路由到 runtime substrate)**
 
 #### F6: package.json
 

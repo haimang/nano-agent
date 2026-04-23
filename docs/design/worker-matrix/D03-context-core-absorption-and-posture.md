@@ -118,8 +118,8 @@
 
 ### 3.4 聚合点
 
-- **聚合对象**:`workers/context-core/src/` 作为 context substrate 唯一物理归属
-- **聚合形式**:W3 C2 blueprint §4 建议目录(`context-layers.ts / context-assembler.ts / compact-boundary.ts / redaction.ts / snapshot.ts / evidence/{assembly.ts, compact.ts, snapshot.ts}/` + `budget/ async-compact/ inspector-facade/` 三个 C1 子目录)
+- **聚合对象**:`workers/context-core/src/` 作为 context substrate 的 worker-side canonical copy
+- **聚合形式**:W3 C2 blueprint §4 建议目录(`context-layers.ts / context-assembler.ts / compact-boundary.ts / redaction.ts / snapshot.ts / evidence-emitters-context.ts` + `budget/ async-compact/ inspector-facade/` 三个 C1 子目录)
 - **为什么不能分散**:C1 + C2 协同提供 assembly + compact + evidence 的完整语义;分散会让 host consumer 无单一 owner 可调
 
 ---
@@ -164,10 +164,10 @@
 
 - **[S1]** `packages/context-management/src/**`(C1)搬进 `workers/context-core/src/`:`budget/ async-compact/ inspector-facade/` 三子目录;public API 在 index.ts aggregate
 - **[S2]** `packages/workspace-context-artifacts/src/` 的 context slice(`context-layers.ts / context-assembler.ts / compact-boundary.ts / redaction.ts / snapshot.ts`)搬进 `workers/context-core/src/`
-- **[S3]** `evidence-emitters.ts` 中 **context 侧 helper**(`build/emitAssemblyEvidence / build/emitCompactEvidence / build/emitSnapshotEvidence`)+ `EvidenceAnchorLike / EvidenceSinkLike` 结构类型搬进 `workers/context-core/src/evidence/{assembly.ts, compact.ts, snapshot.ts}/`
+- **[S3]** `evidence-emitters.ts` 中 **context 侧 helper**(`build/emitAssemblyEvidence / build/emitCompactEvidence / build/emitSnapshotEvidence`)+ `EvidenceAnchorLike / EvidenceSinkLike` 结构类型搬进 `workers/context-core/src/evidence-emitters-context.ts`
 - **[S4]** 新增 `appendInitialContextLayer(payload: SessionStartInitialContext): void` API 与关联类型冻结;本 PR 先 ship API 形态,host 消费由 D05 完成
 - **[S5]** tests(C1 package-local + C2 slice 涉及 tests)迁到 `workers/context-core/test/`
-- **[S6]** `workers/context-core/src/index.ts` 从 version-probe 升级为 context runtime entry(暴露 public API;保留 version-probe JSON shape 兼容)
+- **[S6]** `workers/context-core/src/index.ts` 从 W4 version-probe 升级为 **probe-only library worker entry**(`absorbed_runtime: true` + `library_worker: true`);不把 context runtime 作为远端 HTTP API 暴露
 - **[S7]** `workers/context-core/package.json` 补齐 devDependencies(C1/C2 原需 zod / typescript / vitest);`dependencies` 含 `@haimang/nacp-core workspace:*`、`@nano-agent/storage-topology workspace:*`(本阶段保留,D04 后视具体 import 是否仍需)
 - **[S8]** 首波 compact posture 在文档层与代码层显式:**compact 保持 opt-in,不默认挂;`createKernelCompactDelegate` 作为 opt-in factory 继续存在但不被 default composition 默认调用**
 - **[S9]** `restoreVersion` 继续 throw `not implemented`,honest-partial 不改
@@ -248,7 +248,7 @@
 | F3 | evidence-emitters context 侧分拣 | assembly/compact/snapshot helpers + 2 结构类型 → workers/context-core/src/evidence/ | ✅ context 侧 3 类 build+emit helper + `EvidenceAnchorLike/EvidenceSinkLike` 结构类型迁入 |
 | F4 | `appendInitialContextLayer` API | context.core 提供给 host 的 layer push API | ✅ 签名冻结为 `(payload: SessionStartInitialContext) => void`;package-local test 验证 shape + 空 payload 行为 |
 | F5 | tests 迁移 | C1 + C2 涉及的 package-local tests | ✅ `pnpm --filter workers/context-core test` 全绿(>= 原 WCA C2 涉及 + 97 C1)|
-| F6 | `workers/context-core/src/index.ts` 升级 | 从 version-probe 升为 context runtime entry | ✅ 暴露 public API;保留 version-probe JSON 兼容 |
+| F6 | `workers/context-core/src/index.ts` 升级 | 从 version-probe 升为 probe-only library worker entry | ✅ `absorbed_runtime: true` + `library_worker: true`;不对外暴露 context runtime HTTP API |
 | F7 | compact posture 冻结 | 确认 opt-in 保持 | ✅ `createKernelCompactDelegate` 存在但不被 default composition 默认调用;文档层 + 代码层双重 asserting |
 | F8 | `restoreVersion` honest-partial 保留 | 不改 | ✅ 继续 throw `not implemented`;test 覆盖 |
 
@@ -259,7 +259,7 @@
 - **输入**:`packages/context-management/src/**`
 - **输出**:`workers/context-core/src/{budget,async-compact,inspector-facade}/`
 - **主要调用者**:D05 host consumer(via `appendInitialContextLayer`)、D06 composition(via opt-in compact delegate)
-- **核心逻辑**:cp -r src → workers/context-core/src;保留 3 子目录;public API 由 `workers/context-core/src/index.ts` aggregate;`AsyncCompactOrchestrator` 保持 armed → prepare → commit 生命周期
+- **核心逻辑**:cp -r src → workers/context-core/src;保留 3 子目录;`index.ts` 继续只 serve probe/library-worker identity,不承担 runtime aggregate export;`AsyncCompactOrchestrator` 保持 armed → prepare → commit 生命周期
 - **边界情况**:`inspector-facade` 默认 OFF;env gate by `ENABLE_INSPECTOR`
 - **一句话收口目标**:✅ **3 子目录完整搬;97 C1 tests package-local 全绿**
 
@@ -274,7 +274,7 @@
 #### F3: evidence-emitters context 侧分拣
 
 - **输入**:`packages/workspace-context-artifacts/src/evidence-emitters.ts`(mixed)
-- **输出**:`workers/context-core/src/evidence/{assembly.ts, compact.ts, snapshot.ts}/`
+- **输出**:`workers/context-core/src/evidence-emitters-context.ts`
 - **核心逻辑**:
   1. 按 W3 blueprint §3.3 表抽 context 侧 helper:`build/emitAssemblyEvidence`、`build/emitCompactEvidence`、`build/emitSnapshotEvidence`
   2. 2 个结构类型 `EvidenceAnchorLike / EvidenceSinkLike` 复制进 workers/context-core(D04 的 filesystem 侧同时也会有 copy — 这是故意;W3 blueprint 明确 "保持极薄 structural seam")
@@ -317,7 +317,7 @@
 
 - **输入**:F1-F4 aggregate
 - **输出**:升级后的 `workers/context-core/src/index.ts`
-- **核心逻辑**:保留 fetch handler(默认 returns version-probe JSON 兼容 W4 shape);export public API(C1 3 子模块 + C2 5 文件 + evidence context 侧 + `appendInitialContextLayer`)
+- **核心逻辑**:保留 fetch handler(默认 returns version-probe JSON 兼容 W4 shape)，并把 worker 明确标为 `library_worker: true`;不要求把 C1/C2 API 聚合进 deploy entry
 - **一句话收口目标**:✅ **`curl preview-url`(若 deploy)仍返回合法 JSON;`import { ContextAssembler, appendInitialContextLayer } from '@haimang/context-core-worker'` 或等价 in-workspace 消费路径 resolve 成功**
 
 #### F7: compact posture 冻结

@@ -70,7 +70,7 @@ Posture 已定为 **Q4a host-local 继续**(charter §7 Q4):不建 `workspace.fs
 
 1. **Phase 0 — kickoff gate**:P2 DoD 绿 + live loop preview URL 仍可用 + WCA split 代表 blueprint / mixed helper owner 表与 P3 交叉无 overlap
 2. **Phase 1 — D1 WCA filesystem slice**:9 个 `.ts` + `backends/{memory,reference,types}.ts` 搬到 `workers/filesystem-core/src/`;保持 byte-identical;`MountRouter + WorkspaceNamespace + backends + refs + promotion` 完整迁;packages 保留 duplicate(共存期)
-3. **Phase 2 — mixed helper artifact 部分**:`evidence-emitters.ts` 的 artifact 类 helper(buildArtifactEvidence / emitArtifact / 以及 2 结构类型中的 filesystem 归属那条)→ `workers/filesystem-core/src/evidence-emitters-filesystem.ts`;**与 P3 context slice 切分不 overlap**;packages 侧保留的 context 部分在 P3 已切,本 phase 切走 filesystem 部分后 packages evidence-emitters 可以保留 re-export 或 stub
+3. **Phase 2 — mixed helper artifact 部分**:`evidence-emitters.ts` 的 artifact 类 helper(buildArtifactEvidence / emitArtifact / 以及 2 结构类型中的 filesystem 归属那条)→ `workers/filesystem-core/src/evidence-emitters-filesystem.ts`;**与 P3 context slice 切分不 overlap**;packages 侧 artifact helper 在共存期保留 compatibility duplicate 注释,等待 P5 cutover/deprecation
 4. **Phase 3 — D2 storage-topology**:整包搬;包含 `tenant*`(B9 契约核心)/`placement` / `adapters` / `calibration`;tenant wrapper(`getTenantScopedStorage` / `tenantDoStorage*` / `tenantKvStorage*` / `tenantR2Storage*`)完整保留;use-site 必须仍在 bash.core / agent.core / context.core / filesystem.core 中经 wrapper 调;grep 验证
 5. **Phase 4 — Q4a posture + tenant wrapper 显式**:
    - `workers/agent-core/wrangler.jsonc` `FILESYSTEM_CORE` binding 仍注释;workers/agent-core composition 的 workspace handle 仍 `composeWorkspaceWithEvidence` host-local 版本;加注释 "per charter Q4a"
@@ -478,9 +478,10 @@ worker-matrix/P4/
 
 1. D1 filesystem slice 已吸收到 `workers/filesystem-core/src/{types,paths,refs,artifacts,prepared-artifacts,promotion,mounts,namespace,backends}/**`，对应 WCA filesystem tests 已迁入并改成 worker 内本地路径。
 2. D2 `storage-topology` 已吸收到 `workers/filesystem-core/src/storage/**`，storage tests 已整体迁入 `workers/filesystem-core/test/storage/**` 并完成路径重绑。
-3. `workers/filesystem-core/package.json` 已补齐 `zod` 依赖；`backends/{memory,reference}.ts` 与 top-level backends tests 已从旧 package import 改为消费本地 `src/storage/index.ts`。
-4. `workers/filesystem-core` probe 已从 W4 shell 口径升级为 `phase: "worker-matrix-P4-absorbed"` + `absorbed_runtime: true`，对应 smoke test 已同步。
-5. Q4a posture 本轮显式化为：
+3. mixed helper artifact slice 已补到 `workers/filesystem-core/src/evidence-emitters-filesystem.ts`，并新增 `test/evidence-emitters-filesystem.test.ts`；`packages/workspace-context-artifacts` 保留 compatibility duplicate 注释，等待 P5 cutover/deprecation。
+4. `workers/filesystem-core/package.json` 已补齐 `zod` 依赖；`backends/{memory,reference}.ts` 与 top-level backends tests 已从旧 package import 改为消费本地 `src/storage/index.ts`。
+5. `workers/filesystem-core` probe 已从 W4 shell 口径升级为 `phase: "worker-matrix-P4-absorbed"` + `absorbed_runtime: true` + `library_worker: true`，对应 smoke test 已同步。
+6. Q4a posture 本轮显式化为：
    - `workers/agent-core/wrangler.jsonc` 继续保留 `FILESYSTEM_CORE` 注释态，并把原因改写成 first-wave host-local posture；
    - `workers/agent-core/README.md` 明确 `FILESYSTEM_CORE` 是 **absorbed but still commented / host-local**；
    - `workers/filesystem-core/src/backends/reference.ts` 明确记录 `connected === false` 仍是 first-wave canonical default。
@@ -489,7 +490,7 @@ worker-matrix/P4/
 
 | target | 结果 |
 |--------|------|
-| `pnpm --filter @haimang/filesystem-core-worker typecheck build test` | **24 files / 291 tests 绿** |
+| `pnpm --filter @haimang/filesystem-core-worker typecheck build test` | **25 files / 293 tests 绿** |
 | `pnpm --filter @haimang/filesystem-core-worker run deploy:dry-run` | 绿 |
 | `pnpm --filter @haimang/agent-core-worker typecheck build test` | **96 files / 1027 tests 绿** |
 | `node --test test/*.test.mjs` | **107 绿** |
@@ -497,6 +498,6 @@ worker-matrix/P4/
 
 ### 11.3 收口判断
 
-- **P4 in-scope 已闭合**：D1 + D2 吸收、tests 迁移、probe truth 校准、Q4a host-local posture 注释化全部完成。
+- **P4 in-scope 已闭合**：D1 + D2 吸收、artifact evidence slice 补齐、tests 迁移、probe truth 校准、Q4a host-local posture 注释化全部完成。
 - **P4 posture 结论**：filesystem/storage 代码已进入 `workers/filesystem-core`，但 first-wave `agent-core` 仍不启用 `FILESYSTEM_CORE` remote binding；这不是未完成，而是 P4 明确选择保留的 shipped posture。
-- **遗留到后续 phase 的事项**：tenant wrapper / package deprecation / cutover 仍归 P5；remote `workspace.fs.*` family 继续保持 out-of-scope。
+- **遗留到后续 phase 的事项**：tenant wrapper / package deprecation / cutover 仍归 P5；remote `workspace.fs.*` family 继续保持 out-of-scope；`filesystem-core` 当前仍是 **0 runtime consumer** 的 library worker，后续需显式决定 agent-core 是否切换到该路径。
