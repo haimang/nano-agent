@@ -1,5 +1,13 @@
 # Changelog — @nano-agent/context-management
 
+## Unreleased — 2026-04-23 (worker-matrix P5/D09 DEPRECATED)
+
+### Deprecated
+
+- Full runtime ownership absorbed into `workers/context-core/src/{budget,async-compact,inspector-facade}/` as C1 per worker-matrix D03 (P3). Package is now a **coexistence duplicate**. `CompactPolicy` / `DEFAULT_COMPACT_POLICY` / `AsyncCompactOrchestrator` / `createKernelCompactDelegate` / `InspectorFacade` / `mountInspectorFacade` canonically owned by `workers/context-core`.
+- **Compact posture unchanged** (charter Q3c): default composition does NOT auto-wire `createKernelCompactDelegate`; opt-in only. Behavior byte-identical.
+- README banner added. Coexistence-period bug-fix discipline unchanged (W3 pattern §6).
+
 ## 0.1.0 — 2026-04-20
 
 After-Foundations Phase 3 (B4) — initial package ship. First time

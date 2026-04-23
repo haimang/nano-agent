@@ -1,5 +1,13 @@
 # @nano-agent/session-do-runtime
 
+> ⚠️ **DEPRECATED — absorbed 2026-04-23(worker-matrix P5/D09)**
+>
+> 本包的 runtime ownership 已迁移到 `workers/agent-core/src/host/`(A1 host shell)。
+> `NanoSessionDO` / `SessionOrchestrator` / `SessionWebSocketHelper` / `dispatchAdmissibleFrame` / composition & remote-bindings factory / `appendInitialContextLayer` consumer(初始 stub,已由 P3 迁到 `@haimang/context-core-worker/context-api/`)皆由 `workers/agent-core` 承载;本包以 coexistence duplicate 保留至下一阶段统一 physical delete。
+>
+> **新 consumer 请 import 自 `workers/agent-core`(或其消费路径);不要新增对本包的 runtime import。**
+> 共存期 bug 优先在本包修复,再同步到 workers/agent-core(W3 pattern §6)。
+
 Durable-Object runtime assembly layer for nano-agent sessions. Wires the
 Session DO class, a minimal Worker fetch entry, WebSocket + HTTP-fallback
 routing, the session actor state machine, the kernel orchestrator, a

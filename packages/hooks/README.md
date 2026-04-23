@@ -1,5 +1,14 @@
 # @nano-agent/hooks
 
+> ⚠️ **DEPRECATED — runtime residual absorbed 2026-04-23(worker-matrix P5/D09)**
+>
+> 本包的 **runtime residual**(`HookDispatcher` / `HookRegistry` / matcher / guards / `HOOK_EVENT_CATALOG` / core-mapping / session-mapping / audit / snapshot / `LocalTsRuntime` / `ServiceBindingRuntime`)已迁移到 `workers/agent-core/src/hooks/`(A4 完整吸收)。
+>
+> ⚠ **Wire catalog 不 deprecate**:`HookEventName` + `HOOK_EVENT_PAYLOAD_SCHEMA_NAMES` 仍是 `@haimang/nacp-core` 的 wire vocabulary,继续作为 Tier A 存在。本包的 `HOOK_EVENT_CATALOG` 是 dispatch semantics(policy),不是 wire vocabulary。
+>
+> **新 consumer 请 import 自 `workers/agent-core`;不要新增对本包 runtime 的 import。**
+> 本包 `CHANGELOG.md` 已追加 P5 deprecation entry;共存期 bug 优先在本包修复(W3 pattern §6)。物理删除归下一阶段。
+
 Lifecycle-governance hooks for nano-agent: the v2 **18-event catalog**,
 outcome aggregation, single-entry dispatcher, local + service-binding
 runtimes, NACP-Core/Session codec, audit-record builder, and session

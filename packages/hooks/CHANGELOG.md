@@ -1,5 +1,13 @@
 # Changelog — @nano-agent/hooks
 
+## Unreleased — 2026-04-23 (worker-matrix P5/D09 DEPRECATED — runtime residual only)
+
+### Deprecated
+
+- **Runtime residual** absorbed into `workers/agent-core/src/hooks/` as A4 per worker-matrix D01 (P1.A-sub2). Package is now a **coexistence duplicate** for runtime residual only. `HookDispatcher` / `HookRegistry` / `HOOK_EVENT_CATALOG` / matcher / guards / core-mapping / session-mapping / audit / snapshot / `LocalTsRuntime` / `ServiceBindingRuntime` canonically owned by `workers/agent-core`. README banner added.
+- **NOT deprecated (wire truth retained)**: `HookEventName` + `HOOK_EVENT_PAYLOAD_SCHEMA_NAMES` remain the canonical wire vocabulary in `@haimang/nacp-core::hooks` (Tier A). This package's `HOOK_EVENT_CATALOG` is dispatch semantics (policy), not wire vocabulary — continues to coexist with the absorbed runtime.
+- Coexistence-period bug-fix discipline unchanged (W3 pattern §6).
+
 ## Unreleased — 2026-04-22 (W0 pre-worker-matrix compat adapt)
 
 ### Changed

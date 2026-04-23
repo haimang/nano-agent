@@ -1,5 +1,13 @@
 # Changelog — @nano-agent/llm-wrapper
 
+## Unreleased — 2026-04-23 (worker-matrix P5/D09 DEPRECATED)
+
+### Deprecated
+
+- Full runtime ownership absorbed into `workers/agent-core/src/llm/` as A3 per worker-matrix D01 (P1.A-sub2). Package is now a **coexistence duplicate**. `LLMExecutor` / canonical model / `OpenAIChatAdapter` / adapter & provider & model registry / stream normalizer / attachment planner / session-stream bridge canonically owned by `workers/agent-core`. README banner added.
+- Coexistence-period bug-fix discipline unchanged (W3 pattern §6).
+- No runtime / public-API changes in this entry — code is byte-identical to prior.
+
 ## 0.1.0 — 2026-04-17
 
 Initial v1 implementation + post-review corrections.

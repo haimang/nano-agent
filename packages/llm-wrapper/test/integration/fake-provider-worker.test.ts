@@ -10,7 +10,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { fakeProviderFetch } from "../../../../test/fixtures/external-seams/fake-provider-worker.js";
+import { fakeProviderFetch } from "../../../../test-legacy/fixtures/external-seams/fake-provider-worker.js";
 import { OpenAIChatAdapter } from "../../src/adapters/openai-chat.js";
 import { LLMExecutor } from "../../src/executor.js";
 import {

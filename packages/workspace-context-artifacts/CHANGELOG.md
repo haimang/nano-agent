@@ -1,5 +1,15 @@
 # Changelog — @nano-agent/workspace-context-artifacts
 
+## Unreleased — 2026-04-23 (worker-matrix P5/D09 DEPRECATED — C2+D1 split same PR)
+
+### Deprecated
+
+- Package split absorbed into two workers per W3 blueprint (C2/D1 + mixed helper):
+  - **context slice** (C2): `context-layers` / `context-assembler` / `compact-boundary` / `redaction` / `snapshot` + mixed helper context part (assembly / compact / snapshot evidence helpers + 2 structural types) canonically owned by `workers/context-core/src/` (P3 / D03).
+  - **filesystem slice** (D1): `types` / `paths` / `refs` / `artifacts` / `prepared-artifacts` / `promotion` / `mounts` / `namespace` / `backends/*` + mixed helper artifact part canonically owned by `workers/filesystem-core/src/` (P4 / D04).
+- Package retained as **coexistence duplicate** during the overlap period. `agent-core` and downstream consumers currently still import from this package; the one-shot ownership switch is deferred to the post-worker-matrix physical-delete charter.
+- README banner added. Coexistence-period bug-fix discipline unchanged (W3 pattern §6).
+
 ## Unreleased — 2026-04-22 (W0 pre-worker-matrix compat adapt)
 
 ### Changed

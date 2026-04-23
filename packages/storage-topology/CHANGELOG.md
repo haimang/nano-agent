@@ -1,5 +1,14 @@
 # Changelog — @nano-agent/storage-topology
 
+## Unreleased — 2026-04-23 (worker-matrix P5/D09 DEPRECATED)
+
+### Deprecated
+
+- Full runtime ownership absorbed into `workers/filesystem-core/src/storage/` as D2 per worker-matrix D04 (P4). Package is now a **coexistence duplicate**. taxonomy / data-items / placement / calibration / demotion / promotion / archive plan / adapters (`d1-adapter` / `do-storage-adapter` / `kv-adapter` / `r2-adapter` / `scoped-io`) / evidence / mime-gate / errors / refs canonically owned by `workers/filesystem-core`.
+- **Tenant wrapper NOT deprecated** (unchanged):`tenantDoStorage*` / `tenantKv*` / `tenantR2*` canonical helpers remain in `@haimang/nacp-core::tenancy` (Tier A). B9 contract preserved — every `storage.put/get/list` use-site must still go through `getTenantScopedStorage()`.
+- **Q4a host-local posture preserved**: `workers/agent-core/wrangler.jsonc` still has `FILESYSTEM_CORE` binding commented out. `filesystem-core` is currently a 0-runtime-consumer library worker; the decision whether to switch `agent-core`'s WCA consumer path to `workers/filesystem-core` is deferred to a later posture charter.
+- README banner added. Coexistence-period bug-fix discipline unchanged (W3 pattern §6).
+
 ## Unreleased — 2026-04-22 (W0 pre-worker-matrix compat adapt)
 
 ### Changed

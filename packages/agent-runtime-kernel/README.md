@@ -1,5 +1,13 @@
 # @nano-agent/agent-runtime-kernel
 
+> ⚠️ **DEPRECATED — absorbed 2026-04-23(worker-matrix P5/D09;R5 README-only path)**
+>
+> 本包的 runtime ownership 已迁移到 `workers/agent-core/src/kernel/`(A2 完整吸收)。
+> `KernelRunner` / reducer / scheduler / step / state / events / `KernelDelegates` / checkpoint / interrupt / message-intents 全部落在 `@haimang/agent-core-worker` 下。
+>
+> **新 consumer 请 import 自 `workers/agent-core`;不要新增对本包的 runtime import。**
+> 本包无 `CHANGELOG.md`(per P1-P5 GPT review R5 口径,允许 README-only deprecation);共存期 bug 优先在本包修复(W3 pattern §6)。物理删除归下一阶段。
+
 Step-driven kernel for session actor turn loop.
 
 The kernel owns session and turn state, a scheduler that picks the next

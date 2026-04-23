@@ -1,5 +1,13 @@
 # Changelog — @nano-agent/eval-observability
 
+## Unreleased — 2026-04-23 (worker-matrix P5/D09 DEPRECATED — runtime residual)
+
+### Deprecated
+
+- **Runtime residual** absorbed into `workers/agent-core/src/eval/` as A5 per worker-matrix D01 (P1.A-sub2). Package is now a **coexistence duplicate**. `TraceSink` interface / `DoStorageTraceSink` / `DurablePromotionRegistry` / inspector / evidence bridge / evidence streams / timeline / replay / scenario runner / classification / truncation / metric names canonically owned by `workers/agent-core`. `BoundedEvalSink` lives inside A1 host shell and consumes the `TraceSink` interface.
+- B7 LIVE 5 tests remain as root guardians in `test-legacy/` protecting dedup + overflow disclosure semantics.
+- Coexistence-period bug-fix discipline unchanged (W3 pattern §6).
+
 ## 0.2.0 — 2026-04-20
 
 B6 — SessionInspector dedup + overflow disclosure writeback. Per

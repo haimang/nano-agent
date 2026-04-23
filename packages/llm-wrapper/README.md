@@ -1,5 +1,12 @@
 # @nano-agent/llm-wrapper
 
+> ⚠️ **DEPRECATED — absorbed 2026-04-23(worker-matrix P5/D09)**
+>
+> 本包的 runtime ownership 已迁移到 `workers/agent-core/src/llm/`(A3 完整吸收,含 `adapters/` + `registry/` 两个子目录)。canonical model / `LLMExecutor` / `OpenAIChatAdapter` / stream normalizer / attachment planner / provider & model registry / session-stream bridge 全部现归 `@haimang/agent-core-worker`。
+>
+> **新 consumer 请 import 自 `workers/agent-core`;不要新增对本包的 runtime import。**
+> 本包 `CHANGELOG.md` 已追加 P5 deprecation entry;共存期 bug 优先在本包修复(W3 pattern §6)。物理删除归下一阶段。
+
 Provider-agnostic LLM wrapper for nano-agent. Owns the canonical request /
 message / event model, the adapter seam to OpenAI-compatible Chat
 Completions APIs, the local-fetch executor (with retry, timeout, `on-429`

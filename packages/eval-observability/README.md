@@ -1,5 +1,13 @@
 # @nano-agent/eval-observability
 
+> ⚠️ **DEPRECATED — runtime residual absorbed 2026-04-23(worker-matrix P5/D09)**
+>
+> 本包的 runtime residual(`TraceSink` interface / `BoundedEvalSink`(落在 agent-core host)/ `DoStorageTraceSink` / inspector / `DurablePromotionRegistry` / evidence bridge / evidence streams / timeline / replay / scenario runner / classification / truncation / metric names)已迁移到 `workers/agent-core/src/eval/`(A5 完整吸收,含 `sinks/` 子目录)。
+>
+> **新 consumer 请 import 自 `workers/agent-core`;不要新增对本包 runtime 的 import。**
+> B7 LIVE 5 tests 作为 root guardians 继续在根 test-legacy 绿(保护 dedup / overflow disclosure 契约)。
+> 本包 `CHANGELOG.md` 已追加 P5 deprecation entry;共存期 bug 优先在本包修复(W3 pattern §6)。物理删除归下一阶段。
+
 Trace taxonomy, durable sink, timeline, scenario runner, failure replay and
 attribution helpers for nano-agent.
 

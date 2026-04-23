@@ -1,5 +1,13 @@
 # `@nano-agent/context-management`
 
+> ⚠️ **DEPRECATED — absorbed 2026-04-23(worker-matrix P5/D09)**
+>
+> 本包的 runtime ownership 已迁移到 `workers/context-core/src/{budget,async-compact,inspector-facade}/`(C1 完整吸收)。
+> `CompactPolicy` / `DEFAULT_COMPACT_POLICY` / `AsyncCompactOrchestrator` / `createKernelCompactDelegate` / `InspectorFacade` / `mountInspectorFacade` 现归 `@haimang/context-core-worker`;compact posture 保持 opt-in(per charter Q3c,default 不装 kernel compact delegate)。
+>
+> **新 consumer 请 import 自 `workers/context-core`;不要新增对本包 runtime 的 import。**
+> 本包 `CHANGELOG.md` 已追加 P5 deprecation entry;共存期 bug 优先在本包修复(W3 pattern §6)。物理删除归下一阶段。
+
 After-Foundations Phase 3 (B4) — context governance runtime for
 nano-agent. Three submodules, one public root:
 

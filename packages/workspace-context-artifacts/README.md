@@ -1,5 +1,16 @@
 # @nano-agent/workspace-context-artifacts
 
+> ⚠️ **DEPRECATED — split absorbed 2026-04-23(worker-matrix P5/D09;C2+D1 split 同步)**
+>
+> 本包按 W3 absorption blueprint 的 C2/D1 split 已迁移到两个 worker:
+>   - **context slice** — `context-layers.ts` / `context-assembler.ts` / `compact-boundary.ts` / `redaction.ts` / `snapshot.ts` + mixed helper 的 context 部分(assembly / compact / snapshot evidence helpers + 2 结构类型)已进入 `workers/context-core/src/`(含 `evidence-emitters-context.ts`)
+>   - **filesystem slice** — `types.ts` / `paths.ts` / `refs.ts` / `artifacts.ts` / `prepared-artifacts.ts` / `promotion.ts` / `mounts.ts` / `namespace.ts` / `backends/*` + mixed helper 的 artifact 部分已进入 `workers/filesystem-core/src/`(含 `evidence-emitters-filesystem.ts`)
+>
+> **本包保留为 coexistence duplicate 直到 P5 之后的 one-shot ownership switch**:当前 agent-core 的主 consumer 路径(`WorkspaceNamespace` / `InMemoryArtifactStore` / `ContextAssembler` / `MountRouter` 等)仍 import 自本包,这是 P3/P4 closure 已诚实承认的 coexistence posture。
+>
+> **新 consumer 请优先 import 自 `workers/context-core` 或 `workers/filesystem-core`(按 slice 归属);不要扩大对本包 runtime 的新 import。**
+> 本包 `CHANGELOG.md` 已追加 P5 deprecation entry;共存期 bug 优先在本包修复(W3 pattern §6)。物理删除归下一阶段。
+
 Workspace data plane for nano-agent: mount-based namespace, in-memory
 backend, artifact store, prepared-artifact seam, context assembler,
 compact boundary manager, redaction helpers, and the workspace

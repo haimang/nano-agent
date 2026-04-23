@@ -1,5 +1,13 @@
 # Changelog — @nano-agent/session-do-runtime
 
+## Unreleased — 2026-04-23 (worker-matrix P5/D09 DEPRECATED)
+
+### Deprecated
+
+- Full runtime ownership absorbed into `workers/agent-core/src/host/` as A1 host shell per worker-matrix D01 (P1). Package is now a **coexistence duplicate** kept as-is until the post-worker-matrix physical delete charter. `NanoSessionDO` / `SessionOrchestrator` / `SessionWebSocketHelper` / composition factory / remote-bindings are all canonically owned by `workers/agent-core`. README banner added.
+- Coexistence-period bug-fix discipline unchanged (W3 pattern §6: fix here first, sync into `workers/agent-core/src/host/`).
+- No runtime / public-API changes in this entry — code is byte-identical to prior.
+
 ## Unreleased — 2026-04-22 (W0 pre-worker-matrix compat adapt)
 
 ### Changed
