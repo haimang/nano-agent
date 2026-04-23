@@ -405,3 +405,38 @@ W2 Publishing Pipeline
 ### 11.5 最终收口意见
 
 **结论**：W2 已可按 narrowed scope 收口为 **executed**。本阶段要求的 mandatory skeleton（publish metadata / workflow / discipline / dogfood skeleton / closure）已经齐备；首次真实发布与 published-path dogfood 继续保持 optional parallel，并受 owner-aligned namespace / release window 约束。这一状态足以支撑后续 W4/W5 消费，不需要再把 W2 误写成 pre-worker-matrix 的剩余 blocker。
+
+### 11.6 真实首发补充日志（2026-04-23）
+
+1. owner 决策落到 `@haimang/*` 路线后，我完成了受控 scope migration：
+   - `@haimang/nacp-core`
+   - `@haimang/nacp-session`
+   - workflow `scope: "@haimang"`
+   - dogfood `.npmrc` 与 `package.json` 同步到 `@haimang`
+2. 首次 release-ready commit：
+   - `ff9a03d` — `chore: prepare haimang nacp publish`
+3. 首次 tag push：
+   - `nacp-v1.4.0`
+   - 第一次 run `24814362710` 失败，根因是 CI clean checkout 下 `nacp-session` typecheck 先于 `nacp-core` build
+4. workflow 修复：
+   - `8da7e6b` — `fix: order nacp publish workflow builds`
+   - 调整为 `typecheck+build nacp-core` → `typecheck+build nacp-session` → `test` → `publish` → `dogfood`
+5. 删除并重推同名 tag：
+   - 删除远端/本地 `nacp-v1.4.0`
+   - 重建并重推到 `8da7e6b`
+6. 成功首发证据：
+   - run: `https://github.com/haimang/nano-agent/actions/runs/24814439569`
+   - job: `https://github.com/haimang/nano-agent/actions/runs/24814439569/job/72625731482`
+   - `+ @haimang/nacp-core@1.4.0`
+   - `+ @haimang/nacp-session@1.3.0`
+   - dogfood install/build/smoke 全部成功，smoke 输出：
+     ```json
+     {
+       "nacpCoreVersion": "1.4.0",
+       "nacpSessionVersion": "1.3.0",
+       "coreTypeCount": 11
+     }
+     ```
+7. 补充结论：
+   - W2 已不只是 `skeleton complete`
+   - W2 已升级为 **`first publish completed`**

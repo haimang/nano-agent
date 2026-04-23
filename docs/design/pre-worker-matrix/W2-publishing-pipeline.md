@@ -10,12 +10,13 @@
 >   - `docs/design/pre-worker-matrix/W0-nacp-consolidation.md`(ship 1.4.0 shape)
 >   - `docs/design/pre-worker-matrix/W1-cross-worker-protocols.md`(RFC-only executed；不新增 publish symbol)
 > - 后继 design(W2 阻塞):`W4-workers-scaffolding.md`(4 worker 从 GitHub Packages import NACP)
-> 文档状态:`executed (v0.3 skeleton shipped)`
+> 文档状态:`executed (v0.4 first publish completed)`
 >
 > **修订历史**:
 > - v0.1 (2026-04-21):初稿
 > - v0.2 (2026-04-21):Post-GPT-review narrowing(GPT review 盲点 2 整改)— publishing 从"硬 blocker"降级为 **parallel track**。pipeline skeleton(publishConfig + workflow + auth)仍在 pre-phase 完成;首次真实发布可 parallel 到 worker-matrix first-wave 期间完成。worker-matrix first-wave 允许 workers 用 `workspace:*` 作为 interim 依赖。
 > - v0.3 (2026-04-22):executed / shipped — 落下双包 `publishConfig`、`publish-nacp.yml`、dogfood skeleton 与 W2 closure；同时按 W0 reality 校准版本纪律为 `nacp-core@1.4.0` bundle tag anchor + `nacp-session@1.3.0` follow。
+> - v0.4 (2026-04-23):actual first publish completed — owner 选择 `@haimang/*` 作为 owner-aligned scope；`nacp-v1.4.0` 第二次 run 成功发布 `@haimang/nacp-core@1.4.0` + `@haimang/nacp-session@1.3.0`，并在 workflow 内完成 dogfood published-path smoke。
 
 ---
 

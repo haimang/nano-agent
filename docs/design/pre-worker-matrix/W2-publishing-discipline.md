@@ -14,9 +14,9 @@
 - `packages/nacp-core/package.json`：已是独立 package，当前版本 `1.4.0`
 - `packages/nacp-session/package.json`：已是独立 package，当前版本 `1.3.0`
 - `pnpm-workspace.yaml`：当前 workspace 只包含 `packages/*`
-- 当前 package 名称仍是 `@nano-agent/*`，而仓库 owner 现实是 `haimang/nano-agent`；因此 **workflow skeleton 可以先按当前 package truth 落盘，但真实首发仍需 owner-aligned namespace / publish venue 最终确认**
+- 当前真实发布面已对齐为 `@haimang/*`，并已通过 `nacp-v1.4.0` 完成首次 GitHub Packages 发布
 
-因此，W2 的最小真实任务不是“发明 publish 概念”，而是把**已有双包**的 publish skeleton、discipline、dogfood 路径写成稳定约束。
+因此，W2 的最小真实任务不是“发明 publish 概念”，而是把**已有双包**的 publish skeleton、discipline、dogfood 路径写成稳定约束，并在 owner 决策落地后把它变成实际可消费的 published path。
 
 ## 3. W2 必须坚持的 6 条纪律
 
