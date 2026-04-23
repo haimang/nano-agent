@@ -25,7 +25,7 @@ import { WsController } from "../ws-controller.js";
 import { HttpController } from "../http-controller.js";
 import { HealthGate } from "../health.js";
 import type { HeartbeatTracker, AckWindow } from "../health.js";
-import { DEFAULT_RUNTIME_CONFIG } from "../env.js";
+import { DEFAULT_RUNTIME_CONFIG, resolveCapabilityBinding } from "../env.js";
 import type { RuntimeConfig } from "../env.js";
 import { SessionOrchestrator } from "../orchestration.js";
 import type { OrchestrationDeps, OrchestrationState } from "../orchestration.js";
@@ -75,7 +75,7 @@ function selectCompositionFactory(
 ): CompositionFactory {
   const e = (env ?? {}) as Partial<SessionRuntimeEnv>;
   const anyRemote = Boolean(
-    e.CAPABILITY_WORKER || e.HOOK_WORKER || e.FAKE_PROVIDER_WORKER,
+    resolveCapabilityBinding(e) || e.HOOK_WORKER || e.FAKE_PROVIDER_WORKER,
   );
   return anyRemote
     ? makeRemoteBindingsFactory({ anchorProvider })

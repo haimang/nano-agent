@@ -2,7 +2,7 @@
  * Remote-binding composition adapters (A5 Phase 2 / Phase 3).
  *
  * This module provides the small glue code that turns a v1 env binding
- * (`HOOK_WORKER` / `CAPABILITY_WORKER` / `FAKE_PROVIDER_WORKER`) into
+ * (`HOOK_WORKER` / `BASH_CORE` / `FAKE_PROVIDER_WORKER`) into
  * the transport shape each subsystem expects. It stays OUT of
  * `composition.ts` so the default factory stays zero-dep; deployed
  * builds opt in to this wiring via `makeRemoteBindingsFactory()`.
@@ -32,6 +32,7 @@ import type {
   ServiceBindingLike,
   SessionRuntimeEnv,
 } from "./env.js";
+import { resolveCapabilityBinding } from "./env.js";
 import { buildCrossSeamHeaders, type CrossSeamAnchor } from "./cross-seam.js";
 
 // ─────────────────────────────────────────────────────────────────────
@@ -334,7 +335,7 @@ export function makeRemoteBindingsFactory(
           : undefined;
       const capabilityTransport =
         profile.capability === "remote"
-          ? makeCapabilityTransport(env.CAPABILITY_WORKER)
+          ? makeCapabilityTransport(resolveCapabilityBinding(env))
           : undefined;
       const providerFetcher =
         profile.provider === "remote"

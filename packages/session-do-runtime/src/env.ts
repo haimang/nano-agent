@@ -7,12 +7,15 @@
  *
  * Phase 4 (A5) binding catalog (AX-QNA Q9):
  *   The v1 external binding catalog freezes THREE remote worker slots:
- *     - CAPABILITY_WORKER     — remote tool execution (capability-runtime)
+ *     - BASH_CORE             — remote tool execution (capability-runtime)
  *     - HOOK_WORKER           — remote hook dispatch    (hooks)
  *     - FAKE_PROVIDER_WORKER  — remote fake LLM seam    (llm-wrapper / P5 golden path)
  *   These are the only remote seams composed into v1. SKILL_WORKERS is
  *   retained as a RESERVED slot only — it must not be composed into the
  *   runtime truth in Phase 4.
+ *   `CAPABILITY_WORKER` is kept only as a legacy alias during the
+ *   worker-matrix closeout so pre-existing tests and fixtures do not
+ *   silently lose the capability seam.
  *
  * Reference: `docs/action-plan/after-skeleton/A5-external-seam-closure.md`
  * Reference code: `packages/nacp-core/src/transport/service-binding.ts`
@@ -42,7 +45,7 @@ export interface ServiceBindingLike {
  *   KV_CONFIG   — KV namespace for warm config (provider config, model registry, etc.)
  *
  * Optional v1 binding catalog (P4):
- *   CAPABILITY_WORKER     — Service binding to the capability-runtime worker.
+ *   BASH_CORE             — Service binding to the capability-runtime worker.
  *   HOOK_WORKER           — Service binding to the hook-runtime worker.
  *   FAKE_PROVIDER_WORKER  — Service binding to the fake LLM provider worker.
  *
@@ -58,11 +61,13 @@ export interface SessionRuntimeEnv {
   readonly KV_CONFIG: unknown;
 
   // v1 binding catalog (Phase 4 truth)
-  readonly CAPABILITY_WORKER?: ServiceBindingLike;
+  readonly BASH_CORE?: ServiceBindingLike;
   readonly HOOK_WORKER?: ServiceBindingLike;
   readonly FAKE_PROVIDER_WORKER?: ServiceBindingLike;
 
   // Reserved / legacy
+  /** @deprecated Legacy alias for `BASH_CORE`. Prefer `BASH_CORE` in new code and bindings. */
+  readonly CAPABILITY_WORKER?: ServiceBindingLike;
   /** @deprecated Reserved for a future skill composition seam. Do not consume. */
   readonly SKILL_WORKERS?: unknown;
   readonly LLM_API_KEY?: string;
@@ -71,7 +76,7 @@ export interface SessionRuntimeEnv {
 
 /** Enumerable list of v1 binding names. Kept in sync with the type above. */
 export const V1_BINDING_CATALOG: readonly (keyof SessionRuntimeEnv)[] = [
-  "CAPABILITY_WORKER",
+  "BASH_CORE",
   "HOOK_WORKER",
   "FAKE_PROVIDER_WORKER",
 ] as const;
@@ -105,6 +110,12 @@ export const DEFAULT_COMPOSITION_PROFILE: CompositionProfile = {
   provider: "local",
 } as const;
 
+export function resolveCapabilityBinding(
+  env: Pick<SessionRuntimeEnv, "BASH_CORE" | "CAPABILITY_WORKER">,
+): ServiceBindingLike | undefined {
+  return env.BASH_CORE ?? env.CAPABILITY_WORKER;
+}
+
 /**
  * Read a `CompositionProfile` from the runtime env. Any seam whose
  * corresponding binding is missing falls back to `local`; any seam
@@ -114,7 +125,7 @@ export function readCompositionProfile(
   env: SessionRuntimeEnv,
 ): CompositionProfile {
   return {
-    capability: env.CAPABILITY_WORKER ? "remote" : "local",
+    capability: resolveCapabilityBinding(env) ? "remote" : "local",
     hooks: env.HOOK_WORKER ? "remote" : "local",
     provider: env.FAKE_PROVIDER_WORKER ? "remote" : "local",
   };

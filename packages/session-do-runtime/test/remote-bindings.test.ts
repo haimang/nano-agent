@@ -154,7 +154,7 @@ describe("makeRemoteBindingsFactory", () => {
     const fake = { fetch: vi.fn(async () => new Response("{}")) };
     const factory = makeRemoteBindingsFactory();
     const handles = factory.create(
-      { ...baseEnv, HOOK_WORKER: fake, CAPABILITY_WORKER: fake },
+      { ...baseEnv, HOOK_WORKER: fake, BASH_CORE: fake },
       DEFAULT_RUNTIME_CONFIG,
     );
     expect(handles.profile).toEqual({
