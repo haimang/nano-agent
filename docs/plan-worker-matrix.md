@@ -611,6 +611,15 @@ worker-matrix 结束后,下一阶段应由以下 2 类 trigger 之一启动:
 ### 11.1 已收口 Phase 索引
 
 - **P0 Absorption Prep**(2026-04-23 收口) — 见 [`docs/issue/worker-matrix/P0-absorption-prep-closure.md`](./issue/worker-matrix/P0-absorption-prep-closure.md)。含 P2.E0 owner decision、P1.A/P1.B kickoff checklist、D01-D09 R1-R5 吸收索引、10 units 映射 index。P1 kickoff PR 的 body 直接引用本 memo。
+- **P1 agent-core + bash-core Absorption**(2026-04-23 收口) — 见 [`docs/issue/worker-matrix/P1-closure.md`](./issue/worker-matrix/P1-closure.md)。A1-A5 + B1 吸收 + bash-core real preview deploy。
+- **P2 Live Turn Loop Activation**(2026-04-23 收口) — 见 [`docs/issue/worker-matrix/P2-closure.md`](./issue/worker-matrix/P2-closure.md)。composition 6-handle + D05 consumer + BASH_CORE binding 激活 + 两条 root e2e。
+- **P3 context-core Absorption**(2026-04-23 收口) — 见 [`docs/issue/worker-matrix/P3-closure.md`](./issue/worker-matrix/P3-closure.md)。C1+C2 slice worker-side canonical copy + `appendInitialContextLayer` owner 归位。
+- **P4 filesystem-core Absorption**(2026-04-23 收口) — 见 [`docs/issue/worker-matrix/P4-closure.md`](./issue/worker-matrix/P4-closure.md)。D1+D2 + artifact evidence slice + Q4a host-local posture 显式。
+- **P5 Cutover + Deprecation + Final Closure**(2026-04-23 收口) — 见 [`docs/issue/worker-matrix/worker-matrix-final-closure.md`](./issue/worker-matrix/worker-matrix-final-closure.md)。`workspace:*` → `@haimang/nacp-core@1.4.0`/`nacp-session@1.3.0` published path cutover + 9 Tier B DEPRECATED banner + agent-core preview Version ID `1d423bfc-4d54-4fed-b84c-f47586b79728` + worker-matrix 阶段 6 条 primary exit criteria 全绿。
+
+### 11.2 worker-matrix 阶段整体状态
+
+**worker-matrix 阶段 = `closed`(2026-04-23)**。下一阶段等待 **live loop stability trigger** 或 **scope expansion trigger** 之一激活;详见 final closure memo §3。
 
 ---
 

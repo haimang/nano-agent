@@ -493,3 +493,122 @@ worker-matrix/P5/
 ## 10. 结语
 
 这份 P5 action-plan 以 **"workspace:* interim 退役 + Tier B 吸收真相诚实标注 + worker-matrix 正式收口"** 为第一优先级,采用 **"独立 release PR 原子 cutover + per-worker deprecation 流水 + closure + handoff"** 的推进方式,优先解决 **"4 workers 未真走 published path / 9 Tier B 未打 banner / 3 placeholder 未清点 / 阶段未收口"** 四件 release hygiene 欠账,并把 **"Tier B 物理保留 / NACP 版本不 bump / production 不 flip / tenant wrapper 不绕过 / B7 LIVE 不破 / R4 .npmrc 诚实化 / R5 no-CHANGELOG 二路径"** 作为主要约束。整个计划完成后,`worker-matrix` 应达到 **"charter §9 primary 6 exit criteria 全绿 + workers 从 published registry install NACP + Tier B 吸收真相在 README/CHANGELOG 落盘 + 最终 closure/handoff 就位"**,从而让本阶段以诚实、可审计、可回滚的方式正式闭合,为后续 live loop stability 2-4 周监控或 scope expansion trigger 提供稳定起点。
+
+---
+
+## 11. P5 执行工作报告(Claude Opus 4.7, 2026-04-23)
+
+### 11.1 执行综述
+
+- **判断结果**:P5 可以进入 — Phase 0-4 全部完成
+- **Phase 序列**:Phase 0 gate → Phase 1 cutover(含 `.npmrc` readiness 落盘)→ Phase 2 9 Tier B banner → Phase 3 W3 pattern 清点 → Phase 4 final closure + handoff
+- **总规模**:workers/*/package.json 4 改 + 根 `.npmrc` 新建 + 9 README banner + 7 CHANGELOG entries + W3 pattern §15 新增 + final closure memo(~300 行)+ handoff memo(~150 行)+ charter §11 update
+- **deploy**:agent-core preview redeploy 成功;新 Version ID `1d423bfc-4d54-4fed-b84c-f47586b79728`;live probe 字段保持
+- **R4 readiness verdict**:owner 在 P5 当日提供 classic PAT `read:packages` scope;`.npmrc` 落在 root(覆盖 4 workers);CI / wrangler / local-dev 使用同一 `${NODE_AUTH_TOKEN}` 占位符模式
+- **R5 deprecation**:`capability-runtime` + `agent-runtime-kernel` 2 无-CHANGELOG 包均选 **README-only** 路径(不补 minimal stub,per R5 二选一)
+
+### 11.2 全部新增文件清单
+
+- `.npmrc`(root)— 3 行;`@haimang:registry=https://npm.pkg.github.com` + `//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN}` + `always-auth=true`
+- `docs/issue/worker-matrix/worker-matrix-final-closure.md` — ~300 行,含 6 exit criteria 映射 + 9 Tier B deprecation 表 + handoff 段 + cross-cut 不变量
+- `docs/handoff/worker-matrix-to-next.md` — ~150 行,含 2 trigger 候选 + 5 layers truth pack + kickoff checklist + open questions + 硬约束
+
+### 11.3 全部修改文件清单
+
+**workers/ package.json(Phase 1 cutover)**:
+- `workers/agent-core/package.json` — `@haimang/nacp-core` workspace:* → `"1.4.0"`;`@haimang/nacp-session` workspace:* → `"1.3.0"`
+- `workers/bash-core/package.json` — 同构
+- `workers/context-core/package.json` — 同构
+- `workers/filesystem-core/package.json` — 同构
+
+**pnpm-lock.yaml(Phase 1 cutover)**:
+- 4 workers 的 `@haimang/nacp-core` resolution 从 `link:../../packages/nacp-core` 切到 `1.4.0(zod@3.25.76)`
+- 同理 nacp-session 切到 `1.3.0(zod@3.25.76)`
+
+**packages/* README(Phase 2 — 9 文件)**:全部顶部加 `⚠️ DEPRECATED` banner block
+- `packages/session-do-runtime/README.md`
+- `packages/capability-runtime/README.md`(R5 README-only)
+- `packages/agent-runtime-kernel/README.md`(R5 README-only)
+- `packages/llm-wrapper/README.md`
+- `packages/hooks/README.md`(runtime residual only;wire catalog 不 deprecate)
+- `packages/eval-observability/README.md`(runtime residual only;B7 LIVE 仍 root guardian)
+- `packages/context-management/README.md`
+- `packages/workspace-context-artifacts/README.md`(C2+D1 split 同步)
+- `packages/storage-topology/README.md`(tenant wrapper 不 deprecate)
+
+**packages/* CHANGELOG(Phase 2 — 7 文件)**:全部顶部加 `## Unreleased — 2026-04-23 (worker-matrix P5/D09 DEPRECATED)` 段
+- `packages/session-do-runtime/CHANGELOG.md`
+- `packages/llm-wrapper/CHANGELOG.md`
+- `packages/hooks/CHANGELOG.md`(runtime residual wording)
+- `packages/eval-observability/CHANGELOG.md`(runtime residual wording)
+- `packages/context-management/CHANGELOG.md`
+- `packages/workspace-context-artifacts/CHANGELOG.md`(C2+D1 split 同步 wording)
+- `packages/storage-topology/CHANGELOG.md`(tenant wrapper 不 deprecate wording)
+
+**docs(Phase 3 + 4)**:
+- `docs/design/pre-worker-matrix/W3-absorption-pattern.md` — §15 新增 "第 3 placeholder(循环引用)最终状态" 章节 + §15.1 3 placeholder 最终清点表;§14 verdict 更新
+- `docs/plan-worker-matrix.md` — §11.1 列出全部 5 phase closure link + P5 final closure link;§11.2 状态标 `closed`
+
+**本文件回填(Phase 4)**:
+- `docs/action-plan/worker-matrix/P5-cutover-and-deprecation.md` — 本 §11 工作报告
+
+### 11.4 Live deploy 证据
+
+- agent-core Preview URL:`https://nano-agent-agent-core-preview.haimang.workers.dev`
+- 新 Version ID:`1d423bfc-4d54-4fed-b84c-f47586b79728`(cutover 后 redeploy)
+- Upload:290.80 KiB → **318.73 KiB**;gzip 58.62 KiB → **63.48 KiB**(published NACP bundle 被实际打进 deploy artifact)
+- Startup:15 ms → 21 ms(可接受,bundle 稍大)
+- curl probe JSON:`{"worker":"agent-core","nacp_core_version":"1.4.0","nacp_session_version":"1.3.0","status":"ok","phase":"worker-matrix-P2-live-loop","absorbed_runtime":true,"live_loop":true,"capability_binding":true}` — 字段值与 P2 完全一致(cutover 是源头切换,不是 probe 字段 bump)
+- `/sessions/check-p3p4/status` → HTTP 200 `{"ok":true,"action":"status","phase":"unattached"}` — SESSION_DO forwarding 仍活
+- bash-core Preview URL 保持 live(Version `50335742-e9e9-4f49-b6d7-ec58e0d1cfb4` 不变)
+
+### 11.5 Test 回归(与 P5 action-plan §4 各 DoD 对比)
+
+| target | 实测 | P5 DoD 要求 |
+|--------|------|-------------|
+| `workers/agent-core test` | 1027 绿 | 全绿 |
+| `workers/bash-core test` | 355 绿 | 全绿 |
+| `workers/context-core test` | 170 绿 | 全绿 |
+| `workers/filesystem-core test` | 293 绿 | 全绿 |
+| `pnpm -r run test` | 15 projects 全绿 | 全绿 |
+| `node --test test-legacy/*.test.mjs`(含 B7 LIVE)| 107 绿 | 全绿 |
+| `npm run test:cross` | 121 绿 | 全绿 |
+| `pnpm --filter './workers/*' run deploy:dry-run` | 4 workers 全绿 | 全绿 |
+
+**说明**:P5 DoD 原文 references "98 root + 112 cross",但这是 PX test tree rename 之前的老路径。PX 把 `test/` → `test-legacy/` 后,npm scripts `test:contracts / test:cross / test:e2e` 同步指向 `test-legacy/`,实测 `node --test test-legacy/*.test.mjs` 107 / `test:cross` 121。数字比 P4 时(98 / 112)增多原因是 P2 两条 root e2e + P3/P4 review 时增补的几条覆盖;regression 口径等价(原 98/112 都在,新增都绿)。
+
+### 11.6 charter §9 primary exit criteria 全绿映射(与 final closure memo §1 对照)
+
+| # | criterion | 状态 |
+|---|-----------|------|
+| 1 | live agent turn loop 端到端 | ✅ P2 两条 root e2e + live URL 验证 |
+| 2 | 4 workers runtime ownership 吸收 | ✅ P1-P4 全 absorbed;workers/*/src/ 是 canonical |
+| 3 | `@haimang/nacp-*` published path cutover | ✅ **本 P5 Phase 1 完成** |
+| 4 | Tier B DEPRECATED(9 包)| ✅ **本 P5 Phase 2 完成** |
+| 5 | 全仓 test 仍全绿 | ✅ 详见 §11.5 |
+| 6 | final closure + handoff shipped | ✅ **本 P5 Phase 4 完成** |
+
+**6/6 全绿**;worker-matrix 阶段正式 closed。
+
+### 11.7 R4 / R5 / R3 吸收验证
+
+- **R4(`.npmrc` readiness 诚实化)**:owner 在 P5 当日补齐 `read:packages` scope PAT;root `.npmrc` 落仓(使用 `${NODE_AUTH_TOKEN}` 占位符,token 本体不入 git);验证 `pnpm install` → `pnpm-lock.yaml` 所有 worker/@haimang 条目切到非 `link:` — done per R5 truth
+- **R5(no-CHANGELOG fallback)**:`packages/capability-runtime/` + `packages/agent-runtime-kernel/` 均选 README-only 路径;DEPRECATED banner 写明 "R5 README-only" 口径;无 minimal stub CHANGELOG 被创建(不搞半吊子历史)
+- **R3(其他 review R3)**:bash-core `/tool.call.request` 仍 404,binding-first 口径保持
+
+### 11.8 对未来的影响
+
+- worker-matrix 阶段 `closed` — 下一阶段等待 trigger
+- 所有 9 个 Tier B 包的物理删除 timeline 由下一阶段(live loop stability trigger 之后)决定;现在删会破坏 coexistence
+- `.npmrc` 已经落仓,使用 `${NODE_AUTH_TOKEN}` 占位符;CI / wrangler / 新开发者都按该模式,不会再遇本次 cutover 的 token 障碍
+
+### 11.9 已知限制(保留给下一阶段)
+
+1. WCA coexistence duplicate(context slice / artifact slice)的 one-shot ownership switch 延到下一阶段
+2. filesystem-core 当前 0 runtime consumer(Q4a posture);是否切 agent-core WCA consumer path 归下一阶段
+3. Tenant wrapper CI grep guard 仍靠人工 review;建议下一阶段固化
+4. PX root test tree reset(独立于 worker-matrix)可继续推进
+
+### 11.10 结论
+
+P5 Phase 0-4 全部完成;worker-matrix 阶段 6 条 primary exit criteria 全绿;released path cutover + 9 Tier B deprecation + final closure + handoff 全部 ship;agent-core preview redeploy 后 live probe 保持 `live_loop: true` + `capability_binding: true`。**worker-matrix 阶段正式 closed;下一阶段等待 trigger 激活。**

@@ -212,4 +212,30 @@ npm run test:cross && pnpm -r run test                 # 全仓回归
 
 ## 14. 一句话 verdict
 
-这份 pattern spec 的价值，是让 worker-matrix 的实现从第一天起就建立在统一迁移方法上：**同一套 owner discipline、同一套 test discipline、同一套 partial disclosure discipline、同一套 deprecated timing discipline。** Pattern 11 + 12(P1.A 实测回填)证明该方法论在真实代码层可机械化执行;Pattern 10(循环引用)保留由 P3/P4 WCA split 回填。
+这份 pattern spec 的价值，是让 worker-matrix 的实现从第一天起就建立在统一迁移方法上：**同一套 owner discipline、同一套 test discipline、同一套 partial disclosure discipline、同一套 deprecated timing discipline。** Pattern 11 + 12(P1.A 实测回填)证明该方法论在真实代码层可机械化执行。
+
+## 15. 第 3 placeholder(循环引用)最终状态(P5 清点,2026-04-23)
+
+P1 首批 absorb PR 已回填 **Pattern 11(LOC→时长系数)** 与 **Pattern 12(可执行流水线样板)**。原计划留作第 3 个 placeholder 的 **"循环引用解决 pattern"** 在 P5 阶段作如下清点:
+
+**结论:未触发 — P3/P4 WCA split 执行中零循环依赖,无需新 pattern。**
+
+事实依据:
+1. **C2/D1 slice 切分没有出现循环引用**:`workers/context-core/src/compact-boundary.ts` / `snapshot.ts` / `redaction.ts` 确实 cross-import `@nano-agent/workspace-context-artifacts`(因 `refs.ts` / `types.ts` 归 D1 但 context-core 需要其中类型),但这是 **coexistence 时期的单向反向引用**,不是循环 — WCA 并未再 import 回 context-core(context-core 是 new landing,coexistence duplicate 的方向是 workers→packages,不是 packages→workers)
+2. **mixed helper(`evidence-emitters.ts`)的 context/artifact 切分没有触发循环**:P3 建立 `workers/context-core/src/evidence-emitters-context.ts`,P4 建立 `workers/filesystem-core/src/evidence-emitters-filesystem.ts`,两端各自消费自己的 `ContextLayer / AssemblyResult / ArtifactEvidenceRecord` 类型,不跨 worker 回环
+3. **`appendInitialContextLayer` helper 归位(P3 S5)亦无循环**:helper 在 `workers/context-core/src/context-api/` 下,被 `workers/agent-core/src/host/do/nano-session-do.ts` 单向消费,agent-core 不回 export 给 context-core
+
+这一观察本身成为 P1-P5 worker-matrix 执行的第 3 条沉淀原则:
+
+> **W3 split 若做得好,canonical ownership 在每个 symbol 上单向收敛。循环依赖是 split 设计出问题的信号,不是执行时无法避免的副作用。**
+> W3 mixed helper owner 表(D03 §4.1 / D04 §4.1)在本次 WCA split 中严格生效 — context 侧 helper 和 artifact 侧 helper 的 owner 表在 P3 / P4 两端交叉验证零 overlap,这就是循环被回避的真正原因。
+
+若未来其他 split 场景(例如 hooks 的 wire catalog vs dispatch semantics)出现真实循环,应回到本文档补一条 Pattern 13 并记录 how it was broken;当前 worker-matrix 闭环时,placeholder **保留 template stub** 供未来 split 使用。
+
+### 15.1 W3 pattern spec 3 placeholder 最终清点表
+
+| placeholder | 回填 phase | 状态 | 落点 |
+|-------------|------------|------|------|
+| LOC → 时长经验系数 | P1 first absorb PR | ✅ 已填 | §12 Pattern 11 |
+| 可执行流水线样板 | P1 first absorb PR | ✅ 已填 | §13 Pattern 12 |
+| 循环引用解决 pattern | P3/P4 WCA split(预期)→ P5 清点(实际)| ⚠ 未触发(文档化为正面 finding,不是缺口)| 本 §15 |

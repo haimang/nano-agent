@@ -389,3 +389,108 @@ npm run test:cross
 - **仍然保留的已知限制**：
   1. `packages/workspace-context-artifacts` 的 context slice 与 artifact evidence helper 仍保留 coexistence duplicate；P5 cutover 前没有做 packages→workers 的 one-shot ownership switch。
   2. `filesystem-core` 仍是 library worker / 0 runtime consumer；是否把 agent-core 的 WCA consumer path 切到 filesystem-core，仍需在 P5 或后续 posture charter 明确决策。
+
+---
+
+## 7. 二次审查
+
+### 7.1 二次审查结论
+
+> 复核者: `Claude Opus 4.7 (1M context)`
+> 复核时间: `2026-04-23`
+> 复核依据: `实现者 §6 回应 + 当前代码事实 + 全 P1~P4 联合事实核查`
+
+- **二次结论**:`§6 的六条回应全部在代码层验证通过;之前 review 里指出的唯一 delivery-gap(R1 artifact evidence slice)已补齐,之前的口径问题(R2)已通过"口径修正 B 路径"对齐真相;四个 worker 在 P1~P4 联合核查下内部一致、live URL 与绿测数字都可复现。`
+- **是否收口**:`yes`
+
+### 7.2 已验证有效的修复
+
+| 审查编号 | 复核结论 | 依据 |
+|----------|----------|------|
+| R1 | `closed` | `workers/filesystem-core/src/evidence-emitters-filesystem.ts`(45 行,含 `buildArtifactEvidence` / `emitArtifactEvidence` / `ArtifactEvidenceInput` / `EvidenceAnchorLike` / `EvidenceSinkLike`)和 `test/evidence-emitters-filesystem.test.ts`(60 行,含 schema 校验)都已落地;`packages/workspace-context-artifacts/src/evidence-emitters.ts:185-191` 明确添加 "Coexistence duplicate: canonical first-wave worker ownership now also lives in `workers/filesystem-core/src/evidence-emitters-filesystem.ts`" 注释;`pnpm --filter @haimang/filesystem-core-worker test` 从 24/291 变为 **25/293**(+1 test file / +2 tests,与 §6.4 声称匹配);两份文件的 `buildArtifactEvidence` 函数体 diff 后语义一致 |
+| R2 | `closed` | P3 closure memo 顶部 `文档状态: closed(P3 worker-side canonical copy landed; ...; coexistence duplicate preserved; dry-run green)`;§0 行 13 / §1.1 行 26 / §3 行 70 / §4 行 81-86 全面改用 "worker-side canonical copy + package-side coexistence duplicate";`packages/workspace-context-artifacts/src/index.ts:55-58` 新增显式注释 "Coexistence export: context-core now carries the worker-side canonical copy, but WCA keeps these exports during the overlap period so current consumers do not break before P5 cutover/deprecation";`packages/workspace-context-artifacts/src/index.ts:140-145` 对 evidence-emitters overlap 也写了对应注释。口径已与代码真相对齐 |
+| R3 | `closed` | `workers/context-core/src/types.ts:13` 与 `workers/filesystem-core/src/types.ts:66` 都加了 `readonly library_worker: true` 到 ShellResponse 类型;`workers/context-core/src/index.ts:13` 和 `workers/filesystem-core/src/index.ts:13` probe 返回都包含 `library_worker: true`;`workers/context-core/test/smoke.test.ts:19` 与 `workers/filesystem-core/test/smoke.test.ts:19` 断言 `library_worker === true`;dry-run 实测 context-core 155.75 KiB / filesystem-core 155.76 KiB(与 §6.4 声称精确匹配,确认 library-worker 身份不改变 deploy artifact 尺寸);P3/P4 closure 和 D03/D04 均补 "absorbed_runtime 证明源码归位而非 HTTP runtime API live" 的诚实口径 |
+| R4 | `closed` | `workers/context-core/src/context-api/append-initial-context-layer.ts:28` 新增 `import type { ContextAssembler } from "../context-assembler.js"`;line 89 WeakMap 改回 `WeakMap<ContextAssembler, ContextLayer[]>`;appendInitialContextLayer / drainPendingInitialContextLayers / peekPendingInitialContextLayers 三个 export 的 `assembler` 参数全部是 `ContextAssembler` 强类型;`workers/agent-core/src/context-core-worker.d.ts:3-6` 同步 ambient declaration,从 `assembler: object` 改为 `import type { ContextAssembler, ContextLayer } from "@nano-agent/workspace-context-artifacts"; ... assembler: ContextAssembler`。类型系统守护已恢复 |
+| R5 | `closed` | 采用 docs-align 方案:`docs/design/worker-matrix/D03-context-core-absorption-and-posture.md:122, 167, 277` 三处都把 S3 / §4 目标目录 / F3 输出路径改为实际落地的 `workers/context-core/src/evidence-emitters-context.ts` 单文件;代码侧未做无谓的重写。设计文档与代码形状已一致 |
+| R6 | `closed` | `docs/issue/worker-matrix/P4-closure.md:15, 41-43, 81` 明确:"filesystem-core 当前也是 probe-only library worker" + "当前 `workers/*` 与 `packages/*` 中对 `@haimang/filesystem-core-worker` 的 import 命中仍为 **0**" + "P4 也不等于 agent-core 已切换到 filesystem-core consumer path";`docs/design/worker-matrix/D04-filesystem-core-absorption-and-posture.md:169, 257, 304` 多处写入 library-worker 身份与 posture 决策边界。handoff 层面的 open question 已显式记录 |
+
+### 7.3 仍未收口的问题
+
+| 审查编号 | 当前状态 | 说明 | 下一步要求 |
+|----------|----------|------|------------|
+| — | 无 | R1-R6 全部 closed;二次审查未发现新问题 | — |
+
+### 7.4 二次收口意见
+
+- **必须继续修改的 blocker**:无
+- **可后续跟进的 follow-up**(与原 review §5 follow-up 一致,非本轮新增):
+  1. P5 cutover 时,WCA 的 context slice 与 artifact evidence helper 需要走 one-shot ownership switch(本轮修正为 coexistence duplicate,非永久解)
+  2. Tenant wrapper CI grep guard 仍是人工 review 级别,P5 / 稳定化阶段值得固化成 CI check
+  3. 是否把 agent-core 的 WCA consumer path 切到 `@haimang/filesystem-core-worker`,留给 P5 或下一 posture charter 决策
+
+### 7.5 P1~P4 四个 worker 联合事实核查快照(2026-04-23)
+
+本节作为二次审查的 cross-cut 附证,锁定 P1-P4 完成后的四 worker 集合状态。
+
+#### 7.5.1 四个 worker 状态矩阵
+
+| worker | 身份 | tests | typecheck | dry-run | live preview | 下游 consumer |
+|--------|------|-------|-----------|---------|--------------|---------------|
+| `agent-core` | host worker(非 library)| **1027 / 96 files** 绿 | 绿 | 290.80 KiB / gzip 58.74 KiB;bindings 含 SESSION_DO + **BASH_CORE** + ENVIRONMENT + OWNER_TAG | `https://nano-agent-agent-core-preview.haimang.workers.dev/` 返回 `phase: "worker-matrix-P2-live-loop"` + `live_loop: true` + `capability_binding: true` | 无 cross-worker import(是入口)|
+| `bash-core` | remote capability worker | **355 / 29 files** 绿 | 绿 | 248.50 KiB / gzip 46.41 KiB | `https://nano-agent-bash-core-preview.haimang.workers.dev/` 返回 `phase: "worker-matrix-P1.B-absorbed"` + `absorbed_runtime: true` | 被 agent-core 通过 service binding 消费(`BASH_CORE`)|
+| `context-core` | library worker | **170 / 19 files** 绿 | 绿 | 155.75 KiB / gzip 26.03 KiB | 未 deploy(host-local posture) | 被 agent-core 通过 `@haimang/context-core-worker/context-api/append-initial-context-layer` subpath 消费(仅 1 个 symbol)|
+| `filesystem-core` | library worker | **293 / 25 files** 绿 | 绿 | 155.76 KiB / gzip 26.03 KiB | 未 deploy(host-local posture) | **0 runtime consumer**(P4 closure §4 已诚实承认)|
+
+#### 7.5.2 live end-to-end probes(复现)
+
+- `curl https://nano-agent-agent-core-preview.haimang.workers.dev/` → `{"worker":"agent-core","nacp_core_version":"1.4.0","nacp_session_version":"1.3.0","status":"ok","phase":"worker-matrix-P2-live-loop","absorbed_runtime":true,"live_loop":true,"capability_binding":true}`
+- `curl https://nano-agent-agent-core-preview.haimang.workers.dev/sessions/rereview/status` → HTTP 200 `{"ok":true,"action":"status","phase":"unattached"}` — SESSION_DO forwarding live
+- `curl https://nano-agent-bash-core-preview.haimang.workers.dev/` → `{"worker":"bash-core","nacp_core_version":"1.4.0","nacp_session_version":"1.3.0","status":"ok","phase":"worker-matrix-P1.B-absorbed","absorbed_runtime":true}`
+- `curl -X POST https://nano-agent-bash-core-preview.haimang.workers.dev/capability/call` → HTTP 501 `capability-call-not-wired`(honest-partial,D07 未激活路径可预期)
+- `curl -X POST https://nano-agent-bash-core-preview.haimang.workers.dev/capability/cancel` → HTTP 501 `capability-cancel-not-wired`
+- `curl https://nano-agent-bash-core-preview.haimang.workers.dev/tool.call.request` → HTTP 404 `Not Found`(R3 binding-first 纪律保持,public HTTP RPC 未暴露)
+
+#### 7.5.3 cross-cut 不变量核查
+
+| 不变量 | 状态 | 证据 |
+|--------|------|------|
+| NACP wire vocabulary(6 canonical ContextLayerKind)| 保持 | `workers/context-core/src/context-layers.ts` 与 `packages/workspace-context-artifacts/src/context-layers.ts` 的 `ContextLayerKindSchema` 仍为 `system / session / workspace_summary / artifact_summary / recent_transcript / injected` 6 项;`grep` 全仓无 `"initial_context"` 作 layer kind 值 |
+| R2 wire truth(`session.start.initial_input` / `session.followup_input.text`;`turn_input` 仅 TS 内部类型)| 保持 | `grep -E 'message_type\s*:\s*"turn_input"\|kind\s*:\s*"turn_input"' workers/*/src/` 0 命中;`turn-ingress.ts` 仍消费 canonical wire 字段 |
+| R3 binding-first(bash-core 无 `/tool.call.request` 公路由)| 保持 | bash-core live URL `/tool.call.request` 返 404 |
+| R2 error kind(`system.notify severity=error`,不自造 `system.error`)| 保持 | `grep -E 'kind\s*:\s*"system\.error"' workers/*/src/` 0 命中 |
+| tenant wrapper(B9)所有 `storage.put/get/list` 经 `getTenantScopedStorage`| 保持 | production DO code path(`nano-session-do.ts:1150+1203`、`1208+1212`)均先 `const storage = this.getTenantScopedStorage(); if (!storage) return;`;`DoStorageTraceSink` 里 `this.storage.*` 均是 test-only fixtures 注入的私有 Map,未用于 prod flow |
+| workspace truth 单一源 | 保持(coexistence)| `ContextAssembler` / `WorkspaceNamespace` / `InMemoryArtifactStore` 的 canonical source 仍是 packages/workspace-context-artifacts;agent-core 的 composition.ts 和 workspace-runtime.ts 仍 import 自 WCA;context-core 的 compact-boundary/snapshot/redaction 也仍 cross-import 自 WCA(R2 同一事实)|
+| W1 RFC direction-only(不 ship `workspace.fs.*` remote RPC) | 保持 | agent-core wrangler.jsonc 仅 `BASH_CORE` 激活,`CONTEXT_CORE / FILESYSTEM_CORE` 仍注释 |
+| Tier B packages 共存期物理存在 | 保持 | `packages/{context-management,workspace-context-artifacts,storage-topology,session-do-runtime,eval-observability,hooks,llm-wrapper,agent-runtime-kernel,capability-runtime,nacp-core,nacp-session}` 11 个包完整保留 |
+
+#### 7.5.4 跨 worker 依赖图(post-fix)
+
+```text
+agent-core  ─── dep ───▶ @haimang/context-core-worker(subpath: context-api/append-initial-context-layer)
+            ─── dep ───▶ @haimang/nacp-core / @haimang/nacp-session
+            ─── dep ───▶ @nano-agent/workspace-context-artifacts(C2 symbol 主 consumer 仍在此)
+            ─── devdep ─▶ @nano-agent/eval-observability
+            ─── wrangler service binding ─▶ BASH_CORE = nano-agent-bash-core(-preview)
+
+bash-core   ─── dep ───▶ @haimang/nacp-core / @haimang/nacp-session(仅 wire vocab)
+            (零 @nano-agent/* deps;绝对自包含)
+
+context-core ── dep ───▶ @haimang/nacp-core / @haimang/nacp-session
+            ─── dep ───▶ @nano-agent/storage-topology(async-compact 需 storage types)
+            ─── dep ───▶ @nano-agent/workspace-context-artifacts(compact-boundary/snapshot/redaction 仍反向引用 refs/types)
+            (coexistence duplicate 来源)
+
+filesystem-core ─ dep ─▶ @haimang/nacp-core / @haimang/nacp-session
+            (零 @nano-agent/* deps;绝对自包含,但 0 downstream consumer)
+```
+
+发现:`context-core` 仍对 `@nano-agent/workspace-context-artifacts` 与 `@nano-agent/storage-topology` 持有 production dep(compact-boundary/snapshot/redaction/async-compact 的 refs + types 反向引用)— 这不是新问题,R2 已在初审指出;二次审查确认它在 coexistence 期内是可接受的,但 P5 cutover 的拆解顺序必须明确:**WCA / storage-topology packages 的 refs / types 先移入 context-core / filesystem-core,再把 WCA 的 context slice 与 artifact slice 改为 re-export,最后 DEPRECATE。**这顺序已在 P3 closure §4 预告为 "P5 one-shot cutover"。
+
+### 7.6 本轮 review 最终口径
+
+- **P3 action-plan 最终状态**:`closed(口径对齐 "worker-side canonical copy + package-side coexistence duplicate")`
+- **P4 action-plan 最终状态**:`closed(S1-S7 全部 done — R1 修复使 S2 从 missing 升为 done)`
+- **review 文档状态(从 `changes-requested` 升级为)**:`closed`
+- **对 P5 的前置状态**:已 ready — P5 cutover 可以以当前 P3/P4 作为 single source of truth 启动,本轮 review 留下的三条 follow-up 均非 blocker 而是 P5 输入
+
+> 本轮 review 现予以关闭。P3/P4 主体搬迁在修复后事实与表述对齐;四个 worker 在联合核查下保持 live 可验证 / 绿测可复现 / wire 真实性不破 / B9 tenant wrapper 不绕过 / posture 口径一致。下一个冲刺点为 P5 cutover 与 Tier B deprecation。
