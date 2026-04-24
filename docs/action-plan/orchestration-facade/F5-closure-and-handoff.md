@@ -33,7 +33,7 @@ F5 的价值在于把分散在 design、action-plan、closure、live evidence、
   - `meta 文档与阶段状态仍需要同步翻转`
 - **本次计划的直接产出**：
   - `docs/issue/orchestration-facade/orchestration-facade-final-closure.md`
-  - `docs/handoff/orchestration-facade-to-<next>.md`
+  - `docs/handoff/orchestration-facade-to-next-phase.md`
   - `docs/issue/orchestration-facade/F5-closure.md`
 
 ---
@@ -84,7 +84,9 @@ F5 Closure and Handoff
 │   ├── F5-closure.md
 │   └── orchestration-facade-final-closure.md
 ├── docs/handoff/
-│   └── orchestration-facade-to-<next>.md
+│   └── orchestration-facade-to-next-phase.md
+├── test/cross-e2e/
+│   └── 11-orchestrator-public-facade-roundtrip.test.mjs
 ├── docs/plan-orchestration-facade.md
 └── next-phase trigger docs / eval docs (按实际需要)
 ```
@@ -95,9 +97,9 @@ F5 Closure and Handoff
 
 ### 2.1 In-Scope（本次 action-plan 明确要做）
 
-- **[S1]** 审阅 F0-F4 closure、exit criteria 与 live evidence
+- **[S1]** 审阅 F0-F4 closure、exit criteria 与 live evidence，并补一个 final topology verification asset
 - **[S2]** 产出 `orchestration-facade-final-closure.md`
-- **[S3]** 产出 `orchestration-facade-to-<next>.md` handoff memo 与 `F5-closure.md`
+- **[S3]** 产出 `orchestration-facade-to-next-phase.md` handoff memo 与 `F5-closure.md`
 - **[S4]** 同步阶段状态、next-phase triggers 与相关 meta 文档
 
 ### 2.2 Out-of-Scope（本次 action-plan 明确不做）
@@ -124,10 +126,11 @@ F5 Closure and Handoff
 |------|------------|--------|------|------------------|------------|----------|
 | P1-01 | Phase 1 | F0-F4 closure 审阅 | `update` | `docs/issue/orchestration-facade/F{0..4}-closure.md` | 确认各 phase 已具备可消费事实 | `medium` |
 | P1-02 | Phase 1 | exit criteria 核对 | `update` | `charter + action-plans + closures` | 给阶段级 verdict 提供依据 | `high` |
+| P1-03 | Phase 1 | final topology verification asset | `add/update` | `test/cross-e2e/11-orchestrator-public-facade-roundtrip.test.mjs` `test/shared/live.mjs` | 给 F5 一个可执行的阶段级 live proof | `medium` |
 | P2-01 | Phase 2 | final closure | `add` | `docs/issue/orchestration-facade/orchestration-facade-final-closure.md` | 给 owner 一份综合 verdict | `medium` |
-| P2-02 | Phase 2 | handoff memo | `add` | `docs/handoff/orchestration-facade-to-<next>.md` | 给下游一份可直接消费的输入包 | `medium` |
+| P2-02 | Phase 2 | handoff memo | `add` | `docs/handoff/orchestration-facade-to-next-phase.md` | 给下游一份可直接消费的输入包，并写清 ongoing operational disciplines | `medium` |
 | P2-03 | Phase 2 | F5 closure | `add` | `docs/issue/orchestration-facade/F5-closure.md` | 记录 F5 自身执行事实 | `low` |
-| P3-01 | Phase 3 | meta-doc / charter state sync | `update` | `docs/plan-orchestration-facade.md` + next-phase triggers | 让仓库状态反映 phase closure | `medium` |
+| P3-01 | Phase 3 | meta-doc / charter state sync | `update` | `docs/plan-orchestration-facade.md` + next-phase triggers + `workers/orchestrator-core/src/index.ts` | 让仓库状态反映 phase closure，并把 orchestrator probe marker 翻到 terminal marker | `medium` |
 
 ---
 
@@ -139,20 +142,21 @@ F5 Closure and Handoff
 |------|--------|----------|------------------|----------|----------|----------|
 | P1-01 | F0-F4 closure 审阅 | 核对 5 份 phase closure 是否齐全、是否与 action-plan 交付物一致 | `F0-F4 closures` | 上游 phase 可被 F5 消费 | 文档 review | 5 份 closure 全齐 |
 | P1-02 | exit criteria 核对 | 对照 charter / F0-F5 action-plan 检查阶段 exit criteria 是否全满足 | `charter + action-plans + closures` | final verdict 有 evidence 链 | 文档 review | 阶段 exit criteria 可逐条勾稽 |
+| P1-03 | final topology verification asset | 新增一个阶段级 live proof：`JWT -> orchestrator -> agent -> bash -> stream back` 的 final roundtrip cross-e2e，并把它纳入 F5 evidence review | `test/cross-e2e/11-orchestrator-public-facade-roundtrip.test.mjs` `test/shared/live.mjs` | 阶段 closure 不只靠文档聚合 | cross-e2e | final roundtrip green |
 
 ### 4.2 Phase 2 — final closure / handoff pack
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
 | P2-01 | final closure | 聚合 F0-F4 结果、残余 follow-up、整体 verdict | `orchestration-facade-final-closure.md` | owner 可只读一份文档得出结论 | 文档 review | verdict 明确、不过度复述 |
-| P2-02 | handoff memo | 把下游需要的输入包、依赖、已冻结真相与遗留 follow-up 压成 handoff | `orchestration-facade-to-<next>.md` | next-phase 作者可直接消费 | 文档 review | handoff 不越位代写下游 charter |
+| P2-02 | handoff memo | 把下游需要的输入包、依赖、已冻结真相与遗留 follow-up 压成 handoff，并补 ongoing operational disciplines（`NANO_INTERNAL_BINDING_SECRET` rotation、`TEAM_UUID` single-tenant revalidation、probe marker policy） | `orchestration-facade-to-next-phase.md` | next-phase 作者可直接消费 | 文档 review | handoff 不越位代写下游 charter |
 | P2-03 | F5 closure | 记录本 phase 自己的执行事实与证据来源 | `F5-closure.md` | F5 自身也可被审计 | 文档 review | F5 有独立 closure |
 
 ### 4.3 Phase 3 — meta-doc 同步与阶段翻转
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P3-01 | meta-doc / charter state sync | 更新 `plan-orchestration-facade` 状态、next-phase trigger docs 与相关索引 | `plan-orchestration-facade.md` + related docs | 仓库状态表达与 final closure 一致 | 文档 review | 不再出现“phase 还在进行中”的旧口径 |
+| P3-01 | meta-doc / charter state sync | 更新 `plan-orchestration-facade` 状态、next-phase trigger docs 与相关索引，并把 orchestrator probe marker 翻到 terminal marker（其余 4 worker 的既有 posture marker 在 handoff 中显式说明） | `plan-orchestration-facade.md` + related docs + `workers/orchestrator-core/src/index.ts` | 仓库状态表达与 final closure 一致 | 文档 review | 不再出现“phase 还在进行中”的旧口径 |
 
 ---
 
@@ -164,22 +168,26 @@ F5 Closure and Handoff
 - **本 Phase 对应编号**：
   - `P1-01`
   - `P1-02`
+  - `P1-03`
 - **本 Phase 新增文件**：
-  - `无`
+  - `test/cross-e2e/11-orchestrator-public-facade-roundtrip.test.mjs`
 - **本 Phase 修改文件**：
   - `closure working notes`
+  - `test/shared/live.mjs`
 - **具体功能预期**：
   1. 5 份上游 closure 都可直接引用
   2. charter exit criteria 有真实 evidence
-  3. remaining follow-up 被识别为 next-phase inputs，而非未完成工作
+  3. final topology verification 不只靠口头叙述，而有一条阶段级 live roundtrip
+  4. remaining follow-up 被识别为 next-phase inputs，而非未完成工作
 - **具体测试安排**：
   - **单测**：`无`
-  - **集成测试**：`无`
+  - **集成测试**：`final roundtrip cross-e2e`
   - **回归测试**：`无代码回归；做文档交叉核对`
-  - **手动验证**：`逐 phase 对照 closure / action-plan / live evidence`
+  - **手动验证**：`逐 phase 对照 closure / action-plan / live evidence + final roundtrip`
 - **收口标准**：
   - F0-F4 closure 齐全
   - 阶段 exit criteria 可逐条引用证据
+  - final roundtrip cross-e2e 为绿
 - **本 Phase 风险提醒**：
   - 最容易把局部成功错写成阶段完成
 
@@ -192,14 +200,15 @@ F5 Closure and Handoff
   - `P2-03`
 - **本 Phase 新增文件**：
   - `docs/issue/orchestration-facade/orchestration-facade-final-closure.md`
-  - `docs/handoff/orchestration-facade-to-<next>.md`
+  - `docs/handoff/orchestration-facade-to-next-phase.md`
   - `docs/issue/orchestration-facade/F5-closure.md`
 - **本 Phase 修改文件**：
   - `无`
 - **具体功能预期**：
   1. owner 只看 final closure 即可判断 phase 是否完成
   2. 下游只看 handoff 即可拿到 next-phase 输入包
-  3. F5 自身 closure 记录本 phase 证据链
+  3. handoff 明确 ongoing operational disciplines（secret rotation / tenant truth / probe marker）
+  4. F5 自身 closure 记录本 phase 证据链
 - **具体测试安排**：
   - **单测**：`无`
   - **集成测试**：`无`
@@ -223,8 +232,9 @@ F5 Closure and Handoff
   - `next-phase trigger / index docs`
 - **具体功能预期**：
   1. `plan-orchestration-facade` 状态从 active/reviewed 语气切到 closed/handoff-ready
-  2. next-phase 触发条件被单一文档表达
-  3. 仓库内不再存在“orchestration-facade 还未闭合”的旧口径
+  2. orchestrator probe marker 切到 terminal marker，其余 worker probe posture 在 handoff 中被显式说明
+  3. next-phase 触发条件被单一文档表达
+  4. 仓库内不再存在“orchestration-facade 还未闭合”的旧口径
 - **具体测试安排**：
   - **单测**：`无`
   - **集成测试**：`无`
@@ -265,7 +275,7 @@ F5 的职责是消费 F0-F4 已完成事实，而不是重开设计问题。
 ### 7.2 约束与前提
 
 - **技术前提**：`F0-F4 已各自 closure`
-- **运行时前提**：`关键 live evidence、legacy negative tests、authority negative tests 都已存在`
+- **运行时前提**：`关键 live evidence、legacy negative tests、authority negative tests 都已存在，且 final roundtrip cross-e2e 能被加入`
 - **组织协作前提**：`F5 不回头替 F1-F4 擦屁股`
 - **上线 / 合并前提**：`final closure 与 handoff 都必须可独立被引用`
 
@@ -287,12 +297,13 @@ F5 的职责是消费 F0-F4 已完成事实，而不是重开设计问题。
 - **基础校验**：
   - `F0-F4 closure 齐全`
   - `charter exit criteria 有证据链`
+  - `final roundtrip cross-e2e 已存在`
 - **单元测试**：
   - `无`
 - **集成测试**：
-  - `无新增；消费上游现有 evidence`
+  - `final roundtrip cross-e2e`
 - **端到端 / 手动验证**：
-  - `final closure / handoff / meta-doc 交叉核对`
+  - `final closure / handoff / meta-doc 交叉核对 + final roundtrip smoke`
 - **回归测试**：
   - `无代码回归`
 - **文档校验**：
@@ -304,9 +315,10 @@ F5 的职责是消费 F0-F4 已完成事实，而不是重开设计问题。
 
 1. `F0-F4 closure 已全部被 F5 核对并纳入阶段级 verdict`
 2. `orchestration-facade-final-closure.md` 已形成单一阶段结论
-3. `orchestration-facade-to-<next>.md` 已形成可直接消费的 handoff pack
-4. `F5-closure.md` 已记录本 phase 的执行事实与证据`
-5. `仓库内阶段状态表达已同步翻转`
+3. `orchestration-facade-to-next-phase.md` 已形成可直接消费的 handoff pack
+4. `test/cross-e2e/11-orchestrator-public-facade-roundtrip.test.mjs` 已成为阶段级 live proof
+5. `F5-closure.md` 已记录本 phase 的执行事实与证据
+6. `仓库内阶段状态表达与 orchestrator terminal probe marker 已同步翻转`
 
 ### 8.3 完成定义（Definition of Done）
 

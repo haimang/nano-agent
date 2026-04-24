@@ -131,13 +131,13 @@ F0 Concrete Freeze Pack
 
 | 编号 | 所属 Phase | 工作项 | 类型 | 涉及模块 / 文件 | 目标一句话 | 风险等级 |
 |------|------------|--------|------|------------------|------------|----------|
-| P1-01 | Phase 1 | charter / design / qna 一致性审计 | `update` | `plan + design + FX-qna` | 证明 freeze 真正成立 | `medium` |
-| P1-02 | Phase 1 | review finding 分类 | `update` | `review docs` | 把 blocking / non-blocking 边界写死 | `medium` |
+| P1-01 | Phase 1 | charter / design / qna 一致性审计 | `update` | `plan + design + FX-qna` | 证明 freeze 真正成立，且 Q1-Q8 owner answers 已回填 | `medium` |
+| P1-02 | Phase 1 | review finding 分类 | `update` | `review docs` | 把 blocking / non-blocking 边界写死，并标明 absorbed / follow-up 证据链 | `medium` |
 | P2-01 | Phase 2 | wording 收口 | `update` | `docs/design/orchestration-facade/*` | 移除残留 owner prompts 与漂移 wording | `low` |
 | P2-02 | Phase 2 | charter 对齐 | `update` | `docs/plan-orchestration-facade.md` | 让 charter 与已冻结 design 保持同口径 | `low` |
 | P3-01 | Phase 3 | F1-F5 entry checklist | `update` | `action-plan pack` | 后续周期不再重复 invent start conditions | `medium` |
 | P3-02 | Phase 3 | follow-up 降级清单 | `update` | `closure / action-plan notes` | 把实现期问题从 blocker 列表移走 | `low` |
-| P4-01 | Phase 4 | F0 closure memo | `add` | `docs/issue/orchestration-facade/F0-closure.md` | 正式解锁 F1 | `low` |
+| P4-01 | Phase 4 | F0 closure memo | `add` | `docs/issue/orchestration-facade/F0-closure.md` | 记录 Q1-Q8 freeze、blocker 已清，正式解锁 F1 | `low` |
 
 ---
 
@@ -147,8 +147,8 @@ F0 Concrete Freeze Pack
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P1-01 | 一致性审计 | 核对 charter、8 份 design docs、FX-qna 是否共享同一组 frozen answers | `docs/plan-orchestration-facade.md` `docs/design/orchestration-facade/*` | 冻结真相形成单一口径 | 文档 review | 无自相矛盾结论 |
-| P1-02 | review finding 分类 | 把 DeepSeek / Opus findings 标成 resolved / implementation follow-up | `docs/eval/orchestration-facade/*` | 不再把旧 blocker 留在 F1 入口 | 文档 review | 无残留 owner blocker |
+| P1-01 | 一致性审计 | 核对 charter、8 份 design docs、FX-qna（含 Q1-Q8 `业主回答` 字段）是否共享同一组 frozen answers | `docs/plan-orchestration-facade.md` `docs/design/orchestration-facade/*` | 冻结真相形成单一口径 | 文档 review | 无自相矛盾结论，且 Q1-Q8 owner answers 全部非空 |
+| P1-02 | review finding 分类 | 把 DeepSeek / Opus findings 标成 absorbed / implementation follow-up，并给出引用证据链 | `docs/eval/orchestration-facade/*` | 不再把旧 blocker 留在 F1 入口 | 文档 review | 无残留 owner blocker |
 
 ### 4.2 Phase 2 — 真相同步与 wording 收口
 
@@ -168,7 +168,7 @@ F0 Concrete Freeze Pack
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P4-01 | F0 closure memo | 记录 design freeze 完成、blocker 已清、F1 已解锁 | `docs/issue/orchestration-facade/F0-closure.md` | F0 正式闭合 | 文档 review | closure 可直接被 F1 引用 |
+| P4-01 | F0 closure memo | 记录 design freeze 完成、Q1-Q8 `业主回答` 已回填、blocker 已清、F1 已解锁 | `docs/issue/orchestration-facade/F0-closure.md` | F0 正式闭合 | 文档 review | closure 可直接被 F1 引用 |
 
 ---
 
@@ -188,7 +188,8 @@ F0 Concrete Freeze Pack
 - **具体功能预期**：
   1. review findings 不再以“待解决 blocker”形式悬挂
   2. FX-qna 的冻结答案成为 action-plan 唯一引用口径
-  3. F1-F5 的设计前提得到统一解释
+  3. Q1-Q8 `业主回答` 字段全部非空并可被 F1-F5 直接引用
+  4. F1-F5 的设计前提得到统一解释
 - **具体测试安排**：
   - **单测**：`无`
   - **集成测试**：`无`
@@ -197,6 +198,7 @@ F0 Concrete Freeze Pack
 - **收口标准**：
   - 无 owner-level blocker
   - 无 design 与 charter 冲突
+  - FX-qna Q1-Q8 `业主回答` 全部非空
   - follow-up 都已降级为实现期选择
 - **本 Phase 风险提醒**：
   - 最容易把 wording 收口误当成 design 修改
@@ -270,8 +272,9 @@ F0 Concrete Freeze Pack
   - `无`
 - **具体功能预期**：
   1. closure memo 清楚说明 F0 的交付物
-  2. 明确 F1 已解锁
-  3. implementation follow-up 被正确记录为下游事项
+  2. 明确 Q1-Q8 `业主回答` 已回填并被 freeze baseline 消费
+  3. 明确 F1 已解锁
+  4. implementation follow-up 被正确记录为下游事项
 - **具体测试安排**：
   - **单测**：`无`
   - **集成测试**：`无`
@@ -290,7 +293,7 @@ F0 Concrete Freeze Pack
 ### 6.1 当前结论
 
 本阶段 **无新增 owner-level blocker**。  
-F0 直接消费 `docs/design/orchestration-facade/FX-qna.md` 中已冻结的 Q1-Q8 答案，不再额外开题。
+F0 直接消费 `docs/design/orchestration-facade/FX-qna.md` 中已冻结的 Q1-Q8 答案；F0 closure 必须显式确认 Q1-Q8 `业主回答` 均已回填，不再额外开题。
 
 ### 6.2 问题整理建议
 
@@ -311,7 +314,7 @@ F0 直接消费 `docs/design/orchestration-facade/FX-qna.md` 中已冻结的 Q1-
 
 ### 7.2 约束与前提
 
-- **技术前提**：`8 份 design docs + FX-qna 已存在，且 review absorption 已完成`
+- **技术前提**：`8 份 design docs + FX-qna 已存在，review absorption 已完成，且 Q1-Q8 owner answers 均已回填`
 - **运行时前提**：`当前不要求任何 worker 代码变更或 deploy 行为`
 - **组织协作前提**：`owner / Opus 的 frozen answers 以 FX-qna 为唯一口径`
 - **上线 / 合并前提**：`F0 closure 必须先于 F1 bring-up`
@@ -335,6 +338,7 @@ F0 直接消费 `docs/design/orchestration-facade/FX-qna.md` 中已冻结的 Q1-
 - **基础校验**：
   - `charter / design / FX-qna / review findings 无冲突`
   - `6 份 action-plan 已形成连续执行链`
+  - `Q1-Q8 owner answers 全部非空`
 - **单元测试**：
   - `无`
 - **集成测试**：
@@ -352,9 +356,10 @@ F0 直接消费 `docs/design/orchestration-facade/FX-qna.md` 中已冻结的 Q1-
 
 1. `F0 blocker 已全部清空`
 2. `FX-qna 成为唯一 frozen answer source`
-3. `F1-F5 的执行入口、输出物、退出条件都已明确`
-4. `implementation follow-up 不再冒充设计阻塞`
-5. `F0-closure.md 正式解锁 F1`
+3. `Q1-Q8 业主回答已全部回填并被 closure 明示`
+4. `F1-F5 的执行入口、输出物、退出条件都已明确`
+5. `implementation follow-up 不再冒充设计阻塞`
+6. `F0-closure.md 正式解锁 F1`
 
 ### 8.3 完成定义（Definition of Done）
 
