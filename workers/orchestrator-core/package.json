@@ -1,0 +1,32 @@
+{
+  "name": "@haimang/orchestrator-core-worker",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "orchestrator-core worker — orchestration-facade F1 public start façade",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "deploy:preview": "pnpm build && wrangler deploy --env preview",
+    "deploy:dry-run": "wrangler deploy --dry-run"
+  },
+  "dependencies": {
+    "@haimang/nacp-core": "1.4.0",
+    "@haimang/nacp-session": "1.3.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20251101.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0",
+    "wrangler": "^4.83.0"
+  }
+}

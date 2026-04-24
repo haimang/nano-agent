@@ -1,0 +1,52 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "nano-agent-orchestrator-core",
+  "main": "dist/index.js",
+  "compatibility_date": "2026-04-24",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "ENVIRONMENT": "preview",
+    "OWNER_TAG": "nano-agent",
+    "TEAM_UUID": "nano-agent"
+  },
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "ORCHESTRATOR_USER_DO",
+        "class_name": "NanoOrchestratorUserDO"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_classes": ["NanoOrchestratorUserDO"]
+    }
+  ],
+  "services": [
+    { "binding": "AGENT_CORE", "service": "nano-agent-agent-core" }
+  ],
+  "env": {
+    "preview": {
+      "vars": {
+        "ENVIRONMENT": "preview",
+        "OWNER_TAG": "nano-agent",
+        "TEAM_UUID": "nano-agent"
+      },
+      "durable_objects": {
+        "bindings": [
+          {
+            "name": "ORCHESTRATOR_USER_DO",
+            "class_name": "NanoOrchestratorUserDO"
+          }
+        ]
+      },
+      "services": [
+        { "binding": "AGENT_CORE", "service": "nano-agent-agent-core-preview" }
+      ]
+    }
+  }
+}
