@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { fetchJson, liveTest, randomSessionId } from "../shared/live.mjs";
+import { createOrchestratorAuth } from "../shared/orchestrator-auth.mjs";
 
 /**
  * Cross e2e — end-to-end session lifecycle through agent-core's full
@@ -27,23 +28,24 @@ import { fetchJson, liveTest, randomSessionId } from "../shared/live.mjs";
  */
 
 liveTest(
-  "agent-core + bash-core — full session lifecycle with mid-session cross-worker call",
-  ["agent-core", "bash-core"],
+  "orchestrator-core + bash-core — full session lifecycle with mid-session cross-worker call",
+  ["orchestrator-core", "bash-core"],
   async ({ getUrl }) => {
-    const base = getUrl("agent-core");
+    const base = getUrl("orchestrator-core");
     const sessionId = randomSessionId();
+    const { authHeaders, jsonHeaders } = await createOrchestratorAuth("cross-e2e");
 
     const start = await fetchJson(`${base}/sessions/${sessionId}/start`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: jsonHeaders,
       body: JSON.stringify({ initial_input: "lifecycle-xwkr-t1" }),
     });
     assert.equal(start.response.status, 200);
-    assert.equal(start.json?.phase, "attached");
+    assert.equal(start.json?.action, "start");
 
     const input = await fetchJson(`${base}/sessions/${sessionId}/input`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: jsonHeaders,
       body: JSON.stringify({ text: "lifecycle-xwkr-t2" }),
     });
     assert.equal(input.response.status, 200);
@@ -52,7 +54,7 @@ liveTest(
     // Mid-session cross-seam probe: still reaches bash-core
     const verify = await fetchJson(`${base}/sessions/${sessionId}/verify`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: jsonHeaders,
       body: JSON.stringify({
         check: "capability-call",
         toolName: "pwd",
@@ -64,16 +66,17 @@ liveTest(
 
     const cancel = await fetchJson(`${base}/sessions/${sessionId}/cancel`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: jsonHeaders,
       body: JSON.stringify({}),
     });
     assert.equal(cancel.response.status, 200);
+    assert.equal(cancel.json?.terminal, "cancelled");
 
-    const status = await fetchJson(`${base}/sessions/${sessionId}/status`);
+    const status = await fetchJson(`${base}/sessions/${sessionId}/status`, { headers: authHeaders });
     assert.equal(status.response.status, 200);
     assert.equal(status.json?.ok, true);
 
-    const timeline = await fetchJson(`${base}/sessions/${sessionId}/timeline`);
+    const timeline = await fetchJson(`${base}/sessions/${sessionId}/timeline`, { headers: authHeaders });
     assert.equal(timeline.response.status, 200);
     assert.ok(Array.isArray(timeline.json?.events));
   },

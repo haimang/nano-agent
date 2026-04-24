@@ -1,13 +1,15 @@
 import assert from "node:assert/strict";
 import { fetchJson, liveTest, randomSessionId } from "../shared/live.mjs";
+import { createOrchestratorAuth } from "../shared/orchestrator-auth.mjs";
 
-liveTest("agent-core live path consumes initial_context", ["agent-core"], async ({ getUrl }) => {
-  const base = getUrl("agent-core");
+liveTest("orchestrator-core live path consumes initial_context", ["orchestrator-core"], async ({ getUrl }) => {
+  const base = getUrl("orchestrator-core");
   const sessionId = randomSessionId();
+  const { jsonHeaders } = await createOrchestratorAuth("cross-e2e");
 
   const start = await fetchJson(`${base}/sessions/${sessionId}/start`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: jsonHeaders,
     body: JSON.stringify({
       initial_input: "cross-e2e initial context",
       initial_context: {
@@ -19,7 +21,7 @@ liveTest("agent-core live path consumes initial_context", ["agent-core"], async 
 
   const verify = await fetchJson(`${base}/sessions/${sessionId}/verify`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: jsonHeaders,
     body: JSON.stringify({ check: "initial-context" }),
   });
   assert.equal(verify.response.status, 200);

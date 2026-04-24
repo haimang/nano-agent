@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { fetchJson, liveTest, randomSessionId } from "../shared/live.mjs";
+import { createOrchestratorAuth } from "../shared/orchestrator-auth.mjs";
 
 /**
  * Cross e2e — bash-core error envelopes propagate through agent-core
@@ -36,17 +37,28 @@ const CROSS_CASES = [
 
 for (const { label, toolName, expectedCode } of CROSS_CASES) {
   liveTest(
-    `agent-core verify surfaces bash-core "${expectedCode}" error verbatim (${label})`,
-    ["agent-core", "bash-core"],
-    async ({ getUrl }) => {
-      const verify = await fetchJson(
-        `${getUrl("agent-core")}/sessions/${randomSessionId()}/verify`,
-        {
+      `orchestrator-core verify surfaces bash-core "${expectedCode}" error verbatim (${label})`,
+      ["orchestrator-core", "bash-core"],
+      async ({ getUrl }) => {
+        const base = getUrl("orchestrator-core");
+        const sessionId = randomSessionId();
+        const { jsonHeaders } = await createOrchestratorAuth("cross-e2e");
+
+        const start = await fetchJson(`${base}/sessions/${sessionId}/start`, {
           method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            check: "capability-call",
-            toolName,
+          headers: jsonHeaders,
+          body: JSON.stringify({ initial_input: `cross-error-${label}` }),
+        });
+        assert.equal(start.response.status, 200);
+
+        const verify = await fetchJson(
+          `${base}/sessions/${sessionId}/verify`,
+          {
+            method: "POST",
+            headers: jsonHeaders,
+            body: JSON.stringify({
+              check: "capability-call",
+              toolName,
             toolInput: {},
           }),
         },

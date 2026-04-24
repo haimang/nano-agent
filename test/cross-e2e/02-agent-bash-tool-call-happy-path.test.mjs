@@ -1,11 +1,22 @@
 import assert from "node:assert/strict";
 import { fetchJson, liveTest, randomSessionId } from "../shared/live.mjs";
+import { createOrchestratorAuth } from "../shared/orchestrator-auth.mjs";
 
-liveTest("agent-core verifies a real bash-core happy-path tool call", ["agent-core", "bash-core"], async ({ getUrl }) => {
+liveTest("orchestrator-core verifies a real bash-core happy-path tool call", ["orchestrator-core", "bash-core"], async ({ getUrl }) => {
+  const base = getUrl("orchestrator-core");
   const sessionId = randomSessionId();
-  const verify = await fetchJson(`${getUrl("agent-core")}/sessions/${sessionId}/verify`, {
+  const { jsonHeaders } = await createOrchestratorAuth("cross-e2e");
+
+  const start = await fetchJson(`${base}/sessions/${sessionId}/start`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: jsonHeaders,
+    body: JSON.stringify({ initial_input: "cross-capability-happy" }),
+  });
+  assert.equal(start.response.status, 200);
+
+  const verify = await fetchJson(`${base}/sessions/${sessionId}/verify`, {
+    method: "POST",
+    headers: jsonHeaders,
     body: JSON.stringify({
       check: "capability-call",
       toolName: "pwd",
