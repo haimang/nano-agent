@@ -13,7 +13,7 @@
 1. `test/package-e2e/orchestrator-core/` 已成为 canonical public suite；`agent-core/02-06` session-facing package tests 已删除。
 2. affected cross tests `02,03,04,05,06,08,09` 已全部改为经由 `orchestrator-core`；`01` 与 `10` 升级为 5-worker inventory / concurrency probe。
 3. `workers/agent-core/src/index.ts` 现对 legacy session HTTP 路由返回 `legacy-session-route-retired / 410`，对 legacy WS 返回 `legacy-websocket-route-retired / 426`。
-4. `workers/orchestrator-core/src/index.ts` probe marker 已 rollover 到 `orchestration-facade-F3`，`/ws` negative taxonomy 允许在 missing / terminal 场景下走 no-upgrade JSON proof。
+4. 当期 F3 执行完成时，`workers/orchestrator-core/src/index.ts` probe marker 已 rollover 到 `orchestration-facade-F3`，`/ws` negative taxonomy 允许在 missing / terminal 场景下走 no-upgrade JSON proof；由于 F4/F5 在同一执行链内紧接着完成，当前 HEAD 的 marker 已进一步翻到 `orchestration-facade-closed`。
 5. `test/INDEX.md` 与 `workers/{agent-core,orchestrator-core}/README.md` 已同步到 F3 canonical truth。
 
 ## 3. 验证证据

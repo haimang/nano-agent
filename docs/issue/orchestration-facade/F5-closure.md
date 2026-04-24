@@ -22,7 +22,7 @@ F5 已完成。
 2. `docs/handoff/orchestration-facade-to-next-phase.md`
 3. `docs/issue/orchestration-facade/F5-closure.md`
 4. `test/cross-e2e/11-orchestrator-public-facade-roundtrip.test.mjs`
-5. `workers/orchestrator-core/src/index.ts` terminal probe marker → `orchestration-facade-closed`
+5. `workers/orchestrator-core/src/index.ts` 与 `workers/agent-core/src/index.ts` terminal probe marker → `orchestration-facade-closed`
 
 ---
 

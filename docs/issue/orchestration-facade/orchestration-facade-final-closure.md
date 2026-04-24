@@ -52,7 +52,7 @@
   1. public ingress 强制 `trace_uuid` + deploy tenant truth
   2. internal ingress 强制 secret + authority header + trace + no-escalation
   3. `TEAM_UUID` 已在 5 个 worker 的 preview vars 中显式配置
-  4. `bash-core` 已具备 `beforeCapabilityExecute()` seam
+  4. `bash-core` 已具备 `beforeCapabilityExecute()` seam，且 runtime request/cancel 主路径现已经由 `CapabilityExecutor`
 
 ### criterion 4 — live topology proof 已覆盖 public façade 的真实链路
 
@@ -88,7 +88,8 @@
 3. **tenant posture 固化**：first-wave 继续是 `single-tenant-per-deploy + explicit TEAM_UUID`，不是 multi-tenant-per-deploy。
 4. **authority posture 固化**：internal secret 只是第一道 gate；authority payload、trace law、no-escalation 才是 F4 后的正式 legality layer。
 5. **bash posture 固化**：`bash-core` 仍是 governed fake-bash capability worker；F4 只补 legality seam，没有扩大到 credit / billing 域。
-6. **context/filesystem posture 固化**：两者继续维持 probe-only library worker posture，本阶段没有把它们提升为 public business façade。
+6. **canonical redirect posture 固化**：`agent-core` 的 legacy retirement 现在优先消费显式 `ORCHESTRATOR_PUBLIC_BASE_URL`，避免 future custom-domain 部署继续依赖 hostname string replacement。
+7. **context/filesystem posture 固化**：两者继续维持 probe-only library worker posture，本阶段没有把它们提升为 public business façade。
 
 ---
 
@@ -108,6 +109,7 @@
 2. `NANO_INTERNAL_BINDING_SECRET` 继续是 runtime secret，应作为 ongoing rotation discipline，而不是 checked-in config。
 3. `TEAM_UUID` 是非 secret deploy truth；preview/prod 都必须显式配置，不应回退到 `_unknown` 心智。
 4. `orchestration-facade-closed` 已是 terminal probe marker；后续阶段不应复用 F1-F4 marker。
+5. 代码面已基本不存在额外 worker/package runtime consumer 继续直接依赖 `packages/capability-runtime`；next-phase 若要扩 executor law，应继续以 `workers/bash-core` 为唯一 public runtime owner。
 
 ---
 

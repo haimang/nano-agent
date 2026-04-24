@@ -23,7 +23,7 @@ F4 已达到关闭条件。
 2. `workers/orchestrator-core/src/auth.ts` 现在强制要求 public ingress 显式提供 `x-trace-uuid` 或 `trace_uuid` query，并在 tenant claim 与 deploy tenant 不一致时返回 typed reject。
 3. 新增 `workers/agent-core/src/host/internal-policy.ts`，把 internal secret、trace law、authority header、body/header no-escalation 与 tenant truth 收束到统一校验入口。
 4. `workers/orchestrator-core/src/user-do.ts` 现在会对 internal calls 显式转发 `x-trace-uuid` 与 `x-nano-internal-authority`，并在缺少 persisted auth snapshot 时 fail-closed。
-5. `workers/bash-core/src/executor.ts` 已新增 `beforeCapabilityExecute()` seam，固定落点为 `policy.check(plan)` 之后、target lookup 之前。
+5. `workers/bash-core/src/executor.ts` 已新增 `beforeCapabilityExecute()` seam，固定落点为 `policy.check(plan)` 之后、target lookup 之前；`workers/bash-core/src/worker-runtime.ts` 现在实际通过 `CapabilityExecutor` 路径执行 request/cancel，所以 seam 已进入 production runtime path，但当前未配置额外 recheck provider。
 6. 五个 worker 的 `wrangler.jsonc` 现都显式配置 `TEAM_UUID = "nano-agent"`；preview / prod 不再依赖 `_unknown` 心智。
 7. negative coverage 已补齐到 worker tests 与 live package-e2e：missing trace、tenant mismatch、internal invalid authority / escalation、executor recheck fail-closed。
 
@@ -67,6 +67,7 @@ Preview 已重新部署：
 
 1. `NANO_AGENT_LIVE_E2E=1 pnpm test:package-e2e` → `35 / 35 pass`
 2. `NANO_AGENT_LIVE_E2E=1 pnpm test:cross` → `46 / 46 pass`
+3. `rg "@nano-agent/capability-runtime|packages/capability-runtime" workers packages` → 代码面未发现仍在消费 `packages/capability-runtime` runtime API 的 worker/package caller（仅剩 bash-core 自身注释与 package 本体）
 
 ---
 

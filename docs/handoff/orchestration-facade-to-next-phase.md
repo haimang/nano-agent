@@ -15,7 +15,7 @@
 | runtime host | `workers/agent-core` | guarded `/internal/*` remains the only downstream runtime ingress |
 | authority baseline | explicit `trace_uuid` + JWT/public tenant law + internal no-escalation law | F4 closed with local/live negative evidence |
 | tenant posture | `single-tenant-per-deploy + TEAM_UUID` | 5 workers now carry explicit preview vars |
-| bash posture | governed capability worker with pre-execute legality seam | `beforeCapabilityExecute()` is now the fixed future extension point |
+| bash posture | governed capability worker with pre-execute legality seam | runtime path now runs through `CapabilityExecutor`; `beforeCapabilityExecute()` remains the fixed future extension point, but no extra provider is configured yet |
 | context/filesystem posture | probe-only library workers | final handoff does not promote them to public façades |
 
 ---
@@ -41,6 +41,8 @@ Use the older F0-F3 action-plans only as ancestry, not as the primary truth pack
 | credit / quota / billing | deliberately out-of-scope for F4 | next auth/budget charter |
 | multi-tenant-per-deploy | deliberately deferred | next tenancy charter |
 | richer live push stream | current truth remains snapshot-over-NDJSON internal relay | next streaming/runtime charter |
+| session lifecycle mapping law | orchestrator persists `last_phase` as audit string, but no formal SessionEntry ↔ agent DO phase matrix is frozen yet | next streaming/runtime charter |
+| executor recheck provider | runtime path now goes through `CapabilityExecutor`, but no nontrivial `beforeCapabilityExecute` provider is configured yet | next auth/budget charter |
 | context/filesystem public promotion | deliberately not admitted | future topology/product charter |
 | new public product surface | not part of orchestration-facade | next charter only |
 
@@ -52,7 +54,8 @@ Use the older F0-F3 action-plans only as ancestry, not as the primary truth pack
 2. **Keep `TEAM_UUID` explicit in preview/prod**. Do not treat `_unknown` as an acceptable deployed truth.
 3. **When running live orchestrator suites, keep local signing aligned with preview `JWT_SECRET`**.
 4. **Do not re-open `agent-core /sessions/*` as a public convenience path**. The typed `410/426` retirement is now part of the contract.
-5. **Treat `orchestration-facade-closed` as terminal marker**. Future phases should move to new markers, not reuse F1-F4 ones.
+5. **Treat `orchestration-facade-closed` as terminal marker**. `orchestrator-core` and `agent-core` now advertise it; future phases should move to new markers, not reuse F1-F4 ones.
+6. **If `agent-core` serves legacy retirement on custom domains, configure `ORCHESTRATOR_PUBLIC_BASE_URL` explicitly** so `canonical_url` does not depend on hostname string replacement.
 
 ---
 
