@@ -1,6 +1,6 @@
 # Plan Orchestration Facade — Compatibility-First Public Facade over a Private Runtime Mesh
 
-> **状态**：`draft charter (r2 coherent rewrite after Opus 1st/2nd-pass + GPT fact review)`
+> **状态**：`draft charter (r2 + design pack seeded)`
 > **日期**：`2026-04-24`
 > **作者**：`GPT-5.4`
 > **文档性质**：`phase charter` — public ingress cutover / orchestrator façade / private runtime mesh / internal contract freeze / authority law
@@ -172,7 +172,7 @@ first-wave **不**重造全新产品 API，而是保持对外 surface 与当前 
 
 默认采用：
 
-> **HTTP streaming response（Readable body）作为 session stream relay**
+> **HTTP streaming response（Readable body）+ NDJSON framing 作为 session stream relay**
 
 这两件事不是同一件事，也不能只冻住其中一边。
 
@@ -358,7 +358,7 @@ first-wave 默认选择：
 | 字段 | 类型 | 用途 | first-wave 必要性 |
 |---|---|---|---|
 | `user_uuid` | string | DO identity truth | 必需 |
-| `active_sessions` | `Map<session_uuid, { created_at, last_seen_at, status, last_phase?, relay_cursor? }>` | attach / reconnect / expire | 必需 |
+| `active_sessions` | `Map<session_uuid, { created_at, last_seen_at, status, last_phase?, relay_cursor?, ended_at? }>` | attach / reconnect / bounded recent-ended metadata | 必需 |
 | `last_auth_snapshot` | `{ sub, realm?, tenant_uuid?, membership_level?, source_name?, exp? }` | identity / authority cache | 必需 |
 | `initial_context_seed` | `{ realm_hints?, source_name?, default_layers?, user_memory_ref? }` | first-wave seed builder input | 必需 |
 
@@ -398,6 +398,16 @@ first-wave reconnect 必须回答：
 2. orchestrator 如何根据 registry cursor 重建 relay
 3. session 已结束时，返回什么 typed result
 4. 是否允许 multiple tabs / multiple attachments
+
+first-wave 的默认建议是：
+
+> **single active writable attachment**
+
+也就是：
+
+1. 同一 session 同时只允许一个活跃写入 attachment
+2. 新 attachment 到来时，可接管并 supersede 旧 attachment
+3. richer multi-tab / read-only mirror 行为留到下一阶段
 
 因此 F0 必须产出：
 
@@ -507,7 +517,7 @@ first-wave internal invocation 采用三层要求：
 
 first-wave 默认采用：
 
-> **HTTP streaming response（Readable body）**
+> **HTTP streaming response（Readable body）+ NDJSON framing**
 
 理由：
 
@@ -522,6 +532,12 @@ F0 必须冻结：
 2. relay cursor / reconnect cursor
 3. cancel / end / timeout 的流结束语义
 4. orchestrator user DO 如何把后端流映射到 client WS
+
+first-wave 的默认 framing 建议是：
+
+1. `Content-Type: application/x-ndjson`
+2. `meta` / `event` / `terminal` 三类 frame
+3. terminal 不能只靠 EOF 推断，必须有 explicit terminal frame
 
 ### 6.3 `agent.core /sessions/:id/ws` 的 fate
 
@@ -1207,6 +1223,10 @@ F3 exit 必须把 canonical public ingress 真正切干净。
 2. `docs/issue/orchestration-facade/orchestration-facade-final-closure.md`
 3. `docs/handoff/orchestration-facade-to-<next>.md`
 
+### 17.4 QNA 文档
+
+1. `docs/design/orchestration-facade/FX-qna.md`
+
 ---
 
 ## 18. 附加章节：Design 需求与 Action-Plan 需求的明确界定
@@ -1415,16 +1435,18 @@ F3 exit 必须把 canonical public ingress 真正切干净。
 
 1. **先写 7 份 F0 design docs**
    - 这是 F1 的 design gate
-2. **再写 F0 action-plan**
+2. **把仍需 owner 拍板的问题汇总到 `docs/design/orchestration-facade/FX-qna.md`**
+   - design 可以先给出推荐答案，但 F0 signoff 前必须把未冻结项集中收口
+3. **再写 F0 action-plan**
    - 把 design freeze 变成执行任务
-3. **F0 closed 后，进入 F1 action-plan**
+4. **F0 closed 后，进入 F1 action-plan**
    - 不要跳过 F0 直接写 orchestrator worker
-4. **F1 closed 后，再进入 F2**
+5. **F1 closed 后，再进入 F2**
    - 不要在 F1 未完成 first roundtrip 时提前铺满全部 session seam
-5. **F2 closed 后，再进入 F3**
+6. **F2 closed 后，再进入 F3**
    - cutover 只能发生在 first-wave lifecycle 已完整跑通之后
-6. **F4 可在 late F1/F2 之后并行准备，但 closure 仍应在 F3 之后统一收口**
-7. **最后才写 F5 closure / handoff**
+7. **F4 可在 late F1/F2 之后并行准备，但 closure 仍应在 F3 之后统一收口**
+8. **最后才写 F5 closure / handoff**
 
 把它收成一句话：
 
