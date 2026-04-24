@@ -1104,3 +1104,236 @@ packages/cf-adapters/
 如果项目接下来真的会迅速扩大，我现在更倾向于认为：
 
 > **Owner 的裁决比我的上一版建议，更适合作为 after-worker-matrix 的正式架构方向。**
+
+---
+
+## 8. 独立评价与分析(by Claude Opus 4.7)
+
+> 评价日期:`2026-04-23`
+> Author:`Claude Opus 4.7 (1M context)`
+> Scope:
+> - 对 §0–§7 的事实核查
+> - 对重构时机与方式的独立判断
+> - 基于当前 4-worker 真实代码结构给出 actionable 建议
+
+---
+
+### 8.1 先纠事实:GPT §1.1 的「very thin shell」判断已过时
+
+GPT 在 §1.1 断言:
+
+> 当前 `workers/*` 仍然是 very thin shell……`workers/agent-core/src/index.ts` 只是返回 shell JSON,`NanoSessionDO` 也只是 stub。
+
+**这个前提在 W0–W4 shell 时代曾成立,但在 worker-matrix P0–P5 closure 之后已不再成立。** 实际 LOC 与结构:
+
+| worker | src/ LOC | 结构现实 |
+|---|---|---|
+| `agent-core` | **13,328** | 已含 `host/`(20+ 文件,含 `do/nano-session-do.ts`、`ws-controller.ts`、`http-controller.ts`、`orchestration.ts`=463、`remote-bindings.ts`=425、`cross-seam.ts`、`composition.ts`、`checkpoint.ts`、`alarm.ts`、`shutdown.ts`、`traces.ts`、`eval-sink.ts`)、`hooks/`、`eval/`、`kernel/`、`llm/` 四个顶层 |
+| `bash-core` | **5,433** | 已含 `fake-bash/`(bridge + 21 命令 registry)、`capabilities/`(filesystem, search, text-processing, network, exec, vcs)、`planner`、`executor`、`policy`、`permission`、`registry`、`worker-runtime` |
+| `context-core` | **4,594** | `context-assembler`、`compact-boundary`、`context-layers`、`redaction`、`snapshot`、`evidence-emitters-context` |
+| `filesystem-core` | **3,966** | `artifacts`、`prepared-artifacts`、`mounts`、`refs`、`paths`、`promotion`、`namespace`、`evidence-emitters-filesystem` |
+
+也就是说,GPT 推导的核心前提「我们不是在整理厚运行时,而是在为刚完成 absorption 的系统准备长期形态」,**只对了一半**:4-worker 的 absorption 确实已完成,但 absorbed code 已经是一个有层次的厚运行时,不是空壳。
+
+**这对结论的影响:**
+
+- GPT §5 的推进顺序「先做目录与 import boundary 重组,不改语义」,成本被低估了。当前 `host/` 下 20 个文件已经是一个coherent 的 layer,把它 fan-out 成 `facades/` + `commands/` + `services/` + `adapters/` 是**一次有实质工作量的分类重组**,不是命名转译。
+- 这同时也意味着:**结构化压力是真实存在的**(agent-core 已近 1.3 万行),所以 restructuring 的方向没错,但不能按「thin shell 首次建层」的轻量心态来计划。
+
+---
+
+### 8.2 当前是否是重构的合理时机?——**是,但窗口不大**
+
+**支持现在做的理由:**
+
+1. P0–P5 已 closure,35/35 e2e 全绿,代码处于**结构化压力下的稳定态** — 现在动,代价可控;等 `chat.core` 启动后再动,会与新业务层叠加风险。
+2. agent-core 13k LOC 已是 single-worker 里最大的一块;host/ 单层承担了 facades + orchestration + runtime composition 三种职责,**边界开始模糊**(例如 `orchestration.ts` 与 `composition.ts` 语义重叠、`remote-bindings.ts` 既是 transport glue 又是 factory)。
+3. 存在已有的 Cloudflare substrate 散落真相(见 §8.4),**越早收口越便宜**。
+
+**反对现在做的理由:**
+
+1. 35 个 live e2e 测试全部建立在 HTTP surface 上。Owner 裁决二(§7.2)要求 HTTP 降为 410/426 deprecation shell — 若立刻执行,**当前整套 e2e 测试会同时失效**,而我们尚未建立任何 service-binding / 内部 RPC 的外部探测 harness(live e2e 是从 node:test 进程用 fetch 打到 Cloudflare edge 的)。
+2. INDEX.md v0.2 刚完成,测试契约属于「新鲜热度」期;立刻废掉 HTTP 会让刚落地的 v0.2 需要同步重写为 v0.3,浪费文档与测试结构的认知投入。
+3. 有些 §7.6 列出的 cf-adapters 子目录(`tunnel/`、`rate-limit/`、`cache/`、`fanout/`、`artifact-transfer/`、`consistency/`、`migrations/`)在当前代码中**没有任何已存在的 seed**,把它们列进去就是把规划前置到代码之前 — 这恰好是 GPT 自己在 §2.2 引用 Codex 时警告过的「先扩后缩 = 新 core 胖化」陷阱。
+
+**结论:** 窗口合理,但**必须把三件事解耦成顺序执行,而不是绑定为一次 Owner-flavored「激进大重写」。**
+
+---
+
+### 8.3 对 Owner 三条裁决的独立评价
+
+#### 裁决一(`src/` 退化为 entry-only legal zone)
+
+**同意方向,反对物理落点的全面外移。**
+
+- 同意的部分:`src/` 不应继续吞业务逻辑是正确的立法。`host/` 目录当前承担的 orchestration/composition/remote-bindings 等核心逻辑,确实与 runtime entry 不是同一个职责。
+- 反对的部分:把 `commands/`、`services/`、`adapters/`、`facades/` 放到 **`src/` 之外**,会同时迫使:
+  - `tsconfig.json` 的 `rootDir` 从 `src` 改为 `.`(或更高层级)
+  - `include` 放开到 `workers/<w>/{src,facades,commands,services,adapters}/**/*.ts`
+  - `wrangler main` 的 dist 路径假设、path alias 全部重校准
+  - 每个 worker 的 test 目录从 `workers/<w>/test/` 相对 `../src/` import 的方式全部改写
+
+  GPT §7.1 确实承认了这条代价(「构建形态重置」),但它把这称为「应明确写入计划的成本」就过轻了 — **这相当于在一次重构里同时触发 build 系统、import graph、测试 harness、CI 管道四条裂缝**,而裁决一带来的「反回潮法律」价值其实**用 ESLint rule(如 `no-business-logic-in-src`)+ CLAUDE.md 明文约定就能 90% 实现**,不必改物理位置。
+
+- **我的更强替代方案:** 把 `src/` 内部**子目录化**,而不是把业务 fan-out 到 `src/` 外:
+
+  ```text
+  workers/<w>/src/
+    index.ts            # entry bootstrap ONLY
+    middlewares.ts      # runtime chain
+    facades/            # DO / WS / RPC / bindings ingress
+    commands/           # one-shot orchestration
+    services/           # mid-tier business
+    adapters/           # runtime glue
+    deprecated-http.ts  # 410/426 shell(Phase 3 落地前暂不启用)
+  ```
+
+  `tsconfig`、`wrangler main`、test import **全部不变**。反回潮由 lint rule + CI check 保证「`src/` 顶层不得新增非 entry 文件」。
+
+  这是**激进立法 + 保守工程代价**的折中,我认为它比 Owner 的「物理外移」版本**更实际**。
+
+#### 裁决二(HTTP 彻底退化)
+
+**同意「HTTP 不是合法业务协议面」的目标,但强烈反对现在就落地。**
+
+- GPT §7.2 做了一个精确区分:`fetch()` 作为 runtime 物理入口仍在,但业务协议层面 HTTP 废弃。这个区分是对的。
+- 但它忽略了一个硬约束:**当前整套 e2e 测试 harness 是 node:test 通过公网 `fetch(preview-url/...)` 驱动的**。没有任何 in-repo 工具能从外部触发 service binding。要落地「HTTP 降格为 410/426」,必须**先**构建:
+  1. 一个可从外部触发 internal RPC 的 driver(可能是一个新的 `rpc-entry` worker,或一个专用 debug/test 分支)
+  2. 把现有 35 个 e2e 场景翻译成 RPC-driven 版本
+  3. 确保 timeline / status / verify 在 RPC 面也完整 exposed
+
+  这三件事本身就是一个**独立的工作包**,规模堪比 P1 absorption 的一个子阶段。
+
+- **我的建议:** 把 HTTP 废弃拆成两段,而不是一刀切:
+  - **Phase A(after-worker-matrix 首轮):** 在 `host/http-controller.ts` 顶部加 deprecation marker + response header `Deprecation: true` + `Sunset: <future date>`;CLAUDE.md 明文禁止**新增** HTTP 业务 route;既有 route 冻结但继续支撑 e2e 测试。
+  - **Phase B(与 `chat.core` 引入同批,或单独一个 charter):** 构建 RPC test driver → 迁移 e2e → 把既有 route 改为 410/426 shell。
+
+  这么拆的好处是:Phase A 立刻生效,立法已到位;Phase B 等基础设施就位再执行 — **既不会让 v0.2 测试失效,也不会让立法被拖延。**
+
+#### 裁决三(`cf-adapters` 允许「受控膨胀」)
+
+**部分同意。同意「可以厚」,反对「§7.6 列的 18 子目录」。**
+
+- 同意的部分:`nacp-core/src/tenancy/` (336 LOC) + `nacp-core/src/transport/` (420 LOC) + `storage-topology/src/adapters/` (5 文件) 加起来已近 800 LOC 的 Cloudflare substrate seam,散落在两个 package 里。**抽出来做一个专门的 cf-adapters 确实合理**,而且有明确 seed。
+- 反对的部分:§7.6 列出的 18 个子目录里,**只有 6 个**(`d1/`、`r2/`、`kv/`、`queues/`、`do/`、`rpc/`、`bindings/`)对应现有代码;其余 12 个(`tunnel/`、`observability/`、`retries/`、`errors/`、`testing/`、`migrations/`、`cache/`、`rate-limit/`、`artifact-transfer/`、`consistency/`、`ws/`、`fanout/`)**都没有对应 seed**。列出它们会让包从第一天起就带 12 个空壳子目录,然后为它们找「应该装什么」 — 这正是 GPT 自己在 §2.2 警告的 codex-core 陷阱。
+- **我的建议:** cf-adapters 首轮只开 **6–8 个有 seed 的子目录**,其余按 seed 出现时再开:
+  ```text
+  packages/cf-adapters/src/
+    tenancy/      # ← 从 nacp-core/src/tenancy 迁入
+    transport/    # ← 从 nacp-core/src/transport 迁入(含 cross-seam/do-rpc/queue/service-binding)
+    r2/           # ← 从 storage-topology/src/adapters/r2-adapter.ts 迁入
+    kv/           # ← 从 storage-topology/src/adapters/kv-adapter.ts 迁入
+    d1/           # ← 从 storage-topology/src/adapters/d1-adapter.ts 迁入
+    do-storage/   # ← 从 storage-topology/src/adapters/do-storage-adapter.ts 迁入
+    rpc/          # ← 抽 agent-core/host/remote-bindings.ts 里的 callBindingJson + makeHookTransport 等
+    bindings/     # ← 抽 agent-core/host/cross-seam.ts(目前跨两处,合并一处)
+  ```
+  包名用 `@nano-agent/cf-adapters`(与 `@nano-agent/storage-topology` 等对齐,不引入新 scope)— 这点我与 GPT §3.2 一致。
+
+---
+
+### 8.4 「激进」与「并发」的区别 —— GPT §7 的隐含问题
+
+GPT §7.4 把裁决后的新立场总结为「可以更激进,而且应该更激进」。但 §5(被 §7 覆盖之前)其实给出了一个**正确的单轴推进顺序**:
+
+> 1. 目录与 import boundary 重组(不改语义)
+> 2. 抽 shared cf-adapters(只搬 thin seam)
+> 3. facade 改 internal-first
+> 4. public HTTP 收紧
+> 5. 等 `chat.core` 落地做最终 cutover
+
+这个顺序的价值是「restructuring 不与 runtime 语义升级、transport 切换、worker 拓扑变化同时发生」 — **这恰好是 §7「激进」版本要打破的东西**。
+
+**我的判断是:§5 的单轴推进才是对的。** Owner 的三条裁决应当被理解为**三件独立事情各自的最终目标(endpoint)**,而不是**必须同时启动的一次性大重构**。具体映射:
+
+| Owner 裁决 | 正确的理解 | 正确的启动时机 |
+|---|---|---|
+| `src/` 只准放 entry | 立法 endpoint | **现在**(但用 lint rule 实现,不物理外移) |
+| HTTP 降为 410/426 | 立法 endpoint | 立法现在;落地等 RPC driver(Phase B) |
+| cf-adapters 可以厚 | 包的长期定位 | 现在(但只开 6–8 个有 seed 的子目录) |
+
+「激进 = 三条同时启动」是误读。**「激进 = 把 endpoint 写死,但工程路径保持顺序」才是对的。**
+
+---
+
+### 8.5 对 4-worker 非对称落点的补充评价
+
+GPT §4.3 / §7.5 把 agent-core 标为「最重的 orchestration worker」,这是对的。但 §7.5 给出的目录草案**漏掉了 agent-core 真实结构里的两块**:
+
+- **`hooks/`** — agent-core/src/hooks/ 有 14 个文件(registry, dispatcher, matcher, permission, outcome, audit, snapshot, session-mapping, core-mapping, catalog, guards, types, version, index)。这是 NACP hook law 的实现面,**不属于 facades/commands/services/adapters 任何一类**。
+- **`eval/`** — agent-core/src/eval/ 有 19 个文件(runner, timeline, replay, classification, truncation, inspector, sink, placement-log, scenario, attribution, anchor-recovery, audit-record, trace-event, evidence-bridge, evidence-streams, evidence-verdict, durable-promotion-registry, version, types)。这是 evidence/trace evaluation 子系统,**也不属于 4 类任何一类**。
+
+所以 agent-core 的正确分层应该是 **6 类,不是 4 类**:
+
+```text
+workers/agent-core/src/
+  index.ts
+  middlewares.ts
+  facades/      # do/ ws/ rpc/ bindings/
+  commands/     # start-session, accept-input, dispatch-tool-call, ...
+  services/     # session, orchestration, checkpoint, stream, ingress-policy
+  adapters/     # env, do-storage, ws-runtime, rpc-transport, trace-sink
+  hooks/        # ← 保留独立一级目录(NACP hook law 实现)
+  eval/         # ← 保留独立一级目录(evidence/trace subsystem)
+  kernel/       # ← 保留(已存在的 runner/interrupt)
+  llm/          # ← 保留(adapters/registry)
+```
+
+「hooks/ 合并进 services/」或「eval/ 合并进 services/」都会破坏现有 NACP 语义边界。这两块在 §7.5 目录图里**不应被重命名或合并**。
+
+---
+
+### 8.6 我的最终建议(可直接作为 after-worker-matrix 的 charter 草稿)
+
+**目标:** 在 `chat.core` 启动前,把 4-worker 的内部边界、共享 substrate、外部 surface 三件事**各自推进到 endpoint 可见的位置**,但不做并发大重写。
+
+**Phase 1 — 目录立法与 host/ 解层(2–3 个工作单位)**
+
+- 范围限定为 agent-core(压力最大、最值得先做)
+- `src/host/` 内部拆解为:
+  - `src/facades/do/` ← `host/do/`、`host/routes.ts`
+  - `src/facades/ws/` ← `host/ws-controller.ts`、`host/session-edge.ts`
+  - `src/facades/http-deprecated/` ← `host/http-controller.ts`(保留,加 Deprecation header)
+  - `src/facades/bindings/` ← `host/remote-bindings.ts`、`host/cross-seam.ts`
+  - `src/services/` ← `host/orchestration.ts`、`host/composition.ts`、`host/checkpoint.ts`、`host/alarm.ts`、`host/shutdown.ts`、`host/health.ts`、`host/stream.ts`
+  - `src/adapters/` ← `host/env.ts`、`host/eval-sink.ts`、`host/traces.ts`、`host/workspace-runtime.ts`、`host/turn-ingress.ts`、`host/actor-state.ts`
+  - `src/hooks/`、`src/eval/`、`src/kernel/`、`src/llm/` **原样保留**
+- `tsconfig` 不动、`wrangler main` 不动、test import 不动(仅 path 调整)
+- bash-core / context-core / filesystem-core:**保持原状**,等 Phase 3 再处理
+
+**Phase 2 — `@nano-agent/cf-adapters` 抽取(1–2 个工作单位)**
+
+- 新建 `packages/cf-adapters/`,只开 6–8 个有 seed 的子目录(见 §8.3 裁决三建议)
+- 从 `nacp-core/tenancy`、`nacp-core/transport`、`storage-topology/adapters` 迁入现有代码
+- **不**主动添加新能力,**只**做物理迁移 + API 收口
+- 所有 worker 改 import 路径;两个旧包保留 re-export shim 以免破坏现有消费者
+
+**Phase 3 — HTTP deprecation 立法生效(0.5 个工作单位)**
+
+- CLAUDE.md 写入:「**禁止在 4-worker 新增 HTTP 业务 route;所有新 ingress 必须走 RPC / binding facade。**」
+- `src/facades/http-deprecated/` 加响应 header `Deprecation: true` + `Sunset: 2026-Q4`(与 chat.core 目标时点对齐)
+- 现有 35 e2e 测试**不改**;INDEX.md 加一节「HTTP surface 已处于 Deprecation-Phase-A」说明
+- 不触发 410/426(那是 Phase B 的事,等 chat.core + RPC driver 就位)
+
+**Phase 4(延后到 chat.core charter 内部)**
+
+- 构建 RPC test driver
+- 迁移 e2e 到 RPC driver
+- 把 deprecated HTTP 改为 410/426 shell
+- bash-core / context-core / filesystem-core 跟进 Phase 1 的分层模式
+
+---
+
+### 8.7 最终结论
+
+> **方向我支持,时机我支持,但路径必须 de-risk:**
+>
+> 1. **分层是对的,但 `src/` 内部化比 `src/` 外移更合理** — 立法用 lint rule,不用物理重排。
+> 2. **cf-adapters 是对的,但只开有 seed 的 6–8 个子目录** — 厚度由迁移量决定,不由规划决定。
+> 3. **HTTP 废弃是对的,但分两阶段** — 立法现在生效,落地等 RPC driver + chat.core。
+> 4. **三件事按顺序推进,不并发** — GPT §5 的单轴推进顺序比 §7 的「激进版本」更安全、更正确。
+>
+> **Owner 裁决的 endpoint 我接受;Owner 裁决被解读为「一次激进大重写」的路径我不接受。**
+
+如果采纳本节建议,after-worker-matrix 的首轮 charter 就是一个**可在 2–4 个工作单位内完成的、零 runtime 语义变更的、35/35 e2e 测试不失效的、立法边界已到位的**重构。它不会把「agent-core 的分层」「cf-adapters 的抽取」「HTTP 的废弃」「chat.core 的引入」四件事同时塞进同一个时间窗 — 而这四件事同时并发,才是这次重构最大的隐性风险。
+
