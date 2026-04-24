@@ -7,7 +7,7 @@ liveTest("agent-core preview probe reports live-loop truth", ["agent-core"], asy
   expectProbe(json, {
     worker: "agent-core",
     status: "ok",
-    phase: "worker-matrix-P2-live-loop",
+    phase: "orchestration-facade-closed",
     absorbed_runtime: true,
     live_loop: true,
   });

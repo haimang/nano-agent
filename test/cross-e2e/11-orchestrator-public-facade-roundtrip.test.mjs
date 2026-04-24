@@ -2,6 +2,11 @@ import assert from "node:assert/strict";
 import { fetchJson, liveTest, randomSessionId } from "../shared/live.mjs";
 import { createOrchestratorAuth } from "../shared/orchestrator-auth.mjs";
 
+// Assumption at orchestration-facade close: bash-core request execution now
+// flows through CapabilityExecutor, but no additional beforeCapabilityExecute
+// provider is configured yet. A future credit/quota charter may need to extend
+// this test with funded / authorized fixture state.
+
 function waitForOpen(ws) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error("websocket open timeout")), 5_000);

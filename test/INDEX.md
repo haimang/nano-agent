@@ -1,6 +1,6 @@
 # test/ — 5-worker Live E2E 测试索引
 
-> 2026-04-24 `orchestration-facade / F3` cutover 后的根测试树索引。
+> 2026-04-24 `orchestration-facade` closed 后的根测试树索引。
 
 ---
 
@@ -31,7 +31,7 @@ node --test test/package-e2e/**/*.test.mjs test/cross-e2e/**/*.test.mjs
 | `context-core` | `NANO_AGENT_CONTEXT_CORE_URL` | `https://nano-agent-context-core-preview.haimang.workers.dev` |
 | `filesystem-core` | `NANO_AGENT_FILESYSTEM_CORE_URL` | `https://nano-agent-filesystem-core-preview.haimang.workers.dev` |
 
-**当前状态（2026-04-24）**：`44 subtests / 44 pass / 0 fail / 0 skip`
+**当前状态（2026-04-24）**：`47 subtests / 47 pass / 0 fail / 0 skip`
 
 ---
 
@@ -45,15 +45,15 @@ test/
 │   ├── orchestrator-auth.mjs
 │   └── orchestrator-jwt.mjs
 ├── package-e2e/
-│   ├── agent-core/          (1 file / 1 subtest)
-│   ├── orchestrator-core/   (7 files / 12 subtests)
-│   ├── bash-core/           (6 files / 10 subtests)
-│   ├── context-core/        (2 files / 2 subtests)
-│   └── filesystem-core/     (2 files / 2 subtests)
-└── cross-e2e/               (10 files / 11 subtests)
+│   ├── agent-core/          (1 file)
+│   ├── orchestrator-core/   (7 files)
+│   ├── bash-core/           (6 files)
+│   ├── context-core/        (2 files)
+│   └── filesystem-core/     (2 files)
+└── cross-e2e/               (11 files)
 ```
 
-**合计**：`28 files / 44 subtests`
+**合计**：`29 files`
 
 ---
 
@@ -73,13 +73,13 @@ test/
 
 ## 3. package-e2e/ — 单 worker preview truth
 
-| worker | 文件数 / subtests | 当前定位 |
+| worker | 文件数 | 当前定位 |
 | --- | --- | --- |
-| `agent-core` | `1 / 1` | runtime host probe only；public session ingress 已退役 |
-| `orchestrator-core` | `7 / 12` | canonical public session façade suite |
-| `bash-core` | `6 / 10` | capability runtime public surface |
-| `context-core` | `2 / 2` | probe-only library worker |
-| `filesystem-core` | `2 / 2` | probe-only library worker |
+| `agent-core` | `1` | runtime host probe only；public session ingress 已退役 |
+| `orchestrator-core` | `7` | canonical public session façade suite |
+| `bash-core` | `6` | capability runtime public surface |
+| `context-core` | `2` | probe-only library worker |
+| `filesystem-core` | `2` | probe-only library worker |
 
 ### 3.1 `agent-core`
 
@@ -91,15 +91,15 @@ test/
 
 ### 3.2 `orchestrator-core`
 
-| 文件 | subtests | 目标 |
+| 文件 | 目标 |
 | --- | --- | --- |
-| `01-preview-probe.test.mjs` | 1 | probe marker 已 rollover 到 `orchestration-facade-closed` |
-| `02-session-start.test.mjs` | 2 | public start relay + initial_context effect |
-| `03-ws-attach.test.mjs` | 1 | canonical WS attach / supersede behavior |
-| `04-reconnect.test.mjs` | 2 | detached reconnect + terminal/missing taxonomy |
-| `05-verify-status-timeline.test.mjs` | 1 | input/status/timeline/verify/cancel canonical route family |
-| `06-auth-negative.test.mjs` | 4 | missing / malformed bearer token + trace / tenant negatives |
-| `07-legacy-agent-retirement.test.mjs` | 3 | legacy `agent-core` HTTP `410` + WS `426` retirement proof |
+| `01-preview-probe.test.mjs` | probe marker 已 rollover 到 `orchestration-facade-closed` |
+| `02-session-start.test.mjs` | public start relay + initial_context effect |
+| `03-ws-attach.test.mjs` | canonical WS attach / supersede behavior |
+| `04-reconnect.test.mjs` | detached reconnect + terminal/missing taxonomy |
+| `05-verify-status-timeline.test.mjs` | input/status/timeline/verify/cancel canonical route family |
+| `06-auth-negative.test.mjs` | missing / malformed bearer token + trace / tenant negatives |
+| `07-legacy-agent-retirement.test.mjs` | legacy `agent-core` HTTP `410` + WS `426` retirement proof |
 
 ### 3.3 `bash-core`
 
@@ -118,19 +118,19 @@ test/
 
 ## 4. cross-e2e/ — 真实装配与 owner cutover
 
-| 文件 | subtests | 目标 |
-| --- | --- | --- |
-| `01-stack-preview-inventory.test.mjs` | 1 | 5-worker inventory |
-| `02-agent-bash-tool-call-happy-path.test.mjs` | 1 | `orchestrator-core -> bash-core` happy path |
-| `03-agent-bash-tool-call-cancel.test.mjs` | 1 | `orchestrator-core -> bash-core` cancel path |
-| `04-agent-context-initial-context.test.mjs` | 1 | orchestrator public path consumes `initial_context` |
-| `05-agent-context-default-compact-posture.test.mjs` | 1 | compact delegate stays opt-in |
-| `06-agent-filesystem-host-local-posture.test.mjs` | 1 | filesystem posture stays host-local |
-| `07-library-worker-topology-contract.test.mjs` | 1 | context/filesystem remain probe-only |
-| `08-session-lifecycle-cross.test.mjs` | 1 | full lifecycle + mid-session bash call |
-| `09-capability-error-envelope-through-agent.test.mjs` | 2 | bash error envelope survives cross seam verbatim |
-| `10-probe-concurrency-stability.test.mjs` | 1 | 5-worker / 40-request concurrent probe stability |
-| `11-orchestrator-public-facade-roundtrip.test.mjs` | 1 | final `JWT -> orchestrator -> agent -> bash -> stream back` roundtrip |
+| 文件 | 目标 |
+| --- | --- |
+| `01-stack-preview-inventory.test.mjs` | 5-worker inventory |
+| `02-agent-bash-tool-call-happy-path.test.mjs` | `orchestrator-core -> bash-core` happy path |
+| `03-agent-bash-tool-call-cancel.test.mjs` | `orchestrator-core -> bash-core` cancel path |
+| `04-agent-context-initial-context.test.mjs` | orchestrator public path consumes `initial_context` |
+| `05-agent-context-default-compact-posture.test.mjs` | compact delegate stays opt-in |
+| `06-agent-filesystem-host-local-posture.test.mjs` | filesystem posture stays host-local |
+| `07-library-worker-topology-contract.test.mjs` | context/filesystem remain probe-only |
+| `08-session-lifecycle-cross.test.mjs` | full lifecycle + mid-session bash call |
+| `09-capability-error-envelope-through-agent.test.mjs` | bash error envelope survives cross seam verbatim |
+| `10-probe-concurrency-stability.test.mjs` | 5-worker / 40-request concurrent probe stability |
+| `11-orchestrator-public-facade-roundtrip.test.mjs` | final `JWT -> orchestrator -> agent -> bash -> stream back` roundtrip |
 
 ---
 
