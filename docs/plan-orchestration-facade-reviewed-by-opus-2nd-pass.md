@@ -875,3 +875,186 @@ Opus 的 M6 这里是正确补丁。
 
 我认同 Opus 的总 verdict：  
 **approve with small-but-structural follow-ups**，而这些 follow-ups 里最关键的一条就是 **S7 / internal call contract freeze**。  
+
+---
+
+## 13. 对 r2 §18「Design + Action-Plan 工作界定」的独立审核分析
+
+> **审核对象**:`docs/plan-orchestration-facade.md` §18(r2 附加章节)
+> **审核日期**:`2026-04-24`
+
+### 13.1 Executive Verdict
+
+**§18 的工作安排符合预期,且是对 2nd-pass M1-M6 的一次结构性回应 —— 它没有逐条打补丁,而是把 8 份 design docs + 6 个 action-plan 周期立成 charter 的 execution navigation layer,并通过 Tier A/B/C 分级把 "哪些是 blocker" 写死。我判断这已经达到 charter 能输出的最高形态,可以 freeze 为 r2 final,进入 F0 实际动工。**
+
+在此基础上,我提 5 条**增量建议**(不是 blocker,是可以让 §18 更完备的微调),具体见 §13.4。
+
+### 13.2 §18 与 2nd-pass M1-M6 的对应关系 — 6/6 全部覆盖
+
+| # | 2nd-pass 修改项 | 对应 §18 内容 | 覆盖方式 |
+|---|---|---|---|
+| M1 | 新增 `F0-agent-core-internal-binding-contract.md`(解决 G1) | §18.3 #2 | ✅ 直接对应,作为 Tier A 硬前置 |
+| M2 | `F0-compatibility-facade-contract.md` 明确 Deprecation window 语义(解决 G4) | §18.3 #1「legacy deprecation semantics」 | ✅ 直接对应,明确纳入该 doc 职责 |
+| M3 | `F0-stream-relay-mechanism.md` 回答 agent.core WS 归属(解决 G3) | §18.3 #3「legacy WS fate」 | ✅ 直接对应 |
+| M4 | F0/F4.A 写明 tenant identity 来源(解决 G2) | §18.3 #8「tenant truth alignment」 | ✅ 归到 F4 design doc,与 GPT §12.2.3 口径校正配合 |
+| M5 | F1 标为 L 或把 stream piping 归 F2.C(解决 G5) | §18.4 Tier A 硬前置 5 份 docs | ✅ 结构性解决 — design 被前置到 F0,F1 只做 implementation,size 自然压回 M |
+| M6 | 新增 Exit #7(frozen internal contract)+ 扩 §12.3 验证 + NOT-exit #7 | §18 未直接处理(GPT §12.2.9 已独立采纳) | ✅ 口头承诺到位,需在 §15 Exit Criteria 落地 |
+
+**结论**:§18 通过「结构性重构 charter 导航层」而不是「逐条补 bullet」的方式,覆盖了 2nd-pass 的 6 条修改。M1-M5 落到 design doc 清单里,M6 通过 §12.2.9 承诺落到 exit criteria,合计 6/6 覆盖。
+
+### 13.3 §18 做对的 4 件事(我的确认)
+
+#### (1) 8 + 6 的精确总量 —— 摆脱了"文档数量随意"的陷阱
+
+r1 §17 只列了文档清单(6 份 design + 6 份 action-plan),没有说总量上限。§18 明确:
+
+- design 文档 **固定 8 份**(7 份 F0 + 1 份 F4)
+- action-plan 周期 **固定 6 个**(F0-F5)
+
+这个"精确总量"看似只是计数,但它带来两个 owner 层价值:
+
+1. **预算可估**:owner 知道本阶段总设计产出 = 8 份 memo + 6 份 action-plan memo + 6 份 closure memo + 1-2 份 handoff,共 21-22 份文档。而不是"按需再加"的开放式清单。
+2. **漂移可检测**:若执行期出现第 9 份 design doc,就是 scope 漂移信号,应触发 charter 修订。
+
+这与 worker-matrix charter 的 I1-I15 风格一致,是成熟的 charter 纪律。
+
+#### (2) Tier A/B/C 分级 —— 回答了真正的 owner 问题
+
+Tier A(5 份硬前置 F1)/ Tier B(2 份强烈建议 F1 前完成,硬闸 F3 前)/ Tier C(1 份 F4 前完成)是 §18 最有价值的一张表。
+
+理由:charter 里列 8 份文档,如果都标"F0 产出",执行时必然并发;但不是每份都是 F1 blocker。Tier 分级让 owner 知道**可以先启动哪 5 份设计、可以允许哪 2 份晚一点、哪 1 份完全可以延后到 F4 门前**。这比"all in F0"更灵活,也比"随意先后"更安全。
+
+#### (3) 严格禁止「先写 worker,再慢慢补文档」
+
+§18.9 的推进顺序清单最后一句:
+
+> 本阶段的开发导航应是:7 份 F0 design docs → 1 个 F0 action-plan 周期 → 5 个后续 action-plan 周期,而不是「先写 worker,再慢慢补文档」。
+
+这句话的价值在于它明确拒绝了 LLM-加速时代最容易犯的错误模式 —— 用代码产出代替设计思考。在 orchestration-facade 这种涉及 4 个 decisions(tenant / internal-call / stream / reconnect)的阶段,跳过 design 直接写 worker,返工成本可能比写 7 份 design memo 高 3-5 倍。
+
+#### (4) 6 个 action-plan 周期的原因被写清
+
+§18.6 给出了为什么必须按 6 个周期拆开:每个周期解决不同性质的工作,不拆就丢失**独立的进入条件 + 独立的收口证据**。这与 worker-matrix 的 P0-P5 分法一致,是已被实证过的工作方式。
+
+### 13.4 我的 5 条增量建议(非 blocker)
+
+以下 5 条建议不影响 §18 的结构合理性,但会让执行期更顺畅。
+
+#### 建议 1 — 显式标注每份 design doc 的 authorship / primary owner
+
+§18 没说 8 份 design doc 由谁写。考虑到:
+
+- r0 → r1 → r2 这轮 charter 迭代是 GPT + Opus + Owner 三方
+- worker-matrix charter 的 design blueprints 分了「代表 blueprint」(必写 × 3)vs「非代表 blueprint」(on-demand × 7)
+
+建议 §18 新增一列:
+
+| # | 设计文档 | primary author 推荐 | reviewer 推荐 |
+|---|---|---|---|
+| 1 | compatibility-facade-contract | GPT 起草 / Owner 审 | Opus |
+| 2 | agent-core-internal-binding-contract | GPT 起草 / Opus 审 | Owner |
+| 3 | stream-relay-mechanism | GPT 起草 | Opus + Owner |
+| ... | ... | ... | ... |
+
+否则 F0 启动时会出现"等作者就位"的停滞。
+
+#### 建议 2 — 标注 Tier A 内部的 cross-reference DAG
+
+5 份 Tier A docs 之间并非完全独立:
+
+- #1 compatibility-facade-contract 决定了 "public `/sessions/:id/...` 的语义"
+- #2 agent-core-internal-binding-contract 决定了 "orchestrator 如何调 agent" —— **它的 authority passing convention 部分依赖 #1 决定的「public request 带了什么 authority」**
+- #3 stream-relay-mechanism 决定了 "stream 的 framing" —— **它依赖 #2 的 internal call 形状**(是 HTTP? 是 DO RPC? 决定了 stream body 从哪里来)
+- #5 session-lifecycle-and-reconnect 依赖 #1 + #2(lifecycle 的 owner 必然是 orchestrator,但 agent-core 在 reconnect 时怎么认出 session 由 #2 决定)
+- #4 user-do-schema 相对独立
+
+所以 Tier A 内部的建议 DAG 是:
+
+```
+#1 (facade-contract)
+ ├─→ #2 (internal-binding)
+ │    ├─→ #3 (stream-relay)
+ │    └─→ #5 (lifecycle-reconnect)
+ └─→ (直接影响 #5 的 public semantic)
+#4 (user-do-schema) —— 独立,可并行
+```
+
+这意味着 Tier A 5 份其实**不能完全并行**,最小关键路径是 **#1 → #2 → (#3 ‖ #5)**。
+
+**建议**:§18.4 Tier A 5 份后加一句「建议先冻结 #1,再并行 #4,然后启动 #2,最后 #3 + #5 并行」,避免 5 份同时写导致的 cross-reference 抖动。
+
+#### 建议 3 — 每份 design doc 的「收口标准」未定义
+
+§18.3 列了"必须在什么时候完成",但没列"如何完成"。一份 design doc 什么时候算 frozen?
+
+worker-matrix 的 design blueprint 有一个隐含模式:owner 审过 + 代码锚点都对上 + 对应 action-plan 的 `In-Scope` 可直接引用该 design。但 orchestration-facade 的 8 份 design 里,#2 / #3 / #5 没有现成代码锚点(因为 orchestrator 还不存在),需要另一套收口标准。
+
+**建议**:§18 新增一小节「design doc 收口标准」,例如:
+
+- 对于有现成代码的(#4 / #7):收口 = 列出锚点 + 覆盖所有 known edge cases + owner 审
+- 对于新建系统的(#1 / #2 / #3 / #5 / #6 / #8):收口 = sequence diagram(或 pseudocode)+ 列出所有未决开放问题 + owner 审 + 被对应 action-plan 的 `In-Scope` 显式引用
+
+否则 F0 可能会出现"design 似乎完成但 action-plan 启动时发现仍有未决问题"。
+
+#### 建议 4 — Tier B #7 的 cross-phase 性质应显式标注
+
+§18.3 #7 `F0-live-e2e-migration-inventory.md` 的"必须在什么时候完成"是 **F3 前,但最好 F1 前完成** —— 它是 **F0 design pack 里唯一的 cross-phase doc**。
+
+这个 cross-phase 性质在 §18.4 分档时被降到 Tier B(强烈建议 F1 前完成),但**实际上**:
+
+- 如果 F1 启动前不写 #7,F1 期间的 test 改动方向可能和 F3 的 migration 策略冲突
+- 如果 F3 启动前才写 #7,F3.A(cutover)和 F3.B(migration)就没法预先规划
+
+**建议**:§18.3 把 #7 的 "F3 前" 改为 "F2 前(硬闸)/ F1 前(强烈建议)",并在 §18.4 把 #7 标为 Tier A'(比 Tier B 更硬,比 Tier A 更灵活)。这样明确它不是纯 F4-style 延后品。
+
+#### 建议 5 — 引用 worker-matrix 的 P0-P5 closure memo 作为 template
+
+§18.5 说 6 个 action-plan 周期,每个周期需要独立的 closure 证据(§18.6)。但 §18 没说 action-plan 的具体形式是什么。
+
+worker-matrix 的 P0-P5 closure memo 是成熟 template(详见 `docs/issue/worker-matrix/P{0-5}-closure.md` 或 `worker-matrix-final-closure.md`),其结构:
+
+- §1 Scope(该 phase 做了什么)
+- §2 Key code anchors(改动锚点)
+- §3 DoD checklist(逐条打勾)
+- §4 Outstanding items(未决项 / defer 到下一 phase)
+- §5 Handoff(给下一 phase 的输入)
+
+**建议**:§18.5 加一句「每个 action-plan 周期的 closure memo 采用 worker-matrix P0-P5 closure memo 的 template(§1-§5 结构);未在结构上偏离,以保持 phase-to-phase 可对比性」。
+
+### 13.5 对「这个工作安排是否符合预期」的最终判断
+
+**是,符合预期,且超出我的 2nd-pass 建议的最低要求。**
+
+三条证据:
+
+1. **2nd-pass 的 6 条 M 修改被 100% 覆盖**(见 §13.2 对应表),其中 5 条是直接采纳,1 条(M6)通过 GPT §12.2.9 独立承诺落地
+2. **§18 本身提供了 2nd-pass 未要求但同样有价值的结构**(Tier A/B/C 分级、6-cycle 工作界定、禁止先写代码后补文档),这是 charter 从「draft」到「actionable」的关键跨越
+3. **与 worker-matrix charter 的成熟模式一致**(I1-I15 总量、P0-P5 action-plan 周期、design-before-absorb 纪律),说明 GPT 在 r0 → r1 → r2 迭代里已经学会了 nano-agent 的 charter 文法
+
+### 13.6 执行层面的推荐动作
+
+给 Owner 的一页纸总结:
+
+> **§18 可以直接作为 F0 启动的执行导航。推荐立即动作:**
+>
+> **1. 冻结 §18.4 Tier A 的 5 份硬前置 design docs 作为 F0 首轮产出。**
+> **2. 按 §13.4 建议 2 的内部 DAG 推进(先 #1,然后 #4 并行,再 #2,最后 #3/#5 并行)。**
+> **3. 接受 §13.4 建议 1 的 authorship 补表,明确 8 份 design doc 的 primary author。**
+> **4. 在写 design doc 时,参照 §13.4 建议 3 的收口标准(有锚点 / 无锚点两分)。**
+> **5. Tier B #7 按 §13.4 建议 4 升格为 Tier A',在 F2 前完成。**
+> **6. 每个 action-plan 周期的 closure memo 参照 worker-matrix P0-P5 closure template。**
+>
+> **如果上述 6 条落实,本阶段从 F0 启动到 F5 closure,不需要再一次 charter rewrite。**
+
+### 13.7 一句话总结
+
+> **§18 是 r2 charter 最有价值的新增章节 —— 它把 r1 散落的文档清单收束成 execution navigation,把 2nd-pass 的 6 条 M 修改通过结构性重构而非逐条 bullet 的方式 100% 吸收,并为 F0 到 F5 提供了 owner-executable 的工作导航。我 approve,5 条增量建议(§13.4)是"锦上添花",不是 blocker。**
+
+---
+
+## 14. 版本历史(追加)
+
+- **r0 review(1st-pass,2026-04-24)**
+- **r1 review(2nd-pass,2026-04-24)**
+- **r2 §18 review(本节,2026-04-24)**:对 r2 charter 新增 §18(Design + Action-Plan 工作界定)的独立审核。结论:符合预期,2nd-pass M1-M6 被 100% 结构性覆盖,可作为 F0 启动的执行导航 freeze。提出 5 条非阻塞增量建议(authorship / Tier A 内部 DAG / 收口标准 / Tier B #7 升格 / action-plan closure template)。
+
