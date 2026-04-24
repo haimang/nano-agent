@@ -39,6 +39,51 @@ function createShellResponse(env: AgentCoreEnv): AgentCoreShellResponse {
   };
 }
 
+const LEGACY_SESSION_ACTIONS = new Set([
+  "start",
+  "input",
+  "cancel",
+  "end",
+  "status",
+  "timeline",
+  "verify",
+]);
+
+function deriveCanonicalUrl(request: Request): string {
+  const url = new URL(request.url);
+  if (url.hostname.includes("agent-core")) {
+    url.hostname = url.hostname.replace("agent-core", "orchestrator-core");
+  }
+  return url.toString();
+}
+
+type LegacyRoute = Exclude<ReturnType<typeof routeRequest>, { type: "not-found" }>;
+
+function legacyRetirementResponse(request: Request, route: LegacyRoute): Response {
+  const canonicalUrl = deriveCanonicalUrl(request);
+  if (route.type === "websocket") {
+    return Response.json(
+      {
+        error: "legacy-websocket-route-retired",
+        message: "public websocket session ingress moved to orchestrator-core",
+        canonical_worker: "orchestrator-core",
+        canonical_url: canonicalUrl,
+      },
+      { status: 426 },
+    );
+  }
+
+  return Response.json(
+    {
+      error: "legacy-session-route-retired",
+      message: `public session route "${route.action}" moved to orchestrator-core`,
+      canonical_worker: "orchestrator-core",
+      canonical_url: canonicalUrl,
+    },
+    { status: 410 },
+  );
+}
+
 const worker = {
   async fetch(request: Request, env: AgentCoreEnv): Promise<Response> {
     const url = new URL(request.url);
@@ -61,11 +106,14 @@ const worker = {
       });
     }
 
-    const sessionId =
-      route.type === "websocket" || route.type === "http-fallback"
-        ? route.sessionId
-        : "default";
-    const stub = env.SESSION_DO.get(env.SESSION_DO.idFromName(sessionId));
+    if (
+      route.type === "websocket" ||
+      (route.type === "http-fallback" && LEGACY_SESSION_ACTIONS.has(route.action))
+    ) {
+      return legacyRetirementResponse(request, route);
+    }
+
+    const stub = env.SESSION_DO.get(env.SESSION_DO.idFromName(route.sessionId));
     return stub.fetch(request);
   },
 };

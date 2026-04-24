@@ -1,3 +1,8 @@
+import {
+  jsonPolicyError,
+  readTraceUuid,
+} from "./policy/authority.js";
+
 export interface JwtPayload {
   readonly sub: string;
   readonly exp?: number;
@@ -57,10 +62,6 @@ const base64Url = {
   },
 };
 
-function jsonError(status: number, error: string, message: string): Response {
-  return Response.json({ error, message }, { status });
-}
-
 async function importKey(secret: string): Promise<CryptoKey> {
   return crypto.subtle.importKey(
     "raw",
@@ -116,21 +117,40 @@ function toOptionalNumber(value: unknown): number | undefined {
 export async function authenticateRequest(request: Request, env: AuthEnv): Promise<AuthResult> {
   const token = parseBearerToken(request);
   if (!token) {
-    return { ok: false, response: jsonError(401, "invalid-auth", "missing bearer token") };
+    return {
+      ok: false,
+      response: jsonPolicyError(401, "invalid-auth", "missing bearer token"),
+    };
   }
   const secret = env.JWT_SECRET;
   if (!secret || secret.length < 32) {
-    return { ok: false, response: jsonError(503, "auth-misconfigured", "JWT secret missing or invalid") };
+    return {
+      ok: false,
+      response: jsonPolicyError(503, "auth-misconfigured", "JWT secret missing or invalid"),
+    };
   }
   const payload = await verifyJwt(token, secret);
   if (!payload) {
-    return { ok: false, response: jsonError(401, "invalid-auth", "token missing, invalid, or expired") };
+    return {
+      ok: false,
+      response: jsonPolicyError(401, "invalid-auth", "token missing, invalid, or expired"),
+    };
+  }
+  const traceUuid = readTraceUuid(request);
+  if (!traceUuid) {
+    return {
+      ok: false,
+      response: jsonPolicyError(400, "invalid-trace", "trace_uuid must be supplied as x-trace-uuid header or trace_uuid query parameter"),
+    };
   }
 
   const claimTenant = toOptionalString(payload.tenant_uuid);
   const deployTenant = toOptionalString(env.TEAM_UUID);
   if (claimTenant && deployTenant && claimTenant !== deployTenant) {
-    return { ok: false, response: jsonError(403, "tenant-mismatch", "tenant claim does not match deploy tenant") };
+    return {
+      ok: false,
+      response: jsonPolicyError(403, "tenant-mismatch", "tenant claim does not match deploy tenant"),
+    };
   }
 
   const effectiveTenant = claimTenant ?? deployTenant;
@@ -160,9 +180,11 @@ export async function authenticateRequest(request: Request, env: AuthEnv): Promi
     ok: true,
     value: {
       user_uuid: payload.sub,
-      trace_uuid: request.headers.get("x-trace-uuid") ?? crypto.randomUUID(),
+      trace_uuid: traceUuid,
       snapshot,
       initial_context_seed,
     },
   };
 }
+
+export const validateIngressAuthority = authenticateRequest;

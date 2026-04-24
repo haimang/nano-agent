@@ -1,6 +1,7 @@
 import { NACP_VERSION } from "@haimang/nacp-core";
 import { NACP_SESSION_VERSION } from "@haimang/nacp-session";
 import { authenticateRequest, type AuthEnv } from "./auth.js";
+import { ensureConfiguredTeam, jsonPolicyError } from "./policy/authority.js";
 import { NanoOrchestratorUserDO } from "./user-do.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -18,7 +19,7 @@ export interface OrchestratorCoreShellResponse {
   readonly nacp_core_version: string;
   readonly nacp_session_version: string;
   readonly status: "ok";
-  readonly phase: "orchestration-facade-F2";
+  readonly phase: "orchestration-facade-closed";
   readonly public_facade: true;
   readonly agent_binding: boolean;
 }
@@ -29,21 +30,14 @@ function createShellResponse(env: OrchestratorCoreEnv): OrchestratorCoreShellRes
     nacp_core_version: NACP_VERSION,
     nacp_session_version: NACP_SESSION_VERSION,
     status: "ok",
-    phase: "orchestration-facade-F2",
+    phase: "orchestration-facade-closed",
     public_facade: true,
     agent_binding: Boolean(env.AGENT_CORE),
   };
 }
 
-function jsonError(status: number, error: string, message: string): Response {
-  return Response.json({ error, message }, { status });
-}
-
 function ensureTenantConfigured(env: OrchestratorCoreEnv): Response | null {
-  if (!env.TEAM_UUID && env.ENVIRONMENT !== "test") {
-    return jsonError(503, "worker-misconfigured", "TEAM_UUID must be configured");
-  }
-  return null;
+  return ensureConfiguredTeam(env);
 }
 
 async function parseBody(request: Request, optional = false): Promise<Record<string, unknown> | null> {
@@ -86,7 +80,7 @@ const worker = {
     if (tenantError) return tenantError;
 
     const route = parseSessionRoute(request);
-    if (!route) return jsonError(404, "not-found", "route not found");
+    if (!route) return jsonPolicyError(404, "not-found", "route not found");
 
     const auth = await authenticateRequest(request, env);
     if (!auth.ok) return auth.response;
@@ -94,12 +88,9 @@ const worker = {
     const stub = env.ORCHESTRATOR_USER_DO.get(env.ORCHESTRATOR_USER_DO.idFromName(auth.value.user_uuid));
 
     if (route.action === "ws") {
-      if (!isWebSocketUpgrade(request)) {
-        return jsonError(400, "invalid-upgrade", "ws route requires websocket upgrade");
-      }
       return stub.fetch(new Request(`https://orchestrator.internal/sessions/${route.sessionUuid}/ws`, {
         method: "GET",
-        headers: { upgrade: "websocket" },
+        headers: isWebSocketUpgrade(request) ? { upgrade: "websocket" } : {},
       }));
     }
 
@@ -107,7 +98,7 @@ const worker = {
     const needsBody = route.action === "start" || route.action === "input" || route.action === "cancel" || route.action === "verify";
     const body = needsBody ? await parseBody(request, optionalBody) : null;
     if (needsBody && body === null) {
-      return jsonError(400, `invalid-${route.action}-body`, `${route.action} requires a JSON body`);
+        return jsonPolicyError(400, `invalid-${route.action}-body`, `${route.action} requires a JSON body`);
     }
 
     return stub.fetch(new Request(`https://orchestrator.internal/sessions/${route.sessionUuid}/${route.action}`, {

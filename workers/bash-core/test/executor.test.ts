@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { CapabilityExecutor } from "../src/executor.js";
 import type { TargetHandler } from "../src/executor.js";
 import { CapabilityPolicyGate } from "../src/policy.js";
@@ -137,5 +137,36 @@ describe("CapabilityExecutor", () => {
     const result = await executor.execute(makePlan("ls"));
     expect(result.kind).toBe("timeout");
     expect(result.error?.code).toBe("timeout");
+  });
+
+  it("rechecks authority before target execution", async () => {
+    registry.register(makeDecl("ls", "allow"));
+    const beforeCapabilityExecute = vi.fn();
+    const executor = new CapabilityExecutor(targets, gate, {
+      beforeCapabilityExecute,
+    });
+
+    await executor.execute(makePlan("ls"));
+
+    expect(beforeCapabilityExecute).toHaveBeenCalledTimes(1);
+    expect(beforeCapabilityExecute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        plan: expect.objectContaining({ capabilityName: "ls" }),
+      }),
+    );
+  });
+
+  it("fails closed when authority recheck rejects", async () => {
+    registry.register(makeDecl("ls", "allow"));
+    const executor = new CapabilityExecutor(targets, gate, {
+      beforeCapabilityExecute() {
+        throw new Error("authority revoked");
+      },
+    });
+
+    const result = await executor.execute(makePlan("ls"));
+    expect(result.kind).toBe("error");
+    expect(result.error?.code).toBe("policy-denied");
+    expect(result.error?.message).toBe("authority revoked");
   });
 });

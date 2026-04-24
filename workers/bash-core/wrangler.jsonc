@@ -23,7 +23,8 @@
   ],
   "vars": {
     "ENVIRONMENT": "preview",
-    "OWNER_TAG": "nano-agent"
+    "OWNER_TAG": "nano-agent",
+    "TEAM_UUID": "nano-agent"
   },
   "env": {
     "preview": {
@@ -37,7 +38,8 @@
       },
       "vars": {
         "ENVIRONMENT": "preview",
-        "OWNER_TAG": "nano-agent"
+        "OWNER_TAG": "nano-agent",
+        "TEAM_UUID": "nano-agent"
       }
     }
   }

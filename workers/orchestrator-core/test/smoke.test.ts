@@ -7,6 +7,7 @@ import { signTestJwt } from "./jwt-helper.js";
 const SESSION_UUID = "11111111-1111-4111-8111-111111111111";
 const USER_UUID = "22222222-2222-4222-8222-222222222222";
 const JWT_SECRET = "x".repeat(32);
+const TRACE_UUID = "33333333-3333-4333-8333-333333333333";
 
 describe("orchestrator-core shell smoke", () => {
   it("exports a fetch handler and DO class", () => {
@@ -14,7 +15,7 @@ describe("orchestrator-core shell smoke", () => {
     expect(typeof NanoOrchestratorUserDO).toBe("function");
   });
 
-  it("returns the F2 probe shape", async () => {
+  it("returns the F3 probe shape", async () => {
     const response = await worker.fetch(new Request("https://example.com"), {
       ORCHESTRATOR_USER_DO: {} as DurableObjectNamespace,
       TEAM_UUID: "nano-agent",
@@ -25,7 +26,7 @@ describe("orchestrator-core shell smoke", () => {
     expect(body.nacp_core_version).toBe(NACP_VERSION);
     expect(body.nacp_session_version).toBe(NACP_SESSION_VERSION);
     expect(body.status).toBe("ok");
-    expect(body.phase).toBe("orchestration-facade-F2");
+    expect(body.phase).toBe("orchestration-facade-closed");
     expect(body.public_facade).toBe(true);
     expect(body.agent_binding).toBe(false);
   });
@@ -51,6 +52,73 @@ describe("orchestrator-core shell smoke", () => {
     expect(get).not.toHaveBeenCalled();
   });
 
+  it("rejects authenticated start without trace uuid", async () => {
+    const token = await signTestJwt({ sub: USER_UUID, realm: "default" }, JWT_SECRET);
+    const response = await worker.fetch(
+      new Request(`https://example.com/sessions/${SESSION_UUID}/start`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ initial_input: "hello" }),
+      }),
+      {
+        JWT_SECRET,
+        TEAM_UUID: "nano-agent",
+        ORCHESTRATOR_USER_DO: {} as DurableObjectNamespace,
+      } as any,
+    );
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toBe("invalid-trace");
+  });
+
+  it("rejects tenant mismatch claim", async () => {
+    const token = await signTestJwt(
+      { sub: USER_UUID, realm: "default", tenant_uuid: "foreign-tenant" },
+      JWT_SECRET,
+    );
+    const response = await worker.fetch(
+      new Request(`https://example.com/sessions/${SESSION_UUID}/start`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+          "x-trace-uuid": TRACE_UUID,
+        },
+        body: JSON.stringify({ initial_input: "hello" }),
+      }),
+      {
+        JWT_SECRET,
+        TEAM_UUID: "nano-agent",
+        ORCHESTRATOR_USER_DO: {} as DurableObjectNamespace,
+      } as any,
+    );
+
+    expect(response.status).toBe(403);
+    expect((await response.json()).error).toBe("tenant-mismatch");
+  });
+
+  it("rejects non-probe routes when TEAM_UUID is missing outside test env", async () => {
+    const token = await signTestJwt({ sub: USER_UUID, realm: "default" }, JWT_SECRET);
+    const response = await worker.fetch(
+      new Request(`https://example.com/sessions/${SESSION_UUID}/status`, {
+        headers: {
+          authorization: `Bearer ${token}`,
+          "x-trace-uuid": TRACE_UUID,
+        },
+      }),
+      {
+        JWT_SECRET,
+        ORCHESTRATOR_USER_DO: {} as DurableObjectNamespace,
+      } as any,
+    );
+
+    expect(response.status).toBe(503);
+    expect((await response.json()).error).toBe("worker-misconfigured");
+  });
+
   it("routes authenticated start requests to the user DO keyed by JWT sub", async () => {
     const token = await signTestJwt({ sub: USER_UUID, realm: "default" }, JWT_SECRET);
     const stubFetch = vi.fn<(req: Request) => Promise<Response>>().mockResolvedValue(new Response(JSON.stringify({ ok: true, action: "start" }), { status: 200 }));
@@ -60,7 +128,11 @@ describe("orchestrator-core shell smoke", () => {
     const response = await worker.fetch(
       new Request(`https://example.com/sessions/${SESSION_UUID}/start`, {
         method: "POST",
-        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+          "x-trace-uuid": TRACE_UUID,
+        },
         body: JSON.stringify({ initial_input: "hello", initial_context: { source: "test" } }),
       }),
       {
@@ -87,7 +159,7 @@ describe("orchestrator-core shell smoke", () => {
     const get = vi.fn().mockReturnValue({ fetch: stubFetch });
 
     const response = await worker.fetch(
-      new Request(`https://example.com/sessions/${SESSION_UUID}/ws?access_token=${token}`, { method: "GET", headers: { upgrade: "websocket" } }),
+      new Request(`https://example.com/sessions/${SESSION_UUID}/ws?access_token=${token}&trace_uuid=${TRACE_UUID}`, { method: "GET", headers: { upgrade: "websocket" } }),
       {
         JWT_SECRET,
         TEAM_UUID: "nano-agent",

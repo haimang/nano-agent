@@ -1,24 +1,27 @@
-# workers/agent-core — runtime host + legacy public edge
+# workers/agent-core — runtime host + retired public session edge
 
 ## Status
 
-`agent-core` is no longer a shell-only worker. It is the absorbed session runtime host,
-and during orchestration-facade F1 it carries **two** ingress postures:
+`agent-core` is the absorbed session runtime host. After orchestration-facade F3 it no longer owns canonical public session ingress.
 
-- legacy public `/sessions/:session_uuid/*` (still canonical until F3 cutover)
-- guarded `/internal/sessions/:session_uuid/*` for `orchestrator-core`
+- `GET /` / `GET /health` probe stays available
+- guarded `/internal/sessions/:session_uuid/*` remains active for `orchestrator-core`
+- legacy public `/sessions/:session_uuid/*` now returns typed retirement envelopes (`HTTP 410` / `WS 426`)
 
-## Purpose in F1
+## Purpose in F3+
 
-F1 does **not** rewrite the runtime loop. It only adds the minimum internal seam that
+`agent-core` keeps the real session runtime loop and the guarded internal seam that
 lets `orchestrator-core` call:
 
 - `start`
 - `input`
 - `cancel`
+- `status`
+- `timeline`
+- `verify`
 - `stream`
 
-The runtime still reuses the existing DO/HTTP fallback/timeline machinery underneath.
+The runtime still reuses the existing DO/HTTP fallback/timeline machinery underneath; only public ownership moved.
 
 ## Scripts
 

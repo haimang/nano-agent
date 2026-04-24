@@ -70,6 +70,10 @@ export function isStreamingHandler(
 /** Options for the executor. */
 export interface ExecutorOptions {
   timeoutMs?: number;
+  beforeCapabilityExecute?: (ctx: {
+    readonly plan: CapabilityPlan;
+    readonly requestId: string;
+  }) => Promise<void> | void;
   /**
    * Optional B5 hook producer seam. When supplied, ask-gated policy
    * decisions are routed to the authorizer (which in turn dispatches
@@ -188,6 +192,24 @@ export class CapabilityExecutor {
         };
       }
       // fall-through: verdict === "allow" → continue executing
+    }
+
+    const beforeCapabilityExecute = this.options?.beforeCapabilityExecute;
+    if (beforeCapabilityExecute) {
+      try {
+        await beforeCapabilityExecute({ plan, requestId });
+      } catch (err) {
+        return {
+          kind: "error",
+          capabilityName: plan.capabilityName,
+          requestId,
+          error: {
+            code: "policy-denied",
+            message: err instanceof Error ? err.message : String(err),
+          },
+          durationMs: Date.now() - start,
+        };
+      }
     }
 
     // 2. Find target handler
@@ -339,6 +361,26 @@ export class CapabilityExecutor {
             return;
           }
           // verdict === "allow" → continue
+        }
+
+        const beforeCapabilityExecute = self.options?.beforeCapabilityExecute;
+        if (beforeCapabilityExecute) {
+          try {
+            await beforeCapabilityExecute({ plan, requestId });
+          } catch (err) {
+            yield {
+              kind: "error",
+              capabilityName: plan.capabilityName,
+              requestId,
+              timestamp: new Date().toISOString(),
+              detail: {
+                code: "policy-denied",
+                message: err instanceof Error ? err.message : String(err),
+                durationMs: Date.now() - start,
+              },
+            };
+            return;
+          }
         }
 
         const handler = self.targets.get(plan.executionTarget);

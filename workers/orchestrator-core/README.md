@@ -1,8 +1,8 @@
-# workers/orchestrator-core — orchestration-facade F2 worker
+# workers/orchestrator-core — orchestration-facade closed public façade
 
 ## Status
 
-**F2 session seam is active.**
+**orchestration-facade is closed and handoff-ready.**
 
 `orchestrator-core` now owns the first-wave compatibility façade for session traffic:
 
@@ -14,7 +14,14 @@
 - `POST /sessions/:id/verify`
 - `GET /sessions/:id/ws`
 
-The worker keeps canonical public ownership, while `agent-core` remains the runtime host behind guarded internal routes.
+The worker now owns canonical public session ingress, while `agent-core` remains the runtime host behind guarded internal routes and typed legacy retirement.
+
+## Final highlights
+
+- probe marker rolled to `orchestration-facade-closed`
+- session-facing live suites migrated here as canonical package-e2e owner
+- public JWT ingress now enforces explicit `trace_uuid` + deploy-tenant truth
+- legacy `agent-core /sessions/*` retirement is asserted from this suite
 
 ## Scripts
 

@@ -3,6 +3,23 @@ import worker, { NanoSessionDO } from "../src/index.js";
 import { NACP_VERSION } from "@haimang/nacp-core";
 import { NACP_SESSION_VERSION } from "@haimang/nacp-session";
 
+const TRACE_UUID = "33333333-3333-4333-8333-333333333333";
+const AUTHORITY = {
+  sub: "22222222-2222-4222-8222-222222222222",
+  realm: "test",
+  tenant_uuid: "nano-agent",
+  tenant_source: "claim",
+};
+
+function internalHeaders(extra: Record<string, string> = {}) {
+  return {
+    "x-nano-internal-binding-secret": "secret",
+    "x-trace-uuid": TRACE_UUID,
+    "x-nano-internal-authority": JSON.stringify(AUTHORITY),
+    ...extra,
+  };
+}
+
 describe("agent-core shell smoke", () => {
   it("exports a fetch handler", () => {
     expect(typeof worker.fetch).toBe("function");
@@ -39,17 +56,10 @@ describe("agent-core shell smoke", () => {
     expect(body.live_loop).toBe(true);
   });
 
-  it("forwards /sessions/:sessionId/:action to SESSION_DO via idFromName → get → fetch", async () => {
-    const stubFetch = vi
-      .fn<(req: Request) => Promise<Response>>()
-      .mockResolvedValue(
-        new Response(JSON.stringify({ forwarded: true }), { status: 200 }),
-      );
-    const get = vi.fn().mockReturnValue({ fetch: stubFetch });
+  it("returns canonical 410 retirement envelopes for legacy public session routes", async () => {
     const idFromName = vi.fn().mockReturnValue({ __kind: "mock-id" });
-    const env = {
-      SESSION_DO: { idFromName, get } as unknown as DurableObjectNamespace,
-    };
+    const get = vi.fn();
+    const env = { SESSION_DO: { idFromName, get } as unknown as DurableObjectNamespace };
 
     const request = new Request(
       "https://example.com/sessions/abc/status",
@@ -57,39 +67,32 @@ describe("agent-core shell smoke", () => {
     );
     const response = await worker.fetch(request, env);
 
-    expect(idFromName).toHaveBeenCalledWith("abc");
-    expect(get).toHaveBeenCalledTimes(1);
-    expect(stubFetch).toHaveBeenCalledTimes(1);
-    const forwarded = stubFetch.mock.calls[0]![0]!;
-    expect(new URL(forwarded.url).pathname).toBe("/sessions/abc/status");
-    expect(response.status).toBe(200);
-    const body = (await response.json()) as { forwarded: boolean };
-    expect(body.forwarded).toBe(true);
+    expect(response.status).toBe(410);
+    expect(idFromName).not.toHaveBeenCalled();
+    expect(get).not.toHaveBeenCalled();
+    const body = (await response.json()) as Record<string, string>;
+    expect(body.error).toBe("legacy-session-route-retired");
+    expect(body.canonical_worker).toBe("orchestrator-core");
+    expect(body.canonical_url).toContain("/sessions/abc/status");
   });
 
-  it("forwards /sessions/:sessionId/ws (websocket intent) to SESSION_DO with the sessionId", async () => {
-    const stubFetch = vi
-      .fn<(req: Request) => Promise<Response>>()
-      .mockResolvedValue(
-        new Response("ws-ack", {
-          status: 200,
-          headers: { "x-upgraded": "websocket" },
-        }),
-      );
-    const get = vi.fn().mockReturnValue({ fetch: stubFetch });
+  it("returns canonical 426 retirement envelope for legacy public websocket route", async () => {
     const idFromName = vi.fn().mockReturnValue({ __kind: "mock-id" });
-    const env = {
-      SESSION_DO: { idFromName, get } as unknown as DurableObjectNamespace,
-    };
+    const get = vi.fn();
+    const env = { SESSION_DO: { idFromName, get } as unknown as DurableObjectNamespace };
 
     const request = new Request("https://example.com/sessions/xyz/ws", {
       headers: { upgrade: "websocket" },
     });
     const response = await worker.fetch(request, env);
 
-    expect(idFromName).toHaveBeenCalledWith("xyz");
-    expect(stubFetch).toHaveBeenCalledTimes(1);
-    expect(response.headers.get("x-upgraded")).toBe("websocket");
+    expect(response.status).toBe(426);
+    expect(idFromName).not.toHaveBeenCalled();
+    expect(get).not.toHaveBeenCalled();
+    const body = (await response.json()) as Record<string, string>;
+    expect(body.error).toBe("legacy-websocket-route-retired");
+    expect(body.canonical_worker).toBe("orchestrator-core");
+    expect(body.canonical_url).toContain("/sessions/xyz/ws");
   });
 
   it("returns 404 JSON for off-spec routes without burning a DO roundtrip", async () => {
@@ -125,13 +128,12 @@ describe("agent-core shell smoke", () => {
     const response = await worker.fetch(
       new Request(`https://example.com/internal/sessions/${sessionId}/start`, {
         method: "POST",
-        headers: {
+        headers: internalHeaders({
           "content-type": "application/json",
-          "x-nano-internal-binding-secret": "secret",
-        },
-        body: JSON.stringify({ initial_input: "hello" }),
+        }),
+        body: JSON.stringify({ initial_input: "hello", trace_uuid: TRACE_UUID, auth_snapshot: AUTHORITY }),
       }),
-      env as any,
+      { ...env, TEAM_UUID: "nano-agent" } as any,
     );
 
     expect(response.status).toBe(200);
@@ -156,6 +158,83 @@ describe("agent-core shell smoke", () => {
     expect(get).not.toHaveBeenCalled();
   });
 
+  it("rejects /internal/* when trace uuid is missing", async () => {
+    const response = await worker.fetch(
+      new Request("https://example.com/internal/sessions/11111111-1111-4111-8111-111111111111/start", {
+        method: "POST",
+        headers: {
+          "x-nano-internal-binding-secret": "secret",
+          "x-nano-internal-authority": JSON.stringify(AUTHORITY),
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ initial_input: "hello", auth_snapshot: AUTHORITY }),
+      }),
+      {
+        NANO_INTERNAL_BINDING_SECRET: "secret",
+        TEAM_UUID: "nano-agent",
+        SESSION_DO: {
+          idFromName: vi.fn().mockReturnValue({ __kind: "mock-id" }),
+          get: vi.fn(),
+        } as unknown as DurableObjectNamespace,
+      } as any,
+    );
+
+    expect(response.status).toBe(400);
+    expect((await response.json()).error).toBe("invalid-trace");
+  });
+
+  it("rejects /internal/* on tenant mismatch and authority escalation", async () => {
+    const tenantMismatch = await worker.fetch(
+      new Request("https://example.com/internal/sessions/11111111-1111-4111-8111-111111111111/start", {
+        method: "POST",
+        headers: internalHeaders({
+          "content-type": "application/json",
+        }),
+        body: JSON.stringify({
+          initial_input: "hello",
+          trace_uuid: TRACE_UUID,
+          auth_snapshot: { ...AUTHORITY, tenant_uuid: "foreign-tenant" },
+        }),
+      }),
+      {
+        NANO_INTERNAL_BINDING_SECRET: "secret",
+        TEAM_UUID: "nano-agent",
+        SESSION_DO: {
+          idFromName: vi.fn().mockReturnValue({ __kind: "mock-id" }),
+          get: vi.fn(),
+        } as unknown as DurableObjectNamespace,
+      } as any,
+    );
+
+    expect(tenantMismatch.status).toBe(400);
+    expect((await tenantMismatch.json()).error).toBe("invalid-authority");
+
+    const escalation = await worker.fetch(
+      new Request("https://example.com/internal/sessions/11111111-1111-4111-8111-111111111111/start", {
+        method: "POST",
+        headers: internalHeaders({
+          "content-type": "application/json",
+        }),
+        body: JSON.stringify({
+          initial_input: "hello",
+          trace_uuid: TRACE_UUID,
+          auth_snapshot: { ...AUTHORITY, membership_level: 9 },
+        }),
+      }),
+      {
+        NANO_INTERNAL_BINDING_SECRET: "secret",
+        TEAM_UUID: "nano-agent",
+        SESSION_DO: {
+          idFromName: vi.fn().mockReturnValue({ __kind: "mock-id" }),
+          get: vi.fn(),
+        } as unknown as DurableObjectNamespace,
+      } as any,
+    );
+
+    expect(escalation.status).toBe(403);
+    expect((await escalation.json()).error).toBe("authority-escalation");
+  });
+
 
 
   it("synthesizes a minimal session.update event when timeline replay is empty", async () => {
@@ -176,10 +255,11 @@ describe("agent-core shell smoke", () => {
     const response = await worker.fetch(
       new Request(`https://example.com/internal/sessions/${sessionId}/stream`, {
         method: "GET",
-        headers: { "x-nano-internal-binding-secret": "secret" },
+        headers: internalHeaders(),
       }),
       {
         NANO_INTERNAL_BINDING_SECRET: "secret",
+        TEAM_UUID: "nano-agent",
         SESSION_DO: { idFromName, get } as unknown as DurableObjectNamespace,
       } as any,
     );
@@ -196,10 +276,18 @@ describe("agent-core shell smoke", () => {
     const stubFetch = vi.fn<(req: Request) => Promise<Response>>().mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
     const get = vi.fn().mockReturnValue({ fetch: stubFetch });
     const idFromName = vi.fn().mockReturnValue({ __kind: "mock-id" });
-    const env = { NANO_INTERNAL_BINDING_SECRET: "secret", SESSION_DO: { idFromName, get } as unknown as DurableObjectNamespace };
+    const env = {
+      NANO_INTERNAL_BINDING_SECRET: "secret",
+      TEAM_UUID: "nano-agent",
+      SESSION_DO: { idFromName, get } as unknown as DurableObjectNamespace,
+    };
 
-    await worker.fetch(new Request(`https://example.com/internal/sessions/${sessionId}/status`, { headers: { "x-nano-internal-binding-secret": "secret" } }), env as any);
-    await worker.fetch(new Request(`https://example.com/internal/sessions/${sessionId}/verify`, { method: "POST", headers: { "x-nano-internal-binding-secret": "secret", "content-type": "application/json" }, body: JSON.stringify({ check: "bogus" }) }), env as any);
+    await worker.fetch(new Request(`https://example.com/internal/sessions/${sessionId}/status`, { headers: internalHeaders() }), env as any);
+    await worker.fetch(new Request(`https://example.com/internal/sessions/${sessionId}/verify`, {
+      method: "POST",
+      headers: internalHeaders({ "content-type": "application/json" }),
+      body: JSON.stringify({ check: "bogus", trace_uuid: TRACE_UUID, authority: AUTHORITY }),
+    }), env as any);
 
     expect(new URL(stubFetch.mock.calls[0]![0]!.url).pathname).toBe(`/sessions/${sessionId}/status`);
     expect(new URL(stubFetch.mock.calls[1]![0]!.url).pathname).toBe(`/sessions/${sessionId}/verify`);
@@ -227,10 +315,11 @@ describe("agent-core shell smoke", () => {
     const response = await worker.fetch(
       new Request(`https://example.com/internal/sessions/${sessionId}/stream`, {
         method: "GET",
-        headers: { "x-nano-internal-binding-secret": "secret" },
+        headers: internalHeaders(),
       }),
       {
         NANO_INTERNAL_BINDING_SECRET: "secret",
+        TEAM_UUID: "nano-agent",
         SESSION_DO: { idFromName, get } as unknown as DurableObjectNamespace,
       } as any,
     );

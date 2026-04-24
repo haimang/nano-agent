@@ -9,7 +9,8 @@
   },
   "vars": {
     "ENVIRONMENT": "preview",
-    "OWNER_TAG": "nano-agent"
+    "OWNER_TAG": "nano-agent",
+    "TEAM_UUID": "nano-agent"
   },
   "durable_objects": {
     "bindings": [
@@ -41,7 +42,8 @@
     "preview": {
       "vars": {
         "ENVIRONMENT": "preview",
-        "OWNER_TAG": "nano-agent"
+        "OWNER_TAG": "nano-agent",
+        "TEAM_UUID": "nano-agent"
       },
       "durable_objects": {
         "bindings": [

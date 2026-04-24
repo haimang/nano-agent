@@ -1,6 +1,10 @@
+import { validateInternalAuthority } from "./internal-policy.js";
+
 export interface AgentInternalEnv {
   readonly SESSION_DO: DurableObjectNamespace;
   readonly NANO_INTERNAL_BINDING_SECRET?: string;
+  readonly TEAM_UUID?: string;
+  readonly ENVIRONMENT?: string;
 }
 
 type SupportedInternalAction =
@@ -26,18 +30,6 @@ function jsonResponse(status: number, body: Record<string, unknown>): Response {
   return Response.json(body, { status });
 }
 
-function validateInternalSecret(request: Request, env: AgentInternalEnv): Response | null {
-  const expected = env.NANO_INTERNAL_BINDING_SECRET;
-  const provided = request.headers.get("x-nano-internal-binding-secret");
-  if (!expected || provided !== expected) {
-    return jsonResponse(401, {
-      error: "invalid-internal-auth",
-      message: "internal binding secret missing or invalid",
-    });
-  }
-  return null;
-}
-
 function parseInternalRoute(request: Request):
   | { type: "action"; sessionId: string; action: SupportedInternalAction }
   | { type: "unsupported-action"; action: string | null }
@@ -57,18 +49,18 @@ function parseInternalRoute(request: Request):
 }
 
 async function forwardHttpAction(
-  request: Request,
   env: AgentInternalEnv,
   sessionId: string,
   action: Exclude<SupportedInternalAction, "stream">,
+  method: string,
+  contentType: string | null,
+  bodyText?: string,
 ): Promise<Response> {
   const stub = env.SESSION_DO.get(env.SESSION_DO.idFromName(sessionId));
   const targetUrl = `https://session.internal/sessions/${sessionId}/${action}`;
   const headers = new Headers();
-  const contentType = request.headers.get("content-type");
   if (contentType) headers.set("content-type", contentType);
-  const method = request.method.toUpperCase();
-  const body = method === "GET" || method === "HEAD" ? undefined : await request.text();
+  const body = method === "GET" || method === "HEAD" ? undefined : bodyText;
   return stub.fetch(new Request(targetUrl, { method, headers, body }));
 }
 
@@ -161,8 +153,8 @@ export async function routeInternal(request: Request, env: AgentInternalEnv): Pr
     });
   }
 
-  const authFailure = validateInternalSecret(request, env);
-  if (authFailure) return authFailure;
+  const validated = await validateInternalAuthority(request, env);
+  if (!validated.ok) return validated.response;
 
   switch (route.action) {
     case "stream":
@@ -173,7 +165,14 @@ export async function routeInternal(request: Request, env: AgentInternalEnv): Pr
     case "status":
     case "timeline":
     case "verify":
-      return forwardHttpAction(request, env, route.sessionId, route.action);
+      return forwardHttpAction(
+        env,
+        route.sessionId,
+        route.action,
+        request.method.toUpperCase(),
+        request.headers.get("content-type"),
+        validated.bodyText,
+      );
     default:
       return jsonResponse(404, { error: "unsupported-action", message: "internal action not supported" });
   }

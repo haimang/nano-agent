@@ -108,6 +108,17 @@ function jsonResponse(status: number, body: Record<string, unknown>): Response {
   return Response.json(body, { status });
 }
 
+function isAuthSnapshot(value: unknown): value is AuthSnapshot {
+  return (
+    Boolean(value) &&
+    typeof value === 'object' &&
+    typeof (value as { sub?: unknown }).sub === 'string' &&
+    ((value as { tenant_source?: unknown }).tenant_source === undefined ||
+      (value as { tenant_source?: unknown }).tenant_source === 'claim' ||
+      (value as { tenant_source?: unknown }).tenant_source === 'deploy-fill')
+  );
+}
+
 function sessionMissingResponse(sessionUuid: string): Response {
   return jsonResponse(404, { error: 'session_missing', session_uuid: sessionUuid });
 }
@@ -480,13 +491,12 @@ export class NanoOrchestratorUserDO {
   }
 
   private async handleWsAttach(sessionUuid: string, request: Request): Promise<Response> {
-    if (!isWebSocketUpgrade(request)) {
-      return jsonResponse(400, { error: 'invalid-upgrade', message: 'ws route requires websocket upgrade' });
-    }
-
     const entry = await this.requireSession(sessionUuid);
     if (!entry) return sessionMissingResponse(sessionUuid);
     if (entry.status === 'ended') return sessionTerminalResponse(sessionUuid, await this.getTerminal(sessionUuid));
+    if (!isWebSocketUpgrade(request)) {
+      return jsonResponse(400, { error: 'invalid-upgrade', message: 'ws route requires websocket upgrade' });
+    }
 
     const pair = createWebSocketPair();
     if (!pair) {
@@ -655,8 +665,25 @@ export class NanoOrchestratorUserDO {
       return jsonResponse(503, { error: 'internal-auth-unconfigured', message: 'internal binding secret missing' });
     }
 
+    const traceUuid =
+      typeof body?.trace_uuid === 'string' && body.trace_uuid.length > 0
+        ? body.trace_uuid
+        : crypto.randomUUID();
+    const authority = isAuthSnapshot(body?.auth_snapshot)
+      ? body.auth_snapshot
+      : await this.get<AuthSnapshot>(USER_AUTH_SNAPSHOT_KEY);
+    if (!authority || typeof authority.sub !== 'string' || authority.sub.length === 0) {
+      return jsonResponse(400, {
+        error: 'missing-authority',
+        message: 'internal requests require a persisted auth snapshot',
+        session_uuid: sessionUuid,
+      });
+    }
+
     const headers = new Headers({
       'x-nano-internal-binding-secret': this.env.NANO_INTERNAL_BINDING_SECRET,
+      'x-trace-uuid': traceUuid,
+      'x-nano-internal-authority': JSON.stringify(authority),
     });
     if (body) headers.set('content-type', 'application/json');
 
