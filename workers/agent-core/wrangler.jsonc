@@ -10,7 +10,8 @@
   "vars": {
     "ENVIRONMENT": "preview",
     "OWNER_TAG": "nano-agent",
-    "TEAM_UUID": "nano-agent"
+    "TEAM_UUID": "nano-agent",
+    "ORCHESTRATOR_PUBLIC_BASE_URL": "https://nano-agent-orchestrator-core-preview.haimang.workers.dev"
   },
   "durable_objects": {
     "bindings": [
@@ -43,7 +44,8 @@
       "vars": {
         "ENVIRONMENT": "preview",
         "OWNER_TAG": "nano-agent",
-        "TEAM_UUID": "nano-agent"
+        "TEAM_UUID": "nano-agent",
+        "ORCHESTRATOR_PUBLIC_BASE_URL": "https://nano-agent-orchestrator-core-preview.haimang.workers.dev"
       },
       "durable_objects": {
         "bindings": [

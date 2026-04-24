@@ -355,6 +355,7 @@ export class NanoOrchestratorUserDO {
       authority: body.auth_snapshot,
     });
     if (!startAck.response.ok) {
+      await this.delete(sessionKey(sessionUuid));
       return jsonResponse(startAck.response.status, {
         error: 'agent-start-failed',
         message: 'agent-core internal start failed',
@@ -669,8 +670,8 @@ export class NanoOrchestratorUserDO {
       typeof body?.trace_uuid === 'string' && body.trace_uuid.length > 0
         ? body.trace_uuid
         : crypto.randomUUID();
-    const authority = isAuthSnapshot(body?.auth_snapshot)
-      ? body.auth_snapshot
+    const authority = isAuthSnapshot(body?.authority)
+      ? body.authority
       : await this.get<AuthSnapshot>(USER_AUTH_SNAPSHOT_KEY);
     if (!authority || typeof authority.sub !== 'string' || authority.sub.length === 0) {
       return jsonResponse(400, {
@@ -698,7 +699,7 @@ export class NanoOrchestratorUserDO {
 
   private async readInternalStream(sessionUuid: string): Promise<StreamReadResult> {
     const response = await this.forwardInternalRaw(sessionUuid, 'stream');
-    if (!response.ok) return { ok: true, frames: [] };
+    if (!response.ok) return { ok: false, response };
     try {
       return { ok: true, frames: await readNdjsonFrames(response) };
     } catch (error) {

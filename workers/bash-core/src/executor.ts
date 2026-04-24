@@ -123,8 +123,14 @@ export class CapabilityExecutor {
   ) {}
 
   async execute(plan: CapabilityPlan): Promise<CapabilityResult> {
+    return this.executeWithRequestId(plan, generateRequestId());
+  }
+
+  async executeWithRequestId(
+    plan: CapabilityPlan,
+    requestId: string,
+  ): Promise<CapabilityResult> {
     const start = Date.now();
-    const requestId = generateRequestId();
 
     // 1. Policy check
     const decision = await this.policy.check(plan);
@@ -540,11 +546,13 @@ export class CapabilityExecutor {
    *
    * No-op if the requestId is unknown or already completed.
    */
-  cancel(requestId: string): void {
+  cancel(requestId: string): boolean {
     const controller = this.activeExecutions.get(requestId);
     if (controller) {
       controller.abort();
+      return true;
     }
+    return false;
   }
 
   /**

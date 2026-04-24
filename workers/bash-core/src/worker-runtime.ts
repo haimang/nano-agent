@@ -4,6 +4,7 @@ import { createNetworkHandlers } from "./capabilities/network.js";
 import { createSearchHandlers } from "./capabilities/search.js";
 import { createTextProcessingHandlers } from "./capabilities/text-processing.js";
 import { createVcsHandlers } from "./capabilities/vcs.js";
+import { CapabilityExecutor } from "./executor.js";
 import { registerMinimalCommands } from "./fake-bash/commands.js";
 import { planFromToolCall } from "./planner.js";
 import { CapabilityPolicyGate } from "./policy.js";
@@ -34,7 +35,7 @@ interface BashWorkerRuntime {
   readonly registry: InMemoryCapabilityRegistry;
   readonly gate: CapabilityPolicyGate;
   readonly target: LocalTsTarget;
-  readonly activeCalls: Map<string, AbortController>;
+  readonly executor: CapabilityExecutor;
 }
 
 const PX_SLEEP_DECLARATION: CapabilityDeclaration = {
@@ -109,7 +110,10 @@ function createRuntime(): BashWorkerRuntime {
     registry,
     gate: new CapabilityPolicyGate(registry),
     target,
-    activeCalls: new Map<string, AbortController>(),
+    executor: new CapabilityExecutor(
+      new Map([["local-ts", target]]),
+      new CapabilityPolicyGate(registry),
+    ),
   };
 }
 
@@ -175,34 +179,12 @@ export async function executeCapabilityCall(
     return toErrorBody("unknown-tool", `tool "${toolName}" is not registered`);
   }
 
-  const decision = await runtime.gate.check(plan);
-  if (decision === "deny") {
-    return toErrorBody("policy-denied", `Capability "${toolName}" was denied by policy`);
-  }
-  if (decision === "ask") {
-    return toErrorBody(
-      "policy-ask",
-      `Capability "${toolName}" requires user approval`,
-    );
-  }
-
-  const controller = new AbortController();
-  runtime.activeCalls.set(requestId, controller);
-  try {
-    const result = await runtime.target.execute(plan, controller.signal);
-    return resultToToolResponse(result);
-  } finally {
-    runtime.activeCalls.delete(requestId);
-  }
+  const result = await runtime.executor.executeWithRequestId(plan, requestId);
+  return resultToToolResponse(result);
 }
 
 export function cancelCapabilityCall(requestId: string) {
-  const controller = runtime.activeCalls.get(requestId);
-  if (!controller) {
-    return { ok: true, cancelled: false };
-  }
-  controller.abort();
-  return { ok: true, cancelled: true };
+  return { ok: true, cancelled: runtime.executor.cancel(requestId) };
 }
 
 export function parseCapabilityCallRequest(raw: unknown): WorkerCapabilityCallRequest | null {

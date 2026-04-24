@@ -40,7 +40,7 @@ describe("agent-core shell smoke", () => {
     expect(body.nacp_session_version).toBe(NACP_SESSION_VERSION);
     expect(body.status).toBe("ok");
     expect(body.absorbed_runtime).toBe(true);
-    expect(body.phase).toBe("worker-matrix-P2-live-loop");
+    expect(body.phase).toBe("orchestration-facade-closed");
     expect(body.live_loop).toBe(true);
     expect(body.capability_binding).toBe(false); // no BASH_CORE in test env
   });
@@ -74,6 +74,23 @@ describe("agent-core shell smoke", () => {
     expect(body.error).toBe("legacy-session-route-retired");
     expect(body.canonical_worker).toBe("orchestrator-core");
     expect(body.canonical_url).toContain("/sessions/abc/status");
+  });
+
+  it("prefers ORCHESTRATOR_PUBLIC_BASE_URL when building canonical retirement URLs", async () => {
+    const response = await worker.fetch(
+      new Request("https://legacy.example.com/sessions/abc/status?via=test"),
+      {
+        ORCHESTRATOR_PUBLIC_BASE_URL: "https://orchestrator.example.com/base",
+        SESSION_DO: {
+          idFromName: vi.fn(),
+          get: vi.fn(),
+        } as unknown as DurableObjectNamespace,
+      } as any,
+    );
+
+    expect(response.status).toBe(410);
+    const body = await response.json();
+    expect(body.canonical_url).toBe("https://orchestrator.example.com/sessions/abc/status?via=test");
   });
 
   it("returns canonical 426 retirement envelope for legacy public websocket route", async () => {

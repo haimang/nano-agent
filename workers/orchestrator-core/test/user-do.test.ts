@@ -190,6 +190,67 @@ describe('NanoOrchestratorUserDO', () => {
     expect(await verify.json()).toMatchObject({ error: 'unknown-verify-check' });
   });
 
+  it('cleans up starting session state when internal start fails', async () => {
+    const { state, store } = createState();
+    const userDo = new NanoOrchestratorUserDO(state, {
+      AGENT_CORE: {
+        fetch: async () => Response.json({ error: 'boom' }, { status: 503 }),
+      } as Fetcher,
+      NANO_INTERNAL_BINDING_SECRET: 'secret',
+    });
+
+    const response = await userDo.fetch(
+      new Request(`https://orchestrator.internal/sessions/${SESSION_UUID}/start`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          initial_input: 'hello',
+          auth_snapshot: { sub: USER_UUID, tenant_source: 'deploy-fill' },
+          initial_context_seed: { default_layers: [], user_memory_ref: null },
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(503);
+    expect(store.has(`sessions/${SESSION_UUID}`)).toBe(false);
+  });
+
+  it('surfaces non-ok internal stream responses instead of treating them as empty replay', async () => {
+    installFakePair();
+    const { state, store } = createState();
+    store.set(`sessions/${SESSION_UUID}`, {
+      created_at: 'a',
+      last_seen_at: 'a',
+      status: 'detached',
+      last_phase: 'attached',
+      relay_cursor: -1,
+      ended_at: null,
+    });
+    store.set(USER_AUTH_SNAPSHOT_KEY, { sub: USER_UUID, tenant_source: 'deploy-fill' });
+
+    const userDo = new NanoOrchestratorUserDO(state, {
+      AGENT_CORE: {
+        fetch: async (request: Request) => {
+          if (new URL(request.url).pathname.endsWith('/stream')) {
+            return Response.json({ error: 'stream-broken' }, { status: 502 });
+          }
+          return Response.json({ ok: true });
+        },
+      } as Fetcher,
+      NANO_INTERNAL_BINDING_SECRET: 'secret',
+    });
+
+    const response = await userDo.fetch(
+      new Request(`https://orchestrator.internal/sessions/${SESSION_UUID}/ws`, {
+        method: 'GET',
+        headers: { upgrade: 'websocket' },
+      }),
+    );
+
+    expect(response.status).toBe(502);
+    expect(await response.json()).toMatchObject({ error: 'stream-broken' });
+  });
+
   it('supersedes the old ws attachment before switching to the new one', async () => {
     const { created } = installFakePair();
     const { state, store } = createState();

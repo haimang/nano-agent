@@ -2,7 +2,7 @@
 
 ## Status
 
-`agent-core` is the absorbed session runtime host. After orchestration-facade F3 it no longer owns canonical public session ingress.
+`agent-core` is the absorbed session runtime host. The worker now reports the terminal probe marker `orchestration-facade-closed`, while continuing to avoid canonical public session ownership.
 
 - `GET /` / `GET /health` probe stays available
 - guarded `/internal/sessions/:session_uuid/*` remains active for `orchestrator-core`
