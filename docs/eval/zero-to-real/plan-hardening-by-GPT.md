@@ -14,11 +14,11 @@
 ## 0. 一句话结论
 
 **`zero-to-real` 比 `bridging-the-gap` 更准确。**  
-但如果按 Opus v2 的完整构想一次性推进，阶段会过重。更稳妥的做法是：**保留它的方向，缩减它的 first-wave 吸收面，并把“真实用户价值”放在“架构终态优雅”之前。**
+但本阶段不该被理解为“继续做最小面”。更准确的定义是：**把范围收成“最小但完整的真实闭环”——以 NACP 为硬基石，落完整 end-user auth（含 WeChat）、多租户门禁、真实 agent loop、真实 audit/context truth、真实客户端实验。**
 
 我对本阶段的最终定义是：
 
-> **zero-to-real = 让 nano-agent 从“已闭合的 orchestration façade”进入“第一个真实用户可持续使用的闭环”，其最低交付是：真实身份、真实持久化、真实 LLM、真实会话历史、真实客户端实验。**
+> **zero-to-real = 让 nano-agent 从“已闭合的 orchestration façade”进入“第一个真实用户可持续使用的闭环”，其最低交付是：NACP-first 的完整身份授权、多租户安全门禁、真实持久化、真实 LLM、真实会话/审计/上下文真相，以及真实客户端实验。**
 
 ---
 
@@ -139,491 +139,523 @@
 
 **但我不同意把它第一波就做成完整 admin 面。** 见下文。
 
-## 3.2 我认为需要收紧或修正的部分
+## 3.2 我修正后的判断
 
-### A. Opus 的第一版执行面仍然偏重
+结合业主后续四点反馈、当前仓库真实代码以及三份 context，我认为前一版 hardening 需要做 4 个实质修正。
 
-Opus v2 的主要问题不是方向错，而是**一次性想落太多终态元素**：
+### A. auth 不能只做“最小面”，而必须做完整 end-user auth flow
 
-1. 新建 `orchestration.auth`
-2. 重塑 `orchestration.core`
-3. 引入 D1 三大模块子集
-4. 让 `agent.core` 接真 LLM
-5. 加 quota 账本
-6. 加 WeChat bridge
-7. 加 Mini Program
-8. 启动 internal RPC
-9. 加冷归档 / Alarm 驱动数据迁移
+这一点业主是对的。  
+如果 zero-to-real 的目标真的是 **first real client loop**，那么 auth 不能只停留在 register / login / verify-token 的最小流，而应该明确包含：
 
-这些每一项单独看都合理，但如果作为一个阶段的首轮执行面，会严重放大 scope risk。
+1. email/password register / login
+2. verify-token / refresh-token
+3. password reset
+4. current user / tenant readback
+5. **WeChat bridge**
 
-### B. `smind-06` 的吸收粒度应更小
+这里要区分两件事：
 
-`smind-06-conversation-context-session.sql` 非常完整，但它的完整度也意味着成本很高。  
-它有：
+- **我同意完整 end-user auth flow 必须进入 zero-to-real**
+- **我仍不同意 first-wave 直接吞下完整 admin plane**
 
-1. `smind_conversations`
-2. `smind_conversation_participants`
-3. `smind_conversation_sessions`
-4. `smind_conversation_turns`
-5. `smind_conversation_messages`
-6. `smind_conversation_message_parts`
-7. `smind_conversation_context_snapshots`
-8. `smind_conversation_context_items`
+也就是说，`orchestration.auth` 应该做强，但它要强在 **真实用户入口**，而不是一开始就膨胀成完整的 tenant admin / API key product surface。
 
-对于 zero-to-real，**不需要 day-1 全吸收**。  
-当前 nano-agent 的真实 first-wave 仍然是：
+### B. 多租户 + NACP compliance 不是附属约束，而是主线
 
-- 单 host user 主导
-- private conversation 为主
-- message timeline 比 participant/collab 更重要
-- real history 比 rich multimodal message part 更重要
+业主这条批评也是对的。  
+我前一版文档虽然写了 `team_uuid`、写了 day-1 multi-tenant，但没有把它展开成真正的执行 law。
 
-因此我建议：
+而当前仓库已经有明确事实说明，这条线必须进入主线：
 
-**first-wave 只吸收：**
+1. `workers/orchestrator-core/src/auth.ts`
+   - public ingress 已要求 JWT + `trace_uuid`
+   - claim tenant 与 deploy tenant 不一致时会拒绝
+2. `workers/agent-core/src/host/internal-policy.ts`
+   - internal ingress 已要求 `x-trace-uuid`、`x-nano-internal-authority`
+   - body/header 的 trace 与 authority 不能分叉
+   - internal path 已有 no-escalation truth
+3. `packages/nacp-core/src/envelope.ts`
+   - `authority`, `trace`, `tenant_delegation`, `quota_hint`, tenant-prefixed `refs` 都是协议一等字段
+4. `packages/nacp-session/src/ingress.ts`
+   - client frame 不得 author authority
+   - authority 必须 server-stamped 后再进入 session parse path
 
-1. `nano_conversations`
-2. `nano_conversation_sessions`
-3. `nano_conversation_messages`
-4. `nano_conversation_context_snapshots`（若 compact/context 层需要）
+所以 zero-to-real 不该只写成 “建 D1、接模型、做客户端”，而应明确写成：
 
-**延后：**
+> **把多租户安全门禁、trace/authority 双头校验、tenant boundary、NACP compliance 变成 runtime law。**
 
-1. participants
-2. turns
-3. message_parts
-4. context_items
+### C. `nacp-core` / `nacp-session` 必须从“协议存在”推进到“执行真理”
 
-理由不是它们不重要，而是**它们不是“从 zero 到 real”的第一道门槛**。
+这条批评也完全成立。  
+前一版 hardening 没有把 NACP 写得足够重，容易让人误解成“协议是背景板，真正的主线是 auth + D1 + client”。
 
-### C. `smind-09` 的吸收粒度也应更小
+更准确的说法应该是：
 
-Opus 已经把 billing 全延后，这点是对的。  
-但即便只看 quota 平面，`smind-09` 也不应该 first-wave 一次性吸收成完整体系。
+1. `@haimang/nacp-core`
+   - 冻结 internal envelope / authority / trace / control / transport / tenancy / evidence vocabulary
+2. `@haimang/nacp-session`
+   - 冻结 client ↔ session DO profile：`session.start`、`session.followup_input`、ack / heartbeat / replay / resume
+3. zero-to-real 必须冻结：
+   - JWT claims -> `AuthSnapshot` -> `NacpAuthority`
+   - public ingress -> Session profile
+   - internal binding -> NACP envelope + no-escalation
+   - storage / refs -> tenant boundary
+   - runtime events / audit -> trace-linked evidence
 
-`smind_usage_events` + `smind_quota_balances` 已经足够支撑：
+这意味着我前一版把 “internal RPC 可以后放” 与 “NACP 可以后放” 说得太近了。  
+正确关系应是：
 
-1. 每次 side-effect 前做一次 quota check
-2. allow / deny mock
-3. usage event 写入审计
-4. balance 快照更新
+- **transport 可以后演进**
+- **NACP law 不能后演进**
 
-`smind_quota_policies` 和 `smind_quota_ledger_entries` 当然更完备，但不是 zero-to-real 的最低门槛。
+### D. real loop 的最低门槛必须抬高到“可审计、可回放、可追责”
 
-**所以我的建议是：**
+业主第四条的批评，我认为是“部分同意，但必须做实质修正”。
 
-- first-wave：`nano_usage_events` + `nano_quota_balances`
-- second-wave：`nano_quota_policies`
-- later：`nano_quota_ledger_entries`
+当前代码不是空壳：
 
-### D. WeChat bridge 不应成为本阶段前半段的阻塞项
+1. `workers/agent-core/src/kernel/runner.ts`
+   - 已经有真实 loop scaffold：LLM call、tool exec、runtime events
+2. `workers/agent-core/src/llm/gateway.ts`
+   - 真实欠缺主要在 provider 仍是 stub seam
+3. `workers/agent-core/src/host/traces.ts`
+   - trace / audit event vocabulary 已经存在
+4. `workers/context-core/src/context-assembler.ts`、`snapshot.ts`
+   - context layering / snapshot truth 也已有包级实现
 
-这是我与 Opus v2 最大的执行顺序分歧之一。
+所以问题不是 nano-agent 只能做 mockup；  
+问题是我前一版把 “thin persistence” 切得太瘦了，低于 real loop 的验证门槛。
 
-事实基础：
+我现在修正为：
 
-1. `smind-admin` 没有现成的 WeChat bridge 代码可直接吸收。
-2. 微信小程序 + WeChat auth + WS 行为 + mobile quirks 会把调试面大幅扩大。
-3. 本阶段更核心的 first proof 应是：**email/password + web harness + real LLM + persisted history**。
-
-所以：
-
-- **我支持 WeChat bridge 进入 zero-to-real**
-- **但我不支持让它进入前半程的基础 phase**
-
-更合理的顺序是：
-
-1. 先用 email/password 跑通真实 auth substrate
-2. 先用 web thin client 跑通真实 loop
-3. 再把 WeChat + Mini Program 接上
-
-这样一旦出问题，我们知道是：
-
-- auth substrate 有问题
-- runtime / WS 有问题
-- 还是 Mini Program / WeChat bridge 本身有问题
-
-### E. internal RPC 不是 zero-to-real 的前半程主线
-
-我认可 Opus 对 WorkerEntrypoint / RPC 的技术判断，但**不认可它在 zero-to-real 中的优先级**。
-
-原因很简单：
-
-1. 当前 fetch-based service binding 已经在 orchestration-facade 阶段证明可用。
-2. internal RPC 改善的是**内部工程质量与类型安全**，不是 first real user value。
-3. 在 auth / D1 / LLM / WS / Mini Program 都没稳定前，引入新 transport 只会让排错维度变多。
-
-因此我的建议是：
-
-- `zero-to-real` 内部 transport **继续以 fetch-backed binding 为主**
-- RPC 只作为 **late optional track** 或 **zero-to-real 后续阶段** 启动
-
-### F. 冷归档 / R2 cold layer 不是 zero-to-real 的关键门槛
-
-Opus v2 把冷归档放进第三段，我认为仍然偏早。
-
-业主已经明确：
-
-1. 持久化是永久的
-2. first real run 才是当前核心目标
-
-在 first real run 阶段，**最重要的是先把真实数据留住并可审计**，而不是先做冷热层优化。  
-zero-to-real 完全可以先接受：
-
-- D1 热写真相
-- 暂不做冷迁移
-- 先把历史、查询、审计、gap 暴露出来
-
-冷层优化更适合在 first real run 稳定后再做。
+> zero-to-real 的最低真实闭环，至少必须同时拥有：**真实 auth、真实 provider、真实 session/turn/message 持久化、真实 context snapshot、真实 trace/audit sink、真实 client loop。**
 
 ---
 
-## 4. 我建议的阶段内 scope 边界
+## 4. 修正后的阶段 scope 边界
 
 ### 4.1 本阶段必须落地的内容
 
-1. **真实 auth substrate**
-   - register / login / verify-token
-   - multi-tenant identity + membership 真相
+1. **完整 end-user auth substrate**
+   - register / login / verify / refresh / reset
+   - WeChat bridge
+   - current user / tenant readback
 
-2. **最小真实 D1**
+2. **NACP-first 的多租户安全门禁**
+   - JWT -> `AuthSnapshot` -> `NacpAuthority` 映射冻结
+   - public/internal ingress 双头校验
+   - tenant boundary / no-escalation / trace law
+
+3. **thin-but-complete 的 D1 真相层**
    - identity core
-   - conversation/history core
+   - conversation / session / turn / message core
+   - context snapshot core
+   - activity / audit / trace linkage
    - usage/quota minimal core
 
-3. **真实模型接线**
+4. **真实模型接线**
    - 至少一个 non-fake provider
 
-4. **真实执行前 quota hook**
+5. **真实执行前 quota hook**
    - allow / deny
    - usage event 写入
+   - quota balance 更新
 
-5. **真实 history / timeline 持久化**
-   - session 结束后历史还在
+6. **真实 client experiment**
+   - web thin client
+   - Mini Program real run
 
-6. **真实实验客户端**
-   - 先 web，再 Mini Program
+### 4.2 本阶段明确不强行吞下的内容
 
-### 4.2 本阶段不应强行吞下的内容
-
-1. 完整 `smind-06` richness
-2. 完整 `smind-09` quota ledger / alert / policy plane
-3. 完整 team admin / API key 管理面
-4. cold archive / R2 history offload
+1. 完整 team admin / tenant member admin plane
+2. 完整 API key admin plane
+3. 完整 `smind-09` policy / ledger / alerts 平面
+4. `smind-06` 的 full collaboration richness（participants / message_parts / context_items 全量化）
 5. internal RPC 主导迁移
-6. context/filesystem 的 public promotion
-7. multi-tenant-per-deploy 的复杂策略升级
+6. cold archive / R2 history offload
+7. context/filesystem 的 public promotion
 
 ---
 
-## 5. 推荐的架构收紧方案
+## 5. 修正后的架构收紧方案
 
-### 5.1 `orchestration.auth`：保留，但第一波只做最小 auth 核心
+### 5.1 `orchestration.auth`：做完整 end-user auth，不做完整 admin 面
 
-我建议保留 `orchestration.auth`，但把 first-wave surface 收紧到：
+`orchestration.auth` 仍然是对的，而且现在应当更明确：  
+它不是“最小 auth 核心”，而是 **zero-to-real 的完整 end-user auth substrate**。
+
+建议 first-wave surface 至少包含：
 
 1. `POST /internal/auth/register`
 2. `POST /internal/auth/login`
 3. `POST /internal/auth/verify-token`
-4. `POST /internal/auth/password/reset`（可选）
+4. `POST /internal/auth/refresh-token`
+5. `POST /internal/auth/password/reset`
+6. `POST /internal/auth/wechat/*`
+7. `GET /internal/auth/me`
 
-**延后到后段：**
+但仍然明确延后：
 
-1. WeChat bridge
-2. API key 管理
-3. team CRUD / tenant members admin
+1. tenant admin CRUD
+2. member admin / invite
+3. API key admin plane
 
-理由：
+### 5.2 D1 schema：从“thin”改成“thin-but-complete”
 
-- `smind-admin` 证明 auth service 很容易独立成 worker
-- 但 first real client loop 根本不需要一开始就做完整 admin 控制面
+我修正对 `smind-06` 的吸收建议：  
+zero-to-real 不需要 day-1 吞下 full richness，但需要吸收到足以支撑真实 loop 审计。
 
-### 5.2 D1 schema：缩成 “01 core + 06 thin + 09 minimal”
-
-我建议 zero-to-real first-wave 的 D1 只冻结以下表：
+因此 first-wave D1 更合理的冻结面应是：
 
 | 组 | 推荐 first-wave | 延后 |
 | --- | --- | --- |
-| identity | `nano_users`, `nano_user_profiles`, `nano_user_identities`, `nano_teams`, `nano_team_memberships` | `nano_team_api_keys`, invites |
-| conversation | `nano_conversations`, `nano_conversation_sessions`, `nano_conversation_messages` | participants / turns / message_parts / context_items |
-| context | `nano_conversation_context_snapshots`（仅当 compact wire 必需） | richer snapshot composition |
+| identity | `nano_users`, `nano_user_profiles`, `nano_user_identities`, `nano_teams`, `nano_team_memberships` | team admin / invites / API keys |
+| auth/session | `nano_auth_sessions` 或同等 refresh/token state | 更复杂 device/session governance |
+| conversation | `nano_conversations`, `nano_conversation_sessions`, `nano_conversation_turns`, `nano_conversation_messages` | participants / message_parts |
+| context | `nano_conversation_context_snapshots` | richer context items / materialization |
+| audit | `nano_session_activity_logs` 或同等 trace-linked audit table | 更复杂 BI / reporting projection |
 | quota | `nano_usage_events`, `nano_quota_balances` | policies / ledger / alerts |
 | secrets | `nano_tenant_secrets`（仅当 DeepSeek BYO key 提前进入） | 更复杂 secret governance |
 
-### 5.3 real LLM provider 的顺序：先 Workers AI，再 DeepSeek BYO key
+### 5.3 增加一条显式主线：NACP realization track
 
-这里我与 Opus v2 的建议不同。
+zero-to-real 不能只按“业务模块”推进，还必须有一条贯穿全部阶段的 **NACP realization track**。
 
-Opus主张：
+这条主线要冻结 5 件事：
 
-1. 主 DeepSeek
-2. fallback Workers AI
+1. **Authority mapping**
+   - JWT claims -> `AuthSnapshot` -> `NacpAuthority`
+2. **Session profile**
+   - client input 统一进入 `session.start` / `session.followup_input`
+3. **Internal envelope**
+   - `orchestration.auth` / `orchestration.core` / `agent.core` / `bash.core` 全部走 trace + authority + no-escalation
+4. **Storage law**
+   - D1 / DO / KV / R2 / refs 都受 `team_uuid` 边界约束
+5. **Evidence law**
+   - session / tool / llm / quota / context / audit 事件都能回挂到 trace / session / team
 
-我的建议是反过来：
+### 5.4 real LLM provider 顺序：仍建议 Workers AI first
 
-1. **first real provider = Workers AI**
-2. **second provider = DeepSeek**
-3. **再考虑 fallback chain**
+在 auth 与 NACP 都被抬高之后，我仍然维持一个判断：  
+**first real provider 仍应优先 Workers AI。**
 
-原因是事实性的：
+原因没有变化：
 
-1. Workers AI 是平台原生 binding，不需要先引入 `nano_tenant_secrets`、加密、轮转、缓存失效。
-2. DeepSeek BYO key 会直接扩大 D1、secret、admin API、rotation、TTL 失效的调试面。
-3. zero-to-real 的第一目标是**最快得到真实模型输出**，不是第一天就把 provider 策略做到最优。
+1. 它是平台原生 binding，最小化 secret 与轮转复杂度
+2. zero-to-real 的第一目标是尽快得到真实模型输出
+3. DeepSeek BYO key 更适合在 auth/secrets plane 稳定后再引入
 
-**建议顺序：**
+建议顺序：
 
-- 先接 Workers AI，把 fake provider 拔掉
-- 再引入 DeepSeek adapter
-- 再做 per-tenant key / fallback chain
+1. Workers AI first
+2. DeepSeek second
+3. 再做 provider fallback chain
 
-### 5.4 `orchestration.core`：先做 D1 持久化与 history，再做 full user-DO rebuild
+### 5.5 `orchestration.core`：shared truth 优先，但不得低于 real loop 门槛
 
-`smind-contexter` 强烈证明了 user-level DO SQLite + Alarm + 双向 WS 是对的。  
-但我不建议把它作为 zero-to-real 的第一波改造面。
+我仍然认为：**shared truth 先落 D1，比一开始就 full user-DO rebuild 更稳妥。**  
+但这里必须补一句前一版缺失的话：
 
-更合理的是两波：
+> 如果当前 façade + user DO 形态无法满足 session/turn/audit/context 的真实写入与重连语义，那么对 `orchestration.core` 的 stateful uplift 不能继续往后拖。
 
-#### Wave A：先让 shared truth 落地
+因此更准确的执行口径是：
 
-1. conversations / sessions / messages 写 D1
-2. history API 可查
-3. 当前 façade / user DO 继续承担轻量代理
+1. 优先保证 D1 成为 SSOT
+2. 保证当前 user DO / façade 能真实承接：
+   - start / followup / cancel / resume / stream
+   - history / reconnect / audit
+3. 若现有形态不足，则在 zero-to-real 中直接补 user-level stateful uplift
 
-#### Wave B：再把 user DO 升级为 stateful orchestrator
+换句话说，**stateful uplift 是从属于 real loop 目标的，不是一个可无限后移的“优雅改造项”。**
 
-1. DO SQLite
-2. active conversation hint
-3. bidirectional WS
-4. alarm-driven background jobs
-5. local intent dispatcher
+### 5.6 密码学吸收仍然要取结构，不取具体算法
 
-这样可以避免把：
-
-- D1 schema
-- auth worker
-- real LLM
-- user DO 重构
-- WeChat client
-
-全部压到同一波。
-
-### 5.5 密码学吸收要取“工程结构”，不要取“具体算法”
-
-`smind-admin` 的 `auth.service.ts`、`password.service.ts`、`errors.ts`、`env.ts` 很值得吸收；  
-但 `infra/security.ts` 里的 `SHA-256(salt:raw)` 不应原样继承到 nano-agent。
-
-zero-to-real 是新系统，不应把“迁移友好型密码方案”作为自己长期基线。
+这一条结论不变。  
+`smind-admin` 的工程分层值得吸收，但其 `SHA-256(salt:raw)` 不应成为 nano-agent 新系统的密码基线。
 
 ---
 
-## 6. 我推荐的执行阶段划分
+## 6. 修正后的执行阶段划分
 
-我建议把 zero-to-real 切成 **4 个执行阶段 + 1 个文档冻结前导阶段**。
+我现在推荐把 zero-to-real 切成 **5 个执行阶段**，并把 **NACP realization track** 作为全程并行主线。
 
-## Z0 — Contract Freeze
+| 阶段 | 目标 | 关键产出 | Exit truth |
+| --- | --- | --- | --- |
+| Z0 | Contract + Compliance Freeze | auth / D1 / NACP / provider / deferred freeze | action-plan 可执行 |
+| Z1 | Full Auth + Tenant Foundation | `orchestration.auth` + identity core + WeChat bridge | 真实用户与真实租户成立 |
+| Z2 | Session Truth + Audit Baseline | session/turn/message/context/audit D1 truth | real loop 可持久、可重连、可追责 |
+| Z3 | Real Runtime + Quota | Workers AI + quota gate + usage/balance truth | real model + runtime guard 生效 |
+| Z4 | Real Clients + First Real Run | web + Mini Program + gap hardening | 真实 client loop 连续可用 |
 
-### 目标
+### Z0 — Contract + Compliance Freeze
 
-把 zero-to-real 的 first-wave contract 收紧成可执行版本，防止“边做边加终态”。
+#### 目标
 
-### 本阶段要冻结
+把 zero-to-real 的 baseline 收紧成“最小但完整的真实闭环”。
 
-1. JWT claim schema
-2. `orchestration.auth` first-wave surface
-3. D1 first-wave table 清单
-4. real provider 首选顺序（建议 Workers AI first）
-5. zero-to-real 内明确 deferred 的内容
+#### 本阶段要冻结
 
-### Exit
+1. end-user auth surface（明确包含 WeChat）
+2. JWT -> `AuthSnapshot` -> `NacpAuthority` 映射
+3. Session profile：`session.start` / `session.followup_input` / ack / heartbeat / resume
+4. D1 first-wave tables
+5. runtime quota minimal contract
+6. provider 顺序
+7. deferred/backlog 清单
 
-1. charter/design/action-plan 可写
-2. 不再把 full 06 / full 09 / RPC / cold archive 混入基础阶段
+#### Exit
 
-## Z1 — Identity + Persistence Baseline
+1. charter/design/action-plan 能按同一 baseline 展开
+2. multi-tenant / NACP compliance 有显式 checklist
+3. 不再把 admin plane / RPC / cold archive 混入 baseline
 
-### 目标
+### Z1 — Full Auth + Tenant Foundation
 
-第一次让系统拥有**真实用户、真实租户、真实历史**，哪怕 LLM 还没接真 provider。
+#### 目标
 
-### 必做
+第一次让系统拥有 **真实用户、真实租户、真实 JWT 授权入口**。
+
+#### 必做
 
 1. 新建 `nano-agent-db`
 2. 落 identity core：users / profiles / identities / teams / memberships
-3. 落 conversation thin core：conversations / sessions / messages
-4. 新建 `orchestration.auth` worker（最小 auth surface）
-5. orchestration.core 接 auth proxy + public auth routes
-6. 两个真实用户注册登录并隔离
+3. 新建 `orchestration.auth`
+4. 落完整 end-user auth flow：
+   - register / login / verify / refresh / reset
+   - WeChat bridge
+   - `me` / tenant readback
+5. 冻结 public ingress -> `AuthSnapshot` -> `NacpAuthority`
+6. 跑双租户 negative tests
 
-### 明确不做
+#### 明确不做
 
-1. WeChat bridge
-2. API key admin 面
-3. DO SQLite 重构
-4. internal RPC
-5. DeepSeek tenant secrets
+1. 完整 tenant admin plane
+2. API key admin plane
+3. internal RPC
+4. cold archive
 
-### Exit
+#### Exit
 
-1. 两个真实用户能登录
-2. JWT 能驱动完整 session 流
-3. conversation/message 能写入 D1
-4. user A 看不到 user B 的数据
+1. 两个真实 tenant 的用户能独立登录
+2. Web 与 WeChat auth tokens 都能被正确验证
+3. authority / trace / tenant truth 已进入真实 ingress
+4. no-escalation negative cases 能稳定拒绝
 
-## Z2 — Real Runtime
+### Z2 — Session Truth + Audit Baseline
 
-### 目标
+#### 目标
 
-让 agent loop 第一次跑到**真实模型**，并把 execution-time quota hook 变成 runtime truth。
+第一次让系统拥有 **真实 session truth**，而不是只靠内存热态。
 
-### 必做
+#### 必做
 
-1. `agent.core` 接入 **Workers AI** adapter
-2. 移除 fake provider 作为主路径
-3. `bash.core` 真正接 `beforeCapabilityExecute`
-4. 落最小 quota 面：`nano_usage_events` + `nano_quota_balances`
-5. allow / deny mock 可切
+1. 落 conversation core：conversations / sessions / turns / messages
+2. 落 context snapshot truth
+3. 落 trace-linked activity / audit log
+4. `orchestration.core` 把 start / followup / cancel / resume / stream 与 D1 SSOT 接起来
+5. history / reconnect / timeline / conversation list 可读
+6. Web thin client 先跑通真实 persistence loop
 
-### 可选增量
+#### 明确不做
+
+1. full collaboration model
+2. message_parts / context_items 全量 richness
+3. cold archive
+
+#### Exit
+
+1. session 结束后 history 仍可查询
+2. reconnect 后 timeline 不丢
+3. turn/message/context/audit 能对齐同一 trace/session
+4. real loop 已经“可持久、可追责、可回看”
+
+### Z3 — Real Runtime + Quota
+
+#### 目标
+
+把 loop 中“假”的那一部分换成真的：真实 provider 与真实 runtime guard。
+
+#### 必做
+
+1. `agent.core` 接入 Workers AI
+2. fake provider 退为 test/demo path
+3. `bash.core` / capability 执行前真实过 quota hook
+4. 落 `nano_usage_events` + `nano_quota_balances`
+5. trace / audit 里能看到 llm/tool/quota evidence
+
+#### 可选增量
 
 1. DeepSeek adapter skeleton
-2. `nano_tenant_secrets`（若 owner 坚持 DeepSeek 优先）
+2. `nano_tenant_secrets`（若 owner 坚持加速 DeepSeek）
 
-### 明确不做
+#### 明确不做
 
-1. full fallback chain 优化
-2. WeChat bridge
-3. user DO SQLite 重构
-4. internal RPC
-
-### Exit
-
-1. agent loop 返回真实模型内容
-2. capability 执行前真实过 quota hook
-3. usage events 有持久化证据
-
-## Z3 — Stateful Orchestrator
-
-### 目标
-
-把 `orchestration.core` 从“public façade”升级为真正的 **user-stateful orchestrator**。
-
-### 必做
-
-1. user DO 引入 DO SQLite
-2. active conversation pointer
-3. bidirectional WebSocket
-4. conversation list / activate / history
-5. optional context snapshot 持久化
-6. Alarm 只做本地 flush / housekeeping，不做 cold archive
-
-### 明确不做
-
-1. R2 冷归档
-2. full intent intelligence
+1. full fallback chain
+2. full quota ledger / policies / alerts
 3. internal RPC 迁移
 
-### Exit
+#### Exit
 
-1. web client 可通过 WS 双向交互
-2. conversation 切换与历史读取稳定
-3. reconnect 语义与 user-level state 一致
+1. agent loop 返回真实模型内容
+2. quota allow / deny 成为 runtime truth
+3. usage / balance / trace / audit 形成闭环证据
 
-## Z4 — Mini Program + WeChat + First Real Run
+### Z4 — Real Clients + First Real Run
 
-### 目标
+#### 目标
 
-让真实移动端实验进场，并用它暴露最后一批 runtime/auth/gap。
+让真实客户端全面进场，并用真实运行暴露最后一批 gap。
 
-### 必做
+#### 必做
 
-1. `orchestration.auth` 实装 WeChat bridge
+1. web client 完整 hardening
 2. Mini Program 接入
-3. 真实用户实验
+3. WeChat login -> start -> input -> stream -> history 全链路跑通
 4. gap triage + 修复
+5. 若 Z2 暴露出 user-level stateful 缺口，则在本阶段补齐 stateful uplift
 
-### 可选增量
+#### 可选增量
 
 1. DeepSeek BYO key
-2. team secrets 管理
-3. Web / Mini Program 双 client 对照调试
+2. Web / Mini Program 双 client 对照调试
 
-### 明确不做
+#### 明确不做
 
 1. full RPC retirement
 2. cold archive
-3. 完整 admin 面
+3. 完整 admin plane
 
-### Exit
+#### Exit
 
-1. Mini Program 能完成 login -> start -> input -> stream -> history
-2. 有真实 gap 清单与修复闭环
-3. 连续使用无阻塞 blocker
-
----
-
-## 7. 我对 Opus v2 三段式的改写建议
-
-如果要保留 Opus 的三段式外观，我建议至少改成下面的内容：
-
-| Opus v2 | 我建议的改写 |
-| --- | --- |
-| zero-to-real-1: Foundation | **只做 auth + D1 thin schema + persisted history**，不要塞 conversation full rebuild |
-| zero-to-real-2: Runtime 接真 + 用户态补齐 | **拆成两段**：先 real LLM/quota，再 user DO/WS/stateful orchestrator |
-| zero-to-real-3: 对外 + 冷层 + first real run | **移除 cold layer 与 RPC**，聚焦 WeChat/Mini Program/real-run hardening |
-
-也就是说，我更推荐 **4 段**，而不是 3 段。
-
-原因不是形式主义，而是：
-
-1. **real LLM** 和 **stateful user orchestrator** 都是大工程，不该放在同一波
-2. **Mini Program/WeChat** 会带来独立调试维度，不该和底层架构重构重叠
-3. **cold archive / RPC** 都不是 zero-to-real 的第一性用户价值
+1. Web 与 Mini Program 都能完成连续真实 loop
+2. session/history/audit/context 在真实客户端下稳定
+3. 剩余 gap 已收敛为明确 backlog，而非 blocker
 
 ---
 
-## 8. 推荐的 deferred/backlog 明细
+## 7. 推荐的 deferred/backlog 明细
 
-以下内容我建议明确写成 **zero-to-real 之后** 的 backlog，而不是继续漂浮在本阶段：
+以下内容我建议明确写成 **zero-to-real 之后** 的 backlog：
 
 1. internal RPC 全面推进
 2. `/internal/*` HTTP 退役
 3. DeepSeek per-tenant secrets 完整治理
 4. quota policy / ledger / alerts 完整化
-5. conversation participants / turns / message parts / context items 完整化
+5. conversation participants / message parts / context items 完整化
 6. cold archive / R2 history offload
 7. API key admin plane
-8. richer admin product surface
+8. richer tenant admin product surface
 
 ---
 
-## 9. 最终 verdict
+## 8. 最终 verdict
 
-### 9.1 对业主
+### 8.1 对业主
 
-你的方向判断是对的：  
-**下一阶段不该继续停在文档、抽象或 façade polishing，而应该第一次把系统“真的跑起来”。**
+你的方向判断是对的，而且需要比我前一版文档写得更强。  
+**zero-to-real 不是“做一个更完整的 demo”，而是第一次把 nano-agent 推到 production-grade baseline。**
 
-### 9.2 对 Opus
+### 8.2 对 Opus
 
-Opus v2 的优点是：
+Opus v2 的大方向仍然是对的：
 
-1. 重新定义了正确的阶段目标
-2. 找到了三份 context 真正能借鉴的地方
-3. 把 `orchestration.auth`、D1、real LLM、user-level orchestrator 都纳入了同一张图
+1. 阶段目标被重新定义对了
+2. 三份 context 的借鉴方向基本对了
+3. `orchestration.auth` / D1 / real LLM / user-level orchestrator 被放进了同一张图
 
-它的问题不是判断错，而是：
+需要修正的点不再只是“太重”，而是：
 
-> **终态视野太完整，导致 first-wave 执行面仍偏重。**
+> **必须把 NACP-first、多租户安全门禁、完整 end-user auth、以及可审计的 real loop baseline 写得更显式。**
 
-### 9.3 我的最终推荐
+### 8.3 我的最终推荐
 
 **采用 `zero-to-real` 这个新名字。**  
-**保留 Opus v2 的方向。**  
-**但按本文的 Z0-Z4 切分执行，并把 cold archive / full RPC / full 06 / full 09 明确降级到后续 backlog。**
+**保留 Opus v2 的总体方向。**  
+**但按本文修正后的 Z0-Z4 切分执行，并把 NACP realization track 提升为全程主线。**
 
 一句话收口：
 
-> **zero-to-real 应该先追求“真实可用”，再追求“终态完整”，最后才追求“内部优雅”。**
+> **zero-to-real 要追求的不是“更少功能”，而是“更小但完整的真实闭环”。**
 
+---
+
+## 附录 A — 2026-04-24 针对业主四点反馈的追加说明
+
+> **说明**：本附录保留本轮辩证讨论的结论，作为后续继续理解 `zero-to-real` 的上下文。若与本文前文存在冲突，以本附录推动后的正文为准。
+
+### A.1 关于 “auth 不该做最小面，而应完整包括 WeChat”
+
+我的修正结论是：**基本同意。**
+
+1. 业主的目标是 first real client loop，而不是 auth mock
+2. 如果 Mini Program / WeChat 是真实目标入口，那么 WeChat bridge 就不是可随意后移的装饰项
+3. `smind-admin` 证明 auth/control-plane 可以独立成 worker，但它没有现成 WeChat 代码可直接吸收，因此这是新工程而不是 copy 工作
+
+因此我的最终口径变成：
+
+> zero-to-real 必须实现完整 end-user auth flow，包括 WeChat bridge；但它不等于 first-wave 就把完整 admin 面一次性做完。
+
+### A.2 关于 “多租户、安全门禁、多头校验、NACP compliance 被低估了”
+
+我的修正结论是：**完全同意。**
+
+关键事实已经在当前仓库中存在：
+
+1. `workers/orchestrator-core/src/auth.ts`
+   - JWT + `trace_uuid` 已是 public ingress truth
+   - tenant mismatch 会被拒绝
+2. `workers/agent-core/src/host/internal-policy.ts`
+   - internal authority / trace / no-escalation 已是 shipped truth
+3. `packages/nacp-core/src/envelope.ts`
+   - authority / trace / tenant_delegation / quota / refs 都已是一等协议字段
+4. `packages/nacp-session/src/ingress.ts`
+   - authority 必须 server-stamped，client 不得伪造
+
+因此 zero-to-real 不能只写 D1 / provider / client，而必须写成：
+
+> 多租户安全门禁与 NACP compliance 是执行主线，而不是附属约束。
+
+### A.3 关于 “没有把 `nacp-core` / `nacp-session` 讲清楚”
+
+我的修正结论是：**完全同意。**
+
+前一版 hardening 把协议说得太轻，容易造成误解。  
+更准确的口径是：
+
+1. `nacp-core` 冻结 internal contract family
+2. `nacp-session` 冻结 client ↔ session profile
+3. zero-to-real 的 auth、ingress、storage、audit、runtime 都必须能映射回这两层协议
+
+也就是说：
+
+- internal RPC 可以后做
+- transport profile 可以后演进
+- **但 NACP law 不能后做**
+
+### A.4 关于 “前一版过于保守，可能导致无法验证真实 loop / session log / audit / context”
+
+我的修正结论是：**部分同意，但必须做实质修正。**
+
+我不同意“当前 nano-agent 只能做 mockup”的判断，因为仓库已经有真实底座：
+
+1. `workers/agent-core/src/kernel/runner.ts`
+   - 已有真实 loop scaffold
+2. `workers/agent-core/src/llm/gateway.ts`
+   - 当前主要假的部分是 provider seam
+3. `workers/agent-core/src/host/traces.ts`
+   - 已有 trace / audit vocabulary
+4. `workers/context-core/src/context-assembler.ts`、`snapshot.ts`
+   - 已有 context layering / snapshot truth
+
+但我承认：**我前一版对 D1/session/context/audit 的 first-wave 切法偏瘦，低于 real loop 的验证门槛。**
+
+所以最终修正为：
+
+> zero-to-real 的 baseline 至少必须同时拥有：真实 auth、真实 provider、真实 session/turn/message 持久化、真实 context snapshot、真实 trace/audit sink、真实 client loop。
+
+### A.5 本轮讨论后的总收口
+
+本轮讨论后，我对 zero-to-real 的最终定义变成：
+
+> **以 NACP 为硬基石，完成完整 end-user auth、多租户安全门禁、真实持久化、真实 agent loop、真实 audit/context truth、真实客户端实验的 first production-grade baseline。**
