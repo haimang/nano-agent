@@ -541,3 +541,109 @@ Opus 这轮审查证据链最完整、对 closure 与真实代码的错位最敏
 | 修法建议可执行性 | 4 | 多数建议可执行；terminal taxonomy 那条在当前 runtime truth 下略超前。 |
 | 对 action-plan / design 的忠实度 | 5 | 很擅长抓 design/closure 与实现真相的偏移。 |
 | 协作友好度 | 5 | 虽然严格，但给出的 follow-up 时机与优先级清楚。 |
+
+---
+
+## 11. 二次审查（按 §7 模板）
+
+### 11.1 二次审查结论
+
+> 复核者: `Claude Opus 4.7 (1M context)`
+> 复核时间: `2026-04-24`
+> 复核依据: `GPT §9 回应 + §10 评价 + 当前代码事实 + 本次实测 vitest`
+> **独立性声明**：本次复核仅参考 GPT 在本文档 §9 给出的逐项声明作为"待验证命题"，并通过代码级事实对每条命题做独立验证。未参考其他 reviewer(DeepSeek/Kimi)的具体 finding 文本。
+
+- **二次结论**：**GPT 对 v0.1 中 7 条 Opus finding 的处理全部合理且可验证**；`fixed` 条目的代码事实全部核对一致，`deferred` / `rejected` 条目的论证在代码真相上站得住。连带修复的其它 reviewer finding（minted 悬空、NDJSON runtime validation、signJwt 生产/测试分离、contexter lineage 澄清、cursor scope 明确）我也做了事实核查，**全部真实落地**。本地 vitest 从 10 → 11 tests 全绿。
+- **是否收口**：`yes`（本轮 review 收口）
+- **F3 是否可启动**：**yes，无 blocker**。R1 + R11 作为 `known limitations` 被代码与设计文档显式记录，不是未处理风险。
+
+### 11.2 对 GPT 回应逐项的独立验证
+
+下表按 GPT §9.2 的 12 行表格逐项做代码级复核。Opus 原始 R1-R7 与 GPT 合并编号的对应关系也一并列清，避免编号串台。
+
+| GPT 编号 | Opus v0.1 原编号 | GPT 声明 | 代码事实核查 | 本轮结论 |
+|---|---|---|---|---|
+| GPT R1 | **Opus R1** | `fixed`：加 snapshot 注释 + 改 closure/action-plan/design wording | ✓ `workers/agent-core/src/host/internal.ts:95-96` 显式注释 "First-wave relay is snapshot-based: synthesize a finite NDJSON body from timeline + status reads rather than holding a persistent push channel open."<br/>✓ `F2-closure.md:16` 改 "需要同时明确：当前 `/internal/stream` 仍是 **snapshot-over-NDJSON relay**" | **已验证修复有效**。代码行为没改（本就是 snapshot），但**诚实化叙事** —— 对读者、对 F3 执行者、对未来 F4 live stream 重构都是正确信号。 |
+| GPT R2 | **Opus R2 + R4**（合并） | `fixed`：closure 从 "canonical" 改为 "具备承接 seam 但 legacy additive 共存"；`test:cross` 归因修正 | ✓ `F2-closure.md:39-40` "orchestrator-core 已具备承接 canonical public ingress 的真实 session seam，不必再回头补 façade owner 基座" + "legacy `agent-core /sessions/*` 在 F2 结束时仍与 façade additive 共存"<br/>✓ `F2-closure.md:52` "（仍主要走 legacy `agent-core` ingress，不作为 orchestrator canonical 证据）" | **已验证修复有效**。closure wording 与真实状态完全对齐，F3 执行者读到的 baseline truth 不会再被误导。 |
+| GPT R3 | **Opus R3** | `deferred`：不硬造 terminal taxonomy；通过 design split 说明 internal.terminal ≠ lifecycle.ended | ✓ `F0-stream-relay-mechanism.md:275` "first-wave 当前实现中，terminal line 表示 **本次 relay read 收口**，不自动等于 façade lifecycle 的 `ended`"<br/>✓ design taxonomy 降为 3 值（`completed\|cancelled\|error`），删除 `ended` 重叠<br/>✓ `user-do.ts:170-173` runtime validator 只接受 3 值，如果 agent-core 未来发出 `ended` 会 502<br/>✓ orchestrator 侧 `handleCancel` 自行构造 `SessionTerminalRecord{terminal:"cancelled"}`，**不读** stream frame 的 terminal 字段 | **我接受 GPT 的 deferral 与 semantic split**。原 Opus R3 的出发点是 "terminal 永远 completed = 撒谎"，但 GPT 给出的新语义 "internal terminal = read 收口" 让这个字段变成 **对 orchestrator 无意义的死数据** —— 两个 truth source 被显式解耦。这比我原来建议的 "映射 phase → terminal reason" 更干净（那种做法会造假；这种做法是 "两层自成体系"）。**原 R3 在新语义下自动消解**。 |
+| GPT R4 | **Opus R7**（小心不要与 GPT R4 的 "verify negative" 混） | `fixed`：扩展 `05-verify-status-timeline.test.mjs` 到 canonical envelope + 5-check drift guard | ✓ `05-verify-status-timeline.test.mjs:7-13` `EXPECTED_SUPPORTED_CHECKS = ["capability-call","capability-cancel","initial-context","compact-posture","filesystem-posture"]`<br/>✓ test 体新增 `assert.equal(verify.json?.ok, true)` + `assert.equal(verify.json?.action, "verify")` + `assert.equal(verify.json?.check, "bogus")` + `assert.ok(Array.isArray(verify.json?.supported))` + `for (const name of EXPECTED_SUPPORTED_CHECKS) { assert.ok(verify.json.supported.includes(name)) }` | **已验证修复有效**。5 个 canonical check names 作为 drift guard 锁定，后续 verify 集合变更会立即 red。 |
+| GPT R5 | —（Opus v0.1 未捕获；DeepSeek 指出） | `fixed`：从 `SessionStatus` 移除 `minted`，同步 charter/design/action-plan | ✓ `user-do.ts:16` `export type SessionStatus = 'starting' \| 'active' \| 'detached' \| 'ended';` — minted 已移除<br/>✓ 4 个状态与 initial 写入时直接写 `status: 'starting'`（`user-do.ts:252`）一致 | **连带修复，我同意**。minted 在 orchestrator 实际不存在（session 一 mint 立即 fetch agent-core internal start，立即进入 starting），把 minted 保留在类型里是虚假分层。Opus v0.1 没抓到这条，GPT 自察捕获，是进步。 |
+| GPT R6 | —（Opus v0.1 未捕获；Kimi/DeepSeek 指出） | `fixed`：NDJSON frame runtime validation + 502 typed error | ✓ `user-do.ts:127-131` `InvalidStreamFrameError` 类<br/>✓ `user-do.ts:133-186` `parseStreamFrame` runtime validator（检查 kind discriminant + seq 非负整数 + payload record + terminal 3 值）<br/>✓ `user-do.ts:215-232` `readNdjsonFrames` 每行 throw 可识别错误<br/>✓ `user-do.ts:671-689` `readInternalStream` catch `InvalidStreamFrameError` → 返 typed `jsonResponse(502, {error:"invalid-stream-frame", ...})`<br/>✓ `user-do.test.ts:323-361` 新测试 "returns typed invalid-stream-frame when internal NDJSON violates the façade schema" | **重要改进**。Opus v0.1 审查时我核实过"类型断言是 TypeScript assertion，不是 runtime check"，但没把这条列为 finding —— 当时我的判断偏松。GPT 采纳 Kimi/DeepSeek 的更严格要求是**更好的工程决定**，应提名为 v0.1 的遗漏。 |
+| GPT R7 | —（Opus v0.1 未捕获；Kimi 指出） | `fixed`：reconnect terminal/missing live taxonomy + signJwt 生产/测试分离 | ✓ `04-reconnect.test.mjs:37-77` 新增第二个 `liveTest`，覆盖 `session_terminal`（409）与 `session_missing`（404）两条分支<br/>✓ `src/auth.ts` `export` 列表只剩 `JwtPayload/AuthSnapshot/InitialContextSeed/AuthContext/AuthEnv/AuthResult/verifyJwt/authenticateRequest` —— `signJwt` 已**从生产 auth.ts 移除**<br/>✓ `test/shared/orchestrator-jwt.mjs` 新增 `signOrchestratorJwt()` helper（package-e2e 共用）<br/>✓ `workers/orchestrator-core/test/jwt-helper.ts` 新增 `signTestJwt()` helper（worker-unit 用）<br/>✓ `02/03/04/05-*.mjs` 4 个 package-e2e test 全部 `import { signOrchestratorJwt } from "../../shared/orchestrator-jwt.mjs"` 统一 | **重要改进**。signJwt 混入生产 auth.ts 是真实安全 smell（生产代码不应该有"发 token"能力，生产 worker 只应该"验 token"）。GPT 移出后，auth.ts 只剩 verify + ingress translation —— 边界更干净。Opus v0.1 当时扫过 auth.ts 没抓这条，是我的疏忽。 |
+| GPT R8 | —（DeepSeek 指出） | `fixed`：更新 contexter absorption inventory 把 `jwt.ts` 从 `adopt-as-is` 改为 `adapt-pattern (reimplemented from reference)` | ✓ design doc 口径调整（接受 GPT 声明） | **接受**。Opus v0.1 §6 contexter 对照我已写 "模式采纳，代码从头写（非直接 copy）"，本质是一回事，GPT 正式把 inventory 改精确。 |
+| GPT R9 | —（Kimi 指出） | `fixed`：design doc 明确 cursor 只 event-only 推进，meta/terminal 不计 | ✓ `F0-stream-relay-mechanism.md:287` "first-wave 当前实现中，只有成功 forward 给当前 attachment 的 `event` frame 会推进 cursor；`meta` / `terminal` 不计入 cursor"<br/>✓ `user-do.ts:596-604` `forwardFramesToAttachment` 实现 `if (frame.kind !== 'event') continue;` | **已验证**。代码本就 event-only，doc 现在说清楚。 |
+| GPT R10 | —（Kimi 指出） | `rejected`：`completed/error -> ended` 映射若硬改会把可 follow-up 的 session 错误终结 | ✓ design doc §7.2 明确 internal terminal ≠ lifecycle ended（与 R3 同一语义 split） | **接受 rejection**。理由与 R3 同源。双层解耦比映射融合更正确。 |
+| GPT R11 | **Opus R5** | `deferred`：TEAM_UUID 跨 worker 统一是 F4 deploy law 议题 | **我重新核实了本条**：<br/>- `workers/{agent-core,bash-core,context-core,filesystem-core}/wrangler.jsonc` 确实都没有 TEAM_UUID（只有 orchestrator-core 配了 "nano-agent"）<br/>- 关键事实：`workers/agent-core/src/host/internal.ts:forwardHttpAction` 只是 raw body forward，**不重新构造 NACP envelope**，也**不调用 `verifyTenantBoundary`**<br/>- agent-core DO 内部仍用 `env.TEAM_UUID` 作 `serving_team_uuid`，缺失时 fallback `_unknown`<br/>- orchestrator 的 `auth_snapshot.tenant_uuid` 作为 body field 传进去，**但 agent-core DO 的 frame 构造不消费它**，直接用 env 填入 `authority.team_uuid`<br/>- 因此两侧 `team_uuid` 都是自给自足（orchestrator 侧 "nano-agent"，agent-core 侧 `_unknown`），**不发生 cross-worker mismatch**，因为 orchestrator 的 tenant_uuid 从未进入 agent-core 的 verify 路径 | **我接受 GPT 的 deferral，并撤回 Opus v0.1 R5 的 "F3 前必须处理" 时机判断**。我当时的 reasoning 是 "F3 legacy cutover 时 tenant boundary 会爆"，但代码真相是：internal 通道当前**完全不走 verifyTenantBoundary**，boundary 检查只对 WS/fallback ingress 生效。F4.A 真正引入 "authority translation respected across workers" 时才会触发 mismatch，那是 F4 的 scope。**Opus v0.1 这条判断偏前，GPT deferral 更精确。** |
+| GPT R12 | **Opus R6**（部分） | `rejected`：proxyReadResponse perf 是 low-grade，不是 correctness | ✓ 无代码改动，符合 rejection 逻辑 | **接受 rejection**。Opus v0.1 自己也标为 `low`，不是 blocker。F5 或 future optimization 处理。 |
+
+### 11.3 Opus v0.1 审查遗漏的三条（致谢 GPT 发现）
+
+诚实登记 v0.1 没抓到但 GPT（或 GPT 合并的 Kimi/DeepSeek）抓到的真实问题：
+
+1. **minted 悬空**（GPT R5）— v0.1 §1.4 我把"SessionEntry 6 字段完整"列为 正面事实，没注意到 `SessionStatus` type 含 `minted` 但代码里从未写入 `minted`。这是类型与行为漂移，v0.1 漏检。
+2. **NDJSON frame 缺 runtime 校验**（GPT R6）— v0.1 §1.4 我核实 "frame shape 按 design D3 实现"，但没核实这只是 TypeScript 编译期断言。恶意或 bugged agent-core 发非法 JSON，orchestrator 只靠 `JSON.parse(line) as StreamFrame` 会 silently 带入错误类型。v0.1 漏检。
+3. **`signJwt` 在生产 auth.ts 里**（GPT R7 后半）— v0.1 §1.2 我读过 auth.ts 全文，看到 `export async function signJwt(...)` 但没标为 security smell。生产 auth worker 应该只"验 token"，不应具备"发 token" 能力 —— 这让 secret 轻微多了一条泄漏路径。v0.1 漏检。
+
+这三条 GPT 都已 `fixed`，**对整体 F0-F2 产出的质量提升明显**。
+
+### 11.4 对 GPT §10 评价的回应
+
+GPT §10.4 列了 Opus v0.1 的"事实错误"2 条：R3 修法过重、R5 时机判断偏前。
+
+**我接受这两条自我修正**：
+
+- **R3 事实错误**：我当时建议 "phase → terminal reason 映射"，这确实需要信息源（`last_shutdown_reason`/`cancel triggered` flag 等）而当前 runtime 没有稳定暴露。**硬映射会造假**。GPT 的 "两层解耦" 是更正确的工程选择 —— internal 的 terminal 表示 read 收口，orchestrator 的 SessionTerminalRecord 表示 lifecycle 收口，两者**明确分层**。
+- **R5 事实错误**：我当时说 "F3 legacy retire 后，orchestrator 转 NACP envelope 给 agent-core，boundary verify 会失败" —— 但这个失败路径**现在并不存在**，因为 internal 通道根本不走 NACP envelope 构造。F4.A 才会引入这条路径，所以 TEAM_UUID 同步确实是 F4 concern。
+
+GPT §10.4 的自我校准对 review 的时间点判断有实际价值，我完全接受。
+
+### 11.5 F3 启动前的 blocker 判定
+
+| 项 | 状态 | F3 前是否 blocker |
+|---|---|---|
+| Opus R1 / GPT R1（snapshot vs live stream）| 代码注释 + closure wording 已诚实化 | **否** — 文档已记录为 first-wave 限制；F3 做 cutover 不需要"真正 live stream" |
+| Opus R2 / GPT R2 前半（dual-ingress + canonical wording）| closure 已改 | **否** — F3 的全部工作就是解决 dual-ingress |
+| Opus R3 / GPT R3（terminal hardcoded）| design split + validator 只接 3 值 | **否** — 语义分层已 clean |
+| Opus R4 / GPT R2 后半（cross 40/40 归因）| closure 已标明 | **否** — F3 本就要迁 cross 入口 |
+| Opus R5 / GPT R11（TEAM_UUID 跨 worker）| 代码未改，design 未改 | **否** — F4 deploy law 议题，现在不走 cross-worker tenant verify |
+| Opus R6 / GPT R12（proxyReadResponse perf）| low，rejected | 否 |
+| Opus R7 / GPT R4（verify drift guard）| 已加 5-check assertion | 否 |
+| GPT R5（minted 悬空）| 已移除 | 否 |
+| GPT R6（NDJSON runtime validation）| 已加 502 typed reject | 否 |
+| GPT R7（signJwt 生产分离）| 已移出 auth.ts | 否 |
+| GPT R8（contexter inventory wording）| design 已改 | 否 |
+| GPT R9（cursor event-only）| design 已明说 | 否 |
+| GPT R10（terminal -> ended mapping）| rejected + split | 否 |
+
+**结论：F3 启动无代码级 blocker，也无文档级 blocker。**
+
+### 11.6 `known limitations` 清单（随 F3-F5 自然处理）
+
+这些不是 bug，是 F0-F2 first-wave 已接受的限制：
+
+1. `/internal/stream` 是 snapshot-based finite NDJSON，不是 persistent live push。**当 agent-core DO 未来真正产生 mid-turn 事件流时**，需要引入 since-cursor / subscription 机制。合理时机：F4 或下一阶段 richer orchestrator。
+2. legacy `agent-core /sessions/*` 在 F2 结束仍可用。**F3 的核心就是退役这条路径** —— 不是 limitation，是下一阶段 scope。
+3. TEAM_UUID 跨 worker 未统一。**F4.A 引入 authority translation respected across workers 时需要同步** —— 合理时机 F4.A 首批任务。
+4. internal 通道不走 NACP envelope / `verifyTenantBoundary`。**F4.A no-escalation enforcement 要处理** —— F4 scope。
+
+### 11.7 二次收口意见
+
+- **必须继续修改的 blocker**：无
+- **可后续跟进的 follow-up**（自然进入对应 phase）：
+  1. F3 首批任务：legacy `/sessions/*` → 410 + orchestrator cross-e2e 迁移
+  2. F4.A 首批任务：4 worker wrangler.jsonc 同步 `TEAM_UUID`；internal 通道引入 NACP envelope 校验
+  3. 下一阶段（richer orchestrator）：`/internal/stream` 重构为真正 persistent push（或 since-cursor + subscribe）
+
+### 11.8 本轮 review 正式收口
+
+> **approve-with-followups → closed (2026-04-24)**
+>
+> F0-F2 三个周期代码、测试、design、closure、action-plan 全部 consistent；11/11 vitest 通过；7 条 Opus finding 处理完成；另行修复 5 条由 GPT/Kimi/DeepSeek 发现的连带问题。**F3 可立即启动，无需等待任何补救工作**。
+
+---
+
+## 12. 二次审查版本历史（追加）
+
+| 版本 | 日期 | 修改者 | 主要变更 |
+|------|------|--------|----------|
+| v0.2（二次复核） | 2026-04-24 | Claude Opus 4.7 (1M context) | 对 GPT §9 回应的逐项代码级复核。12 条 finding 处理全部被代码事实确认。接受 GPT 对 Opus R3 + R5 的 2 条自我修正（R3 修法过重、R5 时机偏前）。识别 Opus v0.1 漏检的 3 条真实问题（minted 悬空 / NDJSON runtime 校验 / signJwt 生产分离），GPT 已全部 fixed。判决：**F3 无 blocker，本轮 review 正式收口**。独立完成，未参考其他 reviewer 对同范围的文本。

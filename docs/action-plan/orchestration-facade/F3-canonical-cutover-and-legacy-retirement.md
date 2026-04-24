@@ -14,7 +14,7 @@
 > - `docs/design/orchestration-facade/F0-session-lifecycle-and-reconnect.md`
 > - `docs/design/orchestration-facade/FX-qna.md`
 > - `test/INDEX.md`
-> 文档状态: `draft`
+> 文档状态: `executed`
 
 ---
 
@@ -95,7 +95,7 @@ F3 Canonical Cutover and Legacy Retirement
 │   ├── 04-reconnect.test.mjs
 │   ├── 05-verify-status-timeline.test.mjs
 │   ├── 06-auth-negative.test.mjs
-│   └── 07-legacy-410-assertion.test.mjs
+│   └── 07-legacy-agent-retirement.test.mjs
 ├── test/cross-e2e/*
 ├── test/shared/live.mjs
 ├── test/INDEX.md
@@ -163,14 +163,14 @@ F3 Canonical Cutover and Legacy Retirement
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
 | P2-01 | migrate agent-core session tests | 把 `02/04/05/06` 迁到 orchestrator-core，`03` 合并进 `02-session-start`；F1 产出的 `01/02` 在 F3 中被增强/替换，而不是保留双份近似测试 | `test/package-e2e/*` | session-facing package-e2e 全部归属 orchestrator-core | package-e2e | old ghost files 删除 |
-| P2-02 | auth-negative / legacy-negative | 新增 `06-auth-negative` 与 `07-legacy-410-assertion`；其中 `06` 仅覆盖 JWT ingress missing/invalid，authority / tenant / escalation 负例留给 F4 | `test/package-e2e/orchestrator-core/*` | canonical suite 具备安全与退役证明 | package-e2e | 负例职责不重叠 |
+| P2-02 | auth-negative / legacy-negative | 新增 `06-auth-negative` 与 `07-legacy-agent-retirement`；其中 `06` 仅覆盖 JWT ingress missing/invalid，authority / tenant / escalation 负例留给 F4 | `test/package-e2e/orchestrator-core/*` | canonical suite 具备安全与退役证明 | package-e2e | 负例职责不重叠 |
 
 ### 4.3 Phase 3 — cross-e2e / docs / harness 迁移
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
 | P3-01 | cross-e2e 入口迁移 | 迁 `02,03,04,05,06,08,09` 的 default public owner 到 orchestrator | `test/cross-e2e/*` | cross suite 反映 canonical owner | cross-e2e | affected files 全改 |
-| P3-02 | docs truth 更新 | 更新 `test/INDEX.md`、相关 README/preview truth，并注明 `07-legacy-410-assertion` 虽命中 `agent-core`，但因其证明 canonical suite 已完成 legacy retirement 而归于 orchestrator suite | `test/INDEX.md` docs | 文档与测试树说同一套真相 | 文档 review | 不再把 agent-core 当默认 public edge |
+| P3-02 | docs truth 更新 | 更新 `test/INDEX.md`、相关 README/preview truth，并注明 `07-legacy-agent-retirement` 虽命中 `agent-core`，但因其证明 canonical suite 已完成 legacy retirement 而归于 orchestrator suite | `test/INDEX.md` docs | 文档与测试树说同一套真相 | 文档 review | 不再把 agent-core 当默认 public edge |
 
 ### 4.4 Phase 4 — legacy hard deprecation
 
@@ -202,7 +202,7 @@ F3 Canonical Cutover and Legacy Retirement
   - `test/package-e2e/orchestrator-core/04-reconnect.test.mjs`
   - `test/package-e2e/orchestrator-core/05-verify-status-timeline.test.mjs`
   - `test/package-e2e/orchestrator-core/06-auth-negative.test.mjs`
-  - `test/package-e2e/orchestrator-core/07-legacy-410-assertion.test.mjs`
+  - `test/package-e2e/orchestrator-core/07-legacy-agent-retirement.test.mjs`
 - **本 Phase 修改文件**：
   - `test/shared/live.mjs`
 - **具体功能预期**：
@@ -229,7 +229,7 @@ F3 Canonical Cutover and Legacy Retirement
   - `P2-02`
 - **本 Phase 新增文件**：
   - `orchestrator-core/06-auth-negative.test.mjs`
-  - `orchestrator-core/07-legacy-410-assertion.test.mjs`
+  - `orchestrator-core/07-legacy-agent-retirement.test.mjs`
 - **本 Phase 修改文件**：
   - `test/package-e2e/agent-core/02-06*.mjs`
   - `test/package-e2e/orchestrator-core/*.mjs`
@@ -425,3 +425,19 @@ Q7/Q8 已在 `FX-qna.md` 明确：**无 grace window、同 PR hard deprecate、c
 ## 10. 结语
 
 这份 action-plan 以 **让 `orchestrator.core` 成为唯一真实 public ingress** 为第一优先级，采用 **先建 canonical suite、再迁测试与文档、最后同 PR 退役 legacy** 的推进方式，优先解决 **dual-ingress tech debt** 与 **测试树/文档仍说旧真相** 两个问题，并把 **不留 grace window、不拆两次 PR** 作为主要约束。整个计划完成后，`orchestration-facade / F3` 应达到 **canonical cutover 已完成、legacy session surface 已 honest retire** 的状态，从而为后续的 **F4 authority hardening 与 F5 final closure** 提供清晰基础。
+
+---
+
+## 11. 执行日志（2026-04-24）
+
+- 已将 `test/package-e2e/agent-core/02-06` 全部删除，并把对应 session-facing 职责吸收到 `test/package-e2e/orchestrator-core/02/05/06/07`。
+- 已新增 `test/shared/orchestrator-auth.mjs`，统一 orchestrator live tests 的 bearer token / header 构造。
+- 已把 affected cross tests `02,03,04,05,06,08,09` 的默认 public owner 全部切到 `orchestrator-core`，并要求先 start session 再 verify。
+- 已把 `cross-e2e/01` 与 `10` 升级为 5-worker inventory / 40-request fan-out probe。
+- 已在 `workers/agent-core/src/index.ts` 落下 legacy retirement：session HTTP actions 统一 `410`，legacy WS 统一 `426`，同时保留 probe 与 guarded `/internal/*`。
+- 已把 `workers/orchestrator-core/src/index.ts` probe marker bump 到 `orchestration-facade-F3`，并把 `/ws` negative taxonomy 调整为 missing / terminal 可在 no-upgrade 路径上返回 typed JSON。
+- 已重写 `test/INDEX.md`，同步 `workers/{agent-core,orchestrator-core}/README.md` 到 F3 canonical truth。
+- 已完成本地验证：`agent-core` / `orchestrator-core` 的 `typecheck + build + test`、`pnpm test:package-e2e`、`pnpm test:cross` 全部通过。
+- 已重新部署 preview `agent-core` 与 `orchestrator-core`，并在对齐 preview `JWT_SECRET` 后完成 live 证据：
+  - `pnpm test:package-e2e` = `33 / 33 pass`
+  - `pnpm test:cross` = `44 / 44 pass`

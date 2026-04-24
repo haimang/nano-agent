@@ -1,6 +1,6 @@
 # Plan Orchestration Facade — Compatibility-First Public Facade over a Private Runtime Mesh
 
-> **状态**：`active charter (r2 + F0/F1/F2 closed; F3 unlocked)`
+> **状态**：`closed charter (r2 executed; see final closure + handoff pack)`
 > **日期**：`2026-04-24`
 > **作者**：`GPT-5.4`
 > **文档性质**：`phase charter` — public ingress cutover / orchestrator façade / private runtime mesh / internal contract freeze / authority law

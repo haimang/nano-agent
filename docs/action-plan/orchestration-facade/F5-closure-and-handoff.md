@@ -13,7 +13,7 @@
 > - `docs/action-plan/orchestration-facade/F2-session-seam-completion.md`
 > - `docs/action-plan/orchestration-facade/F3-canonical-cutover-and-legacy-retirement.md`
 > - `docs/action-plan/orchestration-facade/F4-authority-hardening.md`
-> 文档状态: `draft`
+> 文档状态: `completed`
 
 ---
 
@@ -345,3 +345,14 @@ F5 的职责是消费 F0-F4 已完成事实，而不是重开设计问题。
 ## 10. 结语
 
 这份 action-plan 以 **把 orchestration-facade 从一组局部完成推进成整阶段闭合事实** 为第一优先级，采用 **先核对 evidence、再压缩成 final closure / handoff、最后翻转 meta 状态** 的推进方式，优先解决 **阶段真相仍分散在多份文档** 与 **下游缺少单一输入包** 两个问题，并把 **不越位代写下游 charter、不回头偷补上游实现** 作为主要约束。整个计划完成后，`orchestration-facade / F5` 应达到 **阶段已正式闭合、下一阶段 handoff-ready** 的状态，从而为后续的 **新 charter / richer orchestrator / multi-tenant or credit domain 议题** 提供稳定起点。
+
+---
+
+## 11. 2026-04-24 执行日志
+
+1. 新增 `test/cross-e2e/11-orchestrator-public-facade-roundtrip.test.mjs`，把 final `JWT -> orchestrator -> agent -> bash -> stream back` 路径固定成阶段级 live proof。
+2. 将 `workers/orchestrator-core/src/index.ts` probe marker 翻到 terminal state `orchestration-facade-closed`，并同步更新 `workers/orchestrator-core/test/smoke.test.ts`、`test/package-e2e/orchestrator-core/01-preview-probe.test.mjs`、`workers/orchestrator-core/README.md` 与 `test/INDEX.md`。
+3. 新增 `docs/issue/orchestration-facade/orchestration-facade-final-closure.md`，把 F0-F5 压成 single final truth anchor。
+4. 新增 `docs/handoff/orchestration-facade-to-next-phase.md`，明确 next phase 可依赖的当前真相、forwarded open items 与 ongoing operational disciplines。
+5. 新增 `docs/issue/orchestration-facade/F5-closure.md`，记录 F5 自身 closeout 事实，并把 `docs/plan-orchestration-facade.md` 顶层状态翻到 closed charter。
+6. 重新部署 preview `orchestrator-core`，再跑 live `pnpm test:package-e2e` (`35/35`) 与 `pnpm test:cross` (`47/47`)；新增 final roundtrip case 已在真实 preview topology 上通过。

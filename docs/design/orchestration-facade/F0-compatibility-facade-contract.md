@@ -267,12 +267,13 @@
   - legacy HTTP session routes 统一返回：
     ```json
     {
-      "error": "gone",
-      "canonical_public": "https://<orchestrator>/sessions/:session_uuid",
+      "error": "legacy-session-route-retired",
+      "canonical_worker": "orchestrator-core",
+      "canonical_url": "https://<orchestrator>/sessions/:session_uuid/<action>",
       "message": "agent-core session surface retired, please use orchestrator-core canonical public ingress"
     }
     ```
-  - legacy WS `/sessions/:session_uuid/ws` 返回 HTTP `426` + 同样的 canonical hint body，不进行 upgrade
+  - legacy WS `/sessions/:session_uuid/ws` 返回 HTTP `426` + `{ error: "legacy-websocket-route-retired", canonical_worker, canonical_url, message }`，不进行 upgrade
 - **边界情况**：
   - `GET /` probe 继续保留
   - internal `/internal/*` 不属于 legacy public path
@@ -338,7 +339,7 @@
 
 ### 9.3 下一步行动
 
-- [ ] **设计冻结回填**：把 legacy HTTP `410` / WS `426` body shape 吸收到 F3 action-plan 与 future negative tests。
+- [x] **设计冻结回填**：legacy HTTP `410` / WS `426` body shape 已吸收到 F3 action-plan，并由 `orchestrator-core/07-legacy-agent-retirement.test.mjs` 锁定 live negative proof。
 - [ ] **关联 Issue / PR**：`docs/action-plan/orchestration-facade/F0-concrete-freeze-pack.md`
 - [ ] **待进入实现阶段的子问题**：
   - `canonical_public` 字段在 preview / prod / local 三种环境下的具体 URL 组装位置
