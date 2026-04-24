@@ -4,7 +4,7 @@
 > 讨论日期: `2026-04-24`
 > 讨论者: `Owner + GPT-5.4`
 > 关联调查报告: `docs/plan-orchestration-facade.md`、`docs/design/orchestration-facade/F0-user-do-schema.md`、`docs/design/orchestration-facade/F0-stream-relay-mechanism.md`
-> 文档状态: `draft (reviewed + FX-qna applied)`
+> 文档状态: `frozen (F0 closed; reviewed + FX-qna consumed)`
 
 ---
 
@@ -80,7 +80,7 @@
 
 ### 2.3 一句话定位陈述
 
-> "在 nano-agent 里，`F0 Session Lifecycle and Reconnect` 是 **session ownership state machine**，负责 **明确 `session_uuid` 从 minted 到 ended 的状态变化，以及 attach / detach / reconnect 的默认法则**，对上游提供 **可预测的 WS 行为**，对下游要求 **registry 与 relay cursor 同步**。"
+> "在 nano-agent 里，`F0 Session Lifecycle and Reconnect` 是 **session ownership state machine**，负责 **明确 `session_uuid` 从 starting 到 ended 的状态变化，以及 attach / detach / reconnect 的默认法则**，对上游提供 **可预测的 WS 行为**，对下游要求 **registry 与 relay cursor 同步**。"
 
 ---
 
@@ -98,7 +98,7 @@
 
 | 扩展点 | 表现形式 (函数签名 / 目录 / 配置字段) | 第一版行为 | 未来可能的演进方向 |
 |--------|---------------------------------------|------------|---------------------|
-| status enum | `minted/starting/active/detached/ended` | minimal lifecycle | richer paused / replaying / restoring |
+| status enum | `starting/active/detached/ended` | minimal lifecycle | richer paused / replaying / restoring |
 | attachment policy | single active writable attachment | 简化 first-wave | multi-tab fanout / read-only mirrors |
 | reconnect result | typed success / terminal / missing | minimal result taxonomy | partial replay / resume snapshots |
 
@@ -110,7 +110,7 @@
 
 ### 3.4 聚合点（哪里要刻意收敛）
 
-- **聚合对象**：`session_uuid` minting、attachment owner、reconnect owner
+- **聚合对象**：`session_uuid` registry ownership、attachment owner、reconnect owner
 - **聚合形式**：`orchestrator.core` user DO
 - **为什么不能分散**：一旦 client、runtime、registry 各自有一套 session truth，F3 cutover 无法真正完成。
 
@@ -218,7 +218,7 @@
 
 | 编号 | 功能名 | 描述 | **一句话收口目标** |
 |------|--------|------|---------------------|
-| F1 | Lifecycle states | minted -> starting -> active -> detached -> ended | ✅ **session 生命周期不再口头描述** |
+| F1 | Lifecycle states | starting -> active -> detached -> ended | ✅ **session 生命周期不再口头描述** |
 | F2 | Attachment policy | single active writable attachment | ✅ **first-wave attach 行为可预测** |
 | F3 | Reconnect result taxonomy | success / terminal / missing | ✅ **reconnect 不靠模糊状态判断** |
 | F4 | Terminal retention | bounded recent-ended metadata | ✅ **结束后仍能完成状态读取与诊断** |
@@ -231,7 +231,6 @@
 - **输出**：registry 中的状态变化
 - **主要调用者**：user DO
 - **状态机建议**：
-  - `minted`
   - `starting`
   - `active`
   - `detached`
@@ -243,6 +242,9 @@
   | `completed` | `ended` | `session.completed` |
   | `cancelled` | `ended` | `session.cancelled` |
   | `error` | `ended` | `session.error` |
+- **F2 implementation note**：
+  - internal relay read 的 `terminal` line 本身只表示该次 relay/read 完成，**不自动等于 session ended**。
+  - façade 只有在 session-level terminal law 成立时才转 `ended`；F2 当前实现中，普通 `start/input` 完成后无 active attachment 时进入 `detached`，`cancel` 则进入 `ended/cancelled`。
 - **边界情况**：
   - `cancel` 结束 turn，不必自动 purge session entry
 - **一句话收口目标**：✅ **状态机已最小化且足以支撑 first-wave façade**

@@ -4,7 +4,7 @@
 > 讨论日期: `2026-04-24`
 > 讨论者: `Owner + GPT-5.4（参考 Opus 1st/2nd-pass review）`
 > 关联调查报告: `docs/plan-orchestration-facade.md`、`docs/plan-orchestration-facade-reviewed-by-opus.md`、`docs/plan-orchestration-facade-reviewed-by-opus-2nd-pass.md`、`docs/eval/after-foundations/smind-contexter-learnings.md`
-> 文档状态: `draft (reviewed + FX-qna applied)`
+> 文档状态: `frozen (F0 closed; reviewed + FX-qna consumed)`
 
 ---
 

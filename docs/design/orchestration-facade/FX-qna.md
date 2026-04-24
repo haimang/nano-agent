@@ -2,6 +2,7 @@
 
 > 范围：`orchestration-facade / F0-F5`
 > 目的：把会影响后续 `F0 design freeze / F1-F5 action-plan / closure` 的业主 / 架构师决策收敛到一份单一清单，避免在多个 design 文档中重复回答、重复漂移、重复改口。
+> 状态：`frozen answer register (Q1-Q8 filled; F0 closed)`
 > 使用方式：
 > 1. **业主只在本文件填写回答。**
 > 2. 其他 design / action-plan / memo 若引用某个 `Q` 编号，默认都以本文件为唯一答复来源。

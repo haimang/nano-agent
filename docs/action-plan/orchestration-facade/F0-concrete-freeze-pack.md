@@ -19,7 +19,7 @@
 > - `docs/design/orchestration-facade/FX-qna.md`
 > - `docs/eval/orchestration-facade/F0-FX-design-docs-reviewed-by-deepseek.md`
 > - `docs/eval/orchestration-facade/F0-FX-design-docs-reviewed-by-opus.md`
-> 文档状态: `draft`
+> 文档状态: `executed`
 
 ---
 
@@ -386,3 +386,55 @@ F0 直接消费 `docs/design/orchestration-facade/FX-qna.md` 中已冻结的 Q1-
 ## 10. 结语
 
 这份 action-plan 以 **把 design pack 真正冻结成可执行真相层** 为第一优先级，采用 **先审计、再收口、最后 closure** 的推进方式，优先解决 **design blocker 与 implementation follow-up 混淆** 以及 **F1 入口不够机械化** 两个问题，并把 **不偷渡实现工作** 作为主要约束。整个计划完成后，`orchestration-facade / F0` 应达到 **正式解锁 F1 的 freeze-ready 状态**，从而为后续的 **orchestrator bring-up、session seam completion、cutover、authority hardening 与 final closure** 提供稳定基础。
+
+
+---
+
+## 11. 工作日志回填（executed）
+
+### 11.1 执行结果总览
+
+- **结论**：F0 已按 action-plan 完成，并已达到 `F0-closure.md` 所要求的关闭条件。
+- **核心变化**：orchestration-facade 现在已经拥有可直接驱动 F1-F5 的 freeze baseline；Q1-Q8 不再悬空，design pack 不再停留在 `draft` 心智。
+
+### 11.2 本轮新增文件
+
+1. `docs/issue/orchestration-facade/F0-closure.md`
+
+### 11.3 本轮修改文件
+
+1. `docs/plan-orchestration-facade.md`
+2. `docs/design/orchestration-facade/F0-compatibility-facade-contract.md`
+3. `docs/design/orchestration-facade/F0-agent-core-internal-binding-contract.md`
+4. `docs/design/orchestration-facade/F0-stream-relay-mechanism.md`
+5. `docs/design/orchestration-facade/F0-contexter-absorption-inventory.md`
+6. `docs/design/orchestration-facade/F0-user-do-schema.md`
+7. `docs/design/orchestration-facade/F0-session-lifecycle-and-reconnect.md`
+8. `docs/design/orchestration-facade/F0-live-e2e-migration-inventory.md`
+9. `docs/design/orchestration-facade/F4-authority-policy-layer.md`
+10. `docs/design/orchestration-facade/FX-qna.md`
+11. `docs/eval/orchestration-facade/F0-FX-design-docs-reviewed-by-deepseek.md`
+12. `docs/eval/orchestration-facade/F0-FX-design-docs-reviewed-by-opus.md`
+13. `docs/action-plan/orchestration-facade/F0-concrete-freeze-pack.md`
+
+### 11.4 F0 实际完成的工作项
+
+1. **P1-01 / P1-02 — 冻结面审计与 review finding 分类**
+   - 复核 charter / design pack / FX-qna / 两份 review 的当前一致性。
+   - 确认 Q1-Q8 `业主回答` 全部非空，并将 review blocker 改写为 close-out 附章中的 resolved / follow-up disposition。
+2. **P2-01 / P2-02 — wording 收口与 charter 对齐**
+   - 将 8 份 design docs 统一翻到 `frozen` 状态。
+   - 将 charter 顶层状态同步到 `F0 freeze closed; F1 unlocked`。
+   - 修正 `F4-authority-policy-layer.md` 中已过时的代码行号引用。
+3. **P3-01 / P3-02 — 执行清单化与 follow-up 降级**
+   - 以修订后的 F1-F5 action-plan pack 作为连续执行链。
+   - 将 `503 vs throw`、`canonical_public` URL 组装、partial replay、NDJSON 类型形式化等事项明确归入后续实现期。
+4. **P4-01 — F0 closure**
+   - 新增 `docs/issue/orchestration-facade/F0-closure.md`。
+   - 正式声明 F0 已闭合，并解锁 F1。
+
+### 11.5 关键发现与裁定
+
+1. F0 真正的 gate 已经不是“再补设计内容”，而是**把已存在的 reviewed truth 翻成 frozen baseline**；这一步现已完成。
+2. DeepSeek / Opus 两份 review 的原判断在审查当时都成立，但当前真相已经前移：**QNA blocker 已清空，剩余问题全部进入实施期分工**。
+3. F1 现在可以直接开始；如果后续再出现新的 owner-level blocker，应视为新问题，而不是回头否定本轮 F0 freeze。

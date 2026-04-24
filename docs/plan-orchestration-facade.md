@@ -1,6 +1,6 @@
 # Plan Orchestration Facade — Compatibility-First Public Facade over a Private Runtime Mesh
 
-> **状态**：`draft charter (r2 + design pack seeded)`
+> **状态**：`active charter (r2 + F0/F1/F2 closed; F3 unlocked)`
 > **日期**：`2026-04-24`
 > **作者**：`GPT-5.4`
 > **文档性质**：`phase charter` — public ingress cutover / orchestrator façade / private runtime mesh / internal contract freeze / authority law
@@ -383,11 +383,9 @@ first-wave 默认规则：
 
 | 阶段 | owner | 状态变化 | 说明 |
 |---|---|---|---|
-| `minted` | `orchestrator.core` | 生成 `session_uuid`，写入 user DO registry | 尚未启动 runtime |
-| `starting` | `orchestrator.core -> agent.core` | 通过 internal contract 发出 `start` | canonical start path |
-| `active` | `agent.core` + registry | runtime 进入运行态 | session stream flowing |
-| `detached` | `orchestrator.core` | client 断线但 runtime 可能仍活着 | reconnect 可恢复 |
-| `reattached` | `orchestrator.core` | client 重新接回 relay | registry 更新 cursor |
+| `starting` | `orchestrator.core -> agent.core` | 接住 client-provided `session_uuid`，写入 registry，并通过 internal contract 发出 `start` | canonical start path |
+| `active` | `agent.core` + registry | runtime 进入运行态且当前有 active attachment | session stream flowing |
+| `detached` | `orchestrator.core` | client 断线，或 turn 已完成但 session 仍可继续 | reconnect 可恢复 |
 | `ended` | `agent.core` + registry | session 结束 | 可保留最近历史 |
 
 ### 4.4 reconnect 语义必须显式设计
@@ -438,7 +436,7 @@ first-wave 的默认建议是：
 
 | contexter 文件 / 模块 | label | first-wave 处理方式 |
 |---|---|---|
-| `core/jwt.ts` | **adopt-as-is (light adaptation)** | 迁入 `orchestrator-core/src/adapters/jwt.ts` 或等价位置 |
+| `core/jwt.ts` | **adapt-pattern (reimplemented from reference)** | 保留算法与接口心智，但按本仓 `orchestrator-core/src/auth.ts` 独立重写 |
 | `src/chat.ts::withTrace` | **adapt-pattern** | 改写为 façade trace middleware |
 | `src/chat.ts::withAuth` | **adapt-pattern** | 改写为 façade JWT middleware |
 | `src/chat.ts::getUserDOStub` | **adapt-pattern** | 保留 `idFromName(user_uuid)` 模式 |
@@ -573,7 +571,7 @@ r2 选择的不是“永久 additive compatibility”，而是：
 
 这条冻结是 r2 的关键决策，因为它保证：
 
-1. `session_uuid` minting owner 不会长期双轨
+1. public session ownership 不会长期双轨
 2. “唯一 canonical public ingress = orchestrator.core” 成为真实系统事实
 3. legacy ingress 不会长期留成半死不活的 tech debt
 

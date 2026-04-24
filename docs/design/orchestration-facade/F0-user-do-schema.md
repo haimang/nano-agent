@@ -4,7 +4,7 @@
 > 讨论日期: `2026-04-24`
 > 讨论者: `Owner + GPT-5.4`
 > 关联调查报告: `docs/plan-orchestration-facade.md`、`docs/design/orchestration-facade/F0-contexter-absorption-inventory.md`
-> 文档状态: `draft (reviewed + FX-qna applied)`
+> 文档状态: `frozen (F0 closed; reviewed + FX-qna consumed)`
 
 ---
 
@@ -247,7 +247,7 @@
 - **建议 entry shape**：
   - `created_at`
   - `last_seen_at`
-  - `status: "minted" | "starting" | "active" | "detached" | "ended"`
+  - `status: "starting" | "active" | "detached" | "ended"`
   - `last_phase?`
   - `relay_cursor?: number // last_forwarded seq, -1 means no frame forwarded yet`
   - `ended_at?`
@@ -256,9 +256,11 @@
   - `user/auth-snapshot`
   - `user/seed`
   - `sessions/<session_uuid>`
+- **F2 implementation note**：
+  - 为保持 `SessionEntry` 不扩列，F2 把 terminal reason 作为 bounded sidecar metadata 存在 `session-terminal/<session_uuid>`，而不是塞回 `SessionEntry` 主体。
 - **retention 建议**：
   - active / detached 全保留
-  - `minted` / `starting` / `active` / `detached` 不受 ended retention policy 影响
+  - `starting` / `active` / `detached` 不受 ended retention policy 影响
   - ended 保留 bounded recent metadata，采用 **24h 时间窗 + 每 user 最多 100 个 ended sessions** 的双上限策略
   - 超过任一上限时，按 `ended_at` 从旧到新 purge
 - **一句话收口目标**：✅ **session registry entry 已具备 attach/reconnect 所需最小字段**

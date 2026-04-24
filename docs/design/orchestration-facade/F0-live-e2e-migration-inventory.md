@@ -4,7 +4,7 @@
 > 讨论日期: `2026-04-24`
 > 讨论者: `Owner + GPT-5.4`
 > 关联调查报告: `docs/plan-orchestration-facade.md`、`test/INDEX.md`
-> 文档状态: `draft (reviewed + FX-qna applied)`
+> 文档状态: `frozen (F0 closed; reviewed + FX-qna consumed)`
 
 ---
 

@@ -4,13 +4,13 @@
 > 讨论日期: `2026-04-24`
 > 讨论者: `Owner + GPT-5.4`
 > 关联调查报告: `docs/plan-orchestration-facade.md`、`docs/plan-orchestration-facade-reviewed-by-opus-2nd-pass.md`
-> 文档状态: `draft (reviewed + FX-qna applied)`
+> 文档状态: `frozen (F0 closed; reviewed + FX-qna consumed)`
 
 ---
 
 ## 0. 背景与前置约束
 
-orchestration-facade 阶段最难偷懒的一层，不是 public route 本身，而是 **`agent.core -> orchestrator.core` 的实时流转发**。当前 `agent.core` 已有 public WS ingress；但在新架构里，这条 WS 不再是 future internal seam。我们必须定义一个 first-wave 可落地、与 fetch transport 一致、且能支撑 reconnect 的 relay 机制。
+orchestration-facade 阶段最难偷懒的一层，不是 public route 本身，而是 **`agent.core -> orchestrator.core` 的 stream relay**。当前 `agent.core` 已有 public WS ingress；但在新架构里，这条 WS 不再是 future internal seam。我们必须定义一个 first-wave 可落地、与 fetch transport 一致、且能支撑 reconnect 的 relay 机制。F1/F2 已验证的现实形态是 **snapshot-over-NDJSON relay**，不是持续 push 的 live stream。
 
 - **项目定位回顾**：本阶段要把 client-facing 实时会话能力交给 `orchestrator.core`，同时避免引入新的 transport 大爆炸。
 - **本次讨论的前置共识**：
@@ -30,13 +30,13 @@ orchestration-facade 阶段最难偷懒的一层，不是 public route 本身，
 ### 1.1 功能簇定义
 
 - **名称**：`F0 Stream Relay Mechanism`
-- **一句话定义**：定义 `agent.core` 如何把 session stream 以 HTTP streaming 形式发给 `orchestrator.core`，以及 `orchestrator.core` 如何将其 relay 给 client WS。
+- **一句话定义**：定义 `agent.core` 如何把 session stream 以 HTTP streaming / NDJSON 形式提供给 `orchestrator.core`，以及 `orchestrator.core` 如何将其 relay 给 client WS。
 - **边界描述**：本功能簇**包含** internal stream route、framing、cursor、terminal semantics、legacy WS fate；**不包含** public route contract 与 internal auth header 的完整定义。
 - **关键术语对齐**：
 
 | 术语 | 定义 | 备注 |
 |------|------|------|
-| relay stream | `agent.core -> orchestrator.core` 的实时事件流 | internal only |
+| relay stream | `agent.core -> orchestrator.core` 的 NDJSON relay body | first-wave 为 snapshot-based |
 | relay cursor | façade 记录的 `last_forwarded.seq` | reconnect 从 `cursor + 1` 恢复 |
 | data frame | 承载 session stream event 的单条流消息 | NDJSON line |
 | terminal frame | 表示本次 stream 正常/异常结束的单条消息 | 不能只靠 EOF 猜 |
@@ -79,7 +79,7 @@ orchestration-facade 阶段最难偷懒的一层，不是 public route 本身，
 
 ### 2.3 一句话定位陈述
 
-> "在 nano-agent 里，`F0 Stream Relay Mechanism` 是 **runtime output bridge**，负责 **把 `agent.core` 的 session stream 以 HTTP streaming 拉到 `orchestrator.core`，再由 user DO relay 给 client**，对上游提供 **稳定的 first-wave event flow**，对下游要求 **明确 framing、cursor 与 terminal semantics**。"
+> "在 nano-agent 里，`F0 Stream Relay Mechanism` 是 **runtime output bridge**，负责 **把 `agent.core` 的 session stream 以 HTTP streaming / NDJSON 拉到 `orchestrator.core`，再由 user DO relay 给 client**，对上游提供 **稳定的 first-wave event flow**，对下游要求 **明确 framing、cursor 与 terminal semantics**。"
 
 ---
 
@@ -272,6 +272,7 @@ orchestration-facade 阶段最难偷懒的一层，不是 public route 本身，
 - **边界情况**：
   - no event before terminal 仍合法
   - terminal 必须最多一条
+  - first-wave 当前实现中，terminal line 表示 **本次 relay read 收口**，不自动等于 façade lifecycle 的 `ended`
 - **一句话收口目标**：✅ **first-wave internal stream framing 被具体化为 NDJSON 三类 frame**
 
 #### F2: `Relay cursor`
@@ -283,7 +284,7 @@ orchestration-facade 阶段最难偷懒的一层，不是 public route 本身，
   - `relay_cursor = last_forwarded.seq`
   - 初始值视为 `-1`
   - reconnect 从 `relay_cursor + 1` 开始恢复
-  - 只要 frame 被成功 forward 给当前 attachment，cursor 就更新；terminal frame 也计入已 forward 序列
+  - first-wave 当前实现中，只有成功 forward 给当前 attachment 的 `event` frame 会推进 cursor；`meta` / `terminal` 不计入 cursor
 - **边界情况**：
   - cursor 缺失或为 `-1` 时，从 `seq 0` 的 `meta/opened` 开始
   - 若无法恢复流，只能回退到 typed terminal / timeline fallback，而不是猜测 off-by-one
@@ -291,7 +292,7 @@ orchestration-facade 阶段最难偷懒的一层，不是 public route 本身，
 
 ### 7.3 非功能性要求
 
-- **性能目标**：stream route 不应把整段数据缓存后再回传。
+- **性能目标**：长期目标是不把整段数据缓存后再回传；first-wave 当前实现允许生成有限 snapshot NDJSON body 后立即 close。
 - **可观测性要求**：meta/event/terminal frame 必须能在日志中区分。
 - **稳定性要求**：frame taxonomy 不能在 F1/F2 实现中随意发散。
 - **测试覆盖要求**：至少有 first event relay integration test；未来补 reconnect / terminal tests。
@@ -332,7 +333,7 @@ orchestration-facade 阶段最难偷懒的一层，不是 public route 本身，
 
 ### 9.1 功能簇画像
 
-`F0 Stream Relay Mechanism` 是 orchestrator 真正“有用起来”的那层设计。没有它，`orchestrator.core` 只能做 HTTP façade；有了它，public WS / reconnect / runtime event continuity 才有落点。第一版复杂度中等，但这是架构级复杂度，不是可选增强。
+`F0 Stream Relay Mechanism` 是 orchestrator 真正“有用起来”的那层设计。没有它，`orchestrator.core` 只能做 HTTP façade；有了它，public WS / reconnect / runtime event continuity 才有落点。第一版当前落地为 snapshot-based relay，而不是 persistent push；复杂度中等，但这是架构级复杂度，不是可选增强。
 
 ### 9.2 Value Verdict
 

@@ -16,7 +16,7 @@
 > - `docs/design/orchestration-facade/F0-session-lifecycle-and-reconnect.md`
 > - `docs/design/orchestration-facade/F4-authority-policy-layer.md`
 > - `docs/design/orchestration-facade/FX-qna.md`
-> 文档状态: `draft`
+> 文档状态: `executed`
 
 ---
 
@@ -168,7 +168,7 @@ F1 Bring-up and First Roundtrip
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
 | P2-01 | public start ingress | 接 `POST /sessions/:id/start`，完成最小 JWT ingress / request parse / user DO routing | `src/ingress/*` `src/index.ts` | façade 可接住 start | worker tests | public `start` 已进入 orchestrator |
-| P2-02 | user DO registry shell | 实现 `user_uuid` owner、`session_uuid` mint，并从 F1 起写入完整初始 `SessionEntry`（`created_at / last_seen_at / status / last_phase / relay_cursor=-1 / ended_at`） | `src/user-do/*` | façade 不再是无状态转发层 | worker tests | user DO 能保存 minted session，且 F2 不再扩字段 |
+| P2-02 | user DO registry shell | 实现 `user_uuid` owner、接住 client-provided `session_uuid`，并从 F1 起写入完整初始 `SessionEntry`（`created_at / last_seen_at / status / last_phase / relay_cursor=-1 / ended_at`） | `src/user-do/*` | façade 不再是无状态转发层 | worker tests | user DO 能保存 starting session，且 F2 不再扩字段 |
 
 ### 4.3 Phase 3 — internal binding 最小落地
 
@@ -432,3 +432,75 @@ Q1 / Q2 / Q5 等 F1 硬前置答案已在 `FX-qna.md` 冻结，且 `业主回答
 ## 10. 结语
 
 这份 action-plan 以 **让 `orchestrator.core` 从概念变成真实 public ingress baseline** 为第一优先级，采用 **先 scaffold、再 narrow route、再 first-event relay、最后 preview proof** 的推进方式，优先解决 **canonical worker 尚不存在** 与 **internal contract 仍未落地** 两个问题，并把 **不提前做完整 session seam / cutover / authority hardening** 作为主要约束。整个计划完成后，`orchestration-facade / F1` 应达到 **public start -> agent internal -> first event relay 已真实成立** 的状态，从而为后续的 **F2 完整 session seam、F3 cutover、F4 authority hardening** 提供稳定基础。
+
+
+---
+
+## 11. 工作日志回填（executed）
+
+### 11.1 执行结果总览
+
+- **结论**：F1 已按 action-plan 完成，并达到 `F1-closure.md` 的关闭条件。
+- **核心变化**：`orchestrator-core` 已从不存在变成真实 public façade worker，`agent-core` 已拥有可用的 guarded internal seam，`start -> first event` 已可经 façade 往返一次。
+
+### 11.2 本轮新增文件
+
+1. `workers/orchestrator-core/.gitignore`
+2. `workers/orchestrator-core/README.md`
+3. `workers/orchestrator-core/package.json`
+4. `workers/orchestrator-core/tsconfig.json`
+5. `workers/orchestrator-core/wrangler.jsonc`
+6. `workers/orchestrator-core/src/auth.ts`
+7. `workers/orchestrator-core/src/index.ts`
+8. `workers/orchestrator-core/src/user-do.ts`
+9. `workers/orchestrator-core/test/smoke.test.ts`
+10. `workers/orchestrator-core/test/user-do.test.ts`
+11. `workers/agent-core/src/host/internal.ts`
+12. `test/package-e2e/orchestrator-core/01-preview-probe.test.mjs`
+13. `test/package-e2e/orchestrator-core/02-session-start.test.mjs`
+14. `docs/issue/orchestration-facade/F1-closure.md`
+
+### 11.3 本轮修改文件
+
+1. `workers/agent-core/src/index.ts`
+2. `workers/agent-core/test/smoke.test.ts`
+3. `workers/agent-core/README.md`
+4. `.github/workflows/workers.yml`
+5. `test/shared/live.mjs`
+6. `docs/action-plan/orchestration-facade/F1-bringup-and-first-roundtrip.md`
+
+### 11.4 F1 实际完成的工作项
+
+1. **P1-01 / P1-02 — orchestrator-core 脚手架**
+   - 新建 `workers/orchestrator-core/` 的 package / wrangler / README / tests / DO class。
+   - 固定 probe marker 为 `worker=orchestrator-core / phase=orchestration-facade-F1`。
+2. **P2-01 / P2-02 — public ingress 与 user DO 起步**
+   - public `POST /sessions/:session_uuid/start` 现在由 `orchestrator-core` 接住。
+   - 以 `JWT sub -> idFromName(user_uuid)` 建立 per-user DO owner，并写入完整初始 `SessionEntry`。
+3. **P3-01 / P3-02 — internal binding 最小落地**
+   - `agent-core` 新增 `/internal/sessions/:id/{start,input,cancel,stream}`。
+   - shared secret gate 采用 `x-nano-internal-binding-secret` + typed `401 invalid-internal-auth`。
+4. **P4-01 / P4-02 — first event relay**
+   - user DO 读取 `agent-core` internal NDJSON stream，并消费 `meta / event / terminal`。
+   - `relay_cursor` 初始值固定为 `-1`，首个已 forward frame 后更新。
+5. **P5-01 / P5-02 — proof 与 closure**
+   - 新增 orchestrator package-e2e 最小集与 live harness URL。
+   - 新增 `F1-closure.md`，明确解锁 F2。
+
+### 11.5 关键发现与裁定
+
+1. F1 可以非常薄，但不能是空心 façade；真正有价值的是 **user DO owner + internal seam + first event relay** 这一整条链路。
+2. `agent-core` 内部通路不需要重写 DO runtime，本轮只是在 worker 边界上补 guarded internal contract，并复用既有 HTTP fallback / timeline / replay 真相。
+3. F2 现在可以专注于补齐 public session seam，而不必再回头争论 `orchestrator-core` 是否只是另一个转发壳。
+
+
+### 11.6 Preview deploy 与 live 证据
+
+1. `agent-core` preview 已重新部署：`https://nano-agent-agent-core-preview.haimang.workers.dev`
+   - Version ID: `f819b896-5d92-4a93-b2ce-9ec17686a2f3`
+2. `orchestrator-core` preview 已首次部署：`https://nano-agent-orchestrator-core-preview.haimang.workers.dev`
+   - Version ID: `c7795357-e319-48a5-a72a-f302397610e5`
+3. live proof 已完成：
+   - `node --test test/package-e2e/orchestrator-core/*.test.mjs` → `2/2` 通过
+   - `pnpm test:package-e2e`（live） → `26/26` 通过（仓库汇总）
+   - `pnpm test:cross`（live） → `37/37` 通过（仍主要验证 legacy `agent-core` ingress）

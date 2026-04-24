@@ -4,7 +4,7 @@
 > 讨论日期: `2026-04-24`
 > 讨论者: `Owner + GPT-5.4`
 > 关联调查报告: `docs/plan-orchestration-facade.md`、`docs/eval/after-foundations/smind-contexter-learnings.md`、`context/smind-contexter/src/{chat.ts,engine_do.ts}`
-> 文档状态: `draft (reviewed, no QNA deltas)`
+> 文档状态: `frozen (F0 closed; reviewed)`
 
 ---
 
@@ -36,7 +36,7 @@
 
 | 术语 | 定义 | 备注 |
 |------|------|------|
-| adopt-as-is | 代码可基本原样迁入，仅做轻量接口适配 | 例如 `jwt.ts` |
+| adopt-as-is | 代码可基本原样迁入，仅做轻量接口适配 | 当前 first-wave 无直接采用样本 |
 | adapt-pattern | 代码结构 / 方法论可借，但需按本仓协议与类型重写 | 例如 `withAuth` / WS sessions map |
 | defer | 当前不吸收，但承认其未来价值 | 例如 `db_do.ts` |
 | discard | 本阶段明确不吸收 | 例如 CICP / RAG |
@@ -155,7 +155,7 @@
 
 ### 5.1 In-Scope（nano-agent 第一版要做）
 
-- **[S1]** `core/jwt.ts` adopt-as-is（light adaptation）
+- **[S1]** `core/jwt.ts` adapt-pattern（reimplemented from reference）
 - **[S2]** `chat.ts` 中 `withTrace` / `withAuth` / `getUserDOStub` adapt-pattern
 - **[S3]** `engine_do.ts` 的 WS sessions map / upgrade 结构 adapt-pattern
 - **[S4]** `core/broadcast.ts` 作为 relay pattern reference

@@ -65,7 +65,7 @@
 - 所有 8 份 design doc 的结构均遵循 `docs/templates/design.md` 模板（9 节结构）。
 - 跨文档引用关系清晰：`F0-user-do-schema` 引用 `F0-contexter-absorption-inventory`，`F0-session-lifecycle-and-reconnect` 引用 `F0-user-do-schema` 和 `F0-stream-relay-mechanism`，形成完整的引用图。
 - Live E2E migration inventory 给出了文件名级别的迁移清单，与 `test/INDEX.md` 中的实际文件一一对应。
-- 代码锚点引用经核实全部有效，包括 `F4-authority-policy-layer.md` 对 `nano-session-do.ts:812-825` 的 `_unknown` fallback 引用。
+- 代码锚点引用经核实全部有效，包括 `F4-authority-policy-layer.md` 对 `nano-session-do.ts:812-826` 的 `_unknown` fallback 引用。
 
 ### 1.2 已确认的负面事实
 
@@ -99,19 +99,19 @@
   2. 若 owner 对某条推荐路线有异议，在 `业主回答` 中写明替代方案。
   3. 回填完成后，将本 review 文档中的 R1 标记为 `resolved`。
 
-### R2. Code anchor 引用 `nano-session-do.ts:812-825` 的行号范围需调整
+### R2. Code anchor 引用行号在审查当时存在 1 行偏移
 
 - **严重级别**: `low`
 - **类型**: `correctness`
 - **事实依据**:
-  - `F4-authority-policy-layer.md` §8.4 引用 `workers/agent-core/src/host/do/nano-session-do.ts:812-825` 作为 `buildIngressContext()` 中 `TEAM_UUID` 缺失时的 `_unknown` fallback 反例
+  - 审查当时的 `F4-authority-policy-layer.md` §8.4 引用 `workers/agent-core/src/host/do/nano-session-do.ts:812-825` 作为 `buildIngressContext()` 中 `TEAM_UUID` 缺失时的 `_unknown` fallback 反例
   - 实际代码中 `buildIngressContext()` 方法位于 lines 812-826，逻辑完全正确 (line 817-819 的 ternary `_unknown` fallback)
 - **为什么重要**:
-  代码逻辑正确，行号范围偏移 1 行不影响引用准确性，但 F4 设计文档中的 `812-825` 应改为 `812-826` 以保持精确。
+  代码逻辑正确，行号范围偏移 1 行不影响引用准确性，但审查当时版本中的 `812-825` 应改为 `812-826` 以保持精确。
 - **审查判断**:
   低优先级，不影响任何设计决策或实现。下次修订 F4 文档时可以顺手修正。
 - **建议修法**:
-  将 `nano-session-do.ts:812-825` 改为 `nano-session-do.ts:812-826`。
+  将审查当时版本中的 `812-825` 修正为 `812-826`。
 
 ### R3. Stream relay 设计缺少 concrete TypeScript type / Zod schema
 
@@ -319,3 +319,23 @@
 | 版本 | 日期 | 修改者 | 主要变更 |
 |------|------|--------|----------|
 | v0.1 | 2026-04-24 | deepseek-v4-pro | 初审完成 |
+
+
+---
+
+## Appendix — F0 close-out status（2026-04-24，GPT-5.4）
+
+### 当前结论
+
+- **R1 blocker 已解决**：`FX-qna.md` 的 Q1-Q8 `业主回答` 全部已回填，review 当时指出的唯一 F0 freeze blocker 已清空。
+- design pack 与 charter 的当前状态，已经从“draft / awaiting-freeze-close”推进到 F0 closure 所要求的 frozen baseline；当前应以 `docs/issue/orchestration-facade/F0-closure.md` 为准。
+
+### finding disposition
+
+1. **R1**：`resolved` — QNA completion + F0 closure。
+2. **R2**：`absorbed` — `F4-authority-policy-layer.md` 的行号引用已与当前代码范围同步。
+3. **R3 / R4**：`downgraded-to-implementation-follow-up` — NDJSON type formalization 与 cross-e2e inventory 粒度属于执行期细化，不再是 F0 gate。
+
+### close-out verdict
+
+DeepSeek 的核心判断“设计包可以进入 F0 action-plan，真正 blocker 只剩 QNA 回填”已被事实验证；F0 现已可正式关闭。
