@@ -1,6 +1,7 @@
 import { NACP_VERSION } from "@haimang/nacp-core";
 import { NACP_SESSION_VERSION } from "@haimang/nacp-session";
 import { NanoSessionDO } from "./host/do/nano-session-do.js";
+import { routeInternal } from "./host/internal.js";
 import { routeRequest } from "./host/routes.js";
 
 export interface AgentCoreEnv {
@@ -10,6 +11,8 @@ export interface AgentCoreEnv {
   readonly FILESYSTEM_CORE?: Fetcher;
   readonly ENVIRONMENT?: string;
   readonly OWNER_TAG?: string;
+  readonly TEAM_UUID?: string;
+  readonly NANO_INTERNAL_BINDING_SECRET?: string;
 }
 
 export interface AgentCoreShellResponse {
@@ -44,6 +47,10 @@ const worker = {
 
     if (method === "GET" && (pathname === "/" || pathname === "/health")) {
       return Response.json(createShellResponse(env));
+    }
+
+    if (pathname.startsWith("/internal/")) {
+      return routeInternal(request, env);
     }
 
     const route = routeRequest(request);
