@@ -1209,9 +1209,232 @@ F3 exit 必须把 canonical public ingress 真正切干净。
 
 ---
 
-## 18. 最终 Verdict
+## 18. 附加章节：Design 需求与 Action-Plan 需求的明确界定
 
-### 18.1 对本阶段的最终定义
+### 18.1 结论先说
+
+就本阶段而言，我的预期是：
+
+1. **需要 8 份 design 文档**
+2. **需要 6 个 action-plan 周期**
+3. 这些内容**已经在 charter 中完成了基础规划**
+4. 但在 r2 之前，charter 更像“文档清单”，还不够像“执行引导”
+
+因此本附加章节的作用是把：
+
+- **要写多少**
+- **为什么要写**
+- **哪些必须先写**
+- **每个周期的进入条件 / 退出条件是什么**
+
+明确下来，作为本阶段开发工作的直接导航。
+
+### 18.2 Design 文档的总量与角色
+
+本阶段设计层的目标不是“多写文档”，而是**先把 F1-F5 会反复返工的歧义冻住**。  
+按 r2 当前口径，design 文档总量应固定为 **8 份**：
+
+| 类别 | 数量 | 作用 |
+|---|---|---|
+| F0 freeze-pack design docs | **7** | 冻结 first-wave topology、tenant truth、contract、relay、schema、reconnect、迁移面 |
+| F4.A policy-layer design doc | **1** | 冻结 authority / tenant / truth-recheck policy seam |
+| **合计** | **8** | 本阶段完整 design pack |
+
+### 18.3 这 8 份 design 文档分别解决什么
+
+| # | 设计文档 | 解决的问题 | 必须在什么时候完成 |
+|---|---|---|---|
+| 1 | `F0-compatibility-facade-contract.md` | first-wave public façade 的 canonical contract、legacy deprecation semantics | F1 前 |
+| 2 | `F0-agent-core-internal-binding-contract.md` | `orchestrator -> agent` internal call 的路径、认证、authority passing convention | F1 前 |
+| 3 | `F0-stream-relay-mechanism.md` | `agent -> orchestrator` stream framing、relay cursor、legacy WS fate | F1 前 |
+| 4 | `F0-contexter-absorption-inventory.md` | contexter 的 adopt / adapt / defer / discard inventory | F1 前 |
+| 5 | `F0-user-do-schema.md` | user DO 的 first-wave schema 与持久化边界 | F1 前 |
+| 6 | `F0-session-lifecycle-and-reconnect.md` | `session_uuid` lifecycle、attach / reconnect truth | F1 前 |
+| 7 | `F0-live-e2e-migration-inventory.md` | affected tests / harness / docs 的迁移面 | F3 前，但最好 F1 前完成 |
+| 8 | `F4-authority-policy-layer.md` | authority policy helper、tenant truth alignment、executor recheck seam | F4 前 |
+
+### 18.4 哪些 design 文档是“绝对前置”
+
+虽然 design 总量是 8 份，但**不是 8 份都要写完才能开始任何实现**。  
+真正的前置层分两档：
+
+#### 档 A — F1 的硬前置（必须先写）
+
+1. `F0-compatibility-facade-contract.md`
+2. `F0-agent-core-internal-binding-contract.md`
+3. `F0-stream-relay-mechanism.md`
+4. `F0-user-do-schema.md`
+5. `F0-session-lifecycle-and-reconnect.md`
+
+没有这 5 份，F1 很容易重新掉回：
+
+- ad-hoc fetch 胶水
+- dual-ingress 模糊状态
+- stream relay 返工
+- user DO 变空壳
+
+#### 档 B — 强烈建议在 F1 前完成
+
+6. `F0-contexter-absorption-inventory.md`
+7. `F0-live-e2e-migration-inventory.md`
+
+这两份不是因为“没有就完全写不了代码”，而是因为没有它们，后面会出现：
+
+- contexter 吸收口径漂移
+- F3 迁移面再次被低估
+
+#### 档 C — F4 前完成
+
+8. `F4-authority-policy-layer.md`
+
+它不是 F1 的 blocker，但它是 F4.A 的直接设计前提。
+
+### 18.5 Action-Plan 的总量与周期划分
+
+本阶段的 action-plan 周期应固定为 **6 个**，与 Phase 一一对应：
+
+| Action-plan 周期 | 对应 Phase | 目标 |
+|---|---|---|
+| 1 | **F0** | 产出完整 concrete freeze pack |
+| 2 | **F1** | 完成 orchestrator bring-up + first roundtrip |
+| 3 | **F2** | 完成 first-wave session seam |
+| 4 | **F3** | 完成 canonical cutover + legacy retirement |
+| 5 | **F4** | 完成 authority policy hardening |
+| 6 | **F5** | 完成 closure + handoff |
+
+所以如果用 owner 执行视角去看：
+
+> **本阶段不是“一份大 action-plan”，而是 6 个连续 action-plan 周期。**
+
+### 18.6 为什么 action-plan 必须按 6 个周期拆开
+
+因为这 6 个周期解决的是 6 类不同性质的工作：
+
+1. **F0** 解决 design freeze，不写业务代码
+2. **F1** 解决 topology 落地与最小 roundtrip
+3. **F2** 解决生命周期完整性
+4. **F3** 解决 cutover / migration / retirement
+5. **F4** 解决 authority / tenant / truth-recheck 法律收口
+6. **F5** 解决 closure / handoff / next-phase trigger
+
+如果把它们混成 1-2 份大 action-plan，会直接失去两件最重要的东西：
+
+1. 每个周期独立的进入条件
+2. 每个周期独立的收口与 closure 证据
+
+### 18.7 这 6 个 action-plan 周期的推荐进入顺序
+
+#### 周期 1 — F0：先冻结真相
+
+必须先完成：
+
+1. public façade contract
+2. internal binding contract
+3. stream relay contract
+4. tenant truth
+5. user DO schema
+6. reconnect truth
+
+这是**本阶段最重要的前置周期**。
+
+#### 周期 2 — F1：做最小但真实的 roundtrip
+
+只回答一件事：
+
+> public `start` 能否经 orchestrator 打进 agent，并把 first event 带回来？
+
+若这一条做不通，后续 F2/F3 都不该启动。
+
+#### 周期 3 — F2：把 first-wave session seam 补完整
+
+把：
+
+- WS
+- attach / reconnect
+- `initial_context`
+- input / cancel / verify / status / timeline
+
+补成完整 first-wave 生命周期。
+
+#### 周期 4 — F3：切流量、迁测试、退役 legacy
+
+这是最容易被低估的周期。  
+它不是“改几个 URL”，而是：
+
+1. 切 canonical ingress
+2. 迁 affected live suite
+3. 改 docs / harness / preview truth
+4. 退役 legacy session ingress
+
+#### 周期 5 — F4：补法律，不造 credit 域
+
+这里只做：
+
+1. authority policy helper
+2. tenant truth alignment
+3. recheck hook seam
+4. negative tests
+
+明确不在这里偷渡 credit / quota / billing domain。
+
+#### 周期 6 — F5：正式闭合
+
+把：
+
+1. final verification
+2. closure docs
+3. handoff docs
+4. next-phase inputs
+
+一起收口。
+
+### 18.8 这部分规划是否已经在 charter 里完成
+
+**答案是：已经完成了 80% 的规划，但此前缺少一段“显式汇总与执行引导”。**
+
+具体来说：
+
+| 内容 | r2 之前是否已规划 | 之前的缺口 |
+|---|---|---|
+| design 文档清单 | **已规划**（§17.1） | 缺总量、优先级、硬前置说明 |
+| action-plan 文档清单 | **已规划**（§17.2） | 缺“这是 6 个执行周期”的显式定义 |
+| phase 结构 | **已规划**（§10 / §11） | 缺“如何从设计包进入执行”的导航 |
+| closure / handoff | **已规划**（§17.3） | 缺“何时开始写 closure”的收口纪律 |
+
+因此，这个附加章节不是推翻原规划，而是把原本散落在：
+
+- §10 Phase 规划
+- §11 Phase 详细说明
+- §17 文档生产清单
+
+里的内容，收束成一个**可执行导航层**。
+
+### 18.9 对本阶段开发工作的直接引导
+
+如果要按最稳妥的方式推进，本阶段应严格遵守下面的执行顺序：
+
+1. **先写 7 份 F0 design docs**
+   - 这是 F1 的 design gate
+2. **再写 F0 action-plan**
+   - 把 design freeze 变成执行任务
+3. **F0 closed 后，进入 F1 action-plan**
+   - 不要跳过 F0 直接写 orchestrator worker
+4. **F1 closed 后，再进入 F2**
+   - 不要在 F1 未完成 first roundtrip 时提前铺满全部 session seam
+5. **F2 closed 后，再进入 F3**
+   - cutover 只能发生在 first-wave lifecycle 已完整跑通之后
+6. **F4 可在 late F1/F2 之后并行准备，但 closure 仍应在 F3 之后统一收口**
+7. **最后才写 F5 closure / handoff**
+
+把它收成一句话：
+
+> **本阶段的开发导航应是：7 份 F0 design docs -> 1 个 F0 action-plan 周期 -> 5 个后续 action-plan 周期，而不是“先写 worker，再慢慢补文档”。**
+
+---
+
+## 19. 最终 Verdict
+
+### 19.1 对本阶段的最终定义
 
 这不是“再加一个 public worker”。
 
@@ -1219,7 +1442,7 @@ F3 exit 必须把 canonical public ingress 真正切干净。
 
 > **把 nano-agent 的 public ownership 从 runtime 层剥离出来，交给一个有最小状态、最小 auth、最小 registry、最小 relay、最小 seed 能力的 upstream orchestrator，并把 orchestrator 与 runtime 之间的 internal API contract 一次性冻住。**
 
-### 18.2 工程价值
+### 19.2 工程价值
 
 1. 让 `agent.core` 回到它真正应该待的位置：downstream session runtime
 2. 让 JWT / authority translation 有唯一 public 入口
@@ -1227,14 +1450,14 @@ F3 exit 必须把 canonical public ingress 真正切干净。
 4. 让 richer orchestrator / memory / credit 下一阶段有可复用 internal contract
 5. 避免继续把 public ingress 与 runtime 演化绑在一起
 
-### 18.3 业务价值
+### 19.3 业务价值
 
 1. 上游应用只需要对接一个 façade
 2. 用户身份、session registry、public ingress 从 runtime 中剥离
 3. 后端 runtime mesh 可以继续独立演化，而不背 public contract 包袱
 4. 下一阶段更厚的 orchestrator 能建立在已冻结的 internal seam 上，而不是临时胶水上
 
-### 18.4 与 r1 的关键差别
+### 19.4 与 r1 的关键差别
 
 r2 相比 r1 的关键收紧是：
 
@@ -1245,13 +1468,13 @@ r2 相比 r1 的关键收紧是：
 5. 明确 F1 按 `L` 级诚实预算
 6. 明确 Exit #7 = internal call contract freeze
 
-### 18.5 一句话总结
+### 19.5 一句话总结
 
 > **Orchestration Facade r2 = 一个 compatibility-first、JWT-first、registry-backed、internal-contract-frozen 的 public façade phase；它不只迁 public ownership，还把 façade 与 runtime 之间的接口真相一起冻住。**
 
 ---
 
-## 19. 维护约定
+## 20. 维护约定
 
 1. 若未来决定改成 multi-tenant-per-deploy，必须先更新 §1.6 / §6.5 / §7.1 / §12.Q5
 2. 若未来改变 internal call contract，必须先更新 §6.1 / §11.1 / §15.1 #7
