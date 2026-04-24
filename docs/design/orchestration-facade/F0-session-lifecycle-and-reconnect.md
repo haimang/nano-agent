@@ -4,7 +4,7 @@
 > 讨论日期: `2026-04-24`
 > 讨论者: `Owner + GPT-5.4`
 > 关联调查报告: `docs/plan-orchestration-facade.md`、`docs/design/orchestration-facade/F0-user-do-schema.md`、`docs/design/orchestration-facade/F0-stream-relay-mechanism.md`
-> 文档状态: `draft`
+> 文档状态: `draft (reviewed + FX-qna applied)`
 
 ---
 
@@ -40,7 +40,7 @@
 | attachment | client WS 与该 session 的一次绑定 | 不等于 runtime turn |
 | detached session | client 断开，但 runtime 可能还在 | reconnect 入口 |
 | relay cursor | 已 relay 的最后 seq | reconnect 辅助 |
-| terminal session | 已进入 ended/cancelled/error final state 的 session | 不再恢复 live relay |
+| terminal session | lifecycle `status = "ended"` 且带有 terminal reason 的 session | 不再恢复 live relay |
 
 ### 1.2 参考调查报告
 
@@ -236,6 +236,13 @@
   - `active`
   - `detached`
   - `ended`
+- **stream terminal -> lifecycle mapping**：
+
+  | stream terminal | lifecycle.status | client-visible terminal kind |
+  |---|---|---|
+  | `completed` | `ended` | `session.completed` |
+  | `cancelled` | `ended` | `session.cancelled` |
+  | `error` | `ended` | `session.error` |
 - **边界情况**：
   - `cancel` 结束 turn，不必自动 purge session entry
 - **一句话收口目标**：✅ **状态机已最小化且足以支撑 first-wave façade**
@@ -247,10 +254,39 @@
 - **主要调用者**：public WS ingress
 - **默认建议**：
   - first-wave 只允许 **single active writable attachment**
-  - 新 attach 到来时，旧 attachment 被显式标记 superseded/closed
+  - 新 attach 到来时，旧 attachment 必须先收到 typed close message，再被 server 主动关闭
+  - typed close message 形状冻结为：
+    ```json
+    {
+      "kind": "attachment_superseded",
+      "reason": "replaced_by_new_attachment",
+      "new_attachment_at": "<timestamp>"
+    }
+    ```
 - **边界情况**：
-  - terminal session 不再允许 live attach，但可返回 typed terminal result
+  - terminal session 不再允许 live attach，upgrade 直接返回：
+    ```json
+    {
+      "error": "session_terminal",
+      "terminal": "completed|cancelled|error"
+    }
+    ```
+  - read-only mirror attachment 明确留到下一阶段 richer orchestrator charter，不在 first-wave 偷渡
 - **一句话收口目标**：✅ **first-wave attach/reconnect 不再存在隐含多写语义**
+
+#### F3: `Reconnect result taxonomy`
+
+- **输入**：client reconnect request + registry `status/relay_cursor`
+- **输出**：`success` / `terminal` / `missing`
+- **主要调用者**：public WS ingress / user DO
+- **核心逻辑**：
+  - `success`：session 仍可恢复 live relay，且从 `relay_cursor + 1` 尝试继续
+  - `terminal`：session 已 `ended`，返回 typed terminal result，不再重新 attach runtime stream
+  - `missing`：registry 中不存在该 session，返回 typed not-found
+- **边界情况**：
+  - `relay_cursor = -1` 表示此前尚未 forward 任何 frame，不等于 missing
+  - reconnect result 由 façade 生成，不要求 client 自己解释 runtime phase
+- **一句话收口目标**：✅ **reconnect 分支不再依赖实现者临场发明语义**
 
 ### 7.3 非功能性要求
 
@@ -309,10 +345,10 @@
 
 ### 9.3 下一步行动
 
-- [ ] **决策确认**：owner 是否接受 single active writable attachment 作为 first-wave 默认策略。
+- [ ] **设计冻结回填**：把 superseded close message、terminal attach rejection、reconnect result taxonomy 吸收到 F2 action-plan。
 - [ ] **关联 Issue / PR**：`docs/action-plan/orchestration-facade/F0-concrete-freeze-pack.md`
 - [ ] **待深入调查的子问题**：
-  - 是否允许 read-only mirror attachment
+  - terminal result 是否需要附带最近一次 `last_phase`
 - [ ] **需要更新的其他设计文档**：
   - `F0-user-do-schema.md`
   - `F0-stream-relay-mechanism.md`
@@ -321,12 +357,9 @@
 
 ## 附录
 
-### B. 开放问题清单（可选）
-
-- [ ] **Q1**：single active writable attachment 是否作为 first-wave frozen answer？
-
 ### C. 版本历史
 
 | 版本 | 日期 | 修改者 | 主要变更 |
 |------|------|--------|----------|
 | v0.1 | 2026-04-24 | GPT-5.4 | 初稿 |
+| v0.2 | 2026-04-24 | GPT-5.4 | 吸收 review + FX-qna，冻结 superseded close message、terminal attach rejection 与 terminal->lifecycle mapping |

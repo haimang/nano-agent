@@ -4,7 +4,7 @@
 > 讨论日期: `2026-04-24`
 > 讨论者: `Owner + GPT-5.4（参考 Opus 2nd-pass）`
 > 关联调查报告: `docs/plan-orchestration-facade.md`、`docs/plan-orchestration-facade-reviewed-by-opus-2nd-pass.md`
-> 文档状态: `draft`
+> 文档状态: `draft (reviewed + FX-qna applied)`
 
 ---
 
@@ -38,7 +38,7 @@
 |------|------|------|
 | internal binding contract | `orchestrator.core -> agent.core` 的 worker-to-worker contract | 与 public contract 分离 |
 | gated internal route | 仅服务于 service binding 的 `/internal/*` 路径族 | 不对外文档化 |
-| internal auth header | `orchestrator.core` 发给 `agent.core` 的 worker-to-worker 请求标识 | 仍需配合 authority 检查 |
+| internal auth header | `x-nano-internal-binding-secret` | 值来自 `env.NANO_INTERNAL_BINDING_SECRET`，仍需配合 authority 检查 |
 | authority-stamped request | 由 façade 翻译后的 trace / authority / session context 完整请求 | 不再携带 public JWT |
 | typed internal rejection | internal path 的显式拒绝响应 | 避免 silent 403/404 混淆 |
 
@@ -98,7 +98,7 @@
 | 扩展点 | 表现形式 (函数签名 / 目录 / 配置字段) | 第一版行为 | 未来可能的演进方向 |
 |--------|---------------------------------------|------------|---------------------|
 | internal route family | `/internal/sessions/:id/*` | first-wave typed actions | richer internal lifecycle ops |
-| internal auth | header + env secret | single shared gate | signed internal token / mTLS-like policy |
+| internal auth | `x-nano-internal-binding-secret` + `env.NANO_INTERNAL_BINDING_SECRET` | single shared gate | signed internal token / mTLS-like policy |
 | authority payload | NACP-stamped JSON body | minimal trace / authority / session context | richer credit / quota metadata |
 | internal error taxonomy | typed JSON error body | `invalid-internal-auth` / `invalid-authority` / `unsupported-action` | versioned internal API errors |
 
@@ -159,7 +159,7 @@
 ### 5.1 In-Scope（nano-agent 第一版要做）
 
 - **[S1]** 定义 `/internal/sessions/:session_uuid/{start,input,cancel,status,timeline,verify,stream}`。
-- **[S2]** internal request 必须带 shared auth header。
+- **[S2]** internal request 必须带 `x-nano-internal-binding-secret`，并由 `env.NANO_INTERNAL_BINDING_SECRET` 校验。
 - **[S3]** internal request 必须带 authority-stamped context，不重复 public JWT。
 - **[S4]** `agent.core` 对 internal actions 提供 typed rejection。
 
@@ -232,13 +232,41 @@
 - **输入**：来自 service binding 的 fetch request
 - **输出**：进入对应 session action handler
 - **主要调用者**：`orchestrator.core`
-- **核心逻辑**：internal path 独立于 public path，至少覆盖 `start` / `cancel`，完整枚举到 first-wave action family。
+- **核心逻辑**：
+  - internal path 独立于 public path，完整枚举到 first-wave action family
+  - 推荐在 `workers/agent-core/src/index.ts` 中于 `routeRequest(request)` 之前增加：
+    - `if (pathname.startsWith("/internal/")) return routeInternal(request, env);`
+  - `workers/agent-core/src/host/routes.ts` 继续只负责 legacy public `/sessions/*` 解析，不混入 `/internal/*`
+  - `routeInternal()` 独立解析 `/internal/sessions/:session_uuid/{start,input,cancel,status,timeline,verify,stream}`
+  - `validateInternalAuthority()` 必须发生在 internal path parse 成功之后、DO stub fetch 之前
 - **边界情况**：
   - `/internal/*` 未认证 -> reject
   - 不支持的 action -> typed rejection
 - **一句话收口目标**：✅ **internal session actions 具备稳定、独立、可测试的路由族**
 
-#### F2: `Authority-stamped request`
+#### F2: `Internal auth gate`
+
+- **输入**：`x-nano-internal-binding-secret`
+- **输出**：继续处理或 typed 401 rejection
+- **主要调用者**：`agent.core` internal ingress
+- **核心逻辑**：
+  - header 名冻结为 `x-nano-internal-binding-secret`
+  - secret 来源冻结为 `wrangler secret` 注入的 `env.NANO_INTERNAL_BINDING_SECRET`
+  - preview / prod 必须使用不同 secret，不得复用
+  - secret 缺失或不匹配时返回：
+    ```json
+    {
+      "error": "invalid-internal-auth",
+      "message": "internal binding secret missing or invalid"
+    }
+    ```
+    并使用 HTTP `401`
+- **边界情况**：
+  - 严禁 fallback 到 legacy public `/sessions/*`
+  - trace/log 输出必须对 secret 做 redact
+- **一句话收口目标**：✅ **internal transport 之外还有显式 gate，且失败语义可测试**
+
+#### F3: `Authority-stamped request`
 
 - **输入**：已在 façade 完成 JWT translation 的 request body
 - **输出**：`agent.core` 可用于 legality verify 的内部上下文
@@ -252,7 +280,7 @@
 ### 7.3 非功能性要求
 
 - **性能目标**：internal path 不得引入明显高于 legacy direct path 的固定开销。
-- **可观测性要求**：每次 internal action 要能区分 `invalid-internal-auth`、`invalid-authority`、`unsupported-action`。
+- **可观测性要求**：每次 internal action 要能区分 `invalid-internal-auth`、`invalid-authority`、`unsupported-action`，且不得记录 secret 明文。
 - **稳定性要求**：F1 必须至少有 `new session` 与 `cancel session` 两条 integration tests。
 - **测试覆盖要求**：Exit #7 必须以 integration tests 体现，而不是只靠文档。
 
@@ -308,10 +336,10 @@
 
 ### 9.3 下一步行动
 
-- [ ] **决策确认**：owner 确认 internal auth 采用 shared header gate 作为 first-wave 基线。
+- [ ] **设计冻结回填**：把 `routeInternal()` 早退集成方案与 `401 invalid-internal-auth` 断言吸收到 F0 / F1 action-plan。
 - [ ] **关联 Issue / PR**：`docs/action-plan/orchestration-facade/F0-concrete-freeze-pack.md`
-- [ ] **待深入调查的子问题**：
-  - shared header 是纯 secret 还是可签名载体
+- [ ] **待进入实现阶段的子问题**：
+  - secret rotation 的部署手册是否单独写入运维说明
 - [ ] **需要更新的其他设计文档**：
   - `F0-stream-relay-mechanism.md`
   - `F4-authority-policy-layer.md`
@@ -320,12 +348,9 @@
 
 ## 附录
 
-### B. 开放问题清单（可选）
-
-- [ ] **Q1**：first-wave internal auth header 采用纯 shared secret 还是签名格式？
-
 ### C. 版本历史
 
 | 版本 | 日期 | 修改者 | 主要变更 |
 |------|------|--------|----------|
 | v0.1 | 2026-04-24 | GPT-5.4 | 初稿 |
+| v0.2 | 2026-04-24 | GPT-5.4 | 吸收 review + FX-qna，冻结 header 名、secret 来源、routeInternal 早退方案与 typed 401 |

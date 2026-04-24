@@ -4,7 +4,7 @@
 > 讨论日期: `2026-04-24`
 > 讨论者: `Owner + GPT-5.4`
 > 关联调查报告: `docs/plan-orchestration-facade.md`、`docs/design/orchestration-facade/F0-contexter-absorption-inventory.md`
-> 文档状态: `draft`
+> 文档状态: `draft (reviewed + FX-qna applied)`
 
 ---
 
@@ -38,8 +38,8 @@
 |------|------|------|
 | logical schema | 对业务可见的对象模型 | 4 个核心字段 |
 | physical storage layout | DO storage 内的 key layout | 为实现阶段服务 |
-| active session entry | `active_sessions` 中单个 session 的状态对象 | 可包含 `relay_cursor` |
-| auth snapshot | 最近一次通过 façade ingress 的认证快照 | 不是权威鉴权数据库 |
+| active session entry | `active_sessions` 中单个 session 的状态对象 | 包含 `relay_cursor = last_forwarded.seq` |
+| auth snapshot | 最近一次通过 façade ingress 的认证快照 | 不是权威鉴权数据库，但保留 `tenant_source` 审计信息 |
 | seed | `initial_context` 生产的默认输入材料 | 不是 full memory |
 
 ### 1.2 参考调查报告
@@ -236,7 +236,7 @@
 - **建议逻辑 schema**：
   - `user_uuid: string`
   - `active_sessions: Map<session_uuid, SessionEntry>`
-  - `last_auth_snapshot: { sub, realm?, tenant_uuid?, membership_level?, source_name?, exp? }`
+  - `last_auth_snapshot: { sub, realm?, tenant_uuid?, tenant_source: "claim" | "deploy-fill", membership_level?, source_name?, exp? }`
   - `initial_context_seed: { realm_hints?, source_name?, default_layers?, user_memory_ref? }`
 - **一句话收口目标**：✅ **`orchestrator.core` 的最小持久 state 已冻结**
 
@@ -249,7 +249,7 @@
   - `last_seen_at`
   - `status: "minted" | "starting" | "active" | "detached" | "ended"`
   - `last_phase?`
-  - `relay_cursor?`
+  - `relay_cursor?: number // last_forwarded seq, -1 means no frame forwarded yet`
   - `ended_at?`
 - **物理布局建议**：
   - `user/meta`
@@ -258,7 +258,9 @@
   - `sessions/<session_uuid>`
 - **retention 建议**：
   - active / detached 全保留
-  - ended 保留 bounded recent metadata（推荐 24h 或 bounded count，以 owner 决策为准）
+  - `minted` / `starting` / `active` / `detached` 不受 ended retention policy 影响
+  - ended 保留 bounded recent metadata，采用 **24h 时间窗 + 每 user 最多 100 个 ended sessions** 的双上限策略
+  - 超过任一上限时，按 `ended_at` 从旧到新 purge
 - **一句话收口目标**：✅ **session registry entry 已具备 attach/reconnect 所需最小字段**
 
 ### 7.3 非功能性要求
@@ -318,10 +320,10 @@
 
 ### 9.3 下一步行动
 
-- [ ] **决策确认**：owner 是否接受 bounded ended-session metadata 的默认建议。
+- [ ] **设计冻结回填**：把 `tenant_source` 与 `24h + 100` 双上限 retention 写进 F0 / F2 action-plan 的 schema checklist。
 - [ ] **关联 Issue / PR**：`docs/action-plan/orchestration-facade/F0-concrete-freeze-pack.md`
 - [ ] **待深入调查的子问题**：
-  - ended metadata 的保留窗口
+  - purge 采用 lazy cleanup、alarm 还是两者结合
 - [ ] **需要更新的其他设计文档**：
   - `F0-session-lifecycle-and-reconnect.md`
   - `F0-stream-relay-mechanism.md`
@@ -330,12 +332,9 @@
 
 ## 附录
 
-### B. 开放问题清单（可选）
-
-- [ ] **Q1**：ended session 的 recent metadata 保留策略是否接受 bounded window？
-
 ### C. 版本历史
 
 | 版本 | 日期 | 修改者 | 主要变更 |
 |------|------|--------|----------|
 | v0.1 | 2026-04-24 | GPT-5.4 | 初稿 |
+| v0.2 | 2026-04-24 | GPT-5.4 | 吸收 review + FX-qna，冻结 `tenant_source` 与 ended-session `24h + 100` 双上限 retention |

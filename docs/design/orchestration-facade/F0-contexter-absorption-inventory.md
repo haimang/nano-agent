@@ -4,7 +4,7 @@
 > 讨论日期: `2026-04-24`
 > 讨论者: `Owner + GPT-5.4`
 > 关联调查报告: `docs/plan-orchestration-facade.md`、`docs/eval/after-foundations/smind-contexter-learnings.md`、`context/smind-contexter/src/{chat.ts,engine_do.ts}`
-> 文档状态: `draft`
+> 文档状态: `draft (reviewed, no QNA deltas)`
 
 ---
 
@@ -303,7 +303,7 @@
 
 ### 9.3 下一步行动
 
-- [ ] **决策确认**：owner 是否接受 `db_do.ts` 明确 defer。
+- [ ] **设计冻结回填**：把 `db_do.ts` defer / `jwt.ts` adopt / `engine_do.ts` adapt 的边界吸收到 F0 action-plan。
 - [ ] **关联 Issue / PR**：`docs/action-plan/orchestration-facade/F0-concrete-freeze-pack.md`
 - [ ] **待深入调查的子问题**：
   - richer user-memory 阶段是否优先重开 `db_do.ts`
@@ -320,3 +320,4 @@
 | 版本 | 日期 | 修改者 | 主要变更 |
 |------|------|--------|----------|
 | v0.1 | 2026-04-24 | GPT-5.4 | 初稿 |
+| v0.2 | 2026-04-24 | GPT-5.4 | 复核 reviewer sweep 后无实质设计改动，仅移除旧式决策提示并对齐当前 freeze 语气 |

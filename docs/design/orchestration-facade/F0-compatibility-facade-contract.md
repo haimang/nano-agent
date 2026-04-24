@@ -4,7 +4,7 @@
 > 讨论日期: `2026-04-24`
 > 讨论者: `Owner + GPT-5.4（参考 Opus 1st/2nd-pass review）`
 > 关联调查报告: `docs/plan-orchestration-facade.md`、`docs/plan-orchestration-facade-reviewed-by-opus.md`、`docs/plan-orchestration-facade-reviewed-by-opus-2nd-pass.md`、`docs/eval/after-foundations/smind-contexter-learnings.md`
-> 文档状态: `draft`
+> 文档状态: `draft (reviewed + FX-qna applied)`
 
 ---
 
@@ -40,7 +40,7 @@
 | compatibility façade | 对外保留现有 `/sessions/:session_uuid/...` 心智模型，但 owner 改为 `orchestrator.core` | 不是永久兼容层 |
 | canonical public ingress | 所有外部 client 默认应该访问的唯一入口 | first-wave 即 `orchestrator.core` |
 | legacy ingress | `agent.core` 现有 `/sessions/*` HTTP / WS 路径 | 只允许迁移期短暂保留 |
-| hard deprecation | F3 exit 后，legacy session routes 不再继续工作 | HTTP 返回 typed `410`；WS 不再升级 |
+| hard deprecation | F3 exit 后，legacy session routes 不再继续工作 | HTTP 返回 typed `410`；WS 返回 typed `426` 并拒绝升级 |
 | public contract | client 可见的 URL / method / status / body / WS 语义集合 | 不等于 internal API |
 
 ### 1.2 参考调查报告
@@ -175,6 +175,7 @@
 - **[S2]** 保留 compatibility-first `/sessions/:session_uuid/...` route family。
 - **[S3]** 明确 legacy `agent.core` HTTP / WS session routes 的 bounded migration overlap 与 hard deprecation。
 - **[S4]** 明确 docs / tests / harness 必须围绕 canonical ingress 迁移。
+- **[S5]** 明确 `orchestrator.core` probe marker 作为 live deploy truth。
 
 ### 5.2 Out-of-Scope（nano-agent 第一版不做）
 
@@ -237,6 +238,7 @@
 | F2 | Canonical owner shift | `session_uuid` / attach / reconnect owner 转到 façade | ✅ **public ownership 从 runtime 边界剥离** |
 | F3 | Legacy migration overlap | 仅在 F3 执行期短暂允许 legacy path 存活 | ✅ **迁移窗口有边界，不是长期兼容层** |
 | F4 | Hard deprecation | F3 exit 后 legacy HTTP/WS session routes 退役 | ✅ **dual-ingress 不再成立** |
+| F5 | Probe marker discipline | `GET /` / `GET /health` 返回稳定 `worker/phase` 真相 | ✅ **preview deploy proof 不再依赖口头说明** |
 
 ### 7.2 详细阐述
 
@@ -248,15 +250,29 @@
 - **核心逻辑**：保持 first-wave surface 兼容，但 canonical owner 改为 `orchestrator.core`。
 - **边界情况**：
   - 非 session 路径不自动迁移
-  - probe 不等于 business ingress
+  - probe 不等于 business ingress，但仍需返回稳定 identity marker
+- **probe marker 要求**：
+  - `GET /` / `GET /health` 必须返回 `worker: "orchestrator-core"`
+  - `phase` 应采用 `orchestration-facade-F1` / `orchestration-facade-F3-cutover` 这一类显式阶段标识
 - **一句话收口目标**：✅ **`/sessions/:id/*` 的 canonical owner 已改为 `orchestrator.core`**
 
 #### F2: `Hard deprecation`
 
 - **输入**：legacy `agent.core` public session request
-- **输出**：迁移窗口内 deprecation disclosure；F3 exit 后 typed rejection
+- **输出**：迁移窗口内仍可工作；F3 exit 后 HTTP/WS 都返回 typed rejection
 - **主要调用者**：旧 harness / 旧 docs / 遗留 client
-- **核心逻辑**：让 legacy path 服务于迁移，而不是继续成为默认路径。
+- **核心逻辑**：
+  - F3 exit 的判定 = `F3-closure memo` 产出 + `orchestrator-core` live E2E 全绿 + legacy negative tests 全绿
+  - legacy session routes 的翻转必须在**同一个 PR**中完成，不允许先加 deprecation disclosure、后续再单独翻 410
+  - legacy HTTP session routes 统一返回：
+    ```json
+    {
+      "error": "gone",
+      "canonical_public": "https://<orchestrator>/sessions/:session_uuid",
+      "message": "agent-core session surface retired, please use orchestrator-core canonical public ingress"
+    }
+    ```
+  - legacy WS `/sessions/:session_uuid/ws` 返回 HTTP `426` + 同样的 canonical hint body，不进行 upgrade
 - **边界情况**：
   - `GET /` probe 继续保留
   - internal `/internal/*` 不属于 legacy public path
@@ -322,10 +338,10 @@
 
 ### 9.3 下一步行动
 
-- [ ] **决策确认**：owner 确认 F3 exit 后 legacy session routes 进入 hard deprecation。
+- [ ] **设计冻结回填**：把 legacy HTTP `410` / WS `426` body shape 吸收到 F3 action-plan 与 future negative tests。
 - [ ] **关联 Issue / PR**：`docs/action-plan/orchestration-facade/F0-concrete-freeze-pack.md`
-- [ ] **待深入调查的子问题**：
-  - 是否保留极短的 post-F3 grace window
+- [ ] **待进入实现阶段的子问题**：
+  - `canonical_public` 字段在 preview / prod / local 三种环境下的具体 URL 组装位置
 - [ ] **需要更新的其他设计文档**：
   - `F0-agent-core-internal-binding-contract.md`
   - `F0-live-e2e-migration-inventory.md`
@@ -341,12 +357,9 @@
   - **B 方观点**：先 cutover，再 productize
   - **最终共识**：本阶段先解决 ownership，不把 API 重造绑进来
 
-### B. 开放问题清单（可选）
-
-- [ ] **Q1**：F3 exit 后是否允许任何额外 grace period？
-
 ### C. 版本历史
 
 | 版本 | 日期 | 修改者 | 主要变更 |
 |------|------|--------|----------|
 | v0.1 | 2026-04-24 | GPT-5.4 | 初稿 |
+| v0.2 | 2026-04-24 | GPT-5.4 | 吸收 DeepSeek/Opus review 与 FX-qna，冻结 probe marker 与 hard-deprecation body shape |

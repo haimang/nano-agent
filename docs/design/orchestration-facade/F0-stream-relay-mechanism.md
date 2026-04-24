@@ -4,7 +4,7 @@
 > 讨论日期: `2026-04-24`
 > 讨论者: `Owner + GPT-5.4`
 > 关联调查报告: `docs/plan-orchestration-facade.md`、`docs/plan-orchestration-facade-reviewed-by-opus-2nd-pass.md`
-> 文档状态: `draft`
+> 文档状态: `draft (reviewed + FX-qna applied)`
 
 ---
 
@@ -37,7 +37,7 @@ orchestration-facade 阶段最难偷懒的一层，不是 public route 本身，
 | 术语 | 定义 | 备注 |
 |------|------|------|
 | relay stream | `agent.core -> orchestrator.core` 的实时事件流 | internal only |
-| relay cursor | façade 记录的已转发进度 | reconnect 用 |
+| relay cursor | façade 记录的 `last_forwarded.seq` | reconnect 从 `cursor + 1` 恢复 |
 | data frame | 承载 session stream event 的单条流消息 | NDJSON line |
 | terminal frame | 表示本次 stream 正常/异常结束的单条消息 | 不能只靠 EOF 猜 |
 | legacy WS ingress | `agent.core /sessions/:id/ws` | 迁移期遗留，不是 internal seam |
@@ -100,7 +100,7 @@ orchestration-facade 阶段最难偷懒的一层，不是 public route 本身，
 | stream route | `GET /internal/sessions/:id/stream` | single stream consumer | richer streaming channels |
 | framing | NDJSON lines | `meta` / `event` / `terminal` 三类 | versioned framing |
 | relay cursor | `last_seq` | reconnect resume hint | stronger replay / ack |
-| terminal semantics | explicit terminal line | completed/cancelled/error/ended | richer shutdown causes |
+| terminal semantics | explicit terminal line | completed/cancelled/error | richer shutdown causes |
 
 ### 3.3 完全解耦点（哪里必须独立）
 
@@ -224,8 +224,8 @@ orchestration-facade 阶段最难偷懒的一层，不是 public route 本身，
 |------|--------|------|---------------------|
 | F1 | Internal stream route | `agent.core` 提供 stream endpoint | ✅ **internal stream 已有明确 fetch target** |
 | F2 | NDJSON framing | 以 line-delimited JSON 输出 | ✅ **stream 内容不再需要靠猜测解释** |
-| F3 | Relay cursor | user DO 持有 `last_seq` | ✅ **reconnect 有 owner** |
-| F4 | Terminal semantics | 明确 completed/cancelled/error/ended | ✅ **stream 结束原因可区分** |
+| F3 | Relay cursor | user DO 持有 `last_forwarded.seq` | ✅ **reconnect 有 owner** |
+| F4 | Terminal semantics | 明确 completed/cancelled/error | ✅ **stream 结束原因可区分** |
 | F5 | Legacy WS retirement | `agent.core /sessions/:id/ws` 不再被当 future seam | ✅ **架构意图不再摇摆** |
 
 ### 7.2 详细阐述
@@ -236,10 +236,39 @@ orchestration-facade 阶段最难偷懒的一层，不是 public route 本身，
 - **输出**：一行一条 JSON frame
 - **主要调用者**：`orchestrator.core`
 - **核心逻辑**：使用 `Content-Type: application/x-ndjson`；每行一条 frame。
-- **建议 frame shape**：
-  - `{"kind":"meta","seq":0,"event":"opened","session_uuid":"..."}`
-  - `{"kind":"event","seq":1,"name":"session.stream.event","payload":{...}}`
-  - `{"kind":"terminal","seq":99,"terminal":"completed|cancelled|error|ended","payload":{...}}`
+- **冻结 frame type shape**：
+  ```ts
+  import type { SessionStreamEventBody } from "@haimang/nacp-session";
+
+  type MetaFrame = {
+    kind: "meta";
+    seq: 0;
+    event: "opened";
+    session_uuid: string;
+  };
+
+  type EventFrame = {
+    kind: "event";
+    seq: number; // non-negative integer, monotonic increasing from 1
+    name: "session.stream.event";
+    payload: SessionStreamEventBody;
+  };
+
+  type TerminalFrame = {
+    kind: "terminal";
+    seq: number; // non-negative integer, greater than every prior frame seq
+    terminal: "completed" | "cancelled" | "error";
+    payload?: {
+      code?: string;
+      message?: string;
+    };
+  };
+
+  type StreamFrame = MetaFrame | EventFrame | TerminalFrame;
+  ```
+- **Zod 对齐要求**：
+  - F1 实现时应以同样的 `kind` discriminator 构造 `z.discriminatedUnion("kind", [...])`
+  - `seq` 必须校验为 `number().int().nonnegative()`
 - **边界情况**：
   - no event before terminal 仍合法
   - terminal 必须最多一条
@@ -250,9 +279,14 @@ orchestration-facade 阶段最难偷懒的一层，不是 public route 本身，
 - **输入**：已 relay 的最后一个 seq
 - **输出**：写入 user DO `active_sessions[*].relay_cursor`
 - **主要调用者**：reconnect flow
-- **核心逻辑**：orchestrator 在 relay 每个 event frame 后更新 cursor；terminal frame 到达后标记 session terminal。
+- **核心逻辑**：
+  - `relay_cursor = last_forwarded.seq`
+  - 初始值视为 `-1`
+  - reconnect 从 `relay_cursor + 1` 开始恢复
+  - 只要 frame 被成功 forward 给当前 attachment，cursor 就更新；terminal frame 也计入已 forward 序列
 - **边界情况**：
-  - cursor 缺失时只能从新流或 timeline fallback 恢复
+  - cursor 缺失或为 `-1` 时，从 `seq 0` 的 `meta/opened` 开始
+  - 若无法恢复流，只能回退到 typed terminal / timeline fallback，而不是猜测 off-by-one
 - **一句话收口目标**：✅ **reconnect 不再依赖 client 自带序号成为唯一真相**
 
 ### 7.3 非功能性要求
@@ -313,7 +347,7 @@ orchestration-facade 阶段最难偷懒的一层，不是 public route 本身，
 
 ### 9.3 下一步行动
 
-- [ ] **决策确认**：owner 是否接受 first-wave NDJSON framing 作为默认建议。
+- [ ] **设计冻结回填**：把 `StreamFrame` discriminated union 与 cursor 语义吸收到 F0 / F1 action-plan 的首批任务。
 - [ ] **关联 Issue / PR**：`docs/action-plan/orchestration-facade/F0-concrete-freeze-pack.md`
 - [ ] **待深入调查的子问题**：
   - reconnect 时是否允许 partial replay
@@ -325,12 +359,9 @@ orchestration-facade 阶段最难偷懒的一层，不是 public route 本身，
 
 ## 附录
 
-### B. 开放问题清单（可选）
-
-- [ ] **Q1**：first-wave internal stream framing 是否正式冻结为 NDJSON？
-
 ### C. 版本历史
 
 | 版本 | 日期 | 修改者 | 主要变更 |
 |------|------|--------|----------|
 | v0.1 | 2026-04-24 | GPT-5.4 | 初稿 |
+| v0.2 | 2026-04-24 | GPT-5.4 | 吸收 review + FX-qna，冻结 StreamFrame type、seq/cursor 语义并移除 overloaded `ended` terminal |

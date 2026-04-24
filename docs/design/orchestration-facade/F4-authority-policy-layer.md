@@ -4,7 +4,7 @@
 > 讨论日期: `2026-04-24`
 > 讨论者: `Owner + GPT-5.4`
 > 关联调查报告: `docs/plan-orchestration-facade.md`、`docs/plan-orchestration-facade-reviewed-by-opus-2nd-pass.md`
-> 文档状态: `draft`
+> 文档状态: `draft (reviewed + FX-qna applied)`
 
 ---
 
@@ -174,7 +174,7 @@
 | 项目 | 判定 | 理由 |
 |------|------|------|
 | `TEAM_UUID` absent in local test env | in-scope but tolerated locally | 本地/测试可兜底，但 preview/prod 不可 |
-| preview/prod 缺 `TEAM_UUID` | out-of-scope | 必须显式配置，否则不算合法 deploy truth |
+| preview/prod 缺 `TEAM_UUID` | in-scope and reject | 必须显式配置，否则直接视为 misconfigured deploy |
 | recheck hook 先留空实现 | in-scope | 当前先冻结 seam，不造 domain |
 
 ---
@@ -238,11 +238,42 @@
   - missing `authority` -> reject
   - authority escalation -> reject
   - tenant claim mismatch -> reject
+  - internal request 还必须叠加 `validateInternalAuthority()`，不能把 header gate 当成 legality 本体
 - **边界情况**：
-  - tenant claim absent：first-wave 可接受，但若存在则必须匹配 `TEAM_UUID`
+  - tenant claim absent：first-wave 可接受，并将 `last_auth_snapshot.tenant_uuid = TEAM_UUID`
+  - tenant claim absent 时，`last_auth_snapshot.tenant_source = "deploy-fill"`
+  - tenant claim present 且匹配时，`last_auth_snapshot.tenant_source = "claim"`
 - **一句话收口目标**：✅ **authority legality 不再散落在各入口处临时拼装**
 
-#### F2: `Executor recheck seam`
+#### F2: `Tenant truth alignment`
+
+- **输入**：`TEAM_UUID`、JWT tenant claim、运行环境标识
+- **输出**：accept / reject / misconfigured deploy verdict
+- **主要调用者**：`orchestrator.core` ingress + worker bootstrap
+- **核心逻辑**：
+  - preview / prod 必须显式配置 `TEAM_UUID`
+  - worker bootstrap 应尽早检查：若 `!env.TEAM_UUID && env.ENVIRONMENT !== "test"`，则直接返回 misconfigured response（推荐 `503`）
+  - JWT claim 缺失时允许 deploy-fill；claim 存在但与 `TEAM_UUID` 不一致时 reject
+  - mismatch 对 client 的 typed body 只暴露 `error: "tenant-mismatch"`；`expected/got` 仅保留在内部日志
+- **边界情况**：
+  - `_unknown` fallback 只允许测试态继续存在
+  - 该策略只在 single-tenant-per-deploy 阶段成立；future multi-tenant charter 必须 revisit
+- **一句话收口目标**：✅ **single-tenant law 从纸面设计落到实际 deploy/runtime 行为**
+
+#### F3: `No-escalation enforcement`
+
+- **输入**：authority payload、internal action、resolved tenant truth
+- **输出**：pass / reject
+- **主要调用者**：`validateIngressAuthority()`、`validateInternalAuthority()`
+- **核心逻辑**：
+  - internal request 不得提升 scope / tool rights / tenant reach
+  - façade 翻译出来的 authority 与下游执行 authority 必须双头一致
+  - 任何 escalation 尝试都返回 typed rejection，而不是静默降级
+- **边界情况**：
+  - `verify` / `timeline` 这类看似只读动作也不能绕过 authority law
+- **一句话收口目标**：✅ **internal contract 不会变成逃逸 public law 的后门**
+
+#### F4: `Executor recheck seam`
 
 - **输入**：即将执行 capability 的上下文
 - **输出**：allow / deny / future domain lookup hook
@@ -251,6 +282,21 @@
 - **边界情况**：
   - first-wave 可先为 no-op 或 simple legality pass-through，但 hook 必须存在
 - **一句话收口目标**：✅ **future truth recheck 不再需要重构执行器主路径**
+
+#### F5: `Negative tests`
+
+- **输入**：非法 ingress / internal authority case
+- **输出**：typed rejection evidence
+- **主要调用者**：F4 action-plan / live tests
+- **核心逻辑**：
+  - 至少覆盖 missing `trace_uuid`
+  - missing `authority`
+  - authority escalation
+  - tenant mismatch
+  - preview env 缺 `TEAM_UUID`
+- **边界情况**：
+  - local/test 对 `_unknown` 的容忍不应污染 preview/prod negative cases
+- **一句话收口目标**：✅ **policy 不是纸面纪律，而是带有可断言负例的执行规则**
 
 ### 7.3 非功能性要求
 
@@ -287,7 +333,7 @@
 
 | 文件:行 | 问题 | 我们为什么避开 |
 |---------|------|----------------|
-| `workers/agent-core/src/host/do/nano-session-do.ts:812-825` | 当前 `buildIngressContext()` 在 `TEAM_UUID` 缺失时会掉 `_unknown` fallback | 这不能继续作为 preview/prod 的 deploy truth |
+| `workers/agent-core/src/host/do/nano-session-do.ts:812-826` | 当前 `buildIngressContext()` 在 `TEAM_UUID` 缺失时会掉 `_unknown` fallback | 这不能继续作为 preview/prod 的 deploy truth |
 
 ---
 
@@ -310,10 +356,10 @@
 
 ### 9.3 下一步行动
 
-- [ ] **决策确认**：owner 是否接受 preview/prod 强制显式 `TEAM_UUID`。
+- [ ] **设计冻结回填**：把 bootstrap `TEAM_UUID` check、`tenant_source` 审计字段与 negative tests 吸收到 F4 action-plan。
 - [ ] **关联 Issue / PR**：`docs/action-plan/orchestration-facade/F4-authority-hardening.md`
 - [ ] **待深入调查的子问题**：
-  - absent tenant claim 的最终默认口径
+  - misconfigured deploy response 在 preview 中采用 `503` 还是直接 throw 的最终实现风格
 - [ ] **需要更新的其他设计文档**：
   - `F0-agent-core-internal-binding-contract.md`
   - `F0-user-do-schema.md`
@@ -327,3 +373,4 @@
 | 版本 | 日期 | 修改者 | 主要变更 |
 |------|------|--------|----------|
 | v0.1 | 2026-04-24 | GPT-5.4 | 初稿 |
+| v0.2 | 2026-04-24 | GPT-5.4 | 吸收 review + FX-qna，冻结 `TEAM_UUID` law、`tenant_source`、negative tests 与 corrected code anchor |
