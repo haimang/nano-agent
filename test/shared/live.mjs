@@ -12,6 +12,7 @@ const DEFAULT_URLS = {
 const ENV_KEYS = {
   "agent-core": "NANO_AGENT_AGENT_CORE_URL",
   "orchestrator-core": "NANO_AGENT_ORCHESTRATOR_CORE_URL",
+  "orchestrator-auth": "NANO_AGENT_ORCHESTRATOR_AUTH_URL",
   "bash-core": "NANO_AGENT_BASH_CORE_URL",
   "context-core": "NANO_AGENT_CONTEXT_CORE_URL",
   "filesystem-core": "NANO_AGENT_FILESYSTEM_CORE_URL",
