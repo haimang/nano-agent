@@ -395,11 +395,12 @@ Z1 完成后，系统将具备：
    - `src/auth.ts` 升级到 `JWT_SIGNING_KEY_<kid>` keyring verify，并保留 legacy `JWT_SECRET` 兼容路径
    - `wrangler.jsonc` 接入 `ORCHESTRATOR_AUTH` service binding 与 shared `NANO_AGENT_DB` binding baseline
 5. 更新测试 / harness / CI：
-   - 新增 `workers/orchestrator-core/test/auth.test.ts`
-   - 扩展 `workers/orchestrator-core/test/smoke.test.ts` 覆盖 auth proxy
-   - 新增 `test/package-e2e/orchestrator-auth/01-probe.test.mjs`
-   - 更新 `test/shared/live.mjs`、`test/shared/orchestrator-jwt.mjs`、`test/shared/orchestrator-auth.mjs`
-   - 更新 `.github/workflows/workers.yml`，把 `orchestrator-auth` 与 shared contract package 纳入 worker CI
+    - 新增 `workers/orchestrator-core/test/auth.test.ts`
+    - 扩展 `workers/orchestrator-core/test/smoke.test.ts` 覆盖 auth proxy
+    - 新增 `test/package-e2e/orchestrator-auth/01-probe.test.mjs`
+    - 新增 `workers/orchestrator-auth/test/public-surface.test.ts`
+    - 更新 `test/shared/live.mjs`、`test/shared/orchestrator-jwt.mjs`、`test/shared/orchestrator-auth.mjs`
+    - 更新 `.github/workflows/workers.yml`，把 `orchestrator-auth` 与 shared contract package 纳入 worker CI
 6. 完成执行后验证：
    - `pnpm --filter @haimang/orchestrator-auth-contract typecheck/build/test`
    - `pnpm --filter @haimang/orchestrator-auth-worker typecheck/build/test/deploy:dry-run`
@@ -407,3 +408,7 @@ Z1 完成后，系统将具备：
    - `pnpm test:package-e2e`
    - `pnpm test:cross-e2e`
 7. 创建 `docs/issue/zero-to-real/Z1-closure.md`，明确 Z1 已落成的 auth foundation，以及 “session/runtime 仍以 deploy-local TEAM_UUID 为 anchor、真实多 team runtime consumption 留给 Z2+” 的诚实限制。
+8. review 修复轮进一步收紧：
+   - D1 write path 从伪事务切到 `db.batch(...)`
+   - contract `AuthSnapshot` 固定为 claim-only，`deploy-fill` 退回 orchestrator ingress 局部语义
+   - unit/non-live tests 补上 revoked refresh、forged/expired token、legacy no-`kid` fallback、public probe-only regression guard

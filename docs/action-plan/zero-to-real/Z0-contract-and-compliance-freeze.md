@@ -318,7 +318,7 @@ Z0 完成后，zero-to-real 不再停留在“design 都写好了”的状态，
 ## 9. 工作日志回填（executed）
 
 1. 重新核对了 `docs/charter/plan-zero-to-real.md`、Z0/Z1 action-plan、ZX 设计包、以及当前 worker/runtime 代码现实，确认 Z1 起步前不再存在 owner-level blocker。
-2. 将 zero-to-real 的验证基线显式压回仓库既有 runner：`pnpm test:package-e2e` 与 `pnpm test:cross-e2e` 被用来确认 root live harness 继续作为唯一验证入口。
-3. 创建 `docs/issue/zero-to-real/Z0-closure.md`，把 frozen answer register、cross-cutting dependency map、validation baseline 与 Z1 解锁结论正式写成 closure 资产。
+2. 将 zero-to-real 的验证基线显式压回仓库既有 runner，并把入口固定到 root `package.json`：`pnpm test:package-e2e`、`pnpm test:cross-e2e`、`pnpm test:cross`。
+3. 创建 `docs/issue/zero-to-real/Z0-closure.md`，把 frozen answer register、cross-cutting dependency map、validation baseline、以及“文档术语 vs 代码路径”的映射正式写成 closure 资产。
 4. 将本文档状态从 `draft` 翻为 `executed`，并把 “Z0 的价值在于 execution gate，而不是新增运行时代码” 这一点固定下来，避免后续阶段误把 Z0 当实现期。
-5. 在 Z0 freeze baseline 上，直接启动并完成了 Z1 的首轮真实实现，这也反向证明 Z0 已经具备“可机械执行”的质量，而不只是设计 recap。
+5. 在 Z0 freeze baseline 上，直接启动并完成了 Z1 的首轮真实实现；这个后续事实可作为 Z0 baseline 已足以机械消费的反向证据，但不把 Z1 成果误记为 Z0 自身交付。

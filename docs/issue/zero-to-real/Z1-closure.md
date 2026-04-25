@@ -13,7 +13,7 @@
 
 Z1 已达到 action-plan 约定的主要关闭条件。
 
-zero-to-real 现在已经拥有一条真实的 auth foundation：**shared typed auth contract、internal-only `orchestrator.auth` worker、Wave A identity schema、JWT `HS256 + kid` keyring verify、register/login/refresh/verify/me/reset/wechat baseline、以及由 `orchestration.core` 对外代理的 `/auth/*` façade 已经落地。**
+zero-to-real 现在已经拥有一条真实的 auth foundation：**shared typed auth contract、internal-only `orchestrator.auth` worker、Wave A identity schema、JWT `HS256 + kid` keyring verify、register/login/refresh/verify/me/reset/wechat baseline、以及由 `orchestrator-core` 对外代理的 `/auth/*` façade 已经落地。**
 
 ---
 
@@ -36,6 +36,7 @@ zero-to-real 现在已经拥有一条真实的 auth foundation：**shared typed 
 3. `@haimang/orchestrator-core-worker` 的 unit tests 覆盖 kid-aware verify 与 `/auth/*` proxy。
 4. `workers/orchestrator-auth` 与 `workers/orchestrator-core` 的 `wrangler deploy --dry-run` 都已通过。
 5. root `pnpm test:package-e2e` 与 `pnpm test:cross-e2e` 维持既有 baseline（当前 live gate 仍按 `NANO_AGENT_LIVE_E2E=1` 控制）。
+6. 本轮额外补齐了 non-live regression guard：`workers/orchestrator-auth/test/public-surface.test.ts` 锁住 public probe-only surface；`service.test.ts` 与 `auth.test.ts` 现在覆盖 revoked refresh、forged/expired token、legacy no-`kid` fallback 收紧等负例。
 
 ---
 
@@ -43,7 +44,11 @@ zero-to-real 现在已经拥有一条真实的 auth foundation：**shared typed 
 
 1. `verifyApiKey` 仍是 **schema-reserved / not-supported**，只冻结 contract，不宣称已实现 runtime verify plane。
 2. `agent-core` / `NanoSessionDO` 当前仍以 deploy-local `TEAM_UUID` 作为 runtime tenant anchor；因此 Z1 已建立真实 `user/team/token` 真相，但 **多租户 team truth 的 session/runtime 全量消费仍留给 Z2 及后续阶段**。
-3. WeChat 路径已具备真实 `jscode2session` bridge 和 unit-test/mock baseline，但真机/开发者工具层面的更深 hardening 仍属于后续客户端阶段。
+3. `deploy-fill` 仍是 orchestrator ingress 的 legacy bridge 概念，而不是 auth contract 的正式输出；真正的 contract snapshot 现已固定为 `tenant_source: "claim"`。
+4. WeChat 路径已具备真实 `jscode2session` bridge、`unionid` 预留字段、超时/重试 baseline，但真机/开发者工具层面的更深 hardening 仍属于后续客户端阶段。
+5. password / refresh hashing 仍维持 first-wave `SHA-256 + PASSWORD_SALT` 最小实现；更强 KDF 升级不在 Z1 范围内。
+6. `/auth/*` façade 已建立，但 owner 在 `ZX-qna` 中冻结的 shim 退役目标仍然成立：到 Z2 closure 前，shim/posture 必须继续向正式 RPC session seam 收口，而不能成为长期架构。
+7. `pnpm test:package-e2e` / `pnpm test:cross-e2e` 当前仍是 live-gated；因此 Z1 的细粒度 auth 负例主要由 worker unit tests 与 non-live surface tests 守护，而不是默认 root live suite。
 
 ---
 
@@ -51,7 +56,7 @@ zero-to-real 现在已经拥有一条真实的 auth foundation：**shared typed 
 
 1. Z2 现在可以直接消费 `AuthSnapshot` / `team_uuid` / `membership_level` 真相，而不必再依赖伪 token。
 2. `NANO_AGENT_DB` 的 Wave A identity core 已存在，后续 session/activity/audit schema 只需继续沿 shared D1 baseline 追加 Wave B。
-3. `orchestration.core -> orchestrator.auth` 的 public façade / private owner 分层已经成立，Z2 不需要再回头拆 auth ownership。
+3. `orchestrator-core -> orchestrator.auth` 的 public façade / private owner 分层已经成立，Z2 不需要再回头拆 auth ownership。
 
 ---
 
