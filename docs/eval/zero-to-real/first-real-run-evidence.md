@@ -118,6 +118,47 @@
 
 ---
 
-## 6. Verdict
+## 6. Z5 closeout supplemental validation
 
-Z4 的目标不是完整产品发布，而是让真实客户端与真实 runtime 进入同一条可观测链路。本轮已经完成 web + mini-program scaffolding baseline、RPC authority preflight、remote D1 migration evidence、真实 Workers AI mainline smoke 与 quota evidence，因此 Z4 可收口为：**real-client scaffolding baseline established / live runtime evidence accepted / remaining work is client manual evidence, stream-plane hardening, and productization**。
+### 6.1 结构化 closeout 锚点
+
+| 字段 | 值 |
+|------|----|
+| `evidence_artifact` | `docs/eval/zero-to-real/evidence/z5-213260f5-9ff9-4c41-b52f-f9ee11b1ce2e.json` |
+| `suite` | `selected-package-e2e-orchestrator-core + all-cross-e2e` |
+| `trace_uuid` | `213260f5-9ff9-4c41-b52f-f9ee11b1ce2e` |
+| `session_uuid` | `3494d560-389d-44c1-8a96-ae57f8feea77` |
+| `usage_event_uuid` | `37bece21-987e-4f69-ad9b-5543f64c1359` |
+| `provider_key` | `workers-ai` |
+| `live_suite_ok` | `true` |
+| `live_suite_pass_count` | `28` |
+| `closure_verdict` | `accepted-as-closeout-validation` |
+
+### 6.2 Z5 closeout 额外验证
+
+1. **Preview live smoke**
+   - 执行：
+     - `NANO_AGENT_LIVE_E2E=1 node --test test/package-e2e/orchestrator-core/{01,02,03,04,05,07}-*.test.mjs test/cross-e2e/*.test.mjs`
+   - 结果：
+     - `28 / 28 pass`
+     - 覆盖 preview probe / public façade / legacy retirement / ws attach / reconnect / bash-core happy-path + cancel + negative / live LLM mainline
+
+2. **Preview D1 SQL spot-check**
+   - 执行：
+     - `PRAGMA table_info(nano_usage_events);`
+     - anchor row lookup
+     - core table counts lookup
+   - 结果：
+     - `provider_key` 列存在（`cid=10`）
+     - anchor row 与 live smoke 中的 `usage_event_uuid` / `trace_uuid` / `session_uuid` 一致
+     - `nano_users=69 / nano_teams=69 / nano_conversation_sessions=88 / nano_usage_events=80`
+
+3. **解释**
+   - 这轮 closeout 验证不是为了替代 Z4 first-real-run artifact，而是为了在写 final closure 前再次确认：
+     - live preview 路径仍为绿色
+     - D1 schema 与 mainline usage anchor 仍可直接查询
+     - zero-to-real 的最终结论不是建立在过期或单次偶然证据之上
+
+## 7. Verdict
+
+Z4 的目标不是完整产品发布，而是让真实客户端与真实 runtime 进入同一条可观测链路。本轮已经完成 web + mini-program scaffolding baseline、RPC authority preflight、remote D1 migration evidence、真实 Workers AI mainline smoke 与 quota evidence；而 Z5 closeout supplemental validation 又再次确认了 live suite 与 D1 anchor 仍然成立。因此 Z4/zero-to-real 的证据口径现在可以稳定收口为：**real-client scaffolding baseline established / live runtime evidence accepted / remaining work is client manual evidence, stream-plane hardening, and productization**。

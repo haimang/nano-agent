@@ -1,0 +1,30 @@
+{
+  "phase": "zero-to-real/Z5",
+  "evidence_kind": "closeout-live-validation",
+  "suite": "selected-package-e2e-orchestrator-core + all-cross-e2e",
+  "client_kind": "preview-live-suite",
+  "trace_uuid": "213260f5-9ff9-4c41-b52f-f9ee11b1ce2e",
+  "session_uuid": "3494d560-389d-44c1-8a96-ae57f8feea77",
+  "live_suite_ok": true,
+  "live_suite_pass_count": 28,
+  "quota_evidence": {
+    "d1_table": "nano_usage_events",
+    "usage_event_uuid": "37bece21-987e-4f69-ad9b-5543f64c1359",
+    "provider_key": "workers-ai",
+    "idempotency_key": "llm:allow:llm-aa47735c-be6b-4d65-a0ec-677909949592-2"
+  },
+  "d1_schema_ok": true,
+  "d1_anchor_row_ok": true,
+  "table_counts": {
+    "nano_users": 69,
+    "nano_teams": 69,
+    "nano_conversation_sessions": 88,
+    "nano_usage_events": 80
+  },
+  "open_gaps": [
+    "This closeout artifact is automated live validation, not browser or Mini Program manual evidence.",
+    "WS transport still reflects first-wave snapshot/replay posture rather than token-level continuous push.",
+    "Client helpers remain duplicated wire-compatible shims, not a shared package."
+  ],
+  "closure_verdict": "accepted-as-closeout-validation"
+}
