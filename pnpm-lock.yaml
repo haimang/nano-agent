@@ -143,6 +143,19 @@ importers:
         specifier: ^3.24.0
         version: 3.25.2(zod@3.25.76)
 
+  packages/orchestrator-auth-contract:
+    dependencies:
+      zod:
+        specifier: ^3.24.0
+        version: 3.25.76
+    devDependencies:
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9
+
   packages/session-do-runtime:
     dependencies:
       '@haimang/nacp-core':
@@ -324,6 +337,25 @@ importers:
         specifier: ^4.83.0
         version: 4.84.1(@cloudflare/workers-types@4.20260423.1)
 
+  workers/orchestrator-auth:
+    dependencies:
+      '@haimang/orchestrator-auth-contract':
+        specifier: workspace:*
+        version: link:../../packages/orchestrator-auth-contract
+    devDependencies:
+      '@cloudflare/workers-types':
+        specifier: ^4.20251101.0
+        version: 4.20260423.1
+      typescript:
+        specifier: ^5.6.0
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.0
+        version: 2.1.9
+      wrangler:
+        specifier: ^4.83.0
+        version: 4.84.1(@cloudflare/workers-types@4.20260423.1)
+
   workers/orchestrator-core:
     dependencies:
       '@haimang/nacp-core':
@@ -332,6 +364,9 @@ importers:
       '@haimang/nacp-session':
         specifier: 1.3.0
         version: 1.3.0(zod@3.25.76)
+      '@haimang/orchestrator-auth-contract':
+        specifier: workspace:*
+        version: link:../../packages/orchestrator-auth-contract
     devDependencies:
       '@cloudflare/workers-types':
         specifier: ^4.20251101.0
