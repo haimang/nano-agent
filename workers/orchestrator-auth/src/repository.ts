@@ -1,4 +1,7 @@
-import type { IdentityProvider } from "@haimang/orchestrator-auth-contract";
+import {
+  OWNER_MEMBERSHIP_LEVEL,
+  type IdentityProvider,
+} from "@haimang/orchestrator-auth-contract";
 
 export interface IdentityRecord {
   readonly identity_uuid: string;
@@ -81,11 +84,7 @@ export interface AuthRepository {
   createAuthSession(input: CreateAuthSessionInput): Promise<void>;
   findAuthSessionByHash(refreshTokenHash: string): Promise<AuthSessionRecord | null>;
   rotateAuthSession(input: RotateAuthSessionInput): Promise<void>;
-  updatePasswordSecret(userUuid: string, passwordHash: string, updatedAt: string): Promise<void>;
-}
-
-function toIsoString(value: unknown): string | null {
-  return typeof value === "string" && value.length > 0 ? value : null;
+  updatePasswordSecret(identityUuid: string, passwordHash: string, updatedAt: string): Promise<void>;
 }
 
 function toNullableString(value: unknown): string | null {
@@ -133,28 +132,16 @@ function normalizeAuthSessionRow(row: Record<string, unknown> | null): AuthSessi
     team_uuid: String(row.team_uuid),
     refresh_token_hash: String(row.refresh_token_hash),
     expires_at: String(row.expires_at),
-    rotated_from_uuid: toIsoString(row.rotated_from_uuid),
+    rotated_from_uuid: toNullableString(row.rotated_from_uuid),
     created_at: String(row.created_at),
-    revoked_at: toIsoString(row.revoked_at),
-    rotated_at: toIsoString(row.rotated_at),
-    last_used_at: toIsoString(row.last_used_at),
+    revoked_at: toNullableString(row.revoked_at),
+    rotated_at: toNullableString(row.rotated_at),
+    last_used_at: toNullableString(row.last_used_at),
   };
 }
 
 export class D1AuthRepository implements AuthRepository {
   constructor(private readonly db: D1Database) {}
-
-  private async withTransaction<T>(work: () => Promise<T>): Promise<T> {
-    await this.db.exec("BEGIN IMMEDIATE");
-    try {
-      const result = await work();
-      await this.db.exec("COMMIT");
-      return result;
-    } catch (error) {
-      await this.db.exec("ROLLBACK");
-      throw error;
-    }
-  }
 
   async findIdentityBySubject(
     provider: IdentityProvider,
@@ -173,15 +160,19 @@ export class D1AuthRepository implements AuthRepository {
          m.membership_level,
          t.plan_level
        FROM nano_user_identities i
-       JOIN nano_team_memberships m
-         ON m.team_uuid = i.team_uuid AND m.user_uuid = i.user_uuid
+       JOIN nano_users u
+         ON u.user_uuid = i.user_uuid
+        JOIN nano_team_memberships m
+          ON m.team_uuid = i.team_uuid AND m.user_uuid = i.user_uuid
        JOIN nano_teams t
          ON t.team_uuid = i.team_uuid
        LEFT JOIN nano_user_profiles p
-         ON p.user_uuid = i.user_uuid
-      WHERE i.identity_provider = ?1
-        AND i.provider_subject_normalized = ?2
-      LIMIT 1`,
+          ON p.user_uuid = i.user_uuid
+       WHERE i.identity_provider = ?1
+         AND i.provider_subject_normalized = ?2
+         AND i.identity_status = 'active'
+         AND u.user_status = 'active'
+       LIMIT 1`,
     )
       .bind(provider, providerSubjectNormalized)
       .first<Record<string, unknown>>();
@@ -189,23 +180,36 @@ export class D1AuthRepository implements AuthRepository {
   }
 
   async createBootstrapUser(input: CreateBootstrapUserInput): Promise<UserContextRecord> {
-    return this.withTransaction(async () => {
-      await this.db.prepare(
-        `INSERT INTO nano_users (user_uuid, created_at) VALUES (?1, ?2)`,
-      ).bind(input.user_uuid, input.created_at).run();
-      await this.db.prepare(
+    await this.db.batch([
+      this.db.prepare(
+        `INSERT INTO nano_users (
+           user_uuid,
+           user_status,
+           default_team_uuid,
+           is_email_verified,
+           created_at,
+           updated_at
+         ) VALUES (?1, 'active', ?2, 0, ?3, ?3)`,
+      ).bind(input.user_uuid, input.team_uuid, input.created_at),
+      this.db.prepare(
         `INSERT INTO nano_user_profiles (user_uuid, display_name, avatar_url, updated_at)
          VALUES (?1, ?2, NULL, ?3)`,
-      ).bind(input.user_uuid, input.display_name, input.created_at).run();
-      await this.db.prepare(
+      ).bind(input.user_uuid, input.display_name, input.created_at),
+      this.db.prepare(
         `INSERT INTO nano_teams (team_uuid, owner_user_uuid, created_at, plan_level)
          VALUES (?1, ?2, ?3, 0)`,
-      ).bind(input.team_uuid, input.user_uuid, input.created_at).run();
-      await this.db.prepare(
+      ).bind(input.team_uuid, input.user_uuid, input.created_at),
+      this.db.prepare(
         `INSERT INTO nano_team_memberships (membership_uuid, team_uuid, user_uuid, membership_level, created_at)
-         VALUES (?1, ?2, ?3, 100, ?4)`,
-      ).bind(input.membership_uuid, input.team_uuid, input.user_uuid, input.created_at).run();
-      await this.db.prepare(
+         VALUES (?1, ?2, ?3, ?4, ?5)`,
+      ).bind(
+        input.membership_uuid,
+        input.team_uuid,
+        input.user_uuid,
+        OWNER_MEMBERSHIP_LEVEL,
+        input.created_at,
+      ),
+      this.db.prepare(
         `INSERT INTO nano_user_identities (
            identity_uuid,
            user_uuid,
@@ -216,30 +220,29 @@ export class D1AuthRepository implements AuthRepository {
            team_uuid,
            created_at,
            last_login_at,
+           password_updated_at,
            identity_status
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8, 'active')`,
-      )
-        .bind(
-          input.identity_uuid,
-          input.user_uuid,
-          input.provider,
-          input.provider_subject,
-          input.provider_subject_normalized,
-          input.auth_secret_hash,
-          input.team_uuid,
-          input.created_at,
-        )
-        .run();
-      return {
-        user_uuid: input.user_uuid,
-        team_uuid: input.team_uuid,
-        display_name: input.display_name,
-        identity_provider: input.provider,
-        login_identifier: input.provider_subject,
-        membership_level: 100,
-        plan_level: 0,
-      };
-    });
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?8, ?8, 'active')`,
+      ).bind(
+        input.identity_uuid,
+        input.user_uuid,
+        input.provider,
+        input.provider_subject,
+        input.provider_subject_normalized,
+        input.auth_secret_hash,
+        input.team_uuid,
+        input.created_at,
+      ),
+    ]);
+    return {
+      user_uuid: input.user_uuid,
+      team_uuid: input.team_uuid,
+      display_name: input.display_name,
+      identity_provider: input.provider,
+      login_identifier: input.provider_subject,
+      membership_level: OWNER_MEMBERSHIP_LEVEL,
+      plan_level: 0,
+    };
   }
 
   async touchIdentityLogin(identityUuid: string, lastLoginAt: string): Promise<void> {
@@ -264,12 +267,15 @@ export class D1AuthRepository implements AuthRepository {
        JOIN nano_teams t
          ON t.team_uuid = m.team_uuid
        LEFT JOIN nano_user_profiles p
-         ON p.user_uuid = m.user_uuid
+          ON p.user_uuid = m.user_uuid
        LEFT JOIN nano_user_identities i
-         ON i.user_uuid = m.user_uuid AND i.team_uuid = m.team_uuid
-      WHERE m.user_uuid = ?1
-        AND m.team_uuid = ?2
-      ORDER BY
+         ON i.user_uuid = m.user_uuid AND i.team_uuid = m.team_uuid AND i.identity_status = 'active'
+       JOIN nano_users u
+         ON u.user_uuid = m.user_uuid
+       WHERE m.user_uuid = ?1
+         AND m.team_uuid = ?2
+         AND u.user_status = 'active'
+       ORDER BY
         CASE WHEN i.identity_provider = 'email_password' THEN 0 ELSE 1 END,
         i.created_at ASC
       LIMIT 1`,
@@ -332,32 +338,54 @@ export class D1AuthRepository implements AuthRepository {
   }
 
   async rotateAuthSession(input: RotateAuthSessionInput): Promise<void> {
-    await this.withTransaction(async () => {
-      await this.db.prepare(
+    await this.db.batch([
+      this.db.prepare(
         `UPDATE nano_auth_sessions
             SET revoked_at = ?2,
                 rotated_at = ?3,
                 last_used_at = ?4
           WHERE auth_session_uuid = ?1`,
-      )
-        .bind(
-          input.current_session_uuid,
-          input.revoked_at,
-          input.rotated_at,
-          input.last_used_at,
-        )
-        .run();
-      await this.createAuthSession(input.next);
-    });
+      ).bind(
+        input.current_session_uuid,
+        input.revoked_at,
+        input.rotated_at,
+        input.last_used_at,
+      ),
+      this.db.prepare(
+        `INSERT INTO nano_auth_sessions (
+           auth_session_uuid,
+           user_uuid,
+           team_uuid,
+           refresh_token_hash,
+           expires_at,
+           rotated_from_uuid,
+           created_at,
+           revoked_at,
+           rotated_at,
+           last_used_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`,
+      ).bind(
+        input.next.auth_session_uuid,
+        input.next.user_uuid,
+        input.next.team_uuid,
+        input.next.refresh_token_hash,
+        input.next.expires_at,
+        input.next.rotated_from_uuid,
+        input.next.created_at,
+        input.next.revoked_at ?? null,
+        input.next.rotated_at ?? null,
+        input.next.last_used_at ?? null,
+      ),
+    ]);
   }
 
-  async updatePasswordSecret(userUuid: string, passwordHash: string, updatedAt: string): Promise<void> {
+  async updatePasswordSecret(identityUuid: string, passwordHash: string, updatedAt: string): Promise<void> {
     await this.db.prepare(
       `UPDATE nano_user_identities
           SET auth_secret_hash = ?2,
-              last_login_at = ?3
-        WHERE user_uuid = ?1
+              password_updated_at = ?3
+        WHERE identity_uuid = ?1
           AND identity_provider = 'email_password'`,
-    ).bind(userUuid, passwordHash, updatedAt).run();
+    ).bind(identityUuid, passwordHash, updatedAt).run();
   }
 }

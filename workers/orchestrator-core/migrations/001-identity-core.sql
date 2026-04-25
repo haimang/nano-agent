@@ -1,6 +1,10 @@
 CREATE TABLE IF NOT EXISTS nano_users (
   user_uuid TEXT PRIMARY KEY,
-  created_at TEXT NOT NULL
+  user_status TEXT NOT NULL DEFAULT 'active' CHECK (user_status IN ('active', 'suspended', 'deleted')),
+  default_team_uuid TEXT NOT NULL,
+  is_email_verified INTEGER NOT NULL DEFAULT 0 CHECK (is_email_verified IN (0, 1)),
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS nano_user_profiles (
@@ -21,7 +25,8 @@ CREATE TABLE IF NOT EXISTS nano_user_identities (
   team_uuid TEXT NOT NULL,
   created_at TEXT NOT NULL,
   last_login_at TEXT,
-  identity_status TEXT NOT NULL DEFAULT 'active',
+  password_updated_at TEXT,
+  identity_status TEXT NOT NULL DEFAULT 'active' CHECK (identity_status IN ('active', 'pending_verification', 'suspended')),
   FOREIGN KEY (user_uuid) REFERENCES nano_users(user_uuid)
 );
 
@@ -37,7 +42,7 @@ CREATE TABLE IF NOT EXISTS nano_team_memberships (
   membership_uuid TEXT PRIMARY KEY,
   team_uuid TEXT NOT NULL,
   user_uuid TEXT NOT NULL,
-  membership_level INTEGER NOT NULL,
+  membership_level INTEGER NOT NULL CHECK (membership_level >= 0),
   created_at TEXT NOT NULL,
   FOREIGN KEY (team_uuid) REFERENCES nano_teams(team_uuid),
   FOREIGN KEY (user_uuid) REFERENCES nano_users(user_uuid)
@@ -64,7 +69,10 @@ CREATE TABLE IF NOT EXISTS nano_team_api_keys (
   team_uuid TEXT NOT NULL,
   key_hash TEXT NOT NULL,
   label TEXT NOT NULL,
+  key_status TEXT NOT NULL DEFAULT 'active' CHECK (key_status IN ('active', 'rotating', 'revoked')),
+  scopes_json TEXT,
   created_at TEXT NOT NULL,
+  last_used_at TEXT,
   revoked_at TEXT,
   FOREIGN KEY (team_uuid) REFERENCES nano_teams(team_uuid)
 );

@@ -1,4 +1,4 @@
-import type { AuthSnapshot, InitialContextSeed } from './auth.js';
+import type { IngressAuthSnapshot, InitialContextSeed } from './auth.js';
 
 export interface OrchestratorUserEnv {
   readonly AGENT_CORE?: Fetcher;
@@ -36,7 +36,7 @@ interface StartSessionBody {
   readonly text?: string;
   readonly initial_context?: unknown;
   readonly trace_uuid?: string;
-  readonly auth_snapshot?: AuthSnapshot;
+  readonly auth_snapshot?: IngressAuthSnapshot;
   readonly initial_context_seed?: InitialContextSeed;
 }
 
@@ -45,20 +45,20 @@ interface FollowupBody {
   readonly context_ref?: unknown;
   readonly stream_seq?: number;
   readonly trace_uuid?: string;
-  readonly auth_snapshot?: AuthSnapshot;
+  readonly auth_snapshot?: IngressAuthSnapshot;
   readonly initial_context_seed?: InitialContextSeed;
 }
 
 interface CancelBody {
   readonly reason?: string;
   readonly trace_uuid?: string;
-  readonly auth_snapshot?: AuthSnapshot;
+  readonly auth_snapshot?: IngressAuthSnapshot;
   readonly initial_context_seed?: InitialContextSeed;
 }
 
 interface VerifyBody {
   readonly trace_uuid?: string;
-  readonly auth_snapshot?: AuthSnapshot;
+  readonly auth_snapshot?: IngressAuthSnapshot;
   readonly initial_context_seed?: InitialContextSeed;
   readonly [key: string]: unknown;
 }
@@ -108,7 +108,7 @@ function jsonResponse(status: number, body: Record<string, unknown>): Response {
   return Response.json(body, { status });
 }
 
-function isAuthSnapshot(value: unknown): value is AuthSnapshot {
+function isAuthSnapshot(value: unknown): value is IngressAuthSnapshot {
   return (
     Boolean(value) &&
     typeof value === 'object' &&
@@ -671,8 +671,8 @@ export class NanoOrchestratorUserDO {
         ? body.trace_uuid
         : crypto.randomUUID();
     const authority = isAuthSnapshot(body?.authority)
-      ? body.authority
-      : await this.get<AuthSnapshot>(USER_AUTH_SNAPSHOT_KEY);
+      ? body?.authority
+      : await this.get<IngressAuthSnapshot>(USER_AUTH_SNAPSHOT_KEY);
     if (!authority || typeof authority.sub !== 'string' || authority.sub.length === 0) {
       return jsonResponse(400, {
         error: 'missing-authority',
@@ -718,7 +718,7 @@ export class NanoOrchestratorUserDO {
   }
 
   private async refreshUserState(
-    authSnapshot?: AuthSnapshot,
+    authSnapshot?: IngressAuthSnapshot,
     seed?: InitialContextSeed,
   ): Promise<void> {
     if (authSnapshot) {

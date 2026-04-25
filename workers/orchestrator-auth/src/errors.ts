@@ -27,7 +27,7 @@ export function assertAuthMeta(rawMeta: unknown): AuthRpcMetadata {
     throw new AuthServiceError("invalid-request", 400, "invalid auth rpc metadata");
   }
   if (parsed.data.caller !== "orchestrator-core") {
-    throw new AuthServiceError("invalid-caller", 403, "only orchestration.core may call orchestrator.auth");
+    throw new AuthServiceError("invalid-caller", 403, "only orchestrator-core may call orchestrator.auth");
   }
   return parsed.data;
 }

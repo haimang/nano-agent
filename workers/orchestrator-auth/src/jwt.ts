@@ -148,9 +148,11 @@ export async function verifyAccessToken(token: string, env: JwtEnv): Promise<Acc
   const orderedSecrets =
     header?.kid && keys.has(header.kid)
       ? [[header.kid, keys.get(header.kid)!], ...Array.from(keys.entries()).filter(([kid]) => kid !== header.kid)]
-      : Array.from(keys.entries());
+      : keys.has("legacy")
+        ? [["legacy", keys.get("legacy")!]]
+        : [];
   if (orderedSecrets.length === 0) {
-    throw new AuthServiceError("worker-misconfigured", 503, "JWT signing keys are not configured");
+    throw new AuthServiceError("invalid-auth", 401, "token missing, invalid, or expired");
   }
 
   const signature = base64Url.decode(signatureB64);

@@ -97,6 +97,7 @@ export class AuthService {
       sub: context.user_uuid,
       user_uuid: context.user_uuid,
       team_uuid: context.team_uuid,
+      // `tenant_uuid` currently aliases `team_uuid` for the NACP bridge.
       tenant_uuid: context.team_uuid,
       tenant_source: "claim",
       membership_level: context.membership_level,
@@ -327,7 +328,7 @@ export class AuthService {
       }
       const newHash = await hashSecret(input.new_password, this.requirePasswordSalt());
       const updatedAt = this.nowIso();
-      await this.deps.repo.updatePasswordSecret(identity.user_uuid, newHash, updatedAt);
+      await this.deps.repo.updatePasswordSecret(identity.identity_uuid, newHash, updatedAt);
       const refreshedContext = await this.ensureContextFromIdentity(identity);
       return okEnvelope({
         password_reset: true,

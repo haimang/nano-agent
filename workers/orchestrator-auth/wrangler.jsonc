@@ -4,6 +4,11 @@
   "main": "dist/index.js",
   "compatibility_date": "2026-04-25",
   "compatibility_flags": ["nodejs_compat"],
+  // Required deploy-time secrets:
+  // - PASSWORD_SALT
+  // - WECHAT_APPID
+  // - WECHAT_SECRET
+  // - JWT_SIGNING_KEY_<kid> (for example JWT_SIGNING_KEY_v1)
   "observability": {
     "enabled": true
   },
@@ -17,6 +22,7 @@
     {
       "binding": "NANO_AGENT_DB",
       "database_name": "nano-agent-preview",
+      // Replace this placeholder with the real shared D1 UUID before deploy.
       "database_id": "00000000-0000-0000-0000-000000000001"
     }
   ],
@@ -32,6 +38,7 @@
         {
           "binding": "NANO_AGENT_DB",
           "database_name": "nano-agent-preview",
+          // Replace this placeholder with the real shared D1 UUID before deploy.
           "database_id": "00000000-0000-0000-0000-000000000001"
         }
       ]

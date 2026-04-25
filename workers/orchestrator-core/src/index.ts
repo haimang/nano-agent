@@ -99,8 +99,7 @@ function readAccessToken(request: Request): string | null {
     const token = authHeader.slice("Bearer ".length).trim();
     if (token.length > 0) return token;
   }
-  const queryToken = new URL(request.url).searchParams.get("access_token");
-  return queryToken && queryToken.length > 0 ? queryToken : null;
+  return null;
 }
 
 async function proxyAuthRoute(

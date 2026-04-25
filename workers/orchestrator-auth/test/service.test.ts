@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { AuthService } from "../src/service.js";
+import { mintAccessToken } from "../src/jwt.js";
 import type {
   AuthRepository,
   AuthSessionRecord,
@@ -96,9 +97,9 @@ class InMemoryAuthRepository implements AuthRepository {
     await this.createAuthSession(input.next);
   }
 
-  async updatePasswordSecret(userUuid: string, passwordHash: string): Promise<void> {
+  async updatePasswordSecret(identityUuid: string, passwordHash: string): Promise<void> {
     for (const [key, identity] of this.identities.entries()) {
-      if (identity.user_uuid !== userUuid || identity.identity_provider !== "email_password") continue;
+      if (identity.identity_uuid !== identityUuid || identity.identity_provider !== "email_password") continue;
       this.identities.set(key, { ...identity, auth_secret_hash: passwordHash });
     }
   }
@@ -108,10 +109,7 @@ function createService(repo = new InMemoryAuthRepository()): AuthService {
   let seq = 0;
   return new AuthService({
     repo,
-    keyEnv: {
-      JWT_SIGNING_KID: "v1",
-      JWT_SIGNING_KEY_v1: "x".repeat(32),
-    },
+    keyEnv: KEY_ENV,
     passwordSalt: "salt",
     wechatClient: {
       async exchangeCode(code: string) {
@@ -125,6 +123,11 @@ function createService(repo = new InMemoryAuthRepository()): AuthService {
     },
   });
 }
+
+const KEY_ENV = {
+  JWT_SIGNING_KID: "v1",
+  JWT_SIGNING_KEY_v1: "x".repeat(32),
+} as const;
 
 const META = {
   trace_uuid: "11111111-1111-4111-8111-111111111111",
@@ -178,6 +181,15 @@ describe("AuthService", () => {
     expect(refreshed.ok).toBe(true);
     if (!refreshed.ok) return;
     expect(refreshed.data.tokens.refresh_token).not.toBe(login.data.tokens.refresh_token);
+
+    const replayed = await service.refresh(
+      { refresh_token: login.data.tokens.refresh_token },
+      META,
+    );
+    expect(replayed.ok).toBe(false);
+    if (!replayed.ok) {
+      expect(replayed.error.code).toBe("refresh-revoked");
+    }
   });
 
   it("requires the old password to reset password", async () => {
@@ -243,7 +255,58 @@ describe("AuthService", () => {
     );
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error.code).toBe("invalid-request");
+      expect(result.error.code).toBe("invalid-caller");
+    }
+  });
+
+  it("rejects forged and cross-team access tokens", async () => {
+    const service = createService();
+    const register = await service.register(
+      {
+        email: "tenant@example.com",
+        password: "password-123",
+      },
+      META,
+    );
+    expect(register.ok).toBe(true);
+    if (!register.ok) return;
+
+    const forged = await mintAccessToken(
+      {
+        sub: register.data.user.user_uuid,
+        user_uuid: register.data.user.user_uuid,
+        team_uuid: register.data.team.team_uuid,
+        membership_level: register.data.team.membership_level,
+        source_name: "orchestrator.auth",
+      },
+      {
+        JWT_SIGNING_KID: "v1",
+        JWT_SIGNING_KEY_v1: "y".repeat(32),
+      },
+    );
+    const forgedResult = await service.me({ access_token: forged.token }, META);
+    expect(forgedResult.ok).toBe(false);
+    if (!forgedResult.ok) {
+      expect(forgedResult.error.code).toBe("invalid-auth");
+    }
+
+    const foreignTeamToken = await mintAccessToken(
+      {
+        sub: register.data.user.user_uuid,
+        user_uuid: register.data.user.user_uuid,
+        team_uuid: "99999999-9999-4999-8999-999999999999",
+        membership_level: register.data.team.membership_level,
+        source_name: "orchestrator.auth",
+      },
+      KEY_ENV,
+    );
+    const foreignResult = await service.me(
+      { access_token: foreignTeamToken.token },
+      META,
+    );
+    expect(foreignResult.ok).toBe(false);
+    if (!foreignResult.ok) {
+      expect(foreignResult.error.code).toBe("identity-not-found");
     }
   });
 });

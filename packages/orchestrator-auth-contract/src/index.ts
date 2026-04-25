@@ -5,9 +5,12 @@ export type IdentityProvider = z.infer<typeof IdentityProviderSchema>;
 
 export const AuthRpcMetadataSchema = z.object({
   trace_uuid: z.string().uuid(),
-  caller: z.literal("orchestrator-core"),
+  caller: z.string().trim().min(1),
 });
 export type AuthRpcMetadata = z.infer<typeof AuthRpcMetadataSchema>;
+
+export const OWNER_MEMBERSHIP_LEVEL = 100 as const;
+export const MembershipLevelSchema = z.number().int().nonnegative();
 
 export const AccessTokenClaimsSchema = z.object({
   sub: z.string().uuid(),
@@ -23,13 +26,21 @@ export const AccessTokenClaimsSchema = z.object({
 });
 export type AccessTokenClaims = z.infer<typeof AccessTokenClaimsSchema>;
 
+/**
+ * Auth worker snapshots are always claim-backed.
+ * The deploy-fill fallback remains an orchestrator-core ingress-only concern.
+ */
 export const AuthSnapshotSchema = z.object({
   sub: z.string().uuid(),
   user_uuid: z.string().uuid(),
   team_uuid: z.string().uuid(),
   tenant_uuid: z.string().uuid(),
-  tenant_source: z.enum(["claim", "deploy-fill"]),
-  membership_level: z.number().int().nonnegative(),
+  /**
+   * `tenant_uuid` is currently an alias of `team_uuid` while zero-to-real
+   * continues to bridge public auth truth into the NACP tenant model.
+   */
+  tenant_source: z.literal("claim"),
+  membership_level: MembershipLevelSchema,
   source_name: z.string().min(1).optional(),
   exp: z.number().int().optional(),
 });
@@ -45,7 +56,7 @@ export type AuthUser = z.infer<typeof AuthUserSchema>;
 
 export const AuthTeamSchema = z.object({
   team_uuid: z.string().uuid(),
-  membership_level: z.number().int().nonnegative(),
+  membership_level: MembershipLevelSchema,
   plan_level: z.number().int().nonnegative(),
 });
 export type AuthTeam = z.infer<typeof AuthTeamSchema>;

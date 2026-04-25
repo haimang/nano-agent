@@ -11,6 +11,7 @@ import {
 } from "@haimang/orchestrator-auth-contract";
 import { WorkerEntrypoint } from "cloudflare:workers";
 import { AuthServiceError } from "./errors.js";
+import { handlePublicRequest, type AuthWorkerProbeResponse } from "./public-surface.js";
 import { D1AuthRepository } from "./repository.js";
 import { AuthService } from "./service.js";
 import { createWeChatClient } from "./wechat.js";
@@ -26,24 +27,6 @@ export interface AuthWorkerEnv {
   readonly ENVIRONMENT?: string;
   readonly OWNER_TAG?: string;
   readonly [key: string]: unknown;
-}
-
-export interface AuthWorkerProbeResponse {
-  readonly worker: "orchestrator-auth";
-  readonly status: "ok";
-  readonly public_business_routes: false;
-  readonly rpc_surface: true;
-  readonly d1_binding: boolean;
-}
-
-function createProbeResponse(env: AuthWorkerEnv): AuthWorkerProbeResponse {
-  return {
-    worker: "orchestrator-auth",
-    status: "ok",
-    public_business_routes: false,
-    rpc_surface: true,
-    d1_binding: Boolean(env.NANO_AGENT_DB),
-  };
 }
 
 function createService(env: AuthWorkerEnv): AuthService {
@@ -79,17 +62,7 @@ export default class OrchestratorAuthEntrypoint
   implements OrchestratorAuthRpcService
 {
   async fetch(request: Request): Promise<Response> {
-    const pathname = new URL(request.url).pathname;
-    if (request.method.toUpperCase() === "GET" && (pathname === "/" || pathname === "/health")) {
-      return Response.json(createProbeResponse(this.env));
-    }
-    return Response.json(
-      {
-        error: "not-found",
-        message: "orchestrator.auth does not expose public business routes",
-      },
-      { status: 404 },
-    );
+    return handlePublicRequest(request, this.env);
   }
 
   async register(rawInput: unknown, rawMeta: unknown): Promise<RegisterEnvelope> {

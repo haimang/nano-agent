@@ -17,7 +17,12 @@ export interface JwtPayload {
   readonly [key: string]: unknown;
 }
 
-export interface AuthSnapshot {
+/**
+ * Ingress-only auth shape. The contract package's `AuthSnapshot`
+ * stays strict and claim-backed; this local form still models the
+ * legacy deploy-fill bridge used by session ingress.
+ */
+export interface IngressAuthSnapshot {
   readonly sub: string;
   readonly user_uuid?: string;
   readonly team_uuid?: string;
@@ -39,7 +44,7 @@ export interface InitialContextSeed {
 export interface AuthContext {
   readonly user_uuid: string;
   readonly trace_uuid: string;
-  readonly snapshot: AuthSnapshot;
+  readonly snapshot: IngressAuthSnapshot;
   readonly initial_context_seed: InitialContextSeed;
 }
 
@@ -133,7 +138,9 @@ async function verifyJwtAgainstKeyring(
   const orderedSecrets =
     header?.kid && keyring.has(header.kid)
       ? [keyring.get(header.kid)!, ...Array.from(keyring.entries()).filter(([kid]) => kid !== header.kid).map(([, secret]) => secret)]
-      : Array.from(keyring.values());
+      : keyring.has("legacy")
+        ? [keyring.get("legacy")!]
+        : [];
   for (const secret of orderedSecrets) {
     const payload = await verifyJwt(token, secret);
     if (payload) return payload;
@@ -207,7 +214,7 @@ export async function authenticateRequest(request: Request, env: AuthEnv): Promi
   const membershipLevel = toOptionalNumber(payload.membership_level);
   const exp = toOptionalNumber(payload.exp);
 
-  const snapshot: AuthSnapshot = {
+  const snapshot: IngressAuthSnapshot = {
     sub: payload.sub,
     ...(userUuid ? { user_uuid: userUuid } : {}),
     ...(effectiveTenant ? { team_uuid: effectiveTenant, tenant_uuid: effectiveTenant } : {}),
