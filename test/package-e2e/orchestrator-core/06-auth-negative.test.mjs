@@ -41,7 +41,12 @@ liveTest("orchestrator-core rejects missing trace uuid on authenticated public s
   assert.ok(JWT_SECRET, "set NANO_AGENT_ORCHESTRATOR_JWT_SECRET for orchestrator live tests");
   const base = getUrl("orchestrator-core");
   const sessionId = randomSessionId();
-  const token = await signOrchestratorJwt({ sub: randomSessionId(), realm: "package-e2e" }, JWT_SECRET);
+  const token = await signOrchestratorJwt(
+    { sub: randomSessionId(), realm: "package-e2e" },
+    JWT_SECRET,
+    3600,
+    { kid: "v1" },
+  );
 
   const start = await fetchJson(`${base}/sessions/${sessionId}/start`, {
     method: "POST",
@@ -63,6 +68,8 @@ liveTest("orchestrator-core rejects tenant mismatch claim on public start", ["or
   const token = await signOrchestratorJwt(
     { sub: randomSessionId(), realm: "package-e2e", tenant_uuid: "foreign-tenant" },
     JWT_SECRET,
+    3600,
+    { kid: "v1" },
   );
 
   const start = await fetchJson(`${base}/sessions/${sessionId}/start`, {

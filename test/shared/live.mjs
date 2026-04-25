@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 const DEFAULT_URLS = {
   "agent-core": "https://nano-agent-agent-core-preview.haimang.workers.dev",
   "orchestrator-core": "https://nano-agent-orchestrator-core-preview.haimang.workers.dev",
+  "orchestrator-auth": "https://nano-agent-orchestrator-auth-preview.haimang.workers.dev",
   "bash-core": "https://nano-agent-bash-core-preview.haimang.workers.dev",
   "context-core": "https://nano-agent-context-core-preview.haimang.workers.dev",
   "filesystem-core": "https://nano-agent-filesystem-core-preview.haimang.workers.dev",
