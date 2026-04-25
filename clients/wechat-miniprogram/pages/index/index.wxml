@@ -1,0 +1,31 @@
+<view class="page">
+  <view class="card">
+    <text class="title">nano-agent Z4 Mini Program</text>
+    <input value="{{baseUrl}}" bindinput="onBaseUrl" placeholder="orchestrator base URL" />
+    <input value="{{email}}" bindinput="onEmail" placeholder="email" />
+    <input value="{{password}}" password bindinput="onPassword" placeholder="password" />
+    <view class="row">
+      <button bindtap="register">Register + Login</button>
+      <button bindtap="login">Login</button>
+      <button bindtap="wechatLogin">WeChat Login</button>
+    </view>
+  </view>
+
+  <view class="card">
+    <input value="{{sessionUuid}}" bindinput="onSessionUuid" placeholder="session uuid" />
+    <textarea value="{{prompt}}" bindinput="onPrompt" placeholder="prompt" />
+    <view class="row">
+      <button bindtap="start">Start</button>
+      <button bindtap="sendInput">Input</button>
+      <button bindtap="stream">WS</button>
+      <button bindtap="timeline">Timeline</button>
+    </view>
+  </view>
+
+  <view class="card">
+    <text class="subtitle">Events</text>
+    <block wx:for="{{logs}}" wx:key="index">
+      <text class="log">{{item}}</text>
+    </block>
+  </view>
+</view>

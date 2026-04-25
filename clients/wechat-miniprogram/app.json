@@ -1,0 +1,8 @@
+{
+  "pages": ["pages/index/index"],
+  "window": {
+    "navigationBarTitleText": "nano-agent",
+    "navigationBarBackgroundColor": "#0f172a",
+    "navigationBarTextStyle": "white"
+  }
+}

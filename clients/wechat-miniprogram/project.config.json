@@ -1,0 +1,12 @@
+{
+  "description": "nano-agent Z4 WeChat Mini Program baseline",
+  "appid": "touristappid",
+  "projectname": "nano-agent-z4",
+  "miniprogramRoot": "./",
+  "compileType": "miniprogram",
+  "setting": {
+    "urlCheck": false,
+    "es6": true,
+    "minified": false
+  }
+}
