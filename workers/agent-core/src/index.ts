@@ -22,6 +22,7 @@ export interface AgentCoreEnv {
   readonly NANO_INTERNAL_BINDING_SECRET?: string;
   readonly NANO_AGENT_LLM_CALL_LIMIT?: string;
   readonly NANO_AGENT_TOOL_CALL_LIMIT?: string;
+  readonly NANO_AGENT_ALLOW_PREVIEW_TEAM_SEED?: string;
 }
 
 export interface AgentCoreShellResponse {

@@ -1,6 +1,10 @@
 import type { CrossSeamAnchor } from "./cross-seam.js";
 import { KernelRunner } from "../kernel/runner.js";
-import { invokeWorkersAi, type AiBindingLike } from "../llm/adapters/workers-ai.js";
+import type { AiBindingLike } from "../llm/adapters/workers-ai.js";
+import {
+  WorkersAiGateway,
+  buildWorkersAiExecutionRequestFromMessages,
+} from "../llm/gateway.js";
 import { QuotaAuthorizer, QuotaExceededError, type QuotaRuntimeContext } from "./quota/authorizer.js";
 
 export interface CapabilityTransportLike {
@@ -101,16 +105,57 @@ export function createMainlineKernelRunner(
   options: MainlineKernelOptions,
 ): KernelRunner {
   const llmRequestIds = new Map<string, string>();
+  const gateway = new WorkersAiGateway(options.ai);
+  let llmRequestSequence = 0;
   const runner = new KernelRunner(
     {
       llm: {
         async *call(request: unknown) {
           const messages = Array.isArray(request) ? request : [];
-          for await (const chunk of invokeWorkersAi(options.ai, {
+          const exec = buildWorkersAiExecutionRequestFromMessages({
             messages,
             tools: true,
-          })) {
-            yield chunk;
+          });
+          for await (const event of gateway.executeStream(exec)) {
+            switch (event.type) {
+              case "delta":
+                yield {
+                  type: "content" as const,
+                  content: event.content,
+                };
+                break;
+              case "tool_call":
+                yield {
+                  type: "tool_calls" as const,
+                  calls: [
+                    {
+                      id: event.id,
+                      name: event.name,
+                      input: (() => {
+                        try {
+                          return JSON.parse(event.arguments);
+                        } catch {
+                          return event.arguments;
+                        }
+                      })(),
+                    },
+                  ],
+                };
+                break;
+              case "finish":
+                yield {
+                  type: "usage" as const,
+                  usage: {
+                    inputTokens: event.usage.inputTokens,
+                    outputTokens: event.usage.outputTokens,
+                  },
+                };
+                break;
+              case "error":
+                throw new Error(event.error.message);
+              default:
+                break;
+            }
           }
         },
         abort() {},
@@ -176,14 +221,6 @@ export function createMainlineKernelRunner(
               };
               return;
             }
-
-            if (options.quotaAuthorizer && quotaContext) {
-              await options.quotaAuthorizer.commit("tool", quotaContext, requestId, {
-                tool_name: toolName,
-                status: "error",
-                error_code: parsed.error.code,
-              });
-            }
             yield {
               type: "result" as const,
               status: "error" as const,
@@ -234,9 +271,12 @@ export function createMainlineKernelRunner(
       beforeLlmInvoke: async ({ turnId }) => {
         const context = options.contextProvider();
         if (!options.quotaAuthorizer || !context) return;
-        const requestId = `llm-${turnId}-${crypto.randomUUID()}`;
+        const requestId = `llm-${turnId}-${llmRequestSequence + 1}`;
+        await options.quotaAuthorizer.authorize("llm", context, requestId, {
+          provider_key: "workers-ai",
+        });
+        llmRequestSequence += 1;
         llmRequestIds.set(turnId, requestId);
-        await options.quotaAuthorizer.authorize("llm", context, requestId, {});
       },
       afterLlmInvoke: async ({ turnId, usage }) => {
         const context = options.contextProvider();
@@ -245,6 +285,7 @@ export function createMainlineKernelRunner(
         if (!requestId) return;
         llmRequestIds.delete(turnId);
         await options.quotaAuthorizer.commit("llm", context, requestId, {
+          provider_key: "workers-ai",
           input_tokens: usage?.inputTokens ?? 0,
           output_tokens: usage?.outputTokens ?? 0,
         });

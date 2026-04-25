@@ -450,7 +450,11 @@ export class NanoSessionDO {
     const runtimeEnv = this.env as Partial<SessionRuntimeEnv> | undefined;
     const db = runtimeEnv?.NANO_AGENT_DB;
     if (!db) return null;
-    return new QuotaAuthorizer(new D1QuotaRepository(db), {
+    return new QuotaAuthorizer(
+      new D1QuotaRepository(db, {
+        allowSeedMissingTeam: runtimeEnv.NANO_AGENT_ALLOW_PREVIEW_TEAM_SEED === "true",
+      }),
+      {
       llmLimit: readPositiveInt(
         runtimeEnv.NANO_AGENT_LLM_CALL_LIMIT,
         DEFAULT_LLM_CALL_LIMIT,
@@ -465,7 +469,8 @@ export class NanoSessionDO {
           await evalSink.emit(event);
         }
       },
-    });
+      },
+    );
   }
 
   private createLiveKernelRunner() {

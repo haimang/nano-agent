@@ -37,6 +37,12 @@ export interface QuotaAuthorizerOptions {
   readonly emitTrace?: (event: TraceEvent) => Promise<void>;
 }
 
+function pickProviderKey(detail: Record<string, unknown>): string | null {
+  return typeof detail.provider_key === "string" && detail.provider_key.length > 0
+    ? detail.provider_key
+    : null;
+}
+
 export class QuotaAuthorizer {
   constructor(
     private readonly repo: D1QuotaRepository,
@@ -59,6 +65,7 @@ export class QuotaAuthorizer {
         teamUuid: context.teamUuid,
         sessionUuid: context.sessionUuid,
         traceUuid: context.traceUuid,
+        providerKey: pickProviderKey(detail),
         resourceKind: quotaKind,
         verdict: "deny",
         quantity: 0,
@@ -66,22 +73,6 @@ export class QuotaAuthorizer {
         idempotencyKey: `${quotaKind}:deny:${requestId}`,
         deductBalance: false,
         defaultLimitValue: balance.limitValue,
-      });
-      await this.repo.appendActivity({
-        teamUuid: context.teamUuid,
-        sessionUuid: context.sessionUuid,
-        traceUuid: context.traceUuid,
-        turnUuid: context.turnUuid ?? null,
-        eventKind: "quota.deny",
-        severity: "warn",
-        payload: {
-          code: "QUOTA_EXCEEDED",
-          quota_kind: quotaKind,
-          request_uuid: requestId,
-          remaining: balance.remaining,
-          limit_value: balance.limitValue,
-          ...detail,
-        },
       });
       await this.emitTrace({
         eventKind: "quota.deny",
@@ -124,6 +115,7 @@ export class QuotaAuthorizer {
       teamUuid: context.teamUuid,
       sessionUuid: context.sessionUuid,
       traceUuid: context.traceUuid,
+      providerKey: pickProviderKey(detail),
       resourceKind: quotaKind,
       verdict: "allow",
       quantity: 1,
@@ -131,26 +123,6 @@ export class QuotaAuthorizer {
       idempotencyKey: `${quotaKind}:allow:${requestId}`,
       deductBalance: true,
       defaultLimitValue: this.defaultLimit(quotaKind),
-    });
-
-    await this.repo.appendActivity({
-      teamUuid: context.teamUuid,
-      sessionUuid: context.sessionUuid,
-      traceUuid: context.traceUuid,
-      turnUuid: context.turnUuid ?? null,
-      eventKind:
-        quotaKind === "llm"
-          ? "runtime.llm.invoke"
-          : "runtime.tool.invoke",
-      severity: "info",
-      payload: {
-        quota_kind: quotaKind,
-        request_uuid: requestId,
-        remaining: result.balance.remaining,
-        limit_value: result.balance.limitValue,
-        inserted: result.inserted,
-        ...detail,
-      },
     });
     await this.emitTrace({
       eventKind:

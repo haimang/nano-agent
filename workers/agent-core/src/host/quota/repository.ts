@@ -1,5 +1,3 @@
-import { redactPayload } from "@haimang/nacp-session";
-
 export type QuotaKind = "llm" | "tool";
 export type UsageVerdict = "allow" | "deny";
 
@@ -16,6 +14,7 @@ export interface UsageEventRecord {
   readonly teamUuid: string;
   readonly sessionUuid: string | null;
   readonly traceUuid: string;
+  readonly providerKey: string | null;
   readonly resourceKind: QuotaKind;
   readonly verdict: UsageVerdict;
   readonly quantity: number;
@@ -24,25 +23,8 @@ export interface UsageEventRecord {
   readonly createdAt: string;
 }
 
-const MAX_ACTIVITY_PAYLOAD_BYTES = 8 * 1024;
-const UNIQUE_RETRY_LIMIT = 3;
-const MESSAGE_REDACTION_FIELDS = [
-  "access_token",
-  "refresh_token",
-  "authority",
-  "auth_snapshot",
-  "password",
-  "secret",
-  "openid",
-  "unionid",
-] as const;
-
-function isUniqueConstraintError(error: unknown): boolean {
-  return (
-    error instanceof Error &&
-    /unique/i.test(error.message) &&
-    /constraint/i.test(error.message)
-  );
+export interface D1QuotaRepositoryOptions {
+  readonly allowSeedMissingTeam?: boolean;
 }
 
 function toCount(value: unknown): number {
@@ -53,22 +35,31 @@ function toCount(value: unknown): number {
       : 0;
 }
 
-function serializeActivityPayload(payload: Record<string, unknown>): string {
-  const sanitized = redactPayload(payload, [...MESSAGE_REDACTION_FIELDS]);
-  const serialized = JSON.stringify(sanitized);
-  const size = new TextEncoder().encode(serialized).byteLength;
-  if (size <= MAX_ACTIVITY_PAYLOAD_BYTES) return serialized;
-  return JSON.stringify({
-    truncated: true,
-    original_bytes: size,
-    preserved_keys: Object.keys(sanitized).slice(0, 32),
-  });
+function toUsageEventRecord(row: Record<string, unknown> | null): UsageEventRecord | null {
+  if (!row) return null;
+  return {
+    usageEventUuid: typeof row.usage_event_uuid === "string" ? row.usage_event_uuid : "",
+    teamUuid: typeof row.team_uuid === "string" ? row.team_uuid : "",
+    sessionUuid: typeof row.session_uuid === "string" ? row.session_uuid : null,
+    traceUuid: typeof row.trace_uuid === "string" ? row.trace_uuid : "",
+    providerKey: typeof row.provider_key === "string" ? row.provider_key : null,
+    resourceKind: row.resource_kind === "tool" ? "tool" : "llm",
+    verdict: row.verdict === "deny" ? "deny" : "allow",
+    quantity: toCount(row.quantity),
+    unit: typeof row.unit === "string" ? row.unit : "call",
+    idempotencyKey: typeof row.idempotency_key === "string" ? row.idempotency_key : "",
+    createdAt: typeof row.created_at === "string" ? row.created_at : "",
+  };
 }
 
 export class D1QuotaRepository {
-  constructor(private readonly db: D1Database) {}
+  constructor(
+    private readonly db: D1Database,
+    private readonly options: D1QuotaRepositoryOptions = {},
+  ) {}
 
   private async ensureTeamSeed(teamUuid: string): Promise<void> {
+    if (!this.options.allowSeedMissingTeam) return;
     const now = new Date().toISOString();
     const ownerUserUuid = teamUuid;
     await this.db.batch([
@@ -134,6 +125,7 @@ export class D1QuotaRepository {
     limitValue: number,
   ): Promise<QuotaBalanceRow> {
     const now = new Date().toISOString();
+    await this.ensureTeamSeed(teamUuid);
     await this.db.prepare(
       `INSERT INTO nano_quota_balances (
          team_uuid,
@@ -168,6 +160,7 @@ export class D1QuotaRepository {
     readonly teamUuid: string;
     readonly sessionUuid: string | null;
     readonly traceUuid: string;
+    readonly providerKey?: string | null;
     readonly resourceKind: QuotaKind;
     readonly verdict: UsageVerdict;
     readonly quantity: number;
@@ -188,36 +181,40 @@ export class D1QuotaRepository {
     const createdAt = new Date().toISOString();
     const quantity = Math.max(0, Math.trunc(input.quantity));
     const usageEventUuid = crypto.randomUUID();
+    const providerKey =
+      typeof input.providerKey === "string" && input.providerKey.length > 0
+        ? input.providerKey
+        : null;
 
-    const insert = await this.db.prepare(
-      `INSERT OR IGNORE INTO nano_usage_events (
-         usage_event_uuid,
-         team_uuid,
-         session_uuid,
-         trace_uuid,
-         resource_kind,
-         verdict,
-         quantity,
-         unit,
-         idempotency_key,
-         created_at
-       ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`,
-    ).bind(
-      usageEventUuid,
-      input.teamUuid,
-      input.sessionUuid,
-      input.traceUuid,
-      input.resourceKind,
-      input.verdict,
-      quantity,
-      input.unit,
-      input.idempotencyKey,
-      createdAt,
-    ).run();
-
-    const inserted = (insert.meta.changes ?? 0) > 0;
-    if (inserted && input.deductBalance && quantity > 0) {
-      await this.db.prepare(
+    const [insertResult, _updateResult, balanceResult] = await this.db.batch([
+      this.db.prepare(
+        `INSERT OR IGNORE INTO nano_usage_events (
+           usage_event_uuid,
+           team_uuid,
+           session_uuid,
+           trace_uuid,
+           provider_key,
+           resource_kind,
+           verdict,
+           quantity,
+           unit,
+           idempotency_key,
+           created_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`,
+      ).bind(
+        usageEventUuid,
+        input.teamUuid,
+        input.sessionUuid,
+        input.traceUuid,
+        providerKey,
+        input.resourceKind,
+        input.verdict,
+        quantity,
+        input.unit,
+        input.idempotencyKey,
+        createdAt,
+      ),
+      this.db.prepare(
         `UPDATE nano_quota_balances
             SET remaining = CASE
                   WHEN remaining >= ?3 THEN remaining - ?3
@@ -225,110 +222,85 @@ export class D1QuotaRepository {
                 END,
                 updated_at = ?4
           WHERE team_uuid = ?1
-            AND quota_kind = ?2`,
+            AND quota_kind = ?2
+            AND ?5 = 1
+            AND ?3 > 0
+            AND EXISTS (
+              SELECT 1
+                FROM nano_usage_events
+               WHERE usage_event_uuid = ?6
+            )`,
       ).bind(
         input.teamUuid,
         input.resourceKind,
         quantity,
         createdAt,
-      ).run();
-    }
+        input.deductBalance ? 1 : 0,
+        usageEventUuid,
+      ),
+      this.db.prepare(
+        `SELECT team_uuid, quota_kind, remaining, limit_value, updated_at
+           FROM nano_quota_balances
+          WHERE team_uuid = ?1
+            AND quota_kind = ?2
+          LIMIT 1`,
+      ).bind(input.teamUuid, input.resourceKind),
+    ]);
 
-    const nextBalance = await this.ensureBalance(
-      input.teamUuid,
-      input.resourceKind,
-      balance.limitValue,
-    );
+    const inserted = ((insertResult as D1Result).meta?.changes ?? 0) > 0;
+    const nextBalanceRow = (balanceResult as D1Result<Record<string, unknown>>).results?.[0];
+    const nextBalance: QuotaBalanceRow = {
+      teamUuid: input.teamUuid,
+      quotaKind: input.resourceKind,
+      remaining: toCount(nextBalanceRow?.remaining),
+      limitValue: toCount(nextBalanceRow?.limit_value) || balance.limitValue,
+      updatedAt:
+        typeof nextBalanceRow?.updated_at === "string" ? nextBalanceRow.updated_at : createdAt,
+    };
+
+    const event =
+      inserted
+        ? ({
+            usageEventUuid,
+            teamUuid: input.teamUuid,
+            sessionUuid: input.sessionUuid,
+            traceUuid: input.traceUuid,
+            providerKey,
+            resourceKind: input.resourceKind,
+            verdict: input.verdict,
+            quantity,
+            unit: input.unit,
+            idempotencyKey: input.idempotencyKey,
+            createdAt,
+          } satisfies UsageEventRecord)
+        : (toUsageEventRecord(
+            await this.db.prepare(
+              `SELECT usage_event_uuid, team_uuid, session_uuid, trace_uuid, provider_key,
+                      resource_kind, verdict, quantity, unit, idempotency_key, created_at
+                 FROM nano_usage_events
+                WHERE idempotency_key = ?1
+                LIMIT 1`,
+            ).bind(input.idempotencyKey).first<Record<string, unknown>>(),
+          ) ??
+          {
+            usageEventUuid,
+            teamUuid: input.teamUuid,
+            sessionUuid: input.sessionUuid,
+            traceUuid: input.traceUuid,
+            providerKey,
+            resourceKind: input.resourceKind,
+            verdict: input.verdict,
+            quantity,
+            unit: input.unit,
+            idempotencyKey: input.idempotencyKey,
+            createdAt,
+          });
 
     return {
       inserted,
-      event: {
-        usageEventUuid,
-        teamUuid: input.teamUuid,
-        sessionUuid: input.sessionUuid,
-        traceUuid: input.traceUuid,
-        resourceKind: input.resourceKind,
-        verdict: input.verdict,
-        quantity,
-        unit: input.unit,
-        idempotencyKey: input.idempotencyKey,
-        createdAt,
-      },
+      event,
       balance: nextBalance,
     };
-  }
-
-  async appendActivity(input: {
-    readonly teamUuid: string;
-    readonly sessionUuid: string | null;
-    readonly traceUuid: string;
-    readonly turnUuid: string | null;
-    readonly eventKind: string;
-    readonly severity: "info" | "warn" | "error";
-    readonly payload: Record<string, unknown>;
-  }): Promise<number> {
-    const payloadText = serializeActivityPayload(input.payload);
-    const createdAt = new Date().toISOString();
-    for (let attempt = 0; attempt < UNIQUE_RETRY_LIMIT; attempt += 1) {
-      const activityUuid = crypto.randomUUID();
-      try {
-        await this.db.prepare(
-          `INSERT INTO nano_session_activity_logs (
-             activity_uuid,
-             team_uuid,
-             actor_user_uuid,
-             conversation_uuid,
-             session_uuid,
-             turn_uuid,
-             trace_uuid,
-             event_seq,
-             event_kind,
-             severity,
-             payload,
-             created_at
-           )
-           SELECT
-             ?1,
-             ?2,
-             NULL,
-             NULL,
-             ?3,
-             ?4,
-             ?5,
-             COALESCE(MAX(event_seq), 0) + 1,
-             ?6,
-             ?7,
-             ?8,
-             ?9
-           FROM nano_session_activity_logs
-           WHERE trace_uuid = ?5`,
-        ).bind(
-          activityUuid,
-          input.teamUuid,
-          input.sessionUuid,
-          input.turnUuid,
-          input.traceUuid,
-          input.eventKind,
-          input.severity,
-          payloadText,
-          createdAt,
-        ).run();
-        const row = await this.db.prepare(
-          `SELECT event_seq
-             FROM nano_session_activity_logs
-            WHERE activity_uuid = ?1
-            LIMIT 1`,
-        ).bind(activityUuid).first<Record<string, unknown>>();
-        return toCount(row?.event_seq) || 1;
-      } catch (error) {
-        if (attempt + 1 < UNIQUE_RETRY_LIMIT && isUniqueConstraintError(error)) {
-          continue;
-        }
-        throw error;
-      }
-    }
-
-    throw new Error("failed to append quota activity after unique retries");
   }
 
   async readBalances(teamUuid: string): Promise<Record<QuotaKind, QuotaBalanceRow>> {

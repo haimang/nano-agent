@@ -70,5 +70,15 @@ export { normalizeStreamChunks } from "./stream-normalizer.js";
 export { mapLlmEventToSessionBody } from "./session-stream-adapter.js";
 export type { SessionEventBody, SessionEventKind } from "./session-stream-adapter.js";
 
-// ── Gateway (interface only) ──
+// ── Gateway ──
+export {
+  WORKERS_AI_PROVIDER_KEY,
+  WorkersAiGateway,
+  buildWorkersAiExecutionRequestFromMessages,
+  toCanonicalMessage,
+} from "./gateway.js";
 export type { InferenceGateway } from "./gateway.js";
+
+// ── Provider Skeletons ──
+export { executeDeepSeekSkeleton } from "./adapters/deepseek/index.js";
+export type { DeepSeekAdapterSkeleton } from "./adapters/deepseek/index.js";
