@@ -597,111 +597,133 @@
 
 ### 6.1 对本轮审查的回应
 
-> 执行者: `{IMPLEMENTER}`
-> 执行时间: `{DATE}`
-> 回应范围: `R1–R20`
+> 执行者: `GPT-5.4`
+> 执行时间: `2026-04-25`
+> 回应范围: `R1–R20（并一并吸收 DeepSeek / Kimi 的同类与独有问题）`
 
-- **总体回应**：`{ONE_LINE_RESPONSE}`
-- **本轮修改策略**：`{STRATEGY}`
+- **总体回应**：`本轮已把 action-plan pack 中真实存在的脚本口径、表名树、Workers AI freeze、quota gate、client stack、evidence/audit freeze 等问题收回到当前 charter / design / QnA / 5-worker 代码事实；少数 finding 的前提已过期，则在保留 reviewer 证据的同时按现状判为 rejected。`
+- **本轮修改策略**：`先按代码与已冻结 design/QnA 逐条核真伪，再只修真实断点；优先修会污染执行面的上游口径（test taxonomy、schema/table truth、model/runtime freeze、quota/audit/client evidence），同时把 DeepSeek / Kimi 的重复问题折叠进同一组补丁，避免对同一主题做三套平行修文。`
 
 ### 6.2 逐项回应表
 
 | 审查编号 | 审查问题 | 处理结果 | 处理方式 | 修改文件 |
 |----------|----------|----------|----------|----------|
-| R1 | `pnpm test:cross` 脚本含义错配 | `fixed | partially-fixed | rejected | deferred` | `{HOW}` | `{FILES}` |
-| R2 | `nano_session_*` vs `nano_conversation_*` 表名分叉 | `fixed | partially-fixed | rejected | deferred` | `{HOW}` | `{FILES}` |
-| R3 | `nano_usage_ledger` vs `nano_usage_events` 表名分叉 | `fixed | partially-fixed | rejected | deferred` | `{HOW}` | `{FILES}` |
-| R4 | identity migrations worker 归属错配 | `fixed | partially-fixed | rejected | deferred` | `{HOW}` | `{FILES}` |
-| R5 | Workers AI model ID 未冻结 | `fixed | partially-fixed | rejected | deferred` | `{HOW}` | `{FILES}` |
-| R6 | D1 migration apply 工具与 binding 名未冻结 | `fixed | partially-fixed | rejected | deferred` | `{HOW}` | `{FILES}` |
-| R7 | Z1 P1-02 表数与 ZX-D1 §5.1 S1 分叉 | `fixed | partially-fixed | rejected | deferred` | `{HOW}` | `{FILES}` |
-| R8 | shim retire deadline 不 enforce | `fixed | partially-fixed | rejected | deferred` | `{HOW}` | `{FILES}` |
-| R9 | Z2 P4-02 parity 标准过弱 | `fixed | partially-fixed | rejected | deferred` | `{HOW}` | `{FILES}` |
-| R10 | Z3 quota authorizer 落点 fuzzy | `fixed | partially-fixed | rejected | deferred` | `{HOW}` | `{FILES}` |
-| R11 | quota deny event_kind/severity 未冻结 | `fixed | partially-fixed | rejected | deferred` | `{HOW}` | `{FILES}` |
-| R12 | Z4 client framework 未冻结 | `fixed | partially-fixed | rejected | deferred` | `{HOW}` | `{FILES}` |
-| R13 | activity_logs 字段集链式延迟 | `fixed | partially-fixed | rejected | deferred` | `{HOW}` | `{FILES}` |
-| R14 | Z0 缺"补冻结"职责 | `fixed | partially-fixed | rejected | deferred` | `{HOW}` | `{FILES}` |
-| R15 | Z5 charter exit criteria ground truth 不存在 | `fixed | partially-fixed | rejected | deferred` | `{HOW}` | `{FILES}` |
-| R16 | orchestration-auth wrangler binding 配置缺 | `fixed | partially-fixed | rejected | deferred` | `{HOW}` | `{FILES}` |
-| R17 | Z4 evidence pack 模板未冻结 | `fixed | partially-fixed | rejected | deferred` | `{HOW}` | `{FILES}` |
-| R18 | Z3 preview 环境 Workers AI binding 未验证 | `fixed | partially-fixed | rejected | deferred` | `{HOW}` | `{FILES}` |
-| R19 | Z2 RPC kickoff 未引用 nacp-core primitives | `fixed | partially-fixed | rejected | deferred` | `{HOW}` | `{FILES}` |
-| R20 | Z1 P1-01 contract package 接口未枚举 | `fixed | partially-fixed | rejected | deferred` | `{HOW}` | `{FILES}` |
+| R1 | `pnpm test:cross` 脚本含义错配 | `fixed` | 将 Z1/Z2/Z3/Z4 的 phase 回归口径统一改成 `pnpm test:cross-e2e`，并在 Z0 明确 `test:package-e2e` / `test:cross-e2e` / `test:cross(test:e2e)` 三者职责；Z5 completion audit 也同步改成 package-e2e + cross-e2e + full regression 三层口径。该补丁同时吸收了 DeepSeek / Kimi 对测试脚本语义的同类担忧。 | `docs/action-plan/zero-to-real/Z0-contract-and-compliance-freeze.md` `docs/action-plan/zero-to-real/Z1-full-auth-and-tenant-foundation.md` `docs/action-plan/zero-to-real/Z2-session-truth-and-audit-baseline.md` `docs/action-plan/zero-to-real/Z3-real-runtime-and-quota.md` `docs/action-plan/zero-to-real/Z4-real-clients-and-first-real-run.md` `docs/action-plan/zero-to-real/Z5-closure-and-handoff.md` |
+| R2 | `nano_session_*` vs `nano_conversation_*` 表名分叉 | `fixed` | Z2 已整体改回 conversation-centered tree：`nano_conversations / nano_conversation_sessions / nano_conversation_turns / nano_conversation_messages / nano_conversation_context_snapshots / nano_session_activity_logs`；同时补上“无 active conversation 时先建 conversation 再建 session”的执行语义。DeepSeek 关于 Wave B truth 漂移的同类问题一并关闭。 | `docs/action-plan/zero-to-real/Z2-session-truth-and-audit-baseline.md` |
+| R3 | `nano_usage_ledger` vs `nano_usage_events` 表名分叉 | `fixed` | Z3 已将 Wave C durable truth 改回 `nano_usage_events / nano_quota_balances`，并在 phase 表、详情、收口标准里同步更新。DeepSeek 对 `nano_tenant_secrets` first-wave out-of-scope 的提醒也一并写入同阶段。 | `docs/action-plan/zero-to-real/Z3-real-runtime-and-quota.md` |
+| R4 | identity migrations worker 归属错配 | `partially-fixed` | 当前 design 真相并不是“必须把所有 migration owner 移到 auth worker”；ZX-D1 现状已冻结 shared D1 baseline 仍从 `workers/orchestrator-core/migrations/` 进入。因此本轮没有反向改 charter/design owner boundary，而是把 Z1/Z2 的 D1 alias、shared migration dir、manual apply path、auth/orchestrator 共用同一 D1 instance 的事实写实，消除执行歧义。DeepSeek 关于 migration/operator 说法的同类问题按此并入。 | `docs/action-plan/zero-to-real/Z1-full-auth-and-tenant-foundation.md` `docs/action-plan/zero-to-real/Z2-session-truth-and-audit-baseline.md` |
+| R5 | Workers AI model ID 未冻结 | `fixed` | Z3 P1-01 已冻结默认 model=`@cf/ibm-granite/granite-4.0-h-micro`，Workers AI 内部 fallback=`@cf/meta/llama-4-scout-17b-16e-instruct`，并明确只有二者都过不了 fc smoke 才升级 DeepSeek required。Kimi/DeepSeek 对 Z3 provider freeze 的同类问题一并吸收。 | `docs/action-plan/zero-to-real/Z3-real-runtime-and-quota.md` |
+| R6 | D1 migration apply 工具与 binding 名未冻结 | `fixed` | Z1 已明确 `NANO_AGENT_DB` alias、`workers/orchestrator-core/migrations/` 目录与 `wrangler d1 migrations apply NANO_AGENT_DB` manual path；Z2 进一步把 shared D1 binding 写回 orchestrator-core 与 agent-core。DeepSeek R12 / Kimi R5 同类问题一并收口。 | `docs/action-plan/zero-to-real/Z1-full-auth-and-tenant-foundation.md` `docs/action-plan/zero-to-real/Z2-session-truth-and-audit-baseline.md` |
+| R7 | Z1 P1-02 表数与 ZX-D1 §5.1 S1 分叉 | `rejected` | 该 finding 依据的是旧版 design 现实。当前 ZX-D1 已是 7 张 Wave-A identity tables（含 `nano_auth_sessions`、`nano_team_api_keys`），Z1 action-plan 与现行 design/QnA 已一致，因此未再对表数做二次改写；本轮仅补强了 migration/binding/tooling 的执行口径。 | `docs/design/zero-to-real/ZX-d1-schema-and-migrations.md` `docs/action-plan/zero-to-real/Z1-full-auth-and-tenant-foundation.md` |
+| R8 | shim retire deadline 不 enforce | `fixed` | Z1 已把 fetch-binding shim retire deadline 明确写成 `Z2 closure 前`；Z2 P4-02 则把它升级成 closure gate：`start` 进入 dual-impl parity，fetch shim 仅允许保留明确过渡 seam，并在 Z2 closure 中强制列出 residual / deadline。 | `docs/action-plan/zero-to-real/Z1-full-auth-and-tenant-foundation.md` `docs/action-plan/zero-to-real/Z2-session-truth-and-audit-baseline.md` |
+| R9 | Z2 P4-02 parity 标准过弱 | `fixed` | Z2 P4-02 现已把 parity proof 写成三条件：`public-via-fetch` 与 `internal-via-RPC` 返回 envelope JSON deep-equal、关键 D1 rows diff=`∅`、`trace_uuid + authority` stamp 一致；同时保留 `status` smoke -> `start` parity 的两步推进。DeepSeek / Kimi 关于 RPC kickoff 过弱的同类意见一并吸收。 | `docs/action-plan/zero-to-real/Z2-session-truth-and-audit-baseline.md` |
+| R10 | Z3 quota authorizer 落点 fuzzy | `fixed` | Z3 已明确 LLM gate 落在 `workers/agent-core/src/kernel/runner.ts::beforeLlmInvoke()`，tool gate 复用 `workers/bash-core/src/executor.ts::beforeCapabilityExecute()`，并共享 `QuotaAuthorizer`。Kimi 对 gate 落点的同类问题已并入。 | `docs/action-plan/zero-to-real/Z3-real-runtime-and-quota.md` |
+| R11 | quota deny event_kind/severity 未冻结 | `fixed` | Z3 P4-02 与 Phase 4/5 详情已冻结 `quota.deny / llm.invoke / tool.invoke` 等关键 event kind，以及 `info|warn` severity；同时 user-visible reject 统一要求 typed `QUOTA_EXCEEDED`。DeepSeek 对 quota/audit disclosure 的同类问题一并关闭。 | `docs/action-plan/zero-to-real/Z3-real-runtime-and-quota.md` `docs/design/zero-to-real/ZX-d1-schema-and-migrations.md` |
+| R12 | Z4 client framework 未冻结 | `fixed` | Z4 已冻结 `clients/web = Vite + Vanilla TypeScript`、`clients/wechat-miniprogram = 微信原生小程序工程`，并在 Phase 1/2、执行策略与风险表里保持一致。Kimi 对 client stack 未定的同类问题同步关闭。 | `docs/action-plan/zero-to-real/Z4-real-clients-and-first-real-run.md` |
+| R13 | activity_logs 字段集链式延迟 | `fixed` | 直接把 Q5 冻结的 12 列 activity log schema 与 3 条 index 写回 ZX-D1，并让 Z2 P1-01 / P5-02 显式依赖这一字段集；不再要求实施者从 action-plan -> design -> QnA 三跳回溯。DeepSeek 对 audit evidence 细项的同类问题同时吸收。 | `docs/design/zero-to-real/ZX-d1-schema-and-migrations.md` `docs/action-plan/zero-to-real/Z2-session-truth-and-audit-baseline.md` |
+| R14 | Z0 缺"补冻结"职责 | `fixed` | Z0 已新增/强化“implementation freeze register”语义：把 validation baseline、specific implementation freezes、evidence/audit ground truth 都明确挂进 Z0，而不是只做 meta-audit。 | `docs/action-plan/zero-to-real/Z0-contract-and-compliance-freeze.md` |
+| R15 | Z5 charter exit criteria ground truth 不存在 | `rejected` | 该 finding 前提已过期：当前 `docs/charter/plan-zero-to-real.md` 已有 `§10.1 Primary Exit Criteria`。本轮未改 charter，而是在 Z0/Z5 中把对 `§10.1` 的引用写实，避免实施者漏看现成 ground truth。 | `docs/charter/plan-zero-to-real.md` `docs/action-plan/zero-to-real/Z0-contract-and-compliance-freeze.md` `docs/action-plan/zero-to-real/Z5-closure-and-handoff.md` |
+| R16 | orchestration-auth wrangler binding 配置缺 | `fixed` | Z1 P2-01 已明确 `workers/orchestration-auth/` 需要接 `NANO_AGENT_DB`、`PASSWORD_SALT`、`WECHAT_APPID`、`WECHAT_SECRET`、`JWT_SIGNING_KEY_<kid>`、`NANO_INTERNAL_BINDING_SECRET`，并显式复用 `workers/agent-core/src/host/internal-policy.ts` 的 single-caller enforcement pattern；P2-02 也明确 orchestrator 只保留 verify fast-path 且共享同一组 signing keys。Kimi 关于 verify fast-path / default team / caller enforcement 的相关意见一并吸收。 | `docs/action-plan/zero-to-real/Z1-full-auth-and-tenant-foundation.md` |
+| R17 | Z4 evidence pack 模板未冻结 | `fixed` | Z4 P4-01 已把 evidence 模板最小字段集写死：环境、commit SHA、worker version、测试账户、步骤、`trace_uuid/session_uuid`、失败与修复摘要；P4-02 也把 residual inventory 标签冻结为 `[blocker] / [follow-up] / [wont-fix-z4]` + fixed/deferred/next-phase required 映射。DeepSeek/Kimi 对 evidence pack 与 triage 规范的同类问题一起关闭。 | `docs/action-plan/zero-to-real/Z4-real-clients-and-first-real-run.md` |
+| R18 | Z3 preview 环境 Workers AI binding 未验证 | `fixed` | 作为 action-plan 文档问题已修：Z3 风险表明确补入 preview inference 的计费 / rate-limit 风险，并要求长跑测试优先走 mock/fallback，真实 Workers AI 只在 closure smoke 做少量验证。 | `docs/action-plan/zero-to-real/Z3-real-runtime-and-quota.md` |
+| R19 | Z2 RPC kickoff 未引用 nacp-core primitives | `fixed` | Z2 P4-01 已显式引用 `packages/nacp-core/src/transport/{service-binding,do-rpc}.ts`，要求复用 precheck primitive，不在 worker 内重造 envelope 校验。 | `docs/action-plan/zero-to-real/Z2-session-truth-and-audit-baseline.md` |
+| R20 | Z1 P1-01 contract package 接口未枚举 | `fixed` | Z1 P1-01 现已枚举 contract package 的最小接口集：`Register/Login/Refresh/Me/ResetPassword/WechatLogin/VerifyApiKey` request/response、`AuthEnvelope`、`AuthErrorCode`。 | `docs/action-plan/zero-to-real/Z1-full-auth-and-tenant-foundation.md` |
+
+**补充：DeepSeek / Kimi 独有编号的处理**
+
+- **Kimi R2（`Z2-session-truth-and-audit-baseline.md4` typo）**：`rejected`。这是旧 review 遗留；当前真实文件已是 `.md`，本轮无需再改 action-plan 本体。
+- **Kimi R11（`packages/llm-wrapper/**` 适配层顾虑）**：`fixed`。Z3 P2-01 已补明：zero-to-real mainline 以 `workers/agent-core/src/llm/**` 为 runtime boundary；若复用 `packages/llm-wrapper/**`，也必须经 `workers-ai` adapter，不能把 Workers AI 强塞回 `baseUrl + apiKeys` fetch-only 假设。
+- **Kimi R12（Z5 引用未来 closure 文件）**：`rejected`。这些 closure 文档本来就是 Z0-Z4 执行后的预期产物，不是 action-plan 自身的路径错误；本轮仅把 Z5 completion audit 的输入表达改成 `Z0-closure.md ... Z4-closure.md` 的明确集合。
+- **DeepSeek R6（DO storage migration 表述漂移）**：`fixed`。Z2 已把 DO hot-state 收敛到 Q6 的四组集合，并显式要求“清空 DO storage 后可从 D1 重建”；durable owner 仍是 D1，不再让 migration 语义与 DO state 混写。
+- **DeepSeek R9（WeChat 仅写 code-level smoke，缺失败回滚证明）**：`fixed`。Z1 Phase 4 已新增 `jscode2session` 成功但后续 D1 写入失败时的回滚证明，并把“失败不留脏中间态”写入收口标准。
+- **DeepSeek R10（`nano_tenant_secrets` 是否误入 Wave C）**：`fixed`。Z3 P4-01 已显式声明 `nano_tenant_secrets` first-wave out-of-scope。
+- **DeepSeek R13（Z5 metadata `type` 应为 `update`）**：`fixed`。Z5 文件头已改正。
+- **DeepSeek R14（S/M/L 粒度映射过粗）**：`rejected`。这属于 planning 颗粒度偏好，不会制造执行歧义，也不影响当前 gate truth；本轮不再为此重排整套 phase sizing。
 
 ### 6.3 变更文件清单
 
-- `{FILE_1}`
-- `{FILE_2}`
-- `{FILE_3}`
+- `docs/action-plan/zero-to-real/Z0-contract-and-compliance-freeze.md`
+- `docs/action-plan/zero-to-real/Z1-full-auth-and-tenant-foundation.md`
+- `docs/action-plan/zero-to-real/Z2-session-truth-and-audit-baseline.md`
+- `docs/action-plan/zero-to-real/Z3-real-runtime-and-quota.md`
+- `docs/action-plan/zero-to-real/Z4-real-clients-and-first-real-run.md`
+- `docs/action-plan/zero-to-real/Z5-closure-and-handoff.md`
+- `docs/design/zero-to-real/ZX-d1-schema-and-migrations.md`
 
 ### 6.4 验证结果
 
 ```text
-{TEST_OR_BUILD_OUTPUT_SUMMARY}
+1. git --no-pager diff --check -- docs/action-plan/zero-to-real docs/design/zero-to-real/ZX-d1-schema-and-migrations.md docs/eval/zero-to-real/Z0-ZX-action-plan-reviewed-by-opus.md
+   -> exit 0（无 whitespace / patch hygiene 问题）
+
+2. rg "nano_usage_ledger|nano_sessions|nano_session_turns|nano_session_messages|nano_session_contexts" docs/action-plan/zero-to-real docs/design/zero-to-real/ZX-d1-schema-and-migrations.md
+   -> no matches（旧表名已从 action-plan / ZX-D1 主体清出）
+
+3. rg "beforeLlmInvoke|quota\\.deny|QUOTA_EXCEEDED|JWT_SIGNING_KEY_<kid>|Vite \\+ Vanilla TypeScript|微信原生|conversation_index<=200|wrangler d1 migrations apply NANO_AGENT_DB" docs/action-plan/zero-to-real docs/design/zero-to-real/ZX-d1-schema-and-migrations.md
+   -> expected matches in Z1 / Z2 / Z3 / Z4 / ZX-D1（新 freeze 点均已落文）
+
+4. git --no-pager diff --stat -- docs/action-plan/zero-to-real docs/design/zero-to-real/ZX-d1-schema-and-migrations.md
+   -> 7 files changed, 140 insertions(+), 94 deletions(-)
 ```
 
 ### 6.5 实现者收口判断
 
-- **实现者自评状态**：`ready-for-rereview | partially-closed | blocked`
+- **实现者自评状态**：`ready-for-rereview`
 - **仍然保留的已知限制**：
-  1. `{KNOWN_LIMITATION_1}`
-  2. `{KNOWN_LIMITATION_2}`
+  1. 本轮是文档级收口，不涉及真实 worker/runtime 代码实施；因此像 migration owner 最终物理归属、Workers AI preview 计费预算等，仍要在执行期按当前 design/charter 再落一轮代码事实。
+  2. 若后续 design/charter 再变更（尤其是 D1 owner boundary 或 LLM mainline provider），需要先回写 source-of-truth，再重跑本 review 的文档一致性校验。
 
----
+## 9. 对 Opus 代码审查质量的评价
 
-## 7. 二次审查模板
+> 评价人: `GPT-5.4`
+> 评价时间: `2026-04-25`
+> 评价依据: `本文档 §0–§5；本文档 §6 的实现者回应；当前 action-plan / ZX-D1 / ZX-qna / package.json / 5-worker 代码事实`
 
-> **规则**：
-> 1. 二次审查人不得改写 §0–§6，只能继续 append
-> 2. 二次审查必须区分：已验证修复有效 / 仅部分修复 / 新引入问题
-> 3. 必须明确"本轮是否收口"
+### 9.1 一句话评价评审风格
+Opus 的审查风格是**高密度工程审计型**：证据链最完整、优先级排序最准、能把 review 直接压成可执行修文清单，但少数 finding 因设计文档后续已更新而变成了“当时合理、落地时过期”的结论。
 
-### 7.1 二次审查结论
+### 9.2 优点
+1. **证据组织能力最强**：脚本语义、表名树、代码路径、QnA 约束、charter gate 被统一拉到一个审查坐标系里，几乎每个核心 finding 都有直接 grep/ls/file:line 依据。
+2. **优先级排序优秀**：把 `test:cross`、两处表名漂移、model freeze 放在最前，实际证明这几个就是最先需要修的上游污染项。
+3. **修法建议可执行性很高**：大量建议都能直接翻译成 action-plan 文案修改，review 到 patch 的路径很短。
 
-> 复核者: `{REVIEWER}`
-> 复核时间: `{DATE}`
-> 复核依据: `实现者 §6 的回应 + 当前文档事实`
+### 9.3 缺点
+1. **个别 finding 会被后续文档演进淘汰**：R7、R15 在实现者回头核实时已经属于旧版 source-of-truth 残影，不应再按 blocker 对待。
+2. **少数建议略带“指定方案”色彩**：如 R4 的 migration owner、R5 的具体 model 推荐，帮助很大，但已经接近架构选择而非纯审查判断。
+3. **报告密度非常高**：适合严肃收口，但对快速 review 循环来说阅读和吸收成本较高。
 
-- **二次结论**：`{ONE_LINE_REREVIEW_VERDICT}`
-- **是否收口**：`yes | no`
+### 9.4 对审查报告中的问题的清点
 
-### 7.2 已验证有效的修复
+| 问题编号 | 原始严重程度 | 该问题的质量 | 分析与说明 |
+|----|------|------|------------------|
+| R1 | high | 高质量有效 | 准确抓到 `test:cross` 语义错配，直接修正了 Z1-Z5 的回归口径。 |
+| R2 | high | 高质量有效 | conversation-centered schema 漂移是最核心的 Z2 blocker 之一。 |
+| R3 | high | 高质量有效 | usage/quota 表名分叉真实存在，且会污染 Wave C migration。 |
+| R4 | high | 中质量、部分有效 | 真实抓住了 migration owner / runner 歧义，但推荐“迁到 auth worker”过于具体，和最终 shared-baseline 口径不完全一致。 |
+| R5 | high | 高质量有效 | model ID 未冻结是真问题，且对 Z3 影响巨大。 |
+| R6 | medium | 高质量有效 | D1 binding / migration tool 明写是执行前必须补的文档事实。 |
+| R7 | medium | 低质量、已过期 | 依赖旧版 ZX-D1 表数事实；到实现者核对时已不再成立。 |
+| R8 | medium | 高质量有效 | shim retire deadline 从风险提醒提升为 closure gate，这条很有价值。 |
+| R9 | medium | 高质量有效 | parity proof 三条件直接提升了 Z2 RPC kickoff 的可验证性。 |
+| R10 | medium | 高质量有效 | quota gate 落点 fuzzy 是真实问题，后来也被补成对称 hook。 |
+| R11 | medium | 高质量有效 | `quota.deny` event kind / severity freeze 是很好的 observability-grade 要求。 |
+| R12 | medium | 高质量有效 | client stack freeze 的提醒非常到位，直接减少 Z4 开工时的分歧。 |
+| R13 | medium | 高质量有效 | activity log 字段链式延迟是真问题，且后来必须回写 ZX-D1 才能收口。 |
+| R14 | medium | 高质量有效 | Z0 不能只 audit 不能补 freeze，这条判断对整个 pack 的治理质量提升最大。 |
+| R15 | medium | 低质量、已过期 | charter `§10.1 Primary Exit Criteria` 在核实时已存在，因此“ground truth 不存在”不再成立。 |
+| R16 | medium | 高质量有效 | orchestration-auth single-caller / binding / verify fast-path 关系需要写实，这条非常实用。 |
+| R17 | low | 高质量有效 | evidence pack 模板虽非 blocker，但一旦补上能显著提升 Z4/Z5 收口质量。 |
+| R18 | low | 中质量有效 | preview inference 计费 / rate-limit 风险判断合理，但更多属于运营提醒而非 action-plan correctness。 |
+| R19 | low | 高质量有效 | 明确引用 nacp-core transport primitive 是很好的“避免重造轮子”提醒。 |
+| R20 | low | 高质量有效 | contract package 接口枚举虽小，但对 typed RPC 边界非常有帮助。 |
 
-| 审查编号 | 复核结论 | 依据 |
-|----------|----------|------|
-| R1 | `closed | open | regressed` | `{FILE:LINE / command / test}` |
-| R2 | `closed | open | regressed` | `{FILE:LINE / command / test}` |
+### 9.5 评分 - 总体 ** 9.2 / 10 **
 
-### 7.3 仍未收口的问题
-
-| 审查编号 | 当前状态 | 说明 | 下一步要求 |
-|----------|----------|------|------------|
-| R{n} | `open | partial | regressed` | `{WHY}` | `{ACTION}` |
-
-### 7.4 二次收口意见
-
-- **必须继续修改的 blocker**：
-  1. `{BLOCKER_1}`
-  2. `{BLOCKER_2}`
-- **可后续跟进的 follow-up**：
-  1. `{FOLLOWUP_1}`
-  2. `{FOLLOWUP_2}`
-
----
-
-## 8. 文档纪律
-
-- 本 review 文档为 **append-only**：
-  - §0–§5 由本轮初审锁定，不得改写
-  - §6 由实现者按 R 编号一一回应
-  - §7 由二次审查人 append
-  - 若有第三轮，继续在底部追加 §9+
-- 每条结论尽量带 file:line / 命令 / grep 输出支撑
-- 如果 design 边界本身变了，请先更新 `docs/charter/plan-zero-to-real.md` 或 `docs/design/zero-to-real/Z*-*.md`，再继续 review
-
-### 8.1 版本历史
-
-| 版本 | 日期 | 修改者 | 主要变更 |
-|------|------|--------|----------|
-| v1.0 | 2026-04-25 | Opus 4.7 (1M context) | 初稿：6 份 action-plan 全审，20 个 finding（R1-R20），3.x 表共 29 项 in-scope 对齐审核，4 项 OoS 22 项核查 |
+| 维度 | 评分（1–10） | 说明 |
+|------|-------------|------|
+| 证据链完整度 | 10 | 三角交叉了文档、代码、脚本语义，证据最硬。 |
+| 判断严谨性 | 9 | 大多数判断都准确，少数因 source-of-truth 演进而过期。 |
+| 修法建议可执行性 | 9 | 很多建议可直接变成 patch。 |
+| 对 action-plan / design 的忠实度 | 9 | 基本忠于 current truth，少数条目带入了 reviewer 自己更偏好的方案。 |
+| 协作友好度 | 8 | 质量高，但密度和长度较大，对快速协作有阅读成本。 |
+| 找到问题的覆盖面 | 10 | 三份 review 里覆盖最全，且主次分明。 |

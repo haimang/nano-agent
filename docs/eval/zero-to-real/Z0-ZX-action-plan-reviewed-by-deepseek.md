@@ -458,3 +458,51 @@
 
 > 本轮 review 不收口。等待 action-plan author 按 §5 的 3 个 blocker 修正后，再进行二次审查。9 条 non-blocking follow-up 可在二次审查前或二次审查后分别处理，不阻塞 Z1 启动。
 
+## 8. 对 DeepSeek 代码审查质量的评价
+
+> 评价人: `GPT-5.4`
+> 评价时间: `2026-04-25`
+> 评价依据: `本文档 §0–§5；当前 action-plan / ZX-D1 / ZX-qna 的已修订事实；docs/eval/zero-to-real/Z0-ZX-action-plan-reviewed-by-opus.md §6 的实现者回应`
+
+### 8.1 一句话评价评审风格
+DeepSeek 的审查风格偏**实施导向型工程 review**：擅长把 design/QnA 约束翻译成 action-plan 的可执行断点，证据链扎实度较高，覆盖面不错，但在“上游冻结职责”和“具体 runner 选择”上偶尔会比源文档更先行一步。
+
+### 8.2 优点
+1. **抓主干问题的能力强**：R1/R2 直接命中了本轮最真实的两个表名分叉断点，都是实施前必须修的硬问题。
+2. **能把 QnA 精确约束转成执行面要求**：R3/R5/R7/R8 都是在提醒 action-plan 不能只写方向，必须把 Q2/Q5/Q7 这类冻结细节显式写回收口标准。
+3. **blocker / follow-up 的切分比较健康**：没有把所有问题一股脑都抬到 blocker，整体协作性好，适合 implementation handoff。
+
+### 8.3 缺点
+1. **覆盖面不如 Opus 全**：没有抓到 `test:cross` 语义错配、Z4 client stack freeze、contract package 接口枚举这几类后来证明确实重要的问题。
+2. **个别建议略带方案先行**：例如 R4 对 migration runner 的建议，本质上抓住了真实歧义，但推荐的 runner 形态比 source-of-truth 更具体，容易把“需澄清”推成“必须按此实现”。
+3. **部分问题停留在执行提示层**：如 R13/R14 更像整理和文档 polish 提醒，价值有但信噪比低于前半段核心 findings。
+
+### 8.4 对审查报告中的问题的清点
+
+| 问题编号 | 原始严重程度 | 该问题的质量 | 分析与说明 |
+|----|------|------|------------------|
+| R1 | critical | 高质量有效 | 准确命中 `nano_conversation_*` vs `nano_session_*` 的结构冲突，是本轮真实 blocker。 |
+| R2 | critical | 高质量有效 | 准确命中 `nano_usage_events` / `nano_quota_balances` vs `nano_usage_ledger` 的建模漂移。 |
+| R3 | high | 高质量有效 | 对 QnA/Opus 精度回退的判断成立，虽然“60% 吸收率”是近似口径，但方向完全正确。 |
+| R4 | medium | 中质量、部分有效 | 抓住了 migration trigger / owner 歧义，但建议的 runner 选择偏 prescriptive，和最终 shared-baseline 口径不完全一致。 |
+| R5 | medium | 高质量有效 | 对 Z2 audit closure 从“测试全绿”细化为 append-only / redaction / trace-linkage proof 的要求很有价值。 |
+| R6 | medium | 中高质量有效 | DO hot-state 从现状 key-value 向 compacted state 迁移的提醒真实存在，属于 implementation-ready 层面的好提醒。 |
+| R7 | medium | 高质量有效 | Q2 的 token lifetime / kid / secret naming 必须显式化，这条后来被证明确需补进 action-plan。 |
+| R8 | medium | 高质量有效 | 对 parity proof 三条件的要求准确且可执行，直接提升了 Z2 RPC kickoff 的收口质量。 |
+| R9 | low | 中高质量有效 | WeChat rollback blind spot 是真实问题，虽非 blocker，但补上后让 Z1 收口更稳。 |
+| R10 | low | 中质量有效 | `nano_tenant_secrets` 显式 out-of-scope 的提醒是对的，价值偏边界治理。 |
+| R11 | low | 中质量有效 | nacp-session 既有资产的显式引用是好提醒，属于低成本增益项。 |
+| R12 | low | 中质量有效 | D1 binding / wrangler 明写是执行细节层面的真实缺口，但严重度判断合理偏低。 |
+| R13 | low | 低质量但有效 | Z5 `type` 标记问题属文档卫生，不影响执行，但判断本身没错。 |
+| R14 | low | 低质量、非阻塞 | size mapping 更像规划偏好，不是 action-plan correctness 问题，价值有限。 |
+
+### 8.5 评分 - 总体 ** 8.2 / 10 **
+
+| 维度 | 评分（1–10） | 说明 |
+|------|-------------|------|
+| 证据链完整度 | 8 | 有明确 file/line/grep 依据，足以支撑大多数判断。 |
+| 判断严谨性 | 8 | 核心问题判断稳，少数方案建议略超出“指出问题”边界。 |
+| 修法建议可执行性 | 8 | 大多数修法能直接落到 action-plan 文字层。 |
+| 对 action-plan / design 的忠实度 | 8 | 基本忠于当前 charter/design/QnA，但个别 runner 选择偏主观。 |
+| 协作友好度 | 8 | blocker 与 follow-up 切分克制，便于实现者吸收。 |
+| 找到问题的覆盖面 | 7 | 主要矛盾抓得准，但仍漏掉几项后来证明确实重要的断点。 |

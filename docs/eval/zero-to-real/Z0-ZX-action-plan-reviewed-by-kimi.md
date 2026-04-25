@@ -519,3 +519,50 @@ Z0 -> Z1 -> Z2 -> Z3 -> Z4 -> Z5
 ---
 
 *End of review — 2026-04-25 by Kimi (k2p6)*
+
+## 8. 对 Kimi 代码审查质量的评价
+
+> 评价人: `GPT-5.4`
+> 评价时间: `2026-04-25`
+> 评价依据: `本文档 §0–§5；当前 action-plan / ZX-D1 / ZX-qna 的已修订事实；docs/eval/zero-to-real/Z0-ZX-action-plan-reviewed-by-opus.md §6 的实现者回应`
+
+### 8.1 一句话评价评审风格
+Kimi 的审查风格偏**交付治理 / 悬置决策扫描型**：擅长从“哪些关键选择还没写死”来提醒实施风险，但对仓库现状与文档新旧版本的事实校准不如 Opus / DeepSeek 稳，导致部分 finding 过期或重复放大。
+
+### 8.2 优点
+1. **能快速扫出“仍需冻结的决策”**：model ID、client 技术栈、migration 工具、quota gate 落点，这几类问题都是真实价值点。
+2. **对 QnA 吸收损耗很敏感**：R1 虽然量化偏夸张，但抓住了“action-plan 不能只吃方向，不吃硬约束”这个核心风险。
+3. **协作语气友好，偏 implementation management**：很多建议天然适合拿去转成 checklist 或 phase note。
+
+### 8.3 缺点
+1. **事实校准波动较大**：R2（`.md4` typo）和 R12（未来 closure 文件不存在）属于过期/非缺陷问题，明显拉低了整体信噪比。
+2. **部分判断把“摘要没写”误当成“文档没覆盖”**：如 R6/R10 一类问题，真实文档在 Phase 详情里已有承接，但报告更多依据综述层做判断。
+3. **严重度与量化有放大倾向**：例如附录里把 Opus 约束吸收率压到 13%，更像管理感知指标，不够适合作为事实结论本身。
+
+### 8.4 对审查报告中的问题的清点
+
+| 问题编号 | 原始严重程度 | 该问题的质量 | 分析与说明 |
+|----|------|------|------------------|
+| R1 | high | 中高质量有效 | 主题抓得对，但“未吸收”的范围和比例明显偏大，部分条件其实已在 action-plan 中体现。 |
+| R2 | low | 低质量、已过期 | `.md4` typo 是旧问题，action-plan review 时已不成立。 |
+| R3 | high | 高质量有效 | model ID 未冻结是真问题，且后来被直接补进 Z3。 |
+| R4 | medium | 高质量有效 | client 技术栈未冻结是真问题，且确实会阻塞 Z4 开工。 |
+| R5 | medium | 中高质量有效 | migration 工具与策略确有必要写实，但建议中“自动 migrate + manual path”带了额外实现假设。 |
+| R6 | medium | 中质量、部分有效 | 关注点正确，但 email/password 自动建 team 在正文较后部分已出现，不算完全缺失。 |
+| R7 | medium | 中高质量有效 | auth worker 与现有 `auth.ts` verify fast-path 的关系确实需要说明。 |
+| R8 | high | 高质量有效 | quota gate 代码落点问题是真缺口，后来也被补成 `beforeLlmInvoke` / `beforeCapabilityExecute` 对称口径。 |
+| R9 | low | 中高质量有效 | gap triage 方法论和 evidence 模板都是低成本高收益项。 |
+| R10 | medium | 中质量、部分有效 | “两步走未采纳”判断不够准；status smoke 与 start kickoff 已在 plan 中，只是 parity 标准未写细。 |
+| R11 | high | 中质量有效 | `llm-wrapper` / Workers AI adapter 关系确实值得提示，但没有充分区分当前 worker-local runtime boundary 与 package abstraction 的主次。 |
+| R12 | low | 低质量、非缺陷 | Z5 依赖未来 closure 文件是正常阶段依赖，不是 action-plan 本体错误。 |
+
+### 8.5 评分 - 总体 ** 6.9 / 10 **
+
+| 维度 | 评分（1–10） | 说明 |
+|------|-------------|------|
+| 证据链完整度 | 6 | 有核查，但不少判断停在摘要/存在性层，line-level 支撑弱于另外两份。 |
+| 判断严谨性 | 6 | 核心主题对，细部真假混杂，过期问题未完全筛掉。 |
+| 修法建议可执行性 | 7 | 多数建议可落地，但有些把“补说明”与“改方案”混在一起。 |
+| 对 action-plan / design 的忠实度 | 6 | 基本忠于大方向，但对已存在内容和最新文件现实的读取不够稳。 |
+| 协作友好度 | 8 | 语气克制，偏 checklist 化，利于项目管理协作。 |
+| 找到问题的覆盖面 | 7 | 决策冻结类问题扫得较全，但 correctness 类命中率一般。 |
