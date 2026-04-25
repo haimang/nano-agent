@@ -171,4 +171,84 @@ describe("orchestrator-core shell smoke", () => {
     expect(idFromName).toHaveBeenCalledWith(USER_UUID);
     expect(new URL(stubFetch.mock.calls[0]![0]!.url).pathname).toBe(`/sessions/${SESSION_UUID}/ws`);
   });
+
+  it("proxies auth register requests to orchestrator-auth rpc", async () => {
+    const register = vi.fn().mockResolvedValue({
+      ok: true,
+      data: {
+        tokens: {
+          access_token: "access",
+          refresh_token: "refresh",
+          expires_in: 3600,
+          refresh_expires_in: 2_592_000,
+          kid: "v1",
+        },
+        user: {
+          user_uuid: USER_UUID,
+          display_name: "User",
+          identity_provider: "email_password",
+          login_identifier: "user@example.com",
+        },
+        team: {
+          team_uuid: "44444444-4444-4444-8444-444444444444",
+          membership_level: 100,
+          plan_level: 0,
+        },
+        snapshot: {
+          sub: USER_UUID,
+          user_uuid: USER_UUID,
+          team_uuid: "44444444-4444-4444-8444-444444444444",
+          tenant_uuid: "44444444-4444-4444-8444-444444444444",
+          tenant_source: "claim",
+          membership_level: 100,
+        },
+      },
+    });
+    const response = await worker.fetch(
+      new Request("https://example.com/auth/register", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          email: "user@example.com",
+          password: "password-123",
+        }),
+      }),
+      {
+        ORCHESTRATOR_AUTH: {
+          register,
+        } as any,
+        ORCHESTRATOR_USER_DO: {} as DurableObjectNamespace,
+      } as any,
+    );
+
+    expect(response.status).toBe(200);
+    expect(register).toHaveBeenCalledWith(
+      {
+        email: "user@example.com",
+        password: "password-123",
+      },
+      expect.objectContaining({
+        caller: "orchestrator-core",
+      }),
+    );
+  });
+
+  it("returns 503 when auth proxy binding is missing", async () => {
+    const response = await worker.fetch(
+      new Request("https://example.com/auth/login", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          email: "user@example.com",
+          password: "password-123",
+        }),
+      }),
+      {
+        ORCHESTRATOR_USER_DO: {} as DurableObjectNamespace,
+      } as any,
+    );
+
+    expect(response.status).toBe(503);
+    expect((await response.json()).error).toBe("worker-misconfigured");
+  });
 });

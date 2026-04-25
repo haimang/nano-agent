@@ -1,7 +1,8 @@
 import { NACP_VERSION } from "@haimang/nacp-core";
 import { NACP_SESSION_VERSION } from "@haimang/nacp-session";
+import type { OrchestratorAuthRpcService } from "@haimang/orchestrator-auth-contract";
 import { authenticateRequest, type AuthEnv } from "./auth.js";
-import { ensureConfiguredTeam, jsonPolicyError } from "./policy/authority.js";
+import { ensureConfiguredTeam, jsonPolicyError, readTraceUuid } from "./policy/authority.js";
 import { NanoOrchestratorUserDO } from "./user-do.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -9,6 +10,8 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-
 export interface OrchestratorCoreEnv extends AuthEnv {
   readonly ORCHESTRATOR_USER_DO: DurableObjectNamespace;
   readonly AGENT_CORE?: Fetcher;
+  readonly ORCHESTRATOR_AUTH?: OrchestratorAuthRpcService;
+  readonly NANO_AGENT_DB?: D1Database;
   readonly NANO_INTERNAL_BINDING_SECRET?: string;
   readonly ENVIRONMENT?: string;
   readonly OWNER_TAG?: string;
@@ -56,6 +59,14 @@ function isWebSocketUpgrade(request: Request): boolean {
 }
 
 type SessionAction = "start" | "input" | "cancel" | "status" | "timeline" | "verify" | "ws";
+type AuthAction =
+  | "register"
+  | "login"
+  | "refresh"
+  | "verify"
+  | "me"
+  | "resetPassword"
+  | "wechatLogin";
 
 function parseSessionRoute(request: Request): { sessionUuid: string; action: SessionAction } | null {
   const segments = new URL(request.url).pathname.split("/").filter(Boolean);
@@ -67,6 +78,78 @@ function parseSessionRoute(request: Request): { sessionUuid: string; action: Ses
   return { sessionUuid, action };
 }
 
+function parseAuthRoute(request: Request): AuthAction | null {
+  const pathname = new URL(request.url).pathname;
+  const method = request.method.toUpperCase();
+  if (method === "POST" && pathname === "/auth/register") return "register";
+  if (method === "POST" && pathname === "/auth/login") return "login";
+  if (method === "POST" && pathname === "/auth/refresh") return "refresh";
+  if (method === "POST" && pathname === "/auth/verify") return "verify";
+  if (method === "POST" && pathname === "/auth/password/reset") return "resetPassword";
+  if (method === "POST" && pathname === "/auth/wechat/login") return "wechatLogin";
+  if ((method === "GET" || method === "POST") && (pathname === "/auth/me" || pathname === "/me")) {
+    return "me";
+  }
+  return null;
+}
+
+function readAccessToken(request: Request): string | null {
+  const authHeader = request.headers.get("authorization");
+  if (authHeader?.startsWith("Bearer ")) {
+    const token = authHeader.slice("Bearer ".length).trim();
+    if (token.length > 0) return token;
+  }
+  const queryToken = new URL(request.url).searchParams.get("access_token");
+  return queryToken && queryToken.length > 0 ? queryToken : null;
+}
+
+async function proxyAuthRoute(
+  request: Request,
+  env: OrchestratorCoreEnv,
+  action: AuthAction,
+): Promise<Response> {
+  if (!env.ORCHESTRATOR_AUTH) {
+    return jsonPolicyError(503, "worker-misconfigured", "ORCHESTRATOR_AUTH binding must be configured");
+  }
+  const traceUuid = readTraceUuid(request) ?? crypto.randomUUID();
+  const meta = {
+    trace_uuid: traceUuid,
+    caller: "orchestrator-core" as const,
+  };
+  const body = action === "me" ? {} : await parseBody(request, true);
+  if (action !== "me" && body === null) {
+    return jsonPolicyError(400, "invalid-auth-body", "auth routes require a JSON body");
+  }
+
+  const accessToken = readAccessToken(request);
+  const input =
+    action === "me" || action === "verify"
+      ? { access_token: accessToken }
+      : action === "resetPassword"
+        ? { ...(body ?? {}), access_token: accessToken }
+        : body ?? {};
+
+  const envelope =
+    action === "register"
+      ? await env.ORCHESTRATOR_AUTH.register(input, meta)
+      : action === "login"
+        ? await env.ORCHESTRATOR_AUTH.login(input, meta)
+        : action === "refresh"
+          ? await env.ORCHESTRATOR_AUTH.refresh(input, meta)
+          : action === "verify"
+            ? await env.ORCHESTRATOR_AUTH.verifyToken(input, meta)
+            : action === "me"
+              ? await env.ORCHESTRATOR_AUTH.me(input, meta)
+              : action === "resetPassword"
+                ? await env.ORCHESTRATOR_AUTH.resetPassword(input, meta)
+                : await env.ORCHESTRATOR_AUTH.wechatLogin(input, meta);
+
+  return Response.json(envelope, {
+    status: envelope.ok ? 200 : envelope.error.status,
+    headers: { "x-trace-uuid": traceUuid },
+  });
+}
+
 const worker = {
   async fetch(request: Request, env: OrchestratorCoreEnv): Promise<Response> {
     const pathname = new URL(request.url).pathname;
@@ -74,6 +157,11 @@ const worker = {
 
     if (method === "GET" && (pathname === "/" || pathname === "/health")) {
       return Response.json(createShellResponse(env));
+    }
+
+    const authRoute = parseAuthRoute(request);
+    if (authRoute) {
+      return proxyAuthRoute(request, env, authRoute);
     }
 
     const tenantError = ensureTenantConfigured(env);

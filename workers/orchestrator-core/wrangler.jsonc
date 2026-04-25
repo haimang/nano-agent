@@ -10,8 +10,17 @@
   "vars": {
     "ENVIRONMENT": "preview",
     "OWNER_TAG": "nano-agent",
-    "TEAM_UUID": "nano-agent"
+    "TEAM_UUID": "nano-agent",
+    "JWT_SIGNING_KID": "v1"
   },
+  "d1_databases": [
+    {
+      "binding": "NANO_AGENT_DB",
+      "database_name": "nano-agent-preview",
+      "database_id": "00000000-0000-0000-0000-000000000001",
+      "migrations_dir": "migrations"
+    }
+  ],
   "durable_objects": {
     "bindings": [
       {
@@ -27,15 +36,29 @@
     }
   ],
   "services": [
-    { "binding": "AGENT_CORE", "service": "nano-agent-agent-core" }
+    { "binding": "AGENT_CORE", "service": "nano-agent-agent-core" },
+    { "binding": "ORCHESTRATOR_AUTH", "service": "nano-agent-orchestrator-auth" }
   ],
   "env": {
     "preview": {
       "vars": {
         "ENVIRONMENT": "preview",
         "OWNER_TAG": "nano-agent",
-        "TEAM_UUID": "nano-agent"
+        "TEAM_UUID": "nano-agent",
+        "JWT_SIGNING_KID": "v1"
       },
+      "d1_databases": [
+        {
+          "binding": "NANO_AGENT_DB",
+          "database_name": "nano-agent-preview",
+          "database_id": "00000000-0000-0000-0000-000000000001",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "services": [
+        { "binding": "AGENT_CORE", "service": "nano-agent-agent-core-preview" },
+        { "binding": "ORCHESTRATOR_AUTH", "service": "nano-agent-orchestrator-auth-preview" }
+      ],
       "durable_objects": {
         "bindings": [
           {
@@ -43,10 +66,7 @@
             "class_name": "NanoOrchestratorUserDO"
           }
         ]
-      },
-      "services": [
-        { "binding": "AGENT_CORE", "service": "nano-agent-agent-core-preview" }
-      ]
+      }
     }
   }
 }

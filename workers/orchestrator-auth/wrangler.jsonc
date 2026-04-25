@@ -1,0 +1,40 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "nano-agent-orchestrator-auth",
+  "main": "dist/index.js",
+  "compatibility_date": "2026-04-25",
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": {
+    "enabled": true
+  },
+  "vars": {
+    "ENVIRONMENT": "preview",
+    "OWNER_TAG": "nano-agent",
+    "JWT_SIGNING_KID": "v1",
+    "WECHAT_API_BASE_URL": "https://api.weixin.qq.com/sns/jscode2session"
+  },
+  "d1_databases": [
+    {
+      "binding": "NANO_AGENT_DB",
+      "database_name": "nano-agent-preview",
+      "database_id": "00000000-0000-0000-0000-000000000001"
+    }
+  ],
+  "env": {
+    "preview": {
+      "vars": {
+        "ENVIRONMENT": "preview",
+        "OWNER_TAG": "nano-agent",
+        "JWT_SIGNING_KID": "v1",
+        "WECHAT_API_BASE_URL": "https://api.weixin.qq.com/sns/jscode2session"
+      },
+      "d1_databases": [
+        {
+          "binding": "NANO_AGENT_DB",
+          "database_name": "nano-agent-preview",
+          "database_id": "00000000-0000-0000-0000-000000000001"
+        }
+      ]
+    }
+  }
+}

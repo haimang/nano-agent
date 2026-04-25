@@ -1,0 +1,35 @@
+{
+  "name": "@haimang/orchestrator-auth-contract",
+  "version": "0.0.0",
+  "type": "module",
+  "description": "Typed auth RPC contracts for orchestration-core and orchestrator-auth",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/haimang/nano-agent.git",
+    "directory": "packages/orchestrator-auth-contract"
+  },
+  "license": "UNLICENSED"
+}

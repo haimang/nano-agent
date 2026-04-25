@@ -23,8 +23,13 @@ export async function signTestJwt(
   payload: JwtPayload,
   secret: string,
   expiresIn = 3600,
+  options?: { kid?: string },
 ): Promise<string> {
-  const header = { alg: 'HS256', typ: 'JWT' };
+  const header = {
+    alg: 'HS256',
+    typ: 'JWT',
+    ...(options?.kid ? { kid: options.kid } : {}),
+  };
   const now = Math.floor(Date.now() / 1000);
   const finalPayload = {
     ...payload,
