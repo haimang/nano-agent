@@ -490,6 +490,58 @@
   4. **R7**：统一 Wave A/Wave B 的 FK 策略（Z2 修正期）。
   5. **R8**：为 `forwardStatus` 添加 parity check（Z2 修正期）。
   6. **R9**：修复 `last_event_seq` 从不更新的 bug（Z2 修正期）。
-  7. **R10+R11**：补 turn_uuid/team_uuid 索引（Z3）。
-  8. **R13+R14**：alarm checkpoint 描述更新 + cache eviction 实现（Z2 修正期或 Z3）。
-  9. 命名体系全局对齐（建议在 Z5 closure 时统一处理，不在 Z2 单点解决）。
+7. **R10+R11**：补 turn_uuid/team_uuid 索引（Z3）。
+8. **R13+R14**：alarm checkpoint 描述更新 + cache eviction 实现（Z2 修正期或 Z3）。
+9. 命名体系全局对齐（建议在 Z5 closure 时统一处理，不在 Z2 单点解决）。
+
+---
+
+## 7. 对 DeepSeek 代码审查质量的评价
+
+> 评价人: `GPT-5.4`
+> 评价时间: `2026-04-25`
+> 评价依据: `本文件 §0-§6；以及实现者对照修复结果（docs/code-review/zero-to-real/Z2-reviewed-by-opus.md §7）`
+
+### 7.1 一句话评价评审风格
+
+DeepSeek 的这份审查更像一次 **架构契约审计**：对 design/action-plan/QNA/DDL 的对照非常强，系统性断点抓得准，但在个别“结构分离是否等于缺陷”的判断上略偏重。
+
+### 7.2 优点
+1. 对 **ZX-D1 / ZX-qna / action-plan / closure / 实际代码** 的交叉比对非常扎实，能抓到一般 code review 很容易漏掉的“文档真相漂移”。
+2. 抓到了多条后来被证实真实存在、且价值很高的问题：write ownership 矛盾、nullable 漂移、payload 8KB、`last_event_seq` 未更新、缺 FK、缺 parity、缺 rebuild proof。
+3. 审查报告对后续阶段的价值高，不只是指出“这段代码有问题”，而是明确指出“这会怎样污染 Z3/Z4 的输入假设”。
+
+### 7.3 缺点
+1. R1 与 R12 的问题域高度重叠，作为两个独立高严重度 finding 有一定重复。
+2. R13 把 “agent-core checkpoint” 与 “orchestrator alarm GC” 两套机制并存当成缺陷，实际上更接近架构边界说明不足，而不是直接 bug。
+3. 个别文档/命名类问题给的严重度略高，优先级排序不如 Opus 那样收敛。
+
+### 7.4 对审查报告中，全部问题，的清点
+
+| 问题编号 | 原始严重程度 | 该问题的质量 | 分析与说明 |
+|----|------|------|------------------|
+| R1 | critical | 高 | 准确抓到 ZX-D1 write ownership matrix 与实际 landed 实现相冲突，这是本轮最有价值的系统性发现之一。 |
+| R2 | critical | 高 | Q5 nullable/lineage 语义与 DDL 不一致完全成立，且后续确实被修复。 |
+| R3 | high | 高 | 对 “RPC 入口存在，但内部仍是 fetch-backed shim” 的判断准确，属于真实架构债。 |
+| R4 | high | 高 | 字段冻结与实际 DDL 命名漂移是真问题，后续也确实需要回修文档。 |
+| R5 | medium | 高 | `payload <= 8KB` 的缺失判断准确，建议也可执行。 |
+| R6 | high | 高 | “清空 storage 后从 D1 重建” proof 缺位是 Q6 字面要求，指认准确。 |
+| R7 | medium | 高 | Wave B 缺 FK 的判断完全成立，且与仓库现有 Wave A 风格对照得当。 |
+| R8 | low | 高 | `forwardStatus` 缺 parity 是低严重度但高准确性的 finding，等级把握合理。 |
+| R9 | medium | 高 | `last_event_seq` 未更新是很精准的实现级发现，后续被直接修复。 |
+| R10 | low | 中 | turn `team_uuid` 索引是有价值的预防性建议，但更偏优化，不是收口核心。 |
+| R11 | low | 中 | message `turn_uuid` 索引同样成立，但属于低优先级 schema 完善项。 |
+| R12 | critical | 中 | 与 R1 高度重叠；独立列出有助于强调，但会稀释报告去重度。 |
+| R13 | medium | 低 | 两套 checkpoint/GC 机制独立并不天然构成 defect，这条更像边界说明问题而非错误。 |
+| R14 | low | 中 | 被动 GC 的观察基本成立，但描述略宽，未完全区分当前已建模 cache 与未建模 cache。 |
+
+### 7.5 评分 - 总体 ** 8.7 / 10 **
+
+| 维度 | 评分（1–10） | 说明 |
+|------|-------------|------|
+| 证据链完整度 | 9 | 文档、DDL、代码、closure、前序阶段 carry-over 都串起来了。 |
+| 判断严谨性 | 9 | 大多数判断经后续修复验证成立；只有极少数边界类问题偏重。 |
+| 修法建议可执行性 | 8 | 大部分可执行，少数项更像“先决策后实现”的设计修正。 |
+| 对 action-plan / design 的忠实度 | 10 | 这是 DeepSeek 最强的维度。 |
+| 协作友好度 | 8 | 结论直且有力，但少数结论偏强，阅读门槛较高。 |
+| 找到问题的覆盖面 | 8 | 设计/契约/文档面覆盖极强，但 runtime 错误路径与测试层不如 Opus 全面。 |

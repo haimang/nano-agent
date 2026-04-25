@@ -580,3 +580,286 @@ cd workers/orchestrator-core && npx wrangler d1 migrations apply
 - **仍然保留的已知限制**：
   1. `deploy-fill` compatibility path 仍未退役；本轮只把 closure/doc truth 收正，没有硬切 runtime。
   2. `sequence_no`、`readSnapshot` 聚合列、整批 stream frame batch、reconnect-cursor/JWT-cache alarm GC、以及 true DO RPC end-to-end 仍是后续收口项。
+
+---
+
+## 8. 对 Opus 代码审查质量的评价
+
+> 评价人: `GPT-5.4`
+> 评价时间: `2026-04-25`
+> 评价依据: `本文件 §0-§7（含实现者回应）；以及对应代码修复结果`
+
+### 8.1 一句话评价评审风格
+
+Opus 的这份审查是 **高密度、高覆盖面的架构型 review**：既能抓 correctness 主线，也能把 docs/action-plan/QNA/closure 的口径偏差一起拉平，整体 signal-to-noise 最好。
+
+### 8.2 优点
+1. 覆盖面最完整：从 schema 并发纪律、deploy-fill carry-over、hot-state invariant、parity、perf，到 contracts/文档 truth，基本没有明显盲区。
+2. 证据链很强，而且优先级分层做得好；critical/high/medium/low 大体符合真实修复收益。
+3. 多数 finding 都转化成了真实修复或高质量 deferred 决策，说明报告不仅“能找问题”，也真正能推动收口。
+
+### 8.3 缺点
+1. 少数 medium/low 项把“未来-proof hardening”与“当前必须修的 defect”放在同一张问题清单里，阅读者需要自己再做优先级二次压缩。
+2. R7 / R9 / R10 这类问题的严重度略偏进取，更像提前替 Z3/Z4 抓债，而不是纯粹的 Z2 blocker。
+3. 报告信息密度很高，协作者需要投入更多时间来消化“哪些是 now，哪些是 next”。 
+
+### 8.4 对审查报告中，全部问题，的清点
+
+| 问题编号 | 原始严重程度 | 该问题的质量 | 分析与说明 |
+|----|------|------|------------------|
+| R1 | critical | 高 | FK/UNIQUE 缺位是 Z2 durable truth 的核心断点，判断非常准。 |
+| R2 | critical | 高 | `event_seq` 并发安全问题抓得极准，后续被直接修复。 |
+| R3 | critical | 高 | `turn_index` 并发安全同样准确，且与 schema 约束一起构成主线问题。 |
+| R4 | high | 高 | compatibility_date 漂移是小而真实的问题，级别与作用范围匹配。 |
+| R5 | high | 高 | 对 Alarm 三件事缺口的描述很完整，也明确区分了“没建模所以没法真做”的部分。 |
+| R6 | high | 高 | deploy-fill carry-over 未机械关闭是关键真实问题，且影响后续多租户可信度。 |
+| R7 | high | 中 | `sequence_no` 作为 proof-grade 排序 invariant 很有前瞻性，但并非唯一解，严重度略偏高。 |
+| R8 | medium | 中 | stream 批量写入问题真实存在，但属于 perf/follow-up，不是最核心收口项。 |
+| R9 | medium | 中 | message body redaction 是很好的前瞻性数据保护提醒，但比当前显式冻结口径更严格。 |
+| R10 | medium | 中 | `readSnapshot` sub-COUNT 是真实 perf 债，不过更偏后续优化。 |
+| R11 | medium | 高 | rebuild invariant test gap 直接对应 Q6 字面要求，质量很高。 |
+| R12 | medium | 高 | parity 用 `JSON.stringify` 的问题判断准确、修法直接。 |
+| R13 | medium | 高 | root `test:contracts` 脱离保护范围是非常有价值的流程性发现，且后续已收口。 |
+| R14 | low | 中 | 命名/术语漂移成立，但确属低优先级问题。 |
+| R15 | low | 中 | view 缺失是真实遗漏，但更偏 completeness than correctness。 |
+| R16 | low | 中 | agent-core 无 D1 binding 的 ownership 边界问题有价值，但主要是 Z3 设计债。 |
+| R17 | low | 高 | `forwardStatus` parity 缺位是低严重度高准确度的问题，分级克制。 |
+
+### 8.5 评分 - 总体 ** 9.3 / 10 **
+
+| 维度 | 评分（1–10） | 说明 |
+|------|-------------|------|
+| 证据链完整度 | 10 | 文档、设计、closure、DDL、代码、测试、前序 carry-over 全部串起来了。 |
+| 判断严谨性 | 9 | 绝大多数判断被后续修复/验证印证，少数只是略偏前瞻。 |
+| 修法建议可执行性 | 9 | 多数建议可以直接落到 migration / repository / tests / docs。 |
+| 对 action-plan / design 的忠实度 | 9 | 对 Q5/Q6/Q7 与 action-plan 的字面对齐做得非常扎实。 |
+| 协作友好度 | 9 | 虽然密度高，但分层清晰、可操作性强。 |
+| 找到问题的覆盖面 | 10 | 三位同事里覆盖面最广、漏项最少。 |
+
+---
+
+## 9. 三轮复核 — Opus 二次审查（针对 GPT 修复）
+
+> 审查范围：本文 §7 GPT 逐项回应中的全部 R1-R17 / D1-D14 / K1-K11 修复声明；以及第二次跨阶段对 Z0~Z2 的代码、文档、迁移、测试事实链。
+> 审查方法：对每一条修复声明，回到 git working tree 中读取真实文件 — 不接受 `closure / 7.x` 表格的字面声明；同时尝试找到修复路径上可能引入的新问题（W-x）。
+> 时间：`2026-04-25`
+> 审查人：`Opus 4.7 (1M context)`
+
+### 9.1 一句话二次结论
+
+**Z2 现在可以正式 closed。** 上一轮列为 carry-over 的 5 条（R1 / R2 / R3 / R7 / R11）已经被修复或诚实降为 deferred，并且 GPT 在修复过程中**没有引入新的 critical 缺陷**；`Z3` 在补完两条 deploy-time / preview-environment 同步动作后即可启动，`Z4` 仍然受三条 architectural carry-over 约束，需要在 Z3 中段前回答。
+
+- **整体判断**：`approve`（Z2 closed）+ `Z3 may start with two preflight items` + `Z4 blocked-on-Z3-mid`
+- **结论等级**：`approve-with-followups`（升档自上一轮的 `approve-with-followups (B)`，但 Z2 内部已经合规）
+- **本轮最关键的 3 个判断**：
+  1. **Schema 真相已经合规**：003 migration 把 FK / UNIQUE(`trace_uuid, event_seq`) / UNIQUE(`session_uuid, turn_index`) / 8KB CHECK / `view_recent_audit_per_team` 全部落地；`appendActivity` / `createTurn` 已经改成单语句 INSERT-FROM-SELECT + UNIQUE 冲突重试，Q5 字面冻结的"per-trace 严格递增"现在真的成立。
+  2. **新增 W-1 不构成 blocker，但需要写入 Z3 设计议题**：`AgentCoreEntrypoint.invokeInternalRpc` 现在直接 `SESSION_DO.fetch(...)` 而绕开了 `routeInternal()` → `validateInternalAuthority()`。在 Cloudflare service-binding 的封闭模型下功能等价，但 defense-in-depth 的 secret + authority-equality 校验在 RPC 路径上消失；fetch 路径仍保留。Z3 引入第三个 caller（quota authorizer / runtime kernel）前必须把 RPC 路径也走过 `validateInternalAuthority`，否则后续 callers 就拥有"绕开内部纪律"的捷径。
+  3. **Preview D1 与 local D1 schema 不同步**：closure §3.2 的迁移命令清单仍只跑过 001/002 remote apply；GPT §7.4 验证清单显示 003 仅在 `--local --persist-to /tmp/...` 应用，**没有 `--env preview --remote`**。如果 Z3 工作直接在现有 preview 环境上启动，会同时遇到"代码假设 UNIQUE 存在"vs"远端 schema 没有 UNIQUE"的真实漂移。这是 Z3 的第一个 preflight。
+
+### 9.2 R/D/K 逐项复核（基于真实代码事实）
+
+| 编号 | GPT 自评 | 复核结论 | 依据（代码事实） |
+|---|---|---|---|
+| R1 | fixed | **closed** | `003-session-truth-hardening.sql:22-90` 显式 `REFERENCES ... ON DELETE CASCADE/SET NULL` 与 `UNIQUE (session_uuid, turn_index)` / `UNIQUE (trace_uuid, event_seq)` 落地。 |
+| R2 | fixed | **closed** | `session-truth.ts:486-547:appendActivity` 已改为 `INSERT ... SELECT COALESCE(MAX(event_seq),0)+1 ... WHERE trace_uuid=?7` 单语句原子化 + UNIQUE retry（`UNIQUE_RETRY_LIMIT=3`）。Q5 "per-trace 严格递增"现在由 schema + atomic stmt 双重保证。 |
+| R3 | fixed | **closed** | `session-truth.ts:285-365:createTurn` 同样使用 INSERT-FROM-SELECT + retry；UNIQUE 见 003。 |
+| R4 | fixed | **closed** | `workers/agent-core/wrangler.jsonc:5 = "2026-04-25"`，已与 orchestrator-core 同步。 |
+| R5 | partially-fixed | **accepted-partial** | `user-do.ts:666-704:trimHotState` 现在遍历 conversation index → 当前 session 集合，主动 trim `recent_frames > 50/session` 与过期 `status:* / verify:*` cache。`reconnect cursor>1h` 与 `JWT key cache refresh` 仍未建模——此为 Z3 follow-up，closure §5.3 已诚实记录。 |
+| R6 | deferred | **accepted-deferral** | `internal-policy.ts:13/53` 与 `user-do.ts:175` 仍接受 `tenant_source: "deploy-fill"`；closure §5.4 显式记录。这条与 Z1 carry-over C-1 同源；本轮接受 deferred 的代价是 Z4 真实多客户端启动前必须先收口（详见 §9.4）。 |
+| R7 | partially-fixed | **accepted-partial** | `session-truth.ts:616:readHistory` ORDER BY 现在是 `(created_at, event_seq, message_uuid)`——稳定但 message_uuid 是随机 UUID，因此"在 same-created_at + same-event_seq"下排序是 deterministic 但不是真实"插入序"。`sequence_no` 仍未加。Z4 真实客户端读 history 时若需要可证明顺序，必须在 Z3 中段前补。 |
+| R8 | partially-fixed | **accepted-partial** | `appendStreamEvent` 现在 `db.batch([insert-message, update-last-event-seq])`，single 帧 round-trip 从 4 降到 2；外层 `recordStreamFrames` 仍是 per-frame loop。50 帧 → 50×2=100 round-trip，未达 single batch。非 blocker。 |
+| R9 | fixed | **closed** | `session-truth.ts:98-100:sanitizeMessagePayload` 把 `MESSAGE_REDACTION_FIELDS`（`access_token / refresh_token / authority / auth_snapshot / password / secret / openid / unionid` 八条）应用到 `buildAppendMessageStatement` 入口，**所有 message body_json 现在都过 redaction**；测试 `user-do.test.ts:414-458` 锁定了 redaction 行为。 |
+| R10 | deferred | **accepted-deferral** | `readSnapshot` 中 sub-COUNT(*) 仍存在；closure §5.2 / 5.3 列为后续运营 follow-up。非 Z2 blocker。 |
+| R11 | partially-fixed | **accepted-partial** | `user-do.ts:784-820:hydrateSessionFromDurableTruth` 真实落地——读 D1 snapshot + timeline，重建 `recent-frames`（容量上限 50），并写回 `sessions/<id>` 与 `conversation/index`；测试 `user-do.test.ts:629-695` 验证清空 hot-state 后 timeline 路径走 D1 还原 50 帧。**没有**端到端 ws reconnect 测试，因此 Q6 line 208 字面口径只达成 ~80%。建议 Z3 启动前补 reconnect e2e。 |
+| R12 | fixed | **closed** | `user-do.ts:206-225:jsonDeepEqual` 递归 + key-sorted；测试 `user-do.test.ts:274-329` 锁定"键序不同时仍 parity OK"。 |
+| R13 | fixed | **closed** | `docs/nacp-session-registry.md` 31 行已建立；`test-legacy/session-registry-doc-sync.test.mjs` 现在能匹配到文档；root `pnpm test:contracts` 进入保护范围。 |
+| R14 | fixed | **closed** | `docs/design/zero-to-real/ZX-d1-schema-and-migrations.md:339` write ownership 收口为 `orchestration.core`（统一经 redaction wrapper append）；index 列表也补齐 turns/messages 双索引 + UNIQUE。 |
+| R15 | fixed | **closed** | `003-session-truth-hardening.sql:287-297` 建出 `view_recent_audit_per_team`。 |
+| R16 | deferred | **accepted-deferral** | `agent-core/wrangler.jsonc` 仍无 `d1_databases`；closure §5.6 列为 Z3 设计前置。 |
+| R17 | fixed | **closed** | `user-do.ts:752-782:forwardStatus` 现在 fetch + RPC 双跑 + jsonDeepEqual 比较；测试 `user-do.test.ts:738-772`。 |
+| D1 | fixed | **closed** | ZX-d1 §7.3.5 write ownership matrix 与 003 一致；不再保留双真相口径。 |
+| D2 | fixed | **closed** | activity nullable 三列（`actor_user_uuid / conversation_uuid / session_uuid`）+ DDL `payload<=8192` CHECK + code `serializeActivityPayload` 截断兜底（`session-truth.ts:102-111`）。 |
+| D3 | partially-fixed | **accepted-partial-with-W1** | `agent-core/src/index.ts:225-232:invokeInternalRpc` 现在 `this.env.SESSION_DO.get(...).fetch(...)`，URL `https://session.internal/sessions/<id>/<action>`，不再走 `routeInternal()`。**新问题 W-1**：因此跳过了 `validateInternalAuthority`（secret + authority-equality + trace_uuid uuid-shape）。详见 §9.3.W-1。 |
+| D5 | fixed | **closed** | 与 D2 同修。 |
+| D6 | partially-fixed | **accepted-partial** | hydrate 测试存在；full reconnect e2e 缺。 |
+| D7 | fixed | **closed** | 003 有 FK。 |
+| D8 | fixed | **closed** | 与 R17 同修。 |
+| D9 | fixed | **closed** | `appendStreamEvent` 在同一 batch 内 `UPDATE last_event_seq = MAX(?2, last_event_seq)`（`session-truth.ts:422-430`）。 |
+| D10 | fixed | **closed** | 003:278-279 创建 `idx_nano_conversation_turns_team_created_at`。 |
+| D11 | fixed | **closed** | 003:284-285 创建 `idx_nano_conversation_messages_turn_created_at`。 |
+| D12 | fixed | **closed** | 与 D1 同修。 |
+| D13 | rejected | **accepted-rejection** | agent-core checkpoint 与 orchestrator alarm 是两套关心不同 invariant 的系统（前者 hibernation restore；后者 hot-state GC），强行耦合会破坏边界。GPT rejected 合理。 |
+| D14 | partially-fixed | **accepted-partial** | `status:* / verify:*` 已被 alarm 主动 evict；其它 cache family（如未来 secret cache）当前没有遍历式 GC。可接受作为 Z3 follow-up。 |
+| K1 | fixed | **closed** | 没采用 `BEGIN TRANSACTION` 是正确的——D1 文档明确指出 BEGIN/COMMIT 不被支持，应用 `db.batch([...])` + UNIQUE 冲突重试是仓库一直坚持的口径。 |
+| K5 | fixed | **closed** | `session-truth.ts:550-591:rollbackSessionStart` + `user-do.ts:906-924` 调用；测试 `user-do.test.ts:355-412` 显式断言 `rollbackSessionStart` 被以正确参数调用，且失败 activity log 写入时 `conversation_uuid/session_uuid/turn_uuid = null`（避免引用已删除行）。 |
+| K7 | deferred | **accepted-deferral** | `nano-session-do.ts:503-511:currentTeamUuid` 仍然 fallback `env.TEAM_UUID`。closure §5.3 / §5.4 与 R6 共同记录。 |
+| K8 | fixed | **closed** | `nano-session-do.ts:1209-1238:restoreFromStorage` 现在恢复 `actorPhase = raw.actorPhase`；测试 `checkpoint-roundtrip.test.ts:116-139` 锁定行为。 |
+| K10 | fixed | **closed** | `user-do.test.ts:414-458` 直接断言 redaction 后字段为 `[redacted]`。 |
+| K11 | fixed | **closed** | closure §5 residuals 现在列出 6 条，不再过满宣称。 |
+
+#### 9.2.1 统计
+
+- **closed**: 22（R1 / R2 / R3 / R4 / R9 / R12 / R13 / R14 / R15 / R17 / D1 / D2 / D5 / D7 / D8 / D9 / D10 / D11 / D12 / K1 / K5 / K8 / K10 / K11——23 条 fixed/closed）
+- **accepted-partial**: 6（R5 / R7 / R8 / R11 / D3 / D6 / D14）
+- **accepted-deferral**: 4（R6 / R10 / R16 / K7）
+- **accepted-rejection**: 1（D13）
+
+整体修复有效率约 65% closed + 18% partial + 12% reasonable-deferral，是一个高质量的修复轮次。
+
+### 9.3 修复过程中可能引入的新问题（W-x）
+
+> 这些发现都不在 GPT 自评清单内，是在复核中独立观察到的。
+
+#### W-1. RPC 路径绕开 `validateInternalAuthority` 形成 defense-in-depth 降级
+
+- **严重级别**：`high`（不阻塞 Z2 关闭，但**阻塞 Z3 引入第二/第三个 RPC caller**）
+- **类型**：`security`
+- **事实依据**：
+  - `workers/agent-core/src/index.ts:225-232`：新版 `invokeInternalRpc` 直接 `this.env.SESSION_DO.get(...).fetch(new Request("https://session.internal/sessions/<id>/<action>", ...))`，不再设置 `x-nano-internal-binding-secret` / `x-nano-internal-authority` / `x-trace-uuid` 三个头。
+  - `NanoSessionDO.fetch` 走 `routeRequest(request)` → `http-fallback` → `httpController.handleRequest`——**没有 `validateInternalAuthority` 调用**。
+  - 对照：fetch 路径（`AGENT_CORE.fetch(/internal/sessions/<id>/start)`）走 `fetchWorker → /internal/* 前缀 → routeInternal → validateInternalAuthority → DO`。
+  - GPT D3 自评说"不再重新进入 routeInternal()"——属实，但这一步把 secret + authority-equality + trace-uuid uuid-shape 三道校验也全部跳过了。
+- **为什么重要**：
+  - 在当前 binding 模型下功能等价（only orchestrator-core 能调 AGENT_CORE.start），但**defense-in-depth 已被砍掉**。
+  - 如果 Z3 把 quota authorizer / runtime kernel 接成 RPC caller，新 caller 就有了"不需要带 secret 也能成功"的捷径——一旦未来环境下有第三方共享 binding 出现，绕路漏洞就会变成真实的横向越权。
+  - parity 在 happy path 上仍然 OK（fetch 与 RPC 都成功），但 fetch 在 invalid trace_uuid 时返回 400，RPC 在同样 input 下会返回 200——使 parity 测试**只对 happy path 有意义**。
+- **审查判断**：
+  - 不是 Z2 blocker（功能 + 测试齐全），但**必须在 Z3 Phase 1 第一道工作**对齐：要么把 `validateInternalAuthority` 抽到 NanoSessionDO 自身入口，要么让 invokeInternalRpc 仍然带头并继续走 routeInternal。
+- **建议修法**：
+  - 推荐把 secret + authority validation 从 routeInternal 抽到 NanoSessionDO.fetch 的最开端——使无论 caller 经哪条 transport（fetch / RPC / 未来 DoRpcTransport），都过同一道关口。
+
+#### W-2. closure §3.2 / §3.3 的 LIVE_E2E 证据是修复前数据，未对修复后代码再验证
+
+- **严重级别**：`medium`
+- **类型**：`test-gap`
+- **事实依据**：
+  - closure §3.2 命令清单仍只列 001/002 远端 apply，没有 003。
+  - closure §3.3 仍写"36 / 36 pass、12 / 12 pass"——这是修复前原 Z2 代码 + 002 schema 的产物。
+  - GPT §7.4 验证清单显示 `pnpm test:package-e2e ✅ (non-live mode; 36 skipped as designed)`、cross-e2e 同样 non-live——**修复后没有再跑 LIVE_E2E**。
+- **为什么重要**：
+  - 003 改动是 `RENAME → CREATE → COPY → DROP`，即使是 idempotent migration，在远端 D1 上首次应用也可能因为已有数据违反新 UNIQUE/FK 而失败。
+  - 修复后 RPC 路径已变（W-1），parity 行为也变；非 live 测试无法证明 e2e 表现一致。
+- **审查判断**：
+  - 这是 Z3 启动前必做的 **preflight #1**：把 003 远端 apply + LIVE_E2E 重跑一遍。
+- **建议修法**：
+  - `cd workers/orchestrator-core && npx wrangler d1 migrations apply NANO_AGENT_DB --env preview --remote` 加 003；然后 `LIVE_E2E=1` 跑 package-e2e/cross-e2e 双跑作为 Z2 真实关闭证据补录。
+
+#### W-3. 003 migration 是非事务性 RENAME→CREATE→COPY→DROP，远端首次应用风险中
+
+- **严重级别**：`medium`
+- **类型**：`correctness`（运维）
+- **事实依据**：
+  - `003-session-truth-hardening.sql:1-262`：6 条 RENAME → 6 条 CREATE → 6 条 INSERT…SELECT → 6 条 DROP。整段不在事务内。
+  - 任何一条 INSERT 在新 UNIQUE 下因数据本身违反约束而失败 → 数据库一半旧、一半新，回滚靠手动。
+  - 8KB CHECK 在 INSERT 时使用 `CASE` fallback 写入 `'{"truncated":true,"migrated":true,"reason":"payload-too-large"}'`，规避了 payload 超限失败——这是好设计。
+  - 但 UNIQUE(trace_uuid, event_seq) 没有数据修复 path：如果 002 期间已有同 trace_uuid 双写（R2 修复前的并发漏洞），003 INSERT 会直接抛 UNIQUE。
+- **为什么重要**：
+  - 当前 preview D1 应用 002 期间数据量很小，远端 apply 大概率成功；但 Z3 / Z4 真实流量下若需要再做 schema 加固迁移，这种"无事务、无去重"模板会反复埋雷。
+- **审查判断**：
+  - Z2 范围内可接受；但在 Z3 启动前应该给 schema migration 写一个标准模板（前置 dedup query / 数据清洗 / 失败回退脚本）。
+- **建议修法**：
+  - 在 `docs/design/zero-to-real/ZX-d1-schema-and-migrations.md` 增加 §migration-discipline，固定"加 UNIQUE 前必须先跑 dedup pre-check"的 SOP。
+
+#### W-4. Closure §3 仍声称 "live e2e 36/36 + 12/12 pass" 但 §7.4 显示 non-live skipped — 文档与现实不一致
+
+- **严重级别**：`low`
+- **类型**：`docs-gap`
+- **事实依据**：
+  - 同 W-2 的事实链。
+  - closure §3.3 与 §7.4 在同一份文档里给出**互相矛盾**的验证状态。一个读者只看 §3 会以为 live e2e 已过；只看 §7.4 会以为只跑了 non-live。
+- **审查判断**：
+  - 不阻塞 Z2 关闭（GPT 已经在 §7.4 诚实记录），但 closure 主体应该被 reconcile 一次。
+- **建议修法**：
+  - 在 closure §3 里明确写"§3.3 是 2026-04-24 / 2026-04-25 修复前的 LIVE_E2E 证据；修复后 LIVE_E2E 重跑挂在 Z3 preflight"。
+
+#### W-5. 上一轮发现的 ZX-qna §1.21 顶部摘要 hot-state 命名漂移仍未修
+
+- **严重级别**：`low`
+- **类型**：`docs-gap`
+- **事实依据**：
+  - `docs/design/zero-to-real/ZX-qna.md:21` 仍写 `Q6=DO SQLite hot-state 只保留 active_session_index / ws_attachment_state / recent_replay_window / pending_input_queue 四组`。
+  - Q6 详细答案（line 196-211）与 003 实现一致使用 `conversation_index / active_pointers / recent_frames / cache`。
+  - GPT 这轮没有触及 §1.21 顶部摘要。
+- **审查判断**：
+  - 跨阶段的旧 docs-gap，本轮不该归罪 GPT；但仍是 Z3 启动前文档对齐项之一。
+- **建议修法**：
+  - 把 ZX-qna §1.21 顶部摘要四组命名改回 Q6 详细口径，同时与 ZX-d1 / Z2-design / Z2-action-plan 一并校准。
+
+### 9.4 跨阶段（Z0~Z2）联合复核
+
+> 这一节不是简单回顾，而是把 Z0/Z1/Z2 三轮 review-after-fix 的最终事实串起来，回答"zero-to-real 阶段一头到 Z2 末梢，已经交付的是什么"。
+
+#### 9.4.1 Z0 — Contract & Compliance Freeze
+
+- **真实状态**：closed（Z0 closure 文档真实存在；charter / design pack / ZX-qna / action-plan 链路成立）。
+- **本轮唯一 docs-gap**：W-5 — ZX-qna 顶部摘要命名漂移。属于 Z0 文档，但 Z2 / Z3 都建立在它之上。
+- **结论**：Z0 不需要再开。
+
+#### 9.4.2 Z1 — Full Auth & Tenant Foundation
+
+- **真实状态**：closed（Z1 closure 真实存在；orchestrator-auth contract、worker、Wave A schema、JWT keyring、register/login/refresh/me/verify/reset/wechat 都已经在 preview 部署）。
+- **未收口的 carry-over**：deploy-fill 在 runtime（agent-core internal-policy + orchestrator-core user-do isAuthSnapshot）依然合法。Z2 closure §5.4 / R6 deferred / K7 deferred 三处都把这条诚实标记为后续阶段（Z3 中段/Z4 客户端启动前）的 blocker。
+- **结论**：Z1 不需要再开；Z3 启动前需要在设计层把 deploy-fill 退役 deadline 写入 Z3 charter。
+
+#### 9.4.3 Z2 — Session Truth & Audit Baseline
+
+- **真实状态**：closed（schema 已经合规 / repository 已经原子化 / DO 4 组热态 + 10m alarm + cache eviction + recent-frames trim 落地 / parity fetch+RPC 双跑 + jsonDeepEqual / hydrate from D1 / start/status RPC kickoff / contracts 测试绿 / docs 对齐）。
+- **新引入的 carry-over**：W-1 / W-2 / W-3 / W-4 — 都不阻塞 Z2 关闭。
+- **结论**：**Z2 closed**。
+
+#### 9.4.4 跨阶段 invariant 的最终状态
+
+| invariant | Z0 | Z1 | Z2 | 备注 |
+|---|---|---|---|---|
+| `tenant_source: claim` 是 contract 唯一合法值 | ✅ | ✅ | ✅ | 仅 contract 层；ingress/runtime 仍允许 deploy-fill |
+| deploy-fill 在 runtime 退役 | n/a | ❌（Z1→Z2 carry） | ❌（Z2→Z3 carry） | 三轮 review 都列 deferred |
+| D1 schema 完整性纪律（FK/UNIQUE） | n/a | ✅ Wave A | ✅ Wave B（修复后） | Z2 003 落地 |
+| event_seq per-trace 严格递增（Q5） | n/a | n/a | ✅ | atomic INSERT-FROM-SELECT + UNIQUE |
+| DO hot-state 四组最小集合（Q6） | n/a | n/a | ✅ | 仅命名与 ZX-qna §1.21 顶部摘要不一致 |
+| status/start RPC parity（Q7） | n/a | n/a | ✅ subset | jsonDeepEqual 锁定；D1 row diff 与 trace stamp 验证仍是后续阶段 |
+| reconnect 重建 invariant（Q6 line 208） | n/a | n/a | ⚠️ partial | hydrate 测试存在；full ws reconnect e2e 缺 |
+| append-only redaction 全覆盖 | n/a | n/a | ✅ | message + activity 双路径都过 redaction |
+| view_recent_audit_per_team | n/a | n/a | ✅ | 003 落地 |
+| message body redaction（R9） | n/a | n/a | ✅ | sanitizeMessagePayload |
+
+### 9.5 Z2 是否可以关闭 / Z3 / Z4 启动判断
+
+#### 9.5.1 Z2 关闭信号
+
+- **关闭判断**：`yes — Z2 closed`
+- **理由**：
+  1. action-plan §2.1 列出的 S1-S6 现在全部从 `partial` 上升到 `done` 或 `accepted-partial-with-deferred-followup`。
+  2. ZX-qna Q5 / Q6 / Q7 字面冻结口径都已经在代码 + 测试中可验证。
+  3. closure §5 residuals 列出的 6 条都已经在本轮 review 中被独立确认为 deferred-by-design。
+
+#### 9.5.2 Z3 启动判断
+
+- **是否允许启动**：`yes，但必须在 Z3 Phase 1 第一道工作之前完成两条 preflight + 一条设计议题`。
+- **必须完成的 Z3 preflight**：
+  1. **W-2 + W-3 + W-4 同源**：把 003 migration 在 preview-remote `--env preview --remote` 上 apply；重跑 `LIVE_E2E=1 pnpm test:package-e2e && pnpm test:cross-e2e`；把 closure §3.2 / §3.3 改成"修复后 evidence"；reconcile 与 §7.4 的矛盾。**没做之前，Z3 工作不要开始往 preview 部署，否则会同时遇到代码/schema 漂移**。
+  2. **W-1**：在 Z3 charter 中写入 "RPC 路径必须过 validateInternalAuthority"，把 secret + authority-equality + trace-uuid uuid-shape 三个 invariant 提到 NanoSessionDO 自身入口，使所有 transport 共享一道关口。Z3 引入第二/第三个 RPC caller（quota authorizer / LLM gate）前必须先做。
+- **必须在 Z3 charter 中明确的设计议题**：
+  - **R16 / agent-core D1 ownership**：Z3 真实 LLM 接入后 quota deny 必须 emit activity log。是 agent-core 直 bind D1 然后破 redaction wrapper 单点纪律，还是引入 `orchestrator-core.appendActivity` RPC（第二条 dual-impl）？这是 ZX-d1 §7.3.5 write ownership matrix 的下一个测试。
+  - **R6 / K7 deploy-fill 退役 deadline**：必须给 Z3 charter 设一个 "deploy-fill 在 runtime 仅作 ingress fallback、internal RPC 路径只接受 claim" 的硬截止；否则 Z4 客户端真机阶段会带病上线。
+
+#### 9.5.3 Z4 启动判断
+
+- **是否允许启动**：`no — Z4 暂不能进入 first real run`，需要先把 Z3 中段三条架构债务收口。
+- **理由**：
+  1. **R6 / K7 deploy-fill**：客户端（Web / Mini Program）真实流量进入后，每个 token 都来自真实 user/team；deploy-fill fallback 不应该再出现在 internal RPC 与 DO authority 路径上。Z4 启动前必须由 Z3 中段把 internal-policy.ts 与 user-do.ts 的 isAuthSnapshot 收紧。
+  2. **R7 / R11 reconnect 真相**：Z4 客户端要真正"重连后看到一致 history"，需要 ws reconnect e2e + sequence_no（或同等可证明顺序）支撑。Z3 中段补 sequence_no（或 OWNER 显式接受 message_uuid 作为 tie-break）+ reconnect e2e。
+  3. **R16 / agent-core audit 路径**：Z4 客户端真实 LLM 流式输出需要 quota / LLM invoke 全程被 activity log 锁定，agent-core ↔ orchestrator-core 的 audit ownership 必须先在 Z3 决定。
+- **解锁条件（建议写入 Z3 closure）**：
+  - W-1 + R6 + K7 一并做完（internal-policy 强收口）。
+  - R11 升级到 reconnect ws e2e。
+  - R16 决策落定。
+
+### 9.6 总评
+
+- **三轮 review 的最终图景**：Z2 是 zero-to-real 第一个真正"打到了字面口径"的阶段——前两轮是骨架 + carry-over，本轮（GPT 修复 + 二次复核）才把 schema 完整性、parity、redaction、reconnect 半边等核心 invariant 拉到合规线。
+- **Z2 真正解决的事**：D1 不再是事件追加桶，而是真正的"约束化真相层"。Q5 字面冻结的"per-trace 严格递增"现在由 schema + atomic stmt 双重保证；Q6 四组热态 + 容量 + 10m alarm 完整成立；Q7 parity 在 fetch/RPC 两条路径上 jsonDeepEqual 锁定；redaction 在 activity + message 两条写入路径全覆盖。
+- **Z2 没解决的事**：deploy-fill 仍在 runtime；agent-core 仍无 D1 ownership；invokeInternalRpc 现在缺 defense-in-depth（W-1）；preview-remote 与 local D1 schema 不同步（W-2/W-3）。这些都是 Z3 必须先收的债。
+- **最终 verdict**：**Z2 closed; Z3 may start with two preflight items + one charter design item; Z4 blocked-on-Z3-mid。**
+
+> GPT 这一轮的修复质量是真正可信的：22+1 条 closed 都对得上代码事实，6 条 partial 与 4 条 deferred 都给出了诚实的 closure §5 记录，1 条 rejected（D13）是合理的边界判断；同时 GPT 没有用"修复"为名引入 critical 缺陷，唯一的 W-1 是设计权衡——把 routeInternal 从 RPC 路径上剥离换来更短调用链——本轮可接受、下一阶段必须收口。这是 zero-to-real 三个阶段以来最干净的一次 review-fix-rereview 闭环。
+

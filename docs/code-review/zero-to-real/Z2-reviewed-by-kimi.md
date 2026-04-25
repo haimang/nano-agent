@@ -554,3 +554,52 @@
 ---
 
 (End of review)
+
+---
+
+## 9. 对 Kimi 代码审查质量的评价
+
+> 评价人: `GPT-5.4`
+> 评价时间: `2026-04-25`
+> 评价依据: `本文件 §0-§8；以及实现者对照修复结果（docs/code-review/zero-to-real/Z2-reviewed-by-opus.md §7）`
+
+### 9.1 一句话评价评审风格
+
+Kimi 的这份审查更像 **runtime/错误路径排障型 code review**：对实际执行路径、失败回滚、restore 与测试空洞很敏感，动作性强，但在 D1 事务模型上有一处关键前提判断不准。
+
+### 9.2 优点
+1. 很擅长抓 **错误路径与可恢复性** 问题：`handleStart` 清理不完整、checkpoint phase restore 缺失、redaction test 缺位，这些都是真实高价值发现。
+2. 审查建议大多直接落在实现层，执行者很容易顺着建议去改代码和补测试。
+3. 报告可读性好，issue 切分清晰，不容易把问题说成抽象口号。
+
+### 9.3 缺点
+1. R1 / R9 明显依赖“SQLite 手写事务可直接用于当前 D1 路径”这一前提，但本仓库 D1 约定是 `db.batch(...)`，所以修法建议方向有偏差。
+2. 对 cross-doc / ownership / 字段冻结漂移的系统性深度不如 DeepSeek 和 Opus。
+3. 一些 blocker 结论建立在事务前提上，导致优先级判断略显机械。
+
+### 9.4 对审查报告中，全部问题，的清点
+
+| 问题编号 | 原始严重程度 | 该问题的质量 | 分析与说明 |
+|----|------|------|------------------|
+| R1 | high | 中 | “多步写入缺原子保护”这个 concern 是真的，但把 `BEGIN TRANSACTION` 当作当前 repo/D1 的正解并不准确。 |
+| R2 | high | 高 | activity log nullable 漂移完全成立，属于高价值 schema 问题。 |
+| R3 | high | 高 | RPC kickoff 仍是 HTTP shim 的判断准确，且对后续 Z3 很重要。 |
+| R4 | medium | 高 | `JSON.stringify` parity 问题指认准确，后续也被直接修复。 |
+| R5 | high | 高 | start 失败后 D1 清理不完整是非常真实的错误路径缺口。 |
+| R6 | medium | 中 | hot-state trim 不完整成立，但对当前 storage 可遍历能力与未建模 cache family 的边界把握一般。 |
+| R7 | medium | 中 | `env.TEAM_UUID` fallback 是真实风险，但是否应在本轮硬移除仍带较强设计权衡。 |
+| R8 | medium | 高 | checkpoint restore 未恢复 `actorState.phase` 的发现非常精准，且容易复现。 |
+| R9 | high | 中 | `event_seq` 并发风险判断成立，但修法依然受错误事务前提拖累。 |
+| R10 | medium | 高 | redaction 测试缺位是高质量 test-gap，后续已补。 |
+| R11 | medium | 高 | closure residuals 过满的问题成立，且对后续协作非常关键。 |
+
+### 9.5 评分 - 总体 ** 7.6 / 10 **
+
+| 维度 | 评分（1–10） | 说明 |
+|------|-------------|------|
+| 证据链完整度 | 8 | 基本证据充分，代码路径抓得准。 |
+| 判断严谨性 | 7 | 多数判断成立，但 D1 事务前提影响了几条关键建议的严谨性。 |
+| 修法建议可执行性 | 7 | 很多建议可直接改代码；事务相关建议在当前仓库里不适用。 |
+| 对 action-plan / design 的忠实度 | 8 | 对 Q5/Q6/Q7 有对照，但系统性文档漂移覆盖不够广。 |
+| 协作友好度 | 8 | 报告可读性和执行友好度都不错。 |
+| 找到问题的覆盖面 | 7 | runtime/rollback/restore 很强，设计契约层广度较弱。 |

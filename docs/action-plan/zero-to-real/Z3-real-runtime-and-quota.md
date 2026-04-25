@@ -13,7 +13,7 @@
 > - `docs/design/zero-to-real/ZX-llm-adapter-and-secrets.md`
 > - `docs/design/zero-to-real/ZX-d1-schema-and-migrations.md`
 > - `docs/design/zero-to-real/ZX-nacp-realization-track.md`
-> 文档状态: `draft`
+> 文档状态: `executed`
 
 ---
 
@@ -32,7 +32,7 @@ Z2 之后，系统已经拥有真实 auth/session/audit baseline，但 agent loo
   - agent loop 的 runtime evidence 还没有与 Z2 session/audit truth 真正闭环
 - **本次计划的直接产出**：
   - `workers/agent-core/` 的 Workers AI mainline wiring
-  - `workers/orchestrator-core/migrations/003-usage-and-quota.sql`
+  - `workers/orchestrator-core/migrations/004-usage-and-quota.sql`
   - `workers/agent-core/**` 与 `workers/bash-core/**` 的 dual-gate runtime
   - `docs/issue/zero-to-real/Z3-closure.md`
 
@@ -101,7 +101,7 @@ Z3 Real Runtime and Quota
 │   │       └── capabilities/**
 │   └── orchestrator-core/
 │       └── migrations/
-│           └── 003-usage-and-quota.sql         [new]
+│           └── 004-usage-and-quota.sql         [new]
 ├── test/
 │   ├── package-e2e/agent-core/
 │   ├── package-e2e/bash-core/
@@ -148,7 +148,7 @@ Z3 Real Runtime and Quota
 | P2-02 | Phase 2 | session stream/runtime mapping | `update` | `workers/agent-core/src/llm/session-stream-adapter.ts` `src/kernel/session-stream-mapping.ts` | 把真实 llm 执行映到 session truth | `high` |
 | P3-01 | Phase 3 | quota authorizer | `update` | `workers/agent-core/src/host/**` `src/kernel/runner.ts` | 统一 llm/tool 额度门禁 | `high` |
 | P3-02 | Phase 3 | bash-core gate integration | `update` | `workers/bash-core/src/executor.ts` `tool-call.ts` `policy.ts` | tool call 真实受 quota 约束 | `high` |
-| P4-01 | Phase 4 | usage/quota migrations | `add` | `workers/orchestrator-core/migrations/003-usage-and-quota.sql` `workers/agent-core/wrangler.jsonc` | 落 `nano_usage_events / nano_quota_balances` durable truth | `medium` |
+| P4-01 | Phase 4 | usage/quota migrations | `add` | `workers/orchestrator-core/migrations/004-usage-and-quota.sql` `workers/agent-core/wrangler.jsonc` | 落 `nano_usage_events / nano_quota_balances` durable truth | `medium` |
 | P4-02 | Phase 4 | audit/eval evidence | `update` | `workers/agent-core/src/eval/**` `src/hooks/**` | accepted/rejected runtime evidence 可读 | `medium` |
 | P5-01 | Phase 5 | runtime/quota tests | `update` | `test/package-e2e/agent-core/**` `test/package-e2e/bash-core/**` `test/cross-e2e/**` | 证明真实 loop 与 dual gate 成立 | `medium` |
 | P5-02 | Phase 5 | Z3 closure | `add` | `docs/issue/zero-to-real/Z3-closure.md` | 形成 runtime 收口文档 | `low` |
@@ -181,7 +181,7 @@ Z3 Real Runtime and Quota
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P4-01 | usage/quota migrations | 落 `nano_usage_events / nano_quota_balances` durable tables，并显式保持 `nano_tenant_secrets` out-of-scope | `workers/orchestrator-core/migrations/003-usage-and-quota.sql` `workers/agent-core/wrangler.jsonc` | quota 不再只存在 memory | migration smoke / D1 assertions | accepted/rejected 调用都能留下 durable 记录；`nano_tenant_secrets` 不进入 Wave C |
+| P4-01 | usage/quota migrations | 落 `nano_usage_events / nano_quota_balances` durable tables，并显式保持 `nano_tenant_secrets` out-of-scope | `workers/orchestrator-core/migrations/004-usage-and-quota.sql` `workers/agent-core/wrangler.jsonc` | quota 不再只存在 memory | migration smoke / D1 assertions | accepted/rejected 调用都能留下 durable 记录；`nano_tenant_secrets` 不进入 Wave C |
 | P4-02 | audit/eval evidence | 将 llm/tool accepted/rejected、usage delta、quota reason 写入 activity/eval evidence，并冻结 `quota.deny` 等关键 event kind | `workers/agent-core/src/eval/**` `src/hooks/**` | runtime evidence 闭环 | package-e2e / audit row assertions | replay/history 可看到关键 runtime 决策；event kind / severity 不再靠实现期猜 |
 
 ### 4.5 Phase 5 — Runtime Closure
@@ -261,7 +261,8 @@ Z3 Real Runtime and Quota
   - `P3-01`
   - `P3-02`
 - **本 Phase 新增文件**：
-  - `可新增 workers/agent-core/src/host/quota/**`
+  - `workers/agent-core/src/host/quota/authorizer.ts`
+  - `workers/agent-core/src/host/quota/repository.ts`
 - **本 Phase 修改文件**：
   - `workers/agent-core/src/host/**`
   - `workers/agent-core/src/kernel/**`
@@ -293,7 +294,7 @@ Z3 Real Runtime and Quota
   - `P4-01`
   - `P4-02`
 - **本 Phase 新增文件**：
-  - `workers/orchestrator-core/migrations/003-usage-and-quota.sql`
+  - `workers/orchestrator-core/migrations/004-usage-and-quota.sql`
 - **本 Phase 修改文件**：
   - `workers/agent-core/src/eval/**`
   - `workers/agent-core/src/hooks/**`
@@ -374,3 +375,67 @@ Z3 完成后，系统将具备：
 1. 启动 `Z4-real-clients-and-first-real-run.md`
 2. 用 web / Mini Program 在真实 quota/runtime 基线之上找 gap
 3. 把 residual 归档为 Z4/Z5 closure 输入
+
+---
+
+## 9. Z3 执行完成后的结果对照
+
+| Z3 目标 | 实际结果 |
+| --- | --- |
+| Workers AI mainline freeze 落地 | ✅ `agent-core` 已以 `AI` binding + `runtime-mainline.ts` 组装真实 provider path |
+| real LLM execution path 接管 session loop | ✅ `KernelRunner` / `SessionOrchestrator` / `NanoSessionDO` 已走真实 loop，并保留无 `AI` 时的 honest fallback |
+| llm + tool dual gate 落地 | ✅ `QuotaAuthorizer` 已在 LLM 与 tool 两端生效，`bash-core` 增加 second-gate ticket 校验 |
+| durable usage / balance / audit truth 落地 | ✅ `004-usage-and-quota.sql` 已 remote apply，`nano_usage_events / nano_quota_balances` 已进入 preview D1 |
+| preview live evidence 成立 | ✅ `pnpm test:package-e2e` = `36 / 36`，`pnpm test:cross-e2e` = `12 / 12` |
+| Z3 closure 文档存在 | ✅ `docs/issue/zero-to-real/Z3-closure.md` 已创建 |
+
+---
+
+## 10. Z3 工作日志（执行回填）
+
+- **Phase 1 — Workers AI Freeze**
+  1. 为 `workers/agent-core/wrangler.jsonc` 增加 `AI`、`NANO_AGENT_DB`、`NANO_AGENT_LLM_CALL_LIMIT`、`NANO_AGENT_TOOL_CALL_LIMIT` 真实环境契约。
+  2. 新增 `workers/agent-core/src/host/runtime-mainline.ts`，冻结 Workers AI mainline assembler，并把 capability transport / quota hook / cross-seam anchor 一起收口。
+  3. 调整 `workers/agent-core/src/llm/adapters/workers-ai.ts`，改用 worker-local frozen tool schema，避免跨 worker import 漂移。
+
+- **Phase 2 — Real LLM Execution Path**
+  1. `workers/agent-core/src/kernel/runner.ts` 新增 `beforeLlmInvoke` / `afterLlmInvoke` hook，LLM invoke 与 provider failure 进入 canonical runtime control path。
+  2. `workers/agent-core/src/host/orchestration.ts` 改为从 kernel snapshot 读取 `pendingToolCalls + llmFinished`，并把 runtime events 映射回 session stream catalog。
+  3. `workers/agent-core/src/host/do/nano-session-do.ts` 已在 `AI` binding 存在时组装真实 `KernelRunner`，在缺 binding 时保持 honest stub fallback，避免本地 harness 被伪装成 live path。
+  4. 修复 `traceContext` 静态化问题，改成 getter-based dynamic session/team/trace identity，避免 attach/hydrate 后 trace law 漂移。
+
+- **Phase 3 — Quota Dual Gate**
+  1. 新增 `workers/agent-core/src/host/quota/{authorizer,repository}.ts`，实现 llm/tool 共用的 authorize/commit/read-balance 路径。
+  2. `NanoSessionDO` 的 verify/live capability 路径已统一走 quota preauth；quota exceed 会返回 typed envelope，而不是 silent fail。
+  3. `workers/bash-core/src/worker-runtime.ts` 已消费可选 `quota` ticket，并在 `beforeCapabilityExecute` 做 request/tool consistency second gate。
+  4. 修复真实 preview blocker：`cancelTurn()` 不再在 turn 已经 settled 时强行 interrupt idle kernel，保证 façade `cancel` 幂等收口。
+
+- **Phase 4 — Usage + Audit Evidence**
+  1. 新增 `workers/orchestrator-core/migrations/004-usage-and-quota.sql`，落下 `nano_quota_balances` / `nano_usage_events` 与索引。
+  2. 已对 preview shared D1 remote apply Wave C migration，并让 `agent-core` 真正 bind 同一份 `NANO_AGENT_DB`。
+  3. 修复 quota writeback 的两个真实 drift：
+     - quota activity 不再把 `agent-core` local kernel turn id 伪装成 durable `turn_uuid`
+     - quota repo 会在缺 deploy team row 时幂等 seed synthetic owner user + team，确保 FK truth 与 single-tenant preview posture 对齐
+
+- **Phase 5 — Runtime Closure**
+  1. 修复 live auth harness：`test/shared/orchestrator-auth.mjs` 采用“真实 auth 优先、deploy-tenant mismatch 时 local JWT fallback”双模式，避免 preview 单租户 posture 与 auth bootstrap team 随机 UUID 冲突。
+  2. 为 `test/package-e2e/orchestrator-core/06-auth-negative.test.mjs` 扩大 secret 解析来源，兼容 preview `kid` 配置。
+  3. 已完成本地验证：
+     - `pnpm --filter @haimang/bash-core-worker typecheck && pnpm --filter @haimang/bash-core-worker test`
+     - `pnpm --filter @haimang/agent-core-worker typecheck && pnpm --filter @haimang/agent-core-worker build && pnpm --filter @haimang/agent-core-worker test`
+     - `pnpm --filter @haimang/orchestrator-core-worker typecheck && pnpm --filter @haimang/orchestrator-core-worker test`
+     - `pnpm test:contracts`
+     - `pnpm test:e2e`
+     - `pnpm test:cross`
+  4. 已完成 preview/live 验证：
+     - `CI=1 npx wrangler d1 migrations apply NANO_AGENT_DB --config workers/orchestrator-core/wrangler.jsonc --env preview --remote`
+     - `pnpm --filter @haimang/bash-core-worker deploy:preview`
+     - `pnpm --filter @haimang/agent-core-worker deploy:preview`
+     - `NANO_AGENT_LIVE_E2E=1 NANO_AGENT_ORCHESTRATOR_JWT_SECRET=<preview-key> pnpm test:package-e2e` → `36 / 36`
+     - `NANO_AGENT_LIVE_E2E=1 NANO_AGENT_ORCHESTRATOR_JWT_SECRET=<preview-key> pnpm test:cross-e2e` → `12 / 12`
+
+- **本轮 Z3 最终收口判断**
+  1. zero-to-real 已第一次拥有真实 Workers AI mainline runtime，而不是 fake/local-only provider path。
+  2. llm/tool quota gate 已进入 shared law，并具备 durable usage/balance truth。
+  3. façade -> agent-core -> bash-core 的真实 cross-worker roundtrip 已在 preview live 证据中闭合。
+  4. Z4 现在可以建立在真实 runtime/quota/audit baseline 之上，而不是继续消费 mock-only happy path。
