@@ -158,7 +158,7 @@
 1. **`orchestration.core` 必须继续是唯一对外入口**
    - public HTTP / WebSocket 只进 `orchestration.core`
    - 其他 worker 都是 internal-only
-2. **`orchestration.auth` 必须从 day-1 就是 pure internal binding / RPC**
+2. **`orchestrator.auth` 必须从 day-1 就是 pure internal binding / RPC**
    - 不开 public route
    - 只接受 `orchestration.core` 一个 caller
    - 其 exact transport form（WorkerEntrypoint RPC vs 过渡期 fetch-binding shim）在 `ZX-binding-boundary-and-rpc-rollout.md` 冻结；charter 本体只冻结 **single caller / no public route / internal-only** 三条硬纪律
@@ -230,7 +230,7 @@
 
 | gap | 当前事实 | 本阶段对应 |
 | --- | --- | --- |
-| 完整 end-user auth 不存在 | 没有独立 `orchestration.auth`; WeChat bridge 缺失 | Z1 |
+| 完整 end-user auth 不存在 | 没有独立 `orchestrator.auth`; WeChat bridge 缺失 | Z1 |
 | internal boundary 仍停在 fetch-backed internal HTTP | `orchestrator-core -> agent-core` 仍通过 `/internal/*` + secret header + URL path 调用 | Z0-Z3 |
 | user-stateful substrate 不完整 | 当前 user DO 尚无 DO SQLite / Alarm / conversation 聚合最低集合 | Z2-Z4 |
 | 共享 D1 真相层不完整 | session / turn / context / audit 还没成为 D1 SSOT | Z2 |
@@ -338,7 +338,7 @@ web 与 Mini Program 不是 demo，而是用来暴露 auth / WS / history / reco
 本阶段的 binding 纪律如下：
 
 1. `orchestration.core` = **唯一 public façade**
-2. `orchestration.auth` = **internal-only / only called by orchestration.core**
+2. `orchestrator.auth` = **internal-only / only called by orchestration.core**
 3. `agent.core` = **runtime host / only internal**
 4. `bash.core / context.core / filesystem.core` = **only internal**
 5. `orchestration.core` 不直接扩成超级路由器，不应继续直接 bind context/filesystem
@@ -377,10 +377,10 @@ web 与 Mini Program 不是 demo，而是用来暴露 auth / WS / history / reco
 
 1. 冻结 worker 间 binding matrix：
    - 只有 `orchestration.core` 对外
-   - `orchestration.auth` internal-only
+   - `orchestrator.auth` internal-only
    - `agent.core` 只作为 runtime host 被内部调用
 2. 冻结 RPC rollout law：
-   - `orchestration.auth` 走 pure internal transport
+   - `orchestrator.auth` 走 pure internal transport
    - `orchestration.core -> agent.core` control-plane RPC-first
    - stream-plane 作为 transitional surface 渐进退役
 3. 冻结 NACP realization track 作为全程主线
@@ -433,7 +433,7 @@ web 与 Mini Program 不是 demo，而是用来暴露 auth / WS / history / reco
    - `nano_user_identities`
    - `nano_teams`
    - `nano_team_memberships`
-3. 新建 `orchestration.auth`
+3. 新建 `orchestrator.auth`
 4. 实装完整 end-user auth flow：
    - register
    - login
@@ -445,7 +445,7 @@ web 与 Mini Program 不是 demo，而是用来暴露 auth / WS / history / reco
 5. 最小 API key **verify** 运行时路径（不含 admin plane）：
    - 仅用于 server-to-server 鉴权校验
    - 不引入 list/create/revoke/rotate/UI
-6. `orchestration.auth` 从 day-1 就走 pure internal transport：
+6. `orchestrator.auth` 从 day-1 就走 pure internal transport：
    - 不开 public route
    - 只接受 `orchestration.core` 一个 caller
    - exact transport form 在 `ZX-binding-boundary-and-rpc-rollout.md` 冻结；charter 当前偏向 WorkerEntrypoint RPC-first
@@ -464,7 +464,7 @@ web 与 Mini Program 不是 demo，而是用来暴露 auth / WS / history / reco
 
 #### 交付物
 
-1. `workers/orchestration-auth/` 或 owner-approved 等价位置
+1. `workers/orchestrator-auth/` 或 owner-approved 等价位置
 2. D1 identity core migrations
 3. auth RPC entrypoint / binding contracts / tests
 4. `docs/issue/zero-to-real/Z1-closure.md`
@@ -473,7 +473,7 @@ web 与 Mini Program 不是 demo，而是用来暴露 auth / WS / history / reco
 
 1. 两个真实 tenant 的用户能独立登录
 2. Web 与 WeChat token 都能被正确验证
-3. `orchestration.auth` 无 public route，且只接受 `orchestration.core` 调用
+3. `orchestrator.auth` 无 public route，且只接受 `orchestration.core` 调用
 4. authority / trace / tenant truth 已进入真实 ingress
 5. 用 Mini Program 开发者工具或等价 mock 至少跑通一次 `code -> openid -> JWT` code-level 链路
 6. negative cases 能稳定拒绝
@@ -666,7 +666,7 @@ Z0 -> Z1 -> Z2 -> Z3 -> Z4
    - 不先冻结 baseline，design 与 action-plan 会漂
 2. **Z1 必须先于 Z2**
    - session / audit / history 的所有真相都依赖真实 identity / tenant truth
-   - `orchestration.auth` 的 internal-only / pure RPC boundary 也必须先成立
+   - `orchestrator.auth` 的 internal-only / pure RPC boundary 也必须先成立
 3. **Z2 必须先于 Z3**
    - provider 接真之前，先把 session/audit/persistence 的 SSOT 与 control-plane RPC 基线落地，避免只有模型输出但没有真 history
 4. **Z3 必须先于 Z4**
@@ -691,7 +691,7 @@ Z0 -> Z1 -> Z2 -> Z3 -> Z4
 | 验证项 | 说明 | 主要 Phase |
 | --- | --- | --- |
 | multi-tenant negative tests | user A / tenant A 不得越权到 tenant B | Z1 |
-| auth pure-RPC boundary proof | `orchestration.auth` 无 public route，且只接受 `orchestration.core` caller | Z1 |
+| auth pure-RPC boundary proof | `orchestrator.auth` 无 public route，且只接受 `orchestration.core` caller | Z1 |
 | authority / trace no-escalation | public + internal body/header 双头校验 | Z1-Z3 |
 | D1 truth consistency | session / turn / message / context / audit 对齐 | Z2 |
 | user-state hot-path proof | history / reconnect / timeline 的热路径不只靠冷 D1 round-trip 兜底 | Z2 |
@@ -718,7 +718,7 @@ Z0 -> Z1 -> Z2 -> Z3 -> Z4
 1. **完整 end-user auth truth 已成立**
    - email/password + WeChat 都可用
    - JWT / refresh / tenant readback 成立
-   - `orchestration.auth` 为 internal-only pure RPC worker
+   - `orchestrator.auth` 为 internal-only pure RPC worker
    - 若 server-to-server ingress 被启用，最小 API key verify 运行时路径成立
 2. **multi-tenant / NACP compliance 成为 runtime truth**
    - public/internal 双头校验成立
@@ -743,7 +743,7 @@ Z0 -> Z1 -> Z2 -> Z3 -> Z4
 1. WeChat auth 仍未进入真实链路
 2. tenant boundary / no-escalation 仍存在可复现洞
 3. session/history/context/audit 仍主要依赖热态而非 SSOT
-4. `orchestration.auth` 仍暴露 public route 或非 `orchestration.core` caller
+4. `orchestrator.auth` 仍暴露 public route 或非 `orchestration.core` caller
 5. runtime 仍主要走 fake provider
 6. history / reconnect 只能依赖冷路径兜底而无 hot-state 最低集合
 7. Mini Program 无法完成连续真实 loop

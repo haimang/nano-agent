@@ -17,17 +17,17 @@
 
 ## 1. Auth / Boundary / RPC
 
-### Q1 — `orchestration.auth` 的 exact transport form，是否直接冻结为 WorkerEntrypoint RPC-first？（来源：`ZX-binding-boundary-and-rpc-rollout.md`、`Z1-full-auth-and-tenant-foundation.md`）
+### Q1 — `orchestrator.auth` 的 exact transport form，是否直接冻结为 WorkerEntrypoint RPC-first？（来源：`ZX-binding-boundary-and-rpc-rollout.md`、`Z1-full-auth-and-tenant-foundation.md`）
 
-- **影响范围**：`workers/orchestration-auth/**`、`workers/orchestrator-core/**`、Z1 tests、后续 auth pure-RPC boundary proof
-- **为什么必须确认**：虽然 charter 已冻结 `orchestration.auth = internal-only + single caller + no public route`，但 exact transport 仍影响 Z1 的实现路线。如果不拍板，Z1 会在 WorkerEntrypoint RPC 与 fetch-binding shim 之间摇摆。
+- **影响范围**：`workers/orchestrator-auth/**`、`workers/orchestrator-core/**`、Z1 tests、后续 auth pure-RPC boundary proof
+- **为什么必须确认**：虽然 charter 已冻结 `orchestrator.auth = internal-only + single caller + no public route`，但 exact transport 仍影响 Z1 的实现路线。如果不拍板，Z1 会在 WorkerEntrypoint RPC 与 fetch-binding shim 之间摇摆。
 - **当前建议 / 倾向**：**优先冻结为 WorkerEntrypoint RPC-first；仅在 Cloudflare 实际限制阻塞时，退回 fetch-binding shim 作为过渡实现。**
 - **Reasoning**：这个问题出现，是因为 repo 当前真正跑着的 internal control-plane 仍偏 fetch-backed，而 `nacp-core` 已经有 service-binding / DO RPC transport primitives。推荐 WorkerEntrypoint RPC-first，更符合 zero-to-real 对“internal boundary 是主线之一”的要求；如果不拍板，Z1 极可能把 auth 先做成 fetch shim，然后长期拖着不切。
 
 - **Opus的对问题的分解**：
   - 问题其实有三层：(a) RPC vs fetch-binding shim 的技术选型；(b) caller / callee 之间合约由谁拥有，是否 typed；(c) 实施过渡期如何避免"shim 永久化"。
   - 代码事实：`packages/nacp-core/src/transport/service-binding.ts` 与 `do-rpc.ts` 已具备 transport precheck 能力；`workers/orchestrator-core/src/user-do.ts:657 forwardInternalRaw` 当前仍走 `https://agent.internal/internal/...` fetch-backed——这是过渡现实，不是终态。
-  - 同时 `workers/orchestration-auth/` 目录在文件系统中**不存在**——这道题不仅是"选 transport"，而是"建一个新 worker 时第一笔技术债选哪种"。
+  - 同时 `workers/orchestrator-auth/` 目录在文件系统中**不存在**——这道题不仅是"选 transport"，而是"建一个新 worker 时第一笔技术债选哪种"。
 
 - **Opus的对GPT推荐线路的分析**：
   - GPT 推荐 WorkerEntrypoint RPC-first 与 charter 的"control-plane RPC-first"主线吻合，技术前提具备，方向正确。
@@ -36,16 +36,16 @@
 
 - **Opus的最终回答**：
   - **同意 WorkerEntrypoint RPC-first**，但附两条硬约束：
-    1. **必须创建 `packages/orchestration-auth-contract/` typed 合约包**：auth worker 与 orchestrator 都从该包 import 接口与 envelope 类型，杜绝 caller/callee 类型漂移。
+    1. **必须创建 `packages/orchestrator-auth-contract/` typed 合约包**：auth worker 与 orchestrator 都从该包 import 接口与 envelope 类型，杜绝 caller/callee 类型漂移。
     2. **fetch-binding shim 退化路径必须带 retire deadline**：仅当 Cloudflare 平台限制确实阻塞 RPC 时允许 shim，但必须在 Z1 closure 文档显式记录"deadline = Z2 closure 之前必须完全替换为 RPC"，否则 Z2 review 不收口。
-  - 业主回答此题时建议同时确认 Z1 是否承担 `workers/orchestration-auth/` 工程骨架（参见 review R3）——若不承担，本题答案没有落点。
+  - 业主回答此题时建议同时确认 Z1 是否承担 `workers/orchestrator-auth/` 工程骨架（参见 review R3）——若不承担，本题答案没有落点。
 
-- **问题**：`Z1 是否确认把 orchestration.auth 的 exact transport 冻结为 WorkerEntrypoint RPC-first？若不同意，请明确是接受 fetch-binding shim 作为 Z1 baseline，还是要改成其它 internal transport。`
+- **问题**：`Z1 是否确认把 orchestrator.auth 的 exact transport 冻结为 WorkerEntrypoint RPC-first？若不同意，请明确是接受 fetch-binding shim 作为 Z1 baseline，还是要改成其它 internal transport。`
 - **业主回答**：同意 GPT 的推荐，同意 Opus 的看法。
 
 ### Q2 — JWT signing / verification / rotation 的 first-wave 纪律，是否采用“单签发 key + 双验证窗口”？（来源：`ZX-nacp-realization-track.md`、`Z1-full-auth-and-tenant-foundation.md`）
 
-- **影响范围**：`orchestration.auth` JWT mint、`orchestration.core` verify、secret rotation playbook、Z1 closure
+- **影响范围**：`orchestrator.auth` JWT mint、`orchestration.core` verify、secret rotation playbook、Z1 closure
 - **为什么必须确认**：auth worker 与 orchestrator 需要共享 token truth；如果 rotation 策略不冻结，Z1 只能写死“一个 secret 永久不动”或引入过度复杂方案。
 - **当前建议 / 倾向**：**采用 HS256 单签发 key + 双验证窗口。** 即 auth worker 仅用 active key 签发；orchestrator 在 rotation 窗口内同时接受 old/new 验证，待旧 token 自然过期后删除旧 key。
 - **Reasoning**：这个问题出现，是因为 zero-to-real 需要真实 JWT，而真实 JWT 一旦进入生产路径就必须考虑 rotation。推荐路线足够简单，也与当前 repo 的轻量 auth reality 匹配；如果不拍板，Z1 可能先做出无法平滑轮换的 token 方案，后续再返工。
@@ -100,7 +100,7 @@
 
 ### Q4 — 最小 API key verify 运行时路径，是否只有在 server-to-server ingress 启用时才进入 Z1？（来源：`Z1-full-auth-and-tenant-foundation.md`、`ZX-binding-boundary-and-rpc-rollout.md`）
 
-- **影响范围**：`orchestration.auth`、server-to-server ingress、Z1 scope 控制
+- **影响范围**：`orchestrator.auth`、server-to-server ingress、Z1 scope 控制
 - **为什么必须确认**：charter 已明确“完整 API key admin plane out-of-scope，但最小 verify path 可在 Z1”。是否真的要进 Z1，需要 owner 拍板，否则 scope 可能继续膨胀。
 - **当前建议 / 倾向**：**只有当 zero-to-real 确定会启用 server-to-server ingress 时，才把 minimal API key verify 放进 Z1；否则保持 schema reserved，不抢跑实现。**
 - **Reasoning**：这个问题出现，是因为 API key 很容易从“最小 verify”膨胀成半个 admin plane。当前推荐路线更稳：仅当它真服务 first real run 时才实现；如果不拍板，Z1 容易被不必要的 control-plane richness 稀释。

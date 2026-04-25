@@ -57,7 +57,7 @@
 - Z1-Z4 的 phase 切分逻辑（先 contract+schema → worker skeleton → full flow → external bridge → negative tests+closure）与 charter §8 DAG 一致。
 - Z0 的 "freeze audit → execution mapping → validation baseline → Z0 closure" 四阶段自身构成完整的 phase governance。
 - Z5 的三阶段 "completion audit → final verdict → handoff pack" 明确定位为文档型收口 phase，不做代码修补（符合 charter §7.5 的 closure/handoff 交付物清单）。
-- `packages/orchestration-auth-contract/` 作为 typed RPC contract package 进入 Z1 Phase 1，直接回应 Q1 Opus 约束第 1 条。
+- `packages/orchestrator-auth-contract/` 作为 typed RPC contract package 进入 Z1 Phase 1，直接回应 Q1 Opus 约束第 1 条。
 - Z2 Phase 4 采用两步 RPC kickoff（`status` smoke → `start` dual-impl），与 Q7 Opus 推荐完全一致。
 - Z4 Phase 1→2 顺序为 web 先、Mini Program 后，与 Q10 Opus 约束第 4 条一致。
 - Z1 Phase 1 将 `nano_team_api_keys` schema 纳入 Wave A（建表但不实现 verify path），与 Q4 Opus 推荐一致。
@@ -151,12 +151,12 @@
   - `docs/action-plan/zero-to-real/Z1-full-auth-and-tenant-foundation.md:165` — Wave-A migration 放在 `workers/orchestrator-core/migrations/001-identity-core.sql`。
   - `docs/action-plan/zero-to-real/Z2-session-truth-and-audit-baseline.md:200` — Wave-B migration 放在 `workers/orchestrator-core/migrations/002-session-truth-and-audit.sql`。
   - `docs/action-plan/zero-to-real/Z3-real-runtime-and-quota.md:291` — Wave-C migration 放在 `workers/orchestrator-core/migrations/003-usage-and-quota.sql`。
-  - `docs/design/zero-to-real/ZX-d1-schema-and-migrations.md:60-62` — "服务于 `orchestration.auth`、`orchestration.core`、`agent.core`"。
-  - `docs/design/zero-to-real/ZX-d1-schema-and-migrations.md:335-339` — Write Ownership Matrix 中 identity 表由 `orchestration.auth` 主写、conversation 表由 `orchestration.core` 和 `agent.core` 分担。
+  - `docs/design/zero-to-real/ZX-d1-schema-and-migrations.md:60-62` — "服务于 `orchestrator.auth`、`orchestration.core`、`agent.core`"。
+  - `docs/design/zero-to-real/ZX-d1-schema-and-migrations.md:335-339` — Write Ownership Matrix 中 identity 表由 `orchestrator.auth` 主写、conversation 表由 `orchestration.core` 和 `agent.core` 分担。
 - **为什么重要**：
-  - 三份 migration 文件都放在 `orchestrator-core/migrations/` 下，暗示 `orchestrator-core` 是 migration runner。但 ZX-d1 的 write ownership 把 identity 写权限给 `orchestration.auth`、conversation session 写权限给 `orchestration.core`、turn/message/context 写权限给 `agent.core`。
-  - 如果 `orchestrator-core` 既是 Z2 migration runner 又是 conversation session 的写 owner，这本身是合理的。但 Z1 migration（identity core）的 run 时机在 `orchestration.auth` 创建 **之前**（Z1 Phase 2），而 identity 表的写 owner 是 `orchestration.auth`——这里存在 chicken-and-egg：谁在 `orchestration.auth` 还不存在时运行 identity migration？
-  - 更稳健的方案在 ZX-d1 中被提及但未被执行：设计 doc 说 "由 `orchestration.auth` 触发 migration"，但 action-plan 把 migration 放在 `orchestrator-core`。需要澄清一致。
+  - 三份 migration 文件都放在 `orchestrator-core/migrations/` 下，暗示 `orchestrator-core` 是 migration runner。但 ZX-d1 的 write ownership 把 identity 写权限给 `orchestrator.auth`、conversation session 写权限给 `orchestration.core`、turn/message/context 写权限给 `agent.core`。
+  - 如果 `orchestrator-core` 既是 Z2 migration runner 又是 conversation session 的写 owner，这本身是合理的。但 Z1 migration（identity core）的 run 时机在 `orchestrator.auth` 创建 **之前**（Z1 Phase 2），而 identity 表的写 owner 是 `orchestrator.auth`——这里存在 chicken-and-egg：谁在 `orchestrator.auth` 还不存在时运行 identity migration？
+  - 更稳健的方案在 ZX-d1 中被提及但未被执行：设计 doc 说 "由 `orchestrator.auth` 触发 migration"，但 action-plan 把 migration 放在 `orchestrator-core`。需要澄清一致。
 - **审查判断**：
   - 这不会阻止 Z1 启动（可以手动 `wrangler d1 execute`），但 action-plan 应明确 migration trigger strategy，避免 Z2/Z3 的增量 migration 出现在迁移顺序意外。
 - **建议修法**：
@@ -357,8 +357,8 @@
 
 | 编号 | 审查项 | 审查结论 | 说明 |
 |------|--------|----------|------|
-| S04 | S1: 新建 `packages/orchestration-auth-contract/` | `done` | P1-01 创建 typed RPC contract package，直接回应 Q1 Opus 第 1 条约束。 |
-| S05 | S2: 新建 `workers/orchestration-auth/` internal-only worker | `done` | P2-01 创建 auth worker scaffold + wrangler config，P2-02 将 orchestrator 降级为 proxy-only。 |
+| S04 | S1: 新建 `packages/orchestrator-auth-contract/` | `done` | P1-01 创建 typed RPC contract package，直接回应 Q1 Opus 第 1 条约束。 |
+| S05 | S2: 新建 `workers/orchestrator-auth/` internal-only worker | `done` | P2-01 创建 auth worker scaffold + wrangler config，P2-02 将 orchestrator 降级为 proxy-only。 |
 | S06 | S3: Wave A D1 schema（identity core + auth_sessions + team_api_keys） | `partial` | P1-02 建表清单包含了所有 7 张表。Q2 Opus 的 `kid`-based rotation 默认 access 1h/refresh 30d 未在 P1-02 收口标准中显式落地（见 R7）。Q4 的 schema reserved + impl defer 已正确执行。 |
 | S07 | S4: register/login/verify/refresh/reset/me | `partial` | P3-01/P3-02 覆盖全链路。refresh token lifetime 和 kid 命名约定未在收口标准中显式列出（见 R3/R7）。 |
 | S08 | S5: WeChat bridge | `done` | P4-01 覆盖 `code -> openid -> JWT`。Q3 Opus 约束的三条（默认 team 命名确定性、email 路径同样自动建 team、membership=owner）已进入 P4-02。 |

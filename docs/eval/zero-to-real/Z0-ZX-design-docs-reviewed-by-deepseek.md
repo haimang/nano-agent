@@ -49,7 +49,7 @@
   - 各 worker 的 `wrangler.jsonc`（binding 与 route 事实）
 - **执行过的验证**：
   - `grep` 扫描所有 worker wrangler 中的 `d1_databases`、`durable_objects`、`services` binding
-  - `grep` 扫描是否存在 `orchestration-auth` 目录
+  - `grep` 扫描是否存在 `orchestrator-auth` 目录
   - `grep` 扫描全仓 `DO SQLite` / `state.storage.sql` 使用
   - `grep` 扫描 WebSocket 双向实现（`addEventListener('message'`）
   - 对照设计文档中引用的代码文件与实际文件存在性
@@ -71,7 +71,7 @@
 
 ### 1.2 已确认的负面事实
 
-- **`workers/orchestration-auth/` 目录不存在**，任何 git 历史中均未出现。当前 auth 能力嵌入在 `orchestrator-core/src/auth.ts` 中。
+- **`workers/orchestrator-auth/` 目录不存在**，任何 git 历史中均未出现。当前 auth 能力嵌入在 `orchestrator-core/src/auth.ts` 中。
 - **全仓 5 个 worker 的 wrangler.jsonc 中，无任何 `[[d1_databases]]` binding**。D1 处于零使用状态。
 - **全仓零 DO SQLite（`state.storage.sql`）使用**。DO storage 全部使用 key-value API（`state.storage.get/put/delete`）。
 - **`workers/context-core/` 和 `workers/filesystem-core/` 是 library worker shell**（入口各 32 行，仅 `/health`），无内部 HTTP route，无 DO class，逻辑通过 `@haimang/context-core-worker` / `@haimang/filesystem-core-worker` package 被 `agent-core` 消费为库。
@@ -95,7 +95,7 @@
   - `docs/design/zero-to-real/Z0-contract-and-compliance-freeze.md:321` — Z0 自身将 `"决策确认"` 列为下一步行动首项。
   - `docs/charter/plan-zero-to-real.md:63-67` — charter 明确将 QnA 定位为 "design 阶段的配套工件"。
 - **为什么重要**：
-  - Q1（auth transport form）直接决定 `orchestration.auth` 的 bringup 路线——RPC or fetch shim。
+  - Q1（auth transport form）直接决定 `orchestrator.auth` 的 bringup 路线——RPC or fetch shim。
   - Q5（activity log schema 单表 vs 拆表）直接决定 Z2 的 D1 migration 内容。
   - Q6（DO SQLite hot-state 最低集合粒度）直接决定 Z2 的 stateful uplift scope。
   - Q7（首条 dual-implemented 方法）直接决定 Z2 的 RPC kickoff 证明标准。
@@ -189,11 +189,11 @@
 - **审查判断**：
   - ZX-d1 文档作为 schema 冻结是合格的，但缺少 "D1 bringup baseline"——即"从零到有 D1"的工程基座设计。这不是要求 Z0 就写完所有 migration SQL，而是要求在 design 阶段冻结 migration strategy、trigger worker、以及 cross-worker binding 的 rollout 顺序。
 - **建议修法**：
-  - 在 `ZX-d1-schema-and-migrations.md` 中补充一节 "D1 Bringup Baseline"，明确：(a) `nano-agent-db` 的 wrangler 创建流程（手动 or wrangler.toml/JSONC 配置）；(b) migration 由哪个 worker 触发（建议 `orchestration.auth` 或独立 migrator worker）；(c) Z1 identity → Z2 conversation → Z3 quota 的 migration 追加顺序；(d) 每个 bind D1 的 worker 的 query helper 封装范式。
+  - 在 `ZX-d1-schema-and-migrations.md` 中补充一节 "D1 Bringup Baseline"，明确：(a) `nano-agent-db` 的 wrangler 创建流程（手动 or wrangler.toml/JSONC 配置）；(b) migration 由哪个 worker 触发（建议 `orchestrator.auth` 或独立 migrator worker）；(c) Z1 identity → Z2 conversation → Z3 quota 的 migration 追加顺序；(d) 每个 bind D1 的 worker 的 query helper 封装范式。
 
 ---
 
-### R6. `orchestration.auth` 的设计缺少对当前嵌入式 auth 的迁移讨论
+### R6. `orchestrator.auth` 的设计缺少对当前嵌入式 auth 的迁移讨论
 
 - **严重级别**：`high`
 - **类型**：`delivery-gap`
@@ -201,15 +201,15 @@
   - `workers/orchestrator-core/src/auth.ts:1-165` — 完整的 `verifyJwt()` / `createJwt()` / `hashSecret()` 实现。
   - `workers/orchestrator-core/src/index.ts` — `fetch()` 入口调用 `requireAuthFromRequest()` 验证 JWT。
   - `workers/orchestrator-core/src/user-do.ts` — `handleStart()` 等接收 `AuthSnapshot`。
-  - `docs/design/zero-to-real/Z1-full-auth-and-tenant-foundation.md` — 全文讨论 "新建 `orchestration.auth`"，但从未讨论"如何从现有 `orchestrator-core/src/auth.ts` 迁移到独立 auth worker"。
+  - `docs/design/zero-to-real/Z1-full-auth-and-tenant-foundation.md` — 全文讨论 "新建 `orchestrator.auth`"，但从未讨论"如何从现有 `orchestrator-core/src/auth.ts` 迁移到独立 auth worker"。
   - `docs/eval/zero-to-real/plan-analysis-by-opus-v2.md:171-173` — §2.1 明确写出 "JWT claim schema 沿用 orchestrator.core 当前格式 {sub, tenant_uuid, ...}"。
 - **为什么重要**：
-  - Z1 不是 greenfield 开发——`orchestrator-core` 已经有完整的 JWT mint/verify 逻辑。迁移意味着：(a) 从 `orchestrator-core` 中移除 `auth.ts` 的 JWT mint 能力（只保留 verify）；(b) 在 `orchestration.auth` 中重建 register/login/JWT mint；(c) 确保两个 worker 的 JWT claim format 一致；(d) 处理 migration 期间的过渡期（新旧两套共存？直接切换？）。
-  - 如果不讨论迁移路径，Z1 实现者可能：(a) 把 `orchestration.auth` 写成全新的，然后发现 `orchestrator-core` 的 JWT format 不一致；(b) 忘掉从 `orchestrator-core` 移除 mint 逻辑，导致出现两个 token 签发者。
+  - Z1 不是 greenfield 开发——`orchestrator-core` 已经有完整的 JWT mint/verify 逻辑。迁移意味着：(a) 从 `orchestrator-core` 中移除 `auth.ts` 的 JWT mint 能力（只保留 verify）；(b) 在 `orchestrator.auth` 中重建 register/login/JWT mint；(c) 确保两个 worker 的 JWT claim format 一致；(d) 处理 migration 期间的过渡期（新旧两套共存？直接切换？）。
+  - 如果不讨论迁移路径，Z1 实现者可能：(a) 把 `orchestrator.auth` 写成全新的，然后发现 `orchestrator-core` 的 JWT format 不一致；(b) 忘掉从 `orchestrator-core` 移除 mint 逻辑，导致出现两个 token 签发者。
 - **审查判断**：
   - 这是设计文档最明显的"断点"——Z1 设计文件讨论的是一个"即将新建"的 auth worker，却没有审查"当前 auth 在哪里、怎么撤"。这种遗漏会导致 Z1 实现时的 integration risk。
 - **建议修法**：
-  - 在 Z1 设计文档中追加一节 "Migration from Embedded Auth"，明确：(a) 当前 `orchestrator-core/src/auth.ts` 中哪些逻辑保留（verify only）、哪些迁移到 `orchestration.auth`（mint/register/login）；(b) JWT claim format 保持 {sub, tenant_uuid, membership_level, ...} 不变；(c) 过渡期间是否接受双签发源。
+  - 在 Z1 设计文档中追加一节 "Migration from Embedded Auth"，明确：(a) 当前 `orchestrator-core/src/auth.ts` 中哪些逻辑保留（verify only）、哪些迁移到 `orchestrator.auth`（mint/register/login）；(b) JWT claim format 保持 {sub, tenant_uuid, membership_level, ...} 不变；(c) 过渡期间是否接受双签发源。
 
 ---
 
@@ -307,7 +307,7 @@
 - **类型**：`docs-gap`
 - **事实依据**：
   - `ZX-d1-schema-and-migrations.md:209-212` — 提到 "write ownership 单一化" 作为 tradeoff，但未分配具体表→worker 的映射。
-  - `Z1-full-auth-and-tenant-foundation.md:115-117` — 将 identity write ownership 固定在 `orchestration.auth`。
+  - `Z1-full-auth-and-tenant-foundation.md:115-117` — 将 identity write ownership 固定在 `orchestrator.auth`。
   - `Z2-session-truth-and-audit-baseline.md` — 未明确 conversation 表的 write ownership 是 `orchestration.core` 还是 `agent.core`。
   - `Z3-real-runtime-and-quota.md` — 未明确 usage/balance 表的 write ownership。
 - **为什么重要**：
@@ -383,10 +383,10 @@
 |------|-----------|----------|------|
 | S07 | 新建 `nano-agent-db` | `pending` | ZX-d1 冻结了 schema，但 D1 bringup 的工程基线（wrangler config, migration trigger）尚未冻结。 |
 | S08 | 落 identity core schema | `done` | ZX-d1 §5.1 S1 包含了 5 张 identity 表。 |
-| S09 | 新建 `orchestration.auth` | `partial` | Z1 设计完整描述了 auth worker 的角色与内部路径，但缺少从 `orchestrator-core/auth.ts` 的迁移路径（见 R6）。 |
+| S09 | 新建 `orchestrator.auth` | `partial` | Z1 设计完整描述了 auth worker 的角色与内部路径，但缺少从 `orchestrator-core/auth.ts` 的迁移路径（见 R6）。 |
 | S10 | 实装完整 end-user auth flow | `partial` | Z1 §7.2 F2 列出了 register/login/verify/refresh/reset/me，但 refresh token state（`nano_auth_sessions`）仅在 ZX-d1 §5.3 的灰色地带表中提及，未给出最小字段设计。 |
 | S11 | 最小 API key verify 运行时路径 | `pending` | Z1 §5.3 标记为 conditional in-scope，Q4 未回答。 |
-| S12 | `orchestration.auth` day-1 pure internal transport | `pending` | Q1 未回答（WorkerEntrypoint RPC vs fetch shim）。 |
+| S12 | `orchestrator.auth` day-1 pure internal transport | `pending` | Q1 未回答（WorkerEntrypoint RPC vs fetch shim）。 |
 | S13 | public ingress → AuthSnapshot → NacpAuthority | `partial` | ZX-nacp §7.2 F1 冻结了 authority translation law，但 Z1 设计文档未给出具体 mapping 方案（JWT claims → AuthSnapshot 的逐字段映射）。 |
 | S14 | 双租户 / no-escalation / negative tests | `done` | Z1 §5.1 S5 明确要求。 |
 

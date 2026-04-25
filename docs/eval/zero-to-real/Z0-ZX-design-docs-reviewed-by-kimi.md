@@ -62,7 +62,7 @@
 
 - `find workers/ -name "*.ts" | head -100` — 确认 worker 代码结构
 - `grep -r "D1\|d1_database\|DB" workers/*/wrangler.jsonc` — 确认无 D1 binding
-- `grep -r "orchestration-auth" workers/` — 确认无 auth worker
+- `grep -r "orchestrator-auth" workers/` — 确认无 auth worker
 - `grep -r "wechat\|WeChat\|wx\." workers/ packages/` — 确认无 WeChat 代码
 - `grep -r "WorkerEntrypoint" workers/ packages/` — 确认无 WorkerEntrypoint RPC 使用
 - `grep -r "env\.AI" workers/ packages/` — 确认无 Workers AI binding 使用
@@ -75,12 +75,12 @@
 - **kernel loop 骨架完整**：`agent-core/src/kernel/runner.ts` 的 step-driven runner、tool exec、lifecycle events 已存在，只差 real provider 接线。
 - **capability hook seam 已预留**：`bash-core/src/executor.ts:203-218` 的 `beforeCapabilityExecute` 为 quota gate 预留了接入点。
 - **thin-but-complete 口径把握得当**：所有设计文档一致排除 full admin plane / full RPC retirement / cold archive，避免了 scope creep。
-- **binding matrix 纪律清晰**：`orchestration.core` 唯一 public façade、`orchestration.auth` internal-only 等原则在所有文件中一致。
+- **binding matrix 纪律清晰**：`orchestration.core` 唯一 public façade、`orchestrator.auth` internal-only 等原则在所有文件中一致。
 
 ### 1.5 已确认的负面事实
 
 - **无 D1 基础设施**：所有 wrangler.jsonc 无 D1 binding；代码中无 `nano-agent-db` 相关引用。
-- **无 auth worker**：无 `workers/orchestration-auth/` 目录；无 JWT mint / register / login / WeChat 代码。
+- **无 auth worker**：无 `workers/orchestrator-auth/` 目录；无 JWT mint / register / login / WeChat 代码。
 - **无 DO SQLite / Alarm**：`user-do.ts` 只使用 `ctx.storage.get/put`；无 `state.storage.sql` 调用。
 - **无 Workers AI adapter**：`llm-wrapper` 有 OpenAI adapter 但无 Workers AI；`gateway.ts` 是 stub。
 - **无 web / Mini Program 客户端**：代码库中无前端代码目录；`context/mini-agent/` 是 Python CLI。
@@ -100,7 +100,7 @@
   - 所有 `workers/*/wrangler.jsonc` 都没有 `[[d1_databases]]` binding
   - `packages/llm-wrapper/src/gateway.ts:6-7` 明确标注 "Stub interface only — not implemented in v1"
   - `workers/orchestrator-core/src/user-do.ts:692` 使用 `https://agent.internal/internal/sessions/...` fetch 调用
-  - 没有 `workers/orchestration-auth/` 目录
+  - 没有 `workers/orchestrator-auth/` 目录
   - 没有 web client 或 Mini Program 代码
 - **为什么重要**：设计文件反复使用"推进""接入""补齐""启动"等词汇，reader 容易误以为当前代码已有相当基础。实际上需要从零建设的部分占比极高：auth worker (~800 LOC)、D1 schema + migrations (~1500 LOC)、DO SQLite uplift (~400 LOC)、Workers AI adapter (~250 LOC)、WeChat bridge (~200 LOC)、web client (~500 LOC)、Mini Program (~400 LOC)。Opus v2 估算的 ~5500 LOC 中，当前已 shipped 的骨架可能只占 ~1000-1500 LOC。
 - **审查判断**：每份设计文档的"背景与前置约束"应增加"当前代码真实起点"小节，明确列出哪些已有、哪些需从零建设，防止工期估算偏低。
@@ -231,15 +231,15 @@
 - **类型**：`scope-drift`
 - **事实依据**：
   - `orchestrator-core/src/auth.ts` 已有 190 行 JWT verify 逻辑，包括 `verifyJwt()`、`parseBearerToken()`、`authenticateRequest()`
-  - Z1 要求新建 `orchestration.auth` worker，负责 JWT mint / verify / refresh
+  - Z1 要求新建 `orchestrator.auth` worker，负责 JWT mint / verify / refresh
   - 但设计文件没有说明 orchestrator-core 现有的 verify 逻辑是保留、迁移还是重写
 - **为什么重要**：如果不明确，可能出现两套 JWT 逻辑并存（orchestrator-core 的本地 verify + auth worker 的 verify），或出现不必要的重构。
 - **审查判断**：Z1 应明确现有 auth 模块的命运。
 - **建议修法**：
   - 在 Z1 §7.2 F1 或 §3.3 中明确：
-    - `orchestrator-core` 保留 JWT verify 作为 fast-path（减少 RPC 调用），但验证 key 与 `orchestration.auth` 共享
-    - 或 `orchestrator-core` 的 verify 完全委托给 `orchestration.auth` 的 binding call
-    - `orchestration.auth` 负责 JWT mint、refresh、WeChat bridge、identity CRUD
+    - `orchestrator-core` 保留 JWT verify 作为 fast-path（减少 RPC 调用），但验证 key 与 `orchestrator.auth` 共享
+    - 或 `orchestrator-core` 的 verify 完全委托给 `orchestrator.auth` 的 binding call
+    - `orchestrator.auth` 负责 JWT mint、refresh、WeChat bridge、identity CRUD
 
 ### R10. D1 migration 策略与工具未选择
 
@@ -300,7 +300,7 @@
 |------|----------------|----------|------|
 | S1 | Z0 冻结全局边界、方法论、文档顺序 | done | 框架完整，charter-freeze / design-handoff 二分法清晰 |
 | S2 | Z0 产出 design / action-plan / closure 文件清单 | done | 清单完整，撰写顺序合理 |
-| S3 | Z1 新建 orchestration.auth（internal-only） | partial | 架构清晰，但与现有 auth.ts 集成关系未明确；Q1/Q2/Q3/Q4 未回答 |
+| S3 | Z1 新建 orchestrator.auth（internal-only） | partial | 架构清晰，但与现有 auth.ts 集成关系未明确；Q1/Q2/Q3/Q4 未回答 |
 | S4 | Z1 完整 end-user auth flow | partial | 范围合理，但 refresh token 存储机制未定义 |
 | S5 | Z1 WeChat bridge | partial | 目标明确，但 Q3（自动建租户）未回答 |
 | S6 | Z2 conversation/session/turn/message 落 D1 | partial | 表清单合理，但缺少具体 DDL；migration 策略未选择 |
@@ -498,7 +498,7 @@ Z0 -> Z1 -> Z2 -> Z3 -> Z4
 | 阶段 | 定性指标（原文） | 建议量化补充 |
 |------|----------------|-------------|
 | Z1 | 两个真实 tenant 的用户能独立登录 | 增加：login latency < 500ms；JWT verify 通过率 100%（negative test 100% reject） |
-| Z1 | `orchestration.auth` 无 public route | 增加：port scan / route probe 验证只有 orchestration.core 可调用 |
+| Z1 | `orchestrator.auth` 无 public route | 增加：port scan / route probe 验证只有 orchestration.core 可调用 |
 | Z2 | session 结束后 history 仍可查询 | 增加：history API 返回最近 N 条 message 的 latency < 200ms |
 | Z2 | user DO 的 hot-state 最低集合已成立 | 增加：DO SQLite 包含 4 张表（conversation_index, active_pointers, reconnect_hints, alarm_schedule） |
 | Z2 | 至少 1 条主方法双实现可用 | 增加：`start` 方法同时有 HTTP 和 RPC 实现，且通过同一套 integration test |

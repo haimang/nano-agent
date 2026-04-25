@@ -99,7 +99,7 @@ Z4 Real Clients and First Real Run
 │       └── Z4-closure.md                [new]
 └── workers/
     ├── orchestrator-core/
-    ├── orchestration-auth/
+    ├── orchestrator-auth/
     └── agent-core/
 ```
 
@@ -139,7 +139,7 @@ Z4 Real Clients and First Real Run
 | P1-01 | Phase 1 | web client scaffold | `add` | `clients/web/**` | 建最小 web 真实入口 | `medium` |
 | P1-02 | Phase 1 | web auth/session integration | `update` | `clients/web/**` `workers/orchestrator-core/**` | 接通 email/password + session loop | `high` |
 | P2-01 | Phase 2 | mini-program scaffold | `add` | `clients/wechat-miniprogram/**` | 建最小微信小程序真实入口 | `medium` |
-| P2-02 | Phase 2 | wechat auth/session integration | `update` | `clients/wechat-miniprogram/**` `workers/orchestration-auth/**` | 接通 WeChat code-level 登录与 session loop | `high` |
+| P2-02 | Phase 2 | wechat auth/session integration | `update` | `clients/wechat-miniprogram/**` `workers/orchestrator-auth/**` | 接通 WeChat code-level 登录与 session loop | `high` |
 | P3-01 | Phase 3 | replay/heartbeat gap fixes | `update` | `clients/**` `workers/orchestrator-core/**` `workers/agent-core/**` | 用真实客户端压出并修补 stateful gaps | `high` |
 | P3-02 | Phase 3 | error/quota disclosure hardening | `update` | `clients/**` `workers/agent-core/**` | 让 runtime failures 对客户端诚实可见 | `medium` |
 | P4-01 | Phase 4 | first real run evidence | `add` | `docs/eval/zero-to-real/first-real-run-evidence.md` | 固定第一次真实 loop 证据 | `medium` |
@@ -163,7 +163,7 @@ Z4 Real Clients and First Real Run
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
 | P2-01 | mini-program scaffold | 新建 `clients/wechat-miniprogram/`，按微信原生工程搭最小页面、store、transport layer | `clients/wechat-miniprogram/**` | 小程序成为真实实验入口 | developer-tools smoke | 目录可运行、页面可加载 |
-| P2-02 | wechat auth/session integration | 接 WeChat 登录、HTTP `start/input(session_uuid required)`、WS `stream/history`、session list/readback | `clients/wechat-miniprogram/**` `workers/orchestration-auth/**` | 小程序可真实进入 agent loop | developer-tools smoke / manual evidence | code-level 登录与 session 基线可跑通 |
+| P2-02 | wechat auth/session integration | 接 WeChat 登录、HTTP `start/input(session_uuid required)`、WS `stream/history`、session list/readback | `clients/wechat-miniprogram/**` `workers/orchestrator-auth/**` | 小程序可真实进入 agent loop | developer-tools smoke / manual evidence | code-level 登录与 session 基线可跑通 |
 
 ### 4.3 Phase 3 — Replay / Heartbeat / Stateful Gap Fix
 
@@ -200,7 +200,7 @@ Z4 Real Clients and First Real Run
   - `clients/web/**`
 - **本 Phase 修改文件**：
   - `workers/orchestrator-core/**`
-  - `workers/orchestration-auth/**`
+  - `workers/orchestrator-auth/**`
 - **具体功能预期**：
   1. web 具备 login/session start/stream history 最小闭环。
   2. 终端用户能直观看到 runtime 输出与错误。
@@ -227,7 +227,7 @@ Z4 Real Clients and First Real Run
 - **本 Phase 新增文件**：
   - `clients/wechat-miniprogram/**`
 - **本 Phase 修改文件**：
-  - `workers/orchestration-auth/**`
+  - `workers/orchestrator-auth/**`
   - `workers/orchestrator-core/**`
 - **具体功能预期**：
   1. 小程序可完成 code-level 登录。

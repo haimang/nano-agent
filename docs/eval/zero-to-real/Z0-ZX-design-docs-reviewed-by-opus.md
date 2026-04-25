@@ -22,12 +22,12 @@
 
 > 一句话 verdict：**这套 design 在“边界、顺序、phase governance”层做得比 charter 更扎实，但在“可执行细节、可验证收口、greenfield deliverable”三层上仍是 charter-level 的复述**——它已经够用来阻止 scope 漂移，但还没到“凭这些文档就能直接拆 action-plan 而不再回头开会”的程度。
 
-- **整体判断**：`approve-with-followups (Grade: B)` — 主线判断与 charter 一致，结构闭合；但 §7.2 详细阐述系统性只覆盖前 2 项功能，`nano_*` 表均无字段级清单，Workers AI 的 binding/model 0 处提及，新建 `workers/orchestration-auth/` 这件事在 10 份文档里没有任何一份处理过。这些不是观点分歧，而是“后面 action-plan 必然会被这些洞重新拉回 design 阶段”的明确债务。
+- **整体判断**：`approve-with-followups (Grade: B)` — 主线判断与 charter 一致，结构闭合；但 §7.2 详细阐述系统性只覆盖前 2 项功能，`nano_*` 表均无字段级清单，Workers AI 的 binding/model 0 处提及，新建 `workers/orchestrator-auth/` 这件事在 10 份文档里没有任何一份处理过。这些不是观点分歧，而是“后面 action-plan 必然会被这些洞重新拉回 design 阶段”的明确债务。
 - **结论等级**：`approve-with-followups`
 - **本轮最关键的 3 个判断**：
   1. **`§7.2 详细阐述`系统性只覆盖前 2 项功能** — Z1/Z2/Z3/Z4 全部存在“§7.1 列了 4-5 个 F，§7.2 只详化前 2 个”的同型缺口，且 Z2/Z4 的 §7.2 标题与 §7.1 编号还存在错位。这是 design 阶段最重要的“逐项展开”节，集体被压缩成示例两条。
   2. **ZX-D1 只到表名为止，不到字段** — `nano_users / nano_user_identities / nano_conversation_messages / nano_session_activity_logs / nano_quota_balances ...` 全部仅列表名，没有“thin-but-complete 到底保留了哪些列、丢弃了哪些列、index 是什么”。`thin-but-complete` 当前是修辞，不是清单。
-  3. **三个明显的 greenfield deliverable 在所有文档里没有 owner** — (a) `workers/orchestration-auth/` 目录、wrangler.jsonc、env/secret 绑定；(b) Workers AI 的 binding 名称与 model ID（`@cf/...`）；(c) WeChat 的 `appid/secret/jscode2session` 凭证管理。前两项是 Z1/Z3 必交付的工程项，第三项是 Mini Program 真实链路必备凭证；charter 与 design 都没指认归属表/归属 worker。
+  3. **三个明显的 greenfield deliverable 在所有文档里没有 owner** — (a) `workers/orchestrator-auth/` 目录、wrangler.jsonc、env/secret 绑定；(b) Workers AI 的 binding 名称与 model ID（`@cf/...`）；(c) WeChat 的 `appid/secret/jscode2session` 凭证管理。前两项是 Z1/Z3 必交付的工程项，第三项是 Mini Program 真实链路必备凭证；charter 与 design 都没指认归属表/归属 worker。
 
 ---
 
@@ -61,7 +61,7 @@
   - `grep -n "forwardInternalRaw\|agent.internal\|/internal/sessions" workers/orchestrator-core/src/user-do.ts` → 6 处命中（行 483, 490, 653, 657, 692, 701）
   - `grep -rn "createJwt\|verifyJwt\|mintJwt\|signJwt" workers/orchestrator-core/src/ workers/agent-core/src/` → 仅 2 处命中，均为 `verifyJwt`
   - `grep -n "beforeCapabilityExecute" workers/bash-core/src/executor.ts` → 行 73, 203, 204, 206, 372, 373, 375
-  - `ls workers/orchestration-auth/` → **不存在**
+  - `ls workers/orchestrator-auth/` → **不存在**
   - `grep -rn "@cf/\|env.AI\|workers AI binding" docs/design/zero-to-real/ZX-llm-adapter-and-secrets.md` → 仅文字提及 "Workers AI"，无 model ID、无 binding 名
   - `grep -n "appid\|appsecret\|wechat.*secret\|jscode2session" docs/design/zero-to-real/*.md` → **0 命中**
   - `grep -c "✅" docs/design/zero-to-real/Z[1-4]-*.md` → Z1=6, Z2=6, Z3=6, Z4=7（全部为 emoji 形式的“一句话收口目标”，无可机器验证形式）
@@ -70,7 +70,7 @@
 
 - **F+1**：所有 10 份文档结构整齐，统一遵循 `docs/templates/design.md`（功能簇模板）；§0 / §1 / §2 / §3 / §5 / §6 / §7.1 / §9 在每份文档里都齐全。
 - **F+2**：Z0 与 4 份 ZX-* 形成的“phase-freeze + cross-cutting”分层是健康的——把 binding boundary、D1 schema、LLM adapter、NACP realization、QnA 各自独立成单一冻结点，避免了 charter 直接吞下字段级细节。这是 charter r1 之后做对的最重要一步。
-- **F+3**：`ZX-binding-boundary-and-rpc-rollout.md` §7.2 F1 显式列出 4 条 binding 规则（`orchestration.core` 唯一对外、`orchestration.auth` 单 caller、`agent.core` 为 internal mesh head、`bash/context/filesystem` 仅由 `agent.core` 调用），与现状代码事实（`workers/orchestrator-core/src/user-do.ts:657 forwardInternalRaw -> https://agent.internal/internal/sessions/...`）形成"现状 → 终态"的明确对照。
+- **F+3**：`ZX-binding-boundary-and-rpc-rollout.md` §7.2 F1 显式列出 4 条 binding 规则（`orchestration.core` 唯一对外、`orchestrator.auth` 单 caller、`agent.core` 为 internal mesh head、`bash/context/filesystem` 仅由 `agent.core` 调用），与现状代码事实（`workers/orchestrator-core/src/user-do.ts:657 forwardInternalRaw -> https://agent.internal/internal/sessions/...`）形成"现状 → 终态"的明确对照。
 - **F+4**：`ZX-qna.md` 收纳 10 个 owner 决策点，其中 Q1/Q2/Q3/Q5/Q6/Q7/Q9/Q10 都给出了明确的 GPT 推荐线路 + Reasoning，且都预留了 `Opus的对问题的分解 / 对GPT推荐线路的分析 / 最终回答` 三段独立填位——这套机制对“我（Opus）后续如何参与决策”是友好且可继承的。
 - **F+5**：`ZX-nacp-realization-track.md` 正确识别了协议层不能继续被当作背景板，并把 authority translation、transport legality、evidence linkage 三件事统一处理；这与 `packages/nacp-core/` 与 `packages/nacp-session/` 的现实代码（`ingress.ts` 已 server-stamp authority；`service-binding.ts` 已有 precheck）严格对齐，没有臆造能力。
 - **F+6**：所有"反例位置"指向真实文件且语义正确——`workers/agent-core/src/llm/gateway.ts` 确为 15 行 stub（首页注释 "Stub interface only — not implemented in v1"）；`workers/orchestrator-core/src/user-do.ts` 确实仍主用 `forwardInternalRaw` fetch-backed `https://agent.internal/internal/...`。零臆造。
@@ -79,7 +79,7 @@
 
 ### 1.2 已确认的负面事实
 
-- **F-1**：`workers/orchestration-auth/` 目录在文件系统中**不存在**。Z1 §1.1 把它当作既有 worker 引用（"`orchestration.auth`，负责 identity/token truth 的 internal worker"），ZX-binding §7.2 F1 也直接把它列入 binding 矩阵，但**没有任何一份文档**说"Z1 包含创建一个新的 worker 目录、wrangler.jsonc、deploy script 这件工程动作"。
+- **F-1**：`workers/orchestrator-auth/` 目录在文件系统中**不存在**。Z1 §1.1 把它当作既有 worker 引用（"`orchestrator.auth`，负责 identity/token truth 的 internal worker"），ZX-binding §7.2 F1 也直接把它列入 binding 矩阵，但**没有任何一份文档**说"Z1 包含创建一个新的 worker 目录、wrangler.jsonc、deploy script 这件工程动作"。
 - **F-2**：`grep "createJwt\|mintJwt\|signJwt"` 在 `workers/` 内**仅匹配 `verifyJwt` 一处函数定义**（`workers/orchestrator-core/src/auth.ts:75`），即当前仓库里**没有任何 worker 能 mint JWT**。Z1 §7.2 F1 说"把 token mint/verify、identity write、WeChat bridge 集中到 auth worker"——但这是从零开始建造，design 没有给出 mint helper 的形态（HS256? RS256? `jose` 库还是 Web Crypto？payload claim shape？）。
 - **F-3**：跨全部 10 份 design 文档对 `wechat`、`appid`、`appsecret`、`jscode2session`、`open_id` 的 `grep` 结果——**`appid/appsecret/jscode2session` 命中 0 次**。Mini Program first real run 必备的 WeChat 凭证管理（appid/secret 落 env? 落 `nano_tenant_secrets`? 落 wrangler vars?）在 Z1 / ZX-LLM-and-secrets / ZX-D1 三份本应承担的文档里都没有归属。
 - **F-4**：`ZX-llm-adapter-and-secrets.md` 内 `grep "@cf/\|env.AI\|model.*name\|llama\|qwen"` 结果——**0 处命中**具体 model ID 或 binding 名。"Workers AI first" 是 9 处，但全部停留在策略层，没有"用哪个 model、binding 取什么名、是否走 streaming"的执行级 freeze。
@@ -142,20 +142,20 @@
   - 把 `nano_session_activity_logs` 的字段集（来自 Q5 推荐：`team_uuid + conversation_uuid/session_uuid/turn_uuid + trace_uuid + event_kind + payload + created_at`）正式落入 §7.4，不要继续依赖 Q5 答案。
   - 显式枚举 migration waves：wave-1（Z1 identity 6 表）/ wave-2（Z2 conversation/audit 5 表）/ wave-3（Z3 quota 2 表）；并指明 down 策略（drop 还是 archive）。
 
-### R3. `workers/orchestration-auth/` 是 greenfield 创建动作，10 份文档无任何一份处理它
+### R3. `workers/orchestrator-auth/` 是 greenfield 创建动作，10 份文档无任何一份处理它
 
 - **严重级别**：`high`
 - **类型**：`delivery-gap`
 - **事实依据**：
-  - `ls workers/orchestration-auth/` → 不存在（仅 `agent-core / bash-core / context-core / filesystem-core / orchestrator-core` 5 个 worker）。
-  - `Z1 §1.1` 行 32-33 把 `orchestration.auth` 当既有概念引用："auth worker | `orchestration.auth`，负责 identity/token truth 的 internal worker"。
+  - `ls workers/orchestrator-auth/` → 不存在（仅 `agent-core / bash-core / context-core / filesystem-core / orchestrator-core` 5 个 worker）。
+  - `Z1 §1.1` 行 32-33 把 `orchestrator.auth` 当既有概念引用："auth worker | `orchestrator.auth`，负责 identity/token truth 的 internal worker"。
   - `ZX-binding-boundary-and-rpc-rollout.md §7.2 F1` 行 244-251 直接列入 4-rule binding matrix，但全文无"创建该 worker"动作。
   - 对照 charter `plan-zero-to-real.md` §1（已确认决策）也没有列出"创建新 worker 目录"作为显式 deliverable。
 - **为什么重要**：
   - 创建一个新的 Cloudflare Worker 需要：目录骨架、`wrangler.jsonc`（含 D1 binding、env vars、secret bindings、route 配置）、入口文件、deploy script、CI/CD 流水线接入、`packages/` 共享代码引用。这些都是工程项，不是"协议层"决定就能消化的。
   - Z1 closure 的硬指标（"register / login / refresh / WeChat bridge 全部 work"）依赖这个 worker 已经能 deploy。如果到 action-plan 才发现 deploy 流程里没有 it，会立即阻塞 Z1。
   - charter 的 "6-worker terminal state" 与现实的 "5-worker reality" 之间的 delta 在 design 里没有显式 owner。
-- **审查判断**：这不是观点，是空白。Z1 必须显式承担"建立 workers/orchestration-auth/ 工程骨架"作为其第 0 步。
+- **审查判断**：这不是观点，是空白。Z1 必须显式承担"建立 workers/orchestrator-auth/ 工程骨架"作为其第 0 步。
 - **建议修法**：
   - Z1 §7.1 增加 F0 "Auth Worker Scaffolding"，承担：目录创建、`wrangler.jsonc`（D1=`nano-agent-db` 共享 binding、env=`JWT_SECRET_KEY` / `PASSWORD_SALT` / `WECHAT_APPID` / `WECHAT_SECRET`、单 caller binding from orchestration.core）、入口、smoke deploy。
   - ZX-binding §7 增加一条"current vs target worker topology"对照（5 worker → 6 worker，谁先建、谁先 deploy）。
@@ -446,7 +446,7 @@
 
 | 编号 | 计划项 | 审查结论 | 说明 |
 |------|--------|----------|------|
-| Z1-S1 | `orchestration.auth` internal-only bringup | `partial` | 边界冻结；但"创建该 worker 工程骨架"无 owner（R3） |
+| Z1-S1 | `orchestrator.auth` internal-only bringup | `partial` | 边界冻结；但"创建该 worker 工程骨架"无 owner（R3） |
 | Z1-S2 | register / login / verify-token / refresh-token / password reset | `partial` | 列入 in-scope；refresh-token 字段集（R8） + 哈希 / lifetime / rate-limit（R12）未冻结 |
 | Z1-S3 | `me` / tenant readback | `partial` | 概念冻结；具体 read API 形状无 |
 | Z1-S4 | WeChat bridge | `partial` | 列入 in-scope；§7.2 F3 detail 缺失（R1）+ appid/secret 归属（R5）+ 自动建租户（Q3）未确认 |
@@ -494,8 +494,8 @@
 
 | 编号 | 计划项 | 审查结论 | 说明 |
 |------|--------|----------|------|
-| ZX-B-S1 | 6-worker binding matrix | `partial` | 4 条 binding 规则已列；但 6th worker `orchestration.auth` 不存在（R3） |
-| ZX-B-S2 | `orchestration.auth` internal-only / single caller | `done` | Q1 推荐已给 |
+| ZX-B-S1 | 6-worker binding matrix | `partial` | 4 条 binding 规则已列；但 6th worker `orchestrator.auth` 不存在（R3） |
+| ZX-B-S2 | `orchestrator.auth` internal-only / single caller | `done` | Q1 推荐已给 |
 | ZX-B-S3 | control-plane RPC-first 顺序 | `partial` | "start 优先"已 freeze；method signature 未给（R16） |
 | ZX-B-S4 | stream-plane 仅作过渡 seam | `done` | §5.3 / §7 显式列入 |
 | ZX-B-S5 | internal gate 最小安全纪律 | `partial` | "secret + authority + trace" 已声明；但 RPC 世界里 secret 怎么传未给 |
@@ -598,7 +598,7 @@
 - **关闭前必须完成的 blocker**：
   1. **R1 修复**：Z1/Z2/Z3/Z4 的 §7.2 必须覆盖 §7.1 中所有 F，并修正 Z2/Z4 的编号错位。
   2. **R2 修复**：ZX-D1 必须新增字段级清单节（推荐 §7.4），覆盖全部 11 张 in-scope 表。
-  3. **R3 修复**：Z1 必须显式承担 `workers/orchestration-auth/` greenfield scaffolding（建议作为 F0）。
+  3. **R3 修复**：Z1 必须显式承担 `workers/orchestrator-auth/` greenfield scaffolding（建议作为 F0）。
   4. **R4 修复**：ZX-LLM 必须冻结 first-wave Workers AI model ID + binding 名 + streaming/fc 期望。
   5. **R5 修复**：WeChat 凭证落点必须显式 owner（推荐：wrangler secret，落 Z1 §0 前置约束）。
   6. **R6 修复**：所有 ✅ 一句话收口目标必须补"判定方法"（grep / test / metric）。
@@ -630,9 +630,9 @@
 |----------|----------|----------|----------|
 | **Opus R1/R11/R17** + **Kimi R2** + **DeepSeek R1**：`§7.2` 未展开、Z0 closure 缺失、测试基线未入 design、QnA 未消费 | `fixed` | 已把 `ZX-qna.md` 改为 answered freeze register；Z0-Z4 全部补入完整 `§7.2`、closure/判定方法、测试基础设施基线，并把“去 ZX-qna 回答”旧口径改为“已冻结答案需在实施中消费” | `docs/design/zero-to-real/ZX-qna.md`, `Z0-contract-and-compliance-freeze.md`, `Z1-full-auth-and-tenant-foundation.md`, `Z2-session-truth-and-audit-baseline.md`, `Z3-real-runtime-and-quota.md`, `Z4-real-clients-and-first-real-run.md` |
 | **Opus R2/R8/R14/R15** + **Kimi R4** + **DeepSeek R2/R5**：ZX-D1 只有表名、缺字段/index/ownership、`nano_auth_sessions` 未进正式 in-scope、命名与 payload/redaction 未冻结 | `fixed` | ZX-D1 现已补成字段级最小冻结、最小索引、migration waves、binding alias、migration tool、write ownership matrix；`nano_auth_sessions` / `nano_team_api_keys` 已提升为 S1 身份核心；`nano_user_identities` 列名收紧为 `identity_provider / provider_subject_normalized`；`nano_session_activity_logs.payload_json` 增加 `JSON text + 8KB + redaction.ts` discipline | `docs/design/zero-to-real/ZX-d1-schema-and-migrations.md` |
-| **Opus R3/R5/R12** + **Kimi R1** + **DeepSeek R6**：`workers/orchestration-auth/` greenfield deliverable 无 owner、WeChat secret 落点缺失、auth 当前 reality 与迁移路径不清、refresh/password baseline 漂移 | `fixed` | Z1 §0/§7.2 现已显式写明当前只有 verify path、`workers/orchestration-auth/` 为 greenfield deliverable、WeChat 凭证固定为 wrangler secrets、refresh token = `1h/30d/rotate-on-use`、password hash first-wave 延续 `smind-admin` 的 `SHA-256 + PASSWORD_SALT` 基线、rate limiting 明确 OoS | `docs/design/zero-to-real/Z1-full-auth-and-tenant-foundation.md` |
+| **Opus R3/R5/R12** + **Kimi R1** + **DeepSeek R6**：`workers/orchestrator-auth/` greenfield deliverable 无 owner、WeChat secret 落点缺失、auth 当前 reality 与迁移路径不清、refresh/password baseline 漂移 | `fixed` | Z1 §0/§7.2 现已显式写明当前只有 verify path、`workers/orchestrator-auth/` 为 greenfield deliverable、WeChat 凭证固定为 wrangler secrets、refresh token = `1h/30d/rotate-on-use`、password hash first-wave 延续 `smind-admin` 的 `SHA-256 + PASSWORD_SALT` 基线、rate limiting 明确 OoS | `docs/design/zero-to-real/Z1-full-auth-and-tenant-foundation.md` |
 | **Opus R4/R19** + **Kimi R5**：Workers AI binding/model 未冻结、DeepSeek/Workers AI decision trail 不清 | `fixed` | ZX-LLM 已冻结 first-wave `AI` binding 与默认 model `@cf/ibm-granite/granite-4.0-h-micro`，并写明 fallback model、`env.AI.run(..., { messages, stream: true })` 调用形态、DeepSeek 仅 skeleton、以及此前 DeepSeek-primary 评论为何未被采用 | `docs/design/zero-to-real/ZX-llm-adapter-and-secrets.md` |
-| **Opus R6/R16** + **DeepSeek R4**：binding/topology 与 RPC 签名不具体、context/filesystem 现实姿态与 design 有漂移 | `fixed` | ZX-binding 已新增 current-vs-target topology 表，明确当前是 5-worker reality + `orchestration.auth` greenfield；同时明确 `context.core / filesystem.core` 在 zero-to-real 里按 library-shell / probe-only posture 处理，并补入 `startSession` RPC signature 草案、Auth internalization、residual stream inventory | `docs/design/zero-to-real/ZX-binding-boundary-and-rpc-rollout.md` |
+| **Opus R6/R16** + **DeepSeek R4**：binding/topology 与 RPC 签名不具体、context/filesystem 现实姿态与 design 有漂移 | `fixed` | ZX-binding 已新增 current-vs-target topology 表，明确当前是 5-worker reality + `orchestrator.auth` greenfield；同时明确 `context.core / filesystem.core` 在 zero-to-real 里按 library-shell / probe-only posture 处理，并补入 `startSession` RPC signature 草案、Auth internalization、residual stream inventory | `docs/design/zero-to-real/ZX-binding-boundary-and-rpc-rollout.md` |
 | **Opus R7/R18**：JWT/AuthSnapshot/NacpAuthority 映射表缺失、`cross-seam.ts` 是否 first-wave 未说明 | `fixed` | ZX-NACP 已新增字段映射表（JWT/AuthSnapshot -> NacpAuthority）、first-wave session message set、Evidence linkage，并明确 `cross-seam.ts` 在 zero-to-real 仅作 future transport primitive，不进入 first-wave 必经路径 | `docs/design/zero-to-real/ZX-nacp-realization-track.md` |
 | **Opus R9** + **Kimi R6**：quota gate 在 LLM 路径落点未冻结 | `fixed` | Z3 现已把 tool gate 明确绑到 `bash-core` 的 `beforeCapabilityExecute()`，把 LLM gate 明确绑到 `workers/agent-core/src/kernel/runner.ts` invoke 前的对称 hook，并补 usage/balance persistence 与 runtime evidence 两个缺失 F | `docs/design/zero-to-real/Z3-real-runtime-and-quota.md` |
 | **Opus R10/R20** + **DeepSeek R3** + **Kimi R8**：`nacp-session` 既有 primitives 未被 Z2/Z4 消费、IntentDispatcher/Broadcaster 概念悬空、客户端代码位置未定义 | `fixed` | Z2 / Z4 现已显式消费 `messages.ts / frame.ts / heartbeat.ts / replay.ts` 既有 primitives；Z4 重新定义为 HTTP in + WS out baseline 的 hardening 而非“重新发明双向 WS”；同时冻结 `clients/web/` 与 `clients/wechat-miniprogram/` 目录，并把 `IntentDispatcher` / `Broadcaster` 限定为 `agent.core` input routing seam 与 `orchestration.core` user DO fanout seam | `docs/design/zero-to-real/Z2-session-truth-and-audit-baseline.md`, `docs/design/zero-to-real/Z4-real-clients-and-first-real-run.md` |
@@ -670,7 +670,7 @@
 - **实现者自评状态**：`ready-for-rereview`
 - **对设计文件是否收口的判断**：`yes — 已收口到可进入 action-plan / implementation 的程度`
 - **仍然保留的已知限制**：
-  1. 本轮是 design absorption，不新增任何运行时代码；`workers/orchestration-auth/`、`clients/web/`、`clients/wechat-miniprogram/`、Workers AI adapter 等仍待实施阶段落地。
+  1. 本轮是 design absorption，不新增任何运行时代码；`workers/orchestrator-auth/`、`clients/web/`、`clients/wechat-miniprogram/`、Workers AI adapter 等仍待实施阶段落地。
   2. DO SQLite 的“4 组 hot-state”已经在 design 层冻结到对象组级别；若实施阶段需要更细的表/索引草案，应在 Z2 action-plan 内继续细化，而不是重新回滚整个 design pack。
 
 ---
@@ -702,7 +702,7 @@ Opus 这轮评审的风格是 **结构化、证据密集、对 design freeze 标
 |----|------|------|------------------|
 | R1 | high | 极高 | 这是全轮最关键的结构性问题之一，直接指出 4 份 Z 文档 `§7.2` 系统性未展开且有编号错位。 |
 | R2 | high | 极高 | 对 ZX-D1 仍停留在表名层的判断非常准确，也是后续修复量最大的 blocker 之一。 |
-| R3 | high | 极高 | 对 `workers/orchestration-auth/` greenfield deliverable 无 owner 的提醒非常关键，避免了后续 action-plan 把它当成“已存在 worker”。 |
+| R3 | high | 极高 | 对 `workers/orchestrator-auth/` greenfield deliverable 无 owner 的提醒非常关键，避免了后续 action-plan 把它当成“已存在 worker”。 |
 | R4 | high | 极高 | 对 Workers AI binding/model 未冻结的指出非常精准，且直接对应到 Z3 可执行性。 |
 | R6 | high | 极高 | 对“✅ 收口目标缺少判定方法”的批评非常到位，推动了整套 design 从修辞性 closure 转向可验证 closure。 |
 | R7 | medium | 高 | JWT/AuthSnapshot/NACP 映射表的提醒质量很高，是典型 cross-cutting 真缺口。 |

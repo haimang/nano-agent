@@ -109,7 +109,7 @@ zero-to-real 最容易发生的误判，是把 auth / D1 / provider / client 当
 
 - **解耦对象**：client-facing auth token shape vs internal NACP authority shape
 - **解耦原因**：JWT claims 不是内部 authority 的一比一镜像，必须经过 server translation zone。
-- **依赖边界**：外部 token 只能经 `orchestration.core` / `orchestration.auth` 翻译后再进入 session/runtime。
+- **依赖边界**：外部 token 只能经 `orchestration.core` / `orchestrator.auth` 翻译后再进入 session/runtime。
 
 ### 3.4 聚合点（哪里要刻意收敛）
 

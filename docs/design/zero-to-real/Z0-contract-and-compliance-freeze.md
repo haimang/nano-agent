@@ -15,7 +15,7 @@
 - **项目定位回顾**：nano-agent 已完成 `orchestration-facade`，当前要从 public façade + private runtime mesh 进入 first real run。
 - **本次讨论的前置共识**：
   - `orchestration.core` 是唯一 public ingress。
-  - `orchestration.auth` 必须 internal-only。
+  - `orchestrator.auth` 必须 internal-only。
   - `nacp-core` / `nacp-session` 已是协议基石，zero-to-real 不能绕开它们。
   - D1 first-wave 必须是 **thin-but-complete**，不能再退回 too-thin persistence。
   - real client 与 real provider 都属于本阶段目标，不是收尾附属项。
@@ -362,7 +362,7 @@ Z0 只有在以下 4 条同时成立时才算 closed：
   - `ZX-d1-schema-and-migrations.md`
   - `ZX-llm-adapter-and-secrets.md`
 - [ ] **Z0 已冻结但需在 action-plan 显式消费的实现前提**：
-  - `orchestration.auth` 为 greenfield worker
+  - `orchestrator.auth` 为 greenfield worker
   - D1 first-wave 为 thin-but-complete
   - Workers AI first / DeepSeek optional skeleton
 

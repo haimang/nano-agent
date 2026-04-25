@@ -45,16 +45,16 @@
 - `workers/agent-core/src/llm/gateway.ts` — 仍标注 "Stub interface only — not implemented in v1"
 - `workers/orchestrator-core/wrangler.jsonc` — 无 D1 binding，无 `AI` binding
 - `package.json` — 测试脚本：`test:package-e2e`、`test:cross`、`test:cross-e2e`
-- `test/` 目录 — 存在 package-e2e / cross-e2e 测试，但无 `orchestration-auth/` 子目录
-- 无 `workers/orchestration-auth/`、无 `packages/orchestration-auth-contract/`、无 `clients/`、无 migrations 目录
+- `test/` 目录 — 存在 package-e2e / cross-e2e 测试，但无 `orchestrator-auth/` 子目录
+- 无 `workers/orchestrator-auth/`、无 `packages/orchestrator-auth-contract/`、无 `clients/`、无 migrations 目录
 
 ### 1.3 执行过的验证
 
 - `cat package.json | grep test` — 确认测试脚本名称（发现 `test:cross` 和 `test:cross-e2e` 同时存在）
 - `find test/ -name "*.test.mjs" -o -name "*.test.ts"` — 确认测试结构
 - `ls workers/orchestrator-core/migrations/ 2>/dev/null || echo "no migrations dir"` — 确认无 migrations 目录
-- `ls packages/orchestration-auth-contract/ 2>/dev/null || echo "no auth-contract dir"` — 确认无 auth contract package
-- `ls workers/orchestration-auth/ 2>/dev/null || echo "no auth worker"` — 确认无 auth worker
+- `ls packages/orchestrator-auth-contract/ 2>/dev/null || echo "no auth-contract dir"` — 确认无 auth contract package
+- `ls workers/orchestrator-auth/ 2>/dev/null || echo "no auth worker"` — 确认无 auth worker
 - `ls clients/ 2>/dev/null || echo "no clients dir"` — 确认无客户端目录
 - `ls docs/design/zero-to-real/Z2*` — 确认 Z2 文件名存在 typo
 
@@ -65,7 +65,7 @@
 - **Cross-cutting 依赖引用清晰**：每份 action-plan 都明确引用了 charter、design、ZX-qna、cross-cutting design。
 - **执行顺序合理**：contract/schema → worker → flow → integration → closure 的顺序符合依赖 DAG。
 - **风险意识到位**：每份 plan 都有"风险提醒"小节，识别了常见实施陷阱。
-- **Z1 的 typed contract package 被明确提出**：`packages/orchestration-auth-contract/` 在 Z1 目录树和业务工作总表中被列为新增项，响应了 Q1 的 Opus 附加条件。
+- **Z1 的 typed contract package 被明确提出**：`packages/orchestrator-auth-contract/` 在 Z1 目录树和业务工作总表中被列为新增项，响应了 Q1 的 Opus 附加条件。
 - **测试脚本实际存在**：`pnpm test:cross` 在 package.json 中确实存在（第10行），同时也有 `test:cross-e2e`（第15行）。
 
 ### 1.5 已确认的负面事实
@@ -309,7 +309,7 @@
 | S2 | Z0 产出 Z1-Z5 的 cross-cutting dependency map | partial | 有依赖引用，但未形成显式的 dependency matrix 表格 |
 | S3 | Z0 固定 root test scripts 与 closure 路径 | partial | 路径固定，但 test script 名称存在冗余（test:cross 与 test:cross-e2e 并存） |
 | S4 | Z0 产出 Z0-closure.md | done | 收口标准清晰 |
-| S5 | Z1 新建 orchestration.auth（internal-only） | partial | 架构清晰，但缺少 retire deadline（Q1 Opus 条件） |
+| S5 | Z1 新建 orchestrator.auth（internal-only） | partial | 架构清晰，但缺少 retire deadline（Q1 Opus 条件） |
 | S6 | Z1 落 Wave A D1 schema | partial | 表清单合理，但缺少具体 DDL 和 migration 工具选择 |
 | S7 | Z1 打通 register/login/verify/refresh/reset/me | partial | 范围合理，但缺少 `kid`、secret 命名、claim 集等具体决策（Q2 Opus 条件） |
 | S8 | Z1 WeChat bridge + tenant bootstrap | partial | 目标明确，但 email/password 是否同样自动建 team 未明确（Q3 Opus 条件） |

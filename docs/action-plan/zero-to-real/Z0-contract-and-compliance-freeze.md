@@ -14,7 +14,7 @@
 > - `docs/design/zero-to-real/ZX-d1-schema-and-migrations.md`
 > - `docs/design/zero-to-real/ZX-nacp-realization-track.md`
 > - `docs/design/zero-to-real/ZX-llm-adapter-and-secrets.md`
-> 文档状态: `draft`
+> 文档状态: `executed`
 
 ---
 
@@ -232,7 +232,7 @@ zero-to-real/
   - execution-level freeze register 已覆盖 migration tool、binding alias、model fallback、client stack、evidence 模板
   - Z5 能消费 Z0-Z4 的 closure 输出，不再 invent 新命名
 - **本 Phase 风险提醒**：
-  - 最容易遗漏 `packages/orchestration-auth-contract/`、`NANO_AGENT_DB`、`AI` binding 这类 cross-cutting 真前提
+  - 最容易遗漏 `packages/orchestrator-auth-contract/`、`NANO_AGENT_DB`、`AI` binding 这类 cross-cutting 真前提
   - 最容易把“implementation-level freeze”误当成 owner-level blocker而跳过
 
 ### 5.3 Phase 3 — Validation Baseline
@@ -312,3 +312,13 @@ Z0 完成后，zero-to-real 不再停留在“design 都写好了”的状态，
 1. 启动 `Z1-full-auth-and-tenant-foundation.md`
 2. 在 `docs/issue/zero-to-real/` 建立 Z1-Z5 closure 文档骨架
 3. 按 Z1 -> Z2 -> Z3 -> Z4 -> Z5 的顺序推进，不回滚 Z0 基石决策
+
+---
+
+## 9. 工作日志回填（executed）
+
+1. 重新核对了 `docs/charter/plan-zero-to-real.md`、Z0/Z1 action-plan、ZX 设计包、以及当前 worker/runtime 代码现实，确认 Z1 起步前不再存在 owner-level blocker。
+2. 将 zero-to-real 的验证基线显式压回仓库既有 runner：`pnpm test:package-e2e` 与 `pnpm test:cross-e2e` 被用来确认 root live harness 继续作为唯一验证入口。
+3. 创建 `docs/issue/zero-to-real/Z0-closure.md`，把 frozen answer register、cross-cutting dependency map、validation baseline 与 Z1 解锁结论正式写成 closure 资产。
+4. 将本文档状态从 `draft` 翻为 `executed`，并把 “Z0 的价值在于 execution gate，而不是新增运行时代码” 这一点固定下来，避免后续阶段误把 Z0 当实现期。
+5. 在 Z0 freeze baseline 上，直接启动并完成了 Z1 的首轮真实实现，这也反向证明 Z0 已经具备“可机械执行”的质量，而不只是设计 recap。
