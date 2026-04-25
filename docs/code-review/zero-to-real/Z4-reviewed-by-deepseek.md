@@ -539,3 +539,55 @@ GPT-5.5 在工作日志 §9.7 声称：
   6. **Z0→Z4 遗留问题链映射**：将 6 条已知 issue（RPC fetch-backend、DO rebuild test、forwardStatus parity、alarm checkpoint、quota test、AI binding silent fallback）在 residual inventory 中显式映射为 deferred
 
 > 本轮 review 不收口，等待实现者按 §6 响应并再次更新代码。
+
+---
+
+## 7. 对 DeepSeek 代码审查质量的评价
+
+> 评价人: `GPT-5.4 / GitHub Copilot CLI`
+> 评价时间: `2026-04-25`
+> 评价依据: `docs/code-review/zero-to-real/Z4-reviewed-by-deepseek.md §0-§6，尤其 §1.2 / §2 / §3 / §6，并结合本轮对真实 6-worker 代码、客户端、evidence/closure 文档的逐项复核结果`
+
+### 7.1 一句话评价评审风格
+
+DeepSeek 这轮审查覆盖面较广、对 design/action-plan 忠实，能抓住证据体系与 transport residual 这类文档级硬要求，但在若干具体实现判断上精度和去重能力弱于 Opus。
+
+### 7.2 优点
+
+1. 能准确抓住 Z4 最核心的设计落空点：Q10 heartbeat/replay、F3 evidence pack、F5 residual inventory。
+2. 对文档交付物的敏感度高，不会只看代码 happy path，而会追问 evidence、residual、closure wording 是否与设计一致。
+3. 跨阶段分析有价值，能把 Z2/Z3 的 protocol asset 与 Z4 客户端消费缺口串起来。
+
+### 7.3 缺点
+
+1. 若干 finding 存在“方向对、落点偏”的问题，例如把 `touristappid` 直接上升为代码路径不可用，却没有优先命中真正的 `/auth/wechat` 路由错误。
+2. 中低优先级问题较多，像 `sessionUuid` 不自动刷新这类项会稀释报告主信号。
+3. 个别表述偏满，例如把“缺少新增回灌测试”写成“未执行”，严谨性略逊。
+
+### 7.4 对审查报告中，全部问题，的清点
+
+| 问题编号 | 原始严重程度 | 该问题的质量 | 分析与说明 |
+|----|------|------|------------------|
+| R1 | critical | 高质量 | 核心判断成立，准确指出 heartbeat/replay 缺失；但把两个问题并成一条，拆解度略弱。 |
+| R2 | critical | 高质量 | per-run evidence pack 缺失判断准确，且与 design F3 直接对齐。 |
+| R3 | critical | 高质量 | residual HTTP inventory 缺失判断准确，且确实是 Z4 文档交付物缺口。 |
+| R4 | high | 高质量 | IntentDispatcher/Broadcaster 状态未声明是有效 docs-gap，命中 design F4。 |
+| R5 | high | 部分有效 | “真实 AppID/真实验证缺失”这个方向是对的，但把 `touristappid` 视为主因有些偏移，漏掉了更直接的 `/auth/wechat` 路由错误。 |
+| R6 | high | 有效但次级 | hardcoded preview URL 问题真实，也确实值得修；但严重程度偏高，不应与 Q10/F3/F5 同权。 |
+| R7 | medium | 部分有效 | 需要新增护栏/回灌测试的方向正确，但“未执行”表述略满，因为本轮并非完全没有验证，只是缺新增回归。 |
+| R8 | medium | 有效 | typed error / retry 策略问题真实；但更适合作为产品化/客户端硬化 follow-up，而非本轮主 blocker。 |
+| R9 | medium | 高质量 | 对 evidence 字段集的核对很细，确实抓住了 narrative summary 不能替代 structured artifact。 |
+| R10 | low | 有效但低收益 | Mini Program UUID 实现问题在当时成立，但影响层级较低，属于技术债而不是 Z4 主缺陷。 |
+| R11 | low | 低价值 | `sessionUuid` 不自动刷新更像 UX 便利性问题，和本轮交付正确性关联很弱。 |
+| R12 | low | 有效但重复 | 对 evidence wording 的批评成立，但与 R5 / R8 / R9 的信息重叠较高。 |
+
+### 7.5 评分 - 总体 ** 7.8 / 10 **
+
+| 维度 | 评分（1–10） | 说明 |
+|------|-------------|------|
+| 证据链完整度 | 8 | 文件引用充分，能把 design / action-plan / code 串起来。 |
+| 判断严谨性 | 7 | 大方向正确，但个别结论存在过度上提或落点偏移。 |
+| 修法建议可执行性 | 8 | 多数建议可以直接落地，尤其是 evidence / inventory / heartbeat/replay。 |
+| 对 action-plan / design 的忠实度 | 9 | 对 F3/F4/F5 和 Q10 的忠实度很高。 |
+| 协作友好度 | 7 | 语气直接但仍可协作，主要问题是中低优先级项稍多。 |
+| 找到问题的覆盖面 | 8 | 覆盖到代码、文档、evidence 与跨阶段遗留，但信噪比略低于最优。 |

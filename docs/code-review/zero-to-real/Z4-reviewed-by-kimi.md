@@ -530,3 +530,52 @@
 ---
 
 (End of review)
+
+---
+
+## 9. 对 Kimi 代码审查质量的评价
+
+> 评价人: `GPT-5.4 / GitHub Copilot CLI`
+> 评价时间: `2026-04-25`
+> 评价依据: `docs/code-review/zero-to-real/Z4-reviewed-by-kimi.md §0-§8，尤其 §1.2 / §2 / §3 / §5 / §7，并结合本轮对真实 6-worker 代码、客户端、review-fix 落地结果的逐项复核`
+
+### 9.1 一句话评价评审风格
+
+Kimi 的长处是善于做跨阶段遗留账本与全局追踪，但本轮对 Z4 当前面的聚焦不足，混入了多条过时、越界或信号较弱的问题，导致报告信噪比明显低于 Opus。
+
+### 9.2 优点
+
+1. 能把 Z1-Z3 遗留问题与 Z4 现状串联起来，适合做“阶段债务总账”。
+2. 抓到了若干真实问题：Mini Program 证据缺失、heartbeat/replay 未接入、SQL 字符串拼接、residual HTTP inventory 缺失、deploy-fill 残留。
+3. 修法建议大多可执行，尤其是 UUID guard、inventory、客户端错误分类这类项。
+
+### 9.3 缺点
+
+1. 漏掉了本轮最关键的直接 correctness bug：Mini Program `/auth/wechat` 与服务端 `/auth/wechat/login` 的路由错位。
+2. 混入了明显过时/错误 finding，例如 DeepSeek skeleton 缺失，这会显著损伤报告可信度。
+3. 对 blocker 判断偏松，在 Q10 关键要求未落地时仍给出 `approve-with-followups`，收口门槛偏低。
+
+### 9.4 对审查报告中，全部问题，的清点
+
+| 问题编号 | 原始严重程度 | 该问题的质量 | 分析与说明 |
+|----|------|------|------------------|
+| R1 | high | 高质量 | Mini Program 真实运行证据缺失判断准确，是本轮真实存在的 delivery gap。 |
+| R2 | high | 高质量 | heartbeat/replay 未接入判断准确，也确实是 Q10 直连问题。 |
+| R3 | medium | 无效/过时 | 该 finding 不成立；`workers/agent-core/src/llm/adapters/deepseek/index.ts` 实际已存在 skeleton。 |
+| R4 | medium | 部分有效 | preview synthetic seed 的完整 identity 问题有技术意义，但偏离 Z4 主交付，不宜作为本轮核心缺陷。 |
+| R5 | medium | 有效但重复 | “无自动 reconnect” 方向成立，但与 R2 高度重叠，未形成更高信息增量。 |
+| R6 | medium | 高质量 | SQL 字符串拼接模式确实值得指出，本轮也据此补了 UUID guard。 |
+| R7 | medium | 部分有效 | token-level usage 的讨论有价值，但更接近设计取舍/后续计费硬化，而非 Z4 当前 bug。 |
+| R8 | medium | 高质量 | residual HTTP inventory 缺失判断准确，且确属设计交付物。 |
+| R9 | low | 高质量 | deploy-fill authority 残留判断成立，也确实需要诚实描述或退役。 |
+
+### 9.5 评分 - 总体 ** 6.4 / 10 **
+
+| 维度 | 评分（1–10） | 说明 |
+|------|-------------|------|
+| 证据链完整度 | 7 | 引用了大量文件，也做了跨阶段对照。 |
+| 判断严谨性 | 5 | 混入过时 finding，且对本轮 blocker/non-blocker 的边界把握偏松。 |
+| 修法建议可执行性 | 7 | 多数建议可以执行，但部分建议对应的是次阶段问题。 |
+| 对 action-plan / design 的忠实度 | 6 | 对 Q10 和 evidence/inventory 有忠实度，但遗漏了更直接的路由 correctness 问题。 |
+| 协作友好度 | 8 | 语气克制，结构清晰，可作为团队账本使用。 |
+| 找到问题的覆盖面 | 6 | 覆盖面广，但不少精力花在跨阶段旧债与弱相关项上，降低了本轮聚焦度。 |
