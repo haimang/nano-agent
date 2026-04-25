@@ -123,6 +123,7 @@ interface WorkerSocketLike {
 interface AttachmentState {
   readonly socket: WorkerSocketLike;
   readonly attached_at: string;
+  readonly heartbeat_timer?: ReturnType<typeof setInterval>;
 }
 
 interface EndedIndexItem {
@@ -140,6 +141,7 @@ const RECENT_FRAMES_PREFIX = 'recent-frames/';
 const CACHE_PREFIX = 'cache/';
 const MAX_CONVERSATIONS = 200;
 const MAX_RECENT_FRAMES = 50;
+const CLIENT_WS_HEARTBEAT_INTERVAL_MS = 15_000;
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const HOT_STATE_ALARM_MS = 10 * 60 * 1000;
 const MAX_ENDED_SESSIONS = 100;
@@ -239,6 +241,13 @@ function redactActivityPayload(payload: Record<string, unknown>): Record<string,
 
 function isNonNegativeInteger(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0;
+}
+
+function parseLastSeenSeq(request: Request): number | null {
+  const raw = new URL(request.url).searchParams.get('last_seen_seq');
+  if (raw === null || raw.length === 0) return null;
+  const seq = Number(raw);
+  return Number.isInteger(seq) && seq >= 0 ? seq : null;
 }
 
 function parseStreamFrame(value: unknown, context: string): StreamFrame {
@@ -1270,6 +1279,7 @@ export class NanoOrchestratorUserDO {
     if (!isWebSocketUpgrade(request)) {
       return jsonResponse(400, { error: 'invalid-upgrade', message: 'ws route requires websocket upgrade' });
     }
+    const clientLastSeenSeq = parseLastSeenSeq(request);
 
     const pair = createWebSocketPair();
     if (!pair) {
@@ -1283,6 +1293,7 @@ export class NanoOrchestratorUserDO {
     const current = this.attachments.get(sessionUuid);
     if (current) {
       this.attachments.delete(sessionUuid);
+      if (current.heartbeat_timer) clearInterval(current.heartbeat_timer);
       current.socket.send(
         JSON.stringify({
           kind: 'attachment_superseded',
@@ -1293,16 +1304,35 @@ export class NanoOrchestratorUserDO {
       current.socket.close(4001, 'attachment_superseded');
     }
 
+    const heartbeatTimer = setInterval(() => {
+      const currentAttachment = this.attachments.get(sessionUuid);
+      if (!currentAttachment || currentAttachment.socket !== pair.server) {
+        clearInterval(heartbeatTimer);
+        return;
+      }
+      pair.server.send(JSON.stringify({
+        kind: 'session.heartbeat',
+        ts: Date.now(),
+      }));
+    }, CLIENT_WS_HEARTBEAT_INTERVAL_MS);
+    (heartbeatTimer as unknown as { unref?: () => void }).unref?.();
+
     this.attachments.set(sessionUuid, {
       socket: pair.server,
       attached_at: new Date().toISOString(),
+      heartbeat_timer: heartbeatTimer,
     });
     this.bindSocketLifecycle(sessionUuid, pair.server);
 
+    const replayCursor =
+      clientLastSeenSeq === null
+        ? entry.relay_cursor
+        : Math.min(entry.relay_cursor, clientLastSeenSeq);
     const nextEntry: SessionEntry = {
       ...entry,
       last_seen_at: new Date().toISOString(),
       status: 'active',
+      relay_cursor: replayCursor,
       ended_at: null,
     };
     await this.put(sessionKey(sessionUuid), nextEntry);
@@ -1325,6 +1355,7 @@ export class NanoOrchestratorUserDO {
       const current = this.attachments.get(sessionUuid);
       if (!current || current.socket !== socket) return;
       this.attachments.delete(sessionUuid);
+      if (current.heartbeat_timer) clearInterval(current.heartbeat_timer);
       void this.markDetached(sessionUuid);
     });
 

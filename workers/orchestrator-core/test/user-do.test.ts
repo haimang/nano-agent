@@ -554,6 +554,54 @@ describe('NanoOrchestratorUserDO', () => {
     );
   });
 
+  it('uses client last_seen_seq on ws attach to replay missed frames without duplicating acknowledged frames', async () => {
+    const { created } = installFakePair();
+    const { state, store } = createState();
+    store.set(`sessions/${SESSION_UUID}`, {
+      created_at: 'a',
+      last_seen_at: 'a',
+      status: 'detached',
+      last_phase: 'attached',
+      relay_cursor: 3,
+      ended_at: null,
+    });
+    store.set(USER_AUTH_SNAPSHOT_KEY, { sub: USER_UUID, team_uuid: 'team-1', tenant_source: 'claim' });
+
+    const agentFetch = async (request: Request): Promise<Response> => {
+      if (new URL(request.url).pathname.endsWith('/stream')) {
+        return new Response(
+          makeNdjson([
+            JSON.stringify({ kind: 'meta', seq: 0, event: 'opened', session_uuid: SESSION_UUID }),
+            JSON.stringify({ kind: 'event', seq: 1, name: 'session.stream.event', payload: { kind: 'one' } }),
+            JSON.stringify({ kind: 'event', seq: 2, name: 'session.stream.event', payload: { kind: 'two' } }),
+            JSON.stringify({ kind: 'event', seq: 3, name: 'session.stream.event', payload: { kind: 'three' } }),
+          ]),
+          { headers: { 'Content-Type': 'application/x-ndjson' } },
+        );
+      }
+      return Response.json({ ok: true });
+    };
+
+    const userDo = new NanoOrchestratorUserDO(state, {
+      AGENT_CORE: { fetch: agentFetch } as Fetcher,
+      NANO_INTERNAL_BINDING_SECRET: 'secret',
+    });
+
+    const response = await userDo.fetch(
+      new Request(`https://orchestrator.internal/sessions/${SESSION_UUID}/ws?last_seen_seq=1`, {
+        method: 'GET',
+        headers: { upgrade: 'websocket' },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    const frames = created[0]!.server.sent.map((line) => JSON.parse(line));
+    expect(frames.map((frame) => frame.seq)).toEqual([2, 3]);
+    expect(store.get(`sessions/${SESSION_UUID}`)).toEqual(
+      expect.objectContaining({ relay_cursor: 3 }),
+    );
+  });
+
   it('rejects ws attach for missing or ended sessions with typed errors', async () => {
     installFakePair();
     const { state, store } = createState();

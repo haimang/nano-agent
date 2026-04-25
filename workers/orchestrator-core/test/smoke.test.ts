@@ -53,7 +53,7 @@ describe("orchestrator-core shell smoke", () => {
   });
 
   it("rejects authenticated start without trace uuid", async () => {
-    const token = await signTestJwt({ sub: USER_UUID, realm: "default" }, JWT_SECRET);
+    const token = await signTestJwt({ sub: USER_UUID, realm: "default", team_uuid: "44444444-4444-4444-8444-444444444444" }, JWT_SECRET);
     const response = await worker.fetch(
       new Request(`https://example.com/sessions/${SESSION_UUID}/start`, {
         method: "POST",
@@ -74,9 +74,9 @@ describe("orchestrator-core shell smoke", () => {
     expect((await response.json()).error).toBe("invalid-trace");
   });
 
-  it("rejects tenant mismatch claim", async () => {
+  it("rejects authenticated session routes when JWT omits tenant claims", async () => {
     const token = await signTestJwt(
-      { sub: USER_UUID, realm: "default", tenant_uuid: "foreign-tenant" },
+      { sub: USER_UUID, realm: "default" },
       JWT_SECRET,
     );
     const response = await worker.fetch(
@@ -97,11 +97,11 @@ describe("orchestrator-core shell smoke", () => {
     );
 
     expect(response.status).toBe(403);
-    expect((await response.json()).error).toBe("tenant-mismatch");
+    expect((await response.json()).error).toBe("missing-team-claim");
   });
 
   it("rejects non-probe routes when TEAM_UUID is missing outside test env", async () => {
-    const token = await signTestJwt({ sub: USER_UUID, realm: "default" }, JWT_SECRET);
+    const token = await signTestJwt({ sub: USER_UUID, realm: "default", team_uuid: "44444444-4444-4444-8444-444444444444" }, JWT_SECRET);
     const response = await worker.fetch(
       new Request(`https://example.com/sessions/${SESSION_UUID}/status`, {
         headers: {
@@ -120,7 +120,10 @@ describe("orchestrator-core shell smoke", () => {
   });
 
   it("routes authenticated start requests to the user DO keyed by JWT sub", async () => {
-    const token = await signTestJwt({ sub: USER_UUID, realm: "default" }, JWT_SECRET);
+    const token = await signTestJwt(
+      { sub: USER_UUID, realm: "default", team_uuid: "44444444-4444-4444-8444-444444444444" },
+      JWT_SECRET,
+    );
     const stubFetch = vi.fn<(req: Request) => Promise<Response>>().mockResolvedValue(new Response(JSON.stringify({ ok: true, action: "start" }), { status: 200 }));
     const idFromName = vi.fn().mockReturnValue({ __kind: "user-do-id" });
     const get = vi.fn().mockReturnValue({ fetch: stubFetch });
@@ -153,7 +156,7 @@ describe("orchestrator-core shell smoke", () => {
   });
 
   it("routes authenticated ws upgrades to the user DO", async () => {
-    const token = await signTestJwt({ sub: USER_UUID }, JWT_SECRET);
+    const token = await signTestJwt({ sub: USER_UUID, team_uuid: "44444444-4444-4444-8444-444444444444" }, JWT_SECRET);
     const stubFetch = vi.fn<(req: Request) => Promise<Response>>().mockResolvedValue(new Response(null, { status: 200 }));
     const idFromName = vi.fn().mockReturnValue({ __kind: "user-do-id" });
     const get = vi.fn().mockReturnValue({ fetch: stubFetch });

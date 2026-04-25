@@ -3,6 +3,8 @@ import { execFileSync } from "node:child_process";
 import { fetchJson, liveTest, randomSessionId } from "../shared/live.mjs";
 import { createOrchestratorAuth } from "../shared/orchestrator-auth.mjs";
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 function eventBody(event) {
   if (!event || typeof event !== "object") return null;
   if (event.kind && typeof event.kind === "string") return event;
@@ -49,6 +51,20 @@ function queryD1(sql) {
   return Array.isArray(parsed?.[0]?.results) ? parsed[0].results : [];
 }
 
+function queryLlmUsageCount(sessionId) {
+  assert.match(sessionId, UUID_RE);
+  return queryD1(
+    `SELECT COUNT(*) AS count FROM nano_usage_events WHERE session_uuid='${sessionId}' AND resource_kind='llm' AND verdict='allow' AND provider_key='workers-ai';`,
+  );
+}
+
+function queryLlmUsageAnchor(sessionId) {
+  assert.match(sessionId, UUID_RE);
+  return queryD1(
+    `SELECT usage_event_uuid, trace_uuid, session_uuid, idempotency_key, provider_key, resource_kind, verdict FROM nano_usage_events WHERE session_uuid='${sessionId}' AND resource_kind='llm' AND verdict='allow' AND provider_key='workers-ai' ORDER BY created_at DESC LIMIT 1;`,
+  );
+}
+
 liveTest(
   "orchestrator-core starts a real Workers AI LLM mainline turn",
   ["orchestrator-core", "agent-core"],
@@ -74,9 +90,18 @@ liveTest(
     );
     assert.equal(end.kind, "turn.end");
 
-    const usage = queryD1(
-      `SELECT COUNT(*) AS count FROM nano_usage_events WHERE session_uuid='${sessionId}' AND resource_kind='llm' AND verdict='allow' AND provider_key='workers-ai';`,
-    );
+    const usage = queryLlmUsageCount(sessionId);
     assert.ok(Number(usage[0]?.count) >= 1, "expected live Workers AI LLM usage evidence in preview D1");
+    const [anchor] = queryLlmUsageAnchor(sessionId);
+    assert.equal(anchor?.session_uuid, sessionId);
+    console.log(
+      `# Z4_LIVE_LLM_ANCHOR ${JSON.stringify({
+        trace_uuid: anchor.trace_uuid,
+        session_uuid: sessionId,
+        usage_event_uuid: anchor.usage_event_uuid,
+        idempotency_key: anchor.idempotency_key,
+        provider_key: anchor.provider_key,
+      })}`,
+    );
   },
 );

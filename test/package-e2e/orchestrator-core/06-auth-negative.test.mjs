@@ -65,12 +65,12 @@ liveTest("orchestrator-core rejects missing trace uuid on authenticated public s
   assert.equal(start.json?.error, "invalid-trace");
 });
 
-liveTest("orchestrator-core rejects tenant mismatch claim on public start", ["orchestrator-core"], async ({ getUrl }) => {
+liveTest("orchestrator-core rejects missing tenant claim on public start", ["orchestrator-core"], async ({ getUrl }) => {
   assert.ok(JWT_SECRET, "set NANO_AGENT_ORCHESTRATOR_JWT_SECRET for orchestrator live tests");
   const base = getUrl("orchestrator-core");
   const sessionId = randomSessionId();
   const token = await signOrchestratorJwt(
-    { sub: randomSessionId(), realm: "package-e2e", tenant_uuid: "foreign-tenant" },
+    { sub: randomSessionId(), realm: "package-e2e" },
     JWT_SECRET,
     3600,
     { kid: "v1" },
@@ -83,9 +83,9 @@ liveTest("orchestrator-core rejects tenant mismatch claim on public start", ["or
       "content-type": "application/json",
       "x-trace-uuid": randomSessionId(),
     },
-    body: JSON.stringify({ initial_input: "tenant-mismatch" }),
+    body: JSON.stringify({ initial_input: "missing-tenant" }),
   });
 
   assert.equal(start.response.status, 403);
-  assert.equal(start.json?.error, "tenant-mismatch");
+  assert.equal(start.json?.error, "missing-team-claim");
 });

@@ -40,6 +40,7 @@ describe("authenticateRequest", () => {
     const token = await signTestJwt(
       {
         sub: "11111111-1111-4111-8111-111111111111",
+        team_uuid: "22222222-2222-4222-8222-222222222222",
         realm: "legacy",
       },
       "y".repeat(32),
@@ -59,13 +60,40 @@ describe("authenticateRequest", () => {
 
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.snapshot.tenant_source).toBe("deploy-fill");
+    expect(result.value.snapshot.tenant_source).toBe("claim");
+  });
+
+  it("rejects tokens that omit tenant claims instead of deploy-filling from env", async () => {
+    const token = await signTestJwt(
+      {
+        sub: "11111111-1111-4111-8111-111111111111",
+      },
+      "y".repeat(32),
+    );
+    const result = await authenticateRequest(
+      new Request("https://example.com/sessions/11111111-1111-4111-8111-111111111111/start", {
+        headers: {
+          authorization: `Bearer ${token}`,
+          "x-trace-uuid": "33333333-3333-4333-8333-333333333333",
+        },
+      }),
+      {
+        JWT_SECRET: "y".repeat(32),
+        TEAM_UUID: "nano-agent",
+      },
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.response.status).toBe(403);
+    expect(await result.response.json()).toMatchObject({ error: "missing-team-claim" });
   });
 
   it("rejects expired tokens", async () => {
     const token = await signTestJwt(
       {
         sub: "11111111-1111-4111-8111-111111111111",
+        team_uuid: "22222222-2222-4222-8222-222222222222",
       },
       "z".repeat(32),
       -10,
@@ -114,6 +142,7 @@ describe("authenticateRequest", () => {
     const token = await signTestJwt(
       {
         sub: "11111111-1111-4111-8111-111111111111",
+        team_uuid: "22222222-2222-4222-8222-222222222222",
       },
       "q".repeat(32),
     );
@@ -136,6 +165,7 @@ describe("authenticateRequest", () => {
     const token = await signTestJwt(
       {
         sub: "11111111-1111-4111-8111-111111111111",
+        team_uuid: "22222222-2222-4222-8222-222222222222",
       },
       "w".repeat(32),
     );

@@ -19,8 +19,8 @@ export interface JwtPayload {
 
 /**
  * Ingress-only auth shape. The contract package's `AuthSnapshot`
- * stays strict and claim-backed; this local form still models the
- * legacy deploy-fill bridge used by session ingress.
+ * stays strict and claim-backed; this local form keeps the same
+ * claim-backed tenant contract for public session ingress.
  */
 export interface IngressAuthSnapshot {
   readonly sub: string;
@@ -28,7 +28,7 @@ export interface IngressAuthSnapshot {
   readonly team_uuid?: string;
   readonly realm?: string;
   readonly tenant_uuid?: string;
-  readonly tenant_source: "claim" | "deploy-fill";
+  readonly tenant_source: "claim";
   readonly membership_level?: number;
   readonly source_name?: string;
   readonly exp?: number;
@@ -204,17 +204,13 @@ export async function authenticateRequest(
 
   const legacyTenantClaim = toOptionalString(payload.tenant_uuid);
   const teamClaim = toOptionalString(payload.team_uuid);
-  const deployTenant = toOptionalString(env.TEAM_UUID);
-  if (legacyTenantClaim && deployTenant && legacyTenantClaim !== deployTenant) {
+  const effectiveTenant = teamClaim ?? legacyTenantClaim;
+  if (!effectiveTenant) {
     return {
       ok: false,
-      response: jsonPolicyError(403, "tenant-mismatch", "tenant claim does not match deploy tenant"),
+      response: jsonPolicyError(403, "missing-team-claim", "JWT must include team_uuid or tenant_uuid"),
     };
   }
-
-  const effectiveTenant = teamClaim ?? legacyTenantClaim ?? deployTenant;
-  const tenantSource: "claim" | "deploy-fill" =
-    teamClaim || legacyTenantClaim ? "claim" : "deploy-fill";
   const userUuid = toOptionalString(payload.user_uuid) ?? payload.sub;
   const realm = toOptionalString(payload.realm);
   const sourceName = toOptionalString(payload.source_name);
@@ -224,8 +220,9 @@ export async function authenticateRequest(
   const snapshot: IngressAuthSnapshot = {
     sub: payload.sub,
     ...(userUuid ? { user_uuid: userUuid } : {}),
-    ...(effectiveTenant ? { team_uuid: effectiveTenant, tenant_uuid: effectiveTenant } : {}),
-    tenant_source: tenantSource,
+    team_uuid: effectiveTenant,
+    tenant_uuid: effectiveTenant,
+    tenant_source: "claim",
     ...(realm ? { realm } : {}),
     ...(sourceName ? { source_name: sourceName } : {}),
     ...(membershipLevel !== undefined ? { membership_level: membershipLevel } : {}),
