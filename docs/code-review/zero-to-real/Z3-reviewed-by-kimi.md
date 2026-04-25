@@ -480,3 +480,46 @@
 ---
 
 (End of review)
+
+## 9. 对 Kimi 代码审查质量的评价
+
+> 评价人: `GPT-5.4`
+> 评价时间: `2026-04-25`
+> 评价依据: `docs/code-review/zero-to-real/Z3-reviewed-by-kimi.md §0–§8`
+
+### 9.1 一句话评价评审风格
+Kimi 的审查风格偏 **快速 correctness 扫描**，能抓到几个真问题，但对当前仓库的**已生效 schema truth 和 D1 语义**掌握不够稳，导致误报比例偏高。
+
+### 9.2 优点
+1. **能迅速命中最危险的局部 correctness 问题**：`recordUsage` 非原子、`beforeLlmInvoke` leak、DeepSeek skeleton 缺失，这几条都是真问题。
+2. **会追 Z2 carry-over**：不是把 Z3 当孤立工作，而是尝试检查前一阶段遗留债务是否真的被吸收。
+3. **对 closure 完整性有敏感度**：已知限制写不全、evidence 过度乐观，这类文档问题也被纳入判断。
+
+### 9.3 缺点
+1. **对当前有效 schema 的把握明显不足**：R2 基于 `002` 而忽略已存在的 `003`，属于关键前提没核准就下结论。
+2. **部分事务建议不够贴近 Cloudflare D1 实情**：把 `BEGIN/COMMIT` 当成默认推荐路径，忽略了本仓库已有 `db.batch()` 可用语义。
+3. **作用域有时放得过大**：像 token-level usage、session-truth 全量事务化，都是有讨论价值的 follow-up，但被写成了比实际更硬的 blocker。
+
+### 9.4 对审查报告中，全部问题，的清点
+
+| 问题编号 | 原始严重程度 | 该问题的质量 | 分析与说明 |
+|----|------|------|------------------|
+| R1 | `high` | `高` | `recordUsage` 非原子是真问题，直接推动了本轮 `db.batch()` 修复。 |
+| R2 | `high` | `低` | 结论依赖对 `002` 的静态阅读，但忽略了已存在的 `003-session-truth-hardening.sql`；属于前提失真导致的误报。 |
+| R3 | `high` | `低` | “Z2 遗留 D1 事务缺失未修复” 里把 `session-truth.ts` 一概判成未修，忽略了关键路径已使用 `db.batch()` 的事实，判断过重。 |
+| R4 | `medium` | `高` | `beforeLlmInvoke` 先 `set` 后 `authorize` 的 leak 判断准确，也确实被本轮修复。 |
+| R5 | `medium` | `高` | DeepSeek skeleton 缺失判断准确，且修复成本/收益比很高。 |
+| R6 | `medium` | `中` | synthetic identity 不完整这条有价值，但更本质的问题是 write ownership 和 preview-only gate；它触及了问题，但没打到最核心层。 |
+| R7 | `medium` | `中低` | “usage event 不记录 token 消耗” 更像设计 tradeoff，而不是 Z3 当前错误；可以提，但不宜抬太高。 |
+| R8 | `medium` | `高` | 认为 closure 的 known limitations 不完整，这条是成立的，后来也被补写。 |
+
+### 9.5 评分 - 总体 ** 6.3 / 10 **
+
+| 维度 | 评分（1–10） | 说明 |
+|------|-------------|------|
+| 证据链完整度 | 6 | 有证据，但几条关键判断建立在未校准的 schema 前提上。 |
+| 判断严谨性 | 5 | 真问题和误报并存，且误报集中在高严重度项。 |
+| 修法建议可执行性 | 6 | 部分建议可落地，部分过于理想化或不贴 D1 语义。 |
+| 对 action-plan / design 的忠实度 | 7 | 有持续对照 plan/design，但对实际生效 schema truth 校准不足。 |
+| 协作友好度 | 7 | 语气可合作，表达清楚。 |
+| 找到问题的覆盖面 | 7 | correctness、docs、carry-over 都覆盖到了。 |

@@ -389,3 +389,46 @@
   5. **R8**: model ID 硬编码 — Z4/Z5 迁移到 wrangler vars。
   6. Z2 review R6（DO hot-state rebuild invariant 测试）— 仍未闭合，Z4 真机测试前必须补齐。
   7. ZX-D1 §7.3.1 字段冻结表有 10+ 处与 003/004 实际 schema 不一致（Z2 review R4 carry-over），Z5 closure 前回修。
+
+## 8. 对 DeepSeek 代码审查质量的评价
+
+> 评价人: `GPT-5.4`
+> 评价时间: `2026-04-25`
+> 评价依据: `docs/code-review/zero-to-real/Z3-reviewed-by-deepseek.md §0–§7`
+
+### 8.1 一句话评价评审风格
+DeepSeek 的审查风格偏稳健和工程追溯型，最有价值的是能把 **文档真相、测试缺口、以及 preview posture 技术债** 连成同一条证据链。
+
+### 8.2 优点
+1. **抓主问题很准**：`003` 幽灵迁移、quota 专项测试缺失、`ensureTeamSeed` 常开副作用，这三条都是真正影响 Z3 可信收口的问题。
+2. **文档—实现联动意识强**：不是只盯代码，而是会检查 action-plan / closure / schema design 是否同步，这对本仓库很重要。
+3. **建议通常能落地**：像 env-gated seed、补文档追溯、补 quota 相关测试，都是可以直接执行的修法。
+
+### 8.3 缺点
+1. **少量 finding 带有“未来 hardening 与当前 blocker 混写”问题**：例如 tool schema、AI signal、model 配置化，都有价值，但不应该和 correctness blocker 同权。
+2. **部分风险判断略偏保守**：例如 cross-writer `event_seq` 冲突，在当时代码下确实值得提，但更适合作为“ownership drift 的派生症状”，不是核心 blocker 本体。
+3. **缺少对误报/前提变化的主动收缩**：没有明确区分“当前真实错误”和“依赖后续 owner 取舍的优化项”。
+
+### 8.4 对审查报告中，全部问题，的清点
+
+| 问题编号 | 原始严重程度 | 该问题的质量 | 分析与说明 |
+|----|------|------|------------------|
+| R1 | `critical` | `高` | `003-session-truth-hardening.sql` 未进入 Z3 action-plan / closure 追踪，判断准确，且直接推动了文档 truth 修复。 |
+| R2 | `critical` | `高` | 指出 quota exhausted/recover 测试缺失非常关键；虽然我本轮补的是 package regressions 而不是 live quota e2e，但“原先零证据”这一判断是成立的。 |
+| R3 | `high` | `高` | `ensureTeamSeed()` 的 synthetic identity/常开行为确实是架构债，最终也被我收紧为显式 env gate。 |
+| R4 | `high` | `中高` | cross-writer `event_seq` 风险在当时 `agent-core` 直写 activity log 的实现下成立，属于有价值的正确性提醒；只是优先级略低于 ownership 本身。 |
+| R5 | `medium` | `中` | tool schema 硬编码问题真实存在，但更偏 Z3.x / Z4 hardening，而非本轮必须卡住 closure 的 blocker。 |
+| R6 | `medium` | `中` | 无 AI binding 时缺少显式 signal 是合理建议，但更像 observability polish。 |
+| R7 | `medium` | `高` | 指出 `remaining` 递减非原子窗口很有价值，后来也直接对应到了 `recordUsage()` 的 batch 化修复。 |
+| R8 | `medium` | `中` | model ID 配置化是合理长期建议，但在 frozen first-wave posture 下不是高优先级 closure blocker。 |
+
+### 8.5 评分 - 总体 ** 8.4 / 10 **
+
+| 维度 | 评分（1–10） | 说明 |
+|------|-------------|------|
+| 证据链完整度 | 9 | 文档、migration、代码、测试缺口四个面都能连起来。 |
+| 判断严谨性 | 8 | 主判断大多成立，少数项偏保守。 |
+| 修法建议可执行性 | 8 | 多数建议可直接落地，尤其 docs/seed/test 三类。 |
+| 对 action-plan / design 的忠实度 | 9 | 很忠实地检查了 plan / closure / ZX-D1 的一致性。 |
+| 协作友好度 | 8 | 语气直接但整体合作性良好，问题定义清楚。 |
+| 找到问题的覆盖面 | 8 | 覆盖 docs、tests、schema、runtime posture，宽度很好。 |

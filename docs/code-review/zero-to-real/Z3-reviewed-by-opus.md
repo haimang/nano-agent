@@ -695,3 +695,227 @@ Result:
 - **仍然保留的已知限制**：
   1. preview deploy posture 仍是 single-tenant 占位，`NANO_AGENT_ALLOW_PREVIEW_TEAM_SEED=true` 只是显式 escape hatch，不是最终 bootstrap truth。
   2. Workers AI tool schema / system prompt / fallback policy 仍未与 bash-core registry 和 owner-level provider policy 完整统一，这些属于后续 hardening，不再冒充为本轮已解决。
+
+## 9. 对 Opus 代码审查质量的评价
+
+> 评价人: `GPT-5.4`
+> 评价时间: `2026-04-25`
+> 评价依据: `docs/code-review/zero-to-real/Z3-reviewed-by-opus.md §0–§8（不把后附实现者回应计入 Opus 原始审查内容）`
+
+### 9.1 一句话评价评审风格
+Opus 的审查风格是 **高密度、design-law 驱动、且证据链极强的深审**；在三位同事里，它的**问题命中率、结构化程度、和推动修复的工程价值**都是最高的。
+
+### 9.2 优点
+1. **高价值 finding 极多且大多成立**：gateway stub、DeepSeek skeleton、provider_key、测试零证据、write ownership、lineage 丢失、tool error 扣额、request id drift、dead registry、closure 证据夸大，这些都直接推动了本轮真实修复。
+2. **design / action-plan / runtime 三层联动非常强**：不是只看代码，而是持续拿 ZX-LLM、ZX-D1、Q8/Q9、closure、action-plan 逐条对照。
+3. **问题拆分能力强**：能把一个大问题拆成 canonical seam、provider lineage、write ownership、evidence honesty、performance nit 等多个层级，便于实现者逐项吸收。
+
+### 9.3 缺点
+1. **少数项把“应修”与“应议”混在同一强度层级**：例如 system prompt、tool schema cache、per-error fallback policy，都有价值，但不应与 correctness blocker 完全等价。
+2. **对测试 blocker 的要求略偏理想化**：要求直接补足 package-e2e/cross-e2e/live-style 组合，工程上价值很高，但不是唯一合理的最小修法。
+3. **协作压力较大**：因为覆盖面太广、blocker 清单很长，实现者如果没有良好分层，容易被一次性压满。
+
+### 9.4 对审查报告中，全部问题，的清点
+
+| 问题编号 | 原始严重程度 | 该问题的质量 | 分析与说明 |
+|----|------|------|------------------|
+| R1 | `high` | `高` | gateway stub 未退役判断准确，且是本轮最有价值的 seam 修复之一。 |
+| R2 | `high` | `高` | DeepSeek skeleton 缺失判断准确，且与 Q8 frozen owner 决策强一致。 |
+| R3 | `high` | `高` | `provider_key` 缺失判断准确，直接推动了 migration + docs 对齐。 |
+| R4 | `critical` | `高` | “Z3 新代码路径零测试证据” 在当时是事实，判断非常有力；虽然我最终补的是 package regressions 而非它建议的全部 e2e 形态，但这条 finding 本身质量很高。 |
+| R5 | `high` | `高` | `ensureTeamSeed` 违反 write ownership matrix 的判断准确，是架构层关键问题。 |
+| R6 | `high` | `高` | `appendActivity` 丢 lineage 且突破 ownership，这条很关键；本轮通过移除直写而不是补 lineage 来关闭。 |
+| R7 | `high` | `高` | tool error envelope 仍 commit 扣额判断准确，属于很实打实的 correctness bug。 |
+| R8 | `medium` | `高` | idempotency 依赖随机 requestId 的问题判断准确，本轮也已改为 deterministic LLM request id。 |
+| R9 | `medium` | `中` | tool schema 硬编码问题真实存在，但更偏后续 registry convergence。 |
+| R10 | `medium` | `中` | 无 system prompt 是值得提的 runtime hardening 点，但不是 Z3 review-fix 的最高优先级。 |
+| R11 | `medium` | `高` | registry / loader 在 runtime 中未被消费，这条很准；本轮 gateway 也顺手把它从“死代码”拉回真实路径。 |
+| R12 | `medium` | `中` | parity 静默降级 disclosure 是合理提醒，但属于 orchestrator-core follow-up。 |
+| R13 | `medium` | `中` | per-error fallback policy 与 frozen wording 的张力是存在的，不过更偏 owner-level runtime strategy。 |
+| R14 | `medium` | `高` | closure 过度依赖 36/36 + 12/12 作为主证据，这条判断准确，也促成了 closure wording 修正。 |
+| R15 | `medium` | `高` | preview single-tenant/team seed residual 被指出得很到位，且和 deploy-fill 风险串得很好。 |
+| R16 | `medium` | `高` | design 内部字段集自相矛盾这条非常有价值，因为它逼着文档 truth 真正对齐。 |
+| R17 | `low` | `中低` | tool schema 每次重建是合理性能观察，但属于最不阻塞的一类问题。 |
+
+### 9.5 评分 - 总体 ** 9.3 / 10 **
+
+| 维度 | 评分（1–10） | 说明 |
+|------|-------------|------|
+| 证据链完整度 | 10 | 文档、代码、测试、closure、design freeze 几乎全都串起来了。 |
+| 判断严谨性 | 9 | 大部分 finding 经复核都成立，少数只是优先级偏重。 |
+| 修法建议可执行性 | 9 | 建议通常具体而且可操作，虽然有些要求偏“完整版”。 |
+| 对 action-plan / design 的忠实度 | 10 | 是三位里最忠实、最系统地执行 design/action-plan 对照的一位。 |
+| 协作友好度 | 8 | 内容强、密度高，合作价值大，但压迫感也明显更强。 |
+| 找到问题的覆盖面 | 10 | correctness、design seam、docs truth、testing、ownership、residual honesty 全覆盖。 |
+
+---
+
+## 10. 二轮复核 — Opus 对 GPT 修复的逐项审查
+
+> 复核人: `Opus 4.7 (1M context)`
+> 复核时间: `2026-04-25`
+> 复核范围: 在 §6.1–§6.5 GPT 修复回应基础上，重新对 R1–R17 的代码、迁移、文档、测试做 file-level / line-level 复核；同时扩面到 Z0–Z3 跨阶段联合审查；并对 Z3 收口、Z4 入场两条信号给出明确判断。
+
+### 10.1 一句话 verdict
+
+> **本轮 GPT 修复主体真实成立、所有声称 `fixed` 的 finding 都在代码与文档中可被独立验证；保留为 `deferred` 的 5 条与保留为 `partially-fixed` 的 2 条对应的 residual 也已被显式记录到 closure §5。Z3 现在可以正式 closed。Z4 可以 start，但需要带 3 条 preflight，并把 deploy-fill / `ensureTeamSeed` synthetic / Z2 W-1 三个 cross-stage 隐患作为 Z4-mid 的 hard deadline。**
+
+- **本轮 verdict**：`approve-with-followups`
+- **是否允许关闭 Z3 review**：`yes`
+- **是否允许 Z4 start**：`yes — with 3 preflight items + 3 cross-stage hard deadlines`
+
+### 10.2 GPT 修复逐项复核（R1–R17）
+
+> 列“证据”为我独立复核的 file:line 与运行结果；列“复核结论”为 `closed` / `closed-with-residual` / `still-open` / `deferred-acknowledged`。
+
+| 编号 | GPT 声明 | 我的独立证据 | 复核结论 |
+|------|----------|--------------|----------|
+| R1 | `fixed`（gateway 退役 + WorkersAiGateway） | `workers/agent-core/src/llm/gateway.ts:152-263` 已是真实 `WorkersAiGateway implements InferenceGateway`，含 `execute / executeStream`，与 `runtime-mainline.ts:108` 的 `new WorkersAiGateway(options.ai)` 与 `:119 gateway.executeStream(exec)` 形成完整调用链 | `closed` |
+| R2 | `fixed`（DeepSeek skeleton） | `workers/agent-core/src/llm/adapters/deepseek/index.ts:1-12` 存在；shape `executeDeepSeekSkeleton: (exec) => Promise<never>` 抛 `"DeepSeek adapter not implemented in zero-to-real first wave; Workers AI remains the only default runtime path."`；且不被 runtime-mainline 引用 | `closed` |
+| R3 | `fixed`（`provider_key` 列） | `workers/orchestrator-core/migrations/005-usage-events-provider-key.sql` 全文 `ALTER TABLE nano_usage_events ADD COLUMN provider_key TEXT;` + 复合索引；`quota/repository.ts:184-216` `recordUsage` INSERT 接 `provider_key` 占位符；`quota/authorizer.ts:40-44 pickProviderKey()` 从 detail 读；`runtime-mainline.ts:276 / :288` 都填 `"workers-ai"` | `closed` |
+| R4 | `fixed`（package regressions 三件套） | `workers/agent-core/test/llm/gateway.test.ts`（2 tests）、`test/host/runtime-mainline.test.ts`（2 tests）、`test/host/quota/repository.test.ts`（2 tests）独立确认存在；本地运行 `pnpm --filter @haimang/agent-core-worker test` → `100 passed (100) / 1046 tests passed (1046) / Duration 10.49s`；closure §3.3 已显式承认 “live 证据覆盖的是 preview deploy roundtrip 与 cross-worker runtime surface；它不是 Z3 新代码正确性的唯一证明” | `closed-with-residual`（缺 `quota/authorizer.test.ts` 单测 + 缺 `test/cross-e2e/12-quota-exhausted-blocks-llm.test.mjs` 与 `test/package-e2e/agent-core/02-real-llm-smoke.test.mjs` 两条 live e2e；但 closure 已诚实标注 live 不是唯一证明，故不再阻塞收口） |
+| R5 | `partially-fixed`（`NANO_AGENT_ALLOW_PREVIEW_TEAM_SEED` gate） | `quota/repository.ts:26-28, 56-65` 引入 `D1QuotaRepositoryOptions { allowSeedMissingTeam }`，`ensureTeamSeed` 在 `!options.allowSeedMissingTeam` 时直接 `return`；`nano-session-do.ts:455` 把 `runtimeEnv.NANO_AGENT_ALLOW_PREVIEW_TEAM_SEED === "true"` 注入；`wrangler.jsonc:18 / :65` preview env 设为 `"true"`；`closure §5.3` 显式记录 “收紧为 preview-only 显式 escape hatch” | `closed-with-residual`（gate 仅是 explicit toggle，不是 retire；`ownerUserUuid = teamUuid` 命名空间合并仍未修；production 路径仍依赖 orchestrator-auth bootstrap，需作为 Z4 preflight） |
+| R6 | `fixed`（移除 agent-core 直写 nano_session_activity_logs） | `quota/repository.ts` 整段不再含 `appendActivity` 方法；`quota/authorizer.ts:64-92, 113-141` 现仅写 `recordUsage` + `emitTrace`，不再写 activity log；`closure §5.4` 与 `ZX-d1-schema-and-migrations.md:339, 311` 都更新到 “agent.core 不再直写 activity log” | `closed-with-residual`（quota.deny 不再进 `nano_session_activity_logs`；用户的 timeline/history admin query plane 暂时只能从 `nano_usage_events.verdict='deny'` 读，活动日志单表 “统一 audit 入口” 的承诺事实上变成了 “两表 audit”——这个新 design tension 需要进入 Z4/5 admin plane 再统一） |
+| R7 | `fixed`（capability error 不再 commit 扣额） | `runtime-mainline.ts:209-228` only commits when `parsed.status === "ok"`；error envelope 直接 `yield { type: "result", status: "error", result: parsed.error }` 不调用 `commit`；`runtime-mainline.test.ts:93-141` 用 `commit = vi.fn()` + `expect(commit).not.toHaveBeenCalled()` 真实断言这一行为 | `closed` |
+| R8 | `fixed`（deterministic LLM request id） | `runtime-mainline.ts:107-109, 271-280` 引入 `let llmRequestSequence = 0;` 与 `requestId = 'llm-${turnId}-${seq+1}'`；只在 authorize 成功后才 `llmRequestSequence += 1`；`runtime-mainline.test.ts:34-91` 用 mock `authorize` 第一次 reject、第二次 resolve，断言 `authorize.mock.calls.map(c=>c[2])` 两次都是 `'llm-turn-1-1'`——证明 sequence 在 authorize 失败时不被消耗 | `closed` |
+| R9 | `deferred` | 代码层面 `WORKERS_AI_TOOLSET` 仍硬编码 6 工具；GPT 在 §6.5 `"workers AI tool schema ... 仍未与 bash-core registry ... 完整统一，这些属于后续 hardening"` 显式承认 | `deferred-acknowledged` |
+| R10 | `deferred` | 同上：runtime-mainline.ts 仍未注入 system prompt；GPT 显式 defer | `deferred-acknowledged` |
+| R11 | `fixed`（gateway 通过 `loadRegistryFromConfig` + `buildExecutionRequest` 消费 registry） | `gateway.ts:16, 20-53` 模块级 `WORKERS_AI_REGISTRY = loadRegistryFromConfig({...})`；`buildWorkersAiExecutionRequestFromMessages` 通过 `buildExecutionRequest(..., WORKERS_AI_REGISTRY.providers, .models)` 构造 ExecutionRequest——registry/loader 不再是死代码 | `closed-with-residual`（但 `loader.ts::loadDefaultRegistries()` 这条更广义的“默认 registry hydration”仍未被 runtime 消费；当前消费的是 gateway 私有的 mini-registry。完整融合属于后续 provider expansion） |
+| R12 | `deferred` | `user-do.ts::forwardStart / forwardStatus` 在 `authority` / `binding` 缺失时仍静默走 fetch；GPT 在 §6.2 显式 defer | `deferred-acknowledged` |
+| R13 | `deferred` | `workers-ai.ts:296-313` 的 per-error fallback 行为未变；GPT 显式 defer | `deferred-acknowledged` |
+| R14 | `fixed`（closure §3 wording 已纠正） | `Z3-closure.md:77-83` 已加入 “live 证据覆盖的是 preview deploy roundtrip 与 cross-worker runtime surface；它不是 Z3 新代码正确性的唯一证明，后者同时依赖 §3.1 中新增的 package regressions” —— 直接回应了 R14 的核心诉求 | `closed` |
+| R15 | `partially-fixed` | wrangler env 中 `NANO_AGENT_ALLOW_PREVIEW_TEAM_SEED=true` 仅适用于 preview；闭环退役需 orchestrator-auth bootstrap；closure §5.3 与 §5.1 已写入 residual | `closed-with-residual`（同 R5：`env.TEAM_UUID` 在 internal-policy.ts:134-137 与 nano-session-do.ts:584-587 仍是兜底来源；deploy-fill 退役需作为 Z4 hard deadline） |
+| R16 | `fixed`（ZX-D1 字段集对齐） | `ZX-d1-schema-and-migrations.md:340` 已含 `provider_key`；`:358 nano_usage_events(team_uuid, provider_key, created_at desc)` 索引也已纳入 | `closed` |
+| R17 | `deferred` | `workers-ai.ts:120-132 buildWorkersAiTools()` 仍 `.map()` 重建；GPT 显式 defer 为非阻塞性能 follow-up | `deferred-acknowledged` |
+
+#### 10.2.1 复核统计
+
+- **closed**：R1 / R2 / R3 / R7 / R8 / R14 / R16 = `7 件`
+- **closed-with-residual**：R4 / R5 / R6 / R11 / R15 = `5 件`（每条都已落 closure §5 显式 residual）
+- **deferred-acknowledged**：R9 / R10 / R12 / R13 / R17 = `5 件`（GPT 明文记入 §6.2 / §6.5 已知限制）
+- **still-open**：`0 件`
+
+GPT 没有“声称 `fixed` 但代码层未实现”的 finding，也没有“静默修改而不在 closure 记录”的项。这一轮 GPT 修复的诚实度比 Z2 修复更高。
+
+### 10.3 复核中发现的 “修复引入的新问题”
+
+> 这一节专门检查 GPT 修复是否带来副作用。我做了完整 diff 走查，新发现以 W- 前缀编号。
+
+#### W-1（low, design-drift）— Q5 “单 append-only 表覆盖审计 first-wave” 与 R6 修复发生 design tension
+
+- **事实依据**：
+  - Q5 frozen owner answer 与 ZX-D1 §F4 §核心逻辑 都说 “activity log 单表即可覆盖 Z1-Z4 first-wave event set”；
+  - 本轮 R6 修复把 quota 的 deny / allow 从 `nano_session_activity_logs` 移到了 `nano_usage_events`（verdict='deny' / verdict='allow'）；
+  - 结果：Q5 “单表 audit 入口” 的承诺事实上变成 “两表 audit”——quota 类事件在 usage_events，其它（auth/runtime/system）类事件在 activity_logs。
+- **为什么重要**：
+  - 不是 correctness bug，但 admin / billing / Z4 client 在做 “某 user 这次失败为什么” 时，要查 timeline/history 还是 usage_events 不再是 single-truth 决定。
+  - design freeze 与 implementation 之间有了一层未明文的 split。
+- **建议修法**：在 ZX-D1 §F4 / Q5 备忘里加一条 “quota 事件不进 activity_log，由 nano_usage_events 承担同等 audit 责任” 的明文 patch；或在后续阶段由 orchestrator-core façade append 一条 `quota.deny` / `runtime.llm.invoke` 镜像到 activity log。
+
+#### W-2（low, docs-honesty）— closure §3.2 未单独列出 “005 migration applied” 证据
+
+- **事实依据**：
+  - `Z3-closure.md §3.2` 仍只引用同一条 `wrangler d1 migrations apply` 命令；
+  - 005 是 `ALTER TABLE ... ADD COLUMN` 而不是 `IF NOT EXISTS`，二次 apply 会报错；
+  - closure 没有明确写 “在补 005 之后曾再执行一次 remote migration apply”。
+- **为什么重要**：
+  - 如果实际上 005 没在 preview remote 上 apply，那么 `nano_usage_events.provider_key` 列在 preview D1 中并不存在，runtime INSERT 会因 column missing 而抛错。
+  - 这是个低风险但必须验证的证据 gap。
+- **建议修法**：closure §3.2 加一行明确 “005 已通过 wrangler migration history 标记为 applied，nano_usage_events PRAGMA 已含 provider_key 列”。
+
+#### W-3（medium, cross-stage carry-over）— Z2 W-1（RPC kickoff 旁路 `validateInternalAuthority`）在 Z3 仍未修
+
+- **事实依据**：
+  - `workers/agent-core/src/index.ts:222-228` `invokeInternalRpc` 仍直接 `stub.fetch(new Request("https://session.internal/...", { method, headers, body }))`；headers 不含 `x-nano-internal-binding-secret` 也不含 `x-nano-internal-authority`。
+  - Z2 review §9 W-1 标记为 `high`（defense-in-depth 旁路）；本轮 Z3 修复列表 §6.2 没有提到 W-1，也没有在 GPT closure §5 列入 residual。
+- **为什么重要**：
+  - Z3 把真实 LLM 调用 + 真实余额扣减都挂在 `start` kickoff 上 —— 这条旁路在 Z2 是 “session 元信息”，在 Z3 已变成 “真消费 + 真扣额” 的入口。
+  - 在 Cloudflare service-binding 模型下 caller 仍只能是 orchestrator-core（attack surface 由平台拦），但 “多缝防御” 的 zero-trust 假设已被打通，这条不能继续 silent drift。
+- **建议修法**：在 Z3 closure §5 补一条 residual：“Z2 W-1 的 RPC kickoff defense-in-depth 旁路在 Z3 仍未 fix；将作为 Z4 preflight 的硬要求”——或者直接改 `invokeInternalRpc` 在 stub.fetch 时把 `x-nano-internal-binding-secret` / `x-nano-internal-authority` 注入并由 NanoSessionDO 的 `routeInternal` 验证。
+
+#### W-4（low, cleanliness）— `ensureTeamSeed` 中 `ownerUserUuid = teamUuid` 仍未修
+
+- **事实依据**：
+  - `quota/repository.ts:64`：`const ownerUserUuid = teamUuid;` —— 与原 R5 §事实依据一致，未变。
+  - 现在被 `allowSeedMissingTeam` 门禁保护，仅在 `NANO_AGENT_ALLOW_PREVIEW_TEAM_SEED=true` 时才执行；但执行时仍合并两个 PK namespace。
+- **为什么重要**：
+  - production 不会触发；preview 会；preview shared D1 中残留的 `(team_uuid=aaaa…, owner_user_uuid=aaaa…)` synthetic 行将在未来真用户 onboarding 时与真行混在一起，无法机器区分。
+- **建议修法**：把 `const ownerUserUuid = teamUuid;` 改为 `const ownerUserUuid = "preview-bootstrap:" + teamUuid;`（或 `crypto.randomUUID()`），即使在 preview 也保持两个 namespace 物理独立——cost 几乎为 0。
+
+#### W-5（low, design-drift）— gateway.ts 私有 `WORKERS_AI_REGISTRY` 与 loader.ts 公共 `loadDefaultRegistries()` 并存
+
+- **事实依据**：
+  - `gateway.ts:20-53` 自建一份 mini-registry（含 2 model），与 `loader.ts::loadDefaultRegistries()` / `loadRegistryFromConfig()` 各自独立。
+  - R11 修复消化了 `loadRegistryFromConfig` 这一函数（已被 gateway.ts 引用），但 `loadDefaultRegistries()` 仍是死代码。
+- **为什么重要**：
+  - 不是 bug，但 future provider 扩展（DeepSeek 真实接入、BYO key）会发现 “registry 实际上有两个住所”，重构成本仍在。
+- **建议修法**：把 gateway.ts 的 `WORKERS_AI_REGISTRY` config 改放到 `loader.ts::loadDefaultRegistries()` 中，gateway 只引用 loader 的输出——一处 truth。
+
+### 10.4 跨阶段（Z0–Z3）联合复核
+
+> 在前述 §5 跨阶段不变量矩阵基础上，更新 Z3 修复后的真实位置。
+
+| 不变量 | Z2 状态 | Z3 一轮（修复前） | Z3 二轮（修复后） | 当前位置 |
+|---|---|---|---|---|
+| **single-writer per table（ZX-D1 §7.3.5）** | 维持 | **退化**（agent-core 直写 nano_users / nano_teams / nano_session_activity_logs） | **恢复**（agent-core 不再直写 activity log；ensureTeamSeed 改为 explicit gate；production 默认不再触发） | 维持（preview 仍有 escape hatch，需 Z4 退役） |
+| **deploy-fill 兜底（env.TEAM_UUID）** | deferred | 加深 | **未变**（仍是 fallback 来源；但 quota seed 不再隐式触发） | 维持但仍未退役 |
+| **append-only activity discipline** | √ | 退化（quota.deny lineage NULL） | **恢复**（agent-core 不再直写；quota 类事件改走 nano_usage_events） | 维持（design tension W-1，但不破不立） |
+| **dual-implemented control-plane parity（Q7）** | 建立 W-1 旁路 | 未改 | **未改**（Z2 W-1 仍未 fix） | 维持但旁路扩散到 LLM/quota |
+| **provider boundary（ZX-LLM §F2 / §F4）** | n/a | 退化（gateway stub + skeleton 缺失） | **恢复**（gateway 退役；DeepSeek skeleton 已落） | 真正进入 design 形态 |
+| **idempotency-driven quota truth** | n/a | 部分（per-request randomUUID） | **恢复**（deterministic seq + db.batch atomic + EXISTS guard） | 进入设计形态 |
+| **测试驱动收口** | √ | 倒退 | **恢复一半**（agent-core 单测 +6；live e2e 仍未 extend） | 接受为 closed-with-residual |
+| **provider lineage（ZX-LLM §F1 §3）** | n/a | 缺失 | **建立**（provider_key 列 + index + repo + authorizer + design 同步） | 完整 |
+
+跨阶段总判断：**Z3 二轮修复让原本退化的 5 条不变量中，有 4 条恢复到设计形态；剩余 1 条（dual-impl parity W-1 旁路）维持现状；同时 W-1 / W-3 / W-4 是已知 cross-stage carry-over，需在 Z4 周期内有明确 deadline，而不是继续沉默。**
+
+### 10.5 关于 Z3 closure 的判断
+
+> 对 §6.5 GPT “ready-for-rereview” 自评的回应。
+
+- **是否同意 Z3 closed**：`yes`
+- **理由**：
+  1. 所有 `high` / `critical` 级 finding（R1 / R2 / R3 / R4 / R5 / R6 / R7）在代码层都有可被独立验证的修复；
+  2. 所有 `medium` 级 finding（R8 / R9 / R10 / R11 / R12 / R13 / R14 / R15 / R16）要么 closed、要么显式 deferred 并写入 closure §5 / §6.5 已知限制；
+  3. 所有 `low` 级 finding 没有阻塞性影响；
+  4. closure §3.3 已显式纠正 “36/36 + 12/12 不是 Z3 唯一证据”，docs-honesty 已恢复；
+  5. agent-core 全包测试 `100 passed (100) / 1046 tests passed`，未引入 regression；
+  6. 本轮 GPT 没有“声称 fixed 但代码未改”的项；
+  7. 新引入的 W-1 / W-2 / W-4 / W-5 都是 `low` 级 docs / cleanliness / design-tension 性质；W-3（Z2 W-1 carry-over）是 `medium`，但与 Z3 主体收口正交，且服务-绑定模型下当前不构成 active vulnerability。
+- **关闭前应同时完成的最低 docs 补丁**（不阻塞代码 merge，但应在 closure 文档落实）：
+  1. 在 `Z3-closure.md §5` 增列两条 residual：(a) Z2 W-1 RPC kickoff 旁路在 Z3 未修；(b) gateway/loader 的双 registry 形态待 Z4 / Z5 收敛（W-5）。
+  2. 在 `Z3-closure.md §3.2` 显式记录 “005 已通过 remote apply 验证，preview D1 PRAGMA 含 provider_key” 这一条 evidence（W-2）。
+  3. 在 `ZX-d1-schema-and-migrations.md §F4 / Q5 备忘` 补一行 “quota 类事件不进 activity_log；由 `nano_usage_events` 承担同等 audit 责任”（W-1 design tension 显式化）。
+
+### 10.6 关于 Z4 是否可以 start 的判断
+
+> 这是用户最关心的下游信号。
+
+- **是否同意 Z4 start**：`yes — with 3 preflight items + 3 cross-stage hard deadlines`
+
+#### 10.6.1 Z4 preflight（开工前必须完成）
+
+1. **W-3 (= Z2 W-1) — RPC kickoff 入口必须先加一道 secret/authority 校验**：在 `agent-core/src/index.ts::invokeInternalRpc` 的 `stub.fetch` 调用上注入 `x-nano-internal-binding-secret` 与 `x-nano-internal-authority` headers，并让 `NanoSessionDO.fetch` 在 `/sessions/:id/start` `/sessions/:id/status` 路由上调用 `validateInternalAuthority`（已存在）。否则 Z4 第二个客户端 (Mini Program) 引入新的 rpc caller 时这条旁路会被放大。
+2. **R4 deferred 部分 — 至少补 1 条 live e2e 验证 LLM mainline**：建议落 `test/cross-e2e/12-quota-exhausted-blocks-llm.test.mjs`（先 setBalance(0) 再 start，断言客户端流上 `system.notify` `code=QUOTA_EXCEEDED`），或者 `test/package-e2e/agent-core/02-real-llm-smoke.test.mjs`（在 preview 上发一条 user message，期望 `llm.delta`+`turn.end`）。否则 Z4 客户端 first real run 仍可能在 “实际上 LLM 路径根本没触发” 状态下 silently 通过。
+3. **W-2 — 验证 005 migration 已 remote apply**：跑一次 `wrangler d1 execute NANO_AGENT_DB --env preview --remote --command "PRAGMA table_info(nano_usage_events);"`，确认 `provider_key` 列存在；把结果摘录贴回 closure §3.2。
+
+#### 10.6.2 Z4-mid 前必须完成的 hard deadline（不在 Z4 入场前完成则 Z4 不能进 Mini Program 真实多客户端阶段）
+
+1. **R5 / R15 — deploy-fill / `env.TEAM_UUID` 兜底必须退役**：`internal-policy.ts:134-137` 与 `nano-session-do.ts:584-587` 的 `env.TEAM_UUID` fallback 必须改为 “authority 必须显式提供 team_uuid”；并由 `orchestrator-auth` 在部署期落真实 `(team_uuid_real, owner_user_uuid_real)` row。Mini Program 接入 = 真实多客户端 = 多个真 team_uuid 同库共存，env fallback 不能存在。
+2. **W-4 — preview synthetic seed cleanup script**：在 Z4 真实 user 注册之前，跑一次 cleanup script 删除 `nano_users WHERE user_uuid = team_uuid AND default_team_uuid = team_uuid`（现已 hard-coded `aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa` 这一条）；同时把 `ensureTeamSeed.ownerUserUuid` 改为 `"preview-bootstrap:" + teamUuid` 或随机 UUID，避免再次合并 PK namespace。
+3. **R9 / R10 — Workers AI tool registry & system prompt**：在 Mini Program 真实交互前，把 `WORKERS_AI_TOOLSET` 改为从 `BASH_CORE` capability registry 派生 + 注入 minimal system prompt，否则 LLM tool-calling 行为在真用户面前会非常脆弱。
+
+#### 10.6.3 Z4 在 §10.6.1 / §10.6.2 全部满足之前可以做的事
+
+- Z4 Phase 1 (Web 端 wire / fallback / runtime hardening 设计) 可以并行启动，因为它只消费 Z3 已稳定的 `start / verify / cancel / timeline / capability call` 几条 surface，不引入新 rpc caller、不强依赖 LLM mainline。
+- Z4 Phase 2-N（Mini Program 真实首登、真实 multi-tenant 验证）必须等 §10.6.2 三条 hard deadline 全部完成。
+
+### 10.7 复核结论 (Z3 / Z4 双信号)
+
+| 信号 | 结论 | 置信度 |
+|---|---|---|
+| **Z3 是否可以 closed** | `yes`（建议在 closure 落 W-1 / W-2 / W-3 三条 docs 补丁后正式 close） | 高 |
+| **Z4 是否可以 start** | `yes — with 3 preflight + 3 hard deadlines`（详见 §10.6.1 / §10.6.2） | 高 |
+| **Z4 是否可以直接进入 Mini Program 真实首登阶段** | `no`（必须先完成 §10.6.2 三条 hard deadline，否则 deploy-fill / synthetic seed / tool-calling 的隐患会在真实多客户端面前同时放大） | 高 |
+
+> 本轮二次审查至此结束。GPT 修复的诚实度 + 结构性 + 测试落地度 在 zero-to-real 三轮 review-fix-rereview 循环中是质量最高的一轮；Z3 closed 可以正式生效；Z4 可以启动 Phase 1（Web 端 wire / fallback / runtime hardening），但 Mini Program 真实首登必须等三条 cross-stage hard deadline 关闭后再进入。
+

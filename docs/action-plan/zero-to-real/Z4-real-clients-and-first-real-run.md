@@ -14,7 +14,7 @@
 > - `docs/design/zero-to-real/Z1-full-auth-and-tenant-foundation.md`
 > - `docs/design/zero-to-real/Z2-session-truth-and-audit-baseline.md`
 > - `docs/design/zero-to-real/Z3-real-runtime-and-quota.md`
-> 文档状态: `draft`
+> 文档状态: `executed`
 
 ---
 
@@ -359,3 +359,160 @@ Z4 完成后，系统将具备：
 1. 启动 `Z5-closure-and-handoff.md`
 2. 用 Z4 evidence + Z0-Z3 closures 做 zero-to-real 最终 verdict
 3. 把 residual inventory 转成下一阶段入口
+
+---
+
+## 9. 工作日志回填
+
+> 执行者: `GPT-5.5`
+> 执行状态: `executed`
+> 关联 evidence: `docs/eval/zero-to-real/first-real-run-evidence.md`
+> 关联 closure: `docs/issue/zero-to-real/Z4-closure.md`
+
+### 9.1 Z4 preflight 执行
+
+- 修复 `agent-core` WorkerEntrypoint RPC kickoff path：
+  - `workers/agent-core/src/index.ts` 的 internal RPC DO fetch 现在转发 `x-trace-uuid`。
+  - 同一路径转发规范化后的 `x-nano-internal-authority`。
+  - 同一路径转发 `x-nano-internal-binding-secret`。
+- 修复 guarded `/internal/*` HTTP relay：
+  - `workers/agent-core/src/host/internal.ts` 增加内部 header forwarding helper。
+  - `start/input/cancel/status/timeline/verify/stream` 进入 `session.internal` 时都携带同一组 internal authority headers。
+- 修复 `NanoSessionDO` defense-in-depth：
+  - `workers/agent-core/src/host/do/nano-session-do.ts` 对 `https://session.internal/...` 请求调用 `validateInternalAuthority()`。
+  - 复用 validator 已读取的 JSON body，避免 request body 被二次消费。
+  - 增加 DO-side negative/positive 测试，确认缺失 internal auth 会拒绝，合法 internal auth 会放行。
+- 完成 `005` migration 远端证据：
+  - remote apply `005-usage-events-provider-key.sql`。
+  - `PRAGMA table_info(nano_usage_events)` 确认 `provider_key` 列存在。
+- 新增 live-facing LLM/quota evidence：
+  - 新增 `test/cross-e2e/12-real-llm-mainline-smoke.test.mjs`。
+  - 测试通过真实 orchestrator-core public route 发起 session start。
+  - 测试查询 preview D1，确认同一 `session_uuid` 出现 `resource_kind='llm' / verdict='allow' / provider_key='workers-ai'` usage event。
+
+### 9.2 Z4-mid hard deadline 执行
+
+- 退役 runtime tenant deploy-fill：
+  - `internal-policy.ts` 不再用 `env.TEAM_UUID` 补齐缺失 `tenant_uuid`。
+  - `NanoSessionDO.currentTeamUuid()` 不再把 deploy `TEAM_UUID` 当 runtime tenant fallback。
+  - runtime tenant truth 现在来自 session authority latch；测试 harness 只有在显式提供 `SESSION_UUID + TEAM_UUID` 时才作为构造期 fixture 使用。
+- 修复 preview synthetic seed namespace：
+  - `D1QuotaRepository.ensureTeamSeed()` 不再使用 `ownerUserUuid = teamUuid`。
+  - preview synthetic owner 改为独立 UUID `00000000-0000-4000-8000-000000000001`。
+  - 对应 regression 确认 owner user UUID 与 team UUID 不相等。
+- 收敛 Workers AI tool registry：
+  - 新增 `workers/agent-core/src/llm/tool-registry.ts`。
+  - `workers-ai.ts` 不再在 adapter 内硬编码 6 个工具。
+  - `gateway.test.ts` 增加 drift guard，确认 agent-core LLM tools 与 bash-core minimal registry command names 对齐。
+- 注入 runtime system prompt：
+  - `runtime-mainline.ts` 新增 `NANO_AGENT_SYSTEM_PROMPT`。
+  - LLM call 在没有 system message 时自动前置 nano-agent Cloudflare/V8/fake-bash 心智模型 prompt。
+  - 新增 regression 确认 Workers AI payload 首条 message 为 system prompt。
+
+### 9.3 Web client baseline
+
+- 新增 `clients/web/package.json`：
+  - 固定 `Vite + Vanilla TypeScript`。
+  - 提供 `dev/build/preview` scripts。
+- 新增 `clients/web/src/client.ts`：
+  - 封装 register/login/me。
+  - 封装 session `start/input/timeline`。
+  - 封装 WS stream attach：`/sessions/:sessionUuid/ws?access_token=...&trace_uuid=...`。
+- 新增 `clients/web/src/main.ts`：
+  - 提供最小 auth/session runtime UI。
+  - 支持 register/login、`/me`、start、follow-up input、open WS、timeline。
+  - 将所有结果写入页面 event log，方便真实用户侧观察。
+- 新增 `clients/web/src/styles.css` 与 `index.html`：
+  - 保持最小可用界面，不引入产品级 UI 膨胀。
+
+### 9.4 WeChat Mini Program baseline
+
+- 新增微信原生工程：
+  - `clients/wechat-miniprogram/project.config.json`
+  - `app.json`
+  - `app.js`
+  - `app.wxss`
+  - `sitemap.json`
+- 新增 `utils/nano-client.js`：
+  - 封装 `wx.request`。
+  - 封装 bearer auth headers。
+  - 封装 `wx.connectSocket` stream attach。
+- 新增 `pages/index/*`：
+  - 页面可配置 orchestrator URL。
+  - 支持 email/password register/login。
+  - 支持 `wx.login()` code-level WeChat auth entry。
+  - 支持 session start、follow-up input、timeline 与 WS stream。
+  - 所有结果/错误写入页面 event log。
+
+### 9.5 测试与验证
+
+- 已执行 agent-core package validation：
+  - `pnpm --filter @haimang/agent-core-worker typecheck`
+  - `pnpm --filter @haimang/agent-core-worker test`
+- 已执行 preview deploy：
+  - `pnpm --filter @haimang/agent-core-worker deploy:preview`
+  - preview version: `d9134976-d9a7-466b-8a83-cb9ca932f828`
+- 已执行 live evidence：
+  - `NANO_AGENT_LIVE_E2E=1 node --test test/cross-e2e/12-real-llm-mainline-smoke.test.mjs`
+- 已执行默认 E2E regression：
+  - `pnpm test:package-e2e`
+  - `pnpm test:cross-e2e`
+- 已执行客户端源码检查：
+  - `./workers/agent-core/node_modules/.bin/tsc -p clients/web/tsconfig.json --noEmit`
+  - `node --check clients/wechat-miniprogram/utils/nano-client.js`
+  - `node --check clients/wechat-miniprogram/pages/index/index.js`
+
+### 9.6 新增 / 修改文件列表
+
+- 新增：
+  - `clients/web/package.json`
+  - `clients/web/tsconfig.json`
+  - `clients/web/index.html`
+  - `clients/web/src/client.ts`
+  - `clients/web/src/main.ts`
+  - `clients/web/src/styles.css`
+  - `clients/wechat-miniprogram/project.config.json`
+  - `clients/wechat-miniprogram/app.json`
+  - `clients/wechat-miniprogram/app.js`
+  - `clients/wechat-miniprogram/app.wxss`
+  - `clients/wechat-miniprogram/sitemap.json`
+  - `clients/wechat-miniprogram/utils/nano-client.js`
+  - `clients/wechat-miniprogram/pages/index/index.json`
+  - `clients/wechat-miniprogram/pages/index/index.wxml`
+  - `clients/wechat-miniprogram/pages/index/index.wxss`
+  - `clients/wechat-miniprogram/pages/index/index.js`
+  - `test/cross-e2e/12-real-llm-mainline-smoke.test.mjs`
+  - `workers/agent-core/src/llm/tool-registry.ts`
+  - `docs/eval/zero-to-real/first-real-run-evidence.md`
+  - `docs/issue/zero-to-real/Z4-closure.md`
+- 修改：
+  - `test/shared/orchestrator-auth.mjs`
+  - `workers/agent-core/src/index.ts`
+  - `workers/agent-core/src/host/internal.ts`
+  - `workers/agent-core/src/host/internal-policy.ts`
+  - `workers/agent-core/src/host/do/nano-session-do.ts`
+  - `workers/agent-core/src/host/quota/repository.ts`
+  - `workers/agent-core/src/host/runtime-mainline.ts`
+  - `workers/agent-core/src/llm/adapters/workers-ai.ts`
+  - `workers/agent-core/test/rpc.test.ts`
+  - `workers/agent-core/test/smoke.test.ts`
+  - `workers/agent-core/test/host/do/nano-session-do.test.ts`
+  - `workers/agent-core/test/host/integration/checkpoint-roundtrip.test.ts`
+  - `workers/agent-core/test/host/quota/repository.test.ts`
+  - `workers/agent-core/test/host/runtime-mainline.test.ts`
+  - `workers/agent-core/test/llm/gateway.test.ts`
+
+### 9.7 收口意见
+
+- **Z4 verdict**: `closed / real-client baseline established`
+- **已真实成立**：
+  1. web 与 mini-program 客户端目录已建立，并拥有最小真实 auth/session/runtime transport。
+  2. RPC authority preflight 已修复到 DO 内部 fetch 层。
+  3. preview D1 `provider_key` migration 已落地。
+  4. 真实 Workers AI mainline + quota usage evidence 已由 live automated smoke 固化。
+  5. Z4-mid hard deadlines 已在进入 Mini Program baseline 前吸收。
+- **仍保留但不阻塞 Z4 的事项**：
+  1. 客户端 UI 仍是实验入口，不是产品级前端。
+  2. Mini Program 尚无真实 appid/真机截图 evidence。
+  3. orchestrator timeline 当前不转存 `llm.delta`，本轮使用 D1 usage event 作为 LLM mainline evidence。
+  4. preview synthetic seed escape hatch 仍存在，但 owner UUID 已与 team UUID 分离；正式 bootstrap cleanup 留给后续 deployment hardening。
