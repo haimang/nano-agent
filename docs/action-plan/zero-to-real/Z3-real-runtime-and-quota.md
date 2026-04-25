@@ -143,12 +143,12 @@ Z3 Real Runtime and Quota
 
 | 编号 | 所属 Phase | 工作项 | 类型 | 涉及模块 / 文件 | 目标一句话 | 风险等级 |
 |------|------------|--------|------|------------------|------------|----------|
-| P1-01 | Phase 1 | AI binding freeze | `update` | `workers/agent-core/wrangler.jsonc` `src/llm/registry/**` | 把 Workers AI mainline 固定进配置与 registry | `medium` |
+| P1-01 | Phase 1 | AI binding freeze | `update` | `workers/agent-core/wrangler.jsonc` `src/llm/registry/**` `src/llm/adapters/workers-ai.ts` | 把 Workers AI mainline 固定进配置、adapter 与 registry | `medium` |
 | P2-01 | Phase 2 | real llm execution path | `update` | `workers/agent-core/src/llm/**` `src/kernel/**` | 让真实 loop 走 Workers AI | `high` |
 | P2-02 | Phase 2 | session stream/runtime mapping | `update` | `workers/agent-core/src/llm/session-stream-adapter.ts` `src/kernel/session-stream-mapping.ts` | 把真实 llm 执行映到 session truth | `high` |
-| P3-01 | Phase 3 | quota authorizer | `update` | `workers/agent-core/src/host/**` `src/kernel/**` | 统一 llm/tool 额度门禁 | `high` |
+| P3-01 | Phase 3 | quota authorizer | `update` | `workers/agent-core/src/host/**` `src/kernel/runner.ts` | 统一 llm/tool 额度门禁 | `high` |
 | P3-02 | Phase 3 | bash-core gate integration | `update` | `workers/bash-core/src/executor.ts` `tool-call.ts` `policy.ts` | tool call 真实受 quota 约束 | `high` |
-| P4-01 | Phase 4 | usage/quota migrations | `add` | `workers/orchestrator-core/migrations/003-usage-and-quota.sql` | 落 usage/balance/quota durable truth | `medium` |
+| P4-01 | Phase 4 | usage/quota migrations | `add` | `workers/orchestrator-core/migrations/003-usage-and-quota.sql` `workers/agent-core/wrangler.jsonc` | 落 `nano_usage_events / nano_quota_balances` durable truth | `medium` |
 | P4-02 | Phase 4 | audit/eval evidence | `update` | `workers/agent-core/src/eval/**` `src/hooks/**` | accepted/rejected runtime evidence 可读 | `medium` |
 | P5-01 | Phase 5 | runtime/quota tests | `update` | `test/package-e2e/agent-core/**` `test/package-e2e/bash-core/**` `test/cross-e2e/**` | 证明真实 loop 与 dual gate 成立 | `medium` |
 | P5-02 | Phase 5 | Z3 closure | `add` | `docs/issue/zero-to-real/Z3-closure.md` | 形成 runtime 收口文档 | `low` |
@@ -161,34 +161,34 @@ Z3 Real Runtime and Quota
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P1-01 | AI binding freeze | 把 `AI` binding、Workers AI first-wave model、preview/local env contract 写入 `agent-core` | `workers/agent-core/wrangler.jsonc` `src/llm/registry/providers.ts` `models.ts` | provider mainline 进入可执行代码 | package-e2e / preview probe | 不再存在“mainline provider 未定”的口径 |
+| P1-01 | AI binding freeze | 把 `AI` binding、Workers AI first-wave model、preview/local env contract 写入 `agent-core`；默认 model=`@cf/ibm-granite/granite-4.0-h-micro`，Workers AI 内部 fallback=`@cf/meta/llama-4-scout-17b-16e-instruct`，只有两者都过不了 fc smoke 才升级 DeepSeek required | `workers/agent-core/wrangler.jsonc` `src/llm/registry/providers.ts` `models.ts` `src/llm/adapters/workers-ai.ts` | provider mainline 进入可执行代码 | package-e2e / preview probe | first-wave model 通过 5+ tool 类型 invoke smoke，且不再存在“mainline provider 未定”的口径 |
 
 ### 4.2 Phase 2 — Real LLM Execution Path
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P2-01 | real llm execution path | 让 `LLMExecutor` / `request-builder` / adapter 真正调 Workers AI | `workers/agent-core/src/llm/**` `src/kernel/runner.ts` | loop 进入真实推理路径 | package-e2e / integration | preview 上可完成真实 prompt -> delta/result |
+| P2-01 | real llm execution path | 让 `LLMExecutor` / `request-builder` / `workers-ai` adapter 真正调 Workers AI，并把 `gateway.ts` 从 stub 推进到真实主路径；如复用 `packages/llm-wrapper/` 边界，也必须通过 `workers-ai` adapter，而不是强塞回 `baseUrl + apiKeys` 的 fetch-only provider 假设 | `workers/agent-core/src/llm/**` `src/kernel/runner.ts` `packages/llm-wrapper/**` | loop 进入真实推理路径 | package-e2e / integration | preview 上可完成真实 prompt -> delta/result；provider-native stream 能映射到 canonical LLM chunks |
 | P2-02 | session stream/runtime mapping | 把真实 llm execution events 正规映到 session stream / timeline / activity | `session-stream-adapter.ts` `kernel/session-stream-mapping.ts` | session truth 与 llm path 一致 | package-e2e / cross-e2e | no invented event kind，timeline 可读 |
 
 ### 4.3 Phase 3 — Quota Dual Gate
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P3-01 | quota authorizer | 在 agent-core runtime 入口为 llm/tool 统一做余额校验、authorize、deduct/reject | `workers/agent-core/src/host/**` `src/kernel/**` | llm 与 tool 共用一套额度 law | package-e2e / negative tests | insufficient balance 会阻止 llm 与 tool |
-| P3-02 | bash-core gate integration | `bash-core` 执行前消费 quota decision，并把拒绝/执行结果映回 session | `workers/bash-core/src/executor.ts` `tool-call.ts` `policy.ts` | tool gate 与 llm gate 行为一致 | package-e2e / cross-e2e | tool reject 具备 typed reason 与 audit trail |
+| P3-01 | quota authorizer | 在 agent-core runtime 入口为 llm/tool 统一做余额校验、authorize、deduct/reject；LLM gate 明确落 `workers/agent-core/src/kernel/runner.ts::beforeLlmInvoke()`，共享 `QuotaAuthorizer` 落 `workers/agent-core/src/host/quota/authorizer.ts`（或等价目录） | `workers/agent-core/src/host/**` `src/kernel/runner.ts` | llm 与 tool 共用一套额度 law | package-e2e / negative tests | insufficient balance 会阻止 llm 与 tool，deny 产生 typed `QUOTA_EXCEEDED` |
+| P3-02 | bash-core gate integration | `bash-core` 执行前复用 `beforeCapabilityExecute` 消费 quota decision，并把拒绝/执行结果映回 session | `workers/bash-core/src/executor.ts` `tool-call.ts` `policy.ts` | tool gate 与 llm gate 行为一致 | package-e2e / cross-e2e | tool reject 具备 typed reason、audit trail，且与 LLM gate 共享同一 authorizer law |
 
 ### 4.4 Phase 4 — Usage + Audit Evidence
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P4-01 | usage/quota migrations | 落 `nano_usage_ledger`、quota balance/read model 等 durable tables | `workers/orchestrator-core/migrations/003-usage-and-quota.sql` | quota 不再只存在 memory | migration smoke / D1 assertions | accepted/rejected 调用都能留下 durable 记录 |
-| P4-02 | audit/eval evidence | 将 llm/tool accepted/rejected、usage delta、quota reason 写入 activity/eval evidence | `workers/agent-core/src/eval/**` `src/hooks/**` | runtime evidence 闭环 | package-e2e / audit row assertions | replay/history 可看到关键 runtime 决策 |
+| P4-01 | usage/quota migrations | 落 `nano_usage_events / nano_quota_balances` durable tables，并显式保持 `nano_tenant_secrets` out-of-scope | `workers/orchestrator-core/migrations/003-usage-and-quota.sql` `workers/agent-core/wrangler.jsonc` | quota 不再只存在 memory | migration smoke / D1 assertions | accepted/rejected 调用都能留下 durable 记录；`nano_tenant_secrets` 不进入 Wave C |
+| P4-02 | audit/eval evidence | 将 llm/tool accepted/rejected、usage delta、quota reason 写入 activity/eval evidence，并冻结 `quota.deny` 等关键 event kind | `workers/agent-core/src/eval/**` `src/hooks/**` | runtime evidence 闭环 | package-e2e / audit row assertions | replay/history 可看到关键 runtime 决策；event kind / severity 不再靠实现期猜 |
 
 ### 4.5 Phase 5 — Runtime Closure
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P5-01 | runtime/quota tests | 覆盖 real llm run、tool happy path、quota exhausted、quota recover 等场景 | `test/package-e2e/agent-core/**` `test/package-e2e/bash-core/**` `test/cross-e2e/**` | Z3 具备真实 loop proof | `pnpm test:package-e2e` / `pnpm test:cross` | 至少一轮真实 prompt->tool->response 成功，负例 reject 正常 |
+| P5-01 | runtime/quota tests | 覆盖 real llm run、tool happy path、quota exhausted、quota recover 等场景 | `test/package-e2e/agent-core/**` `test/package-e2e/bash-core/**` `test/cross-e2e/**` | Z3 具备真实 loop proof | `pnpm test:package-e2e` / `pnpm test:cross-e2e` | 至少一轮真实 prompt->tool->response 成功，负例 reject 正常 |
 | P5-02 | Z3 closure | 写 `Z3-closure.md`，记录 provider freeze、dual gate、usage/audit/evidence 真相 | `docs/issue/zero-to-real/Z3-closure.md` | Z4 能在真实 loop 上做 client 实验 | 文档 review | closure 诚实写出 mainline / skeleton / residuals |
 
 ---
@@ -208,8 +208,9 @@ Z3 Real Runtime and Quota
   - `workers/agent-core/src/llm/registry/models.ts`
 - **具体功能预期**：
   1. `AI` binding 真正进入 `agent-core` 环境契约。
-  2. Workers AI first-wave model 成为 canonical mainline。
-  3. DeepSeek 仅保留 skeleton position。
+  2. `@cf/ibm-granite/granite-4.0-h-micro` 成为 canonical first-wave model。
+  3. `@cf/meta/llama-4-scout-17b-16e-instruct` 成为 Workers AI 内部 fallback，而不是第一时间跳 DeepSeek。
+  4. DeepSeek 仅保留 skeleton position。
 - **具体测试安排**：
   - **单测**：`provider/model registry`
   - **集成测试**：`AI binding smoke`
@@ -217,6 +218,7 @@ Z3 Real Runtime and Quota
   - **手动验证**：`preview env binding 检查`
 - **收口标准**：
   - provider/model truth 固定
+  - first-wave model 通过 5+ tool 类型 invoke smoke
   - env contract 可运行
   - 文档/代码不再分叉
 - **本 Phase 风险提醒**：
@@ -237,7 +239,9 @@ Z3 Real Runtime and Quota
 - **具体功能预期**：
   1. prompt 真正调用 Workers AI。
   2. delta/result/toolcall 事件映到现有 session truth。
-  3. local reference/fake provider 不再是 mainline。
+  3. `gateway.ts` 不再停在 stub。
+  4. `workers/agent-core/src/llm/**` 成为 zero-to-real 的 canonical runtime boundary；若复用 `packages/llm-wrapper/`，也只能以 Workers AI adapter 兼容，不重开 fetch-only provider 设计。
+  5. local reference/fake provider 不再是 mainline。
 - **具体测试安排**：
   - **单测**：`stream normalization / adapter`
   - **集成测试**：`real prompt completion`
@@ -266,8 +270,9 @@ Z3 Real Runtime and Quota
   - `workers/bash-core/src/policy.ts`
 - **具体功能预期**：
   1. llm 与 tool 都要先过 quota authorizer。
-  2. rejected path 带 typed reason 和 audit trail。
-  3. accepted path 带 usage delta 与余额写回。
+  2. LLM gate 明确落 `beforeLlmInvoke()`；tool gate 明确复用 `beforeCapabilityExecute()`。
+  3. rejected path 带 typed `QUOTA_EXCEEDED` 与 audit trail。
+  4. accepted path 带 usage delta 与余额写回。
 - **具体测试安排**：
   - **单测**：`quota decision helpers`
   - **集成测试**：`llm reject / tool reject / balance recover`
@@ -275,7 +280,8 @@ Z3 Real Runtime and Quota
   - **手动验证**：`余额耗尽后重试`
 - **收口标准**：
   - dual gate 可见
-  - reject reason 稳定
+  - `beforeLlmInvoke` / `beforeCapabilityExecute` 两个 gate 落点稳定
+  - reject reason 稳定，且 user-visible stream 抛 `code='QUOTA_EXCEEDED'`
   - balance/usage 写回路径存在
 - **本 Phase 风险提醒**：
   - 最容易只 gate LLM，忘记工具调用
@@ -293,16 +299,18 @@ Z3 Real Runtime and Quota
   - `workers/agent-core/src/hooks/**`
   - `workers/agent-core/src/host/eval-sink.ts`
 - **具体功能预期**：
-  1. usage/balance 不再只是 runtime memory。
-  2. accepted/rejected runtime decisions 可回放。
-  3. Z4 client 端能观察到真实失败原因与余额状态。
+  1. `nano_usage_events / nano_quota_balances` 不再只是 runtime memory。
+  2. `nano_tenant_secrets` 明确保持 first-wave out-of-scope。
+  3. accepted/rejected runtime decisions 可回放。
+  4. Z4 client 端能观察到真实失败原因与余额状态。
 - **具体测试安排**：
-  - **单测**：`usage ledger writers`
+  - **单测**：`usage/quota writers`
   - **集成测试**：`audit/eval evidence writeback`
   - **回归测试**：`cross-e2e + D1 assertions`
   - **手动验证**：`timeline/history 查看 quota 相关事件`
 - **收口标准**：
-  - ledger tables 可读
+  - `nano_usage_events / nano_quota_balances` 可读
+  - `quota.deny` / `llm.invoke` / `tool.invoke` event kind 与 `info|warn` severity 可见
   - audit/eval stream 可见 quota 决策
   - Z4 可以消费这些 runtime signals
 - **本 Phase 风险提醒**：
@@ -328,7 +336,7 @@ Z3 Real Runtime and Quota
 - **具体测试安排**：
   - **单测**：`无额外要求`
   - **集成测试**：`real loop + quota negatives`
-  - **回归测试**：`pnpm test:package-e2e && pnpm test:cross`
+  - **回归测试**：`pnpm test:package-e2e && pnpm test:cross-e2e`
   - **手动验证**：`preview 真实一轮执行`
 - **收口标准**：
   - real loop 成功
@@ -345,7 +353,8 @@ Z3 Real Runtime and Quota
 |-------------|------|----------|
 | Workers AI 配置与配额不稳定 | preview/live 可能表现不一 | 把 model freeze、fallback policy、known residual 写进 closure |
 | quota 决策分叉 | llm 与 tool 走不同 gate 逻辑 | 用 shared authorizer / shared error taxonomy 收敛 |
-| durable usage 写入滞后 | runtime 成功但 ledger 丢写 | 以 activity/eval evidence + D1 assertions 双重护栏证明 |
+| preview inference 成本 / rate-limit | 长跑测试可能被 Workers AI 计费与速率限制卡住 | package-e2e 以短 smoke 为主；长跑用 mock/skeleton；closure 再做真实 binding proof |
+| durable usage 写入滞后 | runtime 成功但 events/balances 丢写 | 以 activity/eval evidence + D1 assertions 双重护栏证明 |
 
 ---
 

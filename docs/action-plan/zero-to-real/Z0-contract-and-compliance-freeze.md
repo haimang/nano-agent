@@ -48,7 +48,7 @@ Z0 解决的是执行入口问题：哪些答案已经冻结、哪些 cross-cutt
 | Phase | 名称 | 预估工作量 | 目标摘要 | 依赖前序 |
 |------|------|------------|----------|----------|
 | Phase 1 | Freeze Audit | `S` | 核对 charter / design / ZX-qna / 代码起点 / 测试基线 已无结构性冲突 | `-` |
-| Phase 2 | Execution Mapping | `S` | 把 cross-cutting 约束映射进 Z1-Z5 的实施前提与依赖表 | `Phase 1` |
+| Phase 2 | Execution Mapping | `S` | 把 cross-cutting 约束映射进 Z1-Z5 的实施前提与依赖表，并补齐 implementation freeze register | `Phase 1` |
 | Phase 3 | Validation Baseline | `XS` | 固定 root test / package-e2e / cross-e2e / closure evidence 的使用方式 | `Phase 2` |
 | Phase 4 | Z0 Closure | `XS` | 产出 `Z0-closure.md` 并正式解锁 Z1 | `Phase 3` |
 
@@ -71,7 +71,7 @@ Z0 解决的是执行入口问题：哪些答案已经冻结、哪些 cross-cutt
 
 - **执行顺序原则**：`先审计冻结真相，再下放到执行，再写 closure`
 - **风险控制原则**：`Z0 不偷渡实现期设计变更，也不把实现细节重新升格为 owner blocker`
-- **测试推进原则**：`只复用仓库既有 test:package-e2e / test:cross 与 closure evidence，不建立新的平行验证体系`
+- **测试推进原则**：`只复用仓库既有 test:package-e2e / test:cross-e2e / test:cross(test:e2e) 与 closure evidence，不建立新的平行验证体系`
 - **文档同步原则**：`charter / design / action-plan / issue closure 的术语、路径、Q 编号一次对齐`
 
 ### 1.5 本次 action-plan 影响目录树
@@ -136,7 +136,8 @@ zero-to-real/
 | P1-02 | Phase 1 | code-anchor audit | `update` | `workers/**` `test/**` | 把 action-plan 锚定到真实目录、wrangler、tests | `medium` |
 | P2-01 | Phase 2 | cross-cutting dependency map | `update` | `Z1-Z5 action-plan pack` | 让每个 phase 明确消费哪些 ZX 文档与 Q 编号 | `low` |
 | P2-02 | Phase 2 | deliverable / closure path freeze | `update` | `docs/issue/zero-to-real/**` `docs/handoff/**` | 让 issue / handoff 路径固定下来 | `low` |
-| P3-01 | Phase 3 | validation baseline freeze | `update` | `package.json` `test/**` | 统一 `test:package-e2e` / `test:cross` / evidence pack 口径 | `low` |
+| P2-03 | Phase 2 | implementation freeze register | `update` | `ZX-qna + ZX-d1 + ZX-llm + Z4 plan` | 冻结 model、migration tool、client stack、evidence template 等执行级细节 | `medium` |
+| P3-01 | Phase 3 | validation baseline freeze | `update` | `package.json` `test/**` | 统一 `test:package-e2e` / `test:cross-e2e` / `test:cross(test:e2e)` / evidence pack 口径 | `low` |
 | P4-01 | Phase 4 | Z0 closure memo | `add` | `docs/issue/zero-to-real/Z0-closure.md` | 宣告 Z1 可正式启动 | `low` |
 
 ---
@@ -156,12 +157,13 @@ zero-to-real/
 |------|--------|----------|------------------|----------|----------|----------|
 | P2-01 | cross-cutting dependency map | 给 Z1-Z5 明确标出要消费的 ZX 文档、Q 编号、shared bindings、migration waves | `docs/action-plan/zero-to-real/*.md` | 后续 phase 不再在实现期重新找前提 | 文档 review | 每份 action-plan 都有稳定的 cross-cutting 输入集 |
 | P2-02 | deliverable / closure path freeze | 固定 `docs/issue/zero-to-real/` 与 `docs/handoff/` 的输出路径及职责分工 | `issue / handoff paths` | closure / handoff 不再临时 invent 文件名 | 文档 review | Z0-Z5 closure 与 final closure/handoff 路径全部明确 |
+| P2-03 | implementation freeze register | 把 implementation-phase 最容易重新争论的细项冻结成 register：`NANO_AGENT_DB` alias + `wrangler d1 migrations apply`、Workers AI first-wave model/fallback、Z4 client stack baseline、first-real-run evidence template | `docs/action-plan/zero-to-real/*.md` `docs/design/zero-to-real/ZX-*.md` | 后续 phase 不再在实现期重开 model / migration / client stack / evidence 讨论 | 文档 review | 执行期最常见的 implementation-level ambiguity 被前置冻结 |
 
 ### 4.3 Phase 3 — Validation Baseline
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P3-01 | validation baseline freeze | 固定 `pnpm test:package-e2e`、`pnpm test:cross`、package-local tests、evidence pack 的使用规则 | `package.json` `test/**` | 所有 phase 都共享一套验证口径 | 文档 review | action-plan 不再出现平行验证体系或缺失验证口径 |
+| P3-01 | validation baseline freeze | 固定 `pnpm test:package-e2e`、`pnpm test:cross-e2e`、`pnpm test:cross` / `pnpm test:e2e`、package-local tests、evidence pack 的使用规则 | `package.json` `test/**` | 所有 phase 都共享一套验证口径 | 文档 review | action-plan 不再出现平行验证体系或缺失验证口径 |
 
 ### 4.4 Phase 4 — Z0 Closure
 
@@ -206,6 +208,7 @@ zero-to-real/
 - **本 Phase 对应编号**：
   - `P2-01`
   - `P2-02`
+  - `P2-03`
 - **本 Phase 新增文件**：
   - `无`
 - **本 Phase 修改文件**：
@@ -217,7 +220,8 @@ zero-to-real/
 - **具体功能预期**：
   1. 每个 phase 都明确知道自己依赖哪几份 ZX 文档。
   2. D1 migration waves、auth contract、Workers AI、client evidence pack 的责任面不再漂移。
-  3. closure / handoff 文档输出路径提前固定。
+  3. `NANO_AGENT_DB` / migration tool / first-wave model / Z4 client stack / evidence template 被前置冻结。
+  4. closure / handoff 文档输出路径提前固定。
 - **具体测试安排**：
   - **单测**：`无`
   - **集成测试**：`无`
@@ -225,9 +229,11 @@ zero-to-real/
   - **手动验证**：`检查每份 plan 的关联文档与交付路径`
 - **收口标准**：
   - 每份 plan 至少列出 1 组 phase-specific docs + 1 组 cross-cutting docs
+  - execution-level freeze register 已覆盖 migration tool、binding alias、model fallback、client stack、evidence 模板
   - Z5 能消费 Z0-Z4 的 closure 输出，不再 invent 新命名
 - **本 Phase 风险提醒**：
   - 最容易遗漏 `packages/orchestration-auth-contract/`、`NANO_AGENT_DB`、`AI` binding 这类 cross-cutting 真前提
+  - 最容易把“implementation-level freeze”误当成 owner-level blocker而跳过
 
 ### 5.3 Phase 3 — Validation Baseline
 
@@ -248,7 +254,7 @@ zero-to-real/
   - **回归测试**：`脚本与测试目录路径核对`
   - **手动验证**：`核对 package.json scripts 与 test 目录`
 - **收口标准**：
-  - `pnpm test:package-e2e` 与 `pnpm test:cross` 成为每份 plan 的默认验证入口
+  - `pnpm test:package-e2e` = package 内独立验证；`pnpm test:cross-e2e` = cross-worker 独立验证；`pnpm test:cross` / `pnpm test:e2e` = 全量回归
   - Z4/Z5 明确 evidence pack 路径与用途
 - **本 Phase 风险提醒**：
   - 最容易把 manual evidence 与 automated harness 混成一类，导致 closure 判据失焦
@@ -265,7 +271,8 @@ zero-to-real/
 - **具体功能预期**：
   1. Z0 closure 能一页说明“为什么可以进入 Z1”。
   2. closure 明确列出 Z1 的启动前提，而不是泛泛写“下一步做 auth”。
-  3. 所有已冻结决定与剩余 implementation follow-up 分界清楚。
+  3. charter `§10.1 Primary Exit Criteria` 被明确引用为后续审计基线。
+  4. 所有已冻结决定与剩余 implementation follow-up 分界清楚。
 - **具体测试安排**：
   - **单测**：`无`
   - **集成测试**：`无`

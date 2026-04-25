@@ -2,7 +2,7 @@
 
 > 服务业务簇: `zero-to-real / Z5 / closure-and-handoff`
 > 计划对象: `汇总 Z0-Z4 的交付、验证、残留问题，并形成 zero-to-real 最终 closure 与 handoff`
-> 类型: `modify`
+> 类型: `update`
 > 作者: `GPT-5.4`
 > 时间: `2026-04-25`
 > 文件位置: `docs/action-plan/zero-to-real/Z5-closure-and-handoff.md`
@@ -133,8 +133,8 @@ Z5 Closure and Handoff
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P1-01 | completion audit | 汇总 Z0-Z4 closure、`pnpm test:package-e2e`、`pnpm test:cross`、Z4 evidence | `docs/issue/zero-to-real/Z0-closure.md` ... `Z4-closure.md` | 知道哪些交付有证据、哪些没有 | doc review | 每个阶段都有 deliverables/tests/evidence 映射 |
-| P1-02 | charter exit check | 对照 charter primary exit criteria 逐条判断成立与否 | `docs/charter/plan-zero-to-real.md` | Z5 的 verdict 有客观标尺 | doc review | 不再出现“感觉已完成”的表述 |
+| P1-01 | completion audit | 汇总 Z0-Z4 closure、`pnpm test:package-e2e`、`pnpm test:cross-e2e`、全量回归结果与 Z4 evidence | `docs/issue/zero-to-real/Z0-closure.md` ... `Z4-closure.md` | 知道哪些交付有证据、哪些没有 | doc review | 每个阶段都有 deliverables/tests/evidence 映射 |
+| P1-02 | charter exit check | 对照 charter `§10.1 Primary Exit Criteria` 逐条判断成立与否 | `docs/charter/plan-zero-to-real.md` | Z5 的 verdict 有客观标尺 | doc review | 不再出现“感觉已完成”的表述 |
 
 ### 4.2 Phase 2 — Final Verdict
 

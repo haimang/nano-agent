@@ -33,7 +33,7 @@ Z1 是 zero-to-real 的第一道真实入口门。当前仓库只有 `workers/or
 - **本次计划的直接产出**：
   - `packages/orchestration-auth-contract/**`
   - `workers/orchestration-auth/**` + `workers/orchestrator-core/**` auth proxy wiring
-- `workers/orchestrator-core/migrations/001-identity-core.sql`（或等价 wave-A migrations）
+  - `workers/orchestrator-core/migrations/001-identity-core.sql`（或等价 wave-A migrations）
   - `docs/issue/zero-to-real/Z1-closure.md`
 
 ---
@@ -143,7 +143,7 @@ Z1 Full Auth and Tenant Foundation
 | 编号 | 所属 Phase | 工作项 | 类型 | 涉及模块 / 文件 | 目标一句话 | 风险等级 |
 |------|------------|--------|------|------------------|------------|----------|
 | P1-01 | Phase 1 | auth contract package | `add` | `packages/orchestration-auth-contract/**` | 凝固 caller/callee 的 typed contract | `medium` |
-| P1-02 | Phase 1 | wave-A migrations | `add` | `workers/orchestrator-core/migrations/001-identity-core.sql` | 建立 identity / token state / api key reserved schema | `medium` |
+| P1-02 | Phase 1 | wave-A migrations | `add` | `workers/orchestrator-core/migrations/001-identity-core.sql` `workers/orchestration-auth/wrangler.jsonc` `workers/orchestrator-core/wrangler.jsonc` | 建立 identity / token state / api key reserved schema 与 shared D1 baseline | `medium` |
 | P2-01 | Phase 2 | auth worker scaffold | `add` | `workers/orchestration-auth/**` | 建出 internal-only auth worker | `high` |
 | P2-02 | Phase 2 | orchestrator auth proxy wiring | `update` | `workers/orchestrator-core/src/index.ts` `src/auth.ts` `wrangler.jsonc` | 让 public auth surface 只走 orchestration.core | `high` |
 | P3-01 | Phase 3 | register/login/me/verify | `update` | `workers/orchestration-auth/src/**` | 建立基础 JWT 与 user/team readback | `high` |
@@ -161,35 +161,35 @@ Z1 Full Auth and Tenant Foundation
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P1-01 | auth contract package | 新建 `packages/orchestration-auth-contract/`，定义 WorkerEntrypoint RPC input/output、shared auth envelope、typed error codes | `packages/orchestration-auth-contract/**` | auth boundary 的 caller/callee 语义固定 | typecheck / package tests | orchestrator 与 auth worker 都从同一 package import contract |
-| P1-02 | wave-A migrations | 依据 ZX-D1 建 `nano_users / nano_user_profiles / nano_user_identities / nano_teams / nano_team_memberships / nano_auth_sessions / nano_team_api_keys` | `workers/orchestrator-core/migrations/001-identity-core.sql` | identity truth 与 token state 真相层存在 | migration smoke / D1 schema review | `NANO_AGENT_DB` wave-A schema 可被 preview 环境 apply |
+| P1-01 | auth contract package | 新建 `packages/orchestration-auth-contract/`，定义 `Register/Login/Refresh/Me/WechatLogin` request/response、shared `AuthEnvelope`、typed `AuthErrorCode`，以及 schema-reserved `VerifyApiKey*` contract stub | `packages/orchestration-auth-contract/**` | auth boundary 的 caller/callee 语义固定 | typecheck / package tests | orchestrator 与 auth worker 都从同一 package import contract；接口集合不再靠实现期猜测 |
+| P1-02 | wave-A migrations | 依据 ZX-D1 建 `nano_users / nano_user_profiles / nano_user_identities / nano_teams / nano_team_memberships / nano_auth_sessions / nano_team_api_keys`，并冻结 D1 alias=`NANO_AGENT_DB`、migration 目录=`workers/orchestrator-core/migrations/`、manual apply=`wrangler d1 migrations apply NANO_AGENT_DB` | `workers/orchestrator-core/migrations/001-identity-core.sql` `workers/orchestration-auth/wrangler.jsonc` `workers/orchestrator-core/wrangler.jsonc` | identity truth 与 token state 真相层存在 | migration smoke / D1 schema review | `NANO_AGENT_DB` wave-A schema 可被 preview 环境 apply，且 auth/orchestrator 对同一 D1 instance 共享 binding |
 
 ### 4.2 Phase 2 — Auth Worker Bringup
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P2-01 | auth worker scaffold | 新建 `workers/orchestration-auth/`，接 `NANO_AGENT_DB`、`PASSWORD_SALT`、`WECHAT_APPID`、`WECHAT_SECRET`、`JWT_SIGNING_KEY_<kid>` | `workers/orchestration-auth/**` | auth worker 成为真实 owner | package-e2e / preview probe | worker 可 deploy / probe，且无 public business route |
-| P2-02 | orchestrator auth proxy wiring | `orchestration.core` 仅保留 public proxy 与 verify fast-path，所有 mint/write/WeChat 走 WorkerEntrypoint RPC | `workers/orchestrator-core/src/index.ts` `src/auth.ts` `wrangler.jsonc` | public auth surface 与 internal auth owner 解耦 | package-e2e / grep | `grep` 不再显示 orchestrator-core 内的生产签发路径 |
+| P2-01 | auth worker scaffold | 新建 `workers/orchestration-auth/`，接 `NANO_AGENT_DB`、`PASSWORD_SALT`、`WECHAT_APPID`、`WECHAT_SECRET`、`JWT_SIGNING_KEY_<kid>`、`NANO_INTERNAL_BINDING_SECRET`，并复用 `workers/agent-core/src/host/internal-policy.ts` 的 single-caller enforcement pattern | `workers/orchestration-auth/**` | auth worker 成为真实 owner | package-e2e / preview probe | worker 可 deploy / probe，且无 public business route；非 `orchestration.core` caller 被 typed reject |
+| P2-02 | orchestrator auth proxy wiring | `orchestration.core` 仅保留 public proxy 与 verify fast-path；verify 继续消费同一组 `JWT_SIGNING_KEY_<kid>`，所有 mint/write/WeChat 走 WorkerEntrypoint RPC | `workers/orchestrator-core/src/index.ts` `src/auth.ts` `wrangler.jsonc` | public auth surface 与 internal auth owner 解耦 | package-e2e / grep | `grep` 不再显示 orchestrator-core 内的生产签发路径；verify/mint owner 不再双份漂移 |
 
 ### 4.3 Phase 3 — Full User Auth Flow
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
 | P3-01 | register/login/me/verify | 实现 email/password register/login、JWT verify、`me`/tenant readback | `workers/orchestration-auth/src/**` `workers/orchestrator-core/src/index.ts` | web client 可用真实用户进入系统 | package-e2e / cross-e2e | register/login/me 通过，tenant readback 与 D1 一致 |
-| P3-02 | refresh/reset/token rotation | 实现 refresh-token、revoke/rotate-on-use、`kid` + dual verify window、password reset | `workers/orchestration-auth/src/**` `test/shared/orchestrator-jwt.mjs` | token lifecycle 可持续运行 | package-e2e / shared auth tests | revoked/expired/old-kid token 被正确处理 |
+| P3-02 | refresh/reset/token rotation | 实现 refresh-token、revoke/rotate-on-use、`kid` + dual verify window、password reset，并冻结 claim set=`{user_uuid, team_uuid, team_plan_level, kid, iat, exp}` | `workers/orchestration-auth/src/**` `test/shared/orchestrator-jwt.mjs` | token lifecycle 可持续运行 | package-e2e / shared auth tests | access=1h、refresh=30d、`JWT_SIGNING_KEY_<kid>` 命名成立，revoked/expired/old-kid token 被正确处理 |
 
 ### 4.4 Phase 4 — WeChat Bridge + Tenant Bootstrap
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P4-01 | WeChat bridge | 调 `jscode2session`，将 `openid` 写入 `nano_user_identities`，再 mint JWT | `workers/orchestration-auth/src/**` | Mini Program 具备真实 code-level 登录 | package-e2e / manual smoke | `code -> openid -> JWT` 可跑通，失败不留下脏中间态 |
+| P4-01 | WeChat bridge | 调 `jscode2session`，将 `openid` 写入 `nano_user_identities`，再 mint JWT；Z1 只要求开发者工具/等价 mock 的 code-level smoke，不把真机联调偷渡进来 | `workers/orchestration-auth/src/**` | Mini Program 具备真实 code-level 登录 | package-e2e / manual smoke | `code -> openid -> JWT` 可跑通，失败不留下脏中间态 |
 | P4-02 | tenant bootstrap | email/password 与 WeChat 首登都自动建 default team + owner membership | `workers/orchestration-auth/src/**` | auth path 不再在 tenant 语义上分叉 | package-e2e / D1 row assertions | 两条路径都返回非空 `team_uuid`，且 membership 为 `owner` |
 
 ### 4.5 Phase 5 — Negative Tests + Z1 Closure
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P5-01 | auth negative tests | 覆盖 forged token、tenant mismatch、cross-team readback、non-orchestrator caller 等负例 | `test/package-e2e/orchestration-auth/**` `test/package-e2e/orchestrator-core/**` `test/cross-e2e/**` | Z1 安全面可证明 | `pnpm test:package-e2e` / `pnpm test:cross` | 双租户与 forged authority 负例稳定 reject |
+| P5-01 | auth negative tests | 覆盖 forged token、tenant mismatch、cross-team readback、non-orchestrator caller 等负例 | `test/package-e2e/orchestration-auth/**` `test/package-e2e/orchestrator-core/**` `test/cross-e2e/**` | Z1 安全面可证明 | `pnpm test:package-e2e` / `pnpm test:cross-e2e` | 双租户与 forged authority 负例稳定 reject |
 | P5-02 | Z1 closure | 写 `Z1-closure.md`，记录 auth worker、wave-A schema、WeChat chain、negative tests 的完成状态 | `docs/issue/zero-to-real/Z1-closure.md` | Z1 可以被 Z2 直接消费 | 文档 review | closure 可直接列为 Z2 前置输入 |
 
 ---
@@ -210,7 +210,8 @@ Z1 Full Auth and Tenant Foundation
 - **具体功能预期**：
   1. auth contract 由单一 package 持有。
   2. `NANO_AGENT_DB` 的 wave-A schema 已能支撑 Z1 全部流程。
-  3. schema reserved 与 impl-in-scope 的边界清晰（特别是 API key）。
+  3. migration runner / binding alias / tool path 不再留给实现期猜测。
+  4. schema reserved 与 impl-in-scope 的边界清晰（特别是 API key）。
 - **具体测试安排**：
   - **单测**：`packages/orchestration-auth-contract` 类型/shape tests
   - **集成测试**：`migration apply smoke`
@@ -219,6 +220,7 @@ Z1 Full Auth and Tenant Foundation
 - **收口标准**：
   - contract package 可被 orchestrator/auth worker 同时消费
   - wave-A schema apply 成功
+  - `wrangler d1 migrations apply NANO_AGENT_DB` 成为共享 manual path，worker 只做 schema version/assertion，不在启动期偷跑 DDL
   - Q1-Q4 的关键结构已具象到代码落点
 - **本 Phase 风险提醒**：
   - 最容易漏掉 `nano_auth_sessions` / `nano_team_api_keys`
@@ -239,8 +241,9 @@ Z1 Full Auth and Tenant Foundation
   - `workers/orchestrator-core/wrangler.jsonc`
 - **具体功能预期**：
   1. `orchestration.auth` 成为 internal-only single-caller worker。
-  2. `orchestration.core` 不再承担生产签发路径。
-  3. preview deploy 可证明 auth worker 已真实存在。
+  2. `orchestration.core` 保留 verify fast-path，但与 auth worker 共享同一组 `JWT_SIGNING_KEY_<kid>`。
+  3. `orchestration.core` 不再承担生产签发路径。
+  4. preview deploy 可证明 auth worker 已真实存在。
 - **具体测试安排**：
   - **单测**：`auth worker handler / contract validation`
   - **集成测试**：`orchestrator -> auth WorkerEntrypoint RPC smoke`
@@ -248,6 +251,7 @@ Z1 Full Auth and Tenant Foundation
   - **手动验证**：`确认无 public auth worker route`
 - **收口标准**：
   - `workers/orchestration-auth/` 可独立 deploy
+  - `NANO_INTERNAL_BINDING_SECRET` + no-public-route + negative tests 共同证明 single-caller discipline
   - orchestrator 只做代理，不再 mint token
   - non-orchestrator caller 被 typed reject
 - **本 Phase 风险提醒**：
@@ -268,14 +272,16 @@ Z1 Full Auth and Tenant Foundation
 - **具体功能预期**：
   1. email/password 路径可完成 register/login/refresh/me。
   2. JWT 使用 `HS256 + kid + single-sign + dual-verify-window`。
-  3. refresh rotation truth 进入 `nano_auth_sessions`。
+  3. access token=1h、refresh token=30d、rotate-on-use、secret 命名=`JWT_SIGNING_KEY_<kid>`。
+  4. refresh rotation truth 进入 `nano_auth_sessions`。
 - **具体测试安排**：
   - **单测**：`JWT mint/verify helpers`
   - **集成测试**：`register/login/refresh/me`
   - **回归测试**：`orchestrator-core package-e2e`
   - **手动验证**：`旧 kid token 在窗口内仍可验证`
 - **收口标准**：
-  - access / refresh 行为符合 Q2
+  - access=1h、refresh=30d、rotate-on-use 与 Q2 一致
+  - JWT header 含 `kid`，claim set=`{user_uuid, team_uuid, team_plan_level, kid, iat, exp}`
   - me / tenant readback 与 D1 truth 一致
   - invalid/revoked token 被 typed reject
 - **本 Phase 风险提醒**：
@@ -298,13 +304,13 @@ Z1 Full Auth and Tenant Foundation
   3. 不出现 `user 已建但 team 未建` 中间态。
 - **具体测试安排**：
   - **单测**：`WeChat response mapping`
-  - **集成测试**：`code -> openid -> JWT`
+  - **集成测试**：`code -> openid -> JWT`，以及 `jscode2session` 成功但后续 D1 写入失败时的回滚证明
   - **回归测试**：`tenant bootstrap + readback`
   - **手动验证**：`Mini Program 开发者工具 smoke`
 - **收口标准**：
   - `nano_user_identities.identity_provider='wechat'` 可读
   - `team_uuid` 非空且 membership 正确
-  - WeChat 失败不会留下脏数据
+  - WeChat 失败不会留下脏数据（含 `jscode2session` 成功但下游写失败的回滚场景）
 - **本 Phase 风险提醒**：
   - 最容易让两条 auth path 在 tenant 行为上分叉
 
@@ -326,7 +332,7 @@ Z1 Full Auth and Tenant Foundation
 - **具体测试安排**：
   - **单测**：`无新增单测要求`
   - **集成测试**：`auth negative fixtures`
-  - **回归测试**：`pnpm test:package-e2e && pnpm test:cross`
+  - **回归测试**：`pnpm test:package-e2e && pnpm test:cross-e2e`
   - **手动验证**：`closure 对照 Q1-Q4 + D1 rows`
 - **收口标准**：
   - 双租户负例通过
