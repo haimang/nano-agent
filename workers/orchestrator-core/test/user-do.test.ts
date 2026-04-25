@@ -271,6 +271,62 @@ describe('NanoOrchestratorUserDO', () => {
     expect(await response.json()).toMatchObject({ ok: true, action: 'start' });
   });
 
+  it('accepts rpc-backed start parity when object keys arrive in different order', async () => {
+    const { state } = createState();
+    const userDo = new NanoOrchestratorUserDO(state, {
+      AGENT_CORE: {
+        fetch: async (request: Request) => {
+          const pathname = new URL(request.url).pathname;
+          if (pathname.endsWith('/start')) {
+            return Response.json({ ok: true, action: 'start', phase: 'attached' });
+          }
+          if (pathname.endsWith('/stream')) {
+            return new Response(
+              makeNdjson([
+                JSON.stringify({ kind: 'meta', seq: 0, event: 'opened', session_uuid: SESSION_UUID }),
+                JSON.stringify({
+                  kind: 'event',
+                  seq: 1,
+                  name: 'session.stream.event',
+                  payload: { kind: 'session.update', phase: 'attached' },
+                }),
+              ]),
+              { headers: { 'Content-Type': 'application/x-ndjson' } },
+            );
+          }
+          return Response.json({ error: 'not-found' }, { status: 404 });
+        },
+        start: async () => ({
+          status: 200,
+          body: { phase: 'attached', action: 'start', ok: true },
+        }),
+      } as any,
+      NANO_INTERNAL_BINDING_SECRET: 'secret',
+    });
+
+    const response = await userDo.fetch(
+      new Request(`https://orchestrator.internal/sessions/${SESSION_UUID}/start`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          initial_input: 'hello',
+          trace_uuid: '33333333-3333-4333-8333-333333333333',
+          auth_snapshot: {
+            sub: USER_UUID,
+            user_uuid: USER_UUID,
+            team_uuid: '44444444-4444-4444-8444-444444444444',
+            tenant_uuid: '44444444-4444-4444-8444-444444444444',
+            tenant_source: 'claim',
+          },
+          initial_context_seed: { default_layers: [], user_memory_ref: null },
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ ok: true, action: 'start' });
+  });
+
   it('cleans up starting session state when internal start fails', async () => {
     const { state, store } = createState();
     const userDo = new NanoOrchestratorUserDO(state, {
@@ -294,6 +350,111 @@ describe('NanoOrchestratorUserDO', () => {
 
     expect(response.status).toBe(503);
     expect(store.has(`sessions/${SESSION_UUID}`)).toBe(false);
+  });
+
+  it('rolls back durable start scaffolding when internal start fails', async () => {
+    const { state } = createState();
+    const repo = {
+      beginSession: vi.fn().mockResolvedValue({
+        conversation_uuid: '44444444-4444-4444-8444-444444444444',
+        session_uuid: SESSION_UUID,
+        conversation_created: true,
+      }),
+      createTurn: vi.fn().mockResolvedValue({
+        turn_uuid: '55555555-5555-4555-8555-555555555555',
+        turn_index: 1,
+      }),
+      appendMessage: vi.fn().mockResolvedValue(undefined),
+      captureContextSnapshot: vi.fn().mockResolvedValue(undefined),
+      appendActivity: vi.fn().mockResolvedValue(1),
+      rollbackSessionStart: vi.fn().mockResolvedValue(undefined),
+    };
+    const userDo = new NanoOrchestratorUserDO(state, {
+      AGENT_CORE: {
+        fetch: async () => Response.json({ error: 'boom' }, { status: 503 }),
+      } as Fetcher,
+      NANO_INTERNAL_BINDING_SECRET: 'secret',
+    });
+    (userDo as any).sessionTruth = () => repo;
+
+    const response = await userDo.fetch(
+      new Request(`https://orchestrator.internal/sessions/${SESSION_UUID}/start`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          initial_input: 'hello',
+          auth_snapshot: {
+            sub: USER_UUID,
+            user_uuid: USER_UUID,
+            team_uuid: '44444444-4444-4444-8444-444444444444',
+            tenant_uuid: '44444444-4444-4444-8444-444444444444',
+            tenant_source: 'claim',
+          },
+          initial_context_seed: { default_layers: [], user_memory_ref: null },
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(503);
+    expect(repo.rollbackSessionStart).toHaveBeenCalledWith({
+      session_uuid: SESSION_UUID,
+      conversation_uuid: '44444444-4444-4444-8444-444444444444',
+      delete_conversation: true,
+    });
+    expect(repo.appendActivity).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        conversation_uuid: null,
+        session_uuid: null,
+        turn_uuid: null,
+        event_kind: 'session.start.failed',
+      }),
+    );
+  });
+
+  it('redacts durable activity payloads before repository append', async () => {
+    const { state } = createState();
+    const repo = {
+      appendActivity: vi.fn().mockResolvedValue(1),
+    };
+    const userDo = new NanoOrchestratorUserDO(state, {
+      NANO_INTERNAL_BINDING_SECRET: 'secret',
+    });
+    (userDo as any).sessionTruth = () => repo;
+
+    await (userDo as any).appendDurableActivity({
+      pointer: {
+        conversation_uuid: '44444444-4444-4444-8444-444444444444',
+        session_uuid: SESSION_UUID,
+        conversation_created: false,
+      },
+      authSnapshot: {
+        sub: USER_UUID,
+        user_uuid: USER_UUID,
+        team_uuid: '44444444-4444-4444-8444-444444444444',
+        tenant_uuid: '44444444-4444-4444-8444-444444444444',
+        tenant_source: 'claim',
+      },
+      traceUuid: '33333333-3333-4333-8333-333333333333',
+      turnUuid: null,
+      eventKind: 'session.test',
+      severity: 'info',
+      payload: {
+        access_token: 'secret-token',
+        password: 'super-secret',
+        ok: true,
+      },
+      timestamp: new Date().toISOString(),
+    });
+
+    expect(repo.appendActivity).toHaveBeenCalledWith(
+      expect.objectContaining({
+        payload: {
+          access_token: '[redacted]',
+          password: '[redacted]',
+          ok: true,
+        },
+      }),
+    );
   });
 
   it('surfaces non-ok internal stream responses instead of treating them as empty replay', async () => {
@@ -463,6 +624,151 @@ describe('NanoOrchestratorUserDO', () => {
     expect(response.status).toBe(404);
     expect(store.has(`sessions/${SESSION_UUID}`)).toBe(false);
     expect(store.has(`session-terminal/${SESSION_UUID}`)).toBe(false);
+  });
+
+  it('hydrates readable state from durable truth when hot state was cleared', async () => {
+    const { state, store } = createState();
+    const repo = {
+      readSnapshot: vi.fn().mockResolvedValue({
+        conversation_uuid: '44444444-4444-4444-8444-444444444444',
+        session_uuid: SESSION_UUID,
+        team_uuid: '44444444-4444-4444-8444-444444444444',
+        actor_user_uuid: USER_UUID,
+        trace_uuid: '33333333-3333-4333-8333-333333333333',
+        session_status: 'detached',
+        started_at: '2026-04-25T00:00:00.000Z',
+        ended_at: null,
+        last_phase: 'attached',
+        last_event_seq: 60,
+        message_count: 60,
+        activity_count: 2,
+        latest_turn_uuid: '55555555-5555-4555-8555-555555555555',
+      }),
+      readTimeline: vi.fn().mockResolvedValue(
+        Array.from({ length: 60 }, (_, index) => ({
+          kind: 'session.update',
+          phase: 'attached',
+          seq: index + 1,
+        })),
+      ),
+      readHistory: vi.fn().mockResolvedValue([
+        {
+          message_uuid: '66666666-6666-4666-8666-666666666666',
+          turn_uuid: null,
+          trace_uuid: '33333333-3333-4333-8333-333333333333',
+          role: 'assistant',
+          kind: 'stream-event',
+          body: { kind: 'session.update', phase: 'attached' },
+          created_at: '2026-04-25T00:00:01.000Z',
+        },
+      ]),
+      updateSessionState: vi.fn().mockResolvedValue(undefined),
+    };
+    const userDo = new NanoOrchestratorUserDO(state, {
+      AGENT_CORE: { fetch: async () => Response.json({ ok: true, action: 'status', phase: 'attached' }) } as Fetcher,
+      NANO_INTERNAL_BINDING_SECRET: 'secret',
+    });
+    (userDo as any).sessionTruth = () => repo;
+
+    const timeline = await userDo.fetch(
+      new Request(`https://orchestrator.internal/sessions/${SESSION_UUID}/timeline`),
+    );
+
+    expect(timeline.status).toBe(200);
+    expect(await timeline.json()).toMatchObject({ ok: true, action: 'timeline' });
+    expect(store.get(`sessions/${SESSION_UUID}`)).toEqual(
+      expect.objectContaining({
+        status: 'detached',
+        last_phase: 'attached',
+        relay_cursor: 60,
+      }),
+    );
+    expect(store.get(`recent-frames/${SESSION_UUID}`)).toEqual(
+      expect.objectContaining({
+        frames: expect.arrayContaining([
+          expect.objectContaining({ seq: 11 }),
+          expect.objectContaining({ seq: 60 }),
+        ]),
+      }),
+    );
+    expect((store.get(`recent-frames/${SESSION_UUID}`) as { frames: unknown[] }).frames).toHaveLength(50);
+  });
+
+  it('evicts expired caches and trims active recent frames during alarm', async () => {
+    const { state, store } = createState();
+    const now = new Date().toISOString();
+    store.set('conversation/index', [
+      {
+        conversation_uuid: '44444444-4444-4444-8444-444444444444',
+        latest_session_uuid: SESSION_UUID,
+        status: 'detached',
+        updated_at: now,
+      },
+    ]);
+    store.set('conversation/active-pointers', {
+      conversation_uuid: '44444444-4444-4444-8444-444444444444',
+      session_uuid: SESSION_UUID,
+      turn_uuid: null,
+    });
+    store.set(`recent-frames/${SESSION_UUID}`, {
+      updated_at: now,
+      frames: Array.from({ length: 55 }, (_, index) => ({
+        kind: 'event',
+        seq: index + 1,
+        name: 'session.stream.event',
+        payload: { kind: 'session.update', phase: 'attached' },
+      })),
+    });
+    store.set(`cache/status:${SESSION_UUID}`, {
+      key: `status:${SESSION_UUID}`,
+      value: { ok: true },
+      expires_at: '2000-01-01T00:00:00.000Z',
+    });
+
+    const userDo = new NanoOrchestratorUserDO(state, {
+      NANO_INTERNAL_BINDING_SECRET: 'secret',
+    });
+
+    await userDo.alarm();
+
+    expect((store.get(`recent-frames/${SESSION_UUID}`) as { frames: unknown[] }).frames).toHaveLength(50);
+    expect(store.has(`cache/status:${SESSION_UUID}`)).toBe(false);
+  });
+
+  it('accepts rpc-backed status parity when object keys arrive in different order', async () => {
+    const { state, store } = createState();
+    store.set(`sessions/${SESSION_UUID}`, {
+      created_at: 'a',
+      last_seen_at: 'a',
+      status: 'detached',
+      last_phase: 'attached',
+      relay_cursor: -1,
+      ended_at: null,
+    });
+    store.set(USER_AUTH_SNAPSHOT_KEY, {
+      sub: USER_UUID,
+      user_uuid: USER_UUID,
+      team_uuid: '44444444-4444-4444-8444-444444444444',
+      tenant_uuid: '44444444-4444-4444-8444-444444444444',
+      tenant_source: 'claim',
+    });
+    const userDo = new NanoOrchestratorUserDO(state, {
+      AGENT_CORE: {
+        fetch: async () => Response.json({ ok: true, action: 'status', phase: 'attached' }),
+        status: async () => ({
+          status: 200,
+          body: { phase: 'attached', action: 'status', ok: true },
+        }),
+      } as any,
+      NANO_INTERNAL_BINDING_SECRET: 'secret',
+    });
+
+    const response = await userDo.fetch(
+      new Request(`https://orchestrator.internal/sessions/${SESSION_UUID}/status`),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ ok: true, action: 'status', phase: 'attached' });
   });
 
   it('returns typed invalid-stream-frame when internal NDJSON violates the façade schema', async () => {

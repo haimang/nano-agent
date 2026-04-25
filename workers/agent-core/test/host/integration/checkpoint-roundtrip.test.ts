@@ -112,4 +112,29 @@ describe("integration: NanoSessionDO persistCheckpoint roundtrip", () => {
     // Validator must still accept the stored checkpoint.
     expect(validateSessionCheckpoint(store.get(CHECKPOINT_KEY))).toBe(true);
   });
+
+  it("restores actorPhase from the persisted checkpoint", async () => {
+    const { state, store } = makeStorage();
+    store.set("session:teamUuid", TEAM_UUID);
+    store.set(CHECKPOINT_KEY, {
+      version: "0.1.0",
+      sessionUuid: VALID_UUID,
+      teamUuid: TEAM_UUID,
+      actorPhase: "ended",
+      turnCount: 3,
+      kernelFragment: null,
+      replayFragment: null,
+      streamSeqs: {},
+      workspaceFragment: null,
+      hooksFragment: null,
+      usageSnapshot: { totalTokens: 0, totalTurns: 3, totalDurationMs: 0 },
+      checkpointedAt: new Date().toISOString(),
+    });
+
+    const instance = new NanoSessionDO(state, { SESSION_UUID: VALID_UUID, TEAM_UUID });
+    await (instance as any).restoreFromStorage();
+
+    expect((instance as any).state.actorState.phase).toBe("ended");
+    expect((instance as any).state.turnCount).toBe(3);
+  });
 });

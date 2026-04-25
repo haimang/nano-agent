@@ -220,19 +220,15 @@ export default class AgentCoreEntrypoint extends WorkerEntrypoint<AgentCoreEnv> 
             authority,
           }
         : null;
-    const headers = new Headers({
-      "x-trace-uuid": traceUuid,
-      "x-nano-internal-authority": JSON.stringify(authority),
-      "x-nano-internal-binding-secret": this.env.NANO_INTERNAL_BINDING_SECRET ?? "",
-    });
+    const headers = new Headers();
     if (bodyRecord) headers.set("content-type", "application/json");
-    const response = await routeInternal(
-      new Request(`https://agent.internal/internal/sessions/${sessionUuid}/${action}`, {
+    const stub = this.env.SESSION_DO.get(this.env.SESSION_DO.idFromName(sessionUuid));
+    const response = await stub.fetch(
+      new Request(`https://session.internal/sessions/${sessionUuid}/${action}`, {
         method,
         headers,
         body: bodyRecord ? JSON.stringify(bodyRecord) : undefined,
       }),
-      this.env,
     );
     return {
       status: response.status,

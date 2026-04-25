@@ -1228,7 +1228,10 @@ export class NanoSessionDO {
     // factory in production builds.
     this.sessionTeamUuid = raw.teamUuid;
     this.state = {
-      actorState: this.state.actorState,
+      actorState: {
+        ...this.state.actorState,
+        phase: raw.actorPhase as typeof this.state.actorState.phase,
+      },
       kernelSnapshot: raw.kernelFragment,
       turnCount: raw.turnCount,
     };
