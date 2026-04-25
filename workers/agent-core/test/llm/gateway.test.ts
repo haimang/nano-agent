@@ -4,6 +4,7 @@ import {
   buildWorkersAiExecutionRequestFromMessages,
   toCanonicalMessage,
 } from "../../src/llm/gateway.js";
+import { getMinimalCommandDeclarations as getBashCoreMinimalCommandDeclarations } from "../../../bash-core/src/fake-bash/commands.js";
 
 describe("WorkersAiGateway", () => {
   it("streams normalized request-started, tool-call, delta, and finish events", async () => {
@@ -87,5 +88,17 @@ describe("WorkersAiGateway", () => {
         },
       ],
     });
+  });
+
+  it("builds Workers AI tools from the shared minimal capability registry", () => {
+    const exec = buildWorkersAiExecutionRequestFromMessages({
+      messages: [{ role: "user", content: "list files" }],
+      tools: true,
+    });
+    const toolNames = exec.request.tools?.map((tool) => tool.function.name).sort();
+    const registryNames = getBashCoreMinimalCommandDeclarations().map((decl) => decl.name).sort();
+
+    expect(toolNames).toEqual(registryNames);
+    expect(toolNames).toContain("ts-exec");
   });
 });

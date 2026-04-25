@@ -219,6 +219,11 @@ export default class AgentCoreEntrypoint extends WorkerEntrypoint<AgentCoreEnv> 
         : null;
     const headers = new Headers();
     if (bodyRecord) headers.set("content-type", "application/json");
+    headers.set("x-trace-uuid", validatedMeta.traceUuid);
+    headers.set("x-nano-internal-authority", JSON.stringify(validatedMeta.authority));
+    if (this.env.NANO_INTERNAL_BINDING_SECRET) {
+      headers.set("x-nano-internal-binding-secret", this.env.NANO_INTERNAL_BINDING_SECRET);
+    }
     const stub = this.env.SESSION_DO.get(this.env.SESSION_DO.idFromName(sessionUuid));
     const response = await stub.fetch(
       new Request(`https://session.internal/sessions/${sessionUuid}/${action}`, {

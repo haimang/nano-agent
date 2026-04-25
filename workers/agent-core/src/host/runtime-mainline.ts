@@ -101,6 +101,23 @@ export interface MainlineKernelOptions {
   readonly anchorProvider: () => CrossSeamAnchor | undefined;
 }
 
+export const NANO_AGENT_SYSTEM_PROMPT =
+  "You are nano-agent running inside Cloudflare Workers, not a Linux VM. " +
+  "Use the provided tools as a governed fake-bash capability layer; do not assume POSIX shell, local OS access, or unsupported commands. " +
+  "Prefer structured tool calls for filesystem, search, network, TypeScript execution, and git tasks, and surface unsupported capability needs explicitly.";
+
+function withNanoAgentSystemPrompt(messages: readonly unknown[]): readonly unknown[] {
+  const hasSystemPrompt = messages.some(
+    (message) =>
+      isRecord(message) &&
+      message.role === "system" &&
+      typeof message.content === "string" &&
+      message.content.length > 0,
+  );
+  if (hasSystemPrompt) return messages;
+  return [{ role: "system", content: NANO_AGENT_SYSTEM_PROMPT }, ...messages];
+}
+
 export function createMainlineKernelRunner(
   options: MainlineKernelOptions,
 ): KernelRunner {
@@ -113,7 +130,7 @@ export function createMainlineKernelRunner(
         async *call(request: unknown) {
           const messages = Array.isArray(request) ? request : [];
           const exec = buildWorkersAiExecutionRequestFromMessages({
-            messages,
+            messages: withNanoAgentSystemPrompt(messages),
             tools: true,
           });
           for await (const event of gateway.executeStream(exec)) {

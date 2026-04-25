@@ -139,4 +139,27 @@ describe("createMainlineKernelRunner", () => {
       }),
     );
   });
+
+  it("injects the nano-agent system prompt before invoking Workers AI", async () => {
+    const run = vi.fn(async () => ({
+      response: "ok",
+      usage: { prompt_tokens: 1, completion_tokens: 1 },
+    }));
+    const runner = createMainlineKernelRunner({
+      ai: { run },
+      quotaAuthorizer: null,
+      capabilityTransport: undefined,
+      contextProvider: () => null,
+      anchorProvider: () => undefined,
+    });
+
+    await runner.advanceStep(runningSnapshot("turn-system"), baseSignals());
+
+    expect(run).toHaveBeenCalledTimes(1);
+    const payload = run.mock.calls[0]?.[1] as { messages?: Array<{ role?: string; content?: string }> };
+    expect(payload.messages?.[0]).toMatchObject({
+      role: "system",
+    });
+    expect(payload.messages?.[0]?.content).toContain("Cloudflare Workers");
+  });
 });

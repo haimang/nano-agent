@@ -10,6 +10,11 @@ const AUTHORITY = {
   tenant_uuid: "nano-agent",
   tenant_source: "claim",
 };
+const NORMALIZED_AUTHORITY = {
+  sub: AUTHORITY.sub,
+  tenant_uuid: AUTHORITY.tenant_uuid,
+  tenant_source: AUTHORITY.tenant_source,
+};
 
 function internalHeaders(extra: Record<string, string> = {}) {
   return {
@@ -157,6 +162,9 @@ describe("agent-core shell smoke", () => {
     expect(idFromName).toHaveBeenCalledWith(sessionId);
     const forwarded = stubFetch.mock.calls[0]![0]!;
     expect(new URL(forwarded.url).pathname).toBe(`/sessions/${sessionId}/start`);
+    expect(forwarded.headers.get("x-trace-uuid")).toBe(TRACE_UUID);
+    expect(forwarded.headers.get("x-nano-internal-binding-secret")).toBe("secret");
+    expect(JSON.parse(forwarded.headers.get("x-nano-internal-authority") ?? "{}")).toEqual(NORMALIZED_AUTHORITY);
   });
 
   it("rejects /internal/* when the shared secret is missing or invalid", async () => {
@@ -308,6 +316,11 @@ describe("agent-core shell smoke", () => {
 
     expect(new URL(stubFetch.mock.calls[0]![0]!.url).pathname).toBe(`/sessions/${sessionId}/status`);
     expect(new URL(stubFetch.mock.calls[1]![0]!.url).pathname).toBe(`/sessions/${sessionId}/verify`);
+    for (const [request] of stubFetch.mock.calls) {
+      expect(request.headers.get("x-trace-uuid")).toBe(TRACE_UUID);
+      expect(request.headers.get("x-nano-internal-binding-secret")).toBe("secret");
+      expect(JSON.parse(request.headers.get("x-nano-internal-authority") ?? "{}")).toEqual(NORMALIZED_AUTHORITY);
+    }
   });
 
   it("serializes internal stream replay as NDJSON meta/event/terminal frames", async () => {

@@ -1,4 +1,7 @@
-import { validateInternalAuthority } from "./internal-policy.js";
+import {
+  validateInternalAuthority,
+  type InternalAuthorityResult,
+} from "./internal-policy.js";
 
 export interface AgentInternalEnv {
   readonly SESSION_DO: DurableObjectNamespace;
@@ -30,6 +33,23 @@ function jsonResponse(status: number, body: Record<string, unknown>): Response {
   return Response.json(body, { status });
 }
 
+type ValidatedInternalAuthority = Extract<InternalAuthorityResult, { ok: true }>;
+
+function buildForwardHeaders(
+  env: AgentInternalEnv,
+  validated: ValidatedInternalAuthority,
+  contentType?: string | null,
+): Headers {
+  const headers = new Headers();
+  if (contentType) headers.set("content-type", contentType);
+  headers.set("x-trace-uuid", validated.traceUuid);
+  headers.set("x-nano-internal-authority", JSON.stringify(validated.authority));
+  if (env.NANO_INTERNAL_BINDING_SECRET) {
+    headers.set("x-nano-internal-binding-secret", env.NANO_INTERNAL_BINDING_SECRET);
+  }
+  return headers;
+}
+
 function parseInternalRoute(request: Request):
   | { type: "action"; sessionId: string; action: SupportedInternalAction }
   | { type: "unsupported-action"; action: string | null }
@@ -50,6 +70,7 @@ function parseInternalRoute(request: Request):
 
 async function forwardHttpAction(
   env: AgentInternalEnv,
+  validated: ValidatedInternalAuthority,
   sessionId: string,
   action: Exclude<SupportedInternalAction, "stream">,
   method: string,
@@ -58,8 +79,7 @@ async function forwardHttpAction(
 ): Promise<Response> {
   const stub = env.SESSION_DO.get(env.SESSION_DO.idFromName(sessionId));
   const targetUrl = `https://session.internal/sessions/${sessionId}/${action}`;
-  const headers = new Headers();
-  if (contentType) headers.set("content-type", contentType);
+  const headers = buildForwardHeaders(env, validated, contentType);
   const body = method === "GET" || method === "HEAD" ? undefined : bodyText;
   return stub.fetch(new Request(targetUrl, { method, headers, body }));
 }
@@ -86,10 +106,15 @@ async function readJson(response: Response): Promise<Record<string, unknown> | n
 
 // First-wave relay is snapshot-based: synthesize a finite NDJSON body from
 // timeline + status reads rather than holding a persistent push channel open.
-async function forwardInternalStream(env: AgentInternalEnv, sessionId: string): Promise<Response> {
+async function forwardInternalStream(
+  env: AgentInternalEnv,
+  validated: ValidatedInternalAuthority,
+  sessionId: string,
+): Promise<Response> {
   const stub = env.SESSION_DO.get(env.SESSION_DO.idFromName(sessionId));
+  const headers = buildForwardHeaders(env, validated);
   const timelineResponse = await stub.fetch(
-    new Request(`https://session.internal/sessions/${sessionId}/timeline`, { method: "GET" }),
+    new Request(`https://session.internal/sessions/${sessionId}/timeline`, { method: "GET", headers }),
   );
   if (!timelineResponse.ok) return timelineResponse;
   const timelineBody = await readJson(timelineResponse);
@@ -108,7 +133,7 @@ async function forwardInternalStream(env: AgentInternalEnv, sessionId: string): 
   ];
 
   const statusResponse = await stub.fetch(
-    new Request(`https://session.internal/sessions/${sessionId}/status`, { method: "GET" }),
+    new Request(`https://session.internal/sessions/${sessionId}/status`, { method: "GET", headers }),
   );
   if (statusResponse.ok) {
     const statusBody = await readJson(statusResponse);
@@ -158,7 +183,7 @@ export async function routeInternal(request: Request, env: AgentInternalEnv): Pr
 
   switch (route.action) {
     case "stream":
-      return forwardInternalStream(env, route.sessionId);
+      return forwardInternalStream(env, validated, route.sessionId);
     case "start":
     case "input":
     case "cancel":
@@ -167,6 +192,7 @@ export async function routeInternal(request: Request, env: AgentInternalEnv): Pr
     case "verify":
       return forwardHttpAction(
         env,
+        validated,
         route.sessionId,
         route.action,
         request.method.toUpperCase(),

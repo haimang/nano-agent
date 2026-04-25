@@ -66,6 +66,8 @@ export interface SessionRuntimeEnv {
   readonly NANO_AGENT_LLM_CALL_LIMIT?: string;
   readonly NANO_AGENT_TOOL_CALL_LIMIT?: string;
   readonly NANO_AGENT_ALLOW_PREVIEW_TEAM_SEED?: string;
+  readonly NANO_INTERNAL_BINDING_SECRET?: string;
+  readonly TEAM_UUID?: string;
 
   // v1 binding catalog (Phase 4 truth)
   readonly BASH_CORE?: ServiceBindingLike;

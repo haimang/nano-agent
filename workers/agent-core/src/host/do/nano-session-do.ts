@@ -40,6 +40,7 @@ import type { CompositionFactory, SubsystemHandles } from "../composition.js";
 import { makeRemoteBindingsFactory } from "../remote-bindings.js";
 import type { CrossSeamAnchor } from "../cross-seam.js";
 import type { SessionRuntimeEnv } from "../env.js";
+import { validateInternalAuthority } from "../internal-policy.js";
 import {
   buildQuotaErrorEnvelope,
   buildToolQuotaAuthorization,
@@ -262,6 +263,10 @@ export class NanoSessionDO {
       ?.SESSION_UUID;
     if (typeof envSessionUuid === "string" && envSessionUuid.length > 0) {
       this.sessionUuid = envSessionUuid;
+      const envTeamUuid = (env as { TEAM_UUID?: unknown } | undefined)?.TEAM_UUID;
+      if (typeof envTeamUuid === "string" && envTeamUuid.length > 0) {
+        this.sessionTeamUuid = envTeamUuid;
+      }
     }
 
     this.healthGate = new HealthGate(this.config);
@@ -493,6 +498,17 @@ export class NanoSessionDO {
    */
   async fetch(request: Request): Promise<Response> {
     const route: RouteResult = routeRequest(request);
+    const isInternalDoRequest = new URL(request.url).hostname === "session.internal";
+    const validatedInternal = isInternalDoRequest
+      ? await validateInternalAuthority(
+          request,
+          this.env as Pick<
+            SessionRuntimeEnv,
+            "NANO_INTERNAL_BINDING_SECRET" | "TEAM_UUID" | "ENVIRONMENT"
+          >,
+        )
+      : null;
+    if (validatedInternal && !validatedInternal.ok) return validatedInternal.response;
 
     switch (route.type) {
       case "websocket":
@@ -532,11 +548,12 @@ export class NanoSessionDO {
         });
 
         // Optional JSON body from HTTP clients (start / input carry content).
-        let body: unknown = undefined;
+        let body: unknown = validatedInternal?.ok ? validatedInternal.bodyJson ?? undefined : undefined;
         if (
-          request.method === "POST" ||
-          request.method === "PUT" ||
-          request.method === "PATCH"
+          body === undefined &&
+          (request.method === "POST" ||
+            request.method === "PUT" ||
+            request.method === "PATCH")
         ) {
           try {
             body = await request.json();
@@ -586,10 +603,7 @@ export class NanoSessionDO {
     if (this.sessionTeamUuid && this.sessionTeamUuid.length > 0) {
       return this.sessionTeamUuid;
     }
-    const envTeamUuid = (this.env as { TEAM_UUID?: unknown } | undefined)?.TEAM_UUID;
-    return typeof envTeamUuid === "string" && envTeamUuid.length > 0
-      ? envTeamUuid
-      : null;
+    return null;
   }
 
   // ── webSocketMessage ───────────────────────────────────────
@@ -683,10 +697,11 @@ export class NanoSessionDO {
   }
 
   /**
-   * B9: stable source-of-truth for the DO's tenant identity. Reads
-   * `env.TEAM_UUID`, falling back to `"_unknown"` when unset so the
-   * existing vitest harness (which constructs an empty env) keeps
-   * working. Wrapper storage helpers feed this into `tenantDoStorage*`.
+   * B9: stable source-of-truth for the DO's tenant identity. Runtime
+   * tenant truth is latched from request authority; deploy-local TEAM_UUID
+   * is no longer a fallback. The `"_unknown"` value is only used before
+   * a session-owned team has been attached, so legacy unit harnesses can
+   * construct the DO without fabricating tenant identity.
    */
   private tenantTeamUuid(): string {
     const teamUuid = this.currentTeamUuid();

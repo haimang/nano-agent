@@ -8,7 +8,7 @@
  * leaving the DO with a checkpoint that could never be restored.
  *
  * The fixed writer:
- *   - uses a real `sessionUuid` source-of-truth (env / attachSessionUuid)
+   *   - uses a real `sessionUuid` source-of-truth (env / attachSessionUuid)
  *   - refuses to persist when `teamUuid` is missing
  *   - runs `validateSessionCheckpoint()` as a symmetry guard before
  *     handing the record to DO storage
@@ -55,7 +55,7 @@ describe("integration: NanoSessionDO persistCheckpoint roundtrip", () => {
     expect(validateSessionCheckpoint(persisted)).toBe(true);
   });
 
-  it("attaches sessionUuid from a route sessionId the first time a WebSocket upgrade arrives", async () => {
+  it("does not persist a route-attached session before tenant authority is latched", async () => {
     const { state, store } = makeStorage();
     const instance = new NanoSessionDO(state, { TEAM_UUID });
 
@@ -67,10 +67,7 @@ describe("integration: NanoSessionDO persistCheckpoint roundtrip", () => {
     await instance.fetch(req);
     await instance.webSocketClose(null);
 
-    const persisted = store.get(CHECKPOINT_KEY);
-    expect(persisted).toBeDefined();
-    expect(validateSessionCheckpoint(persisted)).toBe(true);
-    expect((persisted as { sessionUuid: string }).sessionUuid).toBe(VALID_UUID);
+    expect(store.has(CHECKPOINT_KEY)).toBe(false);
   });
 
   it("refuses to persist a checkpoint when no UUID source-of-truth has been attached", async () => {

@@ -41,10 +41,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-function normalizeAuthority(
-  value: unknown,
-  teamUuid: string | null,
-): InternalAuthorityPayload | null {
+function normalizeAuthority(value: unknown): InternalAuthorityPayload | null {
   if (!isRecord(value)) return null;
   if (typeof value.sub !== "string" || value.sub.length === 0) return null;
   if (
@@ -70,7 +67,8 @@ function normalizeAuthority(
   const tenantUuid =
     typeof value.tenant_uuid === "string" && value.tenant_uuid.length > 0
       ? value.tenant_uuid
-      : teamUuid;
+      : null;
+  if (!tenantUuid) return null;
 
   return {
     sub: value.sub,
@@ -131,11 +129,7 @@ export function validateInternalRpcMeta(
     };
   }
 
-  const teamUuid =
-    typeof env.TEAM_UUID === "string" && env.TEAM_UUID.length > 0
-      ? env.TEAM_UUID
-      : null;
-  const authority = normalizeAuthority(meta.authority, teamUuid);
+  const authority = normalizeAuthority(meta.authority);
   if (!authority) {
     return {
       ok: false,
@@ -167,11 +161,6 @@ export async function validateInternalAuthority(
       }),
     };
   }
-
-  const teamUuid =
-    typeof env.TEAM_UUID === "string" && env.TEAM_UUID.length > 0
-      ? env.TEAM_UUID
-      : null;
 
   const traceUuid = request.headers.get("x-trace-uuid");
   if (!isUuid(traceUuid)) {
@@ -208,7 +197,7 @@ export async function validateInternalAuthority(
     };
   }
 
-  const authority = normalizeAuthority(headerAuthorityRaw, teamUuid);
+  const authority = normalizeAuthority(headerAuthorityRaw);
   if (!authority) {
     return {
       ok: false,
@@ -259,10 +248,7 @@ export async function validateInternalAuthority(
     };
   }
 
-  const bodyAuthority = normalizeAuthority(
-    bodyJson.authority ?? bodyJson.auth_snapshot,
-    teamUuid,
-  );
+  const bodyAuthority = normalizeAuthority(bodyJson.authority ?? bodyJson.auth_snapshot);
   if ((bodyJson.authority !== undefined || bodyJson.auth_snapshot !== undefined) && !bodyAuthority) {
     return {
       ok: false,

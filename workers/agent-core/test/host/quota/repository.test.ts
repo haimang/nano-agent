@@ -141,5 +141,8 @@ describe("D1QuotaRepository", () => {
     expect(db.batchCalls).toHaveLength(1);
     expect(db.batchCalls[0]?.[0]?.sql).toContain("INSERT OR IGNORE INTO nano_users");
     expect(db.batchCalls[0]?.[1]?.sql).toContain("INSERT OR IGNORE INTO nano_teams");
+    const ownerUserUuid = db.batchCalls[0]?.[1]?.params[1];
+    expect(ownerUserUuid).not.toBe("team-1");
+    expect(ownerUserUuid).toBe("00000000-0000-4000-8000-000000000001");
   });
 });

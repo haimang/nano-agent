@@ -27,6 +27,8 @@ export interface D1QuotaRepositoryOptions {
   readonly allowSeedMissingTeam?: boolean;
 }
 
+const PREVIEW_SEED_OWNER_USER_UUID = "00000000-0000-4000-8000-000000000001";
+
 function toCount(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value)
     ? value
@@ -61,7 +63,7 @@ export class D1QuotaRepository {
   private async ensureTeamSeed(teamUuid: string): Promise<void> {
     if (!this.options.allowSeedMissingTeam) return;
     const now = new Date().toISOString();
-    const ownerUserUuid = teamUuid;
+    const ownerUserUuid = PREVIEW_SEED_OWNER_USER_UUID;
     await this.db.batch([
       this.db.prepare(
         `INSERT OR IGNORE INTO nano_users (

@@ -24,6 +24,11 @@ function makeRequest(
 const TRACE_UUID = "11111111-1111-4111-8111-111111111111";
 const SESSION_UUID = "22222222-2222-4222-8222-222222222222";
 const MESSAGE_UUID_SEED = "33333333-3333-4";
+const AUTHORITY = {
+  sub: "44444444-4444-4444-8444-444444444444",
+  tenant_uuid: "team-xyz",
+  tenant_source: "claim",
+};
 
 let msgCounter = 0;
 function nextMessageUuid(): string {
@@ -116,6 +121,29 @@ describe("NanoSessionDO", () => {
       expect(response.status).toBe(200);
       const body = (await response.json()) as Record<string, unknown>;
       expect(body.ok).toBe(true);
+    });
+
+    it("requires internal authority for session.internal DO fetches", async () => {
+      const internalDo = new NanoSessionDO({}, {
+        NANO_INTERNAL_BINDING_SECRET: "secret",
+        TEAM_UUID: "team-xyz",
+      });
+
+      const missingAuth = await internalDo.fetch(
+        new Request(`https://session.internal/sessions/${SESSION_UUID}/status`),
+      );
+      expect(missingAuth.status).toBe(401);
+
+      const ok = await internalDo.fetch(
+        new Request(`https://session.internal/sessions/${SESSION_UUID}/status`, {
+          headers: {
+            "x-nano-internal-binding-secret": "secret",
+            "x-trace-uuid": TRACE_UUID,
+            "x-nano-internal-authority": JSON.stringify(AUTHORITY),
+          },
+        }),
+      );
+      expect(ok.status).toBe(200);
     });
 
     it("returns 404 for unrecognized paths", async () => {

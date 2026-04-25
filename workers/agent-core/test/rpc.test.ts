@@ -29,7 +29,11 @@ describe("agent-core rpc entrypoint", () => {
 
     expect(result.status).toBe(200);
     expect(result.body).toMatchObject({ ok: true, action: "status" });
-    expect(new URL(stubFetch.mock.calls[0]![0]!.url).pathname).toBe(`/sessions/${SESSION_UUID}/status`);
+    const forwarded = stubFetch.mock.calls[0]![0]!;
+    expect(new URL(forwarded.url).pathname).toBe(`/sessions/${SESSION_UUID}/status`);
+    expect(forwarded.headers.get("x-trace-uuid")).toBe(TRACE_UUID);
+    expect(forwarded.headers.get("x-nano-internal-binding-secret")).toBe("secret");
+    expect(JSON.parse(forwarded.headers.get("x-nano-internal-authority") ?? "{}")).toEqual(AUTHORITY);
   });
 
   it("routes start through the guarded internal surface", async () => {
@@ -51,6 +55,10 @@ describe("agent-core rpc entrypoint", () => {
 
     expect(result.status).toBe(200);
     expect(result.body).toMatchObject({ ok: true, action: "start" });
-    expect(new URL(stubFetch.mock.calls[0]![0]!.url).pathname).toBe(`/sessions/${SESSION_UUID}/start`);
+    const forwarded = stubFetch.mock.calls[0]![0]!;
+    expect(new URL(forwarded.url).pathname).toBe(`/sessions/${SESSION_UUID}/start`);
+    expect(forwarded.headers.get("x-trace-uuid")).toBe(TRACE_UUID);
+    expect(forwarded.headers.get("x-nano-internal-binding-secret")).toBe("secret");
+    expect(JSON.parse(forwarded.headers.get("x-nano-internal-authority") ?? "{}")).toEqual(AUTHORITY);
   });
 });

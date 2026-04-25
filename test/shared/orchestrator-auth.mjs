@@ -46,7 +46,7 @@ export async function createOrchestratorAuth(realm = "live-e2e") {
     if (login.response.status === 200 && login.json?.ok === true) {
       const issuedTeamUuid = login.json?.data?.team?.team_uuid;
       const token = login.json?.data?.tokens?.access_token;
-      if (issuedTeamUuid === TEAM_UUID && typeof token === "string") {
+      if (typeof issuedTeamUuid === "string" && typeof token === "string") {
         return {
           token,
           traceUuid,
@@ -59,7 +59,7 @@ export async function createOrchestratorAuth(realm = "live-e2e") {
             "content-type": "application/json",
             "x-trace-uuid": traceUuid,
           },
-          teamUuid: TEAM_UUID,
+          teamUuid: issuedTeamUuid,
           realm,
         };
       }

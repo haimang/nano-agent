@@ -1,4 +1,5 @@
 import type { LlmChunk } from "../../kernel/types.js";
+import { LLM_TOOL_DECLARATIONS } from "../tool-registry.js";
 
 export interface AiBindingLike {
   run(model: string, input: Record<string, unknown>): Promise<unknown>;
@@ -7,51 +8,6 @@ export interface AiBindingLike {
 export const WORKERS_AI_PRIMARY_MODEL = "@cf/ibm-granite/granite-4.0-h-micro";
 export const WORKERS_AI_FALLBACK_MODEL =
   "@cf/meta/llama-4-scout-17b-16e-instruct";
-
-const WORKERS_AI_TOOLSET = [
-  {
-    name: "pwd",
-    description: "Print current working directory",
-    inputSchema: { type: "object", properties: {} },
-  },
-  {
-    name: "ls",
-    description: "List directory contents",
-    inputSchema: { type: "object", properties: { path: { type: "string" } } },
-  },
-  {
-    name: "cat",
-    description: "Read file contents",
-    inputSchema: { type: "object", properties: { path: { type: "string" } } },
-  },
-  {
-    name: "rg",
-    description: "Search file contents using pattern matching",
-    inputSchema: {
-      type: "object",
-      properties: {
-        pattern: { type: "string" },
-        path: { type: "string" },
-      },
-    },
-  },
-  {
-    name: "curl",
-    description: "Fetch a URL",
-    inputSchema: { type: "object", properties: { url: { type: "string" } } },
-  },
-  {
-    name: "git",
-    description: "Run a limited subset of git subcommands (status, diff, log)",
-    inputSchema: {
-      type: "object",
-      properties: {
-        subcommand: { type: "string" },
-        args: { type: "array", items: { type: "string" } },
-      },
-    },
-  },
-] as const;
 
 type WorkersAiMessage =
   | {
@@ -118,15 +74,12 @@ export function normalizeWorkersAiMessages(
 }
 
 export function buildWorkersAiTools() {
-  return WORKERS_AI_TOOLSET.map((decl) => ({
+  return LLM_TOOL_DECLARATIONS.map((decl) => ({
       type: "function" as const,
       function: {
         name: decl.name,
         description: decl.description,
-        parameters: decl.inputSchema ?? {
-          type: "object",
-          properties: {},
-        },
+        parameters: decl.inputSchema,
       },
     }));
 }
