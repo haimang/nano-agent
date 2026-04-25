@@ -13,7 +13,7 @@
 > - `docs/design/zero-to-real/ZX-binding-boundary-and-rpc-rollout.md`
 > - `docs/design/zero-to-real/ZX-d1-schema-and-migrations.md`
 > - `docs/design/zero-to-real/ZX-nacp-realization-track.md`
-> 文档状态: `draft`
+> 文档状态: `executed`
 
 ---
 
@@ -364,3 +364,114 @@ Z2 完成后，系统将具备：
 1. 启动 `Z3-real-runtime-and-quota.md`
 2. 让 Workers AI、quota gate、usage persistence 直接消费 Z2 的 session/audit truth
 3. 把 Z4 客户端的 replay/heartbeat 交互建立在 Z2 baseline 之上
+
+---
+
+## 9. 执行日志（GPT · 2026-04-25）
+
+### 9.1 当前执行状态
+
+- **状态判断**：`executed`
+- **含义**：
+  1. Z2 的代码实现、preview infra、live evidence、以及 closure 文档都已经补齐。
+  2. `docs/issue/zero-to-real/Z2-closure.md` 已创建，本 action-plan 现在可以诚实翻为 `executed`。
+
+### 9.2 本轮真实完成的工作
+
+1. **Wave B schema 已落地**
+   - 新增 `workers/orchestrator-core/migrations/002-session-truth-and-audit.sql`
+   - 真实创建：
+     - `nano_conversations`
+     - `nano_conversation_sessions`
+     - `nano_conversation_turns`
+     - `nano_conversation_messages`
+     - `nano_conversation_context_snapshots`
+     - `nano_session_activity_logs`
+   - 已补 activity log 的 3 条关键索引，并额外补 session/message 读路径索引。
+
+2. **orchestrator-core durable truth 已开始拥有真实 owner 身份**
+   - 新增 `workers/orchestrator-core/src/session-truth.ts`
+   - `user-do.ts` 已接入：
+     - session/conversation 建立
+     - turn/message/context snapshot 持久化
+     - append-only activity log
+     - `timeline/history/verify/status` 的 durable readback 增补
+   - public façade 新增 `history` route，并保持既有 public route 家族兼容。
+
+3. **DO hot-state 已按 Z2 目标收敛到最小四组**
+   - `conversation/index`
+   - `conversation/active-pointers`
+   - `recent-frames/<session>`
+   - `cache/*`
+   - 已补 `setAlarm()` 调度位点，固定 `10m` 级 trim/refresh 入口。
+
+4. **agent-core 已开始进入 RPC-first seam**
+   - `workers/agent-core/src/index.ts` 已升级为 WorkerEntrypoint-compatible 入口，并保留测试 shim。
+   - 已新增 `status()` / `start()` RPC 方法。
+   - orchestrator `user-do.ts` 已对 `start` 实施 dual-impl parity 校验；`status` 已可走 RPC smoke。
+
+5. **deploy-local TEAM 锚的关键阻塞已被削弱**
+   - `workers/agent-core/src/host/internal-policy.ts` 不再强制 header authority 必须等于 worker-local `TEAM_UUID`。
+   - `workers/agent-core/src/host/do/nano-session-do.ts` 已开始锁存 session-owned `team_uuid`，并在 checkpoint/restore 路径恢复。
+   - `workers/{orchestrator-core,agent-core}/wrangler.jsonc` 的 `TEAM_UUID` 已从非 UUID 占位符收紧为 UUID-shaped placeholder。
+
+6. **Z1 carry-over 问题已一并吸收**
+   - `workers/orchestrator-core/src/auth.ts`
+     - HTTP route 默认不再接受 query-string `access_token`
+     - 仅 `ws` 显式放行 query token compatibility
+     - `tenant_source` 判定从“truthy check”修正为“claim source check”
+   - `workers/orchestrator-auth/src/wechat.ts`
+     - retry 已收紧为 network/timeout/5xx，不再重试 user-caused failures。
+
+7. **本地回归测试已补强**
+   - 新增 `workers/agent-core/test/rpc.test.ts`
+   - 新增/扩展：
+     - `workers/orchestrator-core/test/auth.test.ts`
+     - `workers/orchestrator-core/test/smoke.test.ts`
+     - `workers/orchestrator-core/test/user-do.test.ts`
+     - `workers/agent-core/test/smoke.test.ts`
+
+### 9.3 本轮已完成的验证
+
+1. `pnpm --filter @haimang/orchestrator-core-worker typecheck`
+2. `pnpm --filter @haimang/orchestrator-core-worker build`
+3. `pnpm --filter @haimang/orchestrator-core-worker test`
+4. `pnpm --filter @haimang/agent-core-worker typecheck`
+5. `pnpm --filter @haimang/agent-core-worker build`
+6. `pnpm --filter @haimang/agent-core-worker test`
+7. `pnpm --filter @haimang/orchestrator-auth-worker typecheck`
+8. `pnpm --filter @haimang/orchestrator-auth-worker build`
+9. `pnpm --filter @haimang/orchestrator-auth-worker test`
+10. `git --no-pager diff --check`
+11. `npx wrangler whoami`
+12. `npx wrangler d1 create nano-agent-preview`
+13. `cd workers/orchestrator-core && npx wrangler d1 migrations apply NANO_AGENT_DB --env preview --remote`
+14. `cd workers/orchestrator-auth && npx wrangler deploy --env preview`
+15. `cd workers/orchestrator-core && npx wrangler deploy --env preview`
+16. `cd workers/agent-core && npx wrangler deploy --env preview`
+17. `NANO_AGENT_LIVE_E2E=1 pnpm test:package-e2e`
+18. `NANO_AGENT_LIVE_E2E=1 pnpm test:cross-e2e`
+
+### 9.4 本轮 closure 补齐
+
+1. **preview D1 已真实创建并 apply**
+   - 新建 `nano-agent-preview`
+   - 已 remote apply `001-identity-core.sql` 与 `002-session-truth-and-audit.sql`
+
+2. **preview deploy 已真实完成**
+   - `nano-agent-orchestrator-auth-preview`
+   - `nano-agent-orchestrator-core-preview`
+   - `nano-agent-agent-core-preview`
+
+3. **live E2E 已真实成立**
+   - `pnpm test:package-e2e` → `36 / 36 pass`
+   - `pnpm test:cross-e2e` → `12 / 12 pass`
+
+4. **closure 文档已落地**
+   - `docs/issue/zero-to-real/Z2-closure.md`
+
+### 9.5 仍需诚实记录的事项
+
+1. **根级 `test:contracts` 仍存在一条与本轮改动无关的既有失败**
+   - `test-legacy/session-registry-doc-sync.test.mjs` 依赖的 `docs/nacp-session-registry.md` 当前缺失。
+   - 这是仓库既有文档/测试漂移，不属于本轮 Z2 修改直接引入的问题。
