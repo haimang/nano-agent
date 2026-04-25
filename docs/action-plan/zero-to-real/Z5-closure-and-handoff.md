@@ -15,7 +15,7 @@
 > - `docs/issue/zero-to-real/Z2-closure.md`
 > - `docs/issue/zero-to-real/Z3-closure.md`
 > - `docs/issue/zero-to-real/Z4-closure.md`
-> 文档状态: `draft`
+> 文档状态: `executed`
 
 ---
 
@@ -259,3 +259,85 @@ Z5 完成后，项目将拥有：
 1. 依据 `zero-to-real-to-next-phase.md` 启动下一阶段 charter / design
 2. 把 blocked / residual / deferred 条目转成新的 plan/action-plan 输入
 3. 将 zero-to-real 视为已闭合历史阶段，而不是继续漂移中的 work-in-progress
+
+---
+
+## 9. 工作日志回填
+
+> 执行者: `GPT-5.4`
+> 执行状态: `executed`
+> 关联 closure: `docs/issue/zero-to-real/Z5-closure.md`
+> 关联 final memo: `docs/issue/zero-to-real/zero-to-real-final-closure.md`
+> 关联 handoff: `docs/handoff/zero-to-real-to-next-phase.md`
+
+### 9.1 Completion audit
+
+- 重新审阅并交叉对照：
+  - `docs/issue/zero-to-real/Z0-closure.md`
+  - `docs/issue/zero-to-real/Z1-closure.md`
+  - `docs/issue/zero-to-real/Z2-closure.md`
+  - `docs/issue/zero-to-real/Z3-closure.md`
+  - `docs/issue/zero-to-real/Z4-closure.md`
+  - `docs/charter/plan-zero-to-real.md`
+  - `docs/design/zero-to-real/ZX-qna.md`
+- 逐条按 charter `§10.1 Primary Exit Criteria` 复核 zero-to-real 是否具备：
+  - 完整 end-user auth truth
+  - multi-tenant / NACP compliance runtime truth
+  - session durable truth
+  - Workers AI + quota runtime truth
+  - web / Mini Program first-wave real-client baseline
+  - 明确 backlog register
+- 本轮判断：zero-to-real 不再存在“是否已经 first real run”这一类未定义 blocker；剩余项均可压入 next-phase backlog。
+
+### 9.2 补充验证与 closeout 证据
+
+- 在 final closure 落笔前重新执行一轮 broad local validation：
+  - `orchestrator-auth` / `orchestrator-core` / `agent-core` typecheck + test
+  - `bash-core` / `context-core` / `filesystem-core` test
+  - root `pnpm test:contracts`
+  - `clients/web` typecheck + Mini Program syntax check
+- 补做 preview live smoke：
+  - `NANO_AGENT_LIVE_E2E=1 node --test test/package-e2e/orchestrator-core/{01,02,03,04,05,07}-*.test.mjs test/cross-e2e/*.test.mjs`
+  - 结果：`28 / 28 pass`
+- 补做 preview D1 SQL spot-check：
+  - `PRAGMA table_info(nano_usage_events);`
+  - anchor row lookup for `usage_event_uuid=37bece21-987e-4f69-ad9b-5543f64c1359`
+  - core table counts lookup
+- 新增 closeout evidence artifact：
+  - `docs/eval/zero-to-real/evidence/z5-213260f5-9ff9-4c41-b52f-f9ee11b1ce2e.json`
+- 更新聚合 evidence 文档：
+  - `docs/eval/zero-to-real/first-real-run-evidence.md` 新增 Z5 closeout supplemental validation section
+
+### 9.3 阶段输出
+
+- 新增：
+  - `docs/issue/zero-to-real/Z5-closure.md`
+  - `docs/issue/zero-to-real/zero-to-real-final-closure.md`
+  - `docs/handoff/zero-to-real-to-next-phase.md`
+- 在这些文档中完成：
+  - phase closure mapping
+  - charter exit criteria audit
+  - closeout validation evidence
+  - unified residual register
+  - next-phase ready backlog order
+
+### 9.4 新增 / 修改文件列表
+
+- 新增：
+  - `docs/issue/zero-to-real/Z5-closure.md`
+  - `docs/issue/zero-to-real/zero-to-real-final-closure.md`
+  - `docs/handoff/zero-to-real-to-next-phase.md`
+  - `docs/eval/zero-to-real/evidence/z5-213260f5-9ff9-4c41-b52f-f9ee11b1ce2e.json`
+- 修改：
+  - `docs/eval/zero-to-real/first-real-run-evidence.md`
+  - `docs/action-plan/zero-to-real/Z5-closure-and-handoff.md`
+
+### 9.5 收口意见
+
+- Z5 没有偷渡新的实现 phase，而是严格按照 action-plan 做了：
+  - completion audit
+  - charter exit check
+  - closeout validation
+  - final verdict
+  - handoff pack
+- 当前仍保留的 transport/client/registry/manual-evidence 问题已经被压成明确 backlog，不再阻塞 zero-to-real 作为历史阶段正式闭合。
