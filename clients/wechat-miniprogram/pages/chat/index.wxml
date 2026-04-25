@@ -1,0 +1,124 @@
+<!-- pages/chat/index.wxml -->
+<!-- IDE 风格首页：左侧对话列表 + 右侧主区域 -->
+<view class="ide-layout">
+  <!-- 左侧边栏：对话列表 -->
+  <view class="sidebar">
+    <view class="sidebar-header">
+      <text class="sidebar-title">对话列表</text>
+      <view class="sidebar-action" bindtap="startNewSession">
+        <text class="action-icon">+</text>
+      </view>
+    </view>
+    
+    <scroll-view class="sidebar-content" scroll-y="true">
+      <!-- 新对话按钮 -->
+      <view class="new-chat-btn" bindtap="startNewSession">
+        <text class="new-chat-icon">💬</text>
+        <text class="new-chat-text">新对话</text>
+      </view>
+      
+      <!-- 历史对话列表 -->
+      <view class="chat-list">
+        <view class="list-section-title">今天</view>
+        <block wx:for="{{recentSessions}}" wx:key="session_uuid">
+          <view class="chat-item {{item.active ? 'active' : ''}}" bindtap="openSession" data-uuid="{{item.session_uuid}}">
+            <text class="chat-item-icon">🗨️</text>
+            <view class="chat-item-content">
+              <text class="chat-item-title">{{item.title}}</text>
+              <text class="chat-item-time">{{item.updated_at}}</text>
+            </view>
+          </view>
+        </block>
+        
+        <!-- 空状态 -->
+        <view wx:if="{{recentSessions.length === 0}}" class="empty-list">
+          <text class="empty-text">暂无历史对话</text>
+        </view>
+      </view>
+    </scroll-view>
+    
+    <!-- 底部用户区 -->
+    <view class="sidebar-footer" bindtap="goToProfile">
+      <view class="user-avatar">{{avatarText}}</view>
+      <text class="user-name">{{displayName}}</text>
+    </view>
+  </view>
+
+  <!-- 右侧主区域 -->
+  <view class="main-area">
+    <!-- 顶部工具栏 -->
+    <view class="main-toolbar">
+      <view class="toolbar-left">
+        <text class="toolbar-title">Nano Agent</text>
+        <view class="status-indicator {{isConnected ? 'online' : ''}}">
+          <view class="status-dot"></view>
+          <text class="status-text">{{isConnected ? '在线' : '离线'}}</text>
+        </view>
+      </view>
+      <view class="toolbar-right">
+        <view class="toolbar-btn" bindtap="goToDebug">
+          <text class="btn-icon">🔧</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- 主内容区 -->
+    <scroll-view class="main-content" scroll-y="true">
+      <!-- 欢迎区域 -->
+      <view wx:if="{{!isLoggedIn}}" class="welcome-card">
+        <view class="welcome-header">
+          <text class="welcome-icon">🤖</text>
+          <text class="welcome-title">欢迎使用 Nano Agent</text>
+        </view>
+        <text class="welcome-desc">基于 Cloudflare Workers 的智能对话助手，支持 Agentic 工具调用</text>
+        <button class="btn btn-gradient btn-block" bindtap="goToLogin">登录开始使用</button>
+      </view>
+
+      <!-- 功能卡片区（保留 wbca-mini 渐变风格） -->
+      <view class="feature-section">
+        <view class="section-header">
+          <text class="section-title">快速开始</text>
+        </view>
+        
+        <view class="feature-grid">
+          <view class="feature-card card-gradient-orange card-hover" bindtap="startNewSession">
+            <view class="feature-icon">⚡</view>
+            <view class="feature-content">
+              <text class="feature-title">新对话</text>
+              <text class="feature-desc">开始新的 Agentic 对话</text>
+            </view>
+          </view>
+          
+          <view class="feature-card card-gradient-blue card-hover" bindtap="viewHistory">
+            <view class="feature-icon">📜</view>
+            <view class="feature-content">
+              <text class="feature-title">历史记录</text>
+              <text class="feature-desc">查看过往对话记录</text>
+            </view>
+          </view>
+        </view>
+      </view>
+
+      <!-- 统计信息（IDE 风格） -->
+      <view wx:if="{{isLoggedIn}}" class="stats-section">
+        <view class="section-header">
+          <text class="section-title">状态</text>
+        </view>
+        <view class="stats-grid">
+          <view class="stat-card">
+            <text class="stat-value">{{stats.sessionCount || 0}}</text>
+            <text class="stat-label">对话数</text>
+          </view>
+          <view class="stat-card">
+            <text class="stat-value">{{stats.messageCount || 0}}</text>
+            <text class="stat-label">消息数</text>
+          </view>
+          <view class="stat-card">
+            <text class="stat-value">{{stats.toolCount || 0}}</text>
+            <text class="stat-label">工具调用</text>
+          </view>
+        </view>
+      </view>
+    </scroll-view>
+  </view>
+</view>

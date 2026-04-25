@@ -1,0 +1,98 @@
+<!-- pages/session/index.wxml -->
+<!-- IDE 风格对话页：顶部工具栏 + 消息区 + 底部输入区 -->
+<view class="session-page">
+  <!-- 顶部工具栏 -->
+  <view class="session-toolbar">
+    <view class="toolbar-back" bindtap="goBack">
+      <text class="back-icon">‹</text>
+      <text class="back-text">返回</text>
+    </view>
+    <view class="toolbar-center">
+      <text class="session-title">{{sessionTitle || '新对话'}}</text>
+      <view class="connection-status {{isConnected ? 'online' : ''}}">
+        <view class="status-pulse"></view>
+        <text class="status-label">{{isConnected ? '实时连接' : '已断开'}}</text>
+      </view>
+    </view>
+    <view class="toolbar-actions">
+      <view class="action-btn" bindtap="showLogs">
+        <text class="action-icon">📋</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 消息列表区 -->
+  <scroll-view
+    class="message-area"
+    scroll-y="true"
+    scroll-into-view="{{scrollToView}}"
+    scroll-with-animation="true"
+    enhanced="true"
+  >
+    <!-- 系统欢迎消息 -->
+    <view wx:if="{{messages.length === 0}}" class="system-welcome">
+      <view class="welcome-box">
+        <text class="welcome-emoji">🤖</text>
+        <text class="welcome-heading">Nano Agent</text>
+        <text class="welcome-sub">基于 Cloudflare Workers 的 Agentic 对话助手</text>
+        <view class="welcome-tags">
+          <text class="tag tag-info">工具调用</text>
+          <text class="tag tag-success">实时流</text>
+          <text class="tag tag-warning">Agentic Loop</text>
+        </view>
+      </view>
+    </view>
+
+    <!-- 消息气泡 -->
+    <block wx:for="{{messages}}" wx:key="id">
+      <view id="msg-{{item.id}}" class="message-wrapper">
+        <message-bubble
+          role="{{item.role}}"
+          content="{{item.content}}"
+          status="{{item.status}}"
+          tool-info="{{item.toolInfo}}"
+          is-thinking="{{item.isThinking}}"
+          timestamp="{{item.timestamp}}"
+        ></message-bubble>
+      </view>
+    </block>
+
+    <!-- 底部锚点 -->
+    <view id="bottom-anchor" style="height: 1rpx;"></view>
+  </scroll-view>
+
+  <!-- 底部输入区 -->
+  <view class="input-panel">
+    <view class="input-row">
+      <input
+        class="ide-input"
+        placeholder="输入消息，按回车发送..."
+        value="{{inputValue}}"
+        bindinput="onInputChange"
+        confirm-type="send"
+        bindconfirm="sendMessage"
+        disabled="{{isSending}}"
+      />
+      <button
+        class="send-button {{isSending ? 'sending' : ''}}"
+        bindtap="sendMessage"
+        disabled="{{isSending}}"
+      >
+        <text wx:if="{{!isSending}}" class="send-icon">➤</text>
+        <view wx:if="{{isSending}}" class="send-spinner"></view>
+      </button>
+    </view>
+    <view class="input-hints">
+      <text class="hint-text">支持 Markdown · 支持 Agentic 工具调用</text>
+    </view>
+  </view>
+
+  <!-- 日志面板（覆盖层） -->
+  <view wx:if="{{showLogPanel}}" class="log-overlay">
+    <view class="log-header">
+      <text class="log-title">调试日志</text>
+      <text class="log-close-btn" bindtap="hideLogs">✕</text>
+    </view>
+    <log-panel logs="{{logs}}" bind:clear="clearLogs"></log-panel>
+  </view>
+</view>

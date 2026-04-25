@@ -1,0 +1,292 @@
+/* components/message-bubble/index.wxss */
+/* 现代化消息气泡 + IDE 终端风格工具展示 */
+
+/* === 布局 === */
+.message-row {
+  display: flex;
+  margin-bottom: 24rpx;
+}
+
+.user-row {
+  justify-content: flex-end;
+}
+
+.assistant-row {
+  justify-content: flex-start;
+}
+
+.message-content {
+  max-width: 85%;
+}
+
+/* === 用户消息 === */
+.user-bubble {
+  background-color: #264653;
+  color: #ffffff;
+  padding: 20rpx 24rpx;
+  border-radius: 16rpx;
+  border-bottom-right-radius: 4rpx;
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.1);
+}
+
+.user-text {
+  font-size: 28rpx;
+  line-height: 1.6;
+  word-break: break-all;
+}
+
+/* === AI 消息头部 === */
+.assistant-header {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-bottom: 12rpx;
+}
+
+.assistant-avatar {
+  width: 48rpx;
+  height: 48rpx;
+  border-radius: 50%;
+  background-color: #1a1a2e;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28rpx;
+}
+
+.assistant-label {
+  font-size: 26rpx;
+  font-weight: 500;
+  color: #333;
+}
+
+.assistant-time {
+  font-size: 20rpx;
+  color: #999;
+}
+
+/* === 思考过程（IDE 注释风格） === */
+.thinking-block {
+  margin-bottom: 16rpx;
+  border-radius: 12rpx;
+  overflow: hidden;
+  border: 1rpx solid #fef3c7;
+}
+
+.thinking-header-bar {
+  display: flex;
+  align-items: center;
+  padding: 16rpx 20rpx;
+  background-color: #fef3c7;
+  cursor: pointer;
+}
+
+.thinking-icon {
+  font-size: 28rpx;
+  margin-right: 12rpx;
+}
+
+.thinking-label {
+  flex: 1;
+  font-size: 24rpx;
+  font-weight: 500;
+  color: #92400e;
+}
+
+.thinking-toggle {
+  font-size: 22rpx;
+  color: #92400e;
+}
+
+.thinking-body {
+  padding: 20rpx;
+  background-color: #fffbeb;
+}
+
+.thinking-code {
+  font-size: 24rpx;
+  color: #78350f;
+  line-height: 1.6;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  word-break: break-all;
+}
+
+/* === 工具终端（IDE 风格） === */
+.tool-terminal {
+  margin-bottom: 16rpx;
+  border-radius: 12rpx;
+  overflow: hidden;
+  border: 1rpx solid #334155;
+  box-shadow: 0 4rpx 12rpx rgba(0, 0, 0, 0.15);
+}
+
+.terminal-header {
+  display: flex;
+  align-items: center;
+  padding: 16rpx 20rpx;
+  background-color: #1e1e2e;
+  cursor: pointer;
+}
+
+.terminal-dots {
+  display: flex;
+  gap: 8rpx;
+  margin-right: 16rpx;
+}
+
+.dot {
+  width: 16rpx;
+  height: 16rpx;
+  border-radius: 50%;
+}
+
+.dot.red { background-color: #f56c6c; }
+.dot.yellow { background-color: #e6a23c; }
+.dot.green { background-color: #07c160; }
+
+.terminal-title {
+  flex: 1;
+  font-size: 26rpx;
+  font-weight: 500;
+  color: #e2e8f0;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+.terminal-status {
+  font-size: 22rpx;
+  margin-right: 16rpx;
+  padding: 4rpx 12rpx;
+  border-radius: 8rpx;
+  background-color: #334155;
+  color: #94a3b8;
+}
+
+.terminal-status.running {
+  color: #e6a23c;
+  background-color: rgba(230, 162, 60, 0.2);
+}
+
+.terminal-status.success {
+  color: #07c160;
+  background-color: rgba(7, 193, 96, 0.2);
+}
+
+.terminal-toggle {
+  font-size: 28rpx;
+  color: #94a3b8;
+  font-weight: 300;
+}
+
+.terminal-body {
+  padding: 20rpx;
+  background-color: #1a1a2e;
+}
+
+.terminal-section {
+  margin-bottom: 20rpx;
+}
+
+.terminal-section:last-child {
+  margin-bottom: 0;
+}
+
+.terminal-prompt {
+  display: block;
+  font-size: 22rpx;
+  color: #64748b;
+  margin-bottom: 8rpx;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+}
+
+.terminal-code {
+  display: block;
+  font-size: 24rpx;
+  color: #e2e8f0;
+  background-color: #252535;
+  padding: 16rpx;
+  border-radius: 8rpx;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+  line-height: 1.6;
+}
+
+/* === 最终回复 === */
+.response-body {
+  background-color: #ffffff;
+  padding: 20rpx 24rpx;
+  border-radius: 16rpx;
+  border-bottom-left-radius: 4rpx;
+  box-shadow: 0 2rpx 8rpx rgba(0, 0, 0, 0.05);
+}
+
+/* === 加载动画 === */
+.loading-block {
+  display: flex;
+  gap: 8rpx;
+  padding: 20rpx;
+}
+
+.loading-bar {
+  width: 40rpx;
+  height: 12rpx;
+  background-color: #e0e0e0;
+  border-radius: 6rpx;
+  animation: load-pulse 1.4s infinite ease-in-out both;
+}
+
+.loading-bar:nth-child(1) { animation-delay: -0.32s; }
+.loading-bar:nth-child(2) { animation-delay: -0.16s; }
+
+@keyframes load-pulse {
+  0%, 80%, 100% { opacity: 0.4; }
+  40% { opacity: 1; }
+}
+
+/* === 错误块 === */
+.error-block {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  padding: 20rpx 24rpx;
+  background-color: #fef2f2;
+  border: 1rpx solid #fecaca;
+  border-radius: 12rpx;
+}
+
+.error-icon {
+  font-size: 32rpx;
+}
+
+.error-message {
+  font-size: 26rpx;
+  color: #991b1b;
+  line-height: 1.6;
+}
+
+/* === 系统通知 === */
+.system-notice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12rpx;
+  padding: 12rpx 24rpx;
+  background-color: #f0f0f0;
+  border-radius: 8rpx;
+  margin: 0 auto;
+  max-width: 80%;
+}
+
+.system-icon {
+  font-size: 24rpx;
+}
+
+.system-text {
+  font-size: 24rpx;
+  color: #666;
+}
+
+.system-time {
+  font-size: 20rpx;
+  color: #999;
+}

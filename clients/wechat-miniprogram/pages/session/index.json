@@ -1,0 +1,7 @@
+{
+  "usingComponents": {
+    "message-bubble": "../../components/message-bubble/index",
+    "log-panel": "../../components/log-panel/index"
+  },
+  "navigationBarTitleText": "对话"
+}

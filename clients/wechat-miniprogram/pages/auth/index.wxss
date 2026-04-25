@@ -1,0 +1,145 @@
+/* pages/auth/index.wxss */
+/* 现代化登录页，IDE 风格 */
+
+page {
+  background-color: #f4f4f4;
+}
+
+.auth-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48rpx;
+}
+
+.auth-container {
+  width: 100%;
+  max-width: 640rpx;
+}
+
+/* === 品牌区 === */
+.auth-brand {
+  text-align: center;
+  margin-bottom: 48rpx;
+}
+
+.brand-icon {
+  font-size: 80rpx;
+  margin-bottom: 16rpx;
+}
+
+.brand-name {
+  display: block;
+  font-size: 40rpx;
+  font-weight: 700;
+  color: #333;
+  margin-bottom: 8rpx;
+}
+
+.brand-tagline {
+  display: block;
+  font-size: 26rpx;
+  color: #999;
+}
+
+/* === 登录卡片 === */
+.auth-card {
+  padding: 40rpx;
+  margin-bottom: 32rpx;
+}
+
+/* === Tab 切换 === */
+.auth-tabs {
+  display: flex;
+  margin-bottom: 32rpx;
+  border-bottom: 2rpx solid #f0f0f0;
+}
+
+.auth-tab {
+  flex: 1;
+  text-align: center;
+  padding: 24rpx 0;
+  font-size: 30rpx;
+  color: #999;
+  position: relative;
+  transition: color 0.3s;
+}
+
+.auth-tab.active {
+  color: #264653;
+  font-weight: 600;
+}
+
+.auth-tab.active::after {
+  content: '';
+  position: absolute;
+  bottom: -2rpx;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 48rpx;
+  height: 4rpx;
+  background-color: #264653;
+  border-radius: 2rpx;
+}
+
+/* === 表单 === */
+.auth-form {
+  margin-bottom: 24rpx;
+}
+
+.form-group {
+  margin-bottom: 24rpx;
+}
+
+.form-label {
+  display: block;
+  font-size: 26rpx;
+  color: #666;
+  margin-bottom: 12rpx;
+  font-weight: 500;
+}
+
+.submit-btn {
+  margin-top: 16rpx;
+  height: 88rpx;
+}
+
+.btn-spinner {
+  width: 32rpx;
+  height: 32rpx;
+  border: 4rpx solid rgba(255, 255, 255, 0.3);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* === 微信登录按钮 === */
+.wechat-btn {
+  background-color: #07c160;
+  color: #ffffff;
+  height: 88rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12rpx;
+}
+
+.wechat-icon {
+  font-size: 32rpx;
+}
+
+/* === 底部 === */
+.auth-footer {
+  text-align: center;
+}
+
+.back-link {
+  font-size: 26rpx;
+  color: #999;
+}

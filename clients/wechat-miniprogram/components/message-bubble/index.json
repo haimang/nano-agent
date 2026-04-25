@@ -1,0 +1,6 @@
+{
+  "component": true,
+  "usingComponents": {
+    "markdown-display": "../markdown-display/index"
+  }
+}

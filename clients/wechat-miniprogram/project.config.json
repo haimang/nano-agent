@@ -1,12 +1,38 @@
 {
-  "description": "nano-agent Z4 WeChat Mini Program baseline",
-  "appid": "touristappid",
-  "projectname": "nano-agent-z4",
-  "miniprogramRoot": "./",
-  "compileType": "miniprogram",
-  "setting": {
-    "urlCheck": false,
-    "es6": true,
-    "minified": false
-  }
+        "description": "nano-agent Z4 WeChat Mini Program baseline",
+        "appid": "wxb62ed54d3d2d51a8",
+        "projectname": "nano-agent-z4",
+        "miniprogramRoot": "./",
+        "compileType": "miniprogram",
+        "setting": {
+                "urlCheck": false,
+                "es6": true,
+                "minified": false,
+                "postcss": false,
+                "compileWorklet": false,
+                "uglifyFileName": false,
+                "uploadWithSourceMap": true,
+                "enhance": false,
+                "packNpmManually": false,
+                "packNpmRelationList": [],
+                "minifyWXSS": true,
+                "minifyWXML": true,
+                "localPlugins": false,
+                "disableUseStrict": false,
+                "useCompilerPlugins": false,
+                "condition": false,
+                "swc": false,
+                "disableSWC": true,
+                "babelSetting": {
+                        "ignore": [],
+                        "disablePlugins": [],
+                        "outputPath": ""
+                }
+        },
+        "simulatorPluginLibVersion": {},
+        "packOptions": {
+                "ignore": [],
+                "include": []
+        },
+        "editorSetting": {}
 }

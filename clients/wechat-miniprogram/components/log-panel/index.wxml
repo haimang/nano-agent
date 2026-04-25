@@ -1,0 +1,18 @@
+<!-- components/log-panel/index.wxml -->
+<view class="log-panel">
+  <view class="log-header">
+    <text class="log-title">调试日志</text>
+    <text class="log-clear" bindtap="clearLogs">清空</text>
+  </view>
+  <scroll-view class="log-scroll" scroll-y="true">
+    <block wx:for="{{logs}}" wx:key="index">
+      <view class="log-line">
+        <text class="log-index">[{{index + 1}}]</text>
+        <text class="log-content">{{item}}</text>
+      </view>
+    </block>
+    <view wx:if="{{logs.length === 0}}" class="log-empty">
+      <text>暂无日志</text>
+    </view>
+  </scroll-view>
+</view>

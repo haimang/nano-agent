@@ -1,0 +1,96 @@
+<!-- pages/auth/index.wxml -->
+<!-- 现代化登录页，IDE 风格 -->
+<view class="auth-page">
+  <view class="auth-container">
+    <!-- Logo 区 -->
+    <view class="auth-brand">
+      <view class="brand-icon">🤖</view>
+      <text class="brand-name">Nano Agent</text>
+      <text class="brand-tagline">智能对话助手</text>
+    </view>
+
+    <!-- 登录/注册卡片 -->
+    <view class="auth-card card">
+      <!-- Tab 切换 -->
+      <view class="auth-tabs">
+        <view
+          class="auth-tab {{activeTab === 'login' ? 'active' : ''}}"
+          bindtap="switchTab"
+          data-tab="login"
+        >
+          登录
+        </view>
+        <view
+          class="auth-tab {{activeTab === 'register' ? 'active' : ''}}"
+          bindtap="switchTab"
+          data-tab="register"
+        >
+          注册
+        </view>
+      </view>
+
+      <!-- 表单 -->
+      <view class="auth-form">
+        <view class="form-group">
+          <text class="form-label">邮箱</text>
+          <input
+            class="input"
+            placeholder="请输入邮箱"
+            value="{{email}}"
+            bindinput="onEmailInput"
+            type="text"
+          />
+        </view>
+
+        <view class="form-group">
+          <text class="form-label">密码</text>
+          <input
+            class="input"
+            placeholder="请输入密码"
+            value="{{password}}"
+            bindinput="onPasswordInput"
+            password
+          />
+        </view>
+
+        <view class="form-group" wx:if="{{activeTab === 'register'}}">
+          <text class="form-label">昵称（可选）</text>
+          <input
+            class="input"
+            placeholder="设置显示昵称"
+            value="{{displayName}}"
+            bindinput="onDisplayNameInput"
+            type="text"
+          />
+        </view>
+
+        <button
+          class="btn btn-gradient btn-block submit-btn"
+          bindtap="handleSubmit"
+          disabled="{{isLoading}}"
+        >
+          <text wx:if="{{!isLoading}}">{{activeTab === 'login' ? '登录' : '注册'}}</text>
+          <view wx:if="{{isLoading}}" class="btn-spinner"></view>
+        </button>
+      </view>
+
+      <!-- 分隔线 -->
+      <view class="divider">
+        <view class="line"></view>
+        <text class="text">或</text>
+        <view class="line"></view>
+      </view>
+
+      <!-- 微信登录 -->
+      <button class="btn btn-primary btn-block wechat-btn" bindtap="handleWechatLogin">
+        <text class="wechat-icon">💬</text>
+        <text>微信一键登录</text>
+      </button>
+    </view>
+
+    <!-- 返回链接 -->
+    <view class="auth-footer">
+      <text class="back-link" bindtap="goBack">← 暂不登录，返回首页</text>
+    </view>
+  </view>
+</view>

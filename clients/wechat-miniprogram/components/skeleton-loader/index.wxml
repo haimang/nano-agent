@@ -1,0 +1,7 @@
+<!-- components/skeleton-loader/index.wxml -->
+<view class="skeleton-container">
+  <view class="skeleton-item skeleton-title"></view>
+  <view class="skeleton-item skeleton-line"></view>
+  <view class="skeleton-item skeleton-line"></view>
+  <view class="skeleton-item skeleton-line short"></view>
+</view>
