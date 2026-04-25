@@ -1,0 +1,52 @@
+<!-- components/markdown-display/index.wxml -->
+<view class="markdown-container">
+  <block wx:for="{{nodes}}" wx:key="index">
+    <!-- 段落 -->
+    <view wx:if="{{item.name === 'p'}}" class="md-p">
+      <block wx:for="{{item.children}}" wx:for-item="child" wx:for-index="cidx" wx:key="cidx">
+        <text wx:if="{{child.type === 'text'}}" class="md-text">{{child.text}}</text>
+        <text wx:if="{{child.name === 'strong'}}" class="md-strong">{{child.children[0].text}}</text>
+        <text wx:if="{{child.name === 'em'}}" class="md-em">{{child.children[0].text}}</text>
+      </block>
+    </view>
+
+    <!-- 标题 -->
+    <view wx:if="{{item.name === 'h1'}}" class="md-h1">
+      <block wx:for="{{item.children}}" wx:for-item="child" wx:for-index="cidx" wx:key="cidx">
+        <text wx:if="{{child.type === 'text'}}">{{child.text}}</text>
+      </block>
+    </view>
+    <view wx:if="{{item.name === 'h2'}}" class="md-h2">
+      <block wx:for="{{item.children}}" wx:for-item="child" wx:for-index="cidx" wx:key="cidx">
+        <text wx:if="{{child.type === 'text'}}">{{child.text}}</text>
+      </block>
+    </view>
+    <view wx:if="{{item.name === 'h3'}}" class="md-h3">
+      <block wx:for="{{item.children}}" wx:for-item="child" wx:for-index="cidx" wx:key="cidx">
+        <text wx:if="{{child.type === 'text'}}">{{child.text}}</text>
+      </block>
+    </view>
+
+    <!-- 引用 -->
+    <view wx:if="{{item.name === 'blockquote'}}" class="md-blockquote">
+      <block wx:for="{{item.children}}" wx:for-item="child" wx:for-index="cidx" wx:key="cidx">
+        <text wx:if="{{child.type === 'text'}}">{{child.text}}</text>
+      </block>
+    </view>
+
+    <!-- 列表 -->
+    <view wx:if="{{item.name === 'ul' || item.name === 'ol'}}" class="md-list">
+      <block wx:for="{{item.children}}" wx:for-item="li" wx:for-index="lidx" wx:key="lidx">
+        <view class="md-li">
+          <text class="md-li-marker">{{item.name === 'ul' ? '•' : (lidx + 1) + '.'}}</text>
+          <block wx:for="{{li.children}}" wx:for-item="child" wx:for-index="cidx" wx:key="cidx">
+            <text wx:if="{{child.type === 'text'}}">{{child.text}}</text>
+          </block>
+        </view>
+      </block>
+    </view>
+
+    <!-- 图片 -->
+    <image wx:if="{{item.name === 'img'}}" class="md-img" src="{{item.attrs.src}}" mode="widthFix"></image>
+  </block>
+</view>

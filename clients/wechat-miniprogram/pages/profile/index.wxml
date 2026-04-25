@@ -1,0 +1,119 @@
+<!-- pages/profile/index.wxml -->
+<!-- 保留 wbca-mini 卡片风格 + IDE 现代化 -->
+<view class="profile-page">
+  <!-- 顶部工具栏 -->
+  <view class="profile-header">
+    <text class="header-title">个人中心</text>
+  </view>
+
+  <scroll-view class="profile-content" scroll-y="true">
+    <!-- 未登录状态 -->
+    <view wx:if="{{!isLoggedIn}}" class="logged-out-section">
+      <view class="logo-area">
+        <view class="logo-circle">🤖</view>
+        <text class="logo-text">Nano Agent</text>
+      </view>
+      
+      <button class="btn btn-primary btn-block" bindtap="goToLogin">
+        授权并开始使用
+      </button>
+      
+      <view class="privacy-line">
+        <text class="privacy-text">已阅读 </text>
+        <navigator url="/pages/privacy/index" class="privacy-link">
+          <text>隐私声明</text>
+        </navigator>
+        <text class="privacy-text"> 并同意继续</text>
+      </view>
+    </view>
+
+    <!-- 已登录状态 -->
+    <view wx:if="{{isLoggedIn}}">
+      <!-- 用户信息卡片（保留 wbca-mini 风格） -->
+      <view class="user-card card">
+        <view class="user-header">
+          <view class="avatar-wrapper">
+            <image wx:if="{{userInfo.avatar}}" class="user-avatar" src="{{userInfo.avatar}}" mode="aspectFill"></image>
+            <view wx:if="{{!userInfo.avatar}}" class="avatar-fallback">{{avatarText}}</view>
+          </view>
+          
+          <view class="user-meta">
+            <text class="user-nickname">{{displayName}}</text>
+            <text wx:if="{{hasEmail}}" class="user-email">{{userEmail}}</text>
+            <view class="user-tags">
+              <text class="tag tag-default">{{userInfo.mainland_status_text || '用户'}}</text>
+              <text class="tag {{userInfo.is_phone_verified ? 'tag-success' : 'tag-error'}}">
+                {{userInfo.is_phone_verified ? '已验证' : '未验证'}}
+              </text>
+            </view>
+          </view>
+          
+          <button class="btn btn-secondary btn-sm" bindtap="goToUpdate">更新</button>
+        </view>
+      </view>
+
+      <!-- 会员信息（保留 wbca-mini 风格） -->
+      <view class="membership-card card">
+        <view class="card-header-row">
+          <text class="section-title">会员信息</text>
+          <text class="region-tag">{{userInfo.compliance_region_display || '默认区域'}}</text>
+        </view>
+        
+        <view class="membership-body">
+          <view class="stat-row">
+            <view class="stat-item">
+              <text class="stat-label">当前等级</text>
+              <text class="stat-value accent">{{userInfo.membership_level_text || '免费用户'}}</text>
+            </view>
+            <view class="stat-item">
+              <text class="stat-label">余额</text>
+              <text class="stat-value warning">¥{{userInfo.credit_display || '0.00'}}</text>
+            </view>
+          </view>
+          
+          <button class="btn btn-gradient btn-sm" bindtap="handleRecharge">立即充值</button>
+        </view>
+      </view>
+
+      <!-- 功能菜单（保留 wbca-mini 信息项风格） -->
+      <view class="menu-card card">
+        <view class="info-item" bindtap="refreshProfile">
+          <view class="item-left">
+            <text class="item-icon">🔄</text>
+            <text class="item-title">刷新信息</text>
+          </view>
+          <text class="arrow">></text>
+        </view>
+        
+        <view class="info-item" bindtap="goToDebug">
+          <view class="item-left">
+            <text class="item-icon">🔧</text>
+            <text class="item-title">调试工具</text>
+          </view>
+          <text class="arrow">></text>
+        </view>
+        
+        <view class="info-item" bindtap="showAbout">
+          <view class="item-left">
+            <text class="item-icon">ℹ️</text>
+            <text class="item-title">关于</text>
+          </view>
+          <text class="arrow">></text>
+        </view>
+        
+        <view class="info-item info-item-danger" bindtap="handleLogout">
+          <view class="item-left">
+            <text class="item-icon">🚪</text>
+            <text class="item-title">退出登录</text>
+          </view>
+          <text class="arrow">></text>
+        </view>
+      </view>
+
+      <!-- 版本信息 -->
+      <view class="version-area">
+        <text class="version-text">Nano Agent Mini Program v1.0.0</text>
+      </view>
+    </view>
+  </scroll-view>
+</view>

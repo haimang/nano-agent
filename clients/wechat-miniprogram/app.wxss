@@ -1,5 +1,413 @@
+/* app.wxss - IDE 风格全局样式，保留 wbca-mini 美学 */
+
+/* === 页面基础 === */
 page {
-  background: #0f172a;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'SF Mono', 'Fira Code', 'Roboto Mono', monospace;
+  color: #333;
+  background-color: #f4f4f4;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* === CSS 变量（微信小程序不支持，用类名模拟） === */
+
+/* === 布局工具 === */
+.ide-layout {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.ide-sidebar {
+  width: 200rpx;
+  background-color: #1a1a2e;
   color: #e2e8f0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  border-right: 1rpx solid #334155;
+}
+
+.ide-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background-color: #f4f4f4;
+}
+
+.ide-header {
+  height: 88rpx;
+  background-color: #1a1a2e;
+  color: #e2e8f0;
+  display: flex;
+  align-items: center;
+  padding: 0 24rpx;
+  border-bottom: 1rpx solid #334155;
+  flex-shrink: 0;
+}
+
+.ide-toolbar {
+  height: 72rpx;
+  background-color: #252535;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  padding: 0 24rpx;
+  border-bottom: 1rpx solid #334155;
+  flex-shrink: 0;
+  font-size: 24rpx;
+}
+
+.ide-content {
+  flex: 1;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.ide-footer {
+  height: auto;
+  min-height: 120rpx;
+  background-color: #ffffff;
+  border-top: 1rpx solid #e0e0e0;
+  flex-shrink: 0;
+}
+
+/* === 容器 === */
+.container {
+  padding: 24rpx;
+  box-sizing: border-box;
+}
+
+.container-sm {
+  padding: 16rpx 24rpx;
+}
+
+/* === 卡片（保留 wbca-mini 风格） === */
+.card {
+  background-color: #ffffff;
+  border-radius: 16rpx;
+  padding: 30rpx;
+  margin-bottom: 20rpx;
+  box-shadow: 0 2rpx 10rpx rgba(0, 0, 0, 0.05);
+  box-sizing: border-box;
+}
+
+.card-hover {
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.card-hover:active {
+  transform: translateY(2rpx);
+  box-shadow: 0 4rpx 20rpx rgba(0, 0, 0, 0.08);
+}
+
+/* === 渐变卡片（保留 wbca-mini 特色） === */
+.card-gradient-orange {
+  background-image: linear-gradient(135deg, #FE564D, #FB9B36);
+  color: #ffffff;
+}
+
+.card-gradient-blue {
+  background-image: linear-gradient(135deg, #6a11cb 0%, #2575fc 100%);
+  color: #ffffff;
+}
+
+.card-gradient-teal {
+  background-image: linear-gradient(135deg, #89f7fe 0%, #66a6ff 100%);
+  color: #ffffff;
+}
+
+/* === 按钮 === */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16rpx 40rpx;
+  border-radius: 30rpx;
+  font-size: 28rpx;
+  font-weight: 500;
+  border: none;
+  margin: 0;
+  transition: opacity 0.2s;
+}
+
+.btn::after {
+  border: none;
+}
+
+.btn:active {
+  opacity: 0.8;
+}
+
+.btn-primary {
+  background-color: #07c160;
+  color: #ffffff;
+}
+
+.btn-gradient {
+  background-image: linear-gradient(135deg, #FE564D, #FB9B36);
+  color: #ffffff;
+}
+
+.btn-secondary {
+  background-color: #e8f2ff;
+  color: #264653;
+}
+
+.btn-ghost {
+  background-color: transparent;
+  color: #94a3b8;
+  border: 1rpx solid #334155;
+}
+
+.btn-danger {
+  color: #f56c6c;
+  background-color: transparent;
+}
+
+.btn-block {
+  width: 100%;
+}
+
+.btn-sm {
+  padding: 8rpx 24rpx;
+  font-size: 24rpx;
+}
+
+/* === 输入框（IDE 风格） === */
+.input {
+  background-color: #f8f9fa;
+  border: 2rpx solid #e0e0e0;
+  border-radius: 12rpx;
+  font-size: 28rpx;
+  height: 88rpx;
+  padding: 0 24rpx;
+  box-sizing: border-box;
+  width: 100%;
+  font-family: inherit;
+}
+
+.input:focus {
+  border-color: #264653;
+  outline: none;
+}
+
+.textarea {
+  background-color: #f8f9fa;
+  border: 2rpx solid #e0e0e0;
+  border-radius: 12rpx;
+  font-size: 28rpx;
+  padding: 16rpx 24rpx;
+  min-height: 160rpx;
+  width: 100%;
+  box-sizing: border-box;
+  font-family: inherit;
+}
+
+/* === 文本层级（现代化字体） === */
+.text-xs { font-size: 20rpx; }
+.text-sm { font-size: 24rpx; }
+.text-base { font-size: 28rpx; }
+.text-lg { font-size: 32rpx; }
+.text-xl { font-size: 40rpx; }
+.text-2xl { font-size: 48rpx; }
+
+.font-normal { font-weight: 400; }
+.font-medium { font-weight: 500; }
+.font-semibold { font-weight: 600; }
+.font-bold { font-weight: 700; }
+
+.text-primary { color: #333; }
+.text-secondary { color: #666; }
+.text-muted { color: #999; }
+.text-light { color: #e2e8f0; }
+.text-accent { color: #264653; }
+.text-success { color: #07c160; }
+.text-error { color: #f56c6c; }
+.text-warning { color: #e6a23c; }
+
+/* === 标签（保留 wbca-mini 风格） === */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 4rpx 16rpx;
+  border-radius: 20rpx;
+  font-size: 20rpx;
+  font-weight: 500;
+}
+
+.tag-default {
+  background-color: #eee;
+  color: #666;
+}
+
+.tag-success {
+  background-color: #e1f3d8;
+  color: #07c160;
+}
+
+.tag-error {
+  background-color: #fdecec;
+  color: #f56c6c;
+}
+
+.tag-info {
+  background-color: #e8f2ff;
+  color: #264653;
+}
+
+.tag-warning {
+  background-color: #fdf6ec;
+  color: #e6a23c;
+}
+
+/* === 信息项（保留 wbca-mini 左右分布风格） === */
+.info-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 25rpx 0;
+  font-size: 30rpx;
+  color: #333;
+  border-bottom: 1rpx solid #eee;
+}
+
+.info-item:last-child {
+  border-bottom: none;
+}
+
+.info-item-danger {
+  color: #f56c6c;
+}
+
+.arrow {
+  color: #ccc;
+  font-size: 28rpx;
+}
+
+/* === Section Header（保留 wbca-mini） === */
+.section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 30rpx 30rpx 15rpx 30rpx;
+}
+
+.section-title {
+  font-size: 32rpx;
+  font-weight: bold;
+  color: #333;
+}
+
+.section-subtitle {
+  font-size: 26rpx;
+  color: #999;
+}
+
+/* === 分隔线 === */
+.divider {
+  display: flex;
+  align-items: center;
+  margin: 32rpx 0;
+}
+
+.divider .line {
+  flex: 1;
+  height: 2rpx;
+  background-color: #e0e0e0;
+}
+
+.divider .text {
+  padding: 0 24rpx;
+  font-size: 24rpx;
+  color: #999;
+}
+
+/* === Flex 工具 === */
+.flex { display: flex; }
+.flex-col { display: flex; flex-direction: column; }
+.items-center { align-items: center; }
+.justify-between { justify-content: space-between; }
+.justify-center { justify-content: center; }
+.flex-1 { flex: 1; }
+.flex-wrap { flex-wrap: wrap; }
+.gap-8 { gap: 8rpx; }
+.gap-16 { gap: 16rpx; }
+.gap-24 { gap: 24rpx; }
+
+/* === 间距 === */
+.m-0 { margin: 0; }
+.mt-8 { margin-top: 8rpx; }
+.mt-16 { margin-top: 16rpx; }
+.mt-24 { margin-top: 24rpx; }
+.mb-8 { margin-bottom: 8rpx; }
+.mb-16 { margin-bottom: 16rpx; }
+.mb-24 { margin-bottom: 24rpx; }
+.p-16 { padding: 16rpx; }
+.p-24 { padding: 24rpx; }
+.p-30 { padding: 30rpx; }
+
+/* === 其他 === */
+.rounded { border-radius: 16rpx; }
+.rounded-sm { border-radius: 8rpx; }
+.rounded-full { border-radius: 50%; }
+
+.shadow {
+  box-shadow: 0 2rpx 10rpx rgba(0, 0, 0, 0.05);
+}
+
+.shadow-lg {
+  box-shadow: 0 4rpx 20rpx rgba(0, 0, 0, 0.1);
+}
+
+.center { text-align: center; }
+.hidden { display: none; }
+.w-full { width: 100%; }
+.h-full { height: 100%; }
+
+/* === IDE 专用 === */
+.ide-sidebar-item {
+  display: flex;
+  align-items: center;
+  padding: 20rpx 24rpx;
+  color: #94a3b8;
+  font-size: 24rpx;
+  border-left: 4rpx solid transparent;
+}
+
+.ide-sidebar-item.active {
+  background-color: #252535;
+  color: #e2e8f0;
+  border-left-color: #FE564D;
+}
+
+.ide-sidebar-icon {
+  margin-right: 16rpx;
+  font-size: 32rpx;
+}
+
+.ide-status-bar {
+  height: 48rpx;
+  background-color: #1a1a2e;
+  color: #64748b;
+  font-size: 20rpx;
+  display: flex;
+  align-items: center;
+  padding: 0 24rpx;
+  border-top: 1rpx solid #334155;
+}
+
+/* === 滚动条美化（部分支持） === */
+::-webkit-scrollbar {
+  width: 6rpx;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3rpx;
 }

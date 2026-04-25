@@ -1,0 +1,85 @@
+<!-- components/message-bubble/index.wxml -->
+<view class="message-row {{role}}-row">
+  <view class="message-content">
+    <!-- 用户消息 -->
+    <block wx:if="{{role === 'user'}}">
+      <view class="user-bubble">
+        <text class="user-text">{{content}}</text>
+      </view>
+    </block>
+
+    <!-- AI 消息 - Agentic Loop -->
+    <block wx:if="{{role === 'assistant'}}">
+      <view class="assistant-header">
+        <view class="assistant-avatar">🤖</view>
+        <text class="assistant-label">Nano Agent</text>
+        <text class="assistant-time">{{formattedTime}}</text>
+      </view>
+
+      <!-- 思考过程（IDE 风格注释） -->
+      <view wx:if="{{isThinking}}" class="thinking-block">
+        <view class="thinking-header-bar" bindtap="toggleThinking">
+          <text class="thinking-icon">💭</text>
+          <text class="thinking-label">思考过程</text>
+          <text class="thinking-toggle">{{showThinking ? '收起' : '展开'}}</text>
+        </view>
+        <view wx:if="{{showThinking}}" class="thinking-body">
+          <text class="thinking-code">{{content}}</text>
+        </view>
+      </view>
+
+      <!-- 工具调用（IDE 终端风格） -->
+      <view wx:if="{{isToolRelated}}" class="tool-terminal">
+        <view class="terminal-header" bindtap="toggleToolDetails">
+          <view class="terminal-dots">
+            <view class="dot red"></view>
+            <view class="dot yellow"></view>
+            <view class="dot green"></view>
+          </view>
+          <text class="terminal-title">{{toolDisplayName}}</text>
+          <text class="terminal-status {{status === 'tool_result' ? 'success' : 'running'}}">
+            {{status === 'tool_calling' ? '运行中...' : '已完成'}}
+          </text>
+          <text class="terminal-toggle">{{showToolDetails ? '−' : '+'}}</text>
+        </view>
+        <view wx:if="{{showToolDetails}}" class="terminal-body">
+          <view wx:if="{{toolInfo.arguments}}" class="terminal-section">
+            <text class="terminal-prompt">$ 参数</text>
+            <text class="terminal-code">{{toolInfo.arguments}}</text>
+          </view>
+          <view wx:if="{{toolInfo.result}}" class="terminal-section">
+            <text class="terminal-prompt">$ 结果</text>
+            <text class="terminal-code">{{toolInfo.result}}</text>
+          </view>
+        </view>
+      </view>
+
+      <!-- 最终回复（Markdown） -->
+      <view wx:if="{{showFinalResponse}}" class="response-body">
+        <markdown-display wx:if="{{hasContent}}" markdown="{{content}}"></markdown-display>
+      </view>
+
+      <!-- 发送中状态 -->
+      <view wx:if="{{status === 'sending' && !hasContent}}" class="loading-block">
+        <view class="loading-bar"></view>
+        <view class="loading-bar"></view>
+        <view class="loading-bar"></view>
+      </view>
+
+      <!-- 错误状态 -->
+      <view wx:if="{{status === 'error'}}" class="error-block">
+        <text class="error-icon">⚠️</text>
+        <text class="error-message">{{errorText}}</text>
+      </view>
+    </block>
+
+    <!-- 系统消息 -->
+    <block wx:if="{{role === 'system'}}">
+      <view class="system-notice">
+        <text class="system-icon">ℹ️</text>
+        <text class="system-text">{{content}}</text>
+        <text class="system-time">{{formattedTime}}</text>
+      </view>
+    </block>
+  </view>
+</view>

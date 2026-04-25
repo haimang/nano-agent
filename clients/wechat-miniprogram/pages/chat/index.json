@@ -1,0 +1,6 @@
+{
+  "usingComponents": {
+    "skeleton-loader": "../../components/skeleton-loader/index"
+  },
+  "navigationBarTitleText": "Nano Agent"
+}

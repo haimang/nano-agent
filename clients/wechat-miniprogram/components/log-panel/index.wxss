@@ -1,0 +1,61 @@
+/* components/log-panel/index.wxss */
+.log-panel {
+  background-color: #1e293b;
+  border-radius: 12rpx;
+  margin-top: 24rpx;
+  overflow: hidden;
+}
+
+.log-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16rpx 24rpx;
+  background-color: #0f172a;
+  border-bottom: 2rpx solid #334155;
+}
+
+.log-title {
+  font-size: 26rpx;
+  color: #e2e8f0;
+  font-weight: 500;
+}
+
+.log-clear {
+  font-size: 24rpx;
+  color: #38bdf8;
+}
+
+.log-scroll {
+  max-height: 400rpx;
+  padding: 16rpx 24rpx;
+}
+
+.log-line {
+  display: flex;
+  margin-bottom: 8rpx;
+  word-break: break-all;
+}
+
+.log-index {
+  font-size: 20rpx;
+  color: #64748b;
+  margin-right: 12rpx;
+  min-width: 48rpx;
+}
+
+.log-content {
+  font-size: 22rpx;
+  color: #94a3b8;
+  font-family: monospace;
+}
+
+.log-empty {
+  text-align: center;
+  padding: 32rpx;
+}
+
+.log-empty text {
+  font-size: 24rpx;
+  color: #64748b;
+}
