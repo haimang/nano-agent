@@ -17,7 +17,8 @@
   - Workers AI first 是 charter 显式决策。
   - `workers/agent-core/src/llm/gateway.ts` 当前仍是未来 seam/stub。
   - DeepSeek 可保留 skeleton，但不是 Z3 required path。
-  - BYO key / per-tenant secrets 若进入，必须走受控表与 cache discipline。
+  - Cloudflare 官方当前文档已给出 `env.AI.run("@cf/ibm-granite/granite-4.0-h-micro", { messages, stream: true })` 与 `env.AI.run("@cf/meta/llama-4-scout-17b-16e-instruct", { messages, stream: true })` 这类 Workers AI model IDs；zero-to-real 必须冻结其中一条 first-wave baseline，而不是只写“Workers AI first”。
+  - BYO key / per-tenant secrets 若进入，必须走受控表与 cache discipline；但根据 Q8，`nano_tenant_secrets` 不进入 zero-to-real first wave。
 - **显式排除的讨论范围**：
   - full fallback chain
   - multi-provider routing 平台
@@ -39,7 +40,7 @@
 | required provider | Z3 通过 real runtime proof 必须接通的 provider | 本阶段只有 Workers AI |
 | optional adapter skeleton | 允许保留代码与配置扩展位，但不承诺成为 production baseline | 适用于 DeepSeek |
 | provider adapter | 把外部 provider API 归一化到 agent runtime 的实现 | 不直接暴露给 client |
-| tenant secret | 属于 team/tenant 的 provider credential | 本阶段尽量避免 required |
+| tenant secret | 属于 team/tenant 的 provider credential | zero-to-real first wave 不要求 |
 | secret cache | 在 hot-state 短时缓存解密后的 secret/material | 只能是辅助层 |
 
 ### 1.2 参考调查报告
@@ -98,7 +99,7 @@
 | 扩展点 | 表现形式 (函数签名 / 目录 / 配置字段) | 第一版行为 | 未来可能的演进方向 |
 |--------|---------------------------------------|------------|---------------------|
 | adapter registry | `provider -> adapter` 映射 | Workers AI + optional DeepSeek skeleton | 更多 provider |
-| tenant secrets | `nano_tenant_secrets` / equivalent | reserved / optional | BYO key / rotation policy |
+| tenant secrets | future secret registry seam | zero-to-real 不建表 | BYO key / rotation policy |
 | fallback policy | config / runtime policy | 不强制启用 | 多 provider fallback |
 | secret cache | DO SQLite hot cache | 短时缓存 | richer TTL / revalidation |
 
@@ -240,22 +241,61 @@
 - **输入**：LLM request / runtime messages
 - **输出**：真实模型响应与 usage/evidence
 - **主要调用者**：`agent.core`
-- **核心逻辑**：Z3 required path 只要求 Workers AI 进入主路径。
+- **核心逻辑**：Z3 required path 只要求 Workers AI 进入主路径；first-wave 默认 binding 固定为 `AI`，默认 model 固定为 `@cf/ibm-granite/granite-4.0-h-micro`，调用形态固定为 `messages + stream: true + tool-calling enabled`。若 fc smoke 不过，先在 Workers AI 内换到 `@cf/meta/llama-4-scout-17b-16e-instruct`，仍不通过才升级 DeepSeek path。
 - **边界情况**：
   - 需要与 quota gate 串联
   - 输出仍归一化为 session stream truth
 - **一句话收口目标**：✅ **agent loop 已返回真实模型内容**
+- **判定方法**：
+  1. `agent.core` 通过 `env.AI.run(model, { messages, stream: true })` 产生真实流式输出。
+  2. frozen first-wave model 的 tool-calling smoke 覆盖 5+ tool 类型并通过。
+  3. fake provider 不再是默认 deploy path。
 
-#### F2: `Secret Discipline`
+#### F2: `Adapter Boundary`
+
+- **输入**：canonical LLM request、Workers AI / optional DeepSeek provider responses
+- **输出**：统一的 runtime/session stream truth
+- **主要调用者**：`agent.core`
+- **核心逻辑**：`workers/agent-core/src/llm/gateway.ts` 不再停在 stub；Workers AI 真实 adapter 落在 `workers/agent-core/src/llm/adapters/workers-ai.ts`（或等价目录），DeepSeek skeleton 落在 `workers/agent-core/src/llm/adapters/deepseek/`。provider-native response 必须先归一化，再进入 session stream mapper。
+- **边界情况**：
+  - client-facing stream 不直透 provider-native raw event
+  - zero-to-real 不改写现有 `packages/llm-wrapper` 的 canonical boundary，只在 worker runtime 接线
+- **一句话收口目标**：✅ **provider 细节只存在于 adapter 内部，不泄漏到 client contract**
+- **判定方法**：
+  1. `workers/agent-core/src/llm/gateway.ts` 不再只是 stub/seam comment。
+  2. provider 切换不要求改 public session contract。
+  3. DeepSeek skeleton 存在但未进入 default runtime path。
+
+#### F3: `Secret Discipline`
 
 - **输入**：env secrets、optional tenant secrets、hot cache
 - **输出**：受控 secret 读取与轮换纪律
 - **主要调用者**：provider adapter、runtime host
-- **核心逻辑**：platform secret 优先；tenant secret 仅作为条件扩展位。
+- **核心逻辑**：Workers AI required path 不依赖 provider API key；platform-native `AI` binding 是 first-wave secret discipline 本体。DeepSeek/BYO key 若未来进入，只允许走 env/secret manager + short-lived cache，不倒灌进 zero-to-real first-wave schema。
 - **边界情况**：
-  - 是否引入 `nano_tenant_secrets` 由 Q8 决定
+  - `nano_tenant_secrets` 依据 Q8 明确 **不进入** zero-to-real first wave
   - cache 只能是辅助层，不是 secret 真相层
+  - 非 LLM 平台凭证（如 WeChat `WECHAT_APPID/WECHAT_SECRET`）不由本文拥有，归 Z1 处理
 - **一句话收口目标**：✅ **provider secret 已有可审计、可轮换、可缓存的明确路线**
+- **判定方法**：
+  1. Workers AI happy path 不依赖额外 provider API key。
+  2. zero-to-real first wave 中不存在 `nano_tenant_secrets` 写入或强依赖。
+  3. provider missing / misconfigured path 会给出 typed negative result，而不是 silent fallback。
+
+#### F4: `DeepSeek Skeleton`
+
+- **输入**：future external-provider expansion requirement
+- **输出**：不破坏当前边界的 optional fallback track
+- **主要调用者**：后续 provider 扩展实施者
+- **核心逻辑**：DeepSeek 只保留目录级 skeleton、adapter shape 与 `throw-not-implemented` 占位，不进入 zero-to-real default runtime；其存在的目的只是确保后续扩展不需要推翻 Workers AI / adapter boundary。
+- **边界情况**：
+  - zero-to-real 不要求真实 DeepSeek invoke path
+  - 只有 Workers AI fc smoke 全面失败且换 model 无法修复时，才允许把 DeepSeek 升为 required 路线
+- **一句话收口目标**：✅ **未来扩展有落点，但当前主线仍保持克制**
+- **判定方法**：
+  1. `workers/agent-core/src/llm/adapters/deepseek/` 或等价 skeleton 目录存在。
+  2. skeleton 不进入 default runtime path，也不要求 provider secret engineering 进入 first wave。
+  3. decision trail 在文档中保留，可解释为什么 zero-to-real 选 Workers AI first。
 
 ### 7.3 非功能性要求
 
@@ -263,6 +303,7 @@
 - **可观测性要求**：llm usage / model / provider 选择应进入 trace/evidence。
 - **稳定性要求**：provider 不可继续通过 stub/gateway placeholder 掩盖。
 - **测试覆盖要求**：Workers AI happy path、fallback-disabled path、secret missing negative case 要有证明。
+  - **测试基础设施基线**：延续既有 package-e2e / cross-e2e harness，并新增 model smoke / adapter negative cases，而不是建立新的 provider-only test runner。
 
 ---
 
@@ -313,13 +354,9 @@ ZX-LLM 负责把“真实 provider”这件事收紧到可执行的范围内：W
 
 ### 9.3 下一步行动
 
-- [ ] **决策确认**：在 `ZX-qna.md` 回答 Q8。
-- [ ] **关联 Issue / PR**：Workers AI adapter、secret path、optional DeepSeek skeleton。
-- [ ] **待深入调查的子问题**：
-  - tenant secret 表位是否在 Z3 就需要
-  - provider usage evidence 最小字段集
-  - fallback 触发条件是否要先显式留空
-- [ ] **需要更新的其他设计文档**：
+- [ ] **已冻结答案需在实施中消费**：Q8 已在 `ZX-qna.md` 回填，ZX-LLM 后续只负责把 Workers AI required / DeepSeek skeleton 落到代码结构。
+- [ ] **关联 Issue / PR**：Workers AI adapter、`AI` binding wiring、optional DeepSeek skeleton。
+- [ ] **实施前必须同步的 phase 文档**：
   - `Z3-real-runtime-and-quota.md`
   - `ZX-d1-schema-and-migrations.md`
 
@@ -334,9 +371,13 @@ ZX-LLM 负责把“真实 provider”这件事收紧到可执行的范围内：W
   - **B 方观点**：会把 zero-to-real 扩成 secrets 项目
   - **最终共识**：Workers AI first，DeepSeek skeleton second
 
-### B. 开放问题清单（可选）
+### B. 已冻结决策清单（可选）
 
-- [ ] **Q8**：DeepSeek 的角色与 `nano_tenant_secrets` 是否在 Z3 进入主线
+- [x] **Q8**：Workers AI 是唯一 required provider；DeepSeek 仅作为 optional skeleton / fallback track。
+
+### C. 决策轨迹补充（可选）
+
+- `docs/eval/zero-to-real/plan-analysis-by-opus-v2.md` 曾把 DeepSeek 放到更靠前的位置；charter 与当前 design 转向 Workers AI first，是因为 platform-native `AI` binding 能以最低 secret/cost 心智让 fake provider 尽快退场。
 
 ### C. 版本历史
 

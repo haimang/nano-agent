@@ -18,6 +18,8 @@ zero-to-real 最容易发生的误判，是把 auth / D1 / provider / client 当
   - `workers/agent-core/src/host/internal-policy.ts` 已有 internal secret + authority + trace + no-escalation 逻辑。
   - `packages/nacp-core/src/transport/service-binding.ts` 与 `do-rpc.ts` 已有 transport precheck。
   - `packages/nacp-session/src/ingress.ts` 已明确 authority 必须 server-stamped。
+  - 当前 `workers/orchestrator-core/src/auth.ts::AuthSnapshot` 现实字段仍是 `sub / tenant_uuid / source_name / membership_level / realm / exp`，而 `packages/nacp-core/src/envelope.ts::NacpAuthoritySchema` 需要 `team_uuid / plan_level / stamped_by_key / stamped_at`；zero-to-real 必须显式冻结 translation table，而不是默认“字段天然一致”。
+  - `packages/nacp-session/src/messages.ts` 已冻结 first-wave session 消息面：`session.start / session.resume / session.cancel / session.end / session.stream.ack / session.heartbeat / session.followup_input`；Z2/Z4 应消费这些 primitives，而不是自造私有 message family。
 - **显式排除的讨论范围**：
   - 新发明一套 NACP 之外的协议家族
   - 把 client-facing wire 与 internal worker mesh 混成一层
@@ -242,11 +244,51 @@ zero-to-real 最容易发生的误判，是把 auth / D1 / provider / client 当
 - **主要调用者**：`orchestration.core`
 - **核心逻辑**：public ingress 先验证 token，再把 user/tenant/role/source 等映射进 NACP 载体。
 - **边界情况**：
-  - claim 可缺失时是否允许 deploy-fill，要由 QnA 定死
+  - `plan_level` 当前不在 public JWT/AuthSnapshot 里，必须显式走 deploy/team lookup fill，不允许静默省略
   - tenant mismatch 必须 typed reject
 - **一句话收口目标**：✅ **public ingress 产生的 authority 已可直接进入 session/runtime 主路径**
+- **判定方法**：
+  1. 存在清晰的 JWT/AuthSnapshot -> InternalAuthorityPayload -> NacpAuthority 映射表。
+  2. `team_uuid / plan_level / stamped_by_key / stamped_at` 的来源在文档中逐项冻结。
+  3. forged / tenant mismatch / missing plan-level 都会被 typed reject，而不是 success-shaped fallback。
 
-#### F2: `Transport Legality`
+**字段映射表（first-wave frozen）**
+
+| 来源 | 当前字段 | 目标字段 | 说明 |
+|------|----------|----------|------|
+| JWT | `tenant_uuid` | `team_uuid` | zero-to-real 统一视为 team/tenant 主键 |
+| JWT/AuthSnapshot | `sub` | `user_uuid` | 若存在用户态调用则传入；service-only 调用可为空 |
+| JWT/AuthSnapshot | `membership_level` | `membership_level` | 原样平移 |
+| deploy/team lookup | _无_ | `plan_level` | 必须由 team truth 补齐 |
+| internal signer | _无_ | `stamped_by_key` | 当前 deploy 的 internal signing key id |
+| runtime clock | _无_ | `stamped_at` | server-stamped timestamp |
+
+#### F2: `Session Profile Usage`
+
+- **输入**：client ingress、server stream、resume/replay/heartbeat paths
+- **输出**：严格受 `nacp-session` 仲裁的 session message 使用面
+- **主要调用者**：`orchestration.core`、`agent.core`、Z4 clients
+- **核心逻辑**：Q10 已冻结 first real run baseline 为 HTTP `start/input` + WS `stream/history`；其协议面仍必须消费 `session.start`、`session.followup_input`、`session.stream.ack`、`session.heartbeat`、`session.resume`、replay cursor 等既有 primitives，而不是 invent 私有 wire。
+- **边界情况**：
+  - formal follow-up family 已在 earlier phases 冻结为 `session.followup_input`
+  - heartbeat / replay 是 caller-managed hardening，不等于 transport 层自动魔法
+- **一句话收口目标**：✅ **session legality 由 `nacp-session` 统一仲裁，不再有私有消息旁路**
+- **判定方法**：
+  1. 文档显式列出 Z2/Z4 使用到的 first-wave session message set。
+  2. client ingress / reconnect / replay 说明都不再 invent 私有 message family。
+  3. invalid session message negative cases 进入 contract tests。
+
+**first-wave session message set（必须消费）**
+
+- `session.start`
+- `session.followup_input`
+- `session.cancel`
+- `session.end`
+- `session.resume`
+- `session.stream.ack`
+- `session.heartbeat`
+
+#### F3: `Transport Legality`
 
 - **输入**：worker-to-worker envelope
 - **输出**：经 precheck 的合法 internal 调用
@@ -256,6 +298,25 @@ zero-to-real 最容易发生的误判，是把 auth / D1 / provider / client 当
   - control-plane 优先接入
   - stream-plane 可过渡，但不能无界扩张
 - **一句话收口目标**：✅ **internal control-plane 已不再依赖“裸 fetch JSON”心智**
+- **判定方法**：
+  1. control-plane RPC proof 必须带 NACP envelope + authority + trace。
+  2. 不再新增“只有 JSON body、没有 authority envelope”的 internal method。
+  3. `cross-seam.ts` 在 zero-to-real 只作为 future transport primitive，不成为 first-wave 必经路径。
+
+#### F4: `Evidence Linkage`
+
+- **输入**：history/audit/quota/llm/tool runtime 事件
+- **输出**：可统一回挂 `trace_uuid + session_uuid + team_uuid` 的 evidence 链
+- **主要调用者**：Z2 session truth、Z3 runtime quota、Z4 evidence pack
+- **核心逻辑**：所有 first-wave 持久化与运行证据都要沿用 NACP trace/authority vocabulary，而不是每个 subsystem 自造 ID 族；`nano_session_activity_logs`、`nano_usage_events`、history rows 至少要能共享 trace/session/team linkage。
+- **边界情况**：
+  - evidence 不要求一步到位做 BI schema
+  - 但不允许留“无法挂回 trace/team”的 orphan records
+- **一句话收口目标**：✅ **real run 的各侧证据已能回到同一条 NACP 审计主线**
+- **判定方法**：
+  1. 任一真实 run 的 llm/tool/quota/history/audit 都能共享 `trace_uuid + session_uuid + team_uuid`。
+  2. Z4 evidence pack 能直接引用这些 linkage，不需要额外猜测映射关系。
+  3. orphan record negative checks 存在。
 
 ### 7.3 非功能性要求
 
@@ -313,13 +374,9 @@ ZX-NACP 不是新增协议，而是把现有协议从“已存在”推到“已
 
 ### 9.3 下一步行动
 
-- [ ] **决策确认**：在 `ZX-qna.md` 回答 Q2 / Q4 / Q5 / Q9。
+- [ ] **已冻结答案需在实施中消费**：Q2 / Q4 / Q5 / Q9 已在 `ZX-qna.md` 回填，ZX-NACP 后续只负责把这些答案翻译成 authority/session/evidence 的 runtime law。
 - [ ] **关联 Issue / PR**：Z1 auth mapping、Z2 session truth、Z3 runtime evidence。
-- [ ] **待深入调查的子问题**：
-  - deploy-fill 的 audit 语义
-  - `nano_session_activity_logs` 是否拆表
-  - quota deny 的 NACP event 形态
-- [ ] **需要更新的其他设计文档**：
+- [ ] **实施前必须同步的 phase 文档**：
   - `Z1-full-auth-and-tenant-foundation.md`
   - `Z2-session-truth-and-audit-baseline.md`
   - `Z3-real-runtime-and-quota.md`
@@ -335,10 +392,12 @@ ZX-NACP 不是新增协议，而是把现有协议从“已存在”推到“已
   - **B 方观点**：这些都必须在 NACP 执行真理之下成立
   - **最终共识**：后者成立
 
-### B. 开放问题清单（可选）
+### B. 已冻结决策清单（可选）
 
-- [ ] **Q2**：JWT signing / rotation 的 first-wave 纪律是否采用单签发 + 双验证窗口？
-- [ ] **Q9**：quota deny 是否覆盖全部 llm/tool side-effects？
+- [x] **Q2**：JWT 使用 HS256 + `kid` + 单签发/双验证；authority 通过 server translation zone 补齐 `plan_level / stamped_*`。
+- [x] **Q4**：auth worker transport = WorkerEntrypoint RPC-first；对 NACP 而言它仍是 internal transport，不是 public wire。
+- [x] **Q5**：`nano_session_activity_logs` 保持单表 append-only，不拆表。
+- [x] **Q9**：quota deny 同时覆盖 llm + tool 消耗路径，并进入统一 evidence linkage。
 
 ### C. 版本历史
 

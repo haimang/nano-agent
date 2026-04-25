@@ -19,6 +19,8 @@
   - `nacp-core` / `nacp-session` 已是协议基石，zero-to-real 不能绕开它们。
   - D1 first-wave 必须是 **thin-but-complete**，不能再退回 too-thin persistence。
   - real client 与 real provider 都属于本阶段目标，不是收尾附属项。
+  - `ZX-qna.md` 中 Q1-Q10 已完成 owner 回填，当前 design 以这些答案为 frozen truth。
+  - 当前验证基线沿用仓库既有 `pnpm test:package-e2e` 与 `pnpm test:cross` harness，不在 Z0 重新发明测试体系。
 - **显式排除的讨论范围**：
   - 具体表字段逐列定义
   - 具体 WorkerEntrypoint / fetch shim 代码写法
@@ -250,6 +252,7 @@
   - 不能因为某条线实现困难就把它偷偷降到 out-of-scope
   - 不能把 future richness 当成 Z1-Z4 的必需品
 - **一句话收口目标**：✅ **`zero-to-real` 已被收紧为“最小但完整的真实闭环”**
+- **判定方法**：`docs/charter/plan-zero-to-real.md`、5 份 `ZX-*` 与 5 份 `Z*` 文档对 in-scope/out-of-scope 不再互相冲突，且 review 不再指出 phase boundary 漂移。
 
 #### F2: `Compliance Mainline`
 
@@ -261,6 +264,31 @@
   - transport 可渐进演进
   - NACP legality 不可后置
 - **一句话收口目标**：✅ **任何后续设计都不能把 NACP 降级成背景板**
+- **判定方法**：Z1-Z4 每份文档都显式写明 authority、trace、tenant boundary、audit/persistence 回挂面，且不存在绕开 `nacp-core` / `nacp-session` 的私有协议主线。
+
+#### F3: `Design Production Plan`
+
+- **输入**：charter 文件清单、模板、当前仓库真实代码起点
+- **输出**：稳定的 design / action-plan / closure 文档生产顺序
+- **主要调用者**：design 作者、action-plan 作者、review 作者
+- **核心逻辑**：把阶段治理、cross-cutting 设计、phase-specific 设计、集中式 QnA 分成明确层级，避免 action-plan 反复回滚到基石层重新讨论。
+- **边界情况**：
+  - Z0 只冻结执行顺序与交付面，不吞字段级 schema、route shape、migration SQL 细节
+  - 具体 deliverable owner 由 ZX / Z1-Z4 继续细化
+- **一句话收口目标**：✅ **后续 action-plan 可以直接消费 design r2，而不是重新开会重写基石**
+- **判定方法**：`docs/design/zero-to-real/*.md` 与后续 `docs/action-plan/zero-to-real/*.md` 的文件清单、交叉引用、执行顺序保持一致，且不再出现缺文件或 owner 级 blocker。
+
+#### F4: `QnA Routing`
+
+- **输入**：会改变 contract、边界、顺序、验收标准的 owner-level 问题
+- **输出**：`ZX-qna.md` 作为唯一答复源
+- **主要调用者**：owner、Opus、GPT、后续实施者
+- **核心逻辑**：所有会改变 Z0-Z4 设计口径的问题都在 `ZX-qna.md` 汇总答复；具体 design 只消费已冻结答案，不再各自挂未决问题。
+- **边界情况**：
+  - 不把纯实现细节微调升级成 QnA
+  - 若后续要推翻 Q1-Q10，必须在 `ZX-qna.md` 追加修订记录，而不是静默改 design
+- **一句话收口目标**：✅ **owner 只维护一份决策清单，Z0-Z4 不再出现多版本答复**
+- **判定方法**：design 文档不再以“等待 Qx 回答”为前提推进；review 回应可直接引用 `ZX-qna.md` 中已回填答案作为单一事实源。
 
 ### 7.3 非功能性要求
 
@@ -268,6 +296,7 @@
 - **可观测性要求**：每份文档都必须说明 trace / audit / persistence 如何对齐。
 - **稳定性要求**：QnA 答案要可持续引用，不允许分散漂移。
 - **测试覆盖要求**：后续 Z1-Z4 都必须映射到可执行验证项。
+  - **测试基础设施基线**：沿用仓库既有 `pnpm test:package-e2e` 与 `pnpm test:cross`；package-local tests 与 root cross/package-e2e 是 zero-to-real 的默认证明工具。
 
 ---
 
@@ -316,18 +345,26 @@ Z0 不是“多写一份总纲”，而是把 zero-to-real 从讨论态切到执
 | 风险可控程度 | 5 | 通过 QnA 聚合与分层冻结把风险外显化 |
 | **综合价值** | **5** | **Z0 是 zero-to-real 能否连续推进的必要前提** |
 
-### 9.3 下一步行动
+### 9.3 Z0 closure 标准
 
-- [ ] **决策确认**：Owner 在 `ZX-qna.md` 回填 Q1-Q10。
+Z0 只有在以下 4 条同时成立时才算 closed：
+
+1. `ZX-qna.md` 的 Q1-Q10 已全部有 owner answer，且 design 已消费这些答案。
+2. 5 份 `ZX-*` 与 5 份 `Z*` design 文档都完成 r2 级冻结，不再把关键 deliverable 留在“待后续再说”。
+3. 每份 design 都能指出至少一条可执行验证路径，且默认验证体系明确复用仓库现有 `package-e2e / cross-e2e` harness。
+4. 后续 action-plan 可以直接从当前 design 拆分，而不是回头补基石级问题。
+
+### 9.4 下一步行动
+
 - [ ] **关联 Issue / PR**：起草 Z1-Z4 action-plan。
-- [ ] **待深入调查的子问题**：
-  - auth transport exact form
-  - D1 activity log exact shape
-  - Z2 first RPC parity target
-- [ ] **需要更新的其他设计文档**：
+- [ ] **优先校准的 cross-cutting 文档**：
   - `ZX-binding-boundary-and-rpc-rollout.md`
   - `ZX-d1-schema-and-migrations.md`
-  - `Z1-full-auth-and-tenant-foundation.md`
+  - `ZX-llm-adapter-and-secrets.md`
+- [ ] **Z0 已冻结但需在 action-plan 显式消费的实现前提**：
+  - `orchestration.auth` 为 greenfield worker
+  - D1 first-wave 为 thin-but-complete
+  - Workers AI first / DeepSeek optional skeleton
 
 ---
 
@@ -340,10 +377,9 @@ Z0 不是“多写一份总纲”，而是把 zero-to-real 从讨论态切到执
   - **B 方观点**：必须做最小但完整的真实闭环
   - **最终共识**：采用后者，并把 auth / D1 / runtime / client 一并纳入主线
 
-### B. 开放问题清单（可选）
+### B. 已冻结决策清单（可选）
 
-- [ ] **Q1**：`orchestration.auth` 的 exact transport form 是否直接冻结为 WorkerEntrypoint RPC-first？
-- [ ] **Q5**：`nano_session_activity_logs` 的 first-wave 形态是否采用单表 + views？
+- [x] **Q1-Q10**：已在 `docs/design/zero-to-real/ZX-qna.md` 回填并成为当前唯一答复源。
 
 ### C. 版本历史
 
