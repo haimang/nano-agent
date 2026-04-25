@@ -57,8 +57,11 @@ export function createWeChatClient(env: WeChatEnv): WeChatClient {
               : {}),
           };
         } catch (error) {
-          if (attempt === 0) continue;
           if (error instanceof AuthServiceError) throw error;
+          const retryableTimeout =
+            error instanceof Error &&
+            (error.name === "AbortError" || error.name === "TimeoutError");
+          if (attempt === 0 && retryableTimeout) continue;
           if (
             error instanceof Error &&
             (error.name === "AbortError" || error.name === "TimeoutError")

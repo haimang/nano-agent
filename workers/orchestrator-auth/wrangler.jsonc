@@ -23,7 +23,7 @@
       "binding": "NANO_AGENT_DB",
       "database_name": "nano-agent-preview",
       // Replace this placeholder with the real shared D1 UUID before deploy.
-      "database_id": "00000000-0000-0000-0000-000000000001"
+      "database_id": "71a4b089-93e0-4d8f-afb8-bc9356a97cfa"
     }
   ],
   "env": {
@@ -39,7 +39,7 @@
           "binding": "NANO_AGENT_DB",
           "database_name": "nano-agent-preview",
           // Replace this placeholder with the real shared D1 UUID before deploy.
-          "database_id": "00000000-0000-0000-0000-000000000001"
+          "database_id": "71a4b089-93e0-4d8f-afb8-bc9356a97cfa"
         }
       ]
     }

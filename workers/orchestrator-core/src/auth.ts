@@ -148,12 +148,13 @@ async function verifyJwtAgainstKeyring(
   return null;
 }
 
-function parseBearerToken(request: Request): string | null {
+function parseBearerToken(request: Request, allowQueryToken = false): string | null {
   const authHeader = request.headers.get("authorization");
   if (authHeader?.startsWith("Bearer ")) {
     const token = authHeader.slice("Bearer ".length).trim();
     if (token.length > 0) return token;
   }
+  if (!allowQueryToken) return null;
   const url = new URL(request.url);
   const qsToken = url.searchParams.get("access_token");
   return qsToken && qsToken.length > 0 ? qsToken : null;
@@ -167,8 +168,12 @@ function toOptionalNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
-export async function authenticateRequest(request: Request, env: AuthEnv): Promise<AuthResult> {
-  const token = parseBearerToken(request);
+export async function authenticateRequest(
+  request: Request,
+  env: AuthEnv,
+  options?: { readonly allowQueryToken?: boolean },
+): Promise<AuthResult> {
+  const token = parseBearerToken(request, options?.allowQueryToken === true);
   if (!token) {
     return {
       ok: false,
@@ -208,6 +213,8 @@ export async function authenticateRequest(request: Request, env: AuthEnv): Promi
   }
 
   const effectiveTenant = teamClaim ?? legacyTenantClaim ?? deployTenant;
+  const tenantSource: "claim" | "deploy-fill" =
+    teamClaim || legacyTenantClaim ? "claim" : "deploy-fill";
   const userUuid = toOptionalString(payload.user_uuid) ?? payload.sub;
   const realm = toOptionalString(payload.realm);
   const sourceName = toOptionalString(payload.source_name);
@@ -218,7 +225,7 @@ export async function authenticateRequest(request: Request, env: AuthEnv): Promi
     sub: payload.sub,
     ...(userUuid ? { user_uuid: userUuid } : {}),
     ...(effectiveTenant ? { team_uuid: effectiveTenant, tenant_uuid: effectiveTenant } : {}),
-    tenant_source: effectiveTenant ? "claim" : "deploy-fill",
+    tenant_source: tenantSource,
     ...(realm ? { realm } : {}),
     ...(sourceName ? { source_name: sourceName } : {}),
     ...(membershipLevel !== undefined ? { membership_level: membershipLevel } : {}),

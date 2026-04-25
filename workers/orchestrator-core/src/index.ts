@@ -9,7 +9,16 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-
 
 export interface OrchestratorCoreEnv extends AuthEnv {
   readonly ORCHESTRATOR_USER_DO: DurableObjectNamespace;
-  readonly AGENT_CORE?: Fetcher;
+  readonly AGENT_CORE?: Fetcher & {
+    start?: (
+      input: Record<string, unknown>,
+      meta: { trace_uuid: string; authority: unknown },
+    ) => Promise<{ status: number; body: Record<string, unknown> | null }>;
+    status?: (
+      input: Record<string, unknown>,
+      meta: { trace_uuid: string; authority: unknown },
+    ) => Promise<{ status: number; body: Record<string, unknown> | null }>;
+  };
   readonly ORCHESTRATOR_AUTH?: OrchestratorAuthRpcService;
   readonly NANO_AGENT_DB?: D1Database;
   readonly NANO_INTERNAL_BINDING_SECRET?: string;
@@ -58,7 +67,15 @@ function isWebSocketUpgrade(request: Request): boolean {
   return request.headers.get("upgrade")?.toLowerCase() === "websocket";
 }
 
-type SessionAction = "start" | "input" | "cancel" | "status" | "timeline" | "verify" | "ws";
+type SessionAction =
+  | "start"
+  | "input"
+  | "cancel"
+  | "status"
+  | "timeline"
+  | "history"
+  | "verify"
+  | "ws";
 type AuthAction =
   | "register"
   | "login"
@@ -74,7 +91,7 @@ function parseSessionRoute(request: Request): { sessionUuid: string; action: Ses
   const sessionUuid = segments[1]!;
   const action = segments[2] as SessionAction;
   if (!UUID_RE.test(sessionUuid)) return null;
-  if (!["start", "input", "cancel", "status", "timeline", "verify", "ws"].includes(action)) return null;
+  if (!["start", "input", "cancel", "status", "timeline", "history", "verify", "ws"].includes(action)) return null;
   return { sessionUuid, action };
 }
 
@@ -169,7 +186,9 @@ const worker = {
     const route = parseSessionRoute(request);
     if (!route) return jsonPolicyError(404, "not-found", "route not found");
 
-    const auth = await authenticateRequest(request, env);
+    const auth = await authenticateRequest(request, env, {
+      allowQueryToken: route.action === "ws",
+    });
     if (!auth.ok) return auth.response;
 
     const stub = env.ORCHESTRATOR_USER_DO.get(env.ORCHESTRATOR_USER_DO.idFromName(auth.value.user_uuid));

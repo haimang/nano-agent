@@ -172,6 +172,32 @@ describe("orchestrator-core shell smoke", () => {
     expect(new URL(stubFetch.mock.calls[0]![0]!.url).pathname).toBe(`/sessions/${SESSION_UUID}/ws`);
   });
 
+  it("routes authenticated history reads to the user DO", async () => {
+    const token = await signTestJwt({ sub: USER_UUID, user_uuid: USER_UUID, team_uuid: "44444444-4444-4444-8444-444444444444" }, JWT_SECRET);
+    const stubFetch = vi.fn<(req: Request) => Promise<Response>>().mockResolvedValue(
+      new Response(JSON.stringify({ ok: true, action: "history", messages: [] }), { status: 200 }),
+    );
+    const idFromName = vi.fn().mockReturnValue({ __kind: "user-do-id" });
+    const get = vi.fn().mockReturnValue({ fetch: stubFetch });
+
+    const response = await worker.fetch(
+      new Request(`https://example.com/sessions/${SESSION_UUID}/history`, {
+        headers: {
+          authorization: `Bearer ${token}`,
+          "x-trace-uuid": TRACE_UUID,
+        },
+      }),
+      {
+        JWT_SECRET,
+        TEAM_UUID: "nano-agent",
+        ORCHESTRATOR_USER_DO: { idFromName, get } as unknown as DurableObjectNamespace,
+      } as any,
+    );
+
+    expect(response.status).toBe(200);
+    expect(new URL(stubFetch.mock.calls[0]![0]!.url).pathname).toBe(`/sessions/${SESSION_UUID}/history`);
+  });
+
   it("proxies auth register requests to orchestrator-auth rpc", async () => {
     const register = vi.fn().mockResolvedValue({
       ok: true,

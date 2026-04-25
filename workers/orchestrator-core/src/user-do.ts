@@ -1,7 +1,23 @@
 import type { IngressAuthSnapshot, InitialContextSeed } from './auth.js';
+import { redactPayload } from "@haimang/nacp-session";
+import {
+  D1SessionTruthRepository,
+  type DurableSessionPointer,
+  type DurableTurnPointer,
+} from "./session-truth.js";
 
 export interface OrchestratorUserEnv {
-  readonly AGENT_CORE?: Fetcher;
+  readonly AGENT_CORE?: Fetcher & {
+    start?: (
+      input: Record<string, unknown>,
+      meta: { trace_uuid: string; authority: unknown },
+    ) => Promise<{ status: number; body: Record<string, unknown> | null }>;
+    status?: (
+      input: Record<string, unknown>,
+      meta: { trace_uuid: string; authority: unknown },
+    ) => Promise<{ status: number; body: Record<string, unknown> | null }>;
+  };
+  readonly NANO_AGENT_DB?: D1Database;
   readonly NANO_INTERNAL_BINDING_SECRET?: string;
 }
 
@@ -10,6 +26,7 @@ export interface DurableObjectStateLike {
     get<T = unknown>(key: string): Promise<T | undefined>;
     put<T = unknown>(key: string, value: T): Promise<void>;
     delete?(key: string): Promise<void>;
+    setAlarm?(scheduledTime: number | Date): Promise<void>;
   };
 }
 
@@ -29,6 +46,30 @@ interface SessionTerminalRecord {
   readonly terminal: TerminalKind;
   readonly last_phase: string | null;
   readonly ended_at: string;
+}
+
+interface ConversationIndexItem {
+  readonly conversation_uuid: string;
+  readonly latest_session_uuid: string;
+  readonly status: SessionStatus;
+  readonly updated_at: string;
+}
+
+interface ActivePointers {
+  readonly conversation_uuid: string | null;
+  readonly session_uuid: string | null;
+  readonly turn_uuid: string | null;
+}
+
+interface RecentFramesState {
+  readonly updated_at: string;
+  readonly frames: StreamFrame[];
+}
+
+interface EphemeralCacheEntry {
+  readonly key: string;
+  readonly value: Record<string, unknown> | null;
+  readonly expires_at: string;
 }
 
 interface StartSessionBody {
@@ -93,6 +134,14 @@ const USER_META_KEY = 'user/meta';
 const USER_AUTH_SNAPSHOT_KEY = 'user/auth-snapshot';
 const USER_SEED_KEY = 'user/seed';
 const ENDED_INDEX_KEY = 'sessions/ended-index';
+const CONVERSATION_INDEX_KEY = 'conversation/index';
+const ACTIVE_POINTERS_KEY = 'conversation/active-pointers';
+const RECENT_FRAMES_PREFIX = 'recent-frames/';
+const CACHE_PREFIX = 'cache/';
+const MAX_CONVERSATIONS = 200;
+const MAX_RECENT_FRAMES = 50;
+const CACHE_TTL_MS = 5 * 60 * 1000;
+const HOT_STATE_ALARM_MS = 10 * 60 * 1000;
 const MAX_ENDED_SESSIONS = 100;
 const ENDED_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -102,6 +151,14 @@ function sessionKey(sessionUuid: string): string {
 
 function terminalKey(sessionUuid: string): string {
   return `session-terminal/${sessionUuid}`;
+}
+
+function recentFramesKey(sessionUuid: string): string {
+  return `${RECENT_FRAMES_PREFIX}${sessionUuid}`;
+}
+
+function cacheKey(name: string): string {
+  return `${CACHE_PREFIX}${name}`;
 }
 
 function jsonResponse(status: number, body: Record<string, unknown>): Response {
@@ -144,6 +201,19 @@ class InvalidStreamFrameError extends Error {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+function redactActivityPayload(payload: Record<string, unknown>): Record<string, unknown> {
+  return redactPayload(payload, [
+    'access_token',
+    'refresh_token',
+    'authority',
+    'auth_snapshot',
+    'password',
+    'secret',
+    'openid',
+    'unionid',
+  ]);
 }
 
 function isNonNegativeInteger(value: unknown): value is number {
@@ -274,8 +344,15 @@ export class NanoOrchestratorUserDO {
     private readonly env: OrchestratorUserEnv,
   ) {}
 
+  async alarm(): Promise<void> {
+    await this.trimHotState();
+    await this.cleanupEndedSessions();
+    await this.ensureHotStateAlarm();
+  }
+
   async fetch(request: Request): Promise<Response> {
     await this.cleanupEndedSessions();
+    await this.ensureHotStateAlarm();
 
     const segments = new URL(request.url).pathname.split('/').filter(Boolean);
     if (segments.length !== 3 || segments[0] !== 'sessions') {
@@ -316,9 +393,332 @@ export class NanoOrchestratorUserDO {
 
     if (request.method === 'GET' && action === 'status') return this.handleRead(sessionUuid, 'status');
     if (request.method === 'GET' && action === 'timeline') return this.handleRead(sessionUuid, 'timeline');
+    if (request.method === 'GET' && action === 'history') return this.handleRead(sessionUuid, 'history');
     if (request.method === 'GET' && action === 'ws') return this.handleWsAttach(sessionUuid, request);
 
     return jsonResponse(404, { error: 'not-found', message: 'user DO route not found' });
+  }
+
+  private sessionTruth(): D1SessionTruthRepository | null {
+    return this.env.NANO_AGENT_DB ? new D1SessionTruthRepository(this.env.NANO_AGENT_DB) : null;
+  }
+
+  private async ensureDurableSession(
+    sessionUuid: string,
+    authSnapshot: IngressAuthSnapshot,
+    traceUuid: string,
+    timestamp: string,
+  ): Promise<DurableSessionPointer | null> {
+    const repo = this.sessionTruth();
+    const teamUuid = authSnapshot.team_uuid ?? authSnapshot.tenant_uuid;
+    const actorUserUuid = authSnapshot.user_uuid ?? authSnapshot.sub;
+    if (!repo || typeof teamUuid !== 'string' || teamUuid.length === 0) return null;
+    return repo.beginSession({
+      session_uuid: sessionUuid,
+      team_uuid: teamUuid,
+      actor_user_uuid: actorUserUuid,
+      trace_uuid: traceUuid,
+      started_at: timestamp,
+    });
+  }
+
+  private async createDurableTurn(
+    sessionUuid: string,
+    pointer: DurableSessionPointer | null,
+    authSnapshot: IngressAuthSnapshot,
+    traceUuid: string,
+    kind: 'start' | 'followup' | 'cancel',
+    inputText: string | null,
+    timestamp: string,
+  ): Promise<DurableTurnPointer | null> {
+    const repo = this.sessionTruth();
+    const teamUuid = authSnapshot.team_uuid ?? authSnapshot.tenant_uuid;
+    const actorUserUuid = authSnapshot.user_uuid ?? authSnapshot.sub;
+    if (!repo || !pointer || typeof teamUuid !== 'string' || teamUuid.length === 0) return null;
+    return repo.createTurn({
+      session_uuid: sessionUuid,
+      conversation_uuid: pointer.conversation_uuid,
+      team_uuid: teamUuid,
+      actor_user_uuid: actorUserUuid,
+      trace_uuid: traceUuid,
+      kind,
+      input_text: inputText,
+      created_at: timestamp,
+    });
+  }
+
+  private async appendDurableActivity(input: {
+    readonly pointer: DurableSessionPointer | null;
+    readonly authSnapshot: IngressAuthSnapshot;
+    readonly traceUuid: string;
+    readonly turnUuid?: string | null;
+    readonly eventKind: string;
+    readonly severity: 'info' | 'warn' | 'error';
+    readonly payload: Record<string, unknown>;
+    readonly timestamp: string;
+  }): Promise<void> {
+    const repo = this.sessionTruth();
+    const teamUuid = input.authSnapshot.team_uuid ?? input.authSnapshot.tenant_uuid;
+    const actorUserUuid = input.authSnapshot.user_uuid ?? input.authSnapshot.sub;
+    if (!repo || !input.pointer || typeof teamUuid !== 'string' || teamUuid.length === 0) return;
+    await repo.appendActivity({
+      team_uuid: teamUuid,
+      actor_user_uuid: actorUserUuid,
+      conversation_uuid: input.pointer.conversation_uuid,
+      session_uuid: input.pointer.session_uuid,
+      turn_uuid: input.turnUuid ?? null,
+      trace_uuid: input.traceUuid,
+      event_kind: input.eventKind,
+      severity: input.severity,
+      payload: redactActivityPayload(input.payload),
+      created_at: input.timestamp,
+    });
+  }
+
+  private async recordContextSnapshot(
+    sessionUuid: string,
+    pointer: DurableSessionPointer | null,
+    turn: DurableTurnPointer | null,
+    authSnapshot: IngressAuthSnapshot,
+    traceUuid: string,
+    payload: unknown,
+    timestamp: string,
+  ): Promise<void> {
+    const repo = this.sessionTruth();
+    const teamUuid = authSnapshot.team_uuid ?? authSnapshot.tenant_uuid;
+    if (!repo || !pointer || typeof teamUuid !== 'string' || teamUuid.length === 0) return;
+    const recordPayload = isRecord(payload) ? payload : {};
+    await repo.captureContextSnapshot({
+      session_uuid: sessionUuid,
+      conversation_uuid: pointer.conversation_uuid,
+      team_uuid: teamUuid,
+      trace_uuid: traceUuid,
+      turn_uuid: turn?.turn_uuid ?? null,
+      snapshot_kind: 'initial-context',
+      summary_ref: null,
+      prompt_token_estimate: null,
+      payload: recordPayload,
+      created_at: timestamp,
+    });
+  }
+
+  private async recordUserMessage(
+    sessionUuid: string,
+    pointer: DurableSessionPointer | null,
+    authSnapshot: IngressAuthSnapshot,
+    traceUuid: string,
+    turn: DurableTurnPointer | null,
+    kind: 'user.input' | 'user.cancel',
+    payload: Record<string, unknown>,
+    timestamp: string,
+  ): Promise<void> {
+    const repo = this.sessionTruth();
+    const teamUuid = authSnapshot.team_uuid ?? authSnapshot.tenant_uuid;
+    if (!repo || !pointer || typeof teamUuid !== 'string' || teamUuid.length === 0) return;
+    await repo.appendMessage({
+      session_uuid: sessionUuid,
+      conversation_uuid: pointer.conversation_uuid,
+      team_uuid: teamUuid,
+      trace_uuid: traceUuid,
+      turn_uuid: turn?.turn_uuid ?? null,
+      role: kind === 'user.input' ? 'user' : 'system',
+      kind,
+      event_seq: null,
+      body: payload,
+      created_at: timestamp,
+    });
+  }
+
+  private async recordStreamFrames(
+    sessionUuid: string,
+    pointer: DurableSessionPointer | null,
+    authSnapshot: IngressAuthSnapshot,
+    traceUuid: string,
+    turn: DurableTurnPointer | null,
+    frames: readonly StreamFrame[],
+    timestamp: string,
+  ): Promise<void> {
+    await this.put(recentFramesKey(sessionUuid), {
+      updated_at: timestamp,
+      frames: frames.slice(-MAX_RECENT_FRAMES),
+    } satisfies RecentFramesState);
+    const repo = this.sessionTruth();
+    const teamUuid = authSnapshot.team_uuid ?? authSnapshot.tenant_uuid;
+    const actorUserUuid = authSnapshot.user_uuid ?? authSnapshot.sub;
+    if (!repo || !pointer || typeof teamUuid !== 'string' || teamUuid.length === 0) return;
+
+    for (const frame of frames) {
+      if (frame.kind === 'event') {
+        await repo.appendStreamEvent({
+          session_uuid: sessionUuid,
+          conversation_uuid: pointer.conversation_uuid,
+          team_uuid: teamUuid,
+          trace_uuid: traceUuid,
+          turn_uuid: turn?.turn_uuid ?? null,
+          event_seq: frame.seq,
+          payload: frame.payload,
+          created_at: timestamp,
+        });
+        await repo.appendActivity({
+          team_uuid: teamUuid,
+          actor_user_uuid: actorUserUuid,
+          conversation_uuid: pointer.conversation_uuid,
+          session_uuid: sessionUuid,
+          turn_uuid: turn?.turn_uuid ?? null,
+          trace_uuid: traceUuid,
+          event_kind: `stream.${typeof frame.payload.kind === 'string' ? frame.payload.kind : 'event'}`,
+          severity:
+            frame.payload.kind === 'system.notify' &&
+            typeof frame.payload.severity === 'string' &&
+            frame.payload.severity === 'error'
+              ? 'error'
+              : 'info',
+          payload: redactActivityPayload(frame.payload),
+          created_at: timestamp,
+        });
+      } else if (frame.kind === 'terminal') {
+        await repo.appendActivity({
+          team_uuid: teamUuid,
+          actor_user_uuid: actorUserUuid,
+          conversation_uuid: pointer.conversation_uuid,
+          session_uuid: sessionUuid,
+          turn_uuid: turn?.turn_uuid ?? null,
+          trace_uuid: traceUuid,
+          event_kind: `stream.terminal.${frame.terminal}`,
+          severity: frame.terminal === 'error' ? 'error' : 'info',
+          payload: redactActivityPayload(frame.payload ?? { terminal: frame.terminal }),
+          created_at: timestamp,
+        });
+      }
+    }
+  }
+
+  private async readDurableSnapshot(sessionUuid: string) {
+    return this.sessionTruth()?.readSnapshot(sessionUuid) ?? null;
+  }
+
+  private async readDurableTimeline(sessionUuid: string) {
+    return this.sessionTruth()?.readTimeline(sessionUuid) ?? [];
+  }
+
+  private async readDurableHistory(sessionUuid: string) {
+    return this.sessionTruth()?.readHistory(sessionUuid) ?? [];
+  }
+
+  private async updateConversationIndex(
+    pointer: DurableSessionPointer | null,
+    entry: SessionEntry,
+  ): Promise<void> {
+    if (!pointer) return;
+    const current = (await this.get<ConversationIndexItem[]>(CONVERSATION_INDEX_KEY)) ?? [];
+    const next = [
+      {
+        conversation_uuid: pointer.conversation_uuid,
+        latest_session_uuid: pointer.session_uuid,
+        status: entry.status,
+        updated_at: entry.last_seen_at,
+      },
+      ...current.filter((item) => item.conversation_uuid !== pointer.conversation_uuid),
+    ].slice(0, MAX_CONVERSATIONS);
+    await this.put(CONVERSATION_INDEX_KEY, next);
+  }
+
+  private async updateActivePointers(
+    pointer: DurableSessionPointer | null,
+    turn: DurableTurnPointer | null,
+  ): Promise<void> {
+    await this.put(ACTIVE_POINTERS_KEY, {
+      conversation_uuid: pointer?.conversation_uuid ?? null,
+      session_uuid: pointer?.session_uuid ?? null,
+      turn_uuid: turn?.turn_uuid ?? null,
+    } satisfies ActivePointers);
+  }
+
+  private async rememberCache(name: string, value: Record<string, unknown> | null): Promise<void> {
+    await this.put(cacheKey(name), {
+      key: name,
+      value,
+      expires_at: new Date(Date.now() + CACHE_TTL_MS).toISOString(),
+    } satisfies EphemeralCacheEntry);
+  }
+
+  private async trimHotState(now = Date.now()): Promise<void> {
+    const index = (await this.get<ConversationIndexItem[]>(CONVERSATION_INDEX_KEY)) ?? [];
+    if (index.length > MAX_CONVERSATIONS) {
+      await this.put(CONVERSATION_INDEX_KEY, index.slice(0, MAX_CONVERSATIONS));
+    }
+    const ended = (await this.get<EndedIndexItem[]>(ENDED_INDEX_KEY)) ?? [];
+    for (const item of ended) {
+      const endedAt = Date.parse(item.ended_at);
+      if (Number.isFinite(endedAt) && endedAt < now - ENDED_TTL_MS) {
+        await this.delete(recentFramesKey(item.session_uuid));
+        await this.delete(cacheKey(`status:${item.session_uuid}`));
+        await this.delete(cacheKey(`verify:${item.session_uuid}`));
+      }
+    }
+  }
+
+  private async ensureHotStateAlarm(): Promise<void> {
+    await this.state.storage?.setAlarm?.(Date.now() + HOT_STATE_ALARM_MS);
+  }
+
+  private async forwardStart(
+    sessionUuid: string,
+    body: Record<string, unknown>,
+  ): Promise<{ response: Response; body: Record<string, unknown> | null }> {
+    const fetchResult = await this.forwardInternalJson(sessionUuid, 'start', body);
+    const rpcStart = this.env.AGENT_CORE?.start;
+    const authority = isAuthSnapshot(body.authority) ? body.authority : null;
+    const traceUuid = typeof body.trace_uuid === 'string' ? body.trace_uuid : crypto.randomUUID();
+    if (typeof rpcStart !== 'function' || !authority) return fetchResult;
+    const rpcResult = await rpcStart(
+      {
+        session_uuid: sessionUuid,
+        ...body,
+      },
+      {
+        trace_uuid: traceUuid,
+        authority,
+      },
+    );
+    const parityOk =
+      rpcResult.status === fetchResult.response.status &&
+      JSON.stringify(rpcResult.body ?? null) === JSON.stringify(fetchResult.body ?? null);
+    if (!parityOk) {
+      return {
+        response: jsonResponse(502, {
+          error: 'agent-rpc-parity-failed',
+          message: 'agent-core rpc start diverged from fetch implementation',
+          rpc: rpcResult,
+          fetch: {
+            status: fetchResult.response.status,
+            body: fetchResult.body,
+          },
+        }),
+        body: null,
+      };
+    }
+    return {
+      response: this.cloneJsonResponse(rpcResult.status, rpcResult.body),
+      body: rpcResult.body,
+    };
+  }
+
+  private async forwardStatus(sessionUuid: string): Promise<Response> {
+    const rpcStatus = this.env.AGENT_CORE?.status;
+    const authority = await this.get<IngressAuthSnapshot>(USER_AUTH_SNAPSHOT_KEY);
+    if (typeof rpcStatus !== 'function' || !authority) {
+      return this.forwardInternalRaw(sessionUuid, 'status');
+    }
+    const traceUuid = crypto.randomUUID();
+    const rpcResult = await rpcStatus(
+      { session_uuid: sessionUuid },
+      {
+        trace_uuid: traceUuid,
+        authority,
+      },
+    );
+    return this.cloneJsonResponse(rpcResult.status, rpcResult.body);
   }
 
   private async handleStart(sessionUuid: string, body: StartSessionBody): Promise<Response> {
@@ -335,6 +735,7 @@ export class NanoOrchestratorUserDO {
       return jsonResponse(400, { error: 'invalid-auth-snapshot', message: 'auth_snapshot.sub is required' });
     }
 
+    const traceUuid = typeof body.trace_uuid === 'string' ? body.trace_uuid : crypto.randomUUID();
     const now = new Date().toISOString();
     const startingEntry: SessionEntry = {
       created_at: now,
@@ -347,8 +748,54 @@ export class NanoOrchestratorUserDO {
 
     await this.refreshUserState(body.auth_snapshot, body.initial_context_seed);
     await this.put(sessionKey(sessionUuid), startingEntry);
+    const durablePointer = await this.ensureDurableSession(
+      sessionUuid,
+      body.auth_snapshot,
+      traceUuid,
+      now,
+    );
+    const durableTurn = await this.createDurableTurn(
+      sessionUuid,
+      durablePointer,
+      body.auth_snapshot,
+      traceUuid,
+      'start',
+      initialInput,
+      now,
+    );
+    await this.recordUserMessage(
+      sessionUuid,
+      durablePointer,
+      body.auth_snapshot,
+      traceUuid,
+      durableTurn,
+      'user.input',
+      { text: initialInput },
+      now,
+    );
+    if (body.initial_context !== undefined) {
+      await this.recordContextSnapshot(
+        sessionUuid,
+        durablePointer,
+        durableTurn,
+        body.auth_snapshot,
+        traceUuid,
+        body.initial_context,
+        now,
+      );
+    }
+    await this.appendDurableActivity({
+      pointer: durablePointer,
+      authSnapshot: body.auth_snapshot,
+      traceUuid,
+      turnUuid: durableTurn?.turn_uuid,
+      eventKind: 'session.start.request',
+      severity: 'info',
+      payload: { initial_input: initialInput },
+      timestamp: now,
+    });
 
-    const startAck = await this.forwardInternalJson(sessionUuid, 'start', {
+    const startAck = await this.forwardStart(sessionUuid, {
       initial_input: initialInput,
       ...(body.initial_context !== undefined ? { initial_context: body.initial_context } : {}),
       ...(typeof body.trace_uuid === 'string' ? { trace_uuid: body.trace_uuid } : {}),
@@ -356,6 +803,23 @@ export class NanoOrchestratorUserDO {
     });
     if (!startAck.response.ok) {
       await this.delete(sessionKey(sessionUuid));
+      if (durableTurn) {
+        await this.sessionTruth()?.closeTurn({
+          turn_uuid: durableTurn.turn_uuid,
+          status: 'failed',
+          ended_at: new Date().toISOString(),
+        });
+      }
+      await this.appendDurableActivity({
+        pointer: durablePointer,
+        authSnapshot: body.auth_snapshot,
+        traceUuid,
+        turnUuid: durableTurn?.turn_uuid,
+        eventKind: 'session.start.failed',
+        severity: 'error',
+        payload: startAck.body ?? { error: 'agent-start-failed' },
+        timestamp: new Date().toISOString(),
+      });
       return jsonResponse(startAck.response.status, {
         error: 'agent-start-failed',
         message: 'agent-core internal start failed',
@@ -373,10 +837,41 @@ export class NanoOrchestratorUserDO {
       status: this.attachments.has(sessionUuid) ? 'active' : 'detached',
     };
     await this.put(sessionKey(sessionUuid), entry);
+    await this.sessionTruth()?.updateSessionState({
+      session_uuid: sessionUuid,
+      status: entry.status,
+      last_phase: entry.last_phase,
+      touched_at: entry.last_seen_at,
+    });
     entry = await this.forwardFramesToAttachment(sessionUuid, entry, frames);
+    await this.recordStreamFrames(
+      sessionUuid,
+      durablePointer,
+      body.auth_snapshot,
+      traceUuid,
+      durableTurn,
+      frames,
+      entry.last_seen_at,
+    );
+    await this.updateConversationIndex(durablePointer, entry);
+    await this.updateActivePointers(durablePointer, durableTurn);
 
     const firstEvent =
       frames.find((frame): frame is Extract<StreamFrame, { kind: 'event' }> => frame.kind === 'event') ?? null;
+    const terminal =
+      frames.find((frame): frame is Extract<StreamFrame, { kind: 'terminal' }> => frame.kind === 'terminal') ?? null;
+    if (durableTurn) {
+      await this.sessionTruth()?.closeTurn({
+        turn_uuid: durableTurn.turn_uuid,
+        status:
+          terminal?.terminal === 'cancelled'
+            ? 'cancelled'
+            : terminal?.terminal === 'error'
+              ? 'failed'
+              : 'completed',
+        ended_at: new Date().toISOString(),
+      });
+    }
 
     return jsonResponse(200, {
       ok: true,
@@ -400,6 +895,44 @@ export class NanoOrchestratorUserDO {
       return jsonResponse(400, { error: 'invalid-input-body', message: 'input requires non-empty text' });
     }
     if (body.auth_snapshot) await this.refreshUserState(body.auth_snapshot, body.initial_context_seed);
+    const authSnapshot =
+      body.auth_snapshot ??
+      (await this.get<IngressAuthSnapshot>(USER_AUTH_SNAPSHOT_KEY));
+    if (!authSnapshot) {
+      return jsonResponse(400, { error: 'missing-authority', message: 'input requires persisted auth snapshot' });
+    }
+    const traceUuid = typeof body.trace_uuid === 'string' ? body.trace_uuid : crypto.randomUUID();
+    const now = new Date().toISOString();
+    const durablePointer = await this.ensureDurableSession(sessionUuid, authSnapshot, traceUuid, now);
+    const durableTurn = await this.createDurableTurn(
+      sessionUuid,
+      durablePointer,
+      authSnapshot,
+      traceUuid,
+      'followup',
+      body.text,
+      now,
+    );
+    await this.recordUserMessage(
+      sessionUuid,
+      durablePointer,
+      authSnapshot,
+      traceUuid,
+      durableTurn,
+      'user.input',
+      { text: body.text },
+      now,
+    );
+    await this.appendDurableActivity({
+      pointer: durablePointer,
+      authSnapshot,
+      traceUuid,
+      turnUuid: durableTurn?.turn_uuid,
+      eventKind: 'session.followup.request',
+      severity: 'info',
+      payload: { text: body.text },
+      timestamp: now,
+    });
 
     const inputAck = await this.forwardInternalJson(sessionUuid, 'input', {
       text: body.text,
@@ -409,6 +942,13 @@ export class NanoOrchestratorUserDO {
       ...(body.auth_snapshot ? { authority: body.auth_snapshot } : {}),
     });
     if (!inputAck.response.ok) {
+      if (durableTurn) {
+        await this.sessionTruth()?.closeTurn({
+          turn_uuid: durableTurn.turn_uuid,
+          status: 'failed',
+          ended_at: new Date().toISOString(),
+        });
+      }
       return this.cloneJsonResponse(inputAck.response.status, inputAck.body);
     }
 
@@ -423,7 +963,38 @@ export class NanoOrchestratorUserDO {
       ended_at: null,
     };
     await this.put(sessionKey(sessionUuid), nextEntry);
+    await this.sessionTruth()?.updateSessionState({
+      session_uuid: sessionUuid,
+      status: nextEntry.status,
+      last_phase: nextEntry.last_phase,
+      touched_at: nextEntry.last_seen_at,
+    });
     nextEntry = await this.forwardFramesToAttachment(sessionUuid, nextEntry, frames);
+    await this.recordStreamFrames(
+      sessionUuid,
+      durablePointer,
+      authSnapshot,
+      traceUuid,
+      durableTurn,
+      frames,
+      nextEntry.last_seen_at,
+    );
+    await this.updateConversationIndex(durablePointer, nextEntry);
+    await this.updateActivePointers(durablePointer, durableTurn);
+    if (durableTurn) {
+      const terminal =
+        frames.find((frame): frame is Extract<StreamFrame, { kind: 'terminal' }> => frame.kind === 'terminal') ?? null;
+      await this.sessionTruth()?.closeTurn({
+        turn_uuid: durableTurn.turn_uuid,
+        status:
+          terminal?.terminal === 'cancelled'
+            ? 'cancelled'
+            : terminal?.terminal === 'error'
+              ? 'failed'
+              : 'completed',
+        ended_at: new Date().toISOString(),
+      });
+    }
 
     return jsonResponse(inputAck.response.status, {
       ...(inputAck.body ?? { ok: true, action: 'input' }),
@@ -438,6 +1009,34 @@ export class NanoOrchestratorUserDO {
     if (!entry) return sessionMissingResponse(sessionUuid);
     if (entry.status === 'ended') return sessionTerminalResponse(sessionUuid, await this.getTerminal(sessionUuid));
     if (body.auth_snapshot) await this.refreshUserState(body.auth_snapshot, body.initial_context_seed);
+    const authSnapshot =
+      body.auth_snapshot ??
+      (await this.get<IngressAuthSnapshot>(USER_AUTH_SNAPSHOT_KEY));
+    if (!authSnapshot) {
+      return jsonResponse(400, { error: 'missing-authority', message: 'cancel requires persisted auth snapshot' });
+    }
+    const traceUuid = typeof body.trace_uuid === 'string' ? body.trace_uuid : crypto.randomUUID();
+    const now = new Date().toISOString();
+    const durablePointer = await this.ensureDurableSession(sessionUuid, authSnapshot, traceUuid, now);
+    const durableTurn = await this.createDurableTurn(
+      sessionUuid,
+      durablePointer,
+      authSnapshot,
+      traceUuid,
+      'cancel',
+      typeof body.reason === 'string' ? body.reason : null,
+      now,
+    );
+    await this.recordUserMessage(
+      sessionUuid,
+      durablePointer,
+      authSnapshot,
+      traceUuid,
+      durableTurn,
+      'user.cancel',
+      typeof body.reason === 'string' ? { reason: body.reason } : { reason: 'cancel' },
+      now,
+    );
 
     const cancelAck = await this.forwardInternalJson(sessionUuid, 'cancel', {
       ...(typeof body.reason === 'string' ? { reason: body.reason } : {}),
@@ -448,7 +1047,6 @@ export class NanoOrchestratorUserDO {
       return this.cloneJsonResponse(cancelAck.response.status, cancelAck.body);
     }
 
-    const now = new Date().toISOString();
     const terminal: SessionTerminalRecord = {
       terminal: 'cancelled',
       last_phase: extractPhase(cancelAck.body) ?? entry.last_phase,
@@ -464,9 +1062,35 @@ export class NanoOrchestratorUserDO {
 
     await this.put(sessionKey(sessionUuid), nextEntry);
     await this.put(terminalKey(sessionUuid), terminal);
+    await this.sessionTruth()?.updateSessionState({
+      session_uuid: sessionUuid,
+      status: 'ended',
+      last_phase: terminal.last_phase,
+      touched_at: now,
+      ended_at: now,
+    });
+    if (durableTurn) {
+      await this.sessionTruth()?.closeTurn({
+        turn_uuid: durableTurn.turn_uuid,
+        status: 'cancelled',
+        ended_at: now,
+      });
+    }
+    await this.appendDurableActivity({
+      pointer: durablePointer,
+      authSnapshot,
+      traceUuid,
+      turnUuid: durableTurn?.turn_uuid,
+      eventKind: 'session.cancelled',
+      severity: 'info',
+      payload: cancelAck.body ?? { reason: body.reason ?? 'cancel' },
+      timestamp: now,
+    });
     await this.rememberEndedSession(sessionUuid, now);
     await this.cleanupEndedSessions();
     await this.notifyTerminal(sessionUuid, terminal);
+    await this.updateConversationIndex(durablePointer, nextEntry);
+    await this.updateActivePointers(durablePointer, null);
 
     return jsonResponse(cancelAck.response.status, {
       ...(cancelAck.body ?? { ok: true, action: 'cancel' }),
@@ -481,12 +1105,58 @@ export class NanoOrchestratorUserDO {
     if (!entry) return sessionMissingResponse(sessionUuid);
     if (body.auth_snapshot) await this.refreshUserState(body.auth_snapshot, body.initial_context_seed);
     const response = await this.forwardInternalRaw(sessionUuid, 'verify', body);
-    return this.proxyReadResponse(sessionUuid, entry, response);
+    const proxied = await this.proxyReadResponse(sessionUuid, entry, response);
+    const durable_truth = await this.readDurableSnapshot(sessionUuid);
+    const bodyJson = await readJson(proxied.clone());
+    const nextBody = !durable_truth
+      ? bodyJson
+      : {
+      ...(bodyJson ?? {}),
+      durable_truth,
+    };
+    await this.rememberCache(`verify:${sessionUuid}`, nextBody ?? null);
+    return this.cloneJsonResponse(proxied.status, nextBody ?? null);
   }
 
-  private async handleRead(sessionUuid: string, action: 'status' | 'timeline'): Promise<Response> {
+  private async handleRead(sessionUuid: string, action: 'status' | 'timeline' | 'history'): Promise<Response> {
     const entry = await this.requireSession(sessionUuid);
     if (!entry) return sessionMissingResponse(sessionUuid);
+    if (action === 'history') {
+      await this.touchSession(sessionUuid, entry.status);
+      const messages = await this.readDurableHistory(sessionUuid);
+      return jsonResponse(200, {
+        ok: true,
+        action: 'history',
+        session_uuid: sessionUuid,
+        messages,
+      });
+    }
+    if (action === 'timeline') {
+      const events = await this.readDurableTimeline(sessionUuid);
+      if (events.length > 0) {
+        await this.touchSession(sessionUuid, entry.status);
+        return jsonResponse(200, {
+          ok: true,
+          action: 'timeline',
+          session_uuid: sessionUuid,
+          events,
+        });
+      }
+    }
+    if (action === 'status') {
+      const durable_truth = await this.readDurableSnapshot(sessionUuid);
+      const response = await this.forwardStatus(sessionUuid);
+      const proxied = await this.proxyReadResponse(sessionUuid, entry, response);
+      const bodyJson = await readJson(proxied.clone());
+      const nextBody = !durable_truth
+        ? bodyJson
+        : {
+        ...(bodyJson ?? {}),
+        durable_truth,
+      };
+      await this.rememberCache(`status:${sessionUuid}`, nextBody ?? null);
+      return this.cloneJsonResponse(proxied.status, nextBody ?? null);
+    }
     const response = await this.forwardInternalRaw(sessionUuid, action);
     return this.proxyReadResponse(sessionUuid, entry, response);
   }
@@ -587,11 +1257,19 @@ export class NanoOrchestratorUserDO {
     response: Response,
   ): Promise<Response> {
     const body = await readJson(response);
-    await this.put(sessionKey(sessionUuid), {
+    const nextEntry = {
       ...entry,
       last_seen_at: new Date().toISOString(),
       last_phase: extractPhase(body) ?? entry.last_phase,
-    } satisfies SessionEntry);
+    } satisfies SessionEntry;
+    await this.put(sessionKey(sessionUuid), nextEntry);
+    await this.sessionTruth()?.updateSessionState({
+      session_uuid: sessionUuid,
+      status: nextEntry.status,
+      last_phase: nextEntry.last_phase,
+      touched_at: nextEntry.last_seen_at,
+      ended_at: nextEntry.ended_at,
+    });
     return this.cloneJsonResponse(
       response.status,
       body,

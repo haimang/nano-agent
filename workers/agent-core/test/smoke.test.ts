@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import worker, { NanoSessionDO } from "../src/index.js";
+import { worker, NanoSessionDO } from "../src/index.js";
 import { NACP_VERSION } from "@haimang/nacp-core";
 import { NACP_SESSION_VERSION } from "@haimang/nacp-session";
 
@@ -200,8 +200,8 @@ describe("agent-core shell smoke", () => {
     expect((await response.json()).error).toBe("invalid-trace");
   });
 
-  it("rejects /internal/* on tenant mismatch and authority escalation", async () => {
-    const tenantMismatch = await worker.fetch(
+  it("rejects /internal/* when body authority diverges from the header", async () => {
+    const divergentAuthority = await worker.fetch(
       new Request("https://example.com/internal/sessions/11111111-1111-4111-8111-111111111111/start", {
         method: "POST",
         headers: internalHeaders({
@@ -223,8 +223,8 @@ describe("agent-core shell smoke", () => {
       } as any,
     );
 
-    expect(tenantMismatch.status).toBe(400);
-    expect((await tenantMismatch.json()).error).toBe("invalid-authority");
+    expect(divergentAuthority.status).toBe(403);
+    expect((await divergentAuthority.json()).error).toBe("authority-escalation");
 
     const escalation = await worker.fetch(
       new Request("https://example.com/internal/sessions/11111111-1111-4111-8111-111111111111/start", {

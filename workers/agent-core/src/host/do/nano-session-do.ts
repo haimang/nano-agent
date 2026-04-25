@@ -121,6 +121,8 @@ const CHECKPOINT_STORAGE_KEY = "session:checkpoint";
 
 /** Key used to persist the last-seen-seq hint from the client. */
 const LAST_SEEN_SEQ_KEY = "session:lastSeenSeq";
+/** Unscoped key that remembers the session-owned team UUID across hibernation. */
+const SESSION_TEAM_STORAGE_KEY = "session:teamUuid";
 
 /** Same UUID (v1–v5) shape the checkpoint validator enforces. */
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -195,6 +197,8 @@ export class NanoSessionDO {
    * the old `"unknown"` sentinel that fails the tightened validator.
    */
   private sessionUuid: string | null = null;
+  /** Session-scoped team truth, latched from ingress authority or restore. */
+  private sessionTeamUuid: string | null = null;
 
   /** Per-stream sequence assigned to each accepted client frame. */
   private streamSeq = 0;
@@ -385,8 +389,8 @@ export class NanoSessionDO {
    * request is independently correlatable on the receiving Worker.
    */
   private buildCrossSeamAnchor(): CrossSeamAnchor | undefined {
-    const teamUuid = (this.env as { TEAM_UUID?: unknown } | undefined)?.TEAM_UUID;
-    if (typeof teamUuid !== "string" || teamUuid.length === 0) return undefined;
+    const teamUuid = this.currentTeamUuid();
+    if (!teamUuid) return undefined;
     if (!this.sessionUuid) return undefined;
     if (!this.traceUuid) this.traceUuid = crypto.randomUUID();
     return {
@@ -490,6 +494,22 @@ export class NanoSessionDO {
     this.sessionUuid = candidate;
   }
 
+  private attachTeamUuid(candidate: string | undefined | null): void {
+    if (typeof candidate !== "string" || candidate.length === 0) return;
+    this.sessionTeamUuid = candidate;
+    void this.doState.storage?.put(SESSION_TEAM_STORAGE_KEY, candidate);
+  }
+
+  private currentTeamUuid(): string | null {
+    if (this.sessionTeamUuid && this.sessionTeamUuid.length > 0) {
+      return this.sessionTeamUuid;
+    }
+    const envTeamUuid = (this.env as { TEAM_UUID?: unknown } | undefined)?.TEAM_UUID;
+    return typeof envTeamUuid === "string" && envTeamUuid.length > 0
+      ? envTeamUuid
+      : null;
+  }
+
   // ── webSocketMessage ───────────────────────────────────────
 
   /**
@@ -555,6 +575,7 @@ export class NanoSessionDO {
     // boundary rule is violated, we convert the thrown error into a
     // typed rejection so the caller's admissibility gate blocks dispatch.
     try {
+      this.attachTeamUuid(result.frame.authority.team_uuid);
       const doTeamUuid = this.tenantTeamUuid();
       await verifyTenantBoundary(result.frame, {
         serving_team_uuid: doTeamUuid,
@@ -586,9 +607,9 @@ export class NanoSessionDO {
    * working. Wrapper storage helpers feed this into `tenantDoStorage*`.
    */
   private tenantTeamUuid(): string {
-    const envTeamUuid = (this.env as { TEAM_UUID?: unknown } | undefined)?.TEAM_UUID;
-    return typeof envTeamUuid === "string" && envTeamUuid.length > 0
-      ? envTeamUuid
+    const teamUuid = this.currentTeamUuid();
+    return typeof teamUuid === "string" && teamUuid.length > 0
+      ? teamUuid
       : "_unknown";
   }
 
@@ -811,12 +832,7 @@ export class NanoSessionDO {
 
   /** Build the IngressContext for nacp-session's authority stamping. */
   private buildIngressContext(): IngressContext {
-    const envTeamUuid = (this.env as { TEAM_UUID?: unknown } | undefined)
-      ?.TEAM_UUID;
-    const teamUuid =
-      typeof envTeamUuid === "string" && envTeamUuid.length > 0
-        ? envTeamUuid
-        : "_unknown";
+    const teamUuid = this.currentTeamUuid() ?? "_unknown";
     const planLevel: IngressContext["plan_level"] = "internal";
     return {
       team_uuid: teamUuid,
@@ -842,12 +858,7 @@ export class NanoSessionDO {
   ensureWsHelper(): SessionWebSocketHelper | null {
     if (this.wsHelper) return this.wsHelper;
     if (this.sessionUuid === null) return null;
-    const envTeamUuid = (this.env as { TEAM_UUID?: unknown } | undefined)
-      ?.TEAM_UUID;
-    const teamUuid =
-      typeof envTeamUuid === "string" && envTeamUuid.length > 0
-        ? envTeamUuid
-        : null;
+    const teamUuid = this.currentTeamUuid();
     if (teamUuid === null) return null;
     if (!this.traceUuid) this.traceUuid = crypto.randomUUID();
 
@@ -916,12 +927,7 @@ export class NanoSessionDO {
       | undefined;
     if (!evalSink?.emit) return;
     if (!this.traceUuid) this.traceUuid = crypto.randomUUID();
-    const envTeamUuid = (this.env as { TEAM_UUID?: unknown } | undefined)
-      ?.TEAM_UUID;
-    const teamUuid =
-      typeof envTeamUuid === "string" && envTeamUuid.length > 0
-        ? envTeamUuid
-        : null;
+    const teamUuid = this.currentTeamUuid();
     if (!teamUuid || !this.sessionUuid) return;
 
     await evalSink.emit({
@@ -1110,11 +1116,7 @@ export class NanoSessionDO {
    * identified.
    */
   private buildTraceContext(): TraceContext | undefined {
-    const envTeamUuid = (this.env as { TEAM_UUID?: unknown } | undefined)?.TEAM_UUID;
-    const teamUuid =
-      typeof envTeamUuid === "string" && envTeamUuid.length > 0
-        ? envTeamUuid
-        : null;
+    const teamUuid = this.currentTeamUuid();
     if (!teamUuid || !this.sessionUuid) return undefined;
     if (!this.traceUuid) this.traceUuid = crypto.randomUUID();
     return {
@@ -1178,9 +1180,7 @@ export class NanoSessionDO {
     // name itself with a real UUID must not create a record the
     // validator will immediately reject.
     if (this.sessionUuid === null) return;
-    const envTeamUuid = (this.env as { TEAM_UUID?: unknown } | undefined)?.TEAM_UUID;
-    const teamUuid =
-      typeof envTeamUuid === "string" && envTeamUuid.length > 0 ? envTeamUuid : null;
+    const teamUuid = this.currentTeamUuid();
     if (teamUuid === null) return;
 
     const checkpoint = {
@@ -1207,6 +1207,13 @@ export class NanoSessionDO {
   }
 
   private async restoreFromStorage(): Promise<void> {
+    const rawStorage = this.doState.storage;
+    if (rawStorage) {
+      const rawTeamUuid = await rawStorage.get<string>(SESSION_TEAM_STORAGE_KEY);
+      if (typeof rawTeamUuid === "string" && rawTeamUuid.length > 0) {
+        this.sessionTeamUuid = rawTeamUuid;
+      }
+    }
     // B9: checkpoint read goes through the tenant-scoped wrapper so
     // we only restore our own `tenants/<team>/` namespace.
     const storage = this.getTenantScopedStorage();
@@ -1219,6 +1226,7 @@ export class NanoSessionDO {
     // Restore just the kernel snapshot + turnCount for now — a richer
     // subsystem restore path is the job of the concrete composition
     // factory in production builds.
+    this.sessionTeamUuid = raw.teamUuid;
     this.state = {
       actorState: this.state.actorState,
       kernelSnapshot: raw.kernelFragment,

@@ -71,9 +71,6 @@ function normalizeAuthority(
     typeof value.tenant_uuid === "string" && value.tenant_uuid.length > 0
       ? value.tenant_uuid
       : teamUuid;
-  if (teamUuid && tenantUuid && tenantUuid !== teamUuid) {
-    return null;
-  }
 
   return {
     sub: value.sub,
@@ -123,15 +120,6 @@ export async function validateInternalAuthority(
     typeof env.TEAM_UUID === "string" && env.TEAM_UUID.length > 0
       ? env.TEAM_UUID
       : null;
-  if (!teamUuid && env.ENVIRONMENT !== "test") {
-    return {
-      ok: false,
-      response: jsonResponse(503, {
-        error: "worker-misconfigured",
-        message: "TEAM_UUID must be configured",
-      }),
-    };
-  }
 
   const traceUuid = request.headers.get("x-trace-uuid");
   if (!isUuid(traceUuid)) {

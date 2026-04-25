@@ -190,6 +190,87 @@ describe('NanoOrchestratorUserDO', () => {
     expect(await verify.json()).toMatchObject({ error: 'unknown-verify-check' });
   });
 
+  it('returns durable history payloads even when no D1 binding is configured', async () => {
+    const { state, store } = createState();
+    store.set(`sessions/${SESSION_UUID}`, {
+      created_at: 'a',
+      last_seen_at: 'a',
+      status: 'detached',
+      last_phase: 'attached',
+      relay_cursor: -1,
+      ended_at: null,
+    });
+
+    const userDo = new NanoOrchestratorUserDO(state, {
+      AGENT_CORE: { fetch: async () => Response.json({ ok: true }) } as Fetcher,
+      NANO_INTERNAL_BINDING_SECRET: 'secret',
+    });
+
+    const response = await userDo.fetch(
+      new Request(`https://orchestrator.internal/sessions/${SESSION_UUID}/history`),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ ok: true, action: 'history', messages: [] });
+  });
+
+  it('accepts rpc-backed start parity when rpc and fetch return the same envelope', async () => {
+    const { state } = createState();
+    const agentFetch = async (request: Request): Promise<Response> => {
+      const pathname = new URL(request.url).pathname;
+      if (pathname.endsWith('/start')) {
+        return Response.json({ ok: true, action: 'start', phase: 'attached' });
+      }
+      if (pathname.endsWith('/stream')) {
+        return new Response(
+          makeNdjson([
+            JSON.stringify({ kind: 'meta', seq: 0, event: 'opened', session_uuid: SESSION_UUID }),
+            JSON.stringify({
+              kind: 'event',
+              seq: 1,
+              name: 'session.stream.event',
+              payload: { kind: 'session.update', phase: 'attached' },
+            }),
+          ]),
+          { headers: { 'Content-Type': 'application/x-ndjson' } },
+        );
+      }
+      return Response.json({ error: 'not-found' }, { status: 404 });
+    };
+    const userDo = new NanoOrchestratorUserDO(state, {
+      AGENT_CORE: {
+        fetch: agentFetch,
+        start: async () => ({
+          status: 200,
+          body: { ok: true, action: 'start', phase: 'attached' },
+        }),
+      } as any,
+      NANO_INTERNAL_BINDING_SECRET: 'secret',
+    });
+
+    const response = await userDo.fetch(
+      new Request(`https://orchestrator.internal/sessions/${SESSION_UUID}/start`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          initial_input: 'hello',
+          trace_uuid: '33333333-3333-4333-8333-333333333333',
+          auth_snapshot: {
+            sub: USER_UUID,
+            user_uuid: USER_UUID,
+            team_uuid: '44444444-4444-4444-8444-444444444444',
+            tenant_uuid: '44444444-4444-4444-8444-444444444444',
+            tenant_source: 'claim',
+          },
+          initial_context_seed: { default_layers: [], user_memory_ref: null },
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ ok: true, action: 'start' });
+  });
+
   it('cleans up starting session state when internal start fails', async () => {
     const { state, store } = createState();
     const userDo = new NanoOrchestratorUserDO(state, {

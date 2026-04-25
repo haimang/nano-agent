@@ -58,6 +58,8 @@ describe("authenticateRequest", () => {
     );
 
     expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.snapshot.tenant_source).toBe("deploy-fill");
   });
 
   it("rejects expired tokens", async () => {
@@ -106,5 +108,48 @@ describe("authenticateRequest", () => {
     );
 
     expect(result.ok).toBe(false);
+  });
+
+  it("rejects query-string access_token on non-websocket routes", async () => {
+    const token = await signTestJwt(
+      {
+        sub: "11111111-1111-4111-8111-111111111111",
+      },
+      "q".repeat(32),
+    );
+    const result = await authenticateRequest(
+      new Request(`https://example.com/sessions/11111111-1111-4111-8111-111111111111/start?access_token=${token}`, {
+        headers: {
+          "x-trace-uuid": "33333333-3333-4333-8333-333333333333",
+        },
+      }),
+      {
+        JWT_SECRET: "q".repeat(32),
+        TEAM_UUID: "nano-agent",
+      },
+    );
+
+    expect(result.ok).toBe(false);
+  });
+
+  it("allows query-string access_token only when explicitly enabled", async () => {
+    const token = await signTestJwt(
+      {
+        sub: "11111111-1111-4111-8111-111111111111",
+      },
+      "w".repeat(32),
+    );
+    const result = await authenticateRequest(
+      new Request(`https://example.com/sessions/11111111-1111-4111-8111-111111111111/ws?access_token=${token}&trace_uuid=33333333-3333-4333-8333-333333333333`),
+      {
+        JWT_SECRET: "w".repeat(32),
+        TEAM_UUID: "nano-agent",
+      },
+      {
+        allowQueryToken: true,
+      },
+    );
+
+    expect(result.ok).toBe(true);
   });
 });
