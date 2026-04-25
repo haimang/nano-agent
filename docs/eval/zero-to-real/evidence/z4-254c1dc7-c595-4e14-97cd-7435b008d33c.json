@@ -1,0 +1,30 @@
+{
+  "phase": "zero-to-real/Z4",
+  "evidence_kind": "automated-live-llm-mainline",
+  "client_kind": "cross-e2e-fetch",
+  "auth_path": "orchestrator-auth register/login via orchestrator-core facade",
+  "transport_baseline": {
+    "session_start": "HTTP public facade",
+    "timeline": "HTTP history/timeline readback",
+    "stream": "not exercised by this artifact"
+  },
+  "trace_uuid": "254c1dc7-c595-4e14-97cd-7435b008d33c",
+  "session_uuid": "5436ded3-4f5c-4485-b444-088b85633d0b",
+  "runtime_ok": true,
+  "history_ok": true,
+  "reconnect_ok": "not exercised by this artifact",
+  "quota_evidence": {
+    "d1_table": "nano_usage_events",
+    "usage_event_uuid": "965cd26e-9a6f-408e-a2b8-9f37cd17a44d",
+    "resource_kind": "llm",
+    "verdict": "allow",
+    "provider_key": "workers-ai",
+    "idempotency_key": "llm:allow:llm-4c621008-87ca-45f2-80b3-5f95f22189e2-2"
+  },
+  "open_gaps": [
+    "This artifact is an automated cross-e2e run, not a browser or WeChat manual smoke.",
+    "WS stream remains first-wave one-shot timeline snapshot, not token-level live push.",
+    "Mini Program real appid/devtools evidence remains deferred."
+  ],
+  "closure_verdict": "accepted-as-live-runtime-evidence-not-manual-client-evidence"
+}
