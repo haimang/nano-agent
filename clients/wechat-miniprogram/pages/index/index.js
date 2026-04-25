@@ -1,13 +1,15 @@
-const { uuid, request, authHeaders, connectStream } = require("../../utils/nano-client");
+const { uuid, request, authHeaders, connectStream, readErrMessage } = require("../../utils/nano-client");
+const app = getApp();
 
 Page({
   data: {
-    baseUrl: "https://nano-agent-orchestrator-core-preview.haimang.workers.dev",
+    baseUrl: app.globalData.baseUrl,
     email: `z4-${Date.now()}@nano-agent.test`,
     password: "NanoAgent!z4-mini",
     prompt: "Reply with one short sentence and, if useful, call pwd.",
     sessionUuid: uuid(),
     token: "",
+    lastSeenSeq: 0,
     logs: []
   },
 
@@ -31,7 +33,7 @@ Page({
       });
       await this.login();
     } catch (error) {
-      this.log({ kind: "register.error", message: error.message });
+      this.log({ kind: "register.error", ...readErrMessage(error) });
     }
   },
 
@@ -46,7 +48,7 @@ Page({
       this.setData({ token });
       this.log({ kind: "login.ok", team: body.data?.team });
     } catch (error) {
-      this.log({ kind: "login.error", message: error.message });
+      this.log({ kind: "login.error", ...readErrMessage(error) });
     }
   },
 
@@ -54,7 +56,7 @@ Page({
     wx.login({
       success: async (res) => {
         try {
-          const body = await request(this.data.baseUrl, "/auth/wechat", {
+          const body = await request(this.data.baseUrl, "/auth/wechat/login", {
             method: "POST",
             header: { "content-type": "application/json", "x-trace-uuid": uuid() },
             data: { code: res.code }
@@ -63,7 +65,7 @@ Page({
           this.setData({ token });
           this.log({ kind: "wechat.login.ok", team: body.data?.team });
         } catch (error) {
-          this.log({ kind: "wechat.login.error", message: error.message });
+          this.log({ kind: "wechat.login.error", ...readErrMessage(error) });
         }
       },
       fail: (err) => this.log({ kind: "wechat.login.error", message: err.errMsg })
@@ -85,7 +87,7 @@ Page({
       });
       this.log({ kind: "timeline.ok", events: body.events || [] });
     } catch (error) {
-      this.log({ kind: "timeline.error", message: error.message });
+      this.log({ kind: "timeline.error", ...readErrMessage(error) });
     }
   },
 
@@ -99,8 +101,14 @@ Page({
       this.data.baseUrl,
       this.data.token,
       this.data.sessionUuid,
-      (event) => this.log(event),
-      (state) => this.log(`ws ${state}`)
+      (event) => {
+        if (typeof event.seq === "number" && event.seq > this.data.lastSeenSeq) {
+          this.setData({ lastSeenSeq: event.seq });
+        }
+        this.log(event);
+      },
+      (state) => this.log(`ws ${state}`),
+      this.data.lastSeenSeq
     );
   },
 
@@ -113,7 +121,7 @@ Page({
       });
       this.log({ kind: `${action}.ok`, body });
     } catch (error) {
-      this.log({ kind: `${action}.error`, message: error.message });
+      this.log({ kind: `${action}.error`, ...readErrMessage(error) });
     }
   }
 });

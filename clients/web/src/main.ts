@@ -1,7 +1,9 @@
-import { NanoClient, type AuthState, type SessionEvent } from "./client";
+import { NanoClient, NanoClientError, type AuthState, type SessionEvent } from "./client";
 import "./styles.css";
 
 const DEFAULT_BASE_URL = "https://nano-agent-orchestrator-core-preview.haimang.workers.dev";
+const envBaseUrl = (import.meta as ImportMeta & { readonly env?: { readonly VITE_NANO_BASE_URL?: string } })
+  .env?.VITE_NANO_BASE_URL;
 
 function uuid(): string {
   return crypto.randomUUID();
@@ -13,7 +15,8 @@ if (!app) throw new Error("missing #app");
 let auth: AuthState | null = null;
 let sessionUuid = uuid();
 let socket: WebSocket | null = null;
-const baseUrl = localStorage.getItem("nano.baseUrl") || DEFAULT_BASE_URL;
+let lastSeenSeq = 0;
+const baseUrl = localStorage.getItem("nano.baseUrl") || envBaseUrl || DEFAULT_BASE_URL;
 const client = new NanoClient({
   baseUrl,
   traceUuid: uuid,
@@ -45,6 +48,7 @@ app.innerHTML = `
       <button id="input">Follow-up</button>
       <button id="stream">Open WS</button>
       <button id="timeline">Timeline</button>
+      <button id="newSession">New Session</button>
     </div>
   </section>
   <section class="panel"><h2>Events</h2><div id="log"></div></section>
@@ -69,7 +73,9 @@ async function run(label: string, task: () => Promise<unknown>): Promise<void> {
     const result = await task();
     appendLog({ kind: `client.${label}.ok`, result });
   } catch (error) {
-    appendLog({ kind: `client.${label}.error`, message: error instanceof Error ? error.message : String(error) });
+    appendLog(error instanceof NanoClientError
+      ? { ...error.details, kind: error.details.kind }
+      : { kind: `client.${label}.error`, message: error instanceof Error ? error.message : String(error) });
   }
 }
 
@@ -90,11 +96,22 @@ document.querySelector("#timeline")?.addEventListener("click", () => run("timeli
 document.querySelector("#stream")?.addEventListener("click", () => {
   try {
     socket?.close();
-    socket = client.openStream(requireAuth(), refreshSessionUuid(), appendLog);
+    socket = client.openStream(requireAuth(), refreshSessionUuid(), appendLog, { lastSeenSeq });
+    socket.addEventListener("nano:seq", (event) => {
+      const seq = (event as CustomEvent<number>).detail;
+      if (Number.isFinite(seq)) lastSeenSeq = Math.max(lastSeenSeq, seq);
+    });
     socket.addEventListener("open", () => appendLog("websocket open"));
     socket.addEventListener("close", () => appendLog("websocket close"));
     socket.addEventListener("error", () => appendLog("websocket error"));
   } catch (error) {
     appendLog({ kind: "client.stream.error", message: error instanceof Error ? error.message : String(error) });
   }
+});
+document.querySelector("#newSession")?.addEventListener("click", () => {
+  sessionUuid = uuid();
+  lastSeenSeq = 0;
+  const input = document.querySelector<HTMLInputElement>("#sessionUuid");
+  if (input) input.value = sessionUuid;
+  appendLog({ kind: "client.session.new", sessionUuid });
 });
