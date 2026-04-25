@@ -134,7 +134,11 @@ describe("applyAction", () => {
       expect(next.activeTurn!.pendingToolCalls.map((d) => d.callId)).toEqual([
         "tc-2",
       ]);
-      expect(next.activeTurn!.messages).toContain("file content");
+      expect(next.activeTurn!.messages).toContainEqual({
+        role: "tool",
+        toolCallId: "tc-1",
+        content: "file content",
+      });
     });
   });
 

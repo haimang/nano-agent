@@ -401,10 +401,12 @@ describe("SessionOrchestrator", () => {
             snapshot,
             events: [
               {
-                kind: "llm.delta",
-                content_type: "text",
+                type: "llm.delta",
+                turnId: "11111111-1111-4111-8111-111111111111",
+                contentType: "text",
                 content: `chunk-${callCount}`,
-                is_final: false,
+                isFinal: false,
+                timestamp: "2026-04-25T00:00:00.000Z",
               },
             ],
             done: callCount >= 2,
@@ -650,6 +652,27 @@ describe("SessionOrchestrator", () => {
           message: expect.stringMatching(/cancelled/i),
         }),
       );
+    });
+
+    it("does not throw or call advanceStep once the turn has already settled", async () => {
+      const deps = createMockDeps();
+      const orchestrator = new SessionOrchestrator(deps, DEFAULT_RUNTIME_CONFIG);
+      const initial = orchestrator.createInitialState();
+
+      const attached: OrchestrationState = {
+        ...initial,
+        actorState: {
+          ...initial.actorState,
+          phase: "attached" as const,
+          attachedAt: "2026-04-16T12:00:00.000Z",
+        },
+      };
+
+      const result = await orchestrator.cancelTurn(attached);
+
+      expect(deps.advanceStep).not.toHaveBeenCalled();
+      expect(result.kernelSnapshot).toBe(attached.kernelSnapshot);
+      expect(result.actorState.phase).toBe("attached");
     });
   });
 

@@ -59,6 +59,12 @@ export interface SessionRuntimeEnv {
   readonly SESSION_DO: unknown;
   readonly R2_ARTIFACTS: unknown;
   readonly KV_CONFIG: unknown;
+  readonly NANO_AGENT_DB?: D1Database;
+  readonly AI?: {
+    run(model: string, input: Record<string, unknown>): Promise<unknown>;
+  };
+  readonly NANO_AGENT_LLM_CALL_LIMIT?: string;
+  readonly NANO_AGENT_TOOL_CALL_LIMIT?: string;
 
   // v1 binding catalog (Phase 4 truth)
   readonly BASH_CORE?: ServiceBindingLike;

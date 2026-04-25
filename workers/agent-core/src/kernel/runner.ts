@@ -28,12 +28,28 @@ export interface AdvanceStepResult {
   done: boolean;
 }
 
+export interface KernelRunnerHooks {
+  beforeLlmInvoke?: (ctx: {
+    readonly snapshot: KernelSnapshot;
+    readonly turnId: string;
+  }) => Promise<void> | void;
+  afterLlmInvoke?: (ctx: {
+    readonly snapshot: KernelSnapshot;
+    readonly turnId: string;
+    readonly usage?: { inputTokens: number; outputTokens: number };
+    readonly content: string | null;
+  }) => Promise<void> | void;
+}
+
 // ═══════════════════════════════════════════════════════════════════
 // §2 — KernelRunner
 // ═══════════════════════════════════════════════════════════════════
 
 export class KernelRunner {
-  constructor(private delegates: KernelDelegates) {}
+  constructor(
+    private delegates: KernelDelegates,
+    private hooks: KernelRunnerHooks = {},
+  ) {}
 
   async advanceStep(
     snapshot: KernelSnapshot,
@@ -137,42 +153,73 @@ export class KernelRunner {
     now: string,
   ): Promise<AdvanceStepResult> {
     const events: RuntimeEvent[] = [];
-    let content: string | null = null;
+    let content = "";
     let usage: { inputTokens: number; outputTokens: number } | undefined;
 
-    for await (const chunk of this.delegates.llm.call(
-      snapshot.activeTurn?.messages ?? [],
-    )) {
-      switch (chunk.type) {
-        case "content": {
-          content = chunk.content;
-          events.push({
-            type: "llm.delta",
-            turnId,
-            contentType: "text",
-            content: chunk.content,
-            isFinal: false,
-            timestamp: now,
-          });
-          break;
-        }
-        case "usage": {
-          usage = chunk.usage;
-          break;
-        }
-        case "tool_calls": {
-          snapshot = applyAction(snapshot, {
-            type: "tool_calls_requested",
-            calls: chunk.calls,
-          });
-          break;
+    try {
+      if (this.hooks.beforeLlmInvoke) {
+        await this.hooks.beforeLlmInvoke({ snapshot, turnId });
+      }
+
+      for await (const chunk of this.delegates.llm.call(
+        snapshot.activeTurn?.messages ?? [],
+      )) {
+        switch (chunk.type) {
+          case "content": {
+            content += chunk.content;
+            events.push({
+              type: "llm.delta",
+              turnId,
+              contentType: "text",
+              content: chunk.content,
+              isFinal: false,
+              timestamp: now,
+            });
+            break;
+          }
+          case "usage": {
+            usage = chunk.usage;
+            break;
+          }
+          case "tool_calls": {
+            snapshot = applyAction(snapshot, {
+              type: "tool_calls_requested",
+              calls: chunk.calls,
+            });
+            break;
+          }
         }
       }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const code =
+        error && typeof error === "object" && "code" in error
+          ? String((error as { code?: unknown }).code)
+          : "LLM_EXECUTION_FAILED";
+      const severity = code === "QUOTA_EXCEEDED" ? "warning" : "error";
+      snapshot = applyAction(snapshot, {
+        type: "complete_turn",
+        reason: code.toLowerCase(),
+      });
+      events.push({
+        type: "system.notify",
+        severity,
+        message: `${code}: ${message}`,
+        timestamp: now,
+      });
+      return { snapshot, events, done: true };
     }
 
+    const normalizedContent = content.length > 0 ? content : null;
     const llmAction: KernelAction = {
       type: "llm_response",
-      content,
+      content:
+        normalizedContent === null
+          ? null
+          : {
+              role: "assistant",
+              content: normalizedContent,
+            },
       usage,
     };
     snapshot = applyAction(snapshot, llmAction);
@@ -183,6 +230,30 @@ export class KernelRunner {
       stepIndex,
       result: content,
     });
+
+    try {
+      if (this.hooks.afterLlmInvoke) {
+        await this.hooks.afterLlmInvoke({
+          snapshot,
+          turnId,
+          usage,
+          content: normalizedContent,
+        });
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      snapshot = applyAction(snapshot, {
+        type: "complete_turn",
+        reason: "llm-postprocess-failed",
+      });
+      events.push({
+        type: "system.notify",
+        severity: "error",
+        message: `LLM_POSTPROCESS_FAILED: ${message}`,
+        timestamp: now,
+      });
+      return { snapshot, events, done: true };
+    }
 
     return { snapshot, events, done: false };
   }
@@ -232,7 +303,18 @@ export class KernelRunner {
       toolName: decision.toolName,
       requestId: callId,
       status: resultStatus,
-      output: typeof result === "string" ? result : JSON.stringify(result),
+      ...(resultStatus === "error"
+        ? {
+            errorMessage:
+              result && typeof result === "object" && "message" in (result as Record<string, unknown>)
+                ? String((result as Record<string, unknown>).message)
+                : typeof result === "string"
+                  ? result
+                  : JSON.stringify(result),
+          }
+        : {
+            output: typeof result === "string" ? result : JSON.stringify(result),
+          }),
       timestamp: now,
     });
 

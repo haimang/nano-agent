@@ -24,6 +24,12 @@ export interface WorkerCapabilityCallRequest {
   readonly requestId: string;
   readonly capabilityName?: string;
   readonly body: WorkerToolCallBody;
+  readonly quota?: {
+    readonly verdict?: string;
+    readonly quota_kind?: string;
+    readonly request_id?: string;
+    readonly tool_name?: string;
+  };
 }
 
 export interface WorkerCapabilityCancelRequest {
@@ -37,6 +43,11 @@ interface BashWorkerRuntime {
   readonly target: LocalTsTarget;
   readonly executor: CapabilityExecutor;
 }
+
+const pendingQuotaAuthorizations = new Map<
+  string,
+  WorkerCapabilityCallRequest["quota"] | undefined
+>();
 
 const PX_SLEEP_DECLARATION: CapabilityDeclaration = {
   name: PX_SLEEP_TOOL_NAME,
@@ -113,6 +124,24 @@ function createRuntime(): BashWorkerRuntime {
     executor: new CapabilityExecutor(
       new Map([["local-ts", target]]),
       new CapabilityPolicyGate(registry),
+      {
+        beforeCapabilityExecute: ({ plan, requestId }) => {
+          const quota = pendingQuotaAuthorizations.get(requestId);
+          if (!quota) return;
+          if (quota.verdict !== "allow") {
+            throw new Error("quota authorization missing allow verdict");
+          }
+          if (quota.quota_kind !== "tool") {
+            throw new Error("quota authorization quota_kind must be 'tool'");
+          }
+          if (quota.request_id !== requestId) {
+            throw new Error("quota authorization request_id mismatch");
+          }
+          if (quota.tool_name !== plan.capabilityName) {
+            throw new Error("quota authorization tool_name mismatch");
+          }
+        },
+      },
     ),
   };
 }
@@ -157,7 +186,7 @@ export async function executeCapabilityCall(
   request: WorkerCapabilityCallRequest,
   options: { previewMode: boolean },
 ) {
-  const { requestId, capabilityName, body } = request;
+  const { requestId, capabilityName, body, quota } = request;
   const toolName = body.tool_name;
   const toolInput = isRecord(body.tool_input) ? body.tool_input : {};
 
@@ -179,8 +208,13 @@ export async function executeCapabilityCall(
     return toErrorBody("unknown-tool", `tool "${toolName}" is not registered`);
   }
 
-  const result = await runtime.executor.executeWithRequestId(plan, requestId);
-  return resultToToolResponse(result);
+  pendingQuotaAuthorizations.set(requestId, quota);
+  try {
+    const result = await runtime.executor.executeWithRequestId(plan, requestId);
+    return resultToToolResponse(result);
+  } finally {
+    pendingQuotaAuthorizations.delete(requestId);
+  }
 }
 
 export function cancelCapabilityCall(requestId: string) {
@@ -198,6 +232,17 @@ export function parseCapabilityCallRequest(raw: unknown): WorkerCapabilityCallRe
       tool_name: raw.body.tool_name,
       tool_input: isRecord(raw.body.tool_input) ? raw.body.tool_input : {},
     },
+    quota: isRecord(raw.quota)
+      ? {
+          verdict: typeof raw.quota.verdict === "string" ? raw.quota.verdict : undefined,
+          quota_kind:
+            typeof raw.quota.quota_kind === "string" ? raw.quota.quota_kind : undefined,
+          request_id:
+            typeof raw.quota.request_id === "string" ? raw.quota.request_id : undefined,
+          tool_name:
+            typeof raw.quota.tool_name === "string" ? raw.quota.tool_name : undefined,
+        }
+      : undefined,
   };
 }
 

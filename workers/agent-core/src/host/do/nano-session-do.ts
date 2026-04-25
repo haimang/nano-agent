@@ -41,6 +41,12 @@ import { makeRemoteBindingsFactory } from "../remote-bindings.js";
 import type { CrossSeamAnchor } from "../cross-seam.js";
 import type { SessionRuntimeEnv } from "../env.js";
 import {
+  buildQuotaErrorEnvelope,
+  buildToolQuotaAuthorization,
+  createMainlineKernelRunner,
+} from "../runtime-mainline.js";
+import type { CapabilityTransportLike } from "../runtime-mainline.js";
+import {
   composeWorkspaceWithEvidence,
   type WorkspaceCompositionHandle,
 } from "../workspace-runtime.js";
@@ -98,6 +104,12 @@ import {
   tenantDoStorageDelete,
   type DoStorageLike,
 } from "@haimang/nacp-core";
+import { D1QuotaRepository } from "../quota/repository.js";
+import {
+  QuotaAuthorizer,
+  QuotaExceededError,
+  type QuotaRuntimeContext,
+} from "../quota/authorizer.js";
 
 // ═══════════════════════════════════════════════════════════════════
 // §1 — DurableObjectState subset
@@ -123,9 +135,21 @@ const CHECKPOINT_STORAGE_KEY = "session:checkpoint";
 const LAST_SEEN_SEQ_KEY = "session:lastSeenSeq";
 /** Unscoped key that remembers the session-owned team UUID across hibernation. */
 const SESSION_TEAM_STORAGE_KEY = "session:teamUuid";
+const DEFAULT_LLM_CALL_LIMIT = 200;
+const DEFAULT_TOOL_CALL_LIMIT = 400;
 
 /** Same UUID (v1–v5) shape the checkpoint validator enforces. */
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function readPositiveInt(value: unknown, fallback: number): number {
+  const parsed =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && value.length > 0
+        ? Number(value)
+        : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : fallback;
+}
 
 // ═══════════════════════════════════════════════════════════════════
 // §2 — NanoSessionDO
@@ -148,6 +172,7 @@ export class NanoSessionDO {
    * GPT R2 asked for.
    */
   private readonly workspaceComposition: WorkspaceCompositionHandle;
+  private readonly quotaAuthorizer: QuotaAuthorizer | null;
 
   /**
    * 3rd-round R2: bounded in-memory default eval/evidence sink. When
@@ -353,6 +378,7 @@ export class NanoSessionDO {
       eval: effectiveEvalSink,
       workspace: workspaceHandle,
     };
+    this.quotaAuthorizer = this.buildQuotaAuthorizer(effectiveEvalSink);
     this.workspaceComposition = workspaceHandle!;
 
     const deps = this.buildOrchestrationDeps();
@@ -401,6 +427,57 @@ export class NanoSessionDO {
       sourceRole: "session",
       sourceKey: "nano-agent.session.do@v1",
     };
+  }
+
+  private buildQuotaContext(turnUuid?: string | null): QuotaRuntimeContext | null {
+    const trace = this.buildTraceContext();
+    if (!trace) return null;
+    return {
+      teamUuid: trace.teamUuid,
+      sessionUuid: trace.sessionUuid,
+      traceUuid: trace.traceUuid,
+      // Kernel turn IDs are local runtime identifiers, not the durable
+      // `nano_session_turns.turn_uuid` keys owned by orchestrator-core.
+      // Until a cross-worker durable turn mapping is frozen, quota/audit
+      // writes must stay session-scoped to avoid foreign-key drift.
+      turnUuid: turnUuid ?? null,
+    };
+  }
+
+  private buildQuotaAuthorizer(evalSink: {
+    emit?: (record: unknown) => void | Promise<void>;
+  }): QuotaAuthorizer | null {
+    const runtimeEnv = this.env as Partial<SessionRuntimeEnv> | undefined;
+    const db = runtimeEnv?.NANO_AGENT_DB;
+    if (!db) return null;
+    return new QuotaAuthorizer(new D1QuotaRepository(db), {
+      llmLimit: readPositiveInt(
+        runtimeEnv.NANO_AGENT_LLM_CALL_LIMIT,
+        DEFAULT_LLM_CALL_LIMIT,
+      ),
+      toolLimit: readPositiveInt(
+        runtimeEnv.NANO_AGENT_TOOL_CALL_LIMIT,
+        DEFAULT_TOOL_CALL_LIMIT,
+      ),
+      emitTrace: async (event) => {
+        assertTraceLaw(event);
+        if (evalSink.emit) {
+          await evalSink.emit(event);
+        }
+      },
+    });
+  }
+
+  private createLiveKernelRunner() {
+    const runtimeEnv = this.env as Partial<SessionRuntimeEnv> | undefined;
+    if (!runtimeEnv?.AI) return null;
+    return createMainlineKernelRunner({
+      ai: runtimeEnv.AI,
+      quotaAuthorizer: this.quotaAuthorizer,
+      capabilityTransport: this.getCapabilityTransport(),
+      contextProvider: () => this.buildQuotaContext(),
+      anchorProvider: () => this.buildCrossSeamAnchor(),
+    });
   }
 
   // ── fetch ──────────────────────────────────────────────────
@@ -1006,6 +1083,7 @@ export class NanoSessionDO {
    */
   private buildOrchestrationDeps(): OrchestrationDeps {
     const handles = this.subsystems;
+    const liveKernel = this.createLiveKernelRunner();
 
     return {
       advanceStep: async (snapshot, signals) => {
@@ -1018,6 +1096,12 @@ export class NanoSessionDO {
             }
           | undefined;
         if (kernel?.advanceStep) return kernel.advanceStep(snapshot, signals);
+        if (liveKernel) {
+          return liveKernel.advanceStep(
+            snapshot as import("../../kernel/state.js").KernelSnapshot,
+            signals as import("../../kernel/scheduler.js").SchedulerSignals,
+          );
+        }
         return { snapshot, events: [], done: true };
       },
       buildCheckpoint: (snapshot) => snapshot,
@@ -1038,6 +1122,7 @@ export class NanoSessionDO {
         messages: [],
         startedAt: new Date().toISOString(),
         interruptReason: null,
+        llmFinished: false,
       }),
       emitHook: async (event, payload, context) => {
         // 2nd-round R1: the orchestrator-supplied `context` is just
@@ -1073,7 +1158,7 @@ export class NanoSessionDO {
           | undefined;
         if (evalSink?.emit) await evalSink.emit(event);
       },
-      traceContext: this.buildTraceContext(),
+      traceContext: () => this.buildTraceContext(),
       pushStreamEvent: (_kind, body) => {
         // A4-A5 review R2: the outbound `session.stream.event` surface
         // MUST go through `SessionWebSocketHelper.pushEvent()` so the
@@ -1407,12 +1492,14 @@ export class NanoSessionDO {
   }
 
   private getCapabilityTransport():
+    | CapabilityTransportLike
     | {
         call: (input: {
           requestId: string;
           capabilityName: string;
           body: unknown;
           anchor?: CrossSeamAnchor;
+          quota?: Record<string, unknown>;
         }) => Promise<unknown>;
         cancel?: (input: {
           requestId: string;
@@ -1439,6 +1526,7 @@ export class NanoSessionDO {
         capabilityName: string;
         body: unknown;
         anchor?: CrossSeamAnchor;
+        quota?: Record<string, unknown>;
       }) => Promise<unknown>,
       cancel:
         typeof transport.cancel === "function"
@@ -1468,14 +1556,35 @@ export class NanoSessionDO {
       request.toolInput && typeof request.toolInput === "object"
         ? request.toolInput
         : {};
+    const requestId = `verify-call-${crypto.randomUUID()}`;
+    const quotaContext = this.buildQuotaContext();
+    let quota: Record<string, unknown> | undefined;
+    try {
+      quota = await buildToolQuotaAuthorization(
+        this.quotaAuthorizer,
+        quotaContext,
+        requestId,
+        toolName,
+      );
+    } catch (error) {
+      if (error instanceof QuotaExceededError) {
+        return {
+          check: "capability-call",
+          toolName,
+          response: buildQuotaErrorEnvelope(error),
+        };
+      }
+      throw error;
+    }
     const response = await transport.call({
-      requestId: `verify-call-${crypto.randomUUID()}`,
+      requestId,
       capabilityName: toolName,
       body: {
         tool_name: toolName,
         tool_input: toolInput,
       },
       anchor: this.buildCrossSeamAnchor(),
+      quota,
     });
 
     return {
@@ -1505,6 +1614,25 @@ export class NanoSessionDO {
       typeof request.cancelAfterMs === "number" && Number.isFinite(request.cancelAfterMs)
         ? Math.max(1, Math.min(ms - 1, Math.trunc(request.cancelAfterMs)))
         : 25;
+    const quotaContext = this.buildQuotaContext();
+    let quota: Record<string, unknown> | undefined;
+    try {
+      quota = await buildToolQuotaAuthorization(
+        this.quotaAuthorizer,
+        quotaContext,
+        requestId,
+        "__px_sleep",
+      );
+    } catch (error) {
+      if (error instanceof QuotaExceededError) {
+        return {
+          check: "capability-cancel",
+          requestId,
+          response: buildQuotaErrorEnvelope(error),
+        };
+      }
+      throw error;
+    }
     const callPromise = transport.call({
       requestId,
       capabilityName: "__px_sleep",
@@ -1513,6 +1641,7 @@ export class NanoSessionDO {
         tool_input: { ms },
       },
       anchor: this.buildCrossSeamAnchor(),
+      quota,
     });
 
     await new Promise((resolve) => setTimeout(resolve, cancelAfterMs));

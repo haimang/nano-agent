@@ -54,6 +54,7 @@ export const TurnStateSchema = z.object({
   phase: TurnPhaseSchema,
   pendingToolCalls: z.array(PendingToolCallSchema),
   messages: z.array(z.unknown()),
+  llmFinished: z.boolean(),
   /**
    * Buffered input that arrived while the turn was suspended. Consumed
    * on the next `resume`. Null when no input is pending.
@@ -97,6 +98,7 @@ export function createTurnState(turnId: string): TurnState {
     phase: "pending",
     pendingToolCalls: [],
     messages: [],
+    llmFinished: false,
     pendingInput: null,
     startedAt: new Date().toISOString(),
     interruptReason: null,

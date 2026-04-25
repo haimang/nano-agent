@@ -4,17 +4,24 @@ import { WorkerEntrypoint } from "cloudflare:workers";
 import { NanoSessionDO } from "./host/do/nano-session-do.js";
 import { routeInternal } from "./host/internal.js";
 import { routeRequest } from "./host/routes.js";
+import { validateInternalRpcMeta } from "./host/internal-policy.js";
 
 export interface AgentCoreEnv {
   readonly SESSION_DO: DurableObjectNamespace;
   readonly BASH_CORE?: Fetcher;
   readonly CONTEXT_CORE?: Fetcher;
   readonly FILESYSTEM_CORE?: Fetcher;
+  readonly NANO_AGENT_DB?: D1Database;
+  readonly AI?: {
+    run(model: string, input: Record<string, unknown>): Promise<unknown>;
+  };
   readonly ORCHESTRATOR_PUBLIC_BASE_URL?: string;
   readonly ENVIRONMENT?: string;
   readonly OWNER_TAG?: string;
   readonly TEAM_UUID?: string;
   readonly NANO_INTERNAL_BINDING_SECRET?: string;
+  readonly NANO_AGENT_LLM_CALL_LIMIT?: string;
+  readonly NANO_AGENT_TOOL_CALL_LIMIT?: string;
 }
 
 export interface AgentCoreShellResponse {
@@ -190,24 +197,13 @@ export default class AgentCoreEntrypoint extends WorkerEntrypoint<AgentCoreEnv> 
       };
     }
 
-    const meta =
-      rawMeta && typeof rawMeta === "object" && !Array.isArray(rawMeta)
-        ? rawMeta as AgentCoreRpcMeta
-        : {};
-    const traceUuid =
-      typeof meta.trace_uuid === "string" && meta.trace_uuid.length > 0
-        ? meta.trace_uuid
-        : crypto.randomUUID();
-    const authority =
-      meta.authority && typeof meta.authority === "object" && !Array.isArray(meta.authority)
-        ? meta.authority
-        : null;
-    if (!authority) {
+    const validatedMeta = validateInternalRpcMeta(rawMeta, this.env);
+    if (!validatedMeta.ok) {
       return {
-        status: 400,
+        status: validatedMeta.status,
         body: {
-          error: "invalid-rpc-meta",
-          message: "authority is required",
+          error: validatedMeta.error,
+          message: validatedMeta.message,
         },
       };
     }
@@ -216,8 +212,8 @@ export default class AgentCoreEntrypoint extends WorkerEntrypoint<AgentCoreEnv> 
       method === "POST"
         ? {
             ...stripSessionUuid(rawInput),
-            trace_uuid: traceUuid,
-            authority,
+            trace_uuid: validatedMeta.traceUuid,
+            authority: { ...validatedMeta.authority },
           }
         : null;
     const headers = new Headers();

@@ -199,6 +199,7 @@ export function makeCapabilityTransport(
         requestId: string;
         capabilityName: string;
         body: unknown;
+        quota?: Record<string, unknown>;
         signal?: AbortSignal;
         onProgress?: (frame: unknown) => void;
         anchor?: CrossSeamAnchor;
@@ -210,6 +211,7 @@ export function makeCapabilityTransport(
           requestId: payload.requestId,
           capabilityName: payload.capabilityName,
           body: payload.body,
+          ...(payload.quota ? { quota: payload.quota } : {}),
         },
         payload.signal,
         payload.anchor,

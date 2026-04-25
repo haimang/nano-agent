@@ -110,7 +110,11 @@ export function applyAction(
         },
         activeTurn: {
           ...turn,
-          messages: [...turn.messages, action.content],
+          messages:
+            action.content === null || action.content === undefined
+              ? turn.messages
+              : [...turn.messages, action.content],
+          llmFinished: true,
         },
       };
     }
@@ -128,6 +132,18 @@ export function applyAction(
         activeTurn: {
           ...turn,
           pendingToolCalls: [...turn.pendingToolCalls, ...newCalls],
+          messages: [
+            ...turn.messages,
+            {
+              role: "assistant",
+              content: action.calls.map((call) => ({
+                kind: "tool_call",
+                id: call.id,
+                name: call.name,
+                arguments: JSON.stringify(call.input ?? {}),
+              })),
+            },
+          ],
         },
       };
     }
@@ -142,7 +158,18 @@ export function applyAction(
           pendingToolCalls: turn.pendingToolCalls.filter(
             (descriptor) => descriptor.callId !== action.callId,
           ),
-          messages: [...turn.messages, action.result],
+          messages: [
+            ...turn.messages,
+            {
+              role: "tool",
+              toolCallId: action.callId,
+              content:
+                typeof action.result === "string"
+                  ? action.result
+                  : JSON.stringify(action.result),
+            },
+          ],
+          llmFinished: false,
         },
       };
     }
@@ -207,6 +234,7 @@ export function applyAction(
           ...turn,
           interruptReason: null,
           messages,
+          llmFinished: false,
           pendingInput: null,
         },
       };

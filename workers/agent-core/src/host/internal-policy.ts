@@ -83,8 +83,21 @@ function normalizeAuthority(
       ? { source_name: value.source_name }
       : {}),
     ...(value.exp !== undefined ? { exp: value.exp } : {}),
-  };
+    };
 }
+
+export type InternalRpcMetaResult =
+  | {
+      ok: true;
+      traceUuid: string;
+      authority: InternalAuthorityPayload;
+    }
+  | {
+      ok: false;
+      status: number;
+      error: string;
+      message: string;
+    };
 
 function authorityEquals(
   left: InternalAuthorityPayload,
@@ -98,6 +111,45 @@ function authorityEquals(
     (left.source_name ?? null) === (right.source_name ?? null) &&
     (left.exp ?? null) === (right.exp ?? null)
   );
+}
+
+export function validateInternalRpcMeta(
+  rawMeta: unknown,
+  env: InternalAuthorityEnv,
+): InternalRpcMetaResult {
+  const meta =
+    rawMeta && typeof rawMeta === "object" && !Array.isArray(rawMeta)
+      ? rawMeta as Record<string, unknown>
+      : {};
+  const traceUuid = meta.trace_uuid;
+  if (!isUuid(traceUuid)) {
+    return {
+      ok: false,
+      status: 400,
+      error: "invalid-trace",
+      message: "trace_uuid must be a UUID",
+    };
+  }
+
+  const teamUuid =
+    typeof env.TEAM_UUID === "string" && env.TEAM_UUID.length > 0
+      ? env.TEAM_UUID
+      : null;
+  const authority = normalizeAuthority(meta.authority, teamUuid);
+  if (!authority) {
+    return {
+      ok: false,
+      status: 400,
+      error: "invalid-authority",
+      message: "authority is required and must satisfy tenant truth",
+    };
+  }
+
+  return {
+    ok: true,
+    traceUuid,
+    authority,
+  };
 }
 
 export async function validateInternalAuthority(

@@ -36,11 +36,13 @@ import type { TurnInput } from "./turn-ingress.js";
 import type { RuntimeConfig } from "./env.js";
 import {
   buildSessionEndTrace,
+  buildStepTrace,
   buildTurnBeginTrace,
   buildTurnEndTrace,
   type TraceContext,
   type TraceEvent,
 } from "./traces.js";
+import { buildStreamEventBody, mapRuntimeEventToStreamKind } from "../kernel/events.js";
 
 // ═══════════════════════════════════════════════════════════════════
 // §1 — OrchestrationDeps
@@ -83,7 +85,7 @@ export interface OrchestrationDeps {
    * still produce trace-law-compliant objects but callers should
    * migrate to supplying the real context.
    */
-  readonly traceContext?: TraceContext;
+  readonly traceContext?: TraceContext | (() => TraceContext | undefined);
 
   // ── Session stream ──
   /**
@@ -136,7 +138,11 @@ export class SessionOrchestrator {
   ) {}
 
   private traceCtx(): TraceContext {
-    return this.deps.traceContext ?? ZERO_TRACE_CONTEXT;
+    const traceContext =
+      typeof this.deps.traceContext === "function"
+        ? this.deps.traceContext()
+        : this.deps.traceContext;
+    return traceContext ?? ZERO_TRACE_CONTEXT;
   }
 
   /**
@@ -148,7 +154,11 @@ export class SessionOrchestrator {
    * `ZERO_TRACE_CONTEXT` zero-UUID as if it were a real session.
    */
   private realSessionUuid(): string | null {
-    return this.deps.traceContext?.sessionUuid ?? null;
+    const traceContext =
+      typeof this.deps.traceContext === "function"
+        ? this.deps.traceContext()
+        : this.deps.traceContext;
+    return traceContext?.sessionUuid ?? null;
   }
 
   // ── Initial state ────────────────────────────────────────────
@@ -222,7 +232,17 @@ export class SessionOrchestrator {
     const turnState = this.deps.createTurnState(input.turnId);
     const kernelSnapshot = {
       ...(state.kernelSnapshot as Record<string, unknown>),
-      activeTurn: turnState,
+      activeTurn: {
+        ...(turnState as Record<string, unknown>),
+        messages: [
+          {
+            role: "user",
+            content: input.content,
+            messageType: input.messageType,
+            receivedAt: input.receivedAt,
+          },
+        ],
+      },
       session: {
         ...((state.kernelSnapshot as Record<string, unknown>).session as Record<string, unknown>),
         phase: "turn_running",
@@ -262,12 +282,19 @@ export class SessionOrchestrator {
     let stepCount = 0;
 
     while (stepCount < this.config.maxTurnSteps) {
+      const activeTurn =
+        snapshot && typeof snapshot === "object"
+          ? (snapshot as { activeTurn?: Record<string, unknown> | null }).activeTurn
+          : null;
+      const pendingToolCalls = Array.isArray(activeTurn?.pendingToolCalls)
+        ? activeTurn.pendingToolCalls
+        : [];
       const signals = {
-        hasMoreToolCalls: false,
+        hasMoreToolCalls: pendingToolCalls.length > 0,
         compactRequired: false,
         cancelRequested: false,
         timeoutReached: false,
-        llmFinished: false,
+        llmFinished: Boolean(activeTurn?.llmFinished),
       };
 
       const result = await this.deps.advanceStep(snapshot, signals);
@@ -275,11 +302,18 @@ export class SessionOrchestrator {
       stepCount += 1;
 
       // Dispatch each emitted event — kernel events must already be in
-      // `SessionStreamEventBody` shape.
+      // canonical runtime-event shape and must be mapped onto the
+      // `nacp-session` 9-kind stream catalog here.
       for (const event of result.events) {
-        const evt = event as Record<string, unknown>;
-        const kind = typeof evt["kind"] === "string" ? (evt["kind"] as string) : "system.notify";
-        this.deps.pushStreamEvent(kind, evt);
+        const kind = mapRuntimeEventToStreamKind(event as never);
+        const body =
+          kind === null ? null : buildStreamEventBody(event as never);
+        if (kind && body && typeof body === "object") {
+          this.deps.pushStreamEvent(kind, body as Record<string, unknown>);
+        }
+        await this.deps.emitTrace(
+          buildStepTrace(event, this.traceCtx()),
+        );
       }
 
       if (result.done) {
@@ -384,18 +418,23 @@ export class SessionOrchestrator {
   // ── Cancel Turn ──────────────────────────────────────────────
 
   async cancelTurn(state: OrchestrationState): Promise<OrchestrationState> {
-    const cancelSignals = {
-      hasMoreToolCalls: false,
-      compactRequired: false,
-      cancelRequested: true,
-      timeoutReached: false,
-      llmFinished: false,
-    };
-
-    const result = await this.deps.advanceStep(
-      state.kernelSnapshot,
-      cancelSignals,
-    );
+    const result =
+      state.actorState.phase === "turn_running"
+        ? await this.deps.advanceStep(
+            state.kernelSnapshot,
+            {
+              hasMoreToolCalls: false,
+              compactRequired: false,
+              cancelRequested: true,
+              timeoutReached: false,
+              llmFinished: false,
+            },
+          )
+        : {
+            snapshot: state.kernelSnapshot,
+            events: [],
+            done: true,
+          };
 
     // Cancellation surfaces to the client as a system.notify with
     // severity=warning. `turn.cancelled` is NOT a session.stream.event kind.
