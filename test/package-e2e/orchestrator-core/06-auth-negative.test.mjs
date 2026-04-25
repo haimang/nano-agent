@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { fetchJson, liveTest, randomSessionId } from "../../shared/live.mjs";
 import { signOrchestratorJwt } from "../../shared/orchestrator-jwt.mjs";
 
-const JWT_SECRET = process.env.NANO_AGENT_ORCHESTRATOR_JWT_SECRET;
+const JWT_KID = process.env.NANO_AGENT_ORCHESTRATOR_JWT_KID ?? process.env.JWT_SIGNING_KID ?? "v1";
+const JWT_SECRET =
+  process.env.NANO_AGENT_ORCHESTRATOR_JWT_SECRET ??
+  process.env[`JWT_SIGNING_KEY_${JWT_KID}`] ??
+  process.env.JWT_SIGNING_KEY_v1;
 
 liveTest("orchestrator-core rejects missing bearer token on public start", ["orchestrator-core"], async ({ getUrl }) => {
   const base = getUrl("orchestrator-core");

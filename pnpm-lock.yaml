@@ -221,6 +221,9 @@ importers:
 
   workers/agent-core:
     dependencies:
+      '@haimang/bash-core-worker':
+        specifier: workspace:*
+        version: link:../bash-core
       '@haimang/context-core-worker':
         specifier: workspace:*
         version: link:../context-core
