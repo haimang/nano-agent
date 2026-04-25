@@ -19,11 +19,11 @@ import assert from "node:assert/strict";
  * exercise the real consumer path end-to-end at the host layer.
  */
 
-import { NanoSessionDO } from "../workers/agent-core/dist/index.js";
+import { NanoSessionDO } from "../packages/session-do-runtime/dist/index.js";
 import {
   peekPendingInitialContextLayers,
   drainPendingInitialContextLayers,
-} from "../workers/agent-core/dist/host/context-api/append-initial-context-layer.js";
+} from "../packages/session-do-runtime/dist/context-api/append-initial-context-layer.js";
 
 const SESSION_UUID = "11111111-1111-4111-8111-111111111111";
 
