@@ -18,6 +18,7 @@ export interface AgentCoreEnv {
   readonly ORCHESTRATOR_PUBLIC_BASE_URL?: string;
   readonly ENVIRONMENT?: string;
   readonly OWNER_TAG?: string;
+  readonly WORKER_VERSION?: string;
   readonly TEAM_UUID?: string;
   readonly NANO_INTERNAL_BINDING_SECRET?: string;
   readonly NANO_AGENT_LLM_CALL_LIMIT?: string;
@@ -30,6 +31,7 @@ export interface AgentCoreShellResponse {
   readonly nacp_core_version: string;
   readonly nacp_session_version: string;
   readonly status: "ok";
+  readonly worker_version: string;
   readonly phase: "orchestration-facade-closed";
   readonly absorbed_runtime: true;
   readonly live_loop: true;
@@ -52,6 +54,7 @@ function createShellResponse(env: AgentCoreEnv): AgentCoreShellResponse {
     nacp_core_version: NACP_VERSION,
     nacp_session_version: NACP_SESSION_VERSION,
     status: "ok",
+    worker_version: env.WORKER_VERSION ?? `agent-core@${env.ENVIRONMENT ?? "dev"}`,
     phase: "orchestration-facade-closed",
     absorbed_runtime: true,
     live_loop: true,

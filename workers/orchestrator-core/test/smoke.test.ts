@@ -9,6 +9,21 @@ const USER_UUID = "22222222-2222-4222-8222-222222222222";
 const JWT_SECRET = "x".repeat(32);
 const TRACE_UUID = "33333333-3333-4333-8333-333333333333";
 
+function createProbeFetcher(workerName: string, workerVersion: string) {
+  return {
+    fetch: vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          worker: workerName,
+          status: "ok",
+          worker_version: workerVersion,
+        }),
+        { status: 200 },
+      ),
+    ),
+  };
+}
+
 describe("orchestrator-core shell smoke", () => {
   it("exports a fetch handler and DO class", () => {
     expect(typeof worker.fetch).toBe("function");
@@ -19,6 +34,7 @@ describe("orchestrator-core shell smoke", () => {
     const response = await worker.fetch(new Request("https://example.com"), {
       ORCHESTRATOR_USER_DO: {} as DurableObjectNamespace,
       TEAM_UUID: "nano-agent",
+      WORKER_VERSION: "orchestrator-core@test",
     } as any);
     const body = await response.json();
 
@@ -26,9 +42,39 @@ describe("orchestrator-core shell smoke", () => {
     expect(body.nacp_core_version).toBe(NACP_VERSION);
     expect(body.nacp_session_version).toBe(NACP_SESSION_VERSION);
     expect(body.status).toBe("ok");
+    expect(body.worker_version).toBe("orchestrator-core@test");
     expect(body.phase).toBe("orchestration-facade-closed");
     expect(body.public_facade).toBe(true);
     expect(body.agent_binding).toBe(false);
+  });
+
+  it("aggregates worker health for all bound workers", async () => {
+    const response = await worker.fetch(
+      new Request("https://example.com/debug/workers/health"),
+      {
+        ORCHESTRATOR_USER_DO: {} as DurableObjectNamespace,
+        ENVIRONMENT: "test",
+        WORKER_VERSION: "orchestrator-core@test",
+        ORCHESTRATOR_AUTH: createProbeFetcher("orchestrator-auth", "orchestrator-auth@test"),
+        AGENT_CORE: createProbeFetcher("agent-core", "agent-core@test"),
+        BASH_CORE: createProbeFetcher("bash-core", "bash-core@test"),
+        CONTEXT_CORE: createProbeFetcher("context-core", "context-core@test"),
+        FILESYSTEM_CORE: createProbeFetcher("filesystem-core", "filesystem-core@test"),
+      } as any,
+    );
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.summary).toEqual({ live: 6, total: 6 });
+    expect(body.workers.map((entry: { worker: string }) => entry.worker)).toEqual([
+      "orchestrator-core",
+      "orchestrator-auth",
+      "agent-core",
+      "bash-core",
+      "context-core",
+      "filesystem-core",
+    ]);
+    expect(body.workers[1].worker_version).toBe("orchestrator-auth@test");
   });
 
   it("rejects start without bearer token", async () => {

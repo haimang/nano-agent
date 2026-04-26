@@ -13,6 +13,7 @@
   "vars": {
     "ENVIRONMENT": "preview",
     "OWNER_TAG": "nano-agent",
+    "WORKER_VERSION": "orchestrator-core@preview",
     "TEAM_UUID": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     "JWT_SIGNING_KID": "v1"
   },
@@ -41,13 +42,17 @@
   ],
   "services": [
     { "binding": "AGENT_CORE", "service": "nano-agent-agent-core" },
-    { "binding": "ORCHESTRATOR_AUTH", "service": "nano-agent-orchestrator-auth" }
+    { "binding": "ORCHESTRATOR_AUTH", "service": "nano-agent-orchestrator-auth" },
+    { "binding": "BASH_CORE", "service": "nano-agent-bash-core" },
+    { "binding": "CONTEXT_CORE", "service": "nano-agent-context-core" },
+    { "binding": "FILESYSTEM_CORE", "service": "nano-agent-filesystem-core" }
   ],
   "env": {
     "preview": {
       "vars": {
         "ENVIRONMENT": "preview",
         "OWNER_TAG": "nano-agent",
+        "WORKER_VERSION": "orchestrator-core@preview",
         "TEAM_UUID": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         "JWT_SIGNING_KID": "v1"
       },
@@ -62,7 +67,10 @@
       ],
       "services": [
         { "binding": "AGENT_CORE", "service": "nano-agent-agent-core-preview" },
-        { "binding": "ORCHESTRATOR_AUTH", "service": "nano-agent-orchestrator-auth-preview" }
+        { "binding": "ORCHESTRATOR_AUTH", "service": "nano-agent-orchestrator-auth-preview" },
+        { "binding": "BASH_CORE", "service": "nano-agent-bash-core-preview" },
+        { "binding": "CONTEXT_CORE", "service": "nano-agent-context-core-preview" },
+        { "binding": "FILESYSTEM_CORE", "service": "nano-agent-filesystem-core-preview" }
       ],
       "durable_objects": {
         "bindings": [

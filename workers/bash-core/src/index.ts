@@ -193,6 +193,7 @@ import {
 export interface BashCoreEnv {
   readonly ENVIRONMENT?: string;
   readonly OWNER_TAG?: string;
+  readonly WORKER_VERSION?: string;
   readonly CAPABILITY_CALL_DO?: DurableObjectNamespace;
 }
 
@@ -201,16 +202,18 @@ export interface BashCoreProbeResponse {
   readonly nacp_core_version: string;
   readonly nacp_session_version: string;
   readonly status: "ok";
+  readonly worker_version: string;
   readonly phase: "worker-matrix-P1.B-absorbed";
   readonly absorbed_runtime: true;
 }
 
-function createProbeResponse(): BashCoreProbeResponse {
+function createProbeResponse(env: BashCoreEnv): BashCoreProbeResponse {
   return {
     worker: "bash-core",
     nacp_core_version: NACP_VERSION,
     nacp_session_version: NACP_SESSION_VERSION,
     status: "ok",
+    worker_version: env.WORKER_VERSION ?? `bash-core@${env.ENVIRONMENT ?? "dev"}`,
     phase: "worker-matrix-P1.B-absorbed",
     absorbed_runtime: true,
   };
@@ -352,7 +355,7 @@ const worker = {
     const method = request.method.toUpperCase();
 
     if (method === "GET" && (pathname === "/" || pathname === "/health")) {
-      return Response.json(createProbeResponse());
+      return Response.json(createProbeResponse(env));
     }
 
     if (method === "POST" && pathname === "/capability/call") {

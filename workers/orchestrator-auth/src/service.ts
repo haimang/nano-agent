@@ -344,7 +344,35 @@ export class AuthService {
       assertAuthMeta(rawMeta);
       const input = WeChatLoginInputSchema.parse(rawInput);
       const session = await this.requireWeChatClient().exchangeCode(input.code);
-      const existing = await this.deps.repo.findIdentityBySubject("wechat", session.openid);
+      const decryptedProfile =
+        typeof input.encrypted_data === "string" && typeof input.iv === "string"
+          ? await this.requireWeChatClient().decryptProfile(
+              session.session_key,
+              input.encrypted_data,
+              input.iv,
+            )
+          : null;
+
+      if (
+        decryptedProfile?.openid &&
+        decryptedProfile.openid.length > 0 &&
+        decryptedProfile.openid !== session.openid
+      ) {
+        throw new AuthServiceError(
+          "invalid-wechat-payload",
+          400,
+          "wechat decrypted openid does not match jscode2session openid",
+        );
+      }
+
+      const existing =
+        (decryptedProfile?.unionid
+          ? await this.deps.repo.findIdentityBySubject("wechat", decryptedProfile.unionid)
+          : null) ??
+        (decryptedProfile?.openid
+          ? await this.deps.repo.findIdentityBySubject("wechat", decryptedProfile.openid)
+          : null) ??
+        await this.deps.repo.findIdentityBySubject("wechat", session.openid);
       if (existing) {
         await this.deps.repo.touchIdentityLogin(existing.identity_uuid, this.nowIso());
         const context = await this.ensureContextFromIdentity(existing);
@@ -355,7 +383,10 @@ export class AuthService {
         user_uuid: this.uuid(),
         team_uuid: this.uuid(),
         membership_uuid: this.uuid(),
-        display_name: input.display_name ?? "WeChat User",
+        display_name:
+          decryptedProfile?.display_name ??
+          input.display_name ??
+          "WeChat User",
         provider: "wechat",
         provider_subject: session.openid,
         provider_subject_normalized: session.openid,

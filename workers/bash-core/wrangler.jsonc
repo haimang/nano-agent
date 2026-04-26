@@ -24,6 +24,7 @@
   "vars": {
     "ENVIRONMENT": "preview",
     "OWNER_TAG": "nano-agent",
+    "WORKER_VERSION": "bash-core@preview",
     "TEAM_UUID": "nano-agent"
   },
   "env": {
@@ -39,6 +40,7 @@
       "vars": {
         "ENVIRONMENT": "preview",
         "OWNER_TAG": "nano-agent",
+        "WORKER_VERSION": "bash-core@preview",
         "TEAM_UUID": "nano-agent"
       }
     }

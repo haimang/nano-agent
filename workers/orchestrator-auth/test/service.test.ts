@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { AuthService } from "../src/service.js";
 import { mintAccessToken } from "../src/jwt.js";
+import type { WeChatClient } from "../src/wechat.js";
 import type {
   AuthRepository,
   AuthSessionRecord,
@@ -105,17 +106,23 @@ class InMemoryAuthRepository implements AuthRepository {
   }
 }
 
-function createService(repo = new InMemoryAuthRepository()): AuthService {
+function createService(
+  repo = new InMemoryAuthRepository(),
+  wechatClient: WeChatClient = {
+    async exchangeCode(code: string) {
+      return { openid: `openid:${code}`, session_key: "c2Vzc2lvbi1rZXk=" };
+    },
+    async decryptProfile() {
+      return {};
+    },
+  },
+): AuthService {
   let seq = 0;
   return new AuthService({
     repo,
     keyEnv: KEY_ENV,
     passwordSalt: "salt",
-    wechatClient: {
-      async exchangeCode(code: string) {
-        return { openid: `openid:${code}` };
-      },
-    },
+    wechatClient,
     now: () => new Date("2026-04-25T00:00:00.000Z"),
     uuid: () => {
       seq += 1;
@@ -242,6 +249,56 @@ describe("AuthService", () => {
     expect(second.ok).toBe(true);
     if (!second.ok) return;
     expect(second.data.user.user_uuid).toBe(first.data.user.user_uuid);
+  });
+
+  it("uses decrypted WeChat display name when provided", async () => {
+    const service = createService(
+      new InMemoryAuthRepository(),
+      {
+        async exchangeCode(code: string) {
+          return { openid: `openid:${code}`, session_key: "c2Vzc2lvbi1rZXk=" };
+        },
+        async decryptProfile() {
+          return {
+            openid: "openid:abc",
+            display_name: "小程序用户",
+          };
+        },
+      },
+    );
+
+    const result = await service.wechatLogin(
+      { code: "abc", encrypted_data: "ZW5j", iv: "aXY=" },
+      META,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.data.user.display_name).toBe("小程序用户");
+  });
+
+  it("rejects mismatched decrypted openid", async () => {
+    const service = createService(
+      new InMemoryAuthRepository(),
+      {
+        async exchangeCode(code: string) {
+          return { openid: `openid:${code}`, session_key: "c2Vzc2lvbi1rZXk=" };
+        },
+        async decryptProfile() {
+          return {
+            openid: "openid:other",
+          };
+        },
+      },
+    );
+
+    const result = await service.wechatLogin(
+      { code: "abc", encrypted_data: "ZW5j", iv: "aXY=" },
+      META,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.code).toBe("invalid-wechat-payload");
+    }
   });
 
   it("rejects non-orchestrator callers", async () => {

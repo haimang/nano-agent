@@ -2,17 +2,32 @@ import { AuthServiceError } from "./errors.js";
 
 export interface WeChatSessionInfo {
   readonly openid: string;
+  readonly session_key: string;
   readonly unionid?: string;
+}
+
+export interface WeChatDecryptedProfile {
+  readonly openid?: string;
+  readonly unionid?: string;
+  readonly display_name?: string;
+  readonly avatar_url?: string;
 }
 
 export interface WeChatClient {
   exchangeCode(code: string): Promise<WeChatSessionInfo>;
+  decryptProfile(sessionKey: string, encryptedData: string, iv: string): Promise<WeChatDecryptedProfile>;
 }
 
 export interface WeChatEnv {
   readonly WECHAT_APPID?: string;
   readonly WECHAT_SECRET?: string;
   readonly WECHAT_API_BASE_URL?: string;
+}
+
+function decodeBase64(value: string): Uint8Array {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  const binary = atob(normalized);
+  return Uint8Array.from(binary, (char) => char.charCodeAt(0));
 }
 
 export function createWeChatClient(env: WeChatEnv): WeChatClient {
@@ -50,8 +65,16 @@ export function createWeChatClient(env: WeChatEnv): WeChatClient {
           if (typeof payload.openid !== "string" || payload.openid.length === 0) {
             throw new AuthServiceError("invalid-wechat-code", 400, "wechat response missing openid");
           }
+          if (typeof payload.session_key !== "string" || payload.session_key.length === 0) {
+            throw new AuthServiceError(
+              "invalid-wechat-code",
+              400,
+              "wechat response missing session_key",
+            );
+          }
           return {
             openid: payload.openid,
+            session_key: payload.session_key,
             ...(typeof payload.unionid === "string" && payload.unionid.length > 0
               ? { unionid: payload.unionid }
               : {}),
@@ -72,6 +95,66 @@ export function createWeChatClient(env: WeChatEnv): WeChatClient {
         }
       }
       throw new AuthServiceError("invalid-wechat-code", 502, "wechat jscode2session request failed");
+    },
+
+    async decryptProfile(
+      sessionKey: string,
+      encryptedData: string,
+      iv: string,
+    ): Promise<WeChatDecryptedProfile> {
+      try {
+        const key = await crypto.subtle.importKey(
+          "raw",
+          decodeBase64(sessionKey),
+          { name: "AES-CBC" },
+          false,
+          ["decrypt"],
+        );
+        const decrypted = await crypto.subtle.decrypt(
+          {
+            name: "AES-CBC",
+            iv: decodeBase64(iv),
+          },
+          key,
+          decodeBase64(encryptedData),
+        );
+        const payload = JSON.parse(new TextDecoder().decode(decrypted)) as Record<string, unknown>;
+        const watermark = payload.watermark;
+        const watermarkAppId =
+          watermark && typeof watermark === "object" && !Array.isArray(watermark)
+            ? (watermark as Record<string, unknown>).appid
+            : undefined;
+        const appid =
+          typeof watermarkAppId === "string" ? watermarkAppId : undefined;
+        if (typeof appid !== "string" || appid !== env.WECHAT_APPID) {
+          throw new AuthServiceError(
+            "invalid-wechat-payload",
+            400,
+            "wechat decrypt watermark appid mismatch",
+          );
+        }
+        return {
+          ...(typeof payload.openId === "string" && payload.openId.length > 0
+            ? { openid: payload.openId }
+            : {}),
+          ...(typeof payload.unionId === "string" && payload.unionId.length > 0
+            ? { unionid: payload.unionId }
+            : {}),
+          ...(typeof payload.nickName === "string" && payload.nickName.trim().length > 0
+            ? { display_name: payload.nickName.trim().slice(0, 80) }
+            : {}),
+          ...(typeof payload.avatarUrl === "string" && payload.avatarUrl.length > 0
+            ? { avatar_url: payload.avatarUrl }
+            : {}),
+        };
+      } catch (error) {
+        if (error instanceof AuthServiceError) throw error;
+        throw new AuthServiceError(
+          "invalid-wechat-payload",
+          400,
+          "wechat encrypted payload could not be decrypted",
+        );
+      }
     },
   };
 }

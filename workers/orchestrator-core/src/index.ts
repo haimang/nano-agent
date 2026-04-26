@@ -19,11 +19,15 @@ export interface OrchestratorCoreEnv extends AuthEnv {
       meta: { trace_uuid: string; authority: unknown },
     ) => Promise<{ status: number; body: Record<string, unknown> | null }>;
   };
-  readonly ORCHESTRATOR_AUTH?: OrchestratorAuthRpcService;
+  readonly ORCHESTRATOR_AUTH?: OrchestratorAuthRpcService & Fetcher;
+  readonly BASH_CORE?: Fetcher;
+  readonly CONTEXT_CORE?: Fetcher;
+  readonly FILESYSTEM_CORE?: Fetcher;
   readonly NANO_AGENT_DB?: D1Database;
   readonly NANO_INTERNAL_BINDING_SECRET?: string;
   readonly ENVIRONMENT?: string;
   readonly OWNER_TAG?: string;
+  readonly WORKER_VERSION?: string;
 }
 
 export interface OrchestratorCoreShellResponse {
@@ -31,9 +35,26 @@ export interface OrchestratorCoreShellResponse {
   readonly nacp_core_version: string;
   readonly nacp_session_version: string;
   readonly status: "ok";
+  readonly worker_version: string;
   readonly phase: "orchestration-facade-closed";
   readonly public_facade: true;
   readonly agent_binding: boolean;
+}
+
+interface WorkerHealthProbeBody {
+  readonly worker?: string;
+  readonly status?: string;
+  readonly worker_version?: string;
+  readonly [key: string]: unknown;
+}
+
+interface WorkerHealthEntry {
+  readonly worker: string;
+  readonly live: boolean;
+  readonly status: string;
+  readonly worker_version: string | null;
+  readonly details?: Record<string, unknown>;
+  readonly error?: string;
 }
 
 function createShellResponse(env: OrchestratorCoreEnv): OrchestratorCoreShellResponse {
@@ -42,10 +63,91 @@ function createShellResponse(env: OrchestratorCoreEnv): OrchestratorCoreShellRes
     nacp_core_version: NACP_VERSION,
     nacp_session_version: NACP_SESSION_VERSION,
     status: "ok",
+    worker_version: env.WORKER_VERSION ?? `orchestrator-core@${env.ENVIRONMENT ?? "dev"}`,
     phase: "orchestration-facade-closed",
     public_facade: true,
     agent_binding: Boolean(env.AGENT_CORE),
   };
+}
+
+async function parseProbeResponse(response: Response): Promise<WorkerHealthProbeBody | undefined> {
+  const text = await response.text();
+  if (text.length === 0) return undefined;
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as WorkerHealthProbeBody;
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
+async function probeWorkerBinding(
+  worker: string,
+  binding: Fetcher | undefined,
+): Promise<WorkerHealthEntry> {
+  if (!binding || typeof binding.fetch !== "function") {
+    return {
+      worker,
+      live: false,
+      status: "binding-missing",
+      worker_version: null,
+    };
+  }
+  try {
+    const response = await binding.fetch(new Request(`https://${worker}.internal/health`));
+    const body = await parseProbeResponse(response);
+    const status = typeof body?.status === "string" ? body.status : `http-${response.status}`;
+    return {
+      worker,
+      live: response.ok && status === "ok",
+      status,
+      worker_version: typeof body?.worker_version === "string" ? body.worker_version : null,
+      ...(body ? { details: body } : {}),
+    };
+  } catch (error) {
+    return {
+      worker,
+      live: false,
+      status: "unreachable",
+      worker_version: null,
+      error: error instanceof Error ? error.message : "unknown worker probe failure",
+    };
+  }
+}
+
+async function buildWorkerHealthSnapshot(env: OrchestratorCoreEnv): Promise<Response> {
+  const self = createShellResponse(env);
+  const remoteWorkers = await Promise.all([
+    probeWorkerBinding("orchestrator-auth", env.ORCHESTRATOR_AUTH),
+    probeWorkerBinding("agent-core", env.AGENT_CORE),
+    probeWorkerBinding("bash-core", env.BASH_CORE),
+    probeWorkerBinding("context-core", env.CONTEXT_CORE),
+    probeWorkerBinding("filesystem-core", env.FILESYSTEM_CORE),
+  ]);
+  const workers: WorkerHealthEntry[] = [
+    {
+      worker: self.worker,
+      live: true,
+      status: self.status,
+      worker_version: self.worker_version,
+      details: self as unknown as Record<string, unknown>,
+    },
+    ...remoteWorkers,
+  ];
+  const live = workers.filter((entry) => entry.live).length;
+  return Response.json({
+    ok: true,
+    environment: env.ENVIRONMENT ?? "dev",
+    generated_at: new Date().toISOString(),
+    summary: {
+      live,
+      total: workers.length,
+    },
+    workers,
+  });
 }
 
 function ensureTenantConfigured(env: OrchestratorCoreEnv): Response | null {
@@ -173,6 +275,10 @@ const worker = {
 
     if (method === "GET" && (pathname === "/" || pathname === "/health")) {
       return Response.json(createShellResponse(env));
+    }
+
+    if (method === "GET" && pathname === "/debug/workers/health") {
+      return buildWorkerHealthSnapshot(env);
     }
 
     const authRoute = parseAuthRoute(request);

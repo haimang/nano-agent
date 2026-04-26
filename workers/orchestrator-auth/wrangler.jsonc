@@ -15,6 +15,7 @@
   "vars": {
     "ENVIRONMENT": "preview",
     "OWNER_TAG": "nano-agent",
+    "WORKER_VERSION": "orchestrator-auth@preview",
     "JWT_SIGNING_KID": "v1",
     "WECHAT_API_BASE_URL": "https://api.weixin.qq.com/sns/jscode2session"
   },
@@ -31,6 +32,7 @@
       "vars": {
         "ENVIRONMENT": "preview",
         "OWNER_TAG": "nano-agent",
+        "WORKER_VERSION": "orchestrator-auth@preview",
         "JWT_SIGNING_KID": "v1",
         "WECHAT_API_BASE_URL": "https://api.weixin.qq.com/sns/jscode2session"
       },
