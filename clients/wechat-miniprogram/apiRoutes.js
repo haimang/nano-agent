@@ -17,6 +17,7 @@ const apiRoutes = {
   me: { path: '/auth/me', baseUrl: BASE_URLS.ORCHESTRATOR, method: 'GET' },
   verifyToken: { path: '/auth/verify', baseUrl: BASE_URLS.ORCHESTRATOR, method: 'POST' },
   resetPassword: { path: '/auth/password/reset', baseUrl: BASE_URLS.ORCHESTRATOR, method: 'POST' },
+  workerHealth: { path: '/debug/workers/health', baseUrl: BASE_URLS.ORCHESTRATOR, method: 'GET' },
 
   // Session
   sessionStart: { path: '/sessions/{sessionUuid}/start', baseUrl: BASE_URLS.ORCHESTRATOR, method: 'POST' },
