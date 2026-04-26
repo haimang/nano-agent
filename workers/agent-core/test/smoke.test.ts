@@ -37,6 +37,7 @@ describe("agent-core shell smoke", () => {
   it("returns NACP versions + absorbed-runtime flag from the worker shell", async () => {
     const response = await worker.fetch(new Request("https://example.com"), {
       SESSION_DO: {} as DurableObjectNamespace,
+      WORKER_VERSION: "agent-core@test",
     });
     const body = await response.json();
 
@@ -44,6 +45,7 @@ describe("agent-core shell smoke", () => {
     expect(body.nacp_core_version).toBe(NACP_VERSION);
     expect(body.nacp_session_version).toBe(NACP_SESSION_VERSION);
     expect(body.status).toBe("ok");
+    expect(body.worker_version).toBe("agent-core@test");
     expect(body.absorbed_runtime).toBe(true);
     expect(body.phase).toBe("orchestration-facade-closed");
     expect(body.live_loop).toBe(true);
@@ -53,10 +55,11 @@ describe("agent-core shell smoke", () => {
   it("GET /health returns the same probe shape with live_loop flag", async () => {
     const response = await worker.fetch(
       new Request("https://example.com/health"),
-      { SESSION_DO: {} as DurableObjectNamespace },
+      { SESSION_DO: {} as DurableObjectNamespace, WORKER_VERSION: "agent-core@test" },
     );
     const body = await response.json();
     expect(body.status).toBe("ok");
+    expect(body.worker_version).toBe("agent-core@test");
     expect(body.absorbed_runtime).toBe(true);
     expect(body.live_loop).toBe(true);
   });

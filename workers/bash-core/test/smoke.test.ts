@@ -9,11 +9,14 @@ describe("bash-core shell smoke", () => {
   });
 
   it("returns the shell worker identity", async () => {
-    const response = await worker.fetch(new Request("https://example.com"), {});
+    const response = await worker.fetch(new Request("https://example.com"), {
+      WORKER_VERSION: "bash-core@test",
+    });
     const body = await response.json();
 
     expect(body.worker).toBe("bash-core");
     expect(body.status).toBe("ok");
+    expect(body.worker_version).toBe("bash-core@test");
   });
 
   it("returns NACP versions from the shell response", async () => {

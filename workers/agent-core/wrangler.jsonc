@@ -11,6 +11,7 @@
   "vars": {
     "ENVIRONMENT": "preview",
     "OWNER_TAG": "nano-agent",
+    "WORKER_VERSION": "agent-core@preview",
     "TEAM_UUID": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     "ORCHESTRATOR_PUBLIC_BASE_URL": "https://nano-agent-orchestrator-core-preview.haimang.workers.dev",
     "NANO_AGENT_LLM_CALL_LIMIT": "200",
@@ -58,6 +59,7 @@
       "vars": {
         "ENVIRONMENT": "preview",
         "OWNER_TAG": "nano-agent",
+        "WORKER_VERSION": "agent-core@preview",
         "TEAM_UUID": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
         "ORCHESTRATOR_PUBLIC_BASE_URL": "https://nano-agent-orchestrator-core-preview.haimang.workers.dev",
         "NANO_AGENT_LLM_CALL_LIMIT": "200",

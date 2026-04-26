@@ -1,6 +1,7 @@
 export interface AuthWorkerProbeResponse {
   readonly worker: "orchestrator-auth";
   readonly status: "ok";
+  readonly worker_version: string;
   readonly public_business_routes: false;
   readonly rpc_surface: true;
   readonly d1_binding: boolean;
@@ -8,12 +9,15 @@ export interface AuthWorkerProbeResponse {
 
 export interface AuthProbeEnv {
   readonly NANO_AGENT_DB?: D1Database;
+  readonly ENVIRONMENT?: string;
+  readonly WORKER_VERSION?: string;
 }
 
 export function createProbeResponse(env: AuthProbeEnv): AuthWorkerProbeResponse {
   return {
     worker: "orchestrator-auth",
     status: "ok",
+    worker_version: env.WORKER_VERSION ?? `orchestrator-auth@${env.ENVIRONMENT ?? "dev"}`,
     public_business_routes: false,
     rpc_surface: true,
     d1_binding: Boolean(env.NANO_AGENT_DB),

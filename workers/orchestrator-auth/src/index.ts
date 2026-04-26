@@ -26,6 +26,7 @@ export interface AuthWorkerEnv {
   readonly JWT_SIGNING_KID?: string;
   readonly ENVIRONMENT?: string;
   readonly OWNER_TAG?: string;
+  readonly WORKER_VERSION?: string;
   readonly [key: string]: unknown;
 }
 
