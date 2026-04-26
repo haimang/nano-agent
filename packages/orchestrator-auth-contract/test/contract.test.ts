@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   AuthRpcMetadataSchema,
   RegisterInputSchema,
+  WeChatLoginInputSchema,
   WeChatLoginEnvelopeSchema,
   VerifyApiKeyEnvelopeSchema,
 } from "../src/index.js";
@@ -61,6 +62,25 @@ describe("orchestrator-auth-contract", () => {
     if (parsed.ok) {
       expect(parsed.data.user.identity_provider).toBe("wechat");
     }
+  });
+
+  it("accepts WeChat decrypt payload pairs and rejects half-pairs", () => {
+    const parsed = WeChatLoginInputSchema.parse({
+      code: "wechat-code",
+      encrypted_data: "ZW5jcnlwdGVk",
+      iv: "aXY=",
+      display_name: "Mini User",
+    });
+
+    expect(parsed.code).toBe("wechat-code");
+    expect(parsed.iv).toBe("aXY=");
+
+    expect(() =>
+      WeChatLoginInputSchema.parse({
+        code: "wechat-code",
+        encrypted_data: "ZW5jcnlwdGVk",
+      }),
+    ).toThrow(/encrypted_data and iv must be provided together/);
   });
 
   it("keeps verify-api-key reserved for a future phase", () => {
