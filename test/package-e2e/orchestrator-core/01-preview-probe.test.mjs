@@ -11,4 +11,5 @@ liveTest("orchestrator-core preview probe exposes closed façade marker", ["orch
     phase: "orchestration-facade-closed",
     public_facade: true,
   });
+  assert.equal(typeof probe.json.worker_version, "string");
 });
