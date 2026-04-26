@@ -1,4 +1,5 @@
 const { uuid, request, authHeaders, connectStream, readErrMessage } = require("../../utils/nano-client");
+const { collectWechatLoginPayload } = require("../../utils/wechat-auth");
 const app = getApp();
 
 Page({
@@ -52,24 +53,28 @@ Page({
     }
   },
 
-  wechatLogin() {
-    wx.login({
-      success: async (res) => {
-        try {
-          const body = await request(this.data.baseUrl, "/auth/wechat/login", {
-            method: "POST",
-            header: { "content-type": "application/json", "x-trace-uuid": uuid() },
-            data: { code: res.code }
-          });
-          const token = body.data?.tokens?.access_token || "";
-          this.setData({ token });
-          this.log({ kind: "wechat.login.ok", team: body.data?.team });
-        } catch (error) {
-          this.log({ kind: "wechat.login.error", ...readErrMessage(error) });
-        }
-      },
-      fail: (err) => this.log({ kind: "wechat.login.error", message: err.errMsg })
-    });
+  async wechatLogin() {
+    try {
+      const body = await request(this.data.baseUrl, "/auth/wechat/login", {
+        method: "POST",
+        header: { "content-type": "application/json", "x-trace-uuid": uuid() },
+        data: await collectWechatLoginPayload()
+      });
+      const token = body.data?.tokens?.access_token || "";
+      this.setData({ token });
+      this.log({ kind: "wechat.login.ok", team: body.data?.team });
+    } catch (error) {
+      this.log({ kind: "wechat.login.error", ...readErrMessage(error) });
+    }
+  },
+
+  async workerHealth() {
+    try {
+      const body = await request(this.data.baseUrl, "/debug/workers/health");
+      this.log({ kind: "worker.health.ok", summary: body.summary, workers: body.workers });
+    } catch (error) {
+      this.log({ kind: "worker.health.error", ...readErrMessage(error) });
+    }
   },
 
   async start() {

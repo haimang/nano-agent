@@ -38,6 +38,7 @@ app.innerHTML = `
       <button id="register">Register + Login</button>
       <button id="login">Login</button>
       <button id="me">/me</button>
+      <button id="workerHealth">Worker Health</button>
     </div>
   </section>
   <section class="panel">
@@ -90,6 +91,7 @@ document.querySelector("#login")?.addEventListener("click", () => run("login", a
 }));
 
 document.querySelector("#me")?.addEventListener("click", () => run("me", () => client.me(requireAuth())));
+document.querySelector("#workerHealth")?.addEventListener("click", () => run("workerHealth", () => client.workerHealth()));
 document.querySelector("#start")?.addEventListener("click", () => run("start", () => client.startSession(requireAuth(), refreshSessionUuid(), value("prompt"))));
 document.querySelector("#input")?.addEventListener("click", () => run("input", () => client.sendInput(requireAuth(), refreshSessionUuid(), value("prompt"))));
 document.querySelector("#timeline")?.addEventListener("click", () => run("timeline", () => client.timeline(requireAuth(), refreshSessionUuid())));

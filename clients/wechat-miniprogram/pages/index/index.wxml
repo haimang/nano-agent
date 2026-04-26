@@ -8,6 +8,7 @@
       <button bindtap="register">Register + Login</button>
       <button bindtap="login">Login</button>
       <button bindtap="wechatLogin">WeChat Login</button>
+      <button bindtap="workerHealth">Worker Health</button>
     </view>
   </view>
 

@@ -1,5 +1,6 @@
 // pages/auth/index.js
 const api = require('../../utils/api');
+const { collectWechatLoginPayload } = require('../../utils/wechat-auth');
 
 Page({
   data: {
@@ -105,54 +106,40 @@ Page({
     }
   },
 
-  handleWechatLogin() {
+  async handleWechatLogin() {
     if (this.data.isLoading) return;
     this.setData({ isLoading: true });
+    try {
+      const loginPayload = await collectWechatLoginPayload();
+      const loginRes = await api.request('wechatLogin', {
+        method: 'POST',
+        data: loginPayload,
+        requireAuth: false,
+        showLoading: false,
+      });
 
-    wx.login({
-      success: async (res) => {
-        if (res.code) {
-          try {
-            const loginRes = await api.request('wechatLogin', {
-              method: 'POST',
-              data: { code: res.code },
-              requireAuth: false,
-              showLoading: false,
-            });
+      if (loginRes.ok) {
+        const token = loginRes.data?.tokens?.access_token;
+        const refreshToken = loginRes.data?.tokens?.refresh_token;
+        const user = loginRes.data?.user;
 
-            if (loginRes.ok) {
-              const token = loginRes.data?.tokens?.access_token;
-              const refreshToken = loginRes.data?.tokens?.refresh_token;
-              const user = loginRes.data?.user;
-
-              if (token) {
-                const app = getApp();
-                app.setLoginState(user, token, refreshToken);
-                wx.showToast({ title: '登录成功', icon: 'success' });
-                this.navigateAfterAuth();
-              } else {
-                throw new Error('微信登录响应缺少 token');
-              }
-            } else {
-              throw new Error(loginRes.error?.message || '微信登录失败');
-            }
-          } catch (error) {
-            console.error('Wechat login error:', error);
-            wx.showToast({ title: error.message || '微信登录失败', icon: 'none' });
-          } finally {
-            this.setData({ isLoading: false });
-          }
+        if (token) {
+          const app = getApp();
+          app.setLoginState(user, token, refreshToken);
+          wx.showToast({ title: '登录成功', icon: 'success' });
+          this.navigateAfterAuth();
         } else {
-          wx.showToast({ title: '获取微信登录凭证失败', icon: 'none' });
-          this.setData({ isLoading: false });
+          throw new Error('微信登录响应缺少 token');
         }
-      },
-      fail: (err) => {
-        console.error('wx.login failed:', err);
-        wx.showToast({ title: '微信登录接口调用失败', icon: 'none' });
-        this.setData({ isLoading: false });
-      },
-    });
+      } else {
+        throw new Error(loginRes.error?.message || '微信登录失败');
+      }
+    } catch (error) {
+      console.error('Wechat login error:', error);
+      wx.showToast({ title: error.message || '微信登录失败', icon: 'none' });
+    } finally {
+      this.setData({ isLoading: false });
+    }
   },
 
   navigateAfterAuth() {
