@@ -79,6 +79,7 @@ export type AuthView = z.infer<typeof AuthViewSchema>;
 
 const EmailSchema = z.string().trim().email();
 const PasswordSchema = z.string().min(8);
+const Base64PayloadSchema = z.string().trim().min(1);
 
 export const RegisterInputSchema = z.object({
   email: EmailSchema,
@@ -112,7 +113,19 @@ export type ResetPasswordInput = z.infer<typeof ResetPasswordInputSchema>;
 
 export const WeChatLoginInputSchema = z.object({
   code: z.string().trim().min(1),
+  encrypted_data: Base64PayloadSchema.optional(),
+  iv: Base64PayloadSchema.optional(),
   display_name: z.string().trim().min(1).max(80).optional(),
+}).superRefine((value, ctx) => {
+  const hasEncrypted = typeof value.encrypted_data === "string";
+  const hasIv = typeof value.iv === "string";
+  if (hasEncrypted !== hasIv) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "encrypted_data and iv must be provided together",
+      path: hasEncrypted ? ["iv"] : ["encrypted_data"],
+    });
+  }
 });
 export type WeChatLoginInput = z.infer<typeof WeChatLoginInputSchema>;
 
@@ -153,6 +166,7 @@ export const AuthErrorCodeSchema = z.enum([
   "refresh-expired",
   "refresh-revoked",
   "invalid-wechat-code",
+  "invalid-wechat-payload",
   "not-supported",
   "worker-misconfigured",
 ]);
