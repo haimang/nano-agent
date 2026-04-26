@@ -12,6 +12,7 @@ liveTest("orchestrator-auth exposes only probe surface publicly", ["orchestrator
     public_business_routes: false,
     rpc_surface: true,
   });
+  assert.equal(typeof probe.json.worker_version, "string");
 
   const publicRoute = await fetchJson(`${base}/auth/login`, {
     method: "POST",

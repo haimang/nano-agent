@@ -11,5 +11,6 @@ liveTest("agent-core preview probe reports live-loop truth", ["agent-core"], asy
     absorbed_runtime: true,
     live_loop: true,
   });
+  assert.equal(typeof json.worker_version, "string");
   assert.equal(typeof json.capability_binding, "boolean");
 });

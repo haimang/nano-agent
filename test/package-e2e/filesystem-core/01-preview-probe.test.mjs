@@ -11,4 +11,5 @@ liveTest("filesystem-core preview probe reports library-worker truth", ["filesys
     absorbed_runtime: true,
     library_worker: true,
   });
+  assert.equal(typeof json.worker_version, "string");
 });

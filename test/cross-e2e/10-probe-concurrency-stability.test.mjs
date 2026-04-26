@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { fetchJson, liveTest } from "../shared/live.mjs";
 
 /**
- * Cross e2e — 5-worker probe fan-out under concurrent load.
+ * Cross e2e — 6-worker probe fan-out under concurrent load.
  *
  * Stack-preview-inventory (01) probes each worker once. This test
  * fans out **8 concurrent probes per worker** to catch:
@@ -12,16 +12,23 @@ import { fetchJson, liveTest } from "../shared/live.mjs";
  *   - session namespace independence: the probe path is session-less
  *     (`GET /`), so concurrent probes MUST NOT interfere with each
  *     other or leak state between workers
- *   - subrequest budget health at the edge (32 concurrent requests
- *     total across 5 workers)
+ *   - subrequest budget health at the edge (48 concurrent requests
+ *     total across 6 workers)
  *
  * Passing criteria:
- *   - all 32 responses 200
+ *   - all 48 responses 200
  *   - response bodies are identical per worker (deep-equal)
  *   - no request takes > 10s(timeout guard for cold-start pathology)
  */
 
-const WORKERS = ["agent-core", "orchestrator-core", "bash-core", "context-core", "filesystem-core"];
+const WORKERS = [
+  "agent-core",
+  "orchestrator-auth",
+  "orchestrator-core",
+  "bash-core",
+  "context-core",
+  "filesystem-core",
+];
 const FANOUT = 8;
 const TIMEOUT_MS = 10_000;
 
@@ -38,7 +45,7 @@ function withTimeout(promise, ms, label) {
 }
 
 liveTest(
-  "5-worker probe fan-out (8×5=40 concurrent) stays identical-body and under 10s",
+  "6-worker probe fan-out (8×6=48 concurrent) stays identical-body and under 10s",
   WORKERS,
   async ({ getUrl }) => {
     const started = Date.now();
@@ -55,7 +62,7 @@ liveTest(
     const results = await Promise.all(probes);
     const elapsed = Date.now() - started;
 
-    // All 40 must return 200
+    // All 48 must return 200
     for (const r of results) {
       assert.equal(
         r.response.status,
@@ -90,12 +97,12 @@ liveTest(
       }
     }
 
-    // Sanity: 40 probes should not take the full 10s × 40 — they run
+    // Sanity: 48 probes should not take the full 10s × 48 — they run
     // concurrently; if the wall clock exceeds 10s it suggests cold-start
     // pathology or serialization.
     assert.ok(
       elapsed < TIMEOUT_MS,
-      `40 concurrent probes took ${elapsed}ms (>${TIMEOUT_MS}ms — suspect serialization or cold-start pathology)`,
+      `48 concurrent probes took ${elapsed}ms (>${TIMEOUT_MS}ms — suspect serialization or cold-start pathology)`,
     );
   },
 );

@@ -10,4 +10,5 @@ liveTest("bash-core preview probe reports absorbed runtime", ["bash-core"], asyn
     phase: "worker-matrix-P1.B-absorbed",
     absorbed_runtime: true,
   });
+  assert.equal(typeof json.worker_version, "string");
 });
