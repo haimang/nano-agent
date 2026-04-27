@@ -27,6 +27,25 @@ const apiRoutes = {
   sessionTimeline: { path: '/sessions/{sessionUuid}/timeline', baseUrl: BASE_URLS.ORCHESTRATOR, method: 'GET' },
   sessionHistory: { path: '/sessions/{sessionUuid}/history', baseUrl: BASE_URLS.ORCHESTRATOR, method: 'GET' },
   sessionVerify: { path: '/sessions/{sessionUuid}/verify', baseUrl: BASE_URLS.ORCHESTRATOR, method: 'POST' },
+
+  // ZX2 Phase 6 P6-02 — facade-必需 endpoints
+  sessionUsage: { path: '/sessions/{sessionUuid}/usage', baseUrl: BASE_URLS.ORCHESTRATOR, method: 'GET' },
+  sessionResume: { path: '/sessions/{sessionUuid}/resume', baseUrl: BASE_URLS.ORCHESTRATOR, method: 'POST' },
+  permissionDecision: {
+    path: '/sessions/{sessionUuid}/permission/decision',
+    baseUrl: BASE_URLS.ORCHESTRATOR,
+    method: 'POST',
+  },
+  permissionMode: {
+    path: '/sessions/{sessionUuid}/policy/permission_mode',
+    baseUrl: BASE_URLS.ORCHESTRATOR,
+    method: 'POST',
+  },
+  meSessionsCreate: { path: '/me/sessions', baseUrl: BASE_URLS.ORCHESTRATOR, method: 'POST' },
+  meSessionsList: { path: '/me/sessions', baseUrl: BASE_URLS.ORCHESTRATOR, method: 'GET' },
+  catalogSkills: { path: '/catalog/skills', baseUrl: BASE_URLS.ORCHESTRATOR, method: 'GET' },
+  catalogCommands: { path: '/catalog/commands', baseUrl: BASE_URLS.ORCHESTRATOR, method: 'GET' },
+  catalogAgents: { path: '/catalog/agents', baseUrl: BASE_URLS.ORCHESTRATOR, method: 'GET' },
 };
 
 module.exports = {

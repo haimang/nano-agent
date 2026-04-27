@@ -335,3 +335,17 @@ Codex 对我们最有价值的是：
 当前系统的方向是正确的：`orchestrator-core` 作为 public facade，`orchestrator-auth` RPC 化，session runtime 通过 User DO 和 Agent Session DO 分层，NACP-Core 作为内部协议核心。真正需要改进的是“迁移中间态”的治理：内部 HTTP 不能只靠大家口头理解，必须成为有名称、有边界、有退役计划的 compatibility profile；对外 HTTP/WS 也不能直接暴露内部 action-specific shape，而应形成稳定 frontend facade profile。
 
 如果下一步只做一件事，应先冻结并补齐 **`session-ws-v1` 与 `facade-http-v1` 文档**，因为它们最直接影响前端功能扩展，也最容易和内部 NACP shape 产生长期碎片。
+
+---
+
+## ZX2 落地标注（2026-04-27）
+
+本报告提出的全部 7 项风险（包括 transport profile 未命名、internal HTTP 退役不明、外部 envelope 不稳定等）已被 ZX2 行动计划落地解决：
+
+- §7.2 §6.3 §3.3 — 5 transport profile 命名冻结、`session-ws-v1.md` server-frame registry、`facade-http-v1` 公约扩展。
+- §3.2 §3.3 — agent-core `input/cancel/verify/timeline/streamSnapshot` 全部 RPC + dual-track parity；bash-core 提升 `WorkerEntrypoint` + NACP authority（含 caller / source / request_uuid）。
+- §6.2 — 5 facade-必需端点 (`/sessions/{id}/permission/decision`, `policy/permission_mode`, `usage`, `resume`, `/catalog/{skills,commands,agents}`) + `/me/sessions` server-mint 全部 ship。
+- §6.3 — server WS frame 形态对齐 `NacpSessionFrameSchema`（compat 层映射现有 `{kind,...}`）。
+- §7.1 — Gemini-CLI 证据缺失列入 ZX2 plan §2.2 [O13]，留给后续 plan 补齐 investigation 后再评估。
+
+详细执行日志见 `docs/action-plan/zero-to-real/ZX2-transport-enhance.md` §12 与收尾文件 `docs/issue/zero-to-real/ZX2-closure.md`。

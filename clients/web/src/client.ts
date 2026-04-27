@@ -110,9 +110,82 @@ export class NanoClient {
     const body = await this.json(`/sessions/${sessionUuid}/timeline`, {
       headers: this.authHeaders(auth),
     });
-    return Array.isArray((body as { events?: unknown }).events)
-      ? ((body as { events: SessionEvent[] }).events)
-      : [];
+    // ZX2 Phase 4 P4-02 — facade-http-v1 envelope wraps the inner timeline
+    // body. Accept both shapes for compat:
+    //   { ok:true, data: { events: [...] }, trace_uuid }   ← new
+    //   { events: [...] }                                  ← legacy
+    const data = (body.data ?? body) as { events?: SessionEvent[] };
+    return Array.isArray(data.events) ? data.events : [];
+  }
+
+  // ZX2 Phase 5 P5-02 — server-mint session UUID. Replaces client-self-issue.
+  async createSession(auth: AuthState): Promise<{ session_uuid: string; ttl_seconds: number }> {
+    const body = await this.json(`/me/sessions`, {
+      method: "POST",
+      headers: this.authHeaders(auth, true),
+      body: JSON.stringify({}),
+    });
+    const data = (body.data ?? {}) as { session_uuid?: string; ttl_seconds?: number };
+    if (typeof data.session_uuid !== "string" || data.session_uuid.length === 0) {
+      throw new Error("/me/sessions response missing session_uuid");
+    }
+    return {
+      session_uuid: data.session_uuid,
+      ttl_seconds: typeof data.ttl_seconds === "number" ? data.ttl_seconds : 86400,
+    };
+  }
+
+  async listMySessions(auth: AuthState): Promise<unknown> {
+    const body = await this.json(`/me/sessions`, { headers: this.authHeaders(auth) });
+    return (body.data ?? {});
+  }
+
+  // ZX2 Phase 5 P5-01 — usage / resume / permission decision / policy.
+  async usage(auth: AuthState, sessionUuid: string): Promise<unknown> {
+    const body = await this.json(`/sessions/${sessionUuid}/usage`, {
+      headers: this.authHeaders(auth),
+    });
+    return body.data ?? body;
+  }
+
+  async resume(auth: AuthState, sessionUuid: string, lastSeenSeq: number): Promise<unknown> {
+    const body = await this.json(`/sessions/${sessionUuid}/resume`, {
+      method: "POST",
+      headers: this.authHeaders(auth, true),
+      body: JSON.stringify({ last_seen_seq: lastSeenSeq }),
+    });
+    return body.data ?? body;
+  }
+
+  async permissionDecision(
+    auth: AuthState,
+    sessionUuid: string,
+    payload: { request_uuid: string; decision: string; scope?: string; reason?: string },
+  ): Promise<unknown> {
+    const body = await this.json(`/sessions/${sessionUuid}/permission/decision`, {
+      method: "POST",
+      headers: this.authHeaders(auth, true),
+      body: JSON.stringify(payload),
+    });
+    return body.data ?? body;
+  }
+
+  async setPermissionMode(
+    auth: AuthState,
+    sessionUuid: string,
+    mode: "auto-allow" | "ask" | "deny" | "always_allow",
+  ): Promise<unknown> {
+    const body = await this.json(`/sessions/${sessionUuid}/policy/permission_mode`, {
+      method: "POST",
+      headers: this.authHeaders(auth, true),
+      body: JSON.stringify({ mode }),
+    });
+    return body.data ?? body;
+  }
+
+  async catalog(kind: "skills" | "commands" | "agents"): Promise<unknown> {
+    const body = await this.json(`/catalog/${kind}`);
+    return body.data ?? body;
   }
 
   openStream(

@@ -30,7 +30,7 @@ function appendLog(event: SessionEvent | string): void {
 
 app.innerHTML = `
   <section class="panel">
-    <h1>nano-agent Z4 web client</h1>
+    <h1>nano-agent Z4 + ZX2 web client</h1>
     <label>Orchestrator URL <input id="baseUrl" value="${baseUrl}" /></label>
     <label>Email <input id="email" value="z4-${Date.now()}@nano-agent.test" /></label>
     <label>Password <input id="password" type="password" value="NanoAgent!z4-client" /></label>
@@ -50,6 +50,14 @@ app.innerHTML = `
       <button id="stream">Open WS</button>
       <button id="timeline">Timeline</button>
       <button id="newSession">New Session</button>
+      <button id="mintSession">Mint Server UUID</button>
+    </div>
+    <div class="row">
+      <button id="usage">Usage</button>
+      <button id="resume">Resume</button>
+      <button id="catalogSkills">Catalog: skills</button>
+      <button id="catalogCommands">Catalog: commands</button>
+      <button id="myList">List My Sessions</button>
     </div>
   </section>
   <section class="panel"><h2>Events</h2><div id="log"></div></section>
@@ -117,3 +125,28 @@ document.querySelector("#newSession")?.addEventListener("click", () => {
   if (input) input.value = sessionUuid;
   appendLog({ kind: "client.session.new", sessionUuid });
 });
+
+// ZX2 Phase 6 P6-01 — facade-必需 endpoints exercised from the UI.
+document.querySelector("#mintSession")?.addEventListener("click", () => run("mintSession", async () => {
+  const minted = await client.createSession(requireAuth());
+  sessionUuid = minted.session_uuid;
+  lastSeenSeq = 0;
+  const input = document.querySelector<HTMLInputElement>("#sessionUuid");
+  if (input) input.value = sessionUuid;
+  return minted;
+}));
+document.querySelector("#usage")?.addEventListener("click", () => run("usage", () =>
+  client.usage(requireAuth(), refreshSessionUuid()),
+));
+document.querySelector("#resume")?.addEventListener("click", () => run("resume", () =>
+  client.resume(requireAuth(), refreshSessionUuid(), lastSeenSeq),
+));
+document.querySelector("#catalogSkills")?.addEventListener("click", () => run("catalog.skills", () =>
+  client.catalog("skills"),
+));
+document.querySelector("#catalogCommands")?.addEventListener("click", () => run("catalog.commands", () =>
+  client.catalog("commands"),
+));
+document.querySelector("#myList")?.addEventListener("click", () => run("me.sessions", () =>
+  client.listMySessions(requireAuth()),
+));

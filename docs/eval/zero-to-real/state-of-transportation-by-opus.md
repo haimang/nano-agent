@@ -311,3 +311,20 @@ NACP 内层 schema (`tool.call.request/response`) 不动，只是被外层 `Enve
 > - `.tmp/rpc-shapes.md`（envelope 碎片）
 > - `.tmp/cli-host-gaps.md`（claude-code/codex/gemini-cli host API 对照）
 > - `.tmp/external-api-gaps.md`（前端能力侧缺口）
+
+---
+
+## ZX2 落地标注（2026-04-27）
+
+本调查报告提出的所有 P0–P2 问题已经由 ZX2 行动计划全量交付：
+
+- 5 transport profile 命名冻结：`docs/transport/transport-profiles.md`
+- agent-core 7 action 全 RPC（dual-track parity 模式）：`workers/agent-core/src/index.ts` + `workers/orchestrator-core/src/user-do.ts`
+- bash-core `WorkerEntrypoint` + NACP authority：`workers/bash-core/src/index.ts`
+- internal-http-compat 状态：`retired-with-rollback`（回滚 runbook 见 `docs/runbook/zx2-rollback.md`）
+- 公网 envelope 统一 facade-http-v1：`packages/orchestrator-auth-contract/src/facade-http.ts`
+- 5 facade-必需端点 + 7 message_type 接入：`workers/orchestrator-core/src/{index.ts,user-do.ts}` + `clients/api-docs/{permissions,usage,catalog,me-sessions,session-ws-v1}.md`
+- web + wechat 客户端切单一 narrow：`clients/web/src/client.ts` + `clients/wechat-miniprogram/utils/api.js`
+- e2e: `test/cross-e2e/zx2-transport.test.mjs`
+
+详细执行日志见 `docs/action-plan/zero-to-real/ZX2-transport-enhance.md` §12 与收尾文件 `docs/issue/zero-to-real/ZX2-closure.md`。

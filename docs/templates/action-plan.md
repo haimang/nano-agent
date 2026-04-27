@@ -2,20 +2,28 @@
 
 > 服务业务簇: `{SERVICE_CLUSTER_NAME}`
 > 计划对象: `{PLAN_OBJECT}`
-> 类型: `new | upgrade | modify | refactor | migration`
+> 类型: `new | upgrade | modify | refactor | migration | remove`
 > 作者: `{AUTHOR}`
 > 时间: `{DATE}`
 > 文件位置: `{TARGET_PATHS}`
+> 上游前序 / closure:
+> - `{PREDECESSOR_CLOSURE_OR_GATE}`
+> 下游交接:
+> - `{SUCCESSOR_PLAN_OR_HANDOFF}`
 > 关联设计 / 调研文档:
 > - `{RELATED_DESIGN_DOCS}`
 > - `{RELATED_INVESTIGATION_DOCS}`
-> 文档状态: `draft | reviewed | executing | completed`
+> 冻结决策来源:
+> - `{DESIGN_QNA_OR_DECISION_REGISTER}`（只读引用；本 action-plan 不填写 Q/A）
+> 文档状态: `draft | reviewed | executing | executed | superseded`
 
 ---
 
 ## 0. 执行背景与目标
 
-> 用一到三段话说明：为什么现在要做这份 action-plan、它对应哪个功能簇或子系统、这次行动计划想解决什么问题、最终希望落到什么可交付物。
+> 用一到三段话说明：为什么现在要执行这份计划、它从哪些 frozen design / QNA / closure 继承输入、它要把哪些设计结论落成可交付物。
+>
+> **纪律**：如果仍有 owner / architect 需要回答的问题，不应在 action-plan 中开 Q/A；应回到 design / QNA register 完成冻结。本文件只消费已冻结结论。
 
 - **服务业务簇**：`{SERVICE_CLUSTER_NAME}`
 - **计划对象**：`{PLAN_OBJECT}`
@@ -27,6 +35,9 @@
   - `{DELIVERABLE_1}`
   - `{DELIVERABLE_2}`
   - `{DELIVERABLE_3}`
+- **本计划不重新讨论的设计结论**：
+  - `{FROZEN_DECISION_1}`（来源：`{Q_OR_DESIGN_REF}`）
+  - `{FROZEN_DECISION_2}`（来源：`{Q_OR_DESIGN_REF}`）
 
 ---
 
@@ -34,12 +45,12 @@
 
 ### 1.1 总体执行方式
 
-> 用一段话概括：这份 action-plan 一共分几个 Phase，执行方式是“先骨架后集成”、“先协议后实现”、“先底层后上层”，还是其他策略。
+> 用一段话概括：这份 action-plan 一共分几个 Phase，执行方式是“先审计后改动”、“先协议后实现”、“先底层后上层”、“先迁 consumer 后删除”等哪一种。这里写执行策略，不重新论证设计方案本身。
 
 ### 1.2 Phase 总览
 
-| Phase | 名称 | 预估工作量 | 目标摘要 | 依赖前序 |
-|------|------|------------|----------|----------|
+| Phase | 名称 | 规模 | 目标摘要 | 依赖前序 |
+|------|------|------|----------|----------|
 | Phase 1 | `{PHASE_1_NAME}` | `XS / S / M / L / XL` | `{PHASE_1_SUMMARY}` | `-` |
 | Phase 2 | `{PHASE_2_NAME}` | `XS / S / M / L / XL` | `{PHASE_2_SUMMARY}` | `{PHASE_DEP}` |
 | Phase 3 | `{PHASE_3_NAME}` | `XS / S / M / L / XL` | `{PHASE_3_SUMMARY}` | `{PHASE_DEP}` |
@@ -63,32 +74,13 @@
 - **风险控制原则**：`{RISK_STRATEGY}`
 - **测试推进原则**：`{TEST_STRATEGY}`
 - **文档同步原则**：`{DOCS_STRATEGY}`
+- **回滚 / 降级原则**：`{ROLLBACK_OR_DEGRADE_STRATEGY}`
 
-### 1.5 本次 action-plan 影响目录树
+### 1.5 本次 action-plan 影响结构图
 
-> 用树状结构快速展示：本次 action-plan 会影响哪些模块、目录、文件、运行链路或服务边界。  
-> 这一节不是文件系统快照，而是**影响结构图**；既可以按目录写，也可以按业务链路写。
-
-```text
-{SERVICE_CLUSTER_NAME}/
-├── runtime/
-│   ├── {RUNTIME_FILE_OR_MODULE}
-│   └── {RUNTIME_FILE_OR_MODULE}
-├── transport/
-│   ├── {TRANSPORT_FILE_OR_MODULE}
-│   └── {TRANSPORT_FILE_OR_MODULE}
-├── storage/
-│   ├── {STORAGE_FILE_OR_MODULE}
-│   └── {STORAGE_FILE_OR_MODULE}
-├── tests/
-│   ├── {TEST_FILE_OR_MODULE}
-│   └── {TEST_FILE_OR_MODULE}
-└── docs/
-    ├── {DOC_FILE}
-    └── {DOC_FILE}
-```
-
-或使用业务链路树：
+> 用树状结构快速展示：本计划会影响哪些模块、目录、运行链路、服务边界、测试层或文档资产。
+>
+> 这一节不是文件系统快照，而是**影响结构图**；推荐按业务链路或执行路径写。
 
 ```text
 {PLAN_OBJECT}
@@ -98,7 +90,7 @@
 ├── Phase 2: {PHASE_2_NAME}
 │   ├── {AFFECTED_BOUNDARY_3}
 │   └── {AFFECTED_BOUNDARY_4}
-└── Phase 3: {PHASE_3_NAME}
+└── Phase N: {PHASE_N_NAME}
     ├── {AFFECTED_BOUNDARY_5}
     └── {AFFECTED_BOUNDARY_6}
 ```
@@ -107,8 +99,7 @@
 
 ## 2. In-Scope / Out-of-Scope
 
-> 把 action-plan 的边界集中写在这里。  
-> 其他章节不再重复写“这次不做什么”，避免 scope 分散在多个位置。
+> 把 action-plan 的执行边界集中写在这里。设计上的边界应来自 design/QNA；本节只说明本轮执行做什么、不做什么、何时重评。
 
 ### 2.1 In-Scope（本次 action-plan 明确要做）
 
@@ -126,31 +117,30 @@
 
 ### 2.3 边界判定表
 
-| 项目 | 判定 | 理由 | 预计何时重评 |
-|------|------|------|--------------|
+| 项目 | 判定 | 理由 | 重评条件 |
+|------|------|------|----------|
 | `{ITEM}` | `in-scope` | `{WHY}` | `{REVISIT_CONDITION}` |
 | `{ITEM}` | `out-of-scope` | `{WHY}` | `{REVISIT_CONDITION}` |
-| `{ITEM}` | `defer / depends-on-decision` | `{WHY}` | `{REVISIT_CONDITION}` |
+| `{ITEM}` | `defer / depends-on-design` | `{WHY}` | `{REVISIT_CONDITION}` |
 
 ---
 
 ## 3. 业务工作总表
 
-> 这一节先给出总索引；后面 §4 会按 Phase 展开。编号建议使用 `P1-01 / P1-02 / P2-01` 这种形式，便于讨论与追踪。
+> 这一节先给出总索引；后面 §4 会按 Phase 展开。编号建议使用 `P1-01 / P1-02 / P2-01` 这种形式，便于 review、handoff 与 closure 引用。
 
 | 编号 | 所属 Phase | 工作项 | 类型 | 涉及模块 / 文件 | 目标一句话 | 风险等级 |
 |------|------------|--------|------|------------------|------------|----------|
-| P1-01 | Phase 1 | `{WORK_ITEM}` | `add | update | remove | refactor` | `{FILES}` | `{ONE_LINE_GOAL}` | `low | medium | high` |
-| P1-02 | Phase 1 | `{WORK_ITEM}` | `add | update | remove | refactor` | `{FILES}` | `{ONE_LINE_GOAL}` | `low | medium | high` |
-| P2-01 | Phase 2 | `{WORK_ITEM}` | `add | update | remove | refactor` | `{FILES}` | `{ONE_LINE_GOAL}` | `low | medium | high` |
-| P3-01 | Phase 3 | `{WORK_ITEM}` | `add | update | remove | refactor` | `{FILES}` | `{ONE_LINE_GOAL}` | `low | medium | high` |
+| P1-01 | Phase 1 | `{WORK_ITEM}` | `add | update | remove | refactor | migrate` | `{FILES}` | `{ONE_LINE_GOAL}` | `low | medium | high` |
+| P1-02 | Phase 1 | `{WORK_ITEM}` | `add | update | remove | refactor | migrate` | `{FILES}` | `{ONE_LINE_GOAL}` | `low | medium | high` |
+| P2-01 | Phase 2 | `{WORK_ITEM}` | `add | update | remove | refactor | migrate` | `{FILES}` | `{ONE_LINE_GOAL}` | `low | medium | high` |
+| P3-01 | Phase 3 | `{WORK_ITEM}` | `add | update | remove | refactor | migrate` | `{FILES}` | `{ONE_LINE_GOAL}` | `low | medium | high` |
 
 ---
 
 ## 4. Phase 业务表格
 
-> 每个 Phase 一张表，完整列出这个 Phase 内的工作项、目标、涉及文件、测试方式与收口条件。  
-> 如果某个 Phase 很大，可以拆成多个小表，但仍建议保持单一编号体系。
+> 每个 Phase 一张表，完整列出这个 Phase 内的工作项、目标、涉及文件、测试方式与收口条件。
 
 ### 4.1 Phase 1 — `{PHASE_1_NAME}`
 
@@ -158,7 +148,6 @@
 |------|--------|----------|------------------|----------|----------|----------|
 | P1-01 | `{ITEM_NAME}` | `{ITEM_DESCRIPTION}` | `{FILES}` | `{EXPECTED_OUTPUT}` | `{TEST_METHOD}` | `{DONE_CRITERION}` |
 | P1-02 | `{ITEM_NAME}` | `{ITEM_DESCRIPTION}` | `{FILES}` | `{EXPECTED_OUTPUT}` | `{TEST_METHOD}` | `{DONE_CRITERION}` |
-| P1-03 | `{ITEM_NAME}` | `{ITEM_DESCRIPTION}` | `{FILES}` | `{EXPECTED_OUTPUT}` | `{TEST_METHOD}` | `{DONE_CRITERION}` |
 
 ### 4.2 Phase 2 — `{PHASE_2_NAME}`
 
@@ -166,7 +155,6 @@
 |------|--------|----------|------------------|----------|----------|----------|
 | P2-01 | `{ITEM_NAME}` | `{ITEM_DESCRIPTION}` | `{FILES}` | `{EXPECTED_OUTPUT}` | `{TEST_METHOD}` | `{DONE_CRITERION}` |
 | P2-02 | `{ITEM_NAME}` | `{ITEM_DESCRIPTION}` | `{FILES}` | `{EXPECTED_OUTPUT}` | `{TEST_METHOD}` | `{DONE_CRITERION}` |
-| P2-03 | `{ITEM_NAME}` | `{ITEM_DESCRIPTION}` | `{FILES}` | `{EXPECTED_OUTPUT}` | `{TEST_METHOD}` | `{DONE_CRITERION}` |
 
 ### 4.3 Phase 3 — `{PHASE_3_NAME}`
 
@@ -181,7 +169,7 @@
 
 ## 5. Phase 详情
 
-> 这一节按 Phase 展开详细执行说明。建议把“做什么、改哪些文件、怎么测、做到什么算结束”写清楚，避免后续实现时反复重读上下文。
+> 这一节按 Phase 展开详细执行说明。建议把“做什么、改哪些文件、怎么测、做到什么算结束”写清楚，避免后续实现时反复重读 design。
 
 ### 5.1 Phase 1 — `{PHASE_1_NAME}`
 
@@ -189,19 +177,15 @@
 - **本 Phase 对应编号**：
   - `P1-01`
   - `P1-02`
-  - `P1-03`
 - **本 Phase 新增文件**：
   - `{NEW_FILE_1}`
-  - `{NEW_FILE_2}`
 - **本 Phase 修改文件**：
   - `{MODIFIED_FILE_1}`
-  - `{MODIFIED_FILE_2}`
 - **本 Phase 删除文件**（如无可删去）：
   - `{DELETED_FILE_1}`
 - **具体功能预期**：
   1. `{FUNCTION_EXPECTATION_1}`
   2. `{FUNCTION_EXPECTATION_2}`
-  3. `{FUNCTION_EXPECTATION_3}`
 - **具体测试安排**：
   - **单测**：`{UNIT_TEST_SCOPE}`
   - **集成测试**：`{INTEGRATION_TEST_SCOPE}`
@@ -210,10 +194,8 @@
 - **收口标准**：
   - `{EXIT_CRITERION_1}`
   - `{EXIT_CRITERION_2}`
-  - `{EXIT_CRITERION_3}`
 - **本 Phase 风险提醒**：
   - `{PHASE_RISK_1}`
-  - `{PHASE_RISK_2}`
 
 ### 5.2 Phase 2 — `{PHASE_2_NAME}`
 
@@ -221,37 +203,12 @@
 - **本 Phase 对应编号**：
   - `P2-01`
   - `P2-02`
-  - `P2-03`
 - **本 Phase 新增文件**：
   - `{NEW_FILE_1}`
 - **本 Phase 修改文件**：
   - `{MODIFIED_FILE_1}`
-  - `{MODIFIED_FILE_2}`
-- **具体功能预期**：
-  1. `{FUNCTION_EXPECTATION_1}`
-  2. `{FUNCTION_EXPECTATION_2}`
-- **具体测试安排**：
-  - **单测**：`{UNIT_TEST_SCOPE}`
-  - **集成测试**：`{INTEGRATION_TEST_SCOPE}`
-  - **回归测试**：`{REGRESSION_TEST_SCOPE}`
-  - **手动验证**：`{MANUAL_CHECK_SCOPE}`
-- **收口标准**：
-  - `{EXIT_CRITERION_1}`
-  - `{EXIT_CRITERION_2}`
-- **本 Phase 风险提醒**：
-  - `{PHASE_RISK_1}`
-
-### 5.3 Phase 3 — `{PHASE_3_NAME}`
-
-- **Phase 目标**：`{PHASE_GOAL}`
-- **本 Phase 对应编号**：
-  - `P3-01`
-  - `P3-02`
-- **本 Phase 新增文件**：
-  - `{NEW_FILE_1}`
-- **本 Phase 修改文件**：
-  - `{MODIFIED_FILE_1}`
-  - `{MODIFIED_FILE_2}`
+- **本 Phase 删除文件**（如无可删去）：
+  - `{DELETED_FILE_1}`
 - **具体功能预期**：
   1. `{FUNCTION_EXPECTATION_1}`
   2. `{FUNCTION_EXPECTATION_2}`
@@ -270,49 +227,20 @@
 
 ---
 
-## 6. 需要业主 / 架构师回答的问题清单
+## 6. 依赖的冻结设计决策（只读引用）
 
-> 把当前 action-plan 里仍未冻结、必须由业主或架构师拍板的问题集中列出。  
-> 每个问题都要说明：问题是什么、为什么必须回答、影响哪些 Phase，并预留 **Q / A** 结构，方便架构师或业主直接在文档里填写。
+> 这里列出本 action-plan 依赖哪些 design / QNA / closure 结论。**不要在本节填写新 Q/A，也不要在这里等待 owner 回答。**
+>
+> 如果某条关键结论尚未冻结，本 action-plan 应保持 `draft-blocked` 或回退到 design 阶段。
 
-### 6.1 Q/A 填写模板
-
-#### Q1
-
-- **影响范围**：`{AFFECTED_PHASES}`
-- **为什么必须确认**：`{WHY_IT_MATTERS}`
-- **当前建议 / 倾向**：`{RECOMMENDED_ANSWER}`
-- **Q**：`{QUESTION}`
-- **A**：`{ARCHITECT_OR_OWNER_ANSWER}`
-
-#### Q2
-
-- **影响范围**：`{AFFECTED_PHASES}`
-- **为什么必须确认**：`{WHY_IT_MATTERS}`
-- **当前建议 / 倾向**：`{RECOMMENDED_ANSWER}`
-- **Q**：`{QUESTION}`
-- **A**：`{ARCHITECT_OR_OWNER_ANSWER}`
-
-#### Q3
-
-- **影响范围**：`{AFFECTED_PHASES}`
-- **为什么必须确认**：`{WHY_IT_MATTERS}`
-- **当前建议 / 倾向**：`{RECOMMENDED_ANSWER}`
-- **Q**：`{QUESTION}`
-- **A**：`{ARCHITECT_OR_OWNER_ANSWER}`
-
-*（按需继续扩展 Q4 / Q5 / ...）*
-
-### 6.2 问题整理建议
-
-- 优先问 **会直接改变实现路径** 的问题
-- 优先问 **影响多个 Phase** 的问题
-- 不要把“实现时自然可确定”的细节也塞进待确认项
-- 每个问题最好给出 **当前建议答案**，方便架构师决策
+| 决策 / Q ID | 冻结来源 | 本计划中的影响 | 若不成立的处理 |
+|-------------|----------|----------------|----------------|
+| `{Q1_OR_DECISION}` | `{DESIGN_OR_QNA_LINK}` | `{IMPACT_ON_PHASES}` | `{BLOCK_OR_ROLLBACK}` |
+| `{Q2_OR_DECISION}` | `{DESIGN_OR_QNA_LINK}` | `{IMPACT_ON_PHASES}` | `{BLOCK_OR_ROLLBACK}` |
 
 ---
 
-## 7. 其他补充说明
+## 7. 风险、依赖与完成后状态
 
 ### 7.1 风险与依赖
 
@@ -338,11 +266,19 @@
 - 需要同步更新的测试说明：
   - `{TEST_DOC}`
 
+### 7.4 完成后的预期状态
+
+> 用 3-5 条说明本 action-plan 完成后，系统、仓库结构、测试、文档或运行链路会变成什么状态。这比泛泛“结语”更有用。
+
+1. `{POST_COMPLETION_STATE_1}`
+2. `{POST_COMPLETION_STATE_2}`
+3. `{POST_COMPLETION_STATE_3}`
+
 ---
 
 ## 8. Action-Plan 整体测试与整体收口
 
-> 这里写的是整个 action-plan 完成后的**整体测试方法**与**整体收口标准**，不是某个单独 Phase 的局部测试。
+> 这里写整个 action-plan 完成后的整体测试方法与整体收口标准，不重复某个单独 Phase 的局部测试。
 
 ### 8.1 Action-Plan 整体测试方法
 
@@ -368,7 +304,6 @@
 2. `{GLOBAL_EXIT_CRITERION_2}`
 3. `{GLOBAL_EXIT_CRITERION_3}`
 4. `{GLOBAL_EXIT_CRITERION_4}`
-5. `{GLOBAL_EXIT_CRITERION_5}`
 
 ### 8.3 完成定义（Definition of Done）
 
@@ -382,23 +317,13 @@
 
 ---
 
-## 9. 执行后复盘关注点
+## 9. 执行日志回填（仅 `executed` 状态使用）
 
-> 这一节不是必填，但建议在 action-plan 执行结束后回填，用于后续迭代与模板复用。
+> 若文档状态不是 `executed`，本节可以省略。执行完成后回填实际发生了什么、哪些计划发生偏差、哪些测试暴露新事实、哪些风险已关闭。
 
-- **哪些 Phase 的工作量估计偏差最大**：`{RETRO_1}`
-- **哪些编号的拆分还不够合理**：`{RETRO_2}`
-- **哪些问题本应更早问架构师**：`{RETRO_3}`
-- **哪些测试安排在实际执行中证明不够**：`{RETRO_4}`
-- **模板本身还需要补什么字段**：`{RETRO_5}`
+- **实际执行摘要**：`{EXECUTION_SUMMARY}`
+- **Phase 偏差**：`{PHASE_VARIANCE}`
+- **阻塞与处理**：`{BLOCKERS_AND_RESOLUTION}`
+- **测试发现**：`{TEST_FINDINGS}`
+- **后续 handoff**：`{FOLLOW_UP_HANDOFF}`
 
----
-
-## 10. 结语
-
-> 用一段话总结这份 action-plan 的总体执行立场：  
-> 我们准备如何推进、优先保证什么、接受什么 trade-off、完成后会给项目带来什么确定性。
-
-示例句式：
-
-> 这份 action-plan 以 **{PRIMARY_GOAL}** 为第一优先级，采用 **{EXECUTION_STRATEGY}** 的推进方式，优先解决 **{MOST_IMPORTANT_PROBLEMS}**，并把 **{RISK_BOUNDARIES}** 作为主要约束。整个计划完成后，`{SERVICE_CLUSTER_NAME}` 应达到 **{FINAL_EXPECTATION}**，从而为后续的 **{NEXT_CAPABILITIES}** 提供稳定基础。

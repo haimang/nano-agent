@@ -392,6 +392,67 @@ function uploadFile(routeKey, filePath, name, options = {}) {
   });
 }
 
+// ZX2 Phase 6 P6-02 — facade-必需 helpers. Each wrapper exists so call
+// sites stay terse and so we can swap the underlying request shape (e.g.
+// pathParams convention) in one place when ZX3 ships /me/conversations.
+
+/** ZX2: server-mint a new session UUID. Returns `{session_uuid, ttl_seconds, ...}` from envelope.data. */
+async function meSessionsCreate() {
+  const result = await request('meSessionsCreate', { data: {} });
+  return result && result.data ? result.data : result;
+}
+
+/** ZX2: list current user's sessions. */
+async function meSessionsList() {
+  const result = await request('meSessionsList');
+  return result && result.data ? result.data : result;
+}
+
+/** ZX2: snapshot usage for a session. */
+async function sessionUsage(sessionUuid) {
+  const result = await request('sessionUsage', { pathParams: { sessionUuid } });
+  return result && result.data ? result.data : result;
+}
+
+/** ZX2: explicit resume (HTTP mirror of WS reconnect). */
+async function sessionResume(sessionUuid, lastSeenSeq = 0) {
+  const result = await request('sessionResume', {
+    pathParams: { sessionUuid },
+    data: { last_seen_seq: lastSeenSeq },
+  });
+  return result && result.data ? result.data : result;
+}
+
+/** ZX2: reply to a `session.permission.request` over HTTP. */
+async function permissionDecision(sessionUuid, payload) {
+  const result = await request('permissionDecision', {
+    pathParams: { sessionUuid },
+    data: payload,
+  });
+  return result && result.data ? result.data : result;
+}
+
+/** ZX2: set session-level default permission mode. */
+async function permissionMode(sessionUuid, mode) {
+  const result = await request('permissionMode', {
+    pathParams: { sessionUuid },
+    data: { mode },
+  });
+  return result && result.data ? result.data : result;
+}
+
+/** ZX2: catalog reads. kind ∈ {skills,commands,agents}. */
+async function catalogList(kind) {
+  const route =
+    kind === 'commands'
+      ? 'catalogCommands'
+      : kind === 'agents'
+        ? 'catalogAgents'
+        : 'catalogSkills';
+  const result = await request(route, { requireAuth: false });
+  return result && result.data ? result.data : result;
+}
+
 module.exports = {
   request,
   uploadFile,
@@ -402,4 +463,12 @@ module.exports = {
   removeJwtToken,
   generateTraceUuid,
   apiRoutes,
+  // ZX2 Phase 6 P6-02 helpers
+  meSessionsCreate,
+  meSessionsList,
+  sessionUsage,
+  sessionResume,
+  permissionDecision,
+  permissionMode,
+  catalogList,
 };

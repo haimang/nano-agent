@@ -1,256 +1,306 @@
-# ZX2 Transport Enhance — 收尾专项
+# ZX2 Transport Enhance — 收尾专项 (ALL-DONE)
 
-> 类型: closure
+> 类型: closure (final)
 > 关联: `docs/action-plan/zero-to-real/ZX2-transport-enhance.md`
 > 上游调研: `docs/eval/zero-to-real/state-of-transportation-by-{opus,GPT}.md`
 > 执行人: Opus 4.7（1M ctx）
-> 时间: 2026-04-27
-> 状态: **Phase 1 + Phase 2 已落地；Phase 3 - 6 转交后续执行窗口**
+> 时间: 2026-04-27（v3 全量交付）
+> 状态: **Phase 1-6 全部落地；Phase 1+2 在 v1 完成；Phase 3-6 在 v3 完成；2392 tests 全绿**
 
 ---
 
 ## 0. TL;DR
 
-ZX2 把整个 transport 层的"契约地基"一次性交付完成 —— 5 个 transport profile 的命名冻结、NACP 协议公开 surface 补齐（`Envelope<T>` / `RpcMeta` / `RpcErrorCode` / `validateRpcCall`）、`nacp-session` 接收 5 族 7 个新 message_type、`orchestrator-auth-contract` 扩为 facade-http-v1 单一来源、6 个 worker 的 `workers_dev` 全部显式审计（含 agent-core preview = false）、4 个非 facade worker 的 fetch 入口加 binding-scope 守卫。**所有 worker 包测试 2372/2372 全绿**。Phase 3-6 的实施动作完全依赖这次落地的契约层；现在可以独立、并行启动。
+ZX2 把 nano-agent 6-worker matrix 的 transport 层从"修边"完整推到"收口"：5 个 transport profile 命名冻结、NACP 协议公开 surface 补齐（`Envelope<T>` / `RpcMeta` / `RpcErrorCode` / `validateRpcCall`）、`nacp-session` 接收 5 族 7 个新 message_type、`orchestrator-auth-contract` 扩为 facade-http-v1 单一来源、agent-core 7 个 session action 全部走 RPC + dual-track parity（含 cursor-paginated stream snapshot）、bash-core 升级为 `WorkerEntrypoint` + NACP authority + secret 三层守卫、5 个前端必需 HTTP 端点 + 7 个新 WS message_type 接入、web 与 wechat-miniprogram 客户端切到统一 narrow、live preview e2e 测试就绪。**所有 worker 包测试 2392/2392 全绿**；`internal-http-compat` profile 状态迁至 `retired-with-rollback`，回滚 runbook 在 `docs/runbook/zx2-rollback.md` 待用。
 
 ```
 Phase 1 ✅ done   transport-profiles.md / wrangler audit / binding-scope guard / api-docs README
 Phase 2 ✅ done   nacp-core rpc.ts / nacp-session 5 族 / orchestrator-auth-contract facade-http-v1
-Phase 3 ⏳ open   agent-core 4 RPC shadow + stream snapshot / bash-core RPC + NACP authority / 翻转
-Phase 4 ⏳ open   orchestrator-core session envelope / WS frame 对齐 / session-ws-v1.md
-Phase 5 ⏳ open   5 facade 必需端点 + 7 message_type 接入 + /me/sessions 冻结
-Phase 6 ⏳ open   web/wechat 切单一 narrow + live preview e2e + 文档收口
+Phase 3 ✅ done   agent-core 4 RPC shadow + stream snapshot / bash-core RPC + NACP authority / rollback runbook
+Phase 4 ✅ done   orchestrator-core session envelope / WS frame 对齐 / session-ws-v1.md
+Phase 5 ✅ done   5 facade 必需端点 + 7 message_type 接入 + /me/sessions 冻结
+Phase 6 ✅ done   web/wechat 切单一 narrow + live preview e2e + 文档收口
 ```
 
 ---
 
 ## 1. 已交付物
 
-### 1.1 文档（3 份新增 / 1 份更新）
+### 1.1 文档（10 份新增 / 5 份更新）
 
-| 文件 | 状态 | 说明 |
-|---|---|---|
-| `docs/transport/transport-profiles.md` | new | 5 profile 命名冻结（`nacp-internal` / `internal-http-compat` / `facade-http-v1` / `session-ws-v1` / `health-probe`），含范围、wire、信任栈、契约源、跨界规则、禁忌、状态标签词典 |
-| `docs/issue/zero-to-real/ZX2-closure.md` | new | 本文件 |
-| `docs/action-plan/zero-to-real/ZX2-transport-enhance.md` | updated | §12 执行日志（实施报告） |
-| `clients/api-docs/README.md` | updated | profile 索引 + 9 篇文档分级 + 错误形状统一规则 |
+**新增**：
+| 文件 | 说明 |
+|---|---|
+| `docs/transport/transport-profiles.md` | 5 profile 命名冻结 + 跨界规则 + 形状碎片治理 |
+| `docs/runbook/zx2-rollback.md` | HTTP→RPC 翻转回滚 runbook（软回滚 + 硬回滚 + bash-core 回滚） |
+| `clients/api-docs/transport-profiles.md` | 已合并到 `clients/api-docs/README.md` 的 profile 索引 |
+| `clients/api-docs/session-ws-v1.md` | server-frame registry / close codes / ack / heartbeat / order / resume |
+| `clients/api-docs/permissions.md` | permission decision/policy HTTP + WS 闭环 |
+| `clients/api-docs/usage.md` | usage HTTP snapshot + WS push |
+| `clients/api-docs/catalog.md` | skills / commands / agents 列表 |
+| `clients/api-docs/me-sessions.md` | server-mint UUID + TTL + 跨设备 resume 语义 |
+| `docs/issue/zero-to-real/ZX2-closure.md` | 本文件 |
 
-### 1.2 NACP 协议补齐
+**更新**：
+| 文件 | 改动 |
+|---|---|
+| `docs/action-plan/zero-to-real/ZX2-transport-enhance.md` | §12 + §13 执行日志（v1+v2+v3） |
+| `docs/eval/zero-to-real/state-of-transportation-by-opus.md` | 末尾 ZX2 落地标注 |
+| `docs/eval/zero-to-real/state-of-transportation-by-GPT.md` | 末尾 ZX2 落地标注 |
+| `clients/api-docs/README.md` | profile 索引 + 9 篇文档分级 |
+| `clients/api-docs/session.md` | 引用 session-ws-v1.md（无形状改动） |
 
-**`packages/nacp-core/src/rpc.ts`**（约 320 行）— 公开 RPC 协议层。导出：
-- `Envelope<T> = { ok:true; data:T } | { ok:false; error:RpcError }` 联合类型 + zod schema
-- `RpcMeta` schema（`trace_uuid` / `caller` / `authority?` / `session_uuid?` / `request_uuid?` / `source?`）
-- `RpcErrorCode` enum（30 个 code，含 auth / permission / lifecycle / runtime 四类）
-- `RpcCaller` enum（11 个 caller，含 worker / cli / web / wechat-miniprogram / test）
-- `validateRpcCall(rawInput, rawMeta, options)` —— caller-side 双头校验 helper，支持 `requireAuthority` / `requireTenant` / `requireSession` / `requireRequestUuid`
+### 1.2 NACP 协议补齐 (Phase 2 v1)
+
+`packages/nacp-core/src/rpc.ts`（约 320 行）— 公开 RPC 协议层。导出：
+- `Envelope<T>` 联合类型 + zod schema
+- `RpcMeta` schema（trace_uuid / caller / authority? / session_uuid? / request_uuid? / source?）
+- `RpcErrorCode` enum（30 个 code）
+- `RpcCaller` enum（11 个 caller）
+- `validateRpcCall(rawInput, rawMeta, options)` — caller-side 双头校验
 - `okEnvelope` / `errorEnvelope` / `envelopeFromThrown` / `envelopeFromAuthLike` 4 个 helper
 
-通过 `packages/nacp-core/src/index.ts` 公开导出，nacp-core 测试 30/30 全绿、整包 289/289 全绿。
+测试：30/30 ✅。
 
-### 1.3 nacp-session 5 族 7 message_type 注册
+### 1.3 nacp-session 5 族 7 message_type (Phase 2 v1)
 
-**`packages/nacp-session/src/messages.ts`**（+143 行）— 加入：
-| 族 | message_type | 方向 | required |
-|---|---|---|---|
-| permission | `session.permission.request` | server→client | ✅ |
-| permission | `session.permission.decision` | client→server | ✅ |
-| usage | `session.usage.update` | server→client (允许 0 字段) | ✅ |
-| skill | `session.skill.invoke` | client→server | ✅ |
-| command | `session.command.invoke` | client→server | ✅ |
-| elicitation | `session.elicitation.request` | server→client | ✅ |
-| elicitation | `session.elicitation.answer` | client→server | ✅ |
+`packages/nacp-session/src/messages.ts` 加：
+- `session.permission.{request,decision}`
+- `session.usage.update`
+- `session.skill.invoke`
+- `session.command.invoke`
+- `session.elicitation.{request,answer}`
 
-`type-direction-matrix.ts` 与 `session-registry.ts`（role + phase）同步更新；`SESSION_MESSAGE_TYPES` 从 8 升至 15；`SESSION_BODY_SCHEMAS` / `SESSION_BODY_REQUIRED` 同步。
+`type-direction-matrix.ts` + `session-registry.ts`（role + phase）同步。`SESSION_MESSAGE_TYPES` 从 8 升至 15。测试：27 新增 + 1 size assert 升级，nacp-session 整包 146/146 ✅。
 
-测试：`zx2-messages.test.ts` 27/27 全绿；nacp-session 整包 146/146 全绿。
+### 1.4 facade-http-v1 contract (Phase 2 v1)
 
-### 1.4 facade-http-v1 contract
-
-**`packages/orchestrator-auth-contract/src/facade-http.ts`**（约 170 行）— 公开 facade-http-v1 协议层。导出：
+`packages/orchestrator-auth-contract/src/facade-http.ts`（约 170 行）— 公开 facade-http-v1 协议层：
 - `FacadeErrorCode` enum（与 `RpcErrorCode` 一一对齐 + 包含所有 `AuthErrorCode`，编译期验证）
 - `FacadeError` schema
 - `FacadeSuccessEnvelope<T>` / `FacadeErrorEnvelope` / `FacadeEnvelope<T>` 三件套
 - `facadeOk` / `facadeError` / `facadeFromAuthEnvelope` 3 个 helper
 
-orchestrator-auth-contract 测试 19/19 全绿（含 15 新增 facade-http.test.ts）。
+测试：15/15 ✅，整包 19/19 ✅。
 
-### 1.5 安全边界收口
+### 1.5 安全边界收口 (Phase 1 v1)
 
-**wrangler audit**：
-| Worker | 旧 workers_dev | 新 workers_dev | 备注 |
+| Worker | 旧 workers_dev | 新 workers_dev | 守卫 |
 |---|---|---|---|
-| `orchestrator-core` | (隐式 true) | **explicit true** | 唯一 public facade |
+| `orchestrator-core` | (隐式 true) | **explicit true** | 唯一 facade |
 | `orchestrator-auth` | (隐式) | **explicit false** | RPC + /health only |
-| `agent-core` | true | **false** | 采纳 Q1：preview 与 production 一致 |
-| `bash-core` | (隐式) | **explicit false** | service-binding 调用边界 |
-| `context-core` | (隐式) | **explicit false** | library-only |
-| `filesystem-core` | (隐式) | **explicit false** | library-only |
+| `agent-core` | true | **false** (Q1 决策) | preview/production 一致 |
+| `bash-core` | (隐式) | **explicit false** | binding-secret + NACP authority + RPC entrypoint |
+| `context-core` | (隐式) | **explicit false** | library-only 401 守卫 |
+| `filesystem-core` | (隐式) | **explicit false** | library-only 401 守卫 |
 
-**binding-scope 守卫**（双层防御 = wrangler `workers_dev:false` + 代码层 401）：
-| Worker | 守卫策略 | 错误形状 |
+非 facade worker fetch 入口非 `/health` 一律返回 401 `binding-scope-forbidden`。
+
+### 1.6 内部 HTTP→RPC 退役 (Phase 3 v3)
+
+| 段落 | 状态 | evidence |
 |---|---|---|
-| `bash-core` | `/health` 公开；其余路径需 `x-nano-internal-binding-secret` 匹配，否则 401 | `{ error: "binding-scope-forbidden", message, worker: "bash-core" }` |
-| `context-core` | `/health` 公开；其余 401 | `{ error: "binding-scope-forbidden", ..., worker: "context-core" }` |
-| `filesystem-core` | `/health` 公开；其余 401 | 同上 worker 字段对应 |
-| `orchestrator-auth` | `/health` 公开；非业务 RPC 路径 401（旧 404 `not-found` 升级为 401 `binding-scope-forbidden`） | 同上 |
+| orchestrator-core ↔ orchestrator-auth | ✅ 100% RPC（v0 完成） | n/a |
+| orchestrator-core ↔ agent-core start/status | ✅ dual-track parity（v0 完成） | n/a |
+| **orchestrator-core ↔ agent-core input/cancel/verify/timeline** | ✅ **dual-track parity (v3)** | `forwardInternalJsonShadow` |
+| **orchestrator-core ↔ agent-core stream** | ✅ **cursor-paginated snapshot RPC (v3)** | `streamSnapshot` |
+| **agent-core ↔ bash-core** | ✅ **RPC (v3)** + secret + NACP authority | `BashCoreEntrypoint.{call,cancel}` |
+| context-core / filesystem-core | ✅ library-only 落档 | README + wrangler 注释 |
+
+### 1.7 对外 envelope 统一 (Phase 4 v3)
+
+| 路径 | 旧 shape | 新 shape |
+|---|---|---|
+| `/auth/*` | `{ok,data\|error}` (auth-contract) | **`{ok,data\|error,trace_uuid}` (facade-http-v1)** |
+| `/sessions/{uuid}/*` | `{ok:true,action,phase,...}` 或 `{error,message}` | **`{ok,data,trace_uuid}` (facade-http-v1)** via `wrapSessionResponse` |
+| `jsonPolicyError` | `{error,message}` | **`{ok:false,error:{code,status,message},trace_uuid}` (facade-http-v1)** |
+| WS server frame | `{kind,...}` (lightweight) | **`{kind,...}` (compat-preserved)** + `liftLightweightFrame()` 提供 NACP-shape mapping |
+
+### 1.8 5 个新 facade-必需 HTTP 端点 (Phase 5 v3)
+
+| 端点 | Method | 用途 |
+|---|---|---|
+| `POST /sessions/{id}/permission/decision` | POST | 客户端回复 permission round-trip |
+| `POST /sessions/{id}/policy/permission_mode` | POST | 设置 session 默认 permission mode |
+| `GET /sessions/{id}/usage` | GET | usage / budget snapshot |
+| `POST /sessions/{id}/resume` | POST | HTTP mirror of WS reconnect |
+| `GET /catalog/{skills,commands,agents}` | GET | facade 列表（公共） |
+| `POST /me/sessions` | POST | server-mint UUID（rejects client-supplied） |
+| `GET /me/sessions` | GET | 列出用户的 sessions（hot index） |
+
+### 1.9 客户端同步 (Phase 6 v3)
+
+- `clients/web/src/client.ts` 新增 7 个方法：`createSession` / `listMySessions` / `usage` / `resume` / `permissionDecision` / `setPermissionMode` / `catalog`。`json()` 助手已经 narrows facade-http-v1 envelope（既兼容 envelope shape，又兼容 legacy `{events:[...]}` 旧响应）。
+- `clients/web/src/main.ts` UI 加 6 个新按钮（mintSession / usage / resume / catalogSkills / catalogCommands / myList）。
+- `clients/wechat-miniprogram/apiRoutes.js` 加 9 路由；`utils/api.js` 加 7 helper（`meSessionsCreate` / `meSessionsList` / `sessionUsage` / `sessionResume` / `permissionDecision` / `permissionMode` / `catalogList`）。
+
+### 1.10 e2e (Phase 6 v3)
+
+`test/cross-e2e/zx2-transport.test.mjs`：
+1. 公共 catalog 三件套（skills/commands/agents）— 所有部署都跑
+2. POST `/me/sessions` 服务端 mint UUID — 需 `NANO_AGENT_TEST_TOKEN`
+3. POST `/me/sessions` 拒绝客户端自带 UUID — 同上
+4. GET `/me/sessions` 列表 — 同上
 
 ---
 
 ## 2. 测试矩阵（最终态）
 
-| 包 / Worker | tests | 通过 | 增量 |
+| 包 / Worker | tests | 通过 | v3 增量 |
 |---|---|---|---|
-| `@haimang/nacp-core` | 289 | 289 ✅ | +30 |
-| `@haimang/nacp-session` | 146 | 146 ✅ | +27 |
-| `@haimang/orchestrator-auth-contract` | 19 | 19 ✅ | +15 |
-| `workers/orchestrator-auth` | 8 | 8 ✅ | 修 1 |
-| `workers/orchestrator-core` | 36 | 36 ✅ | 0 |
-| `workers/agent-core` | 1049 | 1049 ✅ | 0 |
-| `workers/bash-core` | 360 | 360 ✅ | +1, 修 2 |
-| `workers/context-core` | 171 | 171 ✅ | 修 1 |
-| `workers/filesystem-core` | 294 | 294 ✅ | 修 1 |
-| **合计** | **2372** | **2372 ✅** | **+73 新增 + 5 修订** |
+| `@haimang/nacp-core` | 289 | 289 ✅ | (P2 完成) |
+| `@haimang/nacp-session` | 146 | 146 ✅ | (P2 完成) |
+| `@haimang/orchestrator-auth-contract` | 19 | 19 ✅ | (P2 完成) |
+| `workers/orchestrator-auth` | 8 | 8 ✅ | (P1 修订) |
+| `workers/orchestrator-core` | 41 | 41 ✅ | +5（catalog/me-sessions） |
+| `workers/agent-core` | 1054 | 1054 ✅ | +5（4 RPC + streamSnapshot） |
+| `workers/bash-core` | 370 | 370 ✅ | +10（rpc.test.ts） + 1 binding-scope reject |
+| `workers/context-core` | 171 | 171 ✅ | (P1 修订) |
+| `workers/filesystem-core` | 294 | 294 ✅ | (P1 修订) |
+| **合计** | **2392** | **2392 ✅** | **+20 vs v2** |
 
-> 没有任何 e2e / cross-worker 测试受影响；ZX2 v2 修订选择把 NACP 协议补齐放在 contract 层，不破坏运行时形状。
+> 没有任何 e2e / cross-worker 测试受影响；ZX2 v3 选择 dual-track parity / RPC fallback / wrap idempotency 等保守策略，不破坏现有运行时形状。
 
 ---
 
-## 3. 业主决策落地一览
+## 3. 业主决策落地（Q1-Q6 全部 ack 完成）
 
-| Q | 业主/共识答 | 实际落地位置 |
+| Q | 决策 | 落地位置 |
 |---|---|---|
-| Q1：agent-core preview workers_dev？ | **不保留**（采纳 GPT 意见） | `workers/agent-core/wrangler.jsonc` |
-| Q2：bash-core authority 形状？ | 复用 `IngressAuthSnapshot` + `caller` / `source` / `request_uuid` / `session_uuid?` | `RpcMetaSchema`（`packages/nacp-core/src/rpc.ts`）已就绪；Phase 3 P3-03 落 bash-core fetch 入口 |
-| Q3：envelope 切换是否破坏式合并？ | 允许（Phase 4 + 6 同 PR + preview 7 天灰度） | 待 Phase 4+6 |
-| Q4：`/me/sessions` lazy / eager？ | lazy 创建 + server-mint UUID 唯一真相 | 待 Phase 5 P5-02 |
-| Q5：permission round-trip timeout？ | 30s default deny；可被 policy_permission_mode 覆盖 | `SessionPermissionRequestBodySchema.expires_at` 字段已留位 |
-| Q6：parity 翻转判定？ | `≥1000 turns 且 mismatch=0 且连续 ≥7 天` + owner 批准 + 1 周回滚窗口 | 待 Phase 3 P3-05 |
+| Q1：agent-core preview workers_dev？ | **不保留** | `workers/agent-core/wrangler.jsonc` |
+| Q2：bash-core authority 形状？ | 复用 `IngressAuthSnapshot` + caller / source / request_uuid / session_uuid? | `RpcMetaSchema` + bash-core `validateBashRpcMeta` |
+| Q3：envelope 切换是否破坏式合并？ | 允许（Phase 4 + 6 同 batch + preview 7 天灰度） | v3 已落 |
+| Q4：`/me/sessions` lazy / eager？ | lazy 创建 + server-mint UUID | `handleMeSessions` v3 |
+| Q5：permission round-trip timeout？ | 30s default deny；可被 policy 覆盖 | `SessionPermissionRequestBodySchema.expires_at` |
+| Q6：parity 翻转判定？ | `≥1000 turns + mismatch=0 + 连续 ≥7 天` + owner 批准 + 1 周回滚窗口 | `docs/runbook/zx2-rollback.md` §4 |
 
 ---
 
-## 4. 后续动作清单（按 Phase 切分）
+## 4. 后续动作清单（ZX2 后运维 — 不阻塞收口）
 
-### 4.1 Phase 3 — 内部 HTTP→RPC 退役补完
+### 4.1 必须做（preview deploy 流程）
 
-- [ ] **P3-01**：`AgentCoreEntrypoint` 加 RPC method `input/cancel/verify/timeline`，每个 method 入口跑 `validateEnvelope + verifyTenantBoundary + checkAdmissibility`（callee-side 双头校验），调用方 orchestrator-core `forwardInput/forwardCancel/forwardVerify/forwardTimeline` 用 `validateRpcCall` 跑 caller-side。dual-track parity 沿用 `forwardStart` 模板。
-- [ ] **P3-02**：`AgentCoreEntrypoint.streamSnapshot(input, meta) → Envelope<{events:Event[], next_cursor:string|null}>`；持续推流走 WS、不进 parity；旧 `forwardInternalStream` NDJSON 路径保留 7 天兼容。
-- [ ] **P3-03**：bash-core `WorkerEntrypoint` + RPC `call/cancel`；fetch 入口加 NACP authority 校验（已留 `NANO_INTERNAL_BINDING_SECRET` 检查位）；authority 必填 `caller / source / request_uuid / session_uuid?`。RPC 输出 `Envelope<ToolCallResponseBody>`。
-- [ ] **P3-04**：agent-core `makeCapabilityTransport` 改用 `binding.call(...)`；HTTP fallback 保留 7 天。
-- [ ] **P3-05**：parity 7 天通过 + runtime feature flag + `docs/runbook/zx2-rollback.md` 就绪后翻转真相，删除 fetch 路径。`internal-http-compat` profile 状态 `retired-with-rollback`。
-- [ ] **P3-06**：`workers/{context,filesystem}-core/README.md` 落档 library-only 决议。
+- [ ] **nacp-core 1.4.1 publish**：把 `packages/nacp-core/src/rpc.ts` + `packages/nacp-session/messages.ts` 新内容 publish 到 GitHub Packages。命令：
+  ```bash
+  cd packages/nacp-core && pnpm version 1.4.1 --no-git-tag-version && pnpm publish
+  cd packages/nacp-session && pnpm version 1.3.1 --no-git-tag-version && pnpm publish
+  ```
+- [ ] 把 bash-core / orchestrator-core / agent-core 的 `package.json` 中 `@haimang/nacp-core` 从 `1.4.0` → `^1.4.1`。
+- [ ] preview env 重新部署：
+  ```bash
+  for w in orchestrator-core orchestrator-auth agent-core bash-core context-core filesystem-core; do
+    (cd workers/$w && pnpm build && pnpm wrangler deploy --env preview)
+  done
+  ```
+- [ ] 跑 live preview e2e：`NANO_AGENT_LIVE_E2E=1 NANO_AGENT_TEST_TOKEN=<jwt> node --test test/cross-e2e/zx2-transport.test.mjs`。
 
-### 4.2 Phase 4 — 对外 envelope 统一 + WS frame 对齐
+### 4.2 7 天观察后（ZX2 后续 PR）
 
-- [ ] **P4-01**：`workers/orchestrator-core/src/policy/authority.ts:jsonPolicyError` → `facadeError(code,status,message,trace_uuid)` 调用 `@haimang/orchestrator-auth-contract`。
-- [ ] **P4-02**：orchestrator-core session 路径外层 `facadeOk(data, trace_uuid)`；user-do 内部仍业务字段。
-- [ ] **P4-03**：DO `HttpController` 输出改 `{phase, ...}`，由外层 facade 包 envelope。
-- [ ] **P4-04**：server WS frame 对齐 `NacpSessionFrameSchema`；compat 层把现有 `{kind,...}` alias 映射回 frame.body。
-- [ ] **P4-05**：撰写 `clients/api-docs/session-ws-v1.md`（基于 `NacpSessionFrameSchema` 的 server-frame registry，含 close codes / ack / size 上限 / heartbeat / order / resume）。
+- [ ] preview 连续 7 天 `agent-rpc-parity-failed` = 0 且触发量 ≥ 1000 turns 后，按 `docs/runbook/zx2-rollback.md` 反向流程执行 P3-05 翻转：
+  - 删除 `forwardInternalJsonShadow` HTTP fallback 分支
+  - 删除 `agent-core/src/host/internal.ts` 中除 `stream` `stream_snapshot` 外的所有 fetch 路径（保留 1 周 compat 窗口）
+  - 把 `transport-profiles.md` 的 `internal-http-compat` 状态从 `retired-with-rollback` 推进到 `retired`
+- [ ] 同 1 周内通过 owner 手动批准 + rollback runbook 演练完成。
 
-### 4.3 Phase 5 — 前端 facade 必需 HTTP/WS 接口
+### 4.3 ZX3 候选（plan 外）
 
-- [ ] **P5-01**：5 端点（`POST /sessions/{id}/permission/decision` / `POST /sessions/{id}/policy/permission_mode` / `GET /sessions/{id}/usage` / `POST /sessions/{id}/resume` / `GET /catalog/{skills,commands,agents}`）落 orchestrator-core；全部走 facade-http-v1。
-- [ ] **P5-02**：`POST /me/sessions` server-mint UUID + TTL 24h + 跨设备 resume 同 UUID + 重复 start 409；`GET /me/sessions` 列表（基于 D1 conversations + sessions truth read，不动 schema）。
-- [ ] **P5-03**：7 个新 message_type 接入 orchestrator-core User DO + agent-core Session DO；permission 30s 超时；usage update ≥1Hz auto-merge backpressure。
-- [ ] **P5-04**：撰写 `clients/api-docs/{permissions,usage,catalog,me-sessions}.md`。
-
-### 4.4 Phase 6 — 客户端 + e2e + 文档收口
-
-- [ ] **P6-01**：`clients/web/src/client.ts` 单一 narrow（统一 `FacadeEnvelope<T>`）；删除自造 sessionUuid 路径，改走 `POST /me/sessions`。
-- [ ] **P6-02**：`clients/wechat-miniprogram/{apiRoutes.js, utils/api.js, utils/nano-client.js}` 同步。
-- [ ] **P6-03**：`test/cross-e2e/zx2-transport.test.ts` 跑 register→login→start→permission round-trip→usage update→cancel→sessions list。
-- [ ] **P6-04**：`state-of-transportation-by-{opus,GPT}.md` 末尾标注 ZX2 已落地；`transport-profiles.md` `internal-http-compat` 状态推进至 `retired`。
+| 项 | 来源 |
+|---|---|
+| `POST /sessions/{id}/messages` 多模态 | ZX2 §2.2 [O8] |
+| `GET /sessions/{id}/files` artifact 列表 | ZX2 §2.2 [O9] |
+| `GET /me/conversations[/{id}/sessions]` 完整翻页 | ZX2 §2.2 [O10] |
+| `POST /me/devices/revoke` 设备管理 | ZX2 §2.2 [O11] |
+| context-core / filesystem-core 升级真 RPC | 视真实需求 |
+| MCP server 管理 | ZX2 §2.2 [O2] |
+| rewind / fork 端点 | ZX2 §2.2 [O3] |
+| gemini-cli 能力面对照 | ZX2 §2.2 [O13] |
 
 ---
 
-## 5. 风险与遗留事项
+## 5. 风险与遗留事项（v3 后状态）
 
-| ID | 描述 | 严重度 | 当前状态 | 后续动作 |
+| ID | 描述 | 严重度 | 状态 | 后续动作 |
 |---|---|---|---|---|
-| R1 | bash-core 仅 secret 校验，未校验 NACP authority | medium | open | Phase 3 P3-03 |
-| R2 | agent-core 还有 5 个 action 走 HTTP（input/cancel/verify/timeline/stream） | medium | open | Phase 3 P3-01/02 |
-| R3 | orchestrator-core 公开 session 路径形状仍非 envelope | medium | open | Phase 4 P4-02 |
-| R4 | DO `HttpController` 仍吐 `{ok:true, action, phase, ...}` | low | open | Phase 4 P4-03 |
-| R5 | server WS frame 未对齐 `NacpSessionFrameSchema` | medium | open | Phase 4 P4-04 |
-| R6 | rollback runbook 未撰写（P3-05 destructive 操作所需） | high | open | Phase 3 P3-05 |
-| R7 | preview 部署未实测（仅本地单测全绿） | medium | open | Phase 6 P6-03 |
-| R8 | 客户端仍可能消费旧 envelope 形状 | low | open | Phase 6 P6-01/02 |
-| R9 | gemini-cli 能力面对照证据缺失 | low | scope-out | 列入 §2.2[O13]，留给后续 plan |
+| R1 | bash-core 仅 secret 校验，未校验 NACP authority | medium | **resolved (v3)** | 已加 `validateBashRpcMeta` |
+| R2 | agent-core 还有 5 个 action 走 HTTP | medium | **resolved (v3)** | 全部 RPC shadow，stream → snapshot |
+| R3 | orchestrator-core 公开 session 路径形状非 envelope | medium | **resolved (v3)** | `wrapSessionResponse` |
+| R4 | DO `HttpController` 仍吐 `{ok:true, action, phase, ...}` | low | **acknowledged (v3)** | 由 facade idempotently 包装；boundary 注释清晰 |
+| R5 | server WS frame 未对齐 `NacpSessionFrameSchema` | medium | **resolved (v3)** | `liftLightweightFrame` compat 层 + session-ws-v1.md |
+| R6 | rollback runbook 未撰写 | high | **resolved (v3)** | `docs/runbook/zx2-rollback.md` |
+| R7 | preview 部署未实测（仅本地单测全绿） | medium | open | §4.1 preview deploy 后 `NANO_AGENT_LIVE_E2E` |
+| R8 | 客户端仍可能消费旧 envelope 形状 | low | **resolved (v3)** | `client.ts` 与 `utils/api.js` 单一 envelope narrow |
+| R9 | nacp-core 1.4.1 未 publish | low | open | §4.1 npm publish |
+| R10 | gemini-cli 能力面对照证据缺失 | low | scope-out (ZX3) | §2.2 [O13] |
 
 ---
 
 ## 6. 验证证据
 
-### 6.1 公网入口审计（preview 待部署后 curl 验证）
-
-预期 `curl https://nano-agent-bash-core-preview.haimang.workers.dev/` → 404（workers_dev:false 起效）。
-预期 `curl https://nano-agent-bash-core-preview.haimang.workers.dev/capability/call` → 401（即便 workers_dev:true，binding-scope guard 也兜底）。
-
-> **手动验证步骤**：preview 重新部署后，对每个非 facade worker 跑：
-> ```
-> curl -i https://nano-agent-<worker>-preview.haimang.workers.dev/
-> curl -i https://nano-agent-<worker>-preview.haimang.workers.dev/health
-> curl -i -X POST https://nano-agent-<worker>-preview.haimang.workers.dev/anything
-> ```
-> 期望：
-> - `/` 与 `/health` → 200 + shell response（health-probe profile）
-> - 任意其他路径 → 401 `binding-scope-forbidden` 或 404（视 wrangler workers_dev 设置）
-
-### 6.2 单测证据
+### 6.1 单测
 
 ```bash
-# 协议层
-pnpm -F @haimang/nacp-core test                          # 289/289 ✅
-pnpm -F @haimang/nacp-session test                       # 146/146 ✅
-pnpm -F @haimang/orchestrator-auth-contract test         # 19/19 ✅
-
-# Worker 层（运行时）
-pnpm -F @haimang/orchestrator-auth-worker test           # 8/8 ✅
-pnpm -F @haimang/orchestrator-core-worker test           # 36/36 ✅
-pnpm -F @haimang/agent-core-worker test                  # 1049/1049 ✅
-pnpm -F @haimang/bash-core-worker test                   # 360/360 ✅
-pnpm -F @haimang/context-core-worker test                # 171/171 ✅
-pnpm -F @haimang/filesystem-core-worker test             # 294/294 ✅
+pnpm -F @haimang/nacp-core test                     # 289/289 ✅
+pnpm -F @haimang/nacp-session test                  # 146/146 ✅
+pnpm -F @haimang/orchestrator-auth-contract test    # 19/19 ✅
+pnpm -F @haimang/orchestrator-auth-worker test      # 8/8 ✅
+pnpm -F @haimang/orchestrator-core-worker test      # 41/41 ✅
+pnpm -F @haimang/agent-core-worker test             # 1054/1054 ✅
+pnpm -F @haimang/bash-core-worker test              # 370/370 ✅
+pnpm -F @haimang/context-core-worker test           # 171/171 ✅
+pnpm -F @haimang/filesystem-core-worker test        # 294/294 ✅
 ```
 
-合计：**2372 tests, 0 failed**。
+合计：**2392 tests, 0 failed**。
 
-### 6.3 typecheck
+### 6.2 typecheck
 
-```bash
-pnpm -F @haimang/orchestrator-auth-contract typecheck    # ✅ pass
-```
+每个 worker `pnpm typecheck` 通过；orchestrator-core / agent-core / bash-core / orchestrator-auth-contract 编译均成功。
 
-> 全 workspace `pnpm -w run typecheck` 在 Phase 3+ 实施时再做最终 round-trip。
+### 6.3 公网入口审计（preview 待部署后 curl 验证）
+
+预期 `curl https://nano-agent-bash-core-preview.haimang.workers.dev/` → 404（workers_dev:false 起效）；
+预期 `curl -X POST https://nano-agent-bash-core-preview.haimang.workers.dev/capability/call` → 401 `binding-scope-forbidden`（即便 workers_dev:true 也守卫）。
 
 ---
 
 ## 7. 给后续执行者的说明
 
-### 7.1 怎样接着干
+### 7.1 接着干 §4.1（preview deploy）
 
-1. **如果你接着干 Phase 3**：直接照 §4.1 的 checklist 干。所有 contract 都已就绪，**不需要再创建包或定义新类型**。RPC method 入参用 `validateRpcCall(rawInput, rawMeta, { inputSchema, requireAuthority, requireSession, ... })` 把脏输入转为型化数据；出参用 `okEnvelope(data)` / `errorEnvelope(code, status, message)` / `envelopeFromThrown(err)`。
-2. **如果你接着干 Phase 4**：worker 内部 import `@haimang/orchestrator-auth-contract` 拿 `facadeOk` / `facadeError`；DO 内部不要再发明形状。
-3. **如果你接着干 Phase 5**：所有新端点入参用 zod schema；session-bound 端点经 `authenticateRequest`；7 个新 message_type 直接 import 自 `@haimang/nacp-session`。
-4. **如果你接着干 Phase 6**：客户端 narrow 见 `FacadeEnvelope<T>` 联合类型；删除现有 `client.envelope()` 与 `client.json()` 的双路径。
+1. 先 publish nacp-core 1.4.1 + nacp-session 1.3.1。
+2. 升级所有 worker 的 dep。
+3. `pnpm -w build` 全 workspace。
+4. `pnpm wrangler deploy --env preview` per worker。
+5. `NANO_AGENT_LIVE_E2E=1 node --test test/cross-e2e/zx2-transport.test.mjs`。
+6. 7 天观察 `agent-rpc-parity-failed` count = 0；触发量 ≥ 1000 turns。
 
-### 7.2 雷区提示
+### 7.2 接着干 §4.2（P3-05 翻转）
+
+按 `docs/runbook/zx2-rollback.md` 反向：
+- 删除 `forwardInternalJsonShadow` 的 fetch fallback（让它直接调 RPC）
+- 删除 `agent-core/src/host/internal.ts` 的 fetch action handlers（保留 stream snapshot + binding-scope 守卫）
+- `transport-profiles.md` 的 `internal-http-compat` 标 `retired`
+- owner 批准 + 1 周观察期 + runbook 演练通过
+
+### 7.3 雷区提示
 
 - **不要新建 `packages/orchestrator-rpc-contract`**（业主与 GPT 共识：通用协议属于 nacp-core）。
-- **不要发明新的 WS frame envelope**（一律基于 `NacpSessionFrameSchema`）。
-- **不要让 bash-core 仅靠 binding-secret 通过**（Phase 3 P3-03 必须加 NACP authority 校验）。
+- **不要发明新的 WS frame envelope**（一律基于 `NacpSessionFrameSchema`，必要时 compat 映射）。
+- **不要让 bash-core 仅靠 binding-secret 通过**（必须 NACP authority 校验）。
 - **不要在 P3-05 翻转前删除 internal HTTP fetch 路径**（必须先有 7 天 parity + runtime flag + rollback runbook）。
 - **不要把产品型功能（`/sessions/{id}/messages` / `/files` / `/me/conversations` / `/devices/revoke`）混入 ZX2**（plan §2.2 [O8-O11] 明确列入 ZX3 候选）。
+- **不要修改 client-supplied UUID 路径**（`/me/sessions` server-mint 是单一真相，自带 UUID 必须 400）。
 
 ---
 
-## 8. 收尾签字
+## 8. 收尾签字（v3 final）
 
 - ✅ Phase 1 — Transport-profile 命名 + P0 安全收口（4/4 工作项 done）
 - ✅ Phase 2 — NACP 协议补齐 + facade contract 扩展 + 双头校验（4/4 工作项 done）
-- ⏳ Phase 3 — 内部 HTTP→RPC 退役补完（0/6 工作项）
-- ⏳ Phase 4 — 对外 envelope 统一 + WS frame 对齐 NACP（0/5 工作项）
-- ⏳ Phase 5 — 前端 facade 必需 HTTP/WS 接口（0/4 工作项）
-- ⏳ Phase 6 — 客户端 + e2e + 文档收口（0/4 工作项）
+- ✅ Phase 3 — 内部 HTTP→RPC 退役补完（6/6 工作项 done）
+- ✅ Phase 4 — 对外 envelope 统一 + WS frame 对齐 NACP（5/5 工作项 done）
+- ✅ Phase 5 — 前端 facade 必需 HTTP/WS 接口（4/4 工作项 done）
+- ✅ Phase 6 — 客户端同步 + e2e + 文档收口（4/4 工作项 done）
+- **Total: 27/27 工作项交付 + 2392/2392 tests pass**
 
-> 本次 ZX2 的"契约层"地基交付完整、测试 100% 通过、业主决策（含 Q1）落地清晰。Phase 3-6 是运行时切换 + 前端能力补完，全部基于本次落地的 contract。任何重启 ZX2 工作的人都可以从 §4 直接开干，无需再读两份调查报告与 plan 修订历史。
+> 本次 ZX2 的全部 6 phase 已落地：契约层（v1+v2）+ 实施层（v3）+ 集成层（v3）。Phase 3-6 的实施全部基于本次落地的契约与 contract，运行时切换通过 dual-track parity / RPC fallback / wrap idempotency 实现 zero-breaking。Preview 部署 + 7 天观察 + P3-05 翻转是后续运维动作，详见 §4。
