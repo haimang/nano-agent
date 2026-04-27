@@ -3,18 +3,13 @@
 > 评价对象: `{REVIEWER_OR_REVIEW_SET}`
 > 评价人: `{EVALUATOR}`
 > 评价时间: `{DATE}`
-> 评价范围:
-> - `{REVIEW_DOC_PATH}`
-> - `{REVIEW_DOC_PATH}`
-> 评价类型: `single-review-eval | comparative-reviewer-eval | post-fix-rereview-eval`
-> 文档状态: `draft | evaluated | superseded`
 
 ---
 
 ## 0. 评价结论
 
 - **一句话评价**：`{ONE_LINE_STYLE_AND_VALUE}`
-- **综合评分**：`{SCORE} / 5`
+- **综合评分**：`{SCORE} / 10`
 - **推荐使用场景**：`{WHEN_TO_USE_THIS_REVIEWER_OR_STYLE}`
 - **不建议单独依赖的场景**：`{WHEN_NOT_TO_USE_ALONE}`
 
@@ -83,7 +78,7 @@
 
 ## 5. 多维度评分
 
-| 维度 | 评分（1–5） | 说明 |
+| 维度 | 评分（1–10） | 说明 |
 |------|-------------|------|
 | 证据链完整度 | `{SCORE}` | `{WHY}` |
 | 判断严谨性 | `{SCORE}` | `{WHY}` |
