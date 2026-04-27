@@ -323,7 +323,7 @@ export function envelopeFromThrown<T = never>(
 ): Envelope<T> {
   if (error instanceof NacpValidationError) {
     return errorEnvelope<T>("invalid-input", 400, error.message, {
-      issues: error.issues,
+      issues: error.errors,
     });
   }
   if (error instanceof Error) {
