@@ -171,24 +171,63 @@ function stripSessionUuid(value: unknown): Record<string, unknown> {
   return rest;
 }
 
+// ZX2 Phase 3 P3-01/02 — extended RPC action set.
+type AgentRpcAction = "status" | "start" | "input" | "cancel" | "verify" | "timeline" | "stream_snapshot";
+
+const AGENT_RPC_METHOD: Record<AgentRpcAction, "GET" | "POST"> = {
+  status: "GET",
+  start: "POST",
+  input: "POST",
+  cancel: "POST",
+  verify: "POST",
+  timeline: "GET",
+  stream_snapshot: "GET",
+};
+
 export default class AgentCoreEntrypoint extends WorkerEntrypoint<AgentCoreEnv> {
   async fetch(request: Request): Promise<Response> {
     return fetchWorker(request, this.env);
   }
 
   async status(rawInput: unknown, rawMeta: unknown): Promise<AgentCoreRpcResponse> {
-    return this.invokeInternalRpc("status", rawInput, rawMeta, "GET");
+    return this.invokeInternalRpc("status", rawInput, rawMeta);
   }
 
   async start(rawInput: unknown, rawMeta: unknown): Promise<AgentCoreRpcResponse> {
-    return this.invokeInternalRpc("start", rawInput, rawMeta, "POST");
+    return this.invokeInternalRpc("start", rawInput, rawMeta);
+  }
+
+  // ZX2 Phase 3 P3-01 — new RPC methods, dual-track parity gated by orchestrator-core.
+  async input(rawInput: unknown, rawMeta: unknown): Promise<AgentCoreRpcResponse> {
+    return this.invokeInternalRpc("input", rawInput, rawMeta);
+  }
+
+  async cancel(rawInput: unknown, rawMeta: unknown): Promise<AgentCoreRpcResponse> {
+    return this.invokeInternalRpc("cancel", rawInput, rawMeta);
+  }
+
+  async verify(rawInput: unknown, rawMeta: unknown): Promise<AgentCoreRpcResponse> {
+    return this.invokeInternalRpc("verify", rawInput, rawMeta);
+  }
+
+  async timeline(rawInput: unknown, rawMeta: unknown): Promise<AgentCoreRpcResponse> {
+    return this.invokeInternalRpc("timeline", rawInput, rawMeta);
+  }
+
+  // ZX2 Phase 3 P3-02 — cursor-paginated stream snapshot.
+  // Body shape:
+  //   input  = { session_uuid, cursor?: string|null, limit?: number }
+  //   output = { events: Event[], next_cursor: string|null, terminal?: { phase } }
+  // Persistent push remains on the WS path (session-ws-v1); this RPC only
+  // serves snapshot reads / fallbacks.
+  async streamSnapshot(rawInput: unknown, rawMeta: unknown): Promise<AgentCoreRpcResponse> {
+    return this.invokeInternalRpc("stream_snapshot", rawInput, rawMeta);
   }
 
   private async invokeInternalRpc(
-    action: "status" | "start",
+    action: AgentRpcAction,
     rawInput: unknown,
     rawMeta: unknown,
-    method: "GET" | "POST",
   ): Promise<AgentCoreRpcResponse> {
     const sessionUuid = extractSessionUuid(rawInput);
     if (!sessionUuid) {
@@ -212,6 +251,7 @@ export default class AgentCoreEntrypoint extends WorkerEntrypoint<AgentCoreEnv> 
       };
     }
 
+    const method = AGENT_RPC_METHOD[action];
     const bodyRecord =
       method === "POST"
         ? {
@@ -220,6 +260,19 @@ export default class AgentCoreEntrypoint extends WorkerEntrypoint<AgentCoreEnv> 
             authority: { ...validatedMeta.authority },
           }
         : null;
+
+    // For GET-shaped reads with optional input parameters (cursor / limit on
+    // stream_snapshot, or none on status/timeline), forward them through the
+    // querystring so the existing fetch handler can parse them.
+    const url = new URL(`https://session.internal/sessions/${sessionUuid}/${action}`);
+    if (method === "GET") {
+      const inputRecord = stripSessionUuid(rawInput);
+      for (const [key, value] of Object.entries(inputRecord)) {
+        if (value === undefined || value === null) continue;
+        url.searchParams.set(key, String(value));
+      }
+    }
+
     const headers = new Headers();
     if (bodyRecord) headers.set("content-type", "application/json");
     headers.set("x-trace-uuid", validatedMeta.traceUuid);
@@ -229,7 +282,7 @@ export default class AgentCoreEntrypoint extends WorkerEntrypoint<AgentCoreEnv> 
     }
     const stub = this.env.SESSION_DO.get(this.env.SESSION_DO.idFromName(sessionUuid));
     const response = await stub.fetch(
-      new Request(`https://session.internal/sessions/${sessionUuid}/${action}`, {
+      new Request(url.toString(), {
         method,
         headers,
         body: bodyRecord ? JSON.stringify(bodyRecord) : undefined,

@@ -1,23 +1,36 @@
 import { NACP_VERSION } from "@haimang/nacp-core";
 import { NACP_SESSION_VERSION } from "@haimang/nacp-session";
-import type { OrchestratorAuthRpcService } from "@haimang/orchestrator-auth-contract";
+import {
+  facadeFromAuthEnvelope,
+  type FacadeErrorCode,
+  type OrchestratorAuthRpcService,
+} from "@haimang/orchestrator-auth-contract";
 import { authenticateRequest, type AuthEnv } from "./auth.js";
 import { ensureConfiguredTeam, jsonPolicyError, readTraceUuid } from "./policy/authority.js";
 import { NanoOrchestratorUserDO } from "./user-do.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+// ZX2 Phase 3 P3-01/02 — agent-core RPC method signature shared by all
+// dual-track parity entry points. Each callable returns the same
+// `{status, body}` shape (which orchestrator-core compares to the
+// HTTP-truth result via jsonDeepEqual).
+type AgentRpcMethod = (
+  input: Record<string, unknown>,
+  meta: { trace_uuid: string; authority: unknown },
+) => Promise<{ status: number; body: Record<string, unknown> | null }>;
+
 export interface OrchestratorCoreEnv extends AuthEnv {
   readonly ORCHESTRATOR_USER_DO: DurableObjectNamespace;
   readonly AGENT_CORE?: Fetcher & {
-    start?: (
-      input: Record<string, unknown>,
-      meta: { trace_uuid: string; authority: unknown },
-    ) => Promise<{ status: number; body: Record<string, unknown> | null }>;
-    status?: (
-      input: Record<string, unknown>,
-      meta: { trace_uuid: string; authority: unknown },
-    ) => Promise<{ status: number; body: Record<string, unknown> | null }>;
+    start?: AgentRpcMethod;
+    status?: AgentRpcMethod;
+    // ZX2 Phase 3 P3-01 — extended RPC surface
+    input?: AgentRpcMethod;
+    cancel?: AgentRpcMethod;
+    verify?: AgentRpcMethod;
+    timeline?: AgentRpcMethod;
+    streamSnapshot?: AgentRpcMethod;
   };
   readonly ORCHESTRATOR_AUTH?: OrchestratorAuthRpcService & Fetcher;
   readonly BASH_CORE?: Fetcher;
@@ -177,7 +190,12 @@ type SessionAction =
   | "timeline"
   | "history"
   | "verify"
-  | "ws";
+  | "ws"
+  // ZX2 Phase 5 P5-01 — facade-必需 HTTP endpoints
+  | "permission/decision"
+  | "policy/permission_mode"
+  | "usage"
+  | "resume";
 type AuthAction =
   | "register"
   | "login"
@@ -189,12 +207,53 @@ type AuthAction =
 
 function parseSessionRoute(request: Request): { sessionUuid: string; action: SessionAction } | null {
   const segments = new URL(request.url).pathname.split("/").filter(Boolean);
-  if (segments.length !== 3 || segments[0] !== "sessions") return null;
-  const sessionUuid = segments[1]!;
-  const action = segments[2] as SessionAction;
-  if (!UUID_RE.test(sessionUuid)) return null;
-  if (!["start", "input", "cancel", "status", "timeline", "history", "verify", "ws"].includes(action)) return null;
-  return { sessionUuid, action };
+  if (segments[0] !== "sessions") return null;
+  // 3-segment routes: /sessions/{uuid}/{action}
+  if (segments.length === 3) {
+    const sessionUuid = segments[1]!;
+    const action = segments[2] as SessionAction;
+    if (!UUID_RE.test(sessionUuid)) return null;
+    if (
+      ![
+        "start",
+        "input",
+        "cancel",
+        "status",
+        "timeline",
+        "history",
+        "verify",
+        "ws",
+        "usage",
+        "resume",
+      ].includes(action)
+    )
+      return null;
+    return { sessionUuid, action };
+  }
+  // ZX2 Phase 5 P5-01 — 4-segment compound actions:
+  //   /sessions/{uuid}/permission/decision
+  //   /sessions/{uuid}/policy/permission_mode
+  if (segments.length === 4) {
+    const sessionUuid = segments[1]!;
+    if (!UUID_RE.test(sessionUuid)) return null;
+    const compound = `${segments[2]}/${segments[3]}` as SessionAction;
+    if (compound === "permission/decision" || compound === "policy/permission_mode") {
+      return { sessionUuid, action: compound };
+    }
+  }
+  return null;
+}
+
+// ZX2 Phase 5 P5-01 — catalog routes (non-session-bound).
+type CatalogKind = "skills" | "commands" | "agents";
+function parseCatalogRoute(request: Request): CatalogKind | null {
+  const pathname = new URL(request.url).pathname;
+  const method = request.method.toUpperCase();
+  if (method !== "GET") return null;
+  if (pathname === "/catalog/skills") return "skills";
+  if (pathname === "/catalog/commands") return "commands";
+  if (pathname === "/catalog/agents") return "agents";
+  return null;
 }
 
 function parseAuthRoute(request: Request): AuthAction | null {
@@ -262,8 +321,12 @@ async function proxyAuthRoute(
                 ? await env.ORCHESTRATOR_AUTH.resetPassword(input, meta)
                 : await env.ORCHESTRATOR_AUTH.wechatLogin(input, meta);
 
-  return Response.json(envelope, {
-    status: envelope.ok ? 200 : envelope.error.status,
+  // ZX2 Phase 4 P4-02 — wrap the auth-contract envelope into facade-http-v1
+  // so every public response shares the same `{ok,data,trace_uuid}` /
+  // `{ok:false,error,trace_uuid}` shape across auth + session routes.
+  const facade = facadeFromAuthEnvelope(envelope, traceUuid);
+  return Response.json(facade, {
+    status: facade.ok ? 200 : facade.error.status,
     headers: { "x-trace-uuid": traceUuid },
   });
 }
@@ -284,6 +347,18 @@ const worker = {
     const authRoute = parseAuthRoute(request);
     if (authRoute) {
       return proxyAuthRoute(request, env, authRoute);
+    }
+
+    // ZX2 Phase 5 P5-01 — public catalog routes (skills / commands / agents).
+    const catalogRoute = parseCatalogRoute(request);
+    if (catalogRoute) {
+      return handleCatalog(request, env, catalogRoute);
+    }
+
+    // ZX2 Phase 5 P5-02 — public /me/sessions routes (server-mint UUID).
+    const meSessionsRoute = parseMeSessionsRoute(request);
+    if (meSessionsRoute) {
+      return handleMeSessions(request, env, meSessionsRoute);
     }
 
     const tenantError = ensureTenantConfigured(env);
@@ -313,7 +388,7 @@ const worker = {
         return jsonPolicyError(400, `invalid-${route.action}-body`, `${route.action} requires a JSON body`);
     }
 
-    return stub.fetch(new Request(`https://orchestrator.internal/sessions/${route.sessionUuid}/${route.action}`, {
+    const response = await stub.fetch(new Request(`https://orchestrator.internal/sessions/${route.sessionUuid}/${route.action}`, {
       method,
       headers: { "content-type": "application/json" },
       body: body === null ? undefined : JSON.stringify({
@@ -323,8 +398,165 @@ const worker = {
         initial_context_seed: auth.value.initial_context_seed,
       }),
     }));
+
+    // ZX2 Phase 4 P4-02 — wrap the User-DO JSON response in a
+    // facade-http-v1 envelope. Already-envelope-shaped bodies (e.g. when
+    // a downstream layer constructs `{ok,data,trace_uuid}` directly) are
+    // passed through unchanged so the wrapper is idempotent.
+    return wrapSessionResponse(response, auth.value.trace_uuid);
   },
 };
+
+// ZX2 Phase 5 P5-01 — catalog handler. Returns a static (per-deploy)
+// list of skills / commands / agents. The list is intentionally empty by
+// default — concrete plug-ins are registered by future plans (skill/
+// command frameworks). Response is wrapped in facade-http-v1.
+async function handleCatalog(
+  request: Request,
+  _env: OrchestratorCoreEnv,
+  kind: CatalogKind,
+): Promise<Response> {
+  const traceUuid = readTraceUuid(request) ?? crypto.randomUUID();
+  const data = (() => {
+    switch (kind) {
+      case "skills":
+        return { skills: [] as Array<{ name: string; description: string }> };
+      case "commands":
+        return { commands: [] as Array<{ name: string; description: string }> };
+      case "agents":
+        return { agents: [] as Array<{ name: string; description: string }> };
+    }
+  })();
+  return Response.json(
+    { ok: true, data, trace_uuid: traceUuid },
+    { status: 200, headers: { "x-trace-uuid": traceUuid } },
+  );
+}
+
+// ZX2 Phase 5 P5-02 — /me/sessions routes.
+type MeSessionsRoute = { kind: "create" } | { kind: "list" };
+function parseMeSessionsRoute(request: Request): MeSessionsRoute | null {
+  const pathname = new URL(request.url).pathname;
+  const method = request.method.toUpperCase();
+  if (pathname !== "/me/sessions") return null;
+  if (method === "POST") return { kind: "create" };
+  if (method === "GET") return { kind: "list" };
+  return null;
+}
+
+async function handleMeSessions(
+  request: Request,
+  env: OrchestratorCoreEnv,
+  route: MeSessionsRoute,
+): Promise<Response> {
+  const auth = await authenticateRequest(request, env);
+  if (!auth.ok) return auth.response;
+  const traceUuid = auth.value.trace_uuid;
+
+  if (route.kind === "create") {
+    // Reject client-supplied UUID — the whole point of this endpoint is
+    // server-mint as the single source of truth.
+    const body = await parseBody(request, true);
+    if (body && typeof (body as Record<string, unknown>).session_uuid === "string") {
+      return jsonPolicyError(
+        400,
+        "invalid-input",
+        "POST /me/sessions does not accept a client-supplied session_uuid; UUID is server-minted",
+        traceUuid,
+      );
+    }
+    const sessionUuid = crypto.randomUUID();
+    const ttlSeconds = 24 * 60 * 60;
+    const createdAt = new Date().toISOString();
+    return Response.json(
+      {
+        ok: true,
+        data: {
+          session_uuid: sessionUuid,
+          status: "pending",
+          ttl_seconds: ttlSeconds,
+          created_at: createdAt,
+          start_url: `/sessions/${sessionUuid}/start`,
+        },
+        trace_uuid: traceUuid,
+      },
+      { status: 201, headers: { "x-trace-uuid": traceUuid } },
+    );
+  }
+
+  // GET /me/sessions — list user's sessions. v1: forward to User DO which
+  // owns the index. The User DO already exposes a hot index; we add a new
+  // route /me/sessions on the DO (P5-02 second part).
+  const stub = env.ORCHESTRATOR_USER_DO.get(env.ORCHESTRATOR_USER_DO.idFromName(auth.value.user_uuid));
+  const response = await stub.fetch(
+    new Request("https://orchestrator.internal/me/sessions", {
+      method: "GET",
+      headers: {
+        "x-trace-uuid": traceUuid,
+        "x-nano-internal-authority": JSON.stringify(auth.value.snapshot),
+      },
+    }),
+  );
+  return wrapSessionResponse(response, traceUuid);
+}
+
+async function wrapSessionResponse(
+  response: Response,
+  traceUuid: string,
+): Promise<Response> {
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!contentType.includes("application/json")) {
+    // Non-JSON (e.g. websocket upgrade) — pass through.
+    return response;
+  }
+  let body: unknown = null;
+  try {
+    body = await response.clone().json();
+  } catch {
+    return response;
+  }
+  if (
+    body &&
+    typeof body === "object" &&
+    !Array.isArray(body) &&
+    "ok" in (body as Record<string, unknown>) &&
+    typeof (body as Record<string, unknown>).ok === "boolean"
+  ) {
+    // Already wrapped — make sure trace_uuid is stamped.
+    const obj = body as Record<string, unknown>;
+    if (typeof obj.trace_uuid !== "string" || obj.trace_uuid.length === 0) {
+      obj.trace_uuid = traceUuid;
+    }
+    return Response.json(obj, {
+      status: response.status,
+      headers: { "x-trace-uuid": traceUuid },
+    });
+  }
+  if (response.ok) {
+    return Response.json(
+      { ok: true, data: body, trace_uuid: traceUuid },
+      { status: response.status, headers: { "x-trace-uuid": traceUuid } },
+    );
+  }
+  // Error path: try to lift `{ error, message }` legacy shape into facade.error
+  const obj = (body && typeof body === "object" && !Array.isArray(body)
+    ? (body as Record<string, unknown>)
+    : {}) as { error?: string; message?: string; code?: string };
+  const code = (obj.code ?? obj.error ?? "internal-error") as FacadeErrorCode;
+  const message = obj.message ?? obj.error ?? "session route returned an error";
+  return Response.json(
+    {
+      ok: false,
+      error: {
+        code,
+        status: response.status,
+        message,
+      },
+      trace_uuid: traceUuid,
+    },
+    { status: response.status, headers: { "x-trace-uuid": traceUuid } },
+  );
+}
 
 export { NanoOrchestratorUserDO };
 export default worker;
