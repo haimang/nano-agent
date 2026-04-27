@@ -22,6 +22,17 @@ export const NACP_SESSION_TYPE_DIRECTION_MATRIX: Readonly<
   "session.stream.ack": new Set<NacpDeliveryKind>(["response", "event"]),
   "session.heartbeat": new Set<NacpDeliveryKind>(["event"]),
   "session.followup_input": new Set<NacpDeliveryKind>(["command"]),
+  // ZX2 Phase 2 P2-03 — 5 family / 7 message_types
+  // server → client: permission.request, usage.update, elicitation.request
+  // client → server: permission.decision, skill.invoke, command.invoke,
+  //                  elicitation.answer
+  "session.permission.request": new Set<NacpDeliveryKind>(["command", "event"]),
+  "session.permission.decision": new Set<NacpDeliveryKind>(["response", "command"]),
+  "session.usage.update": new Set<NacpDeliveryKind>(["event"]),
+  "session.skill.invoke": new Set<NacpDeliveryKind>(["command"]),
+  "session.command.invoke": new Set<NacpDeliveryKind>(["command"]),
+  "session.elicitation.request": new Set<NacpDeliveryKind>(["command", "event"]),
+  "session.elicitation.answer": new Set<NacpDeliveryKind>(["response", "command"]),
 });
 
 export function isLegalSessionDirection(

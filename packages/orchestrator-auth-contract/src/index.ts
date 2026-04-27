@@ -1,5 +1,25 @@
 import { z } from "zod";
 
+// ZX2 Phase 2 P2-04: facade-http-v1 contract lives alongside auth in this
+// package. Re-exported below.
+export {
+  FacadeErrorCodeSchema,
+  FacadeErrorSchema,
+  FacadeSuccessEnvelopeSchema,
+  FacadeErrorEnvelopeSchema,
+  FacadeEnvelopeSchema,
+  facadeOk,
+  facadeError,
+  facadeFromAuthEnvelope,
+} from "./facade-http.js";
+export type {
+  FacadeErrorCode,
+  FacadeError,
+  FacadeErrorEnvelope,
+  FacadeSuccessEnvelope,
+  FacadeEnvelope,
+} from "./facade-http.js";
+
 export const IdentityProviderSchema = z.enum(["email_password", "wechat"]);
 export type IdentityProvider = z.infer<typeof IdentityProviderSchema>;
 

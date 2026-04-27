@@ -27,12 +27,32 @@ export {
   SessionStartBodySchema, SessionResumeBodySchema, SessionCancelBodySchema,
   SessionEndBodySchema, SessionStreamAckBodySchema, SessionHeartbeatBodySchema,
   SessionFollowupInputBodySchema,
+  // ZX2 Phase 2 P2-03 — 5 family / 7 message_types
+  SessionPermissionDecisionEnumSchema,
+  SessionPermissionScopeEnumSchema,
+  SessionPermissionRequestBodySchema,
+  SessionPermissionDecisionBodySchema,
+  SessionUsageUpdateBodySchema,
+  SessionSkillInvokeBodySchema,
+  SessionCommandInvokeBodySchema,
+  SessionElicitationRequestBodySchema,
+  SessionElicitationAnswerBodySchema,
   SESSION_BODY_SCHEMAS, SESSION_BODY_REQUIRED, SESSION_MESSAGE_TYPES,
 } from "./messages.js";
 export type {
   SessionStartBody, SessionResumeBody, SessionCancelBody,
   SessionEndBody, SessionStreamAckBody, SessionHeartbeatBody,
   SessionFollowupInputBody,
+  // ZX2 Phase 2 P2-03
+  SessionPermissionDecisionEnum,
+  SessionPermissionScopeEnum,
+  SessionPermissionRequestBody,
+  SessionPermissionDecisionBody,
+  SessionUsageUpdateBody,
+  SessionSkillInvokeBody,
+  SessionCommandInvokeBody,
+  SessionElicitationRequestBody,
+  SessionElicitationAnswerBody,
 } from "./messages.js";
 
 // ── Stream events ──

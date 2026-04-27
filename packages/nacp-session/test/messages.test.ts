@@ -65,9 +65,14 @@ describe("Session message schemas", () => {
 });
 
 describe("registries", () => {
-  it("has 8 session message types (initial 7 + followup)", () => {
-    expect(SESSION_MESSAGE_TYPES.size).toBe(8);
+  // ZX2 Phase 2 P2-03: registry now contains the original 8 (7 initial +
+  // followup) plus 7 new ZX2 types — see test/zx2-messages.test.ts for
+  // detailed coverage of the new families.
+  it("has 15 session message types (initial 7 + followup + ZX2 7-family)", () => {
+    expect(SESSION_MESSAGE_TYPES.size).toBe(15);
     expect(SESSION_MESSAGE_TYPES.has("session.followup_input")).toBe(true);
+    expect(SESSION_MESSAGE_TYPES.has("session.permission.request")).toBe(true);
+    expect(SESSION_MESSAGE_TYPES.has("session.usage.update")).toBe(true);
   });
   it("body required set excludes cancel but includes followup", () => {
     expect(SESSION_BODY_REQUIRED.has("session.cancel")).toBe(false);

@@ -114,6 +114,33 @@ export type {
   WrapAsErrorOverrides,
 } from "./error-body.js";
 
+// ── RPC envelope + meta + caller-side validation (ZX2 Phase 2 P2-01/02) ──
+export {
+  RpcErrorCodeSchema,
+  RpcErrorSchema,
+  RpcSuccessEnvelopeSchema,
+  RpcErrorEnvelopeSchema,
+  RpcEnvelopeSchema,
+  RpcCallerSchema,
+  RpcMetaSchema,
+  okEnvelope,
+  errorEnvelope,
+  validateRpcCall,
+  envelopeFromThrown,
+  envelopeFromAuthLike,
+} from "./rpc.js";
+export type {
+  RpcErrorCode,
+  RpcError,
+  RpcErrorEnvelope,
+  RpcSuccessEnvelope,
+  Envelope,
+  RpcCaller,
+  RpcMeta,
+  ValidateRpcCallOptions,
+  ValidatedRpcCall,
+} from "./rpc.js";
+
 // ── Tenancy ──
 export {
   verifyTenantBoundary,

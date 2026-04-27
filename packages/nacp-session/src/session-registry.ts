@@ -29,11 +29,32 @@ export const SESSION_ROLE_REQUIREMENTS: Record<string, SessionRoleRequirement> =
       "session.stream.ack",
       "session.heartbeat",
       "session.followup_input",
+      // ZX2 Phase 2 P2-03 — client-produced families
+      "session.permission.decision",
+      "session.skill.invoke",
+      "session.command.invoke",
+      "session.elicitation.answer",
     ]),
-    consumer: new Set(["session.end", "session.stream.event", "session.heartbeat"]),
+    consumer: new Set([
+      "session.end",
+      "session.stream.event",
+      "session.heartbeat",
+      // ZX2 Phase 2 P2-03 — server-produced families
+      "session.permission.request",
+      "session.usage.update",
+      "session.elicitation.request",
+    ]),
   },
   session: {
-    producer: new Set(["session.end", "session.stream.event", "session.heartbeat"]),
+    producer: new Set([
+      "session.end",
+      "session.stream.event",
+      "session.heartbeat",
+      // ZX2 Phase 2 P2-03
+      "session.permission.request",
+      "session.usage.update",
+      "session.elicitation.request",
+    ]),
     consumer: new Set([
       "session.start",
       "session.resume",
@@ -41,6 +62,11 @@ export const SESSION_ROLE_REQUIREMENTS: Record<string, SessionRoleRequirement> =
       "session.stream.ack",
       "session.heartbeat",
       "session.followup_input",
+      // ZX2 Phase 2 P2-03
+      "session.permission.decision",
+      "session.skill.invoke",
+      "session.command.invoke",
+      "session.elicitation.answer",
     ]),
   },
   ingress: {
@@ -84,6 +110,14 @@ const SESSION_PHASE_ALLOWED: Record<SessionPhase, Set<string>> = {
     "session.stream.ack",
     "session.heartbeat",
     "session.followup_input",
+    // ZX2 Phase 2 P2-03 — facade-needed families
+    "session.permission.request",
+    "session.permission.decision",
+    "session.usage.update",
+    "session.skill.invoke",
+    "session.command.invoke",
+    "session.elicitation.request",
+    "session.elicitation.answer",
   ]),
   turn_running: new Set([
     "session.cancel",
@@ -92,9 +126,19 @@ const SESSION_PHASE_ALLOWED: Record<SessionPhase, Set<string>> = {
     "session.stream.ack",
     "session.heartbeat",
     "session.followup_input",
+    // ZX2 Phase 2 P2-03 — turn-bound families
+    "session.permission.request",
+    "session.permission.decision",
+    "session.usage.update",
+    "session.skill.invoke",
+    "session.command.invoke",
+    "session.elicitation.request",
+    "session.elicitation.answer",
   ]),
   ended: new Set([
     "session.heartbeat",  // final heartbeat before close
+    // ZX2 Phase 2 P2-03 — final usage update before close
+    "session.usage.update",
   ]),
 };
 

@@ -79,6 +79,125 @@ export const SessionFollowupInputBodySchema = z.object({
 });
 export type SessionFollowupInputBody = z.infer<typeof SessionFollowupInputBodySchema>;
 
+// ═══════════════════════════════════════════════════════════════════
+// ZX2 Phase 2 P2-03 — 5 message_type families (7 message types) covering
+// the facade-needed capabilities derived from CLI host comparisons
+// (claude-code / codex / gemini-cli). Each family below stays a body-only
+// schema; the WS frame envelope continues to be NacpSessionFrameSchema.
+// ═══════════════════════════════════════════════════════════════════
+
+// ── Family 1: permission gate ─────────────────────────────────────
+// server → client: ask for tool-use permission with a request_uuid;
+// client → server: reply with the user's decision (mirroring claude-code
+// `can_use_tool`).
+export const SessionPermissionDecisionEnumSchema = z.enum([
+  "allow",
+  "deny",
+  "always_allow",
+  "always_deny",
+]);
+export type SessionPermissionDecisionEnum = z.infer<
+  typeof SessionPermissionDecisionEnumSchema
+>;
+
+export const SessionPermissionScopeEnumSchema = z.enum([
+  "once",
+  "session",
+  "user",
+]);
+export type SessionPermissionScopeEnum = z.infer<
+  typeof SessionPermissionScopeEnumSchema
+>;
+
+export const SessionPermissionRequestBodySchema = z.object({
+  request_uuid: z.string().uuid(),
+  tool_name: z.string().min(1).max(128),
+  tool_input: z.record(z.string(), z.unknown()),
+  reason: z.string().max(2048).optional(),
+  blocked_path: z.string().max(2048).optional(),
+  // ISO timestamp; orchestrator picks 30s default (ZX2 Phase 5 P5-03).
+  expires_at: z.string().datetime({ offset: true }).optional(),
+  suggested_decision: SessionPermissionDecisionEnumSchema.optional(),
+});
+export type SessionPermissionRequestBody = z.infer<
+  typeof SessionPermissionRequestBodySchema
+>;
+
+export const SessionPermissionDecisionBodySchema = z.object({
+  request_uuid: z.string().uuid(),
+  decision: SessionPermissionDecisionEnumSchema,
+  scope: SessionPermissionScopeEnumSchema.default("once"),
+  reason: z.string().max(2048).optional(),
+});
+export type SessionPermissionDecisionBody = z.infer<
+  typeof SessionPermissionDecisionBodySchema
+>;
+
+// ── Family 2: usage update ───────────────────────────────────────
+// High-frequency server → client push. ZX2 Phase 5 P5-03 mandates ≥1Hz
+// auto-merge backpressure so this body MUST stay small.
+export const SessionUsageUpdateBodySchema = z.object({
+  // Cumulative since session start.
+  llm_input_tokens: z.number().int().min(0).optional(),
+  llm_output_tokens: z.number().int().min(0).optional(),
+  llm_cache_read_tokens: z.number().int().min(0).optional(),
+  llm_cache_write_tokens: z.number().int().min(0).optional(),
+  tool_calls: z.number().int().min(0).optional(),
+  subrequest_used: z.number().int().min(0).optional(),
+  subrequest_budget: z.number().int().min(0).optional(),
+  estimated_cost_usd: z.number().min(0).optional(),
+});
+export type SessionUsageUpdateBody = z.infer<typeof SessionUsageUpdateBodySchema>;
+
+// ── Family 3: skill invoke ───────────────────────────────────────
+// client → server: ask the session to invoke a registered skill by name.
+// Skill execution itself remains a NACP-Core `skill.invoke.request` —
+// this WS frame is just the client trigger.
+export const SessionSkillInvokeBodySchema = z.object({
+  skill_name: z.string().min(1).max(128),
+  args: z.record(z.string(), z.unknown()).optional(),
+  request_uuid: z.string().uuid().optional(),
+});
+export type SessionSkillInvokeBody = z.infer<typeof SessionSkillInvokeBodySchema>;
+
+// ── Family 4: command invoke ─────────────────────────────────────
+// client → server: trigger a slash command (parallel to skill but the
+// command catalogue is curated separately, e.g. /loop, /schedule).
+export const SessionCommandInvokeBodySchema = z.object({
+  command_name: z.string().min(1).max(128),
+  args: z.string().max(8192).optional(),
+  request_uuid: z.string().uuid().optional(),
+});
+export type SessionCommandInvokeBody = z.infer<
+  typeof SessionCommandInvokeBodySchema
+>;
+
+// ── Family 5: elicitation ────────────────────────────────────────
+// server → client: single-turn ask-the-user pair (mirroring claude-code
+// `elicitation`). client → server: the answer.
+export const SessionElicitationRequestBodySchema = z.object({
+  request_uuid: z.string().uuid(),
+  prompt: z.string().min(1).max(8192),
+  // JSON schema (loose) describing the expected answer shape; consumers
+  // use it to render structured input when present.
+  answer_schema: z.record(z.string(), z.unknown()).optional(),
+  expires_at: z.string().datetime({ offset: true }).optional(),
+});
+export type SessionElicitationRequestBody = z.infer<
+  typeof SessionElicitationRequestBodySchema
+>;
+
+export const SessionElicitationAnswerBodySchema = z.object({
+  request_uuid: z.string().uuid(),
+  // Free-form structured answer — validated against `answer_schema` on
+  // the server, since the schema is dynamic.
+  answer: z.unknown(),
+  cancelled: z.boolean().optional(),
+});
+export type SessionElicitationAnswerBody = z.infer<
+  typeof SessionElicitationAnswerBodySchema
+>;
+
 // ── Aggregated maps ──
 
 export const SESSION_BODY_SCHEMAS = {
@@ -89,6 +208,14 @@ export const SESSION_BODY_SCHEMAS = {
   "session.stream.ack": SessionStreamAckBodySchema,
   "session.heartbeat": SessionHeartbeatBodySchema,
   "session.followup_input": SessionFollowupInputBodySchema,
+  // ZX2 Phase 2 P2-03 — 5 family / 7 message_types
+  "session.permission.request": SessionPermissionRequestBodySchema,
+  "session.permission.decision": SessionPermissionDecisionBodySchema,
+  "session.usage.update": SessionUsageUpdateBodySchema,
+  "session.skill.invoke": SessionSkillInvokeBodySchema,
+  "session.command.invoke": SessionCommandInvokeBodySchema,
+  "session.elicitation.request": SessionElicitationRequestBodySchema,
+  "session.elicitation.answer": SessionElicitationAnswerBodySchema,
   // session.stream.event is handled separately via stream-event.ts
 } as const;
 
@@ -99,6 +226,14 @@ export const SESSION_BODY_REQUIRED = new Set([
   "session.stream.ack",
   "session.heartbeat",
   "session.followup_input",
+  // ZX2 Phase 2 P2-03 — every new family carries a non-empty body.
+  "session.permission.request",
+  "session.permission.decision",
+  "session.usage.update",
+  "session.skill.invoke",
+  "session.command.invoke",
+  "session.elicitation.request",
+  "session.elicitation.answer",
 ]);
 
 export const SESSION_MESSAGE_TYPES = new Set([
@@ -110,4 +245,12 @@ export const SESSION_MESSAGE_TYPES = new Set([
   "session.stream.ack",
   "session.heartbeat",
   "session.followup_input",
+  // ZX2 Phase 2 P2-03
+  "session.permission.request",
+  "session.permission.decision",
+  "session.usage.update",
+  "session.skill.invoke",
+  "session.command.invoke",
+  "session.elicitation.request",
+  "session.elicitation.answer",
 ]);
