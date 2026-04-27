@@ -1,10 +1,12 @@
 # Catalog API
 
 > Profile: `facade-http-v1`
-> 状态: ZX2 Phase 5 P5-01 — 三件套（skills / commands / agents）只读
-> 生成: 2026-04-27
+> 状态: ZX2 Phase 5 P5-01 — **contract-only placeholder**（contract 已冻结，registry 内容待 ZX3 填充）
+> 生成: 2026-04-27 / 更新 2026-04-27（ZX1-ZX2 review followup — DeepSeek R5）
 
 `/catalog/{kind}` 三个端点暴露当前部署可见的 skill / command / agent 列表，给前端做 slash menu / capability picker。
+
+> **重要**：ZX2 落地的是 **contract + envelope + 路由**，三个 GET 端点当前一律返回**空数组** (`skills: []` / `commands: []` / `agents: []`)。registry 内容的填充（slash command 注册、agent 注册、skill 注册）属于 ZX3 候选项。请将 ZX2 catalog 视作"客户端可以稳定调用、envelope 形状不会再变、但内容暂为占位"的能力。
 
 ## 1. 端点
 
@@ -33,7 +35,7 @@
 }
 ```
 
-ZX2 v1 实现返回 **空数组**（`skills: []`）；具体注册由后续 plan 落地。
+ZX2 实现一律返回 **空数组**（`skills: []`）。注册流程（`registerSkill(...)` / `registerCommand(...)` / `registerAgent(...)`）+ deploy 时静态枚举留给 ZX3。前端集成请基于 envelope 形状写代码，**不要**假定 ZX2 阶段会出现实体内容。
 
 ### `GET /catalog/commands`
 

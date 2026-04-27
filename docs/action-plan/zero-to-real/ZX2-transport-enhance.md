@@ -15,7 +15,11 @@
 > - `docs/eval/zero-to-real/state-of-transportation-by-GPT.md`
 > - `.tmp/{topology,internal-http-retirement,rpc-shapes,cli-host-gaps,external-api-gaps}.md`
 > - `docs/action-plan/zero-to-real/Z5-closure-and-handoff.md`（前置上下文）
-> 文档状态: `draft (v2)`
+> 文档状态: `executed-local (v3) / rollout-pending`
+>
+> **状态语义**（ZX1-ZX2 review followup — GPT R7 / DeepSeek 治理漂移）：
+> - `executed-local`: §13 v3 执行日志记录的 27/27 工作项代码已落地、本地 2392+ 单测全绿。
+> - `rollout-pending`: nacp-core 1.4.1 publish + consumer dep bump + preview deploy + live e2e + 7 天 parity 观察 + P3-05 翻转尚未执行；不属于"代码层 done"但属于"transport 真正退役 done"的硬前置。详见 `docs/issue/zero-to-real/ZX2-closure.md` §4 与 §8。
 
 > **v2 修订要点**（吸收业主与 GPT 共识，原 v1 见 git 历史 / §11）：
 > 1. **不新建 `packages/orchestrator-rpc-contract`。** 通用协议对象（envelope、authority、trace、error registry、transport precheck）回收到 `nacp-core`；session WS frame 回收到 `nacp-session`；facade HTTP 公约扩 `orchestrator-auth-contract`（按需改名 `orchestrator-facade-contract`）。worker-specific RPC interface（`AgentCoreRpc` / `BashCoreRpc`）以轻量 TS interface + zod schema 直接放在 `nacp-session` 或对应 worker `src/contract.ts`，**禁止**重新定义 NACP 已有的协议对象。

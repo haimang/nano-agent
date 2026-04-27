@@ -15,20 +15,7 @@
 
 ---
 
-## 1. 评价方法与样本基础
-
-> 本模板评价的是“审查质量”，不是被审代码本身。
-> 评价必须基于可复核样本：审查文档、实现者回应、二次复核、最终代码事实或后续 closure。
-
-- **样本范围**：`{SAMPLE_SCOPE}`
-- **对照真相**：`{CODE_FACTS_OR_DESIGN_OR_CLOSURE}`
-- **是否包含实现者事后修复结果**：`yes | no`
-- **是否存在利益冲突 / 自评风险**：`yes | no` — `{DISCLOSURE}`
-- **评价方法**：`{METHOD}`
-
----
-
-## 2. 审查风格画像
+## 1. 审查风格画像
 
 | 维度 | 观察 | 例证 |
 |------|------|------|
@@ -40,15 +27,15 @@
 
 ---
 
-## 3. 优点与短板
+## 2. 优点与短板
 
-### 3.1 优点
+### 2.1 优点
 
 1. `{STRENGTH_1}`
 2. `{STRENGTH_2}`
 3. `{STRENGTH_3}`
 
-### 3.2 短板 / 盲区
+### 2.2 短板 / 盲区
 
 1. `{WEAKNESS_1}`
 2. `{WEAKNESS_2}`
@@ -56,27 +43,16 @@
 
 ---
 
-## 4. Findings 质量清点
+## 3. Findings 质量清点
 
 | 问题编号 | 原始严重程度 | 事后判定 | Finding 质量 | 分析与说明 |
 |----------|--------------|----------|--------------|------------|
 | `{R_ID}` | `critical | high | medium | low` | `true-positive | partial | false-positive | stale | missed-by-others` | `excellent | good | mixed | weak` | `{ANALYSIS}` |
 
-### 4.1 False positive / stale 分析
-
-- `{FALSE_POSITIVE_OR_STALE_CASE}`
-
-### 4.2 False negative / 漏判分析
-
-- `{MISSED_CASE}`
-
-### 4.3 Severity 校准分析
-
-- `{SEVERITY_CALIBRATION_NOTE}`
 
 ---
 
-## 5. 多维度评分
+## 4. 多维度评分 - 单向总分10分
 
 | 维度 | 评分（1–10） | 说明 |
 |------|-------------|------|
