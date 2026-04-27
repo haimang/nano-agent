@@ -37,6 +37,7 @@ Cargo.lock
 
 # 上下文文件
 context/
+.tmp/
 
 # packages/ 现由主库统一跟踪；子目录中的构建产物仍由上面的通用规则忽略
 
