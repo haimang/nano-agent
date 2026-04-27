@@ -1,16 +1,42 @@
-# workers/context-core — pre-worker-matrix shell
+# workers/context-core — library-only worker (ZX2 frozen)
 
 ## Status
 
-**Shell-only. No business logic yet.**
+**Library-only worker.** Per ZX2 (transport-profiles.md, 2026-04-27) this
+worker stays as a deployment placeholder + `health-probe` profile only.
+**Do not add business RPC routes here.** All real context-substrate
+runtime code is consumed in-process by `agent-core` via the workspace
+package `@haimang/context-management`. The deploy of `context-core`
+exists so `/debug/workers/health` can keep reporting a stable 6-worker
+matrix.
 
-## Purpose
+## Why this is a deliberate decision
 
-This is the pre-worker-matrix W4 shell for `context-core`. It only proves
-that the worker shape, NACP imports, and Wrangler bundle path are valid.
+- W3.A absorbed the runtime code into agent-core (host-local).
+- ZX2 evaluated promoting context-core to a real RPC worker and explicitly
+  declined: the migration cost is non-trivial and the immediate value is
+  small (no cross-tenant boundary, no quota, no isolation gain).
+- Promotion to a real RPC worker is reserved for ZX3 / W5 if a concrete
+  workload needs it.
 
-Current dependency mode: `workspace:*`. Real context substrate absorption and
-remote compact behavior land during worker-matrix Phase 0.
+## What `context-core` is allowed to expose
+
+| profile | route | semantic |
+|---|---|---|
+| `health-probe` | `GET /` `GET /health` | shell response with `library_worker: true` |
+| (none) | every other path | 401 `binding-scope-forbidden` (ZX2 Phase 1 P1-03) |
+
+The `binding-scope-forbidden` 401 is enforced in code (see
+`src/index.ts:bindingScopeForbidden`) so accidental `workers_dev:true`
+exposure is defended even before wrangler config takes effect.
+
+## What `context-core` is NOT allowed to do
+
+- ❌ Expose business HTTP routes (`/context/*`, `/compact/*`, etc).
+- ❌ Add new service bindings to other workers.
+- ❌ Become a `WorkerEntrypoint` with RPC methods. If a future plan needs
+  this, it has to ship as a separate plan that updates this README first.
+- ❌ Talk to D1 / R2 / KV. The workspace package owns storage truth.
 
 ## Scripts
 
@@ -22,5 +48,20 @@ remote compact behavior land during worker-matrix Phase 0.
 
 ## Binding strategy
 
-No active outgoing bindings in W4. Future remote wiring is documented in the
-W3/W4 design docs and activated during worker-matrix.
+No active outgoing bindings. `wrangler.jsonc` declares `workers_dev: false`
+to keep this worker off the public internet.
+
+## Health probe shape
+
+```json
+{
+  "worker": "context-core",
+  "status": "ok",
+  "worker_version": "context-core@<env>",
+  "phase": "worker-matrix-P3-absorbed",
+  "absorbed_runtime": true,
+  "library_worker": true,
+  "nacp_core_version": "...",
+  "nacp_session_version": "..."
+}
+```

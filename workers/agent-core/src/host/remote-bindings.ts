@@ -186,6 +186,55 @@ export function makeHookTransport(
  * capability seam. The capability runtime expects `call()` to return
  * the `tool.call.response` body directly.
  */
+// ZX2 Phase 3 P3-04 — bash-core RPC binding shape when promoted to a
+// WorkerEntrypoint. Both methods return an Envelope-shaped result.
+type BashRpcEnvelope<T> =
+  | { ok: true; data: T }
+  | { ok: false; error: { code: string; status: number; message: string } };
+
+interface BashCoreRpcBinding {
+  call?: (
+    input: unknown,
+    meta: {
+      trace_uuid: string;
+      caller: string;
+      authority?: unknown;
+      session_uuid?: string;
+      request_uuid?: string;
+      source?: string;
+    },
+  ) => Promise<BashRpcEnvelope<{ status: "ok" | "error"; output?: string; error?: { code: string; message: string } }>>;
+  cancel?: (
+    input: unknown,
+    meta: {
+      trace_uuid: string;
+      caller: string;
+      authority?: unknown;
+    },
+  ) => Promise<BashRpcEnvelope<{ ok: boolean; cancelled: boolean }>>;
+}
+
+function deriveAuthorityFromAnchor(anchor?: CrossSeamAnchor): unknown {
+  // Best-effort NACP-shaped authority derivation from the cross-seam
+  // anchor. Real callers should populate authority from the session DO's
+  // ingress snapshot; this is the common runtime path where the anchor is
+  // the only context piece carried through the executor.
+  if (!anchor) return undefined;
+  return {
+    team_uuid: anchor.teamUuid,
+    plan_level: "internal",
+    stamped_by_key: "nano-agent.agent-core@v1",
+    stamped_at: new Date().toISOString(),
+  };
+}
+
+/**
+ * Build a minimal ServiceBindingTransport-like object for the
+ * capability seam. ZX2 Phase 3 P3-04 — prefer the WorkerEntrypoint RPC
+ * methods on the binding when they are callable; fall back to the legacy
+ * HTTP `/capability/{call,cancel}` shape otherwise. The 7-day fallback
+ * window matches the `internal-http-compat` retirement runbook.
+ */
 export function makeCapabilityTransport(
   binding: ServiceBindingLike | undefined,
 ): {
@@ -193,6 +242,7 @@ export function makeCapabilityTransport(
   cancel?: (input: unknown) => Promise<void>;
 } | undefined {
   if (!binding) return undefined;
+  const rpc = binding as unknown as BashCoreRpcBinding & ServiceBindingLike;
   return {
     async call(input: unknown): Promise<unknown> {
       const payload = input as {
@@ -204,6 +254,41 @@ export function makeCapabilityTransport(
         onProgress?: (frame: unknown) => void;
         anchor?: CrossSeamAnchor;
       };
+
+      // RPC-preferred path: WorkerEntrypoint method available.
+      if (typeof rpc.call === "function") {
+        const envelope = await rpc.call(
+          {
+            requestId: payload.requestId,
+            capabilityName: payload.capabilityName,
+            body: payload.body,
+            ...(payload.quota ? { quota: payload.quota } : {}),
+          },
+          {
+            trace_uuid: payload.anchor?.traceUuid ?? crypto.randomUUID(),
+            caller: "agent-core",
+            authority: deriveAuthorityFromAnchor(payload.anchor),
+            ...(payload.anchor?.sessionUuid
+              ? { session_uuid: payload.anchor.sessionUuid }
+              : {}),
+            request_uuid: payload.anchor?.requestUuid ?? payload.requestId,
+            source: payload.anchor?.sourceRole ?? "session.runtime",
+          },
+        );
+        if (envelope.ok) return envelope.data;
+        // RPC envelope error → surface the same `tool.call.response` shape
+        // the legacy fetch path returned so the capability runtime narrow
+        // does not change.
+        return {
+          status: "error",
+          error: {
+            code: envelope.error.code,
+            message: envelope.error.message,
+          },
+        };
+      }
+
+      // 7-day compat: legacy fetch over service binding.
       return callBindingJson(
         binding,
         "/capability/call",
@@ -223,6 +308,19 @@ export function makeCapabilityTransport(
         body: unknown;
         anchor?: CrossSeamAnchor;
       };
+
+      if (typeof rpc.cancel === "function") {
+        await rpc.cancel(
+          { requestId: payload.requestId, body: payload.body },
+          {
+            trace_uuid: payload.anchor?.traceUuid ?? crypto.randomUUID(),
+            caller: "agent-core",
+            authority: deriveAuthorityFromAnchor(payload.anchor),
+          },
+        );
+        return;
+      }
+
       await callBindingJson(
         binding,
         "/capability/cancel",

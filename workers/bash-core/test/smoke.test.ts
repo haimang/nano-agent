@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import worker from "../src/index.js";
+// ZX2 Phase 3 P3-03 — bash-core's default export is now `BashCoreEntrypoint`
+// (a `WorkerEntrypoint` class). The legacy fetch-shaped object literal is
+// kept as the named `worker` export for the smoke tests below.
+import { worker } from "../src/index.js";
 import { NACP_VERSION } from "@haimang/nacp-core";
 import { NACP_SESSION_VERSION } from "@haimang/nacp-session";
 

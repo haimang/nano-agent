@@ -117,7 +117,7 @@ describe("orchestrator-core shell smoke", () => {
     );
 
     expect(response.status).toBe(400);
-    expect((await response.json()).error).toBe("invalid-trace");
+    expect((await response.json()).error.code).toBe("invalid-trace");
   });
 
   it("rejects authenticated session routes when JWT omits tenant claims", async () => {
@@ -143,7 +143,7 @@ describe("orchestrator-core shell smoke", () => {
     );
 
     expect(response.status).toBe(403);
-    expect((await response.json()).error).toBe("missing-team-claim");
+    expect((await response.json()).error.code).toBe("missing-team-claim");
   });
 
   it("rejects non-probe routes when TEAM_UUID is missing outside test env", async () => {
@@ -162,7 +162,7 @@ describe("orchestrator-core shell smoke", () => {
     );
 
     expect(response.status).toBe(503);
-    expect((await response.json()).error).toBe("worker-misconfigured");
+    expect((await response.json()).error.code).toBe("worker-misconfigured");
   });
 
   it("routes authenticated start requests to the user DO keyed by JWT sub", async () => {
@@ -308,6 +308,113 @@ describe("orchestrator-core shell smoke", () => {
     );
   });
 
+  // ZX2 Phase 5 P5-01 — facade-必需 endpoints
+  it("GET /catalog/skills returns facade-http-v1 envelope with empty list", async () => {
+    const response = await worker.fetch(
+      new Request("https://example.com/catalog/skills", {
+        headers: { "x-trace-uuid": TRACE_UUID },
+      }),
+      {
+        ORCHESTRATOR_USER_DO: {} as DurableObjectNamespace,
+        TEAM_UUID: "nano-agent",
+      } as any,
+    );
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.ok).toBe(true);
+    expect(body.trace_uuid).toBe(TRACE_UUID);
+    expect(body.data).toEqual({ skills: [] });
+  });
+
+  it("GET /catalog/commands returns commands array", async () => {
+    const response = await worker.fetch(
+      new Request("https://example.com/catalog/commands", {
+        headers: { "x-trace-uuid": TRACE_UUID },
+      }),
+      {
+        ORCHESTRATOR_USER_DO: {} as DurableObjectNamespace,
+        TEAM_UUID: "nano-agent",
+      } as any,
+    );
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.ok).toBe(true);
+    expect(body.data.commands).toEqual([]);
+  });
+
+  it("GET /catalog/agents returns agents array", async () => {
+    const response = await worker.fetch(
+      new Request("https://example.com/catalog/agents", {
+        headers: { "x-trace-uuid": TRACE_UUID },
+      }),
+      {
+        ORCHESTRATOR_USER_DO: {} as DurableObjectNamespace,
+        TEAM_UUID: "nano-agent",
+      } as any,
+    );
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.ok).toBe(true);
+    expect(body.data.agents).toEqual([]);
+  });
+
+  // ZX2 Phase 5 P5-02 — POST /me/sessions mints UUID
+  it("POST /me/sessions mints a server-side UUID", async () => {
+    const token = await signTestJwt(
+      { sub: USER_UUID, team_uuid: USER_UUID, exp: Math.floor(Date.now() / 1000) + 3600 },
+      JWT_SECRET,
+    );
+    const response = await worker.fetch(
+      new Request("https://example.com/me/sessions", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "x-trace-uuid": TRACE_UUID,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({}),
+      }),
+      {
+        ORCHESTRATOR_USER_DO: {} as DurableObjectNamespace,
+        JWT_SECRET,
+        TEAM_UUID: "nano-agent",
+      } as any,
+    );
+    expect(response.status).toBe(201);
+    const body = await response.json();
+    expect(body.ok).toBe(true);
+    expect(body.trace_uuid).toBe(TRACE_UUID);
+    expect(typeof body.data.session_uuid).toBe("string");
+    expect(body.data.status).toBe("pending");
+    expect(body.data.start_url).toBe(`/sessions/${body.data.session_uuid}/start`);
+  });
+
+  it("POST /me/sessions rejects client-supplied session_uuid", async () => {
+    const token = await signTestJwt(
+      { sub: USER_UUID, team_uuid: USER_UUID, exp: Math.floor(Date.now() / 1000) + 3600 },
+      JWT_SECRET,
+    );
+    const response = await worker.fetch(
+      new Request("https://example.com/me/sessions", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "x-trace-uuid": TRACE_UUID,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ session_uuid: SESSION_UUID }),
+      }),
+      {
+        ORCHESTRATOR_USER_DO: {} as DurableObjectNamespace,
+        JWT_SECRET,
+        TEAM_UUID: "nano-agent",
+      } as any,
+    );
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error.code).toBe("invalid-input");
+  });
+
   it("returns 503 when auth proxy binding is missing", async () => {
     const response = await worker.fetch(
       new Request("https://example.com/auth/login", {
@@ -324,6 +431,6 @@ describe("orchestrator-core shell smoke", () => {
     );
 
     expect(response.status).toBe(503);
-    expect((await response.json()).error).toBe("worker-misconfigured");
+    expect((await response.json()).error.code).toBe("worker-misconfigured");
   });
 });

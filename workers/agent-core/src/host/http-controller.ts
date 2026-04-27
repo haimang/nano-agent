@@ -10,6 +10,19 @@
  * When no host is wired, the controller keeps its pre-A4 stub behaviour
  * so standalone `HttpController` tests keep exercising the 4xx / 2xx
  * envelope shape without needing a full DO.
+ *
+ * ZX2 Phase 4 P4-03 — boundary contract clarification:
+ *   - The controller emits **inner** session shapes (e.g.
+ *     `{ ok:true, action, phase, ... }` for success and `{ error: ... }` for
+ *     errors). It is **not** responsible for facade-http-v1 wrapping.
+ *   - `orchestrator-core/src/index.ts:wrapSessionResponse` is the
+ *     authoritative facade wrapper; it is idempotent (detects existing
+ *     `ok` and only stamps `trace_uuid`) so this controller's body shape
+ *     can keep its current form without breaking the public envelope.
+ *   - New inner endpoints SHOULD emit minimal-shape bodies (e.g.
+ *     `{ phase, ... }`) and let the facade wrap them. Existing inner
+ *     fields (`ok`, `action`) remain only for backwards compat with the
+ *     extensive test corpus.
  */
 
 import { NACP_VERSION } from "@haimang/nacp-core";

@@ -86,7 +86,10 @@ describe("authenticateRequest", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.response.status).toBe(403);
-    expect(await result.response.json()).toMatchObject({ error: "missing-team-claim" });
+    // ZX2 Phase 4 P4-01 — facade-http-v1 envelope.
+    const body = await result.response.json();
+    expect(body.ok).toBe(false);
+    expect(body.error.code).toBe("missing-team-claim");
   });
 
   it("rejects expired tokens", async () => {

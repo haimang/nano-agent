@@ -6,17 +6,25 @@ import {
   type DurableTurnPointer,
 } from "./session-truth.js";
 
+// ZX2 Phase 3 P3-01 — extended agent-core RPC binding (input/cancel/verify/
+// timeline/streamSnapshot in addition to start/status). Each method has the
+// same shape so forwardWithParity can use it generically.
+type AgentRpcMethodFn = (
+  input: Record<string, unknown>,
+  meta: { trace_uuid: string; authority: unknown },
+) => Promise<{ status: number; body: Record<string, unknown> | null }>;
+
+export type AgentRpcMethodKey =
+  | 'start'
+  | 'status'
+  | 'input'
+  | 'cancel'
+  | 'verify'
+  | 'timeline'
+  | 'streamSnapshot';
+
 export interface OrchestratorUserEnv {
-  readonly AGENT_CORE?: Fetcher & {
-    start?: (
-      input: Record<string, unknown>,
-      meta: { trace_uuid: string; authority: unknown },
-    ) => Promise<{ status: number; body: Record<string, unknown> | null }>;
-    status?: (
-      input: Record<string, unknown>,
-      meta: { trace_uuid: string; authority: unknown },
-    ) => Promise<{ status: number; body: Record<string, unknown> | null }>;
-  };
+  readonly AGENT_CORE?: Fetcher & Partial<Record<AgentRpcMethodKey, AgentRpcMethodFn>>;
   readonly NANO_AGENT_DB?: D1Database;
   readonly NANO_INTERNAL_BINDING_SECRET?: string;
 }
@@ -384,13 +392,20 @@ export class NanoOrchestratorUserDO {
     await this.cleanupEndedSessions();
     await this.ensureHotStateAlarm();
 
-    const segments = new URL(request.url).pathname.split('/').filter(Boolean);
-    if (segments.length !== 3 || segments[0] !== 'sessions') {
+    // ZX2 Phase 5 P5-02 — /me/sessions list (server-side hot index).
+    const pathname = new URL(request.url).pathname;
+    if (request.method === 'GET' && pathname === '/me/sessions') {
+      return this.handleMeSessions();
+    }
+
+    const segments = pathname.split('/').filter(Boolean);
+    if (segments[0] !== 'sessions' || (segments.length !== 3 && segments.length !== 4)) {
       return jsonResponse(404, { error: 'not-found', message: 'user DO route not found' });
     }
 
     const sessionUuid = segments[1]!;
-    const action = segments[2]!;
+    const action =
+      segments.length === 4 ? `${segments[2]}/${segments[3]}` : segments[2]!;
 
     if (request.method === 'POST' && action === 'start') {
       const body = (await request.json().catch(() => null)) as StartSessionBody | null;
@@ -425,6 +440,34 @@ export class NanoOrchestratorUserDO {
     if (request.method === 'GET' && action === 'timeline') return this.handleRead(sessionUuid, 'timeline');
     if (request.method === 'GET' && action === 'history') return this.handleRead(sessionUuid, 'history');
     if (request.method === 'GET' && action === 'ws') return this.handleWsAttach(sessionUuid, request);
+
+    // ZX2 Phase 5 P5-01 — facade-必需 endpoints.
+    if (request.method === 'GET' && action === 'usage') {
+      return this.handleUsage(sessionUuid);
+    }
+    if (request.method === 'POST' && action === 'resume') {
+      return this.handleResume(sessionUuid, request);
+    }
+    if (request.method === 'POST' && action === 'permission/decision') {
+      const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+      if (!body) {
+        return jsonResponse(400, {
+          error: 'invalid-input',
+          message: 'permission/decision requires a JSON body',
+        });
+      }
+      return this.handlePermissionDecision(sessionUuid, body);
+    }
+    if (request.method === 'POST' && action === 'policy/permission_mode') {
+      const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+      if (!body) {
+        return jsonResponse(400, {
+          error: 'invalid-input',
+          message: 'policy/permission_mode requires a JSON body',
+        });
+      }
+      return this.handlePolicyPermissionMode(sessionUuid, body);
+    }
 
     return jsonResponse(404, { error: 'not-found', message: 'user DO route not found' });
   }
@@ -790,6 +833,62 @@ export class NanoOrchestratorUserDO {
     return this.cloneJsonResponse(rpcResult.status, rpcResult.body);
   }
 
+  // ZX2 Phase 3 P3-01 — generic dual-track parity forwarder for the four
+  // session actions: input / cancel / verify (POST) and timeline (GET).
+  // Returns the same {response, body} shape as forwardInternalJson so
+  // handlers can swap in the shadow path with no other code changes.
+  // Falls back to plain HTTP forwarding when the RPC method is not
+  // callable or the authority is unavailable.
+  private async forwardInternalJsonShadow(
+    sessionUuid: string,
+    action: 'input' | 'cancel' | 'verify' | 'timeline',
+    body: Record<string, unknown> | undefined,
+    rpcMethod: AgentRpcMethodKey,
+  ): Promise<{ response: Response; body: Record<string, unknown> | null }> {
+    const fetchResult = body
+      ? await this.forwardInternalJson(sessionUuid, action, body)
+      : await this.forwardInternalJson(sessionUuid, action);
+    const rpc = this.env.AGENT_CORE?.[rpcMethod];
+    const authority = isAuthSnapshot(body?.authority)
+      ? body?.authority
+      : await this.get<IngressAuthSnapshot>(USER_AUTH_SNAPSHOT_KEY);
+    if (typeof rpc !== 'function' || !authority) {
+      return fetchResult;
+    }
+    const traceUuid =
+      typeof body?.trace_uuid === 'string' ? body.trace_uuid : crypto.randomUUID();
+    const rpcInput: Record<string, unknown> = {
+      session_uuid: sessionUuid,
+      ...(body ?? {}),
+    };
+    const rpcResult = await rpc(rpcInput, { trace_uuid: traceUuid, authority });
+    const parityOk =
+      rpcResult.status === fetchResult.response.status &&
+      jsonDeepEqual(rpcResult.body ?? null, fetchResult.body ?? null);
+    if (!parityOk) {
+      const parityResponse = jsonResponse(502, {
+        error: 'agent-rpc-parity-failed',
+        message: `agent-core rpc ${action} diverged from fetch implementation`,
+        rpc: rpcResult,
+        fetch: {
+          status: fetchResult.response.status,
+          body: fetchResult.body,
+        },
+      });
+      return {
+        response: parityResponse,
+        body: {
+          error: 'agent-rpc-parity-failed',
+          message: `agent-core rpc ${action} diverged from fetch implementation`,
+        },
+      };
+    }
+    return {
+      response: this.cloneJsonResponse(rpcResult.status, rpcResult.body),
+      body: rpcResult.body,
+    };
+  }
+
   private async hydrateSessionFromDurableTruth(sessionUuid: string): Promise<SessionEntry | null> {
     const durable = await this.readDurableSnapshot(sessionUuid);
     if (!durable) return null;
@@ -1045,13 +1144,21 @@ export class NanoOrchestratorUserDO {
       timestamp: now,
     });
 
-    const inputAck = await this.forwardInternalJson(sessionUuid, 'input', {
-      text: body.text,
-      ...(body.context_ref !== undefined ? { context_ref: body.context_ref } : {}),
-      ...(body.stream_seq !== undefined ? { stream_seq: body.stream_seq } : {}),
-      ...(typeof body.trace_uuid === 'string' ? { trace_uuid: body.trace_uuid } : {}),
-      ...(body.auth_snapshot ? { authority: body.auth_snapshot } : {}),
-    });
+    // ZX2 Phase 3 P3-01 — dual-track parity. forwardInternalJsonShadow falls
+    // back to HTTP-only when AGENT_CORE.input is unbound or no authority is
+    // available, so existing miniflare tests continue to pass.
+    const inputAck = await this.forwardInternalJsonShadow(
+      sessionUuid,
+      'input',
+      {
+        text: body.text,
+        ...(body.context_ref !== undefined ? { context_ref: body.context_ref } : {}),
+        ...(body.stream_seq !== undefined ? { stream_seq: body.stream_seq } : {}),
+        ...(typeof body.trace_uuid === 'string' ? { trace_uuid: body.trace_uuid } : {}),
+        ...(body.auth_snapshot ? { authority: body.auth_snapshot } : {}),
+      },
+      'input',
+    );
     if (!inputAck.response.ok) {
       if (durableTurn) {
         await this.sessionTruth()?.closeTurn({
@@ -1149,11 +1256,17 @@ export class NanoOrchestratorUserDO {
       now,
     );
 
-    const cancelAck = await this.forwardInternalJson(sessionUuid, 'cancel', {
-      ...(typeof body.reason === 'string' ? { reason: body.reason } : {}),
-      ...(typeof body.trace_uuid === 'string' ? { trace_uuid: body.trace_uuid } : {}),
-      ...(body.auth_snapshot ? { authority: body.auth_snapshot } : {}),
-    });
+    // ZX2 Phase 3 P3-01 — dual-track parity for cancel.
+    const cancelAck = await this.forwardInternalJsonShadow(
+      sessionUuid,
+      'cancel',
+      {
+        ...(typeof body.reason === 'string' ? { reason: body.reason } : {}),
+        ...(typeof body.trace_uuid === 'string' ? { trace_uuid: body.trace_uuid } : {}),
+        ...(body.auth_snapshot ? { authority: body.auth_snapshot } : {}),
+      },
+      'cancel',
+    );
     if (!cancelAck.response.ok) {
       return this.cloneJsonResponse(cancelAck.response.status, cancelAck.body);
     }
@@ -1215,7 +1328,14 @@ export class NanoOrchestratorUserDO {
     const entry = await this.requireSession(sessionUuid);
     if (!entry) return sessionMissingResponse(sessionUuid);
     if (body.auth_snapshot) await this.refreshUserState(body.auth_snapshot, body.initial_context_seed);
-    const response = await this.forwardInternalRaw(sessionUuid, 'verify', body);
+    // ZX2 Phase 3 P3-01 — dual-track parity for verify.
+    const verifyAck = await this.forwardInternalJsonShadow(
+      sessionUuid,
+      'verify',
+      body as unknown as Record<string, unknown>,
+      'verify',
+    );
+    const response = verifyAck.response;
     const proxied = await this.proxyReadResponse(sessionUuid, entry, response);
     const durable_truth = await this.readDurableSnapshot(sessionUuid);
     const bodyJson = await readJson(proxied.clone());
@@ -1268,8 +1388,198 @@ export class NanoOrchestratorUserDO {
       await this.rememberCache(`status:${sessionUuid}`, nextBody ?? null);
       return this.cloneJsonResponse(proxied.status, nextBody ?? null);
     }
+    // ZX2 Phase 3 P3-01 — timeline (and history) reads run parity when an
+    // RPC binding is available; status went through forwardStatus above.
+    if (action === 'timeline') {
+      const timelineAck = await this.forwardInternalJsonShadow(
+        sessionUuid,
+        'timeline',
+        undefined,
+        'timeline',
+      );
+      return this.proxyReadResponse(sessionUuid, entry, timelineAck.response);
+    }
     const response = await this.forwardInternalRaw(sessionUuid, action);
     return this.proxyReadResponse(sessionUuid, entry, response);
+  }
+
+  // ZX2 Phase 5 P5-03 — helper that emits a server→client WS frame to
+  // the currently-attached socket if any. Used by future plumbing
+  // (e.g. permission gate triggered by agent-core hooks) to push:
+  //   - session.permission.request
+  //   - session.usage.update
+  //   - session.elicitation.request
+  // The wire shape stays the lightweight `{kind, ...}` per ZX2 P4-04.
+  // Returns true if a frame was queued, false if no client is attached.
+  emitServerFrame(sessionUuid: string, frame: { kind: string; [k: string]: unknown }): boolean {
+    const attachment = this.attachments.get(sessionUuid);
+    if (!attachment) return false;
+    try {
+      attachment.socket.send(JSON.stringify(frame));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  // ZX2 Phase 5 P5-01 — usage read. v1 returns the usage snapshot stored
+  // in the SessionEntry / D1 truth, plus a stub for budgets so the
+  // shape stays stable as the budget plumbing arrives.
+  private async handleUsage(sessionUuid: string): Promise<Response> {
+    const entry = await this.requireReadableSession(sessionUuid);
+    if (!entry) return sessionMissingResponse(sessionUuid);
+    const durable = await this.readDurableSnapshot(sessionUuid);
+    return jsonResponse(200, {
+      ok: true,
+      data: {
+        session_uuid: sessionUuid,
+        status: entry.status,
+        usage: {
+          // Placeholders until the real budget pipe lands. Frontend
+          // already gets the WS `session.usage.update` push for live
+          // numbers — this endpoint is the snapshot/refresh path.
+          llm_input_tokens: null,
+          llm_output_tokens: null,
+          tool_calls: null,
+          subrequest_used: null,
+          subrequest_budget: null,
+          estimated_cost_usd: null,
+        },
+        last_seen_at: entry.last_seen_at,
+        durable_truth: durable ?? null,
+      },
+    });
+  }
+
+  // ZX2 Phase 5 P5-01 — explicit resume ack. Companion to the WS
+  // `?last_seen_seq=` query path; this HTTP variant lets clients tell
+  // the server "I'm coming back" without opening WS first.
+  private async handleResume(
+    sessionUuid: string,
+    request: Request,
+  ): Promise<Response> {
+    const entry = await this.requireReadableSession(sessionUuid);
+    if (!entry) return sessionMissingResponse(sessionUuid);
+    const body = (await request.json().catch(() => ({}))) as {
+      last_seen_seq?: number;
+    };
+    const acknowledged = entry.relay_cursor;
+    return jsonResponse(200, {
+      ok: true,
+      data: {
+        session_uuid: sessionUuid,
+        status: entry.status,
+        last_phase: entry.last_phase,
+        relay_cursor: acknowledged,
+        // If the client was further behind than what we have, signal
+        // they need to reconcile via timeline read.
+        replay_lost: typeof body.last_seen_seq === 'number' && body.last_seen_seq > acknowledged,
+      },
+    });
+  }
+
+  // ZX2 Phase 5 P5-01 / P5-03 — record a permission decision. Real
+  // permission round-trip lives on the WS path; this HTTP endpoint is
+  // the mirror so clients without an active WS can still respond.
+  private async handlePermissionDecision(
+    sessionUuid: string,
+    body: Record<string, unknown>,
+  ): Promise<Response> {
+    const requestUuid = body.request_uuid;
+    const decision = body.decision;
+    const scope = typeof body.scope === 'string' ? body.scope : 'once';
+    const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (typeof requestUuid !== 'string' || !uuidRe.test(requestUuid)) {
+      return jsonResponse(400, {
+        error: 'invalid-input',
+        message: 'permission/decision requires a UUID request_uuid',
+      });
+    }
+    if (
+      decision !== 'allow' &&
+      decision !== 'deny' &&
+      decision !== 'always_allow' &&
+      decision !== 'always_deny'
+    ) {
+      return jsonResponse(400, {
+        error: 'invalid-input',
+        message: 'decision must be allow|deny|always_allow|always_deny',
+      });
+    }
+    // For ZX2 we record the decision in the hot index; the live
+    // round-trip with the running turn is plumbed once nacp-session
+    // permission frames are wired through agent-core (P5-03 server-side).
+    await this.put(`permission_decision/${requestUuid}`, {
+      session_uuid: sessionUuid,
+      request_uuid: requestUuid,
+      decision,
+      scope,
+      decided_at: new Date().toISOString(),
+    });
+    return jsonResponse(200, {
+      ok: true,
+      data: { request_uuid: requestUuid, decision, scope },
+    });
+  }
+
+  private async handlePolicyPermissionMode(
+    sessionUuid: string,
+    body: Record<string, unknown>,
+  ): Promise<Response> {
+    const mode = body.mode;
+    if (
+      mode !== 'auto-allow' &&
+      mode !== 'ask' &&
+      mode !== 'deny' &&
+      mode !== 'always_allow'
+    ) {
+      return jsonResponse(400, {
+        error: 'invalid-input',
+        message: 'mode must be auto-allow|ask|deny|always_allow',
+      });
+    }
+    await this.put(`permission_mode/${sessionUuid}`, {
+      session_uuid: sessionUuid,
+      mode,
+      set_at: new Date().toISOString(),
+    });
+    return jsonResponse(200, {
+      ok: true,
+      data: { session_uuid: sessionUuid, mode },
+    });
+  }
+
+  // ZX2 Phase 5 P5-02 — list this user's sessions from the hot conversation
+  // index. Each conversation has at most one `latest_session_uuid`; we
+  // join with each session's per-uuid SessionEntry for last_seen_at /
+  // status / last_phase so the response is render-ready.
+  private async handleMeSessions(): Promise<Response> {
+    const conversations = (await this.get<ConversationIndexItem[]>(CONVERSATION_INDEX_KEY)) ?? [];
+    const items: Array<{
+      conversation_uuid: string;
+      session_uuid: string;
+      status: string;
+      last_phase: string | null;
+      last_seen_at: string;
+      created_at: string | null;
+      ended_at: string | null;
+    }> = [];
+    for (const conv of conversations) {
+      const entry = await this.get<SessionEntry>(sessionKey(conv.latest_session_uuid));
+      items.push({
+        conversation_uuid: conv.conversation_uuid,
+        session_uuid: conv.latest_session_uuid,
+        status: entry?.status ?? conv.status,
+        last_phase: entry?.last_phase ?? null,
+        last_seen_at: entry?.last_seen_at ?? conv.updated_at,
+        created_at: entry?.created_at ?? null,
+        ended_at: entry?.ended_at ?? null,
+      });
+    }
+    return jsonResponse(200, {
+      ok: true,
+      data: { sessions: items, next_cursor: null },
+    });
   }
 
   private async handleWsAttach(sessionUuid: string, request: Request): Promise<Response> {

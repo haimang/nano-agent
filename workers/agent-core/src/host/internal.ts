@@ -17,7 +17,11 @@ type SupportedInternalAction =
   | "status"
   | "timeline"
   | "verify"
-  | "stream";
+  | "stream"
+  // ZX2 Phase 3 P3-02 — cursor-paginated stream snapshot RPC. Returns
+  // an Envelope-shaped JSON body with events + next_cursor instead of
+  // an NDJSON stream over RPC.
+  | "stream_snapshot";
 
 const SUPPORTED_INTERNAL_ACTIONS = new Set<SupportedInternalAction>([
   "start",
@@ -27,6 +31,7 @@ const SUPPORTED_INTERNAL_ACTIONS = new Set<SupportedInternalAction>([
   "timeline",
   "verify",
   "stream",
+  "stream_snapshot",
 ]);
 
 function jsonResponse(status: number, body: Record<string, unknown>): Response {
@@ -166,6 +171,110 @@ async function forwardInternalStream(
   });
 }
 
+// ZX2 Phase 3 P3-02 — cursor-paginated stream snapshot.
+//
+// Wire shape (always Envelope-shaped JSON; never NDJSON over RPC):
+//
+//   200 OK:
+//   {
+//     ok: true,
+//     data: {
+//       events: Array<{ seq: number, payload: unknown }>,
+//       next_cursor: string | null,   // opaque cursor; clients should
+//                                     // pass it back in the next call
+//       terminal?: { phase: string }, // present only when session ended
+//     },
+//   }
+//
+// Query params:
+//   ?cursor=<seq>   start emitting events with seq > cursor (default 0)
+//   ?limit=<n>      cap the number of events returned (default 200)
+async function forwardStreamSnapshot(
+  env: AgentInternalEnv,
+  validated: ValidatedInternalAuthority,
+  sessionId: string,
+  url: URL,
+): Promise<Response> {
+  const cursorParam = url.searchParams.get("cursor");
+  const limitParam = url.searchParams.get("limit");
+  const cursor = (() => {
+    if (!cursorParam) return 0;
+    const n = Number(cursorParam);
+    return Number.isFinite(n) && n >= 0 ? n : 0;
+  })();
+  const limit = (() => {
+    if (!limitParam) return 200;
+    const n = Number(limitParam);
+    if (!Number.isFinite(n) || n <= 0) return 200;
+    return Math.min(Math.floor(n), 1000);
+  })();
+
+  const stub = env.SESSION_DO.get(env.SESSION_DO.idFromName(sessionId));
+  const headers = buildForwardHeaders(env, validated);
+
+  const timelineResponse = await stub.fetch(
+    new Request(`https://session.internal/sessions/${sessionId}/timeline`, {
+      method: "GET",
+      headers,
+    }),
+  );
+  if (!timelineResponse.ok) {
+    const errBody = await readJson(timelineResponse);
+    return jsonResponse(timelineResponse.status, {
+      ok: false,
+      error: {
+        code: "internal-error",
+        status: timelineResponse.status,
+        message: typeof errBody?.message === "string" ? errBody.message : "timeline read failed",
+      },
+    });
+  }
+  const timelineBody = await readJson(timelineResponse);
+  const allEvents = Array.isArray(timelineBody?.events)
+    ? timelineBody.events.filter(
+        (event): event is Record<string, unknown> => Boolean(event) && typeof event === "object",
+      )
+    : [];
+
+  // Page slice — cursor is the last seq we already emitted; one event per
+  // index. Seq numbers are 1-indexed in this snapshot RPC to mirror the
+  // existing NDJSON stream (which numbers 1..N for events).
+  const sliced = allEvents
+    .map((payload, index) => ({ seq: index + 1, payload }))
+    .filter((entry) => entry.seq > cursor)
+    .slice(0, limit);
+  const nextCursor =
+    sliced.length === 0
+      ? null
+      : sliced[sliced.length - 1]!.seq < allEvents.length
+        ? String(sliced[sliced.length - 1]!.seq)
+        : null;
+
+  let terminal: { phase: string } | undefined;
+  const statusResponse = await stub.fetch(
+    new Request(`https://session.internal/sessions/${sessionId}/status`, {
+      method: "GET",
+      headers,
+    }),
+  );
+  if (statusResponse.ok) {
+    const statusBody = await readJson(statusResponse);
+    const phase = typeof statusBody?.phase === "string" ? statusBody.phase : null;
+    if (phase && phase !== "turn_running") {
+      terminal = { phase };
+    }
+  }
+
+  return jsonResponse(200, {
+    ok: true,
+    data: {
+      events: sliced,
+      next_cursor: nextCursor,
+      ...(terminal ? { terminal } : {}),
+    },
+  });
+}
+
 export async function routeInternal(request: Request, env: AgentInternalEnv): Promise<Response> {
   const route = parseInternalRoute(request);
   if (route.type === "not-found") {
@@ -184,6 +293,13 @@ export async function routeInternal(request: Request, env: AgentInternalEnv): Pr
   switch (route.action) {
     case "stream":
       return forwardInternalStream(env, validated, route.sessionId);
+    case "stream_snapshot":
+      return forwardStreamSnapshot(
+        env,
+        validated,
+        route.sessionId,
+        new URL(request.url),
+      );
     case "start":
     case "input":
     case "cancel":

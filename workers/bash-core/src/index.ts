@@ -181,8 +181,9 @@ export type {
 // W4 field set plus `absorbed_runtime: true`.
 // No public `/tool.call.request` HTTP ingress is exposed.
 
-import { NACP_VERSION } from "@haimang/nacp-core";
+import { NACP_VERSION, errorEnvelope, okEnvelope, type Envelope, type RpcMeta, RpcMetaSchema } from "@haimang/nacp-core";
 import { NACP_SESSION_VERSION } from "@haimang/nacp-session";
+import { WorkerEntrypoint } from "cloudflare:workers";
 import {
   cancelCapabilityCall,
   executeCapabilityCall,
@@ -375,41 +376,134 @@ function bindingScopeForbidden(): Response {
   );
 }
 
-const worker = {
-  async fetch(request: Request, env: BashCoreEnv): Promise<Response> {
-    const url = new URL(request.url);
-    const { pathname } = url;
-    const method = request.method.toUpperCase();
+async function bashCoreFetch(request: Request, env: BashCoreEnv): Promise<Response> {
+  const url = new URL(request.url);
+  const { pathname } = url;
+  const method = request.method.toUpperCase();
 
-    // health-probe profile: always public.
-    if (method === "GET" && (pathname === "/" || pathname === "/health")) {
-      return Response.json(createProbeResponse(env));
+  // health-probe profile: always public.
+  if (method === "GET" && (pathname === "/" || pathname === "/health")) {
+    return Response.json(createProbeResponse(env));
+  }
+
+  // Everything else demands a valid internal binding-secret. This catches
+  // public hits even before NACP authority validation (ZX2 Phase 3 P3-03).
+  if (!isInternalBindingCall(request, env)) {
+    return bindingScopeForbidden();
+  }
+
+  if (method === "POST" && pathname === "/capability/call") {
+    const parsed = await parseJsonBody(request, pathname);
+    if (!parsed.ok) return parsed.response;
+
+    const forwarded = await maybeForwardToCapabilityDo(request, env, "/capability/call", parsed.body);
+    return forwarded ?? handleCapabilityCall(parsed.body, env);
+  }
+
+  if (method === "POST" && pathname === "/capability/cancel") {
+    const parsed = await parseJsonBody(request, pathname);
+    if (!parsed.ok) return parsed.response;
+
+    const forwarded = await maybeForwardToCapabilityDo(request, env, "/capability/cancel", parsed.body);
+    return forwarded ?? handleCapabilityCancel(parsed.body);
+  }
+
+  return new Response("Not Found", { status: 404 });
+}
+
+// ZX2 Phase 3 P3-03 — bash-core promoted to a `WorkerEntrypoint`. fetch
+// stays as the legacy compat path (HTTP relay over service-binding); the
+// new RPC methods carry NACP authority via the second meta argument.
+//
+// Authority requirement (mirrors orchestrator-core ↔ agent-core):
+//   - meta.trace_uuid (UUID) required
+//   - meta.caller    enum required
+//   - meta.authority required, with team_uuid + plan_level + stamped_by_key + stamped_at
+//   - meta.request_uuid required for /capability/call (idempotency / audit)
+export interface BashCoreToolCallResult {
+  readonly status: "ok" | "error";
+  readonly output?: string;
+  readonly error?: { readonly code: string; readonly message: string };
+}
+
+export interface BashCoreCancelResult {
+  readonly ok: boolean;
+  readonly cancelled: boolean;
+}
+
+function validateBashRpcMeta(rawMeta: unknown, requireRequestUuid: boolean): { ok: true; meta: RpcMeta } | { ok: false; envelope: Envelope<never> } {
+  const parsed = RpcMetaSchema.safeParse(rawMeta);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      envelope: errorEnvelope(
+        "invalid-meta",
+        400,
+        "rpc meta failed validation",
+        { issues: parsed.error.issues.map((i) => i.message) },
+      ),
+    };
+  }
+  if (!parsed.data.authority) {
+    return {
+      ok: false,
+      envelope: errorEnvelope("invalid-authority", 400, "bash-core rpc requires meta.authority"),
+    };
+  }
+  if (requireRequestUuid && !parsed.data.request_uuid) {
+    return {
+      ok: false,
+      envelope: errorEnvelope(
+        "invalid-meta",
+        400,
+        "bash-core /capability/call rpc requires meta.request_uuid for idempotency",
+      ),
+    };
+  }
+  return { ok: true, meta: parsed.data };
+}
+
+export default class BashCoreEntrypoint extends WorkerEntrypoint<BashCoreEnv> {
+  async fetch(request: Request): Promise<Response> {
+    return bashCoreFetch(request, this.env);
+  }
+
+  async call(rawInput: unknown, rawMeta: unknown): Promise<Envelope<BashCoreToolCallResult>> {
+    const validated = validateBashRpcMeta(rawMeta, true);
+    if (!validated.ok) return validated.envelope;
+    const parsedRequest = parseCapabilityCallRequest(rawInput);
+    if (!parsedRequest) {
+      return errorEnvelope(
+        "invalid-input",
+        400,
+        "bash-core /capability/call rpc expects { requestId, capabilityName?, body: { tool_name, tool_input } }",
+      );
     }
+    const result = await executeCapabilityCall(parsedRequest, {
+      previewMode: this.env.ENVIRONMENT === "preview",
+    });
+    return okEnvelope(result as BashCoreToolCallResult);
+  }
 
-    // Everything else demands a valid internal binding-secret. This catches
-    // public hits even before NACP authority validation (ZX2 Phase 3 P3-03).
-    if (!isInternalBindingCall(request, env)) {
-      return bindingScopeForbidden();
+  async cancel(rawInput: unknown, rawMeta: unknown): Promise<Envelope<BashCoreCancelResult>> {
+    const validated = validateBashRpcMeta(rawMeta, false);
+    if (!validated.ok) return validated.envelope;
+    const parsedRequest = parseCapabilityCancelRequest(rawInput);
+    if (!parsedRequest) {
+      return errorEnvelope(
+        "invalid-input",
+        400,
+        "bash-core /capability/cancel rpc expects { requestId, body?: { reason } }",
+      );
     }
+    const result = cancelCapabilityCall(parsedRequest.requestId);
+    return okEnvelope(result as BashCoreCancelResult);
+  }
+}
 
-    if (method === "POST" && pathname === "/capability/call") {
-      const parsed = await parseJsonBody(request, pathname);
-      if (!parsed.ok) return parsed.response;
-
-      const forwarded = await maybeForwardToCapabilityDo(request, env, "/capability/call", parsed.body);
-      return forwarded ?? handleCapabilityCall(parsed.body, env);
-    }
-
-    if (method === "POST" && pathname === "/capability/cancel") {
-      const parsed = await parseJsonBody(request, pathname);
-      if (!parsed.ok) return parsed.response;
-
-      const forwarded = await maybeForwardToCapabilityDo(request, env, "/capability/cancel", parsed.body);
-      return forwarded ?? handleCapabilityCancel(parsed.body);
-    }
-
-    return new Response("Not Found", { status: 404 });
-  },
+// Backward-compat fetch-shaped worker — kept as a named export so existing
+// tests and tooling can still import the legacy fetch-only object. The
+// worker module's actual default export is `BashCoreEntrypoint` (above).
+export const worker = {
+  fetch: bashCoreFetch,
 };
-
-export default worker;
