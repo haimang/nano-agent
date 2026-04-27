@@ -2,6 +2,10 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "nano-agent-bash-core",
   "main": "dist/index.js",
+  // ZX2 Phase 1 P1-02 (transport-profiles.md):
+  // bash-core 是能力执行边界，仅经 service-binding 被 agent-core 调用。
+  // 显式关闭 workers.dev 公网入口（profile = nacp-internal + health-probe）。
+  "workers_dev": false,
   "compatibility_date": "2026-04-23",
   "compatibility_flags": ["nodejs_compat"],
   "observability": {

@@ -195,6 +195,9 @@ export interface BashCoreEnv {
   readonly OWNER_TAG?: string;
   readonly WORKER_VERSION?: string;
   readonly CAPABILITY_CALL_DO?: DurableObjectNamespace;
+  // ZX2 Phase 1 P1-03 — binding-scope guard. ZX2 Phase 3 P3-03 turns this
+  // into a hard requirement together with NACP authority validation.
+  readonly NANO_INTERNAL_BINDING_SECRET?: string;
 }
 
 export interface BashCoreProbeResponse {
@@ -348,14 +351,45 @@ export class CapabilityCallDO {
   }
 }
 
+// ZX2 Phase 1 P1-03 (transport-profiles.md / binding-scope guard):
+// bash-core 不是 public facade（profile = nacp-internal + health-probe）。
+// 仅 /health 公开；其余 /capability/* 调用必须经 service-binding 由 agent-core
+// 触达，并满足 ZX2 Phase 3 P3-03 引入的 NACP authority + binding-secret。
+// 此守卫为兜底防御层：即便 wrangler workers_dev 未关，公网 fetch 仍 401。
+function isInternalBindingCall(request: Request, env: BashCoreEnv): boolean {
+  const expected = (env as { NANO_INTERNAL_BINDING_SECRET?: string })
+    .NANO_INTERNAL_BINDING_SECRET;
+  const provided = request.headers.get("x-nano-internal-binding-secret");
+  return Boolean(expected && provided && provided === expected);
+}
+
+function bindingScopeForbidden(): Response {
+  return Response.json(
+    {
+      error: "binding-scope-forbidden",
+      message:
+        "bash-core does not expose public business routes; reach via agent-core service-binding",
+      worker: "bash-core",
+    },
+    { status: 401 },
+  );
+}
+
 const worker = {
   async fetch(request: Request, env: BashCoreEnv): Promise<Response> {
     const url = new URL(request.url);
     const { pathname } = url;
     const method = request.method.toUpperCase();
 
+    // health-probe profile: always public.
     if (method === "GET" && (pathname === "/" || pathname === "/health")) {
       return Response.json(createProbeResponse(env));
+    }
+
+    // Everything else demands a valid internal binding-secret. This catches
+    // public hits even before NACP authority validation (ZX2 Phase 3 P3-03).
+    if (!isInternalBindingCall(request, env)) {
+      return bindingScopeForbidden();
     }
 
     if (method === "POST" && pathname === "/capability/call") {

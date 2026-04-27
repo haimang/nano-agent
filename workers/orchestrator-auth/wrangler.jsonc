@@ -2,6 +2,10 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "nano-agent-orchestrator-auth",
   "main": "dist/index.js",
+  // ZX2 Phase 1 P1-02 (transport-profiles.md):
+  // orchestrator-auth 仅暴露 RPC + /health；不应有 public business routes。
+  // 显式关闭 workers.dev 公网入口（profile = nacp-internal + health-probe）。
+  "workers_dev": false,
   "compatibility_date": "2026-04-25",
   "compatibility_flags": ["nodejs_compat"],
   // Required deploy-time secrets:

@@ -2,7 +2,10 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "nano-agent-agent-core",
   "main": "dist/index.js",
-  "workers_dev": true,
+  // ZX2 Phase 1 P1-02 (transport-profiles.md):
+  // agent-core 不是 public facade。preview 与 production 都关闭 workers.dev
+  // 公网入口；本地调试经 wrangler dev 或 orchestrator-core facade。
+  "workers_dev": false,
   "compatibility_date": "2026-04-25",
   "compatibility_flags": ["nodejs_compat"],
   "observability": {

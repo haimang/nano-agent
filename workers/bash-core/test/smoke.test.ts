@@ -27,11 +27,43 @@ describe("bash-core shell smoke", () => {
     expect(body.nacp_session_version).toBe(NACP_SESSION_VERSION);
   });
 
-  it("executes a live capability call for pwd", async () => {
+  // ZX2 Phase 1 P1-03 (binding-scope guard): /capability/* requires the
+  // `x-nano-internal-binding-secret` header now. The smoke env supplies a
+  // matching secret; ZX2 Phase 3 P3-03 will additionally require a NACP
+  // authority header on this path.
+  const SMOKE_SECRET = "smoke-secret";
+  const smokeEnv = {
+    ENVIRONMENT: "preview" as const,
+    NANO_INTERNAL_BINDING_SECRET: SMOKE_SECRET,
+  };
+  const internalHeaders = {
+    "content-type": "application/json",
+    "x-nano-internal-binding-secret": SMOKE_SECRET,
+  };
+
+  it("rejects /capability/* without the binding-secret header (ZX2 Phase 1)", async () => {
     const response = await worker.fetch(
       new Request("https://example.com/capability/call", {
         method: "POST",
         headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          requestId: "smoke-rejected-1",
+          capabilityName: "pwd",
+          body: { tool_name: "pwd", tool_input: {} },
+        }),
+      }),
+      smokeEnv,
+    );
+    expect(response.status).toBe(401);
+    const body = await response.json();
+    expect(body.error).toBe("binding-scope-forbidden");
+  });
+
+  it("executes a live capability call for pwd", async () => {
+    const response = await worker.fetch(
+      new Request("https://example.com/capability/call", {
+        method: "POST",
+        headers: internalHeaders,
         body: JSON.stringify({
           requestId: "smoke-call-1",
           capabilityName: "pwd",
@@ -41,7 +73,7 @@ describe("bash-core shell smoke", () => {
           },
         }),
       }),
-      { ENVIRONMENT: "preview" },
+      smokeEnv,
     );
     const body = await response.json();
 
@@ -54,7 +86,7 @@ describe("bash-core shell smoke", () => {
     const callPromise = worker.fetch(
       new Request("https://example.com/capability/call", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: internalHeaders,
         body: JSON.stringify({
           requestId: "smoke-cancel-1",
           capabilityName: "__px_sleep",
@@ -64,7 +96,7 @@ describe("bash-core shell smoke", () => {
           },
         }),
       }),
-      { ENVIRONMENT: "preview" },
+      smokeEnv,
     );
 
     await new Promise((resolve) => setTimeout(resolve, 10));
@@ -72,13 +104,13 @@ describe("bash-core shell smoke", () => {
     const cancelResponse = await worker.fetch(
       new Request("https://example.com/capability/cancel", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: internalHeaders,
         body: JSON.stringify({
           requestId: "smoke-cancel-1",
           body: { reason: "smoke cancel" },
         }),
       }),
-      { ENVIRONMENT: "preview" },
+      smokeEnv,
     );
     const cancelBody = await cancelResponse.json();
     const callResponse = await callPromise;

@@ -11,10 +11,16 @@ describe("orchestrator-auth public surface", () => {
     expect(probe.worker_version).toBe("orchestrator-auth@test");
     expect(probe.public_business_routes).toBe(false);
 
-    const forbidden = await handlePublicRequest(
+    // ZX2 Phase 1 P1-03: binding-scope guard.
+    // public-surface now returns 401 binding-scope-forbidden (was 404 not-found)
+    // so monitors / clients see the same code as the other non-facade workers.
+    const forbiddenResponse = handlePublicRequest(
       new Request("https://example.com/auth/login", { method: "POST" }),
       {},
-    ).json();
-    expect(forbidden.error).toBe("not-found");
+    );
+    expect(forbiddenResponse.status).toBe(401);
+    const forbidden = await forbiddenResponse.json();
+    expect(forbidden.error).toBe("binding-scope-forbidden");
+    expect(forbidden.worker).toBe("orchestrator-auth");
   });
 });

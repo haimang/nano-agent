@@ -33,12 +33,19 @@ describe("context-core shell smoke", () => {
     expect(body.worker_version).toBe("context-core@test");
   });
 
-  it("returns 404 for non-probe routes", async () => {
+  // ZX2 Phase 1 P1-03: binding-scope guard. Non-/health paths now return
+  // 401 binding-scope-forbidden so accidental workers.dev exposure is
+  // defended at code level even before wrangler workers_dev:false takes
+  // effect.
+  it("returns 401 binding-scope-forbidden for non-probe routes (ZX2)", async () => {
     const response = await worker.fetch(
       new Request("https://example.com/runtime", { method: "POST" }),
       {},
     );
 
-    expect(response.status).toBe(404);
+    expect(response.status).toBe(401);
+    const body = await response.json();
+    expect(body.error).toBe("binding-scope-forbidden");
+    expect(body.worker).toBe("context-core");
   });
 });

@@ -15,6 +15,22 @@ function createShellResponse(env: FilesystemCoreEnv): FilesystemCoreShellRespons
   };
 }
 
+// ZX2 Phase 1 P1-03 (transport-profiles.md / binding-scope guard):
+// filesystem-core is a library-only worker. /health is the only public
+// entry; every other path is denied with 401 to defend against any
+// accidental workers.dev exposure.
+function bindingScopeForbidden(): Response {
+  return Response.json(
+    {
+      error: "binding-scope-forbidden",
+      message:
+        "filesystem-core is a library-only worker; runtime code is consumed in-process by agent-core",
+      worker: "filesystem-core",
+    },
+    { status: 401 },
+  );
+}
+
 const worker = {
   async fetch(request: Request, env: FilesystemCoreEnv): Promise<Response> {
     const url = new URL(request.url);
@@ -25,7 +41,7 @@ const worker = {
       return Response.json(createShellResponse(env));
     }
 
-    return new Response("Not Found", { status: 404 });
+    return bindingScopeForbidden();
   },
 };
 

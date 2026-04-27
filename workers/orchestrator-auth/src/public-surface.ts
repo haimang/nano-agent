@@ -29,11 +29,17 @@ export function handlePublicRequest(request: Request, env: AuthProbeEnv): Respon
   if (request.method.toUpperCase() === "GET" && (pathname === "/" || pathname === "/health")) {
     return Response.json(createProbeResponse(env));
   }
+  // ZX2 Phase 1 P1-03 (transport-profiles.md / binding-scope guard):
+  // orchestrator-auth exposes RPC only via WorkerEntrypoint. fetch() must
+  // never serve business routes. Aligned 401 envelope code with other
+  // non-facade workers so monitors can grep the same string.
   return Response.json(
     {
-      error: "not-found",
-      message: "orchestrator.auth does not expose public business routes",
+      error: "binding-scope-forbidden",
+      message:
+        "orchestrator.auth does not expose public business routes; reach via WorkerEntrypoint RPC",
+      worker: "orchestrator-auth",
     },
-    { status: 404 },
+    { status: 401 },
   );
 }

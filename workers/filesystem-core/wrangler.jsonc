@@ -2,6 +2,9 @@
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "nano-agent-filesystem-core",
   "main": "dist/index.js",
+  // ZX2 Phase 1 P1-02 (transport-profiles.md):
+  // library-only worker (W4.A 决议)。仅 /health。显式关闭 workers.dev。
+  "workers_dev": false,
   "compatibility_date": "2026-04-23",
   "compatibility_flags": ["nodejs_compat"],
   "observability": {
