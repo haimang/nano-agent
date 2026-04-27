@@ -49,6 +49,15 @@ export type AccessTokenClaims = z.infer<typeof AccessTokenClaimsSchema>;
 /**
  * Auth worker snapshots are always claim-backed.
  * The deploy-fill fallback remains an orchestrator-core ingress-only concern.
+ *
+ * ZX1-ZX2 review (GLM R6): `team_uuid` is REQUIRED on snapshots produced by
+ * `orchestrator-auth.verify-access-token` (tenant_source=claim, JWT minted
+ * by ZX1+ keys always carries it). It is OPTIONAL on `AccessTokenClaims`
+ * (above) so legacy bearer tokens that pre-date the kid-aware keyring can
+ * still parse — but those tokens are then promoted to a snapshot only after
+ * orchestrator-core's deploy-fill ingress fills in `team_uuid` from
+ * `tenant_uuid`. User DO code paths that read `auth_snapshot.team_uuid`
+ * therefore see a guaranteed UUID and do not need to fall back.
  */
 export const AuthSnapshotSchema = z.object({
   sub: z.string().uuid(),
