@@ -234,6 +234,29 @@ function jsonDeepEqual(left: unknown, right: unknown): boolean {
   return false;
 }
 
+// ZX1-ZX2 review (Kimi §6.3 #1): emit a structured warn line on every
+// parity failure so 7-day preview observation can grep `agent-rpc-parity-failed`
+// in worker logs and count mismatches per action / session. The 502 response
+// already carries the bodies; this is the trace tag.
+function logParityFailure(
+  action: string,
+  sessionUuid: string,
+  rpcResult: { status: number; body: unknown },
+  fetchResult: { response: Response; body: Record<string, unknown> | null },
+): void {
+  const fetchStatus = fetchResult.response.status;
+  console.warn(
+    `agent-rpc-parity-failed action=${action} session=${sessionUuid} rpc_status=${rpcResult.status} fetch_status=${fetchStatus}`,
+    {
+      action,
+      session_uuid: sessionUuid,
+      rpc_status: rpcResult.status,
+      fetch_status: fetchStatus,
+      tag: 'agent-rpc-parity-failed',
+    },
+  );
+}
+
 function redactActivityPayload(payload: Record<string, unknown>): Record<string, unknown> {
   return redactPayload(payload, [
     'access_token',
@@ -782,6 +805,7 @@ export class NanoOrchestratorUserDO {
       rpcResult.status === fetchResult.response.status &&
       jsonDeepEqual(rpcResult.body ?? null, fetchResult.body ?? null);
     if (!parityOk) {
+      logParityFailure('start', sessionUuid, rpcResult, fetchResult);
       return {
         response: jsonResponse(502, {
           error: 'agent-rpc-parity-failed',
@@ -820,6 +844,7 @@ export class NanoOrchestratorUserDO {
       rpcResult.status === fetchResult.response.status &&
       jsonDeepEqual(rpcResult.body ?? null, fetchResult.body ?? null);
     if (!parityOk) {
+      logParityFailure('status', sessionUuid, rpcResult, fetchResult);
       return jsonResponse(502, {
         error: 'agent-rpc-parity-failed',
         message: 'agent-core rpc status diverged from fetch implementation',
@@ -866,6 +891,7 @@ export class NanoOrchestratorUserDO {
       rpcResult.status === fetchResult.response.status &&
       jsonDeepEqual(rpcResult.body ?? null, fetchResult.body ?? null);
     if (!parityOk) {
+      logParityFailure(action, sessionUuid, rpcResult, fetchResult);
       const parityResponse = jsonResponse(502, {
         error: 'agent-rpc-parity-failed',
         message: `agent-core rpc ${action} diverged from fetch implementation`,
@@ -943,6 +969,21 @@ export class NanoOrchestratorUserDO {
     }
     if (!body.auth_snapshot || typeof body.auth_snapshot.sub !== 'string' || body.auth_snapshot.sub.length === 0) {
       return jsonResponse(400, { error: 'invalid-auth-snapshot', message: 'auth_snapshot.sub is required' });
+    }
+
+    // ZX1-ZX2 review (Kimi R6 / GPT R5): /me/sessions mints a UUID and the
+    // first /sessions/{id}/start owns it; any subsequent start on the same
+    // UUID must 409 instead of silently overwriting the active session or
+    // restarting a terminal one. Mint a fresh UUID for a new run.
+    const existingEntry = await this.get<SessionEntry>(sessionKey(sessionUuid));
+    if (existingEntry) {
+      return jsonResponse(409, {
+        error: 'session-already-started',
+        message: `session ${sessionUuid} already exists in state '${existingEntry.status}'; mint a new UUID via POST /me/sessions to run again`,
+        session_uuid: sessionUuid,
+        current_status: existingEntry.status,
+        ...(existingEntry.last_phase ? { last_phase: existingEntry.last_phase } : {}),
+      });
     }
 
     const traceUuid = typeof body.trace_uuid === 'string' ? body.trace_uuid : crypto.randomUUID();

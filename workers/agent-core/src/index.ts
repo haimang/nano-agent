@@ -221,6 +221,48 @@ export default class AgentCoreEntrypoint extends WorkerEntrypoint<AgentCoreEnv> 
   // Persistent push remains on the WS path (session-ws-v1); this RPC only
   // serves snapshot reads / fallbacks.
   async streamSnapshot(rawInput: unknown, rawMeta: unknown): Promise<AgentCoreRpcResponse> {
+    // ZX1-ZX2 review (Kimi §6.3 #2): cursor must be a non-negative integer
+    // when present, limit must be in [1, 1000]. Reject early so callers see
+    // a 400 instead of a silently-coerced default.
+    const inputRecord =
+      rawInput && typeof rawInput === "object"
+        ? (rawInput as Record<string, unknown>)
+        : {};
+    const cursorRaw = inputRecord.cursor;
+    if (cursorRaw !== undefined && cursorRaw !== null) {
+      const cursorNum = Number(cursorRaw);
+      if (
+        !Number.isFinite(cursorNum) ||
+        !Number.isInteger(cursorNum) ||
+        cursorNum < 0
+      ) {
+        return {
+          status: 400,
+          body: {
+            error: "invalid-input",
+            message: "stream_snapshot cursor must be a non-negative integer",
+          },
+        };
+      }
+    }
+    const limitRaw = inputRecord.limit;
+    if (limitRaw !== undefined && limitRaw !== null) {
+      const limitNum = Number(limitRaw);
+      if (
+        !Number.isFinite(limitNum) ||
+        !Number.isInteger(limitNum) ||
+        limitNum <= 0 ||
+        limitNum > 1000
+      ) {
+        return {
+          status: 400,
+          body: {
+            error: "invalid-input",
+            message: "stream_snapshot limit must be an integer in [1, 1000]",
+          },
+        };
+      }
+    }
     return this.invokeInternalRpc("stream_snapshot", rawInput, rawMeta);
   }
 

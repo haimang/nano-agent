@@ -146,6 +146,76 @@ describe("bash-core rpc — cancel", () => {
   });
 });
 
+// ZX1-ZX2 review (Kimi R5 / GLM): bash-core only admits internal callers
+// (orchestrator-core | agent-core | runtime). Free strings — even those
+// the schema-level RpcCallerSchema accepts, e.g. `web` or `cli` — must
+// be rejected with `invalid-caller`.
+describe("bash-core rpc — caller enum check", () => {
+  it("rejects caller='web' even with valid authority + request_uuid", async () => {
+    const ep = makeEntrypoint();
+    const res = await ep.call(
+      {
+        requestId: "rpc-caller-web",
+        capabilityName: "pwd",
+        body: { tool_name: "pwd", tool_input: {} },
+      },
+      {
+        trace_uuid: TRACE,
+        caller: "web",
+        authority: NACP_AUTHORITY,
+        request_uuid: REQ,
+      },
+    );
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error.code).toBe("invalid-caller");
+  });
+
+  it("rejects caller='cli' on cancel path", async () => {
+    const ep = makeEntrypoint();
+    const res = await ep.cancel(
+      { requestId: "rpc-caller-cli" },
+      {
+        trace_uuid: TRACE,
+        caller: "cli",
+        authority: NACP_AUTHORITY,
+      },
+    );
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error.code).toBe("invalid-caller");
+  });
+
+  it("admits caller='orchestrator-core'", async () => {
+    const ep = makeEntrypoint();
+    const res = await ep.call(
+      {
+        requestId: "rpc-caller-oc",
+        capabilityName: "pwd",
+        body: { tool_name: "pwd", tool_input: {} },
+      },
+      {
+        trace_uuid: TRACE,
+        caller: "orchestrator-core",
+        authority: NACP_AUTHORITY,
+        request_uuid: REQ,
+      },
+    );
+    expect(res.ok).toBe(true);
+  });
+
+  it("admits caller='runtime'", async () => {
+    const ep = makeEntrypoint();
+    const res = await ep.cancel(
+      { requestId: "rpc-caller-runtime" },
+      {
+        trace_uuid: TRACE,
+        caller: "runtime",
+        authority: NACP_AUTHORITY,
+      },
+    );
+    expect(res.ok).toBe(true);
+  });
+});
+
 describe("bash-core rpc — fetch handler still works for legacy callers", () => {
   it("legacy fetch path remains 401 without binding-secret", async () => {
     const ep = makeEntrypoint();

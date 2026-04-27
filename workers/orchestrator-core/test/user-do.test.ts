@@ -861,4 +861,47 @@ describe('NanoOrchestratorUserDO', () => {
       session_uuid: SESSION_UUID,
     });
   });
+
+  // ZX1-ZX2 review (Kimi R6 / GPT R5): /me/sessions mints a UUID; the
+  // first /sessions/{id}/start owns it. A second start on the same UUID
+  // must 409 instead of overwriting an active or terminal session.
+  it('rejects duplicate /start with 409 session-already-started when session entry already exists', async () => {
+    const { state, store } = createState();
+    store.set(`sessions/${SESSION_UUID}`, {
+      created_at: 'a',
+      last_seen_at: 'a',
+      status: 'detached',
+      last_phase: 'attached',
+      relay_cursor: -1,
+      ended_at: null,
+    });
+    const agentFetch = vi.fn(async () => Response.json({ ok: true }));
+
+    const userDo = new NanoOrchestratorUserDO(state, {
+      AGENT_CORE: { fetch: agentFetch } as Fetcher,
+      NANO_INTERNAL_BINDING_SECRET: 'secret',
+    });
+
+    const response = await userDo.fetch(
+      new Request(`https://orchestrator.internal/sessions/${SESSION_UUID}/start`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          initial_input: 'hello',
+          auth_snapshot: { sub: USER_UUID, tenant_source: 'deploy-fill' },
+          initial_context_seed: { default_layers: [], user_memory_ref: null },
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      error: 'session-already-started',
+      session_uuid: SESSION_UUID,
+      current_status: 'detached',
+    });
+    expect(agentFetch).not.toHaveBeenCalled();
+    // Existing entry must NOT be overwritten.
+    expect((store.get(`sessions/${SESSION_UUID}`) as { status: string }).status).toBe('detached');
+  });
 });

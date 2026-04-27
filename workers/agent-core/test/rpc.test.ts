@@ -95,6 +95,67 @@ describe("agent-core rpc entrypoint", () => {
     expect(forwarded.headers.get("x-nano-internal-authority")).toBeTruthy();
   });
 
+  // ZX1-ZX2 review (Kimi §6.3 #2): cursor / limit boundary checks live
+  // on the RPC method itself so callers see a 400 instead of a silently
+  // coerced default. The internal HTTP-compat path mirrors this in
+  // host/internal.ts forwardStreamSnapshot.
+  it("streamSnapshot rejects negative cursor with invalid-input", async () => {
+    const stubFetch = vi.fn<(req: Request) => Promise<Response>>();
+    const entrypoint = new AgentCoreEntrypoint({
+      NANO_INTERNAL_BINDING_SECRET: "secret",
+      SESSION_DO: {
+        idFromName: vi.fn().mockReturnValue({ __kind: "mock-id" }),
+        get: vi.fn().mockReturnValue({ fetch: stubFetch }),
+      } as unknown as DurableObjectNamespace,
+    } as any);
+
+    const result = await entrypoint.streamSnapshot(
+      { session_uuid: SESSION_UUID, cursor: -1 },
+      { trace_uuid: TRACE_UUID, authority: AUTHORITY },
+    );
+    expect(result.status).toBe(400);
+    expect((result.body as { error: string }).error).toBe("invalid-input");
+    expect(stubFetch).not.toHaveBeenCalled();
+  });
+
+  it("streamSnapshot rejects limit > 1000 with invalid-input", async () => {
+    const stubFetch = vi.fn<(req: Request) => Promise<Response>>();
+    const entrypoint = new AgentCoreEntrypoint({
+      NANO_INTERNAL_BINDING_SECRET: "secret",
+      SESSION_DO: {
+        idFromName: vi.fn().mockReturnValue({ __kind: "mock-id" }),
+        get: vi.fn().mockReturnValue({ fetch: stubFetch }),
+      } as unknown as DurableObjectNamespace,
+    } as any);
+
+    const result = await entrypoint.streamSnapshot(
+      { session_uuid: SESSION_UUID, limit: 5000 },
+      { trace_uuid: TRACE_UUID, authority: AUTHORITY },
+    );
+    expect(result.status).toBe(400);
+    expect((result.body as { error: string }).error).toBe("invalid-input");
+    expect(stubFetch).not.toHaveBeenCalled();
+  });
+
+  it("streamSnapshot rejects non-integer limit", async () => {
+    const stubFetch = vi.fn<(req: Request) => Promise<Response>>();
+    const entrypoint = new AgentCoreEntrypoint({
+      NANO_INTERNAL_BINDING_SECRET: "secret",
+      SESSION_DO: {
+        idFromName: vi.fn().mockReturnValue({ __kind: "mock-id" }),
+        get: vi.fn().mockReturnValue({ fetch: stubFetch }),
+      } as unknown as DurableObjectNamespace,
+    } as any);
+
+    const result = await entrypoint.streamSnapshot(
+      { session_uuid: SESSION_UUID, limit: 12.5 },
+      { trace_uuid: TRACE_UUID, authority: AUTHORITY },
+    );
+    expect(result.status).toBe(400);
+    expect((result.body as { error: string }).error).toBe("invalid-input");
+    expect(stubFetch).not.toHaveBeenCalled();
+  });
+
   // ZX2 Phase 3 P3-02 — cursor-paginated stream snapshot
   it("streamSnapshot forwards cursor + limit as querystring", async () => {
     const stubFetch = vi.fn<(req: Request) => Promise<Response>>().mockResolvedValue(

@@ -431,6 +431,16 @@ export interface BashCoreCancelResult {
   readonly cancelled: boolean;
 }
 
+// ZX2 ZX1-ZX2 review (Kimi R5 / GLM): bash-core rpc only admits the
+// internal callers that legitimately reach the capability runtime over
+// service-binding. Free strings are rejected even when the schema-level
+// RpcCallerSchema would accept them (e.g. `web`, `cli`).
+const BASH_CORE_ALLOWED_CALLERS = new Set([
+  "orchestrator-core",
+  "agent-core",
+  "runtime",
+] as const);
+
 function validateBashRpcMeta(rawMeta: unknown, requireRequestUuid: boolean): { ok: true; meta: RpcMeta } | { ok: false; envelope: Envelope<never> } {
   const parsed = RpcMetaSchema.safeParse(rawMeta);
   if (!parsed.success) {
@@ -448,6 +458,16 @@ function validateBashRpcMeta(rawMeta: unknown, requireRequestUuid: boolean): { o
     return {
       ok: false,
       envelope: errorEnvelope("invalid-authority", 400, "bash-core rpc requires meta.authority"),
+    };
+  }
+  if (!BASH_CORE_ALLOWED_CALLERS.has(parsed.data.caller as typeof BASH_CORE_ALLOWED_CALLERS extends Set<infer U> ? U : never)) {
+    return {
+      ok: false,
+      envelope: errorEnvelope(
+        "invalid-caller",
+        403,
+        `bash-core rpc rejects caller='${parsed.data.caller}'; allowed: orchestrator-core | agent-core | runtime`,
+      ),
     };
   }
   if (requireRequestUuid && !parsed.data.request_uuid) {

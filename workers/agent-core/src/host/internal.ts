@@ -197,17 +197,40 @@ async function forwardStreamSnapshot(
 ): Promise<Response> {
   const cursorParam = url.searchParams.get("cursor");
   const limitParam = url.searchParams.get("limit");
-  const cursor = (() => {
-    if (!cursorParam) return 0;
+  // ZX1-ZX2 review (Kimi §6.3 #2): cursor/limit must be validated, not
+  // silently coerced. Bad input now returns invalid-input rather than
+  // masquerading as defaults — this lets misbehaving clients surface
+  // their bug instead of receiving an unrelated page silently.
+  let cursor = 0;
+  if (cursorParam !== null) {
     const n = Number(cursorParam);
-    return Number.isFinite(n) && n >= 0 ? n : 0;
-  })();
-  const limit = (() => {
-    if (!limitParam) return 200;
+    if (!Number.isFinite(n) || !Number.isInteger(n) || n < 0) {
+      return jsonResponse(400, {
+        ok: false,
+        error: {
+          code: "invalid-input",
+          status: 400,
+          message: "stream_snapshot cursor must be a non-negative integer",
+        },
+      });
+    }
+    cursor = n;
+  }
+  let limit = 200;
+  if (limitParam !== null) {
     const n = Number(limitParam);
-    if (!Number.isFinite(n) || n <= 0) return 200;
-    return Math.min(Math.floor(n), 1000);
-  })();
+    if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0 || n > 1000) {
+      return jsonResponse(400, {
+        ok: false,
+        error: {
+          code: "invalid-input",
+          status: 400,
+          message: "stream_snapshot limit must be an integer in [1, 1000]",
+        },
+      });
+    }
+    limit = n;
+  }
 
   const stub = env.SESSION_DO.get(env.SESSION_DO.idFromName(sessionId));
   const headers = buildForwardHeaders(env, validated);

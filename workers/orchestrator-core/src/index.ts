@@ -515,15 +515,24 @@ async function wrapSessionResponse(
   } catch {
     return response;
   }
-  if (
-    body &&
-    typeof body === "object" &&
-    !Array.isArray(body) &&
-    "ok" in (body as Record<string, unknown>) &&
-    typeof (body as Record<string, unknown>).ok === "boolean"
-  ) {
-    // Already wrapped — make sure trace_uuid is stamped.
-    const obj = body as Record<string, unknown>;
+  // ZX1-ZX2 review (DeepSeek R6 / Kimi R9): hardened idempotency detection.
+  // The earlier check (`"ok" in body`) was too lax — a business JSON like
+  // `{ok: true, tool_call_id: "x"}` would slip through unwrapped. We now
+  // require either:
+  //   - facade envelope success: ok===true with `data` field, OR
+  //   - legacy DO action ack:    ok===true with `action: string` field
+  //     (kept on purpose so {ok:true,action,phase,...} stays compat-passthrough), OR
+  //   - facade envelope error:   ok===false with `error: object`
+  // Anything else (including `{ok:true,tool_call_id:...}`) is wrapped as a
+  // fresh envelope below.
+  const obj =
+    body && typeof body === "object" && !Array.isArray(body)
+      ? (body as Record<string, unknown>)
+      : null;
+  const looksFacadeSuccess = obj?.ok === true && "data" in obj;
+  const looksFacadeError = obj?.ok === false && obj.error !== undefined && typeof obj.error === "object";
+  const looksLegacyDoAck = obj?.ok === true && typeof obj.action === "string";
+  if (obj && (looksFacadeSuccess || looksFacadeError || looksLegacyDoAck)) {
     if (typeof obj.trace_uuid !== "string" || obj.trace_uuid.length === 0) {
       obj.trace_uuid = traceUuid;
     }
@@ -539,11 +548,11 @@ async function wrapSessionResponse(
     );
   }
   // Error path: try to lift `{ error, message }` legacy shape into facade.error
-  const obj = (body && typeof body === "object" && !Array.isArray(body)
+  const errObj = (body && typeof body === "object" && !Array.isArray(body)
     ? (body as Record<string, unknown>)
     : {}) as { error?: string; message?: string; code?: string };
-  const code = (obj.code ?? obj.error ?? "internal-error") as FacadeErrorCode;
-  const message = obj.message ?? obj.error ?? "session route returned an error";
+  const code = (errObj.code ?? errObj.error ?? "internal-error") as FacadeErrorCode;
+  const message = errObj.message ?? errObj.error ?? "session route returned an error";
   return Response.json(
     {
       ok: false,
