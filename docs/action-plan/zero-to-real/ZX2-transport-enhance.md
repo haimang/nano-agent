@@ -765,3 +765,124 @@ ZX2 的方向正确：先冻结 transport profile，再补内部 RPC，再统一
 3. 将 Phase 5 端点分级，先交付 transport/facade 必需能力，产品型能力拆到后续 plan。
 
 > **v2 落地状态**：§11.4 三条建议已全部落到正文 §0-§10：① §1.5 / §2.2[O12] 撤销新包，通用协议回收 NACP；② §4.1 P1-03 改为保留 service-binding + binding-scope 守卫；③ §4.5 / §4.6 拆 Phase 5 → Phase 5 (facade 必需) + Phase 6 (客户端同步)，§2.2[O8-O11] 把产品型功能列入 ZX3 候选。§11.3 #1-#9 同步在正文标注解决方案（P1-03 / P3-02 stream snapshot / P3-03 bash authority / P3-05 rollback / P4-04 frame 对齐 / P5-02 `/me/sessions` 语义 / Q1 决策；§11.3 #9 列入 §2.2[O13]）。
+
+---
+
+## 12. 执行日志（Phase 1 + Phase 2 实施报告）
+
+> 执行人: Opus 4.7（1M ctx）
+> 时间: 2026-04-27
+> 范围: ZX2 Phase 1（4 工作项）+ Phase 2（4 工作项）实施完成；Phase 3-6 待后续执行
+> 关联收尾文档: `docs/issue/zero-to-real/ZX2-closure.md`
+
+### 12.1 完成情况速查
+
+| Phase | 编号 | 状态 | 证据 |
+|---|---|---|---|
+| Phase 1 | P1-01 profile 命名文档 | ✅ done | `docs/transport/transport-profiles.md`（284 行）冻结 5 profile |
+| Phase 1 | P1-02 wrangler workers_dev audit | ✅ done | 6 个 wrangler.jsonc 全部显式声明：orchestrator-core=true，其余=false（含 agent-core preview=false，采纳 Q1 决策） |
+| Phase 1 | P1-03 binding-scope 守卫 | ✅ done | 4 个非 facade worker fetch 入口加 401 binding-scope-forbidden（bash 检 secret，context/fs/auth 直接 401） |
+| Phase 1 | P1-04 api-docs README profile 索引 | ✅ done | `clients/api-docs/README.md` 加 5 profile 表 + 9 篇文档分级 |
+| Phase 2 | P2-01/02 NACP rpc.ts | ✅ done | `packages/nacp-core/src/rpc.ts`（约 320 行）+ index 导出；30/30 单测全绿 |
+| Phase 2 | P2-03 nacp-session 5 族 7 message_types | ✅ done | `messages.ts` / `type-direction-matrix.ts` / `session-registry.ts` 同步扩；27/27 新单测 + 修 1 个 size assert |
+| Phase 2 | P2-04 facade-http-v1 in auth-contract | ✅ done | `packages/orchestrator-auth-contract/src/facade-http.ts`（约 170 行）+ index 导出；15/15 新单测全绿 |
+
+### 12.2 测试矩阵
+
+| 包 / Worker | tests | 通过 | 备注 |
+|---|---|---|---|
+| `@haimang/nacp-core` | 289 | 289 ✅ | 含 30 新增 rpc.test.ts |
+| `@haimang/nacp-session` | 146 | 146 ✅ | 含 27 新增 zx2-messages.test.ts；修 1 个旧 registry size assert |
+| `@haimang/orchestrator-auth-contract` | 19 | 19 ✅ | 含 15 新增 facade-http.test.ts |
+| `workers/orchestrator-auth` | 8 | 8 ✅ | 修 1 个 public-surface.test.ts（404→401 + worker 字段） |
+| `workers/orchestrator-core` | 36 | 36 ✅ | 无修改 |
+| `workers/agent-core` | 1049 | 1049 ✅ | 无修改 |
+| `workers/bash-core` | 360 | 360 ✅ | 修 2 个 smoke.test.ts（注入 secret）+ 加 1 个新 binding-scope reject 测试 |
+| `workers/context-core` | 171 | 171 ✅ | 修 1 个 smoke.test.ts（404→401 binding-scope-forbidden） |
+| `workers/filesystem-core` | 294 | 294 ✅ | 修 1 个 smoke.test.ts（同上） |
+| **合计** | **2372** | **2372 ✅** | |
+
+### 12.3 文件改动清单（22 modified + 7 new）
+
+**新增**（7 个）:
+- `docs/transport/transport-profiles.md` — 5 profile 命名冻结
+- `packages/nacp-core/src/rpc.ts` — Envelope/RpcMeta/RpcErrorCode/validateRpcCall
+- `packages/nacp-core/test/rpc.test.ts` — 30 测试
+- `packages/nacp-session/test/zx2-messages.test.ts` — 27 测试
+- `packages/orchestrator-auth-contract/src/facade-http.ts` — facade-http-v1 contract
+- `packages/orchestrator-auth-contract/test/facade-http.test.ts` — 15 测试
+- `docs/issue/zero-to-real/ZX2-closure.md` — 收尾专项文档
+
+**修改 packages**（5 个）:
+- `packages/nacp-core/src/index.ts` — 加 rpc.ts 公开导出
+- `packages/nacp-session/src/messages.ts` — +143 行：5 族 7 message_type 的 schema
+- `packages/nacp-session/src/type-direction-matrix.ts` — +11 行：7 个 type-direction
+- `packages/nacp-session/src/session-registry.ts` — +48 行：role + phase
+- `packages/nacp-session/src/index.ts` — 加 ZX2 导出
+- `packages/nacp-session/test/messages.test.ts` — 1 行 assert 升级
+- `packages/orchestrator-auth-contract/src/index.ts` — 加 facade-http 导出
+
+**修改 workers**（11 个）:
+- `workers/orchestrator-core/wrangler.jsonc` — workers_dev:true 显式
+- `workers/orchestrator-auth/wrangler.jsonc` — workers_dev:false
+- `workers/orchestrator-auth/src/public-surface.ts` — 404→401 + binding-scope-forbidden
+- `workers/orchestrator-auth/test/public-surface.test.ts` — 同步
+- `workers/agent-core/wrangler.jsonc` — workers_dev:false（含 preview，采纳 Q1）
+- `workers/bash-core/wrangler.jsonc` — workers_dev:false
+- `workers/bash-core/src/index.ts` — binding-scope guard + secret 校验
+- `workers/bash-core/test/smoke.test.ts` — 2 测试加 secret + 1 新 reject 测试
+- `workers/context-core/wrangler.jsonc` — workers_dev:false
+- `workers/context-core/src/index.ts` — binding-scope-forbidden
+- `workers/context-core/test/smoke.test.ts` — 同步
+- `workers/filesystem-core/wrangler.jsonc` — workers_dev:false
+- `workers/filesystem-core/src/index.ts` — binding-scope-forbidden
+- `workers/filesystem-core/test/smoke.test.ts` — 同步
+
+**修改 clients**（1 个）:
+- `clients/api-docs/README.md` — profile 索引 + 9 篇文档分级表
+
+### 12.4 落地的关键设计决策
+
+1. **NACP 单一协议源**（v2 修订采纳）：通用协议对象（`Envelope<T>` / `RpcMeta` / `RpcErrorCode` / `validateRpcCall` / `envelopeFromThrown` / `envelopeFromAuthLike`）落在 `packages/nacp-core/src/rpc.ts`；不再新建 `orchestrator-rpc-contract` 包。`facade-http-v1` 落在 `orchestrator-auth-contract/src/facade-http.ts`，并在编译期通过 `_authErrorCodesAreFacadeCodes` assignment 保证 `AuthErrorCode ⊂ FacadeErrorCode`。
+
+2. **双头校验机制就绪**：`validateRpcCall(rawInput, rawMeta, options)` 提供 caller-side 双头校验入口，支持 `requireAuthority` / `requireTenant` / `requireSession` / `requireRequestUuid` 四种约束开关。callee-side 的 `validateEnvelope` + `verifyTenantBoundary` + `checkAdmissibility` 已在 `nacp-core` 现成，Phase 3 实施时只需在每个 RPC method 入口调用。
+
+3. **5 族 7 message_type 注册**：`session.permission.{request,decision}`、`session.usage.update`、`session.skill.invoke`、`session.command.invoke`、`session.elicitation.{request,answer}` 全部落 `messages.ts` + `type-direction-matrix.ts` + `session-registry.ts`（role 与 phase 三处全部注册）。`SESSION_MESSAGE_TYPES` 从 8 升至 15。
+
+4. **agent-core preview 公网入口关闭**（Q1 决策）：`agent-core/wrangler.jsonc` 的 `workers_dev` 从 `true` 改为 `false`，preview 与 production 安全模型对齐。本地开发改用 `wrangler dev` 或经 orchestrator-core facade。
+
+5. **binding-scope 守卫与 service-binding 共存**（采纳 GPT §11.3 #1）：未移除 orchestrator-core 对 BASH/CONTEXT/FS 的 service-binding；改为在每个非 facade worker 的 fetch 入口加 `if (pathname !== '/health') return 401`。bash-core 额外检查 `x-nano-internal-binding-secret` header，为 Phase 3 P3-03 的 NACP authority 校验留出对接位。
+
+6. **错误响应统一为 `binding-scope-forbidden`**：所有非 facade worker 拒绝公网请求时返回 `{ error: "binding-scope-forbidden", message, worker }` + HTTP 401。orchestrator-auth 旧 404 `not-found` 也升级为同形（与监控 grep 一致）。
+
+### 12.5 风险与遗留事项
+
+| ID | 风险/遗留 | 状态 | 后续动作 |
+|---|---|---|---|
+| R1 | bash-core 未加 NACP authority 校验（仅 secret） | open | Phase 3 P3-03 落地 NACP authority + caller/source/request_uuid |
+| R2 | agent-core 仍只有 start/status RPC（5 个 action 缺 shadow） | open | Phase 3 P3-01/02 |
+| R3 | orchestrator-core session 路径未 envelope 化 | open | Phase 4 P4-02 |
+| R4 | DO `HttpController` 仍吐 `{ok:true,action,phase}` | open | Phase 4 P4-03 |
+| R5 | server WS frame 未对齐 `NacpSessionFrameSchema` | open | Phase 4 P4-04 |
+| R6 | facade 必需 5 端点 + WS 接入未实施 | open | Phase 5 P5-01/02/03 |
+| R7 | web/wechat 客户端未切到统一 narrow | open | Phase 6 P6-01/02 |
+| R8 | live preview e2e 未跑通 | open | Phase 6 P6-03 |
+| R9 | rollback runbook 未撰写 | open | Phase 3 P3-05 |
+
+### 12.6 与 ZX2 plan 总收口标准的对照
+
+| §8.2 收口项 | 进度 |
+|---|---|
+| 1. 5 profile 在 transport-profiles.md 命名冻结 | ✅ 完成（含 `frozen-v1` 标签） |
+| 2. 全 6 worker wrangler.jsonc 显式审计 + 非 facade 公网关闭 | ✅ 完成 |
+| 3. agent-core 7 action 全 RPC + bash-core RPC + secret + authority | 🟡 部分（P1-03 binding-secret 已落，NACP authority 与 stream snapshot 待 Phase 3） |
+| 4. 内部 RPC 走 Envelope+RpcMeta；error 1 种；session 与 auth 同形 | 🟡 部分（contract 已落，runtime 切换待 Phase 3+4） |
+| 5. nacp-session 5 族；server frame 对齐 NacpSessionFrameSchema；session-ws-v1.md | 🟡 schema 已落（Phase 2 P2-03），frame 对齐 + 文档撰写待 Phase 4 |
+| 6. 5 个 facade 必需 HTTP + 7 个新 message_type 在 preview env 跑通；/me/sessions 语义冻结 | ⏳ 未开始（Phase 5） |
+| 7. cross-e2e 7 天连续绿；first-real-run + wechat e2e 不回归；rollback runbook 演练通过 | ⏳ 未开始（Phase 6） |
+
+> Phase 1+2 是 ZX2 整个计划的"地基"——profile 命名 + NACP 协议补齐 + facade 公约扩展 + 安全收口；Phase 3-6 都依赖它们。本次实施已经把"契约层"全部交付，接下来 Phase 3-6 可以按 plan 逐步执行而不需要重新决策接口形状。
+
+### 12.7 收尾文档
+
+详细的工作内容、证据、后续动作清单见 `docs/issue/zero-to-real/ZX2-closure.md`（本次同时撰写的收尾专项文件）。
