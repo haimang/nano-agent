@@ -1,6 +1,15 @@
 /**
  * docs/templates/composition-factory.ts
  *
+ * **HISTORICAL ARTIFACT — frozen 2026-04-27 by ZX3 Phase 2(components deprecation).**
+ * The packages this file imports(`@nano-agent/agent-runtime-kernel` /
+ * `capability-runtime` / `llm-wrapper` / `context-management` / `hooks` /
+ * `session-do-runtime`)were physically removed in ZX3 P2-01;their runtime
+ * truth has been absorbed into worker source trees(`workers/agent-core/src/{kernel,host,llm,hooks}/`,
+ * `workers/bash-core/src/`). This file is preserved as a historical snapshot
+ * of the worker-matrix B8 starter blueprint;**it does not compile in the
+ * post-ZX3 repo and is not referenced by any build / tsconfig**.
+ *
  * Worker-matrix starter template. This is intentionally a typed sketch:
  * it demonstrates how the already-shipped B2-B7 surfaces fit together
  * without pretending B8 already made the next phase's shell decisions.

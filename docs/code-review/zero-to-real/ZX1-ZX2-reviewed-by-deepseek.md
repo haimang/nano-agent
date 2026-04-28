@@ -598,3 +598,120 @@ ZX1 建立了 JWT signing key 的多 kid 架构（`JWT_SIGNING_KEY_<kid>` + `JWT
 **总体 8.5 / 10**。
 
 本轮审查的优势在于：在 ZX2 closure 已经高度自我完善的文档体系（closure + action-plan 执行日志 + transport-profiles + rollback runbook）之上，仍找到了 3 个实质性断裂面——closure 声称 vs 代码事实不一致、运维前提条件未满足、ZX1 的验证基线不可信。劣势在于：对 DO 内 state machine / turn loop / actor phase 的深度 runtime analysis 未做（超出本次 scope，留给后续专项审查）。
+
+---
+
+## 9. 审查质量评估(由 review-of-reviews 评价人 append)
+
+> 评价对象: `DeepSeek 对 ZX1-ZX2 的独立 review`
+> 评价人: `Opus 4.7(1M ctx)— ZX1-ZX2 实现者 + rollout 执行者(2026-04-27)`
+> 评价时间: `2026-04-27`
+> 评价依据: 横向对照 4 位 reviewer + owner 授权后真实 deploy + cross-e2e 9/14 pass(GPT review §6.5b)
+>
+> 注: 本份 review 已自带 §8 自我评估(8.5 / 10),本节是外部评价人对该自评的横向校准与补充。
+
+### 9.0 评价结论
+
+- **一句话评价**: 4 位 reviewer 中跨阶段连续性追踪最深、证据链最完整的一份;独有的"代码已写 / 验证已完成 / 运维已执行"三层切分让 closure 诚实化的论证最有力;但 R3 touristappid 沿用旧 review 描述未 fresh-grep,出现 stale-finding。
+- **综合评分**: `7.5 / 10`
+- **推荐使用场景**: 需要对 zero-to-real 全阶段(Z0-Z5 + ZX1-ZX2)做连续性追踪的场景;需要"事实链 + 命令证据"驱动的严判型 review;希望对 closure 表述做"three-layer audit(已写 / 已验证 / 已运维)"的场景;期望 reviewer 自带 self-eval 的诚实文化。
+- **不建议单独依赖的场景**: ① 沿用前期 review 描述的 stale-finding 风险(本份 R3);② 代码层细粒度缺陷命中(Kimi 在 caller enum / idempotency / 边界检查领先);③ 跨包契约一致性 / DRY 类议题(GLM §5.2 跨包版本对齐表更系统)。
+
+---
+
+### 9.1 审查风格画像
+
+| 维度 | 观察 | 例证 |
+|---|---|---|
+| 主要切入点 | `protocol-truth + 跨阶段连续性 + 三层 audit` | R1 区分 RPC shadow 就绪 vs 全部走 RPC vs HTTP 退役完成;§5.4 列 Z2 R3+R6+R8+R13+R14 / Z3 R2+R6 在 ZX2 后的状态(已修复 1 / 未改变 5) |
+| 证据类型 | `14 行 grep 命令 + line-references + 跨阶段 review 引用` | §1 "执行过的验证"列 14 个 grep 验证;§5.2 列出 4 个具体 HTTP seam 的 location/原因/退役条件 |
+| Verdict 倾向 | `strict + 三层切分`,`changes-requested + no` | 9 个 finding 中 3 个 yes-blocker(R1/R2/R3);严苛与 GPT 持平 |
+| Finding 粒度 | `balanced`,9 个 finding 在 critical/high/medium/low 四档分布合理 | R2 critical / R1+R3 high / R4+R5+R7 medium / R6+R8+R9 low |
+| 修法建议风格 | `actionable + 三层切分驱动`,经常给出"代码 / 文档 / 运维"三选一处理路径 | R1: 改 closure 表述;R2: 完成 publish + deploy + live e2e;R3: 替换真实 AppID OR 在 closure 诚实声明 |
+
+---
+
+### 9.2 优点与短板
+
+#### 9.2.1 优点
+
+1. **跨阶段连续性追踪深度第 1**: §5.4 列 Z2/Z3 review 6 条遗留问题,逐一映射到 ZX2 后的状态(已修 1 / 未改变 5);§5.1 ZX1 → ZX2 验证断层分析;§5.2 Z4 → ZX2 Residual HTTP inventory 演变;§5.6 JWT_SIGNING_KID 轮换流程未测试。**4 位中唯一系统追踪 Z2-Z4 → ZX2 问题链的 reviewer**。
+2. **三层 audit 框架最具说服力**: 在 R1+R2 中独立提出"代码已写 / 验证已完成 / 运维已执行"的三层切分 — 这个框架直接被本期 closure §8.1 / §8.2 / §8.3 拆分采纳。GPT 的 R1 是"closure 治理漂移"切入,DeepSeek 的 R1+R2 把同一议题用三层框架表达,论证力更强。
+3. **证据链最完整**: §1.3 "执行过的验证"列出 14 个具体 grep 命令(Kimi 9 个 / GPT 6 个 / GLM 9 个),包含 `grep -rn "touristappid"` / `grep -rn "retired-with-rollback"` 等具体定位 — 4 位中证据链最厚实。
+4. **R6 wrapSessionResponse idempotency 独立命中(同 Kimi-R9)**: 两位 reviewer 独立达到同一 finding 是真信号高确证。本期已收紧到三选一检测。
+5. **§8 自我评估开创"meta-honest reviewer"先例**: 4 位中唯一自带 self-eval(8.5 / 10),区分了优势(三层切分 + 跨阶段)和劣势(DO 内 state machine 深度分析未做),meta 层诚实。
+
+#### 9.2.2 短板
+
+1. **R3 touristappid 是 stale-finding**: 沿用 Z4 DeepSeek 旧 review 描述,未在本轮 fresh-grep `clients/wechat-miniprogram/project.config.json` 当前内容。实际代码已是真实 `wechat-appid-redacted`(grep 全代码库,touristappid 仅命中 stale Z4 review 文档)。同问题 GPT-R6 也犯。**这是 reviewer 复用前期 review 时的典型陷阱 — "信任上一轮 finding 而不重新 verify 当前状态"**。 (note: 自评 §8 没识别此项,自评的"证据链 9 分"在该 finding 上不成立)。
+2. **代码层细粒度缺陷命中数中等**: 9 个 finding 中 R5(catalog placeholder)+ R6(idempotency)2 项进入代码 fix 范围;无 caller enum / parity log / 边界检查类发现。Kimi 4 / DeepSeek 2 / GLM 2 / GPT 1 — DeepSeek 与 GLM 并列第二。
+3. **R9 worker_version 静态字符串严重性低估**: 标 `low / delivery-gap / no-blocker`,但 closure §5 R25 + 本期 §6.5b 把它视为 ZX3 实际待办;严重性可上调到 medium(影响 deploy traceability)。
+
+---
+
+### 9.3 Findings 质量清点
+
+| 问题编号 | 原始严重程度 | 事后判定 | Finding 质量 | 分析与说明 |
+|---|---|---|---|---|
+| DeepSeek-R1 (HTTP 完全退役声称不成立) | high | `true-positive`,本期已闭合 | `excellent` | 同 GPT-R1 + Kimi-R3 三方独立达成同一 finding;本期 closure §0 + §1.6 + §8 全文重写。 |
+| DeepSeek-R2 (publish/deploy/live e2e) | critical | `unblocked-2026-04-27 / partially-stale` | `mixed` | 同 GPT-R2 + GLM-R4;rollout 验证不需要 republish + 6 worker preview deploy 已完成。原始 critical 阈值在 `code-implementation-blocker` 视角下偏严,但在 `final-close blocker` 视角下准确。 |
+| DeepSeek-R3 (touristappid) | high | `stale-finding` | `weak` | **沿用 Z4 旧 review 描述未 fresh-grep**;实际代码已是真实 AppID。这是本份 review 最严重的事后失准。 |
+| DeepSeek-R4 (P3-05 表述漂移) | medium | `true-positive`,本期已闭合 | `excellent` | 同 R1 同根;closure §0/§1.6 表述已诚实化。 |
+| DeepSeek-R5 (handleCatalog 空数组) | medium | `true-positive`,本期已闭合 | `excellent` | `clients/api-docs/catalog.md` 已标 "**contract-only placeholder**";`4 位中独立命中`。 |
+| DeepSeek-R6 (wrapSessionResponse idempotency) | low | `true-positive`,本期已闭合 | `excellent` | 同 Kimi-R9 独立达成;本期收紧到三选一检测。**两位独立 reviewer 同一 finding 是高信号**。 |
+| DeepSeek-R7 (WS frame compat 未改 wire) | medium | `true-positive`,本期已闭合 | `excellent` | 同 GPT-R3 + Kimi-R8;transport-profiles.md §2.4 已重写。 |
+| DeepSeek-R8 (action-plan §11 与 §13 字段冲突) | low | `stale-rejected` | `weak` | 自己也确认 v2/v3 已落实(streamSnapshot NDJSON → cursor-paginated);finding 实际不存在。 |
+| DeepSeek-R9 (worker_version 静态) | low | `true-positive + deferred` | `good` | 严重性可上调到 medium;closure §5 R25 留 ZX3。 |
+
+> 9 项 finding 中 6 项 true-positive(R1/R4/R5/R6/R7/R9),1 项 mixed(R2 部分 stale),1 项 weak(R3 stale-finding),1 项 weak(R8 stale-rejected)。**跨阶段连续性 + 证据链优秀,代码层 yield 中等,sticky-stale 风险中等(R3+R8 两项 stale)**。
+
+---
+
+### 9.4 多维度评分(单项满分 10)
+
+| 维度 | 评分 | 外部校准 vs 自评 |
+|---|---|---|
+| 证据链完整度 | `8` | `自评 9 / 外部 8` — 14 行 grep 是 4 位最厚;但 R3 touristappid 沿用 Z4 描述未 fresh-grep,扣 1 分。 |
+| 判断严谨性 | `8` | `自评 8 / 外部 8` — 三层切分(代码/验证/运维)是独有亮点;`一致`。 |
+| 修法建议可执行性 | `8` | `自评 9 / 外部 8` — 三选一处理路径清晰,但 R1+R2 多为"修 closure 表述"而非具体代码 fix;扣 1 分。 |
+| 对 action-plan / design / QNA 的忠实度 | `9` | `自评 9 / 外部 9` — Q10 owner 冻结答案 + Z4 review 跨阶段映射;`一致`,4 位中并列最高。 |
+| 协作友好度 | `8` | `自评 8 / 外部 8` — `changes-requested + no` 严苛但每个 blocker 都有具体路径;`一致`。 |
+| 找到问题的覆盖面 | `7` | `(自评未给) / 外部 7` — 跨阶段视角第 1,但代码层细粒度缺陷数中等。 |
+| 严重级别 / verdict 校准 | `8` | `(自评未给) / 外部 8` — R2 critical 准;R3 high stale 略高;R9 low 略低;整体校准良好。 |
+
+**加权总分: `7.5 / 10`**(自评 8.5 偏高 1 分;外部校准在 R3 stale-finding 扣分后下调)
+
+---
+
+### 9.5 与其他 reviewer 的横向定位
+
+| 比较维度 | DeepSeek vs 其他 reviewer |
+|---|---|
+| 跨阶段连续性 | **第 1**(§5.4 Z2-Z4 → ZX2 问题链映射独有;§5.1+§5.2+§5.6 配套) |
+| 证据链厚度 | **第 1**(14 行 grep > Kimi 9 / GLM 9 / GPT 6) |
+| 三层 audit 框架(代码/验证/运维) | **独有**(此框架被 closure §8.1/§8.2/§8.3 直接采纳为新结构) |
+| verdict 严苛度 | **第 1 并列**(DeepSeek `no` = GPT `no`) |
+| closure 治理漂移敏锐度 | 第 2(R1+R4 与 GPT R1 同根但拆为两条;GPT 一刀切更精准) |
+| 代码层缺陷命中数 | 第 2 并列(2 项: R5+R6;Kimi 4;DeepSeek 2;GLM 2;GPT 1) |
+| stale-finding 风险 | **第 1**(R3+R8 两项;GPT R6 一项;Kimi/GLM 无) |
+| meta-honest(self-eval) | **独有**(§8 8.5/10 自评开创先例) |
+
+> 在 4 位中,DeepSeek 是"跨阶段连续性 + 三层 audit + meta-honest reviewer"角色,跨阶段视角与证据链厚度第 1,自评机制开创先例。但 R3+R8 两项 stale-finding 暴露了"信任上一轮 finding 而不 fresh-verify"的复用陷阱 — 即便有最厚证据链也救不了这个错。**适合作为 zero-to-real 收尾阶段的连续性 audit reviewer,但需配合 fresh-grep 验证机制**。
+
+---
+
+### 9.6 关于 DeepSeek 自评(§8)的横向校准
+
+DeepSeek §8 自评 8.5 / 10,各维度自评:
+- 证据链 9 / 判断 8 / 可执行性 9 / 忠实度 9 / 跨阶段 8 / 中文表达 8
+
+外部校准结果:
+- **基本一致**: 忠实度 9 / 判断 8 / 协作 8 / 跨阶段 8(自评 8 = 跨阶段 vs 外部 §9.5 跨阶段第 1,自评略保守 0.5 分)
+- **下调 1 分**: 证据链(自评 9 → 外部 8;R3 sticky-stale 拉低)、可执行性(自评 9 → 外部 8;R1+R2 偏 closure 修辞类)
+- **总分**: 自评 8.5 → 外部 7.5(R3+R8 两项 stale-finding 是关键扣分点)
+
+DeepSeek 的 self-eval 在 4 位中是**独有的 meta-honest 实践**,这本身是高品质 review 的标志(承认劣势、给具体维度分数、不回避局限)。但 self-eval 没识别 R3 sticky-stale 这一关键失准 — 这反映了 self-eval 的固有盲点(评价者对自己的 stale-finding 不敏感)。建议 DeepSeek 在未来 review 中加 "fresh-grep checklist"(每个沿用前期 review 的 finding 都强制 grep 当前代码 verify)以闭合此盲点。
+
+---
+
+*本评估由 ZX1-ZX2 实现者 + rollout 执行者(Opus 4.7,2026-04-27)在完成 owner 授权后真实部署 + cross-e2e 9/14 pass 后撰写。评估基础是真实 fix yield + 真实部署结果,不是单凭 review 文档自身的言辞。*

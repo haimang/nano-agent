@@ -391,3 +391,103 @@
 ---
 
 *本审查由 Kimi 独立完成，未参考其他 reviewer（Deepseek、Opus、GPT）的分析报告。*
+
+---
+
+## 7. 审查质量评估(由 review-of-reviews 评价人 append)
+
+> 评价对象: `Kimi 对 ZX1-ZX2 的独立 review`
+> 评价人: `Opus 4.7(1M ctx)— ZX1-ZX2 实现者 + rollout 执行者(2026-04-27)`
+> 评价时间: `2026-04-27`
+> 评价依据: 本轮 review-of-reviews 横向对照 4 位 reviewer(Kimi / GPT / GLM / DeepSeek),并对照 owner 授权后真实 deploy + cross-e2e 9/14 pass 的实际 rollout 结果(见 GPT review §6.5b)
+
+### 7.0 评价结论
+
+- **一句话评价**: 4 位 reviewer 中代码层 signal-to-noise 最高的一份;4 个独立 finding 全部转化为真实代码 fix(caller enum / streamSnapshot 边界 / parity log / wrapSessionResponse idempotency 加固),§6 跨阶段深度分析也提供了最具体的执行逻辑错误定位。
+- **综合评分**: `8.0 / 10`
+- **推荐使用场景**: 协议层 + DO 内代码层细粒度 review;对"实现细节是否漏洞百出"的判断;识别 idempotency / 边界检查 / authority 校验缺口的合适触角。
+- **不建议单独依赖的场景**: ① rollout / 部署层 vs 代码层是否 conflate(本份 R3/R4 把 P3-05 翻转标 yes-blocker 但 P3-05 翻转本质是运维动作);② 跨包 type 收敛与 envelope 治理战略级议题(GLM/DeepSeek 在该项更深);③ closure 文档治理漂移层(GPT 更敏锐)。
+
+---
+
+### 7.1 审查风格画像
+
+| 维度 | 观察 | 例证 |
+|---|---|---|
+| 主要切入点 | `runtime + protocol-truth 混合`,以代码事实优先 | R1 直接定位到 `agent-core/src/index.ts:227-295` 的 `invokeInternalRpc` → `stub.fetch()` 真实路径;R5 caller enum 直接对应 plan §5.3 文字缺陷 |
+| 证据类型 | `line-references + 命令(2392/2392 单测) + 文档行号交叉对照` | §1.1-§1.2 全部 finding 都带文件:行号;§6.3 执行逻辑错误 #1+#2 都有可触发条件 |
+| Verdict 倾向 | `balanced`,但 blocker 阈值偏严(R3 P3-05 标 yes-blocker) | `approve-with-followups`,允许关闭但要求 §5 列出的 blocker 完成 |
+| Finding 粒度 | `balanced`,10 个 finding 中 5 个 high / 4 个 medium / 1 个 low,`严重性分布合理` | R1-R3 是结构性,R5-R7 是具体代码 fix,R8-R10 是文档/refactor |
+| 修法建议风格 | `actionable`,但部分 docs-fix(R8/R9)只给"加注释"建议略偏抽象 | R5 直接给出 `BASH_CORE_ALLOWED_CALLERS` 实现伪代码,本期 1:1 落地 |
+
+---
+
+### 7.2 优点与短板
+
+#### 7.2.1 优点
+
+1. **代码层 finding 命中率最高**: 4 个独立 finding(R5 caller enum / R9 idempotency / §6.3 #1 parity log / §6.3 #2 streamSnapshot bounds)全部转化为真实代码 fix。其他 3 位 reviewer 提的 docs-honesty fix 占比更高,Kimi 是唯一在"代码缺陷"维度持续命中的 reviewer。
+2. **§6 跨阶段深度分析在 4 位中最具体**: 4 个断点(session identity 碎片 / auth contract 演化 / binding-secret vs NACP authority 层级 / WORKER_VERSION 真实性)全部触及实质;§6.3 执行逻辑错误更直接给出"parity 失败时返回 502 但不记录 metrics"这种可立即 fix 的描述,无需二次解读。
+3. **§3 In-Scope 对齐表把 partial vs done 的区分做得最细**: ZX2 13 项中 7 项标 partial(R1-R10 reference),诚实承认"契约层 done + 实现层 partial"的状态,优于 GLM 的 16 done / 1 partial 偏乐观分布。
+
+#### 7.2.2 短板
+
+1. **rollout vs 代码层混同**: R3 把 P3-05 翻转标为 yes-blocker,但 P3-05 翻转的硬前置是 7 天 parity 观察 + owner 批准,本质是运维动作。把它列为代码层 review 的 close-blocker 让本轮 review 难以单点关闭(GPT/DeepSeek 也有此问题,但 GPT 把它归类为 rollout-pending 而非 close-blocker,语义更精确)。
+2. **未触发 deploy-only 类 bug**: 因为没有 live env 访问权限(§1.3 自陈),没法触发 R28(`verifyCapabilityCancel` I/O cross-request)、R29(`verify(initial-context)` body 双轨发散)这种只在真部署可见的 deploy-only bug。这是结构性短板,所有 4 位 reviewer 共有,但 Kimi 由于代码层切入最深,本可以预测到 cancel 路径的 cross-request 隔离风险。
+3. **closure 治理漂移与文档命名层不如 GPT 敏锐**: R3 抓到 P3-05 表述漂移,但 ZX2-closure.md 标题 "ALL-DONE" + §0 TL;DR + §1.6 表格 + §13 执行日志的多层不一致,GPT R1 一句话切到根因(`scope-drift`)+ 同时摧毁多个 phase 的过度声明,Kimi 在这个层级停在了"P3-05 单点漂移"。
+
+---
+
+### 7.3 Findings 质量清点
+
+| 问题编号 | 原始严重程度 | 事后判定 | Finding 质量 | 分析与说明 |
+|---|---|---|---|---|
+| Kimi-R1 (agent-core RPC facade) | high | `acknowledged-design` | `good` | 命名与文档过度声明属实;闭口在 closure §1.6 加注释。本身不是代码错误,严重级别可降为 medium。 |
+| Kimi-R2 (parity 同源) | high | `acknowledged-design-limit` | `good` | 设计选择真相,closure §5 R24 显式标注。严重级别可降为 medium。 |
+| Kimi-R3 (P3-05 closure 过度声明) | high | `true-positive` | `excellent` | closure 措辞确实漂移;触发 §0/§1.6/§8 全文重写。和 GPT-R1+DeepSeek-R1+R4 同根。 |
+| Kimi-R4 (live e2e 未跑) | medium | `true-positive`(本轮已闭合) | `excellent` | owner 授权后已实跑,9/14 pass。原始判断准确。 |
+| Kimi-R5 (caller enum) | medium | `true-positive` | `excellent` | 真实代码缺陷,本期已加 `BASH_CORE_ALLOWED_CALLERS` + 4 个新测试。本份 review 最有价值的 finding 之一。 |
+| Kimi-R6 (TTL GC) | medium | `partial-fix + deferred` | `good` | duplicate-start 409 已 fix;TTL GC 触碰 D1 schema(plan §2.2 [O5] out-of-scope)留 ZX3。 |
+| Kimi-R7 (dist overlay) | medium | `stale-finding-after-rollout` | `mixed` | rollout 阶段验证: nacp-core 1.4.0 dist 与本地字节级一致,无需 republish。原 finding 基于"dist overlay 长期化"假设,与实际不符。 |
+| Kimi-R8 (frame-compat 文档) | low | `true-positive` | `excellent` | transport-profiles.md §2.4 + profile 表 + 形状碎片表 三处重写。和 GPT-R3 同根。 |
+| Kimi-R9 (wrapSessionResponse idempotency) | low | `true-positive` | `excellent` | 真实代码 fragility;本期收紧到三选一检测(`data` 字段 / 错误对象 / legacy `action`)+ 重命名 `errObj` 防 shadow。和 DeepSeek-R6 独立达成同一 finding。 |
+| Kimi-R10 (user-do.ts 1909 行) | low | `acknowledged + deferred` | `good` | refactor 留 ZX3。当前不阻塞。 |
+| Kimi §6.2 (4 个命名问题) | low | `partial-fix(docs only)` | `good` | 命名重构会扩散到大量 call site,留 ZX3。 |
+| Kimi §6.3 #1 (parity log 缺失) | medium | `true-positive` | `excellent` | 真实可观测性缺口;本期加 `logParityFailure(action, sessionUuid, rpcResult, fetchResult)` + 三处接入 + structured `console.warn` 输出。**本份 review 最有价值的 finding 之一**;在 owner 授权后真实部署的 cross-e2e 04 测试中,该日志确实抓到了 `agent-rpc-parity-failed rpc_status=200 fetch_status=200` 真分歧 — 该 finding 的修复直接让 dual-track parity 设计在生产环境产生了价值。 |
+| Kimi §6.3 #2 (streamSnapshot 边界) | medium | `true-positive` | `excellent` | 真实输入校验缺口;本期 RPC entry + internal handler 双头加边界(cursor non-negative integer / limit ∈ [1, 1000]) + 3 个新测试。 |
+
+> 13 项 finding 中 8 项 true-positive(其中 4 项进入代码 fix),3 项 acknowledged-design,1 项 stale,1 项 deferred-by-rationale。**真阳性率高**,且代码 fix yield 在 4 位 reviewer 中**领跑**。
+
+---
+
+### 7.4 多维度评分(单项满分 10)
+
+| 维度 | 评分 | 说明 |
+|---|---|---|
+| 证据链完整度 | `8` | 所有 finding 带 file:line;命令验证 2392/2392;§1.3 自陈 live evidence 缺失,诚实。 |
+| 判断严谨性 | `8` | 区分 acknowledged-design / docs / 代码缺陷 三类;只 R3 的 yes-blocker 略偏严。 |
+| 修法建议可执行性 | `9` | R5 caller enum 给伪代码,§6.3 #2 给精确边界 [1,1000];本期 4 个 finding 1:1 落地无需二次解读。**4 位 reviewer 中可执行性最强**。 |
+| 对 action-plan / design / QNA 的忠实度 | `8` | §3 In-Scope 表逐项对齐 plan 5.3 / 5.5 / P5-02 等具体小节,引用准确。 |
+| 协作友好度 | `8` | 结构化 finding;§5 verdict 明确给出 close-blocker / non-blocker 分流,实现者好 act on。 |
+| 找到问题的覆盖面 | `7` | 13 项 finding 覆盖 protocol drift / 代码缺陷 / 命名 / refactor / e2e;deploy-only bug 类(R28/R29)未触及(共有结构限制)。 |
+| 严重级别 / verdict 校准 | `8` | R1+R2 标 high 偏严(应为 medium acknowledged-design);其他校准良好;`approve-with-followups + yes` 与 GLM 一致,比 GPT/DeepSeek 的 `no` 更宽松,本案以 GPT/DeepSeek 严更接近真相(closure 确需重写),但 Kimi 的"yes-with-blockers"也属合理表达。 |
+
+**加权总分: `8.0 / 10`**(代码层 signal-to-noise 第一,文档治理层第二)
+
+---
+
+### 7.5 与其他 reviewer 的横向定位
+
+| 比较维度 | Kimi vs 其他 reviewer |
+|---|---|
+| 代码层缺陷命中数 | **第 1**(4 个独立 fix vs GPT 0 / GLM 1(D1 注释) / DeepSeek 2(R5 catalog + R6 idempotency)) |
+| 跨阶段深度分析 | 第 2(DeepSeek §5 是第 1) |
+| closure 治理漂移敏锐度 | 第 3(GPT 第 1) |
+| verdict 严苛度 | 第 3(GPT/DeepSeek `no`,Kimi/GLM `yes-with-blockers`) |
+| 对 owner-action vs 代码层的区分清晰度 | 第 3(GPT 第 1,把 publish/deploy 归 rollout-pending 而非 close-blocker) |
+
+> 在 4 位 reviewer 中,Kimi 是"代码缺陷狙击手"角色;GPT 是"closure 治理稽查",DeepSeek 是"跨阶段连续性",GLM 是"approve-friendly 兜底"。如果只能保留一份 review,Kimi 的代码 fix yield 价值最大;如果要保留两份,推荐 Kimi(代码) + GPT(治理)。
+
+---
+
+*本评估由 ZX1-ZX2 实现者 + rollout 执行者(Opus 4.7,2026-04-27)在完成 owner 授权后真实部署 + cross-e2e 9/14 pass 后撰写。评估基础是真实 fix yield + 真实部署结果,不是单凭 review 文档自身的言辞。*

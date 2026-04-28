@@ -1,6 +1,13 @@
 /**
  * Historical starter sketch for worker-matrix r2.
  *
+ * **POST-ZX3 NOTE(2026-04-27)**: Packages referenced below(`agent-runtime-kernel` /
+ * `capability-runtime` / `llm-wrapper` / `context-management` / `hooks` /
+ * `session-do-runtime`)were physically removed during ZX3 Phase 2 P2-01.
+ * Runtime truth now lives in `workers/agent-core/src/{kernel,host,llm,hooks}/`
+ * and `workers/bash-core/src/`. This template no longer compiles;preserved as
+ * historical sketch only.
+ *
  * Current primary runtime truth now lives in:
  * - packages/session-do-runtime/src/composition.ts
  * - packages/session-do-runtime/src/remote-bindings.ts

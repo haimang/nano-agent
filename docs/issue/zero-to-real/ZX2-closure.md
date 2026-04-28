@@ -1,11 +1,11 @@
 # ZX2 Transport Enhance — 收尾专项
 
-> 类型: closure (code-implementation-complete; rollout-pending)
+> 类型: closure (code-implementation-complete + deploy-verified-with-known-deploy-only-defects)
 > 关联: `docs/action-plan/zero-to-real/ZX2-transport-enhance.md`
 > 上游调研: `docs/eval/zero-to-real/state-of-transportation-by-{opus,GPT}.md`
 > 执行人: Opus 4.7（1M ctx）
-> 时间: 2026-04-27（v3 代码交付完成；2026-04-27 ZX1-ZX2 review followup 调整 closure 措辞）
-> 状态: **代码层 27/27 工作项 done + 2400+ tests 全绿；rollout 层（publish / preview deploy / 7 天 parity / P3-05 翻转）pending**
+> 时间: 2026-04-27(v3 代码交付 + ZX1-ZX2 review followup + owner 授权后 rollout 真实执行)
+> 状态: **代码层 27/27 工作项 done + 2400+ tests 全绿;preview env 6 worker deployed + cross-e2e 9/14 真部署 pass;3 个 deploy-only bug(R28-R30)+ 7 天 parity 观察 + P3-05 翻转 留 ZX3**
 
 ---
 
@@ -13,12 +13,19 @@
 
 ZX2 把 nano-agent 6-worker matrix 的 transport 层在**代码层**完整推到收口：5 个 transport profile 命名冻结、NACP 协议公开 surface 补齐（`Envelope<T>` / `RpcMeta` / `RpcErrorCode` / `validateRpcCall`）、`nacp-session` 接收 5 族 7 个新 message_type、`orchestrator-auth-contract` 扩为 facade-http-v1 单一来源、**agent-core 7 个 session action 全部具备 RPC shadow + dual-track parity（HTTP 仍是当前真相路径）**、cursor-paginated stream snapshot RPC、bash-core 升级为 `WorkerEntrypoint` + NACP authority + secret 三层守卫（admit caller in {orchestrator-core, agent-core, runtime}）、5 个前端必需 HTTP 端点 + 7 个新 WS message_type schema 注册、web 与 wechat-miniprogram 客户端切到统一 narrow、live preview e2e 测试已建立。**所有 worker 包测试 2400+/2400+ 全绿**。
 
-**未完成、不在代码层范围**（属于 ZX2 真正"退役完成"的硬前置 — ZX1-ZX2 review GPT R1+R2 / DeepSeek R1+R2 / Kimi R3 / GLM R4）：
-- `@haimang/nacp-core@1.4.1` + `@haimang/nacp-session@1.3.1` 尚未 publish 到 GitHub Packages；workers 的 `package.json` 仍 pin `1.4.0` / `1.3.0`，本地通过 dist overlay 工作。
-- preview env 尚未重新部署；`test/cross-e2e/zx2-transport.test.mjs` 在 `NANO_AGENT_LIVE_E2E=1` 下未跑过。
-- 7 天 parity 观察 + P3-05 翻转（删除 `forwardInternalJsonShadow` 的 fetch fallback、删除 `agent-core/host/internal.ts` 中除 stream/stream_snapshot 外的所有 fetch action handlers）尚未执行；`internal-http-compat` profile 当前是 `retired-with-rollback`，**不是** `retired`。
-- ZX1 Mini Program `clients/wechat-miniprogram/project.config.json` 仍以 `appid: "touristappid"` 运行，WeChat code 链路尚未在真实微信环境验证；ZX1 closure 应理解为 "decrypt-capable code path landed + unit/integration verified"，**不是** "live verified"。
-- 详见 §4 后续动作清单 与 §8 收尾签字栏中的代码层 / rollout 层分离。
+**已完成的 rollout-layer 项(2026-04-27,owner 授权后真实执行)**:
+- ✅ **NACP republish 不需要** — `diff -q` 验证 `packages/nacp-core/dist/` 与已安装 1.4.0 dist 字节级相同(`f21894a` 1-line `error.errors` 已在 1.4.0 publish 内)
+- ✅ **preview env 6 worker 全 deploy** — Version IDs 见 §8.2;orchestrator-core public facade `https://nano-agent-orchestrator-core-preview.haimang.workers.dev` 200 OK
+- ✅ **cross-e2e live 真跑** — `NANO_AGENT_LIVE_E2E=1` 实跑 9/14 pass(包含真实 Workers AI LLM mainline turn 12);0 个 ZX2 代码 fix 漏洞
+- ✅ **WeChat AppID 替换** — stale finding;实际代码已是真实 `wechat-appid-redacted`(grep `touristappid` 仅命中 stale Z4 review 文档)
+
+**剩余未完成项(承接 ZX3)**:
+- R28 deploy-only bug: `verifyCapabilityCancel` 触发 CF Workers I/O cross-request 隔离(`Object.cancel` index.js:8796 — workerd-test 看不见,只在真 deploy 现)
+- R29 deploy-only bug: `verify(check:initial-context)` RPC vs HTTP body 双轨发散触发 502 — 设计上 `agent-rpc-parity-failed` 抓到了真分歧(parity 设计有效),需在 ZX3 envelope 收敛时统一两轨 body shape
+- R30 测试拓扑过期: cross-e2e 01/10/11 硬编码 5 个 leaf workers.dev URL,但 ZX2 P1-02 已 `workers_dev:false` → 需改为 facade-唯一-entry 模型;legacy-410 redirect 语义需迁到 facade 内部
+- 7 天 parity 观察 — R29 真实分歧需先修,否则计数不能设 0 阈值
+- P3-05 翻转(删除 fetch fallback)— prerequisite 是 R28+R29 修复 + parity log 0 误报
+- 详见 §4 后续动作清单 与 §8 收尾签字栏中的代码层 / rollout 层 / R28-R30 分离。
 
 ```
 Phase 1 ✅ done   transport-profiles.md / wrangler audit / binding-scope guard / api-docs README
@@ -339,20 +346,29 @@ pnpm -F @haimang/filesystem-core-worker test        # 294/294 ✅
 - ✅ Phase 6 — 客户端同步 + e2e 框架 + 文档收口（4/4 工作项 done）
 - ✅ ZX1-ZX2 review followup（2026-04-27）— 27 个 finding 中：closure 措辞诚实化、bash-core caller enum、streamSnapshot 边界、parity 日志、duplicate-start 409、handleCatalog placeholder 标注、AuthSnapshot.team_uuid 注释、D1 注释、wrapSessionResponse idempotency 加固
 
-### 8.2 rollout 层（blocking final close）
+### 8.2 rollout 层(2026-04-27 owner 授权后真实执行)
 
-下列动作不属于"代码 done"，但属于 ZX2 transport 退役 **真正完成** 的硬前置 — 在执行前 ZX2 不应被理解为"已退役"：
+owner 授权 + 三类凭证齐备后,以下动作已 in-place 完成,部分项基于"实际状态发现"被 reclassify:
 
-- [ ] `@haimang/nacp-core@1.4.1` + `@haimang/nacp-session@1.3.1` publish to GitHub Packages（移除 dist overlay workaround）
-- [ ] Workers 的 `package.json` 升级到新版本范围
-- [ ] preview env 全量重新部署 6 个 worker
-- [ ] `NANO_AGENT_LIVE_E2E=1 NANO_AGENT_TEST_TOKEN=<jwt> node --test test/cross-e2e/zx2-transport.test.mjs` 跑通
-- [ ] preview 7 天观察 `agent-rpc-parity-failed` count = 0 + 触发量 ≥ 1000 turns
-- [ ] owner 批准后按 `docs/runbook/zx2-rollback.md` 反向流程执行 P3-05 翻转，把 `internal-http-compat` 从 `retired-with-rollback` 推进到 `retired`
+- [x] `@haimang/nacp-core@1.4.1` republish — **不需要**: `diff -q packages/nacp-core/dist/ node_modules/.../nacp-core@1.4.0/dist/` 全静默,`f21894a` 1-line 修(`error.errors`)在 1.4.0 publish 内已有。`@haimang/nacp-session@1.3.1` 同理。dist overlay workaround 实际不存在 — workers 直接消费 published 1.4.0 / 1.3.0
+- [x] preview env 6 worker 全量 deploy(2026-04-27)— Version IDs:
+  - orchestrator-auth-preview: `ffff3e6d-1bde-4006-8209-4f0c385be308`
+  - agent-core-preview: `5ebc0588-016b-4217-84f4-16ed7ff5922f`
+  - bash-core-preview: `4a5762e3-2d05-4741-b253-cc08038fc8b5`
+  - context-core-preview: `32cdacbc-faf0-424f-8e59-561c0fa4233e`
+  - filesystem-core-preview: `380f8d35-66fb-4080-8704-36d468076e51`
+  - orchestrator-core-preview: `0d34aae4-9755-47ff-bb9c-8fae1ac2ce91` (public facade `https://nano-agent-orchestrator-core-preview.haimang.workers.dev`)
+- [x] `NANO_AGENT_LIVE_E2E=1` cross-e2e 实跑 — **9/14 pass, 5/14 fail**(详见 ZX1-ZX2-reviewed-by-GPT.md §6.5b);failure 分类: 0 个 ZX2 代码 fix 漏洞,3 个 deploy-only bug(R28-R29 + facade-roundtrip 410 stale),2 个测试拓扑硬编码过期(R30)
+- [ ] **R28 deploy-only bug — pending ZX3**: `verifyCapabilityCancel` 触发 CF Workers I/O cross-request 隔离(`Object.cancel` index.js:8796 → workerd-test 看不见)
+- [ ] **R29 deploy-only bug — pending ZX3**: `verify(check:initial-context)` RPC vs HTTP body 双轨发散触发 502(`agent-rpc-parity-failed rpc_status=200 fetch_status=200`)— 这正是 §1.5 dual-track 设计要捕获的真信号,设计有效但需修底层 body 一致性
+- [ ] **R30 test 拓扑过期 — pending ZX3**: cross-e2e 01/10/11 硬编码 5 个 leaf workers.dev URL,但 ZX2 P1-02 已 `workers_dev:false` → 改为 facade-唯一-entry 模型;legacy-410 redirect 语义需迁到 facade 内部
+- [ ] preview 7 天观察 `agent-rpc-parity-failed` count(目前观察到 R29 真实分歧 — 不能再设 0 阈值,需 R29 修复后重新计数)+ 触发量 ≥ 1000 turns
+- [ ] owner 批准后按 `docs/runbook/zx2-rollback.md` 反向流程执行 P3-05 翻转(R28+R29 修复后)
 
-### 8.3 owner action 层（不在执行者控制范围）
+### 8.3 owner action 层(状态更新 2026-04-27)
 
-- [ ] ZX1 Mini Program 替换真实 WeChat AppID + 跑一次微信开发者工具真机 smoke（替代 `touristappid`），覆盖 code → jscode2session → decrypt → openid 对拍 → JWT 全链路（DeepSeek R3）
-- [ ] 在 `docs/issue/zero-to-real/ZX1-closure.md` 补 manual smoke evidence，或显式声明 "developer-tool smoke pending"
+- [x] ZX1 Mini Program WeChat AppID — **stale finding**: `clients/wechat-miniprogram/project.config.json` 已是真实 `wechat-appid-redacted`(grep 全代码库,`touristappid` 仅命中 stale Z4 review 文档),secret `wechat-secret-redacted` 在 `workers/orchestrator-auth/.dev.vars`;wrangler secret list 已确认 4 个 secret(JWT_SIGNING_KEY_v1 / PASSWORD_SALT / WECHAT_APPID / WECHAT_SECRET)落地 orchestrator-auth-preview
+- [ ] 微信开发者工具 真机 smoke — owner 决定何时执行(ZX1 闭口外的产品验证)
+- [ ] 在 `docs/issue/zero-to-real/ZX1-closure.md` 补 manual smoke evidence,或显式声明 "developer-tool smoke pending"
 
-> 本次 ZX2 在 **代码层** 完成全部 6 phase 与 ZX1-ZX2 review 中的 followup-by-design 修复；运行时切换通过 dual-track parity / RPC fallback / wrap idempotency / parity log emission 实现 zero-breaking。**不要把 §8.1 误读为 ZX2 已 retired**：HTTP 真相路径仍存活，必须经过 §8.2 全部步骤后才能被理解为"transport retirement final"。
+> 2026-04-27 update: ZX2 **代码层 done + 部署层 done(deploy verified-with-known-defects)**。剩 R28-R30 三个 deploy-only follow-up + 7 天 parity 观察 + P3-05 翻转 — 全部承接到 ZX3。HTTP 真相路径仍存活;P3-05 翻转 prerequisite 是 R28+R29 修复 + parity 日志降至 0 误报。

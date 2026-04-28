@@ -384,3 +384,102 @@
   7. `AuthSnapshotSchema.team_uuid` 注释说明 legacy fallback 语义
 - **建议的二次审查方式**：`no rereview needed — non-blocking follow-up 在 ZX3 前后安排即可`
 - **实现者回应入口**：`请按 docs/templates/code-review-respond.md 在本文档 §7 append 回应，不要改写 §0–§5。`
+
+---
+
+## 7. 审查质量评估(由 review-of-reviews 评价人 append)
+
+> 评价对象: `GLM 对 ZX1-ZX2 的独立 review`
+> 评价人: `Opus 4.7(1M ctx)— ZX1-ZX2 实现者 + rollout 执行者(2026-04-27)`
+> 评价时间: `2026-04-27`
+> 评价依据: 横向对照 4 位 reviewer + owner 授权后真实 deploy + cross-e2e 9/14 pass(GPT review §6.5b)
+
+### 7.0 评价结论
+
+- **一句话评价**: 4 位 reviewer 中结构最规范、跨包跨阶段视角最全面的一份;但 verdict 校准最宽松 — 没有把 closure ALL-DONE 的诚实度漂移识别为 blocker,与 GPT/DeepSeek/Kimi 的严判出现明显分歧。
+- **综合评分**: `7.0 / 10`
+- **推荐使用场景**: 需要"approve-friendly"基调下的全面健康度盘点;关心跨包依赖、命名一致性、安全边界(JWT / D1 placeholder)、type 收敛战略议题的场景;希望以"approve-with-followups"快速收口的场景。
+- **不建议单独依赖的场景**: ① closure / action-plan 治理漂移敏锐度要求高的场景(GPT 一刀切到 scope-drift 根因,GLM 把同类问题归于 follow-up);② 需要识别代码层细粒度缺陷的场景(Kimi 在 caller enum / idempotency / 边界检查领先);③ 严判阈值场景(GLM `yes` 与 GPT/DeepSeek `no` 形成对立,事后看后两者更接近真相 — closure 确需重写)。
+
+---
+
+### 7.1 审查风格画像
+
+| 维度 | 观察 | 例证 |
+|---|---|---|
+| 主要切入点 | `cross-package architecture + naming + DRY + 安全边界`,以"系统健康度"为视角 | R1 envelope 三形态并存;R2 JWT 两 worker 重复实现;R3 FacadeErrorCode vs RpcErrorCode 缺自动同步;§5.2 跨包版本对齐表 |
+| 证据类型 | `line-references + 跨包对照表 + 单测命令` | §1.1 7 个正面事实 + §1.2 7 个负面事实带 file:line;§5.2 跨包版本对齐表是 4 位中最系统的 |
+| Verdict 倾向 | `optimistic`,`approve-with-followups + yes` | 10 个 finding 中 0 个标 yes-blocker — `4 位中阈值最宽松` |
+| Finding 粒度 | `coarse-to-balanced`,10 个 finding 偏战略 | R1-R3 是跨包设计债务;R4-R5 是运维待办;R6-R7 是契约语义 |
+| 修法建议风格 | `ZX3-deferred 居多`,具体代码 fix 较少 | R1: ZX3 收敛 envelope 单一来源;R2: ZX3 抽 shared JWT package;R3: ZX3 跨包 zod enum 编译期断言 |
+
+---
+
+### 7.2 优点与短板
+
+#### 7.2.1 优点
+
+1. **跨包架构视角最系统**: R1(envelope 三形态)+ R2(JWT 重复)+ R3(error code 同步) 三个跨包设计债务 finding,以及 §5.2 跨包版本对齐表、§5.3 安全边界验证表,是 4 位 reviewer 中唯一系统性扫描"跨包契约一致性 + DRY + 安全栈层级"的。
+2. **R5 D1 placeholder 注释命中**: 注释 "Replace this placeholder with the real shared D1 UUID before deploy" 在 6 worker 中误导 4 处。本期 wrangler.jsonc 已清洗(orchestrator-auth + orchestrator-core 各 2 处)。GLM 是 4 位中唯一独立命中此项 docs-fix 的。
+3. **R6 AuthSnapshotSchema team_uuid 语义裂缝命中**: 4 位中唯一显式指出"contract 必填 vs runtime fallback"的语义不对齐 — 本期 `AuthSnapshotSchema` 已加详细 schema 注释说明 auth-worker 出口必填(claim-backed)+ legacy claims optional 由 orchestrator-core ingress deploy-fill 兜住的实际语义。**这条 finding 解决了一个真实跨包契约理解陷阱**。
+
+#### 7.2.2 短板
+
+1. **未识别 closure ALL-DONE 治理漂移为 blocker**: closure §0/§1.6/§13 标 ALL-DONE,但 §4.1/§4.2/§7 列出 publish/deploy/live e2e/P3-05 翻转待办 — GPT-R1 + DeepSeek-R1+R4 + Kimi-R3 都把这个不一致标为 blocker 触发 closure 全文重写,GLM 整份 review 没识别该问题。R9 提到 P3-05 状态,但归类为 `low / scope-drift / no-blocker`,严重性低估。**这是 4 位中唯一对 closure 治理漂移失声的 reviewer**。
+2. **代码层细粒度缺陷命中数偏低**: 10 个 finding 中只有 R5(D1 注释)+ R6(team_uuid 注释)2 项进入代码 fix 范围;无 caller enum / idempotency / 边界检查 / parity log 类发现。Kimi 在同一份 codebase 上独立命中 4 个;GLM 落后。
+3. **`approve` verdict 与实际状态偏离**: 事后 owner 授权后真实部署 + cross-e2e 9/14 pass + 5 fail 中 3 个真 deploy-only bug + closure 全文重写 — 实际状态远未到 `approve` 阈值。GLM 的 `yes-with-followups` 让本轮 review 失去了"逼出真诚实"的杠杆,如果 owner 只看 GLM 这份 review,closure 就不会被重写。
+
+---
+
+### 7.3 Findings 质量清点
+
+| 问题编号 | 原始严重程度 | 事后判定 | Finding 质量 | 分析与说明 |
+|---|---|---|---|---|
+| GLM-R1 (envelope 三形态并存) | medium | `true-positive + deferred` | `good` | type 收敛留 ZX3;closure §5 R19 + §1.7 已加诚实表述。 |
+| GLM-R2 (JWT 重复) | low | `true-positive + deferred` | `good` | shared package 抽取留 ZX3;closure §5 R20。 |
+| GLM-R3 (error code 同步) | medium | `true-positive + deferred` | `good` | 跨包穷尽断言留 ZX3;closure §5 R21。 |
+| GLM-R4 (publish 未完成) | medium | `unblocked-2026-04-27 / partially-stale` | `mixed` | 同 GPT-R2;rollout 验证不需要 republish。 |
+| GLM-R5 (D1 placeholder 注释) | low | `true-positive`,本期已闭合 | `excellent` | 4 个 wrangler 注释已清洗。`4 位中唯一独立命中`。 |
+| GLM-R6 (team_uuid 语义裂缝) | medium | `true-positive`,本期已闭合 | `excellent` | `AuthSnapshotSchema` 加 schema 注释说明语义。`4 位中唯一独立命中`。 |
+| GLM-R7 (e2e 覆盖窄) | medium | `true-positive`,本期已部分闭合 | `good` | owner 授权后 cross-e2e 已实跑 9/14 pass(见 GPT review §6.5b)。 |
+| GLM-R8 (demo password 硬编码) | low | `acknowledged-as-demo-state` | `mixed` | demo 阶段允许;上线前移除。但 `low / security` 分类略低 — 如果上线前忘记,是真 security risk。 |
+| GLM-R9 (internal-http-compat 未移除) | low | `true-positive` | `weak` | 严重级别低估 — closure 把 P3-05 标为 ALL-DONE 而代码未翻转,Kimi/GPT/DeepSeek 都标 high 或 critical;GLM 标 `low / scope-drift / no` 是 4 位中最宽松的判断。 |
+| GLM-R10 (ZX1 文件名 typo) | low | `true-positive + deferred` | `good` | 同 GPT-R7;rename 会破坏 cross-doc 引用,留 ZX3 一并 alias。 |
+
+> 10 项 finding 中 7 项 true-positive,2 项独立命中(R5+R6),1 项 mixed(R4 部分 stale),1 项 weak-calibration(R9 严重性低估)。**跨包健康度命中率优秀,但 closure 治理 + verdict 校准失声是结构性短板**。
+
+---
+
+### 7.4 多维度评分(单项满分 10)
+
+| 维度 | 评分 | 说明 |
+|---|---|---|
+| 证据链完整度 | `8` | 所有 finding 带 file:line;§5.2 跨包版本对齐表是独有亮点。 |
+| 判断严谨性 | `6` | R9 把 closure 标 ALL-DONE 而代码未翻转的根本不一致归为 `low / no-blocker`,显著低估 — 同期 GPT/DeepSeek/Kimi 都标 high/critical。`严谨性是 4 位中最低`。 |
+| 修法建议可执行性 | `7` | R5+R6 docs-fix 直接落地;但 R1+R2+R3 多为"ZX3 收敛"式建议,实现者难以本期 act on。 |
+| 对 action-plan / design / QNA 的忠实度 | `7` | §3 In-Scope 16 done / 1 partial 偏乐观,Kimi 同一对账给出 7 partial — 区别在 GLM 接受了 closure 的"已完成"声称,Kimi/GPT/DeepSeek 没接受。这是"忠实于 closure 表述 vs 忠实于代码事实"的二选一冲突。 |
+| 协作友好度 | `9` | tone 最积极;`approve-with-followups` 鼓励向前推进;ZX3 候选清单清晰,实现者好 plan ZX3。 |
+| 找到问题的覆盖面 | `6` | 跨包健康度覆盖最广,但 closure 治理 + 代码层细粒度缺陷 + deploy-only bug(R28/R29 类型)三类都未触及。 |
+| 严重级别 / verdict 校准 | `5` | `approve + yes` 与 GPT/DeepSeek/Kimi `no` 或 `yes-with-blockers` 形成对立 — 事后看 closure 确需重写,GLM 校准偏低。`校准在 4 位中倒数第 1`。 |
+
+**加权总分: `7.0 / 10`**(跨包架构视角第 1,closure 治理稽查 + verdict 校准最弱)
+
+---
+
+### 7.5 与其他 reviewer 的横向定位
+
+| 比较维度 | GLM vs 其他 reviewer |
+|---|---|
+| 跨包架构视角 | **第 1**(envelope 三形态 + JWT 重复 + error code 同步 + 跨包版本对齐表 — 唯一系统扫描) |
+| 独立命中数 | 第 2(R5+R6 共 2 项;DeepSeek 2 项 R5/R6;Kimi 4 项;GPT 1 项) |
+| closure 治理漂移敏锐度 | **第 4**(GPT R1 critical / DeepSeek R1+R4 high / Kimi R3 high / GLM R9 low) |
+| verdict 严苛度 | **第 4**(GPT/DeepSeek `no`;Kimi `yes-with-blockers`;GLM `yes` 最宽松) |
+| 代码层缺陷命中数 | 第 3(2 项;Kimi 4;DeepSeek 2;GPT 1) |
+| 跨阶段深度分析 | 第 3(§5 跨阶段表覆盖 Z0-Z5 + ZX1-ZX2,但深度浅于 DeepSeek §5) |
+| ZX3 候选清单清晰度 | **第 1**(§6 follow-up 7 条逐项可 plan) |
+
+> 在 4 位中,GLM 是"approve-friendly 全面健康度盘点"角色,跨包视角最系统但 closure 治理 + verdict 校准失声。如果只看 GLM 这份 review,closure 就不会被重写,整个 ZX2 会以 `final-closed` 状态进入 ZX3 — 而事后真部署 + e2e 9/14 + 3 个真 deploy-only bug 表明 closure 必须重写。**GLM 不适合作为唯一 reviewer,但作为"跨包架构债务"维度的补充非常有价值**。
+
+---
+
+*本评估由 ZX1-ZX2 实现者 + rollout 执行者(Opus 4.7,2026-04-27)在完成 owner 授权后真实部署 + cross-e2e 9/14 pass 后撰写。评估基础是真实 fix yield + 真实部署结果,不是单凭 review 文档自身的言辞。*
