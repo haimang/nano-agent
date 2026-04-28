@@ -438,6 +438,119 @@ dist/assets/index-CEgs_cpt.js   235.68 kB │ gzip: 71.05 kB
 
 ---
 
+## 7. GPT 二次审查报告
+
+> 二次审查对象: `clients/web`（基于 §6 实现者回应后的当前代码）
+> 二次审查类型: `rereview`
+> 二次审查时间: `2026-04-28`
+> 二次审查人: `GPT`
+> 复核范围:
+> - `clients/web/src/{App.tsx,state/auth.ts,pages/ChatPage.tsx,components/inspector/InspectorTabs.tsx,apis/sessions.ts,components/Topbar.tsx}`
+> - `clients/web/functions/api/[[path]].ts`
+> - `clients/web/vite.config.ts`
+> - `workers/orchestrator-core/src/index.ts`
+> - `clients/api-docs/session-ws-v1.md`
+> - 本文档 `§6 实现者回应`
+
+### 7.1 二次结论
+
+- **整体判断**：`R1/R2/R4 的主修方向成立，但 R3 仍未收口；新增的 reconnect 实现还把 terminal 正常关闭误判为需要重连。`
+- **结论等级**：`changes-requested`
+- **是否允许关闭本轮 review**：`no`
+- **本轮最关键的 1-3 个判断**：
+  1. `Auth` 单一真相源与 session 切换主路径已明显改善，原先最直接的 create/start 断点基本解除。
+  2. `WS resume/reconnect` 仍不是端到端闭环：facade 依旧丢弃 `last_seen_seq`，客户端也没有补 HTTP `resume/timeline` 对账。
+  3. 新 reconnect 逻辑对 close code `1000` 也会自动重连，和 `session-ws-v1` 的 terminal 关闭语义冲突。
+
+### 7.2 本轮已确认关闭的原始 finding
+
+| 原 finding | 二审结论 | 说明 |
+|------------|----------|------|
+| R1 Auth 双 source of truth | `closed` | `App.tsx` 已改为从 `state/auth.ts` 导入 `requireAuth()`；`state/auth.ts:47-50` 成为 createSession 的单一 auth 真相源。 |
+| R2 Session 切换不重置 chat/inspector | `mostly-closed` | `ChatPage.tsx:260-271` 已在 session 切换时重置 `messages/started/lastSeenSeq/error/wsError`；`InspectorTabs.tsx:31-38` 已在 `sessionUuid` 变化时清空缓存数据。主聊天链路的 `/start` vs `/input` 错路问题已被修正。 |
+| R4 本地 `/api/*` 开发路径不可用 | `closed` | `vite.config.ts:8-18` 已增加 `/api` proxy；本地 Vite 7 preview 实现也会从 `server.proxy` 回落（本轮检查 `clients/web/node_modules/vite/dist/node/chunks/config.js` 中 `preview?.proxy ?? server.proxy`）。 |
+
+### 7.3 二次审查发现
+
+#### RR1. `R3` 仍未收口：WS resume/reconnect 仍然不是端到端闭环
+
+- **严重级别**：`high`
+- **类型**：`protocol-drift`
+- **是否 blocker**：`yes`
+- **事实依据**：
+  - `clients/web/src/pages/ChatPage.tsx:96-99` 重连时仍然只把 `last_seen_seq` 写到 public WS URL query。
+  - `workers/orchestrator-core/src/index.ts:416-420` façade 转发到 User DO 的内部 WS request 仍未携带任何原始 query string。
+  - `clients/api-docs/session-ws-v1.md:140-143` 当前 authoritative reconnect 建议明确要求：带 `?last_seen_seq=`，必要时补 `POST /sessions/{uuid}/resume`，最终用 `GET /timeline` 对账。
+  - `clients/web/src/pages/ChatPage.tsx` 当前没有任何 `sessionsApi.resume(...)` 调用。
+- **为什么重要**：
+  - 当前新增的 client reconnect 只能“重新连上”，但不能证明“从正确 seq 恢复”。
+  - 在 6-worker 实际链路里，最关键的 `last_seen_seq` 仍停在 public façade，没到 User DO；因此 closure 里的 resume 断点依然存在。
+- **审查判断**：
+  - `§6` 把 R3 标成 `partially-fixed` 是准确的，但 `§6.3` 中“仍 blocked = 0”不成立。R3 仍应保留为 blocker。
+- **建议修法**：
+  - 后端：修 `orchestrator-core` WS 转发，把原始 search params 至少是 `last_seen_seq` 透传到内部 request。
+  - 前端：在 reconnect 成功后按 `session-ws-v1` 建议补 `POST /sessions/{uuid}/resume`，必要时以 `GET /timeline` 重建本地状态。
+
+#### RR2. 新 reconnect 逻辑会把 terminal 正常关闭也当成“需要重连”
+
+- **严重级别**：`high`
+- **类型**：`correctness`
+- **是否 blocker**：`yes`
+- **事实依据**：
+  - `clients/api-docs/session-ws-v1.md:147-150` 明确 `1000` 是 terminal 后的 normal close。
+  - `clients/web/src/pages/ChatPage.tsx:193-207` close handler 仅排除了 `4001`，对 `1000` 仍会调度指数退避重连。
+- **为什么重要**：
+  - 这会让已经 `completed/cancelled/error` 的 session 在正常终态后继续发起最多 5 次无意义重连。
+  - 它把“恢复异常断线”和“服务端正常结束”混为一谈，属于 runtime 语义错误，不只是 UX 噪声。
+- **审查判断**：
+  - 这是本轮修复引入的新增 blocker；如果不修，chat runtime 仍不满足“正确恢复”而只是“机械重连”。
+- **建议修法**：
+  - close handler 至少排除 `1000` 与 `4001`。
+  - 更稳妥的做法是：收到 `terminal` frame 后显式标记 session 终态，后续 close 不再触发 reconnect。
+
+#### RR3. `selectSession` 的 `auth.expired` 处理仍未实现，§6 回应对这点表述过度
+
+- **严重级别**：`medium`
+- **类型**：`correctness`
+- **是否 blocker**：`no`
+- **事实依据**：
+  - `clients/web/src/App.tsx:56-63` 已为 `createSession` 加入 `auth.expired` 分支。
+  - `clients/web/src/App.tsx:68-77` `selectSession` 仍是裸 `catch { setSessionStatus(null); }`，没有把 401 映射为 logout/login redirect。
+  - `§6.2` 中对应行声称 `createSession / selectSession` 均已修复。
+- **为什么重要**：
+  - token 过期后，用户点选已有 session 时仍可能被静默留在聊天壳内，只看到 status 清空。
+  - 这不是主链 blocker，但说明当前实现者回应里这条修复覆盖面写得比实际更大。
+- **审查判断**：
+  - 这是 residual follow-up，不阻塞本轮的主要 verdict，但应从“已修复”改回“部分修复”。
+- **建议修法**：
+  - 在 `selectSession` catch 中识别 `ApiRequestError && kind === "auth.expired"`，与 `createSession/loadSessions` 保持一致地清 auth 并回到登录页。
+
+### 7.4 Deferred 项复核
+
+| 编号 | 二审结论 | 说明 |
+|------|----------|------|
+| R5 BFF `context.env` / typecheck | `unchanged-deferred` | 代码未修，Deferred 状态成立。 |
+| R6 Transport non-JSON error | `unchanged-deferred` | `transport.ts:91-92` 仍直接 `JSON.parse`，Deferred 状态成立。 |
+| R7 files unavailable tab | `unchanged-deferred` | `InspectorTabs.tsx:13` 仍只有 4 个 tab，Deferred 状态成立。 |
+| R8 package manager / docs drift | `unchanged-deferred` | `deployment.md:69-76` 仍声明 `packageManager` 自动识别，但 `clients/web/package.json` 仍无该字段。 |
+
+### 7.5 二次审查 verdict
+
+- **最终 verdict**：`changes-requested`
+- **是否允许关闭本轮 review**：`no`
+- **关闭前必须完成的 blocker**：
+  1. 修复 `R3 / RR1`：让 `last_seen_seq` 真正穿透 façade，或提供等价的后端/前端 resume 对账闭环。
+  2. 修复 `RR2`：不要在 terminal normal close (`1000`) 后继续自动重连。
+- **可以后续跟进的 non-blocking follow-up**：
+  1. 修正 `selectSession` 的 `auth.expired` 处理与 §6 对应表述。
+  2. 继续处理 R5/R6/R7/R8 的 deferred 项。
+- **本轮是否建议再次复审**：`yes`
+- **复审重点**：
+  1. terminal / attachment_superseded / abnormal close 三类 WS 关闭路径是否被正确区分。
+  2. reconnect 后是否真的具备 authoritative replay / resume 语义，而不只是“重新连上”。
+
+---
+
 ## 附录 A. 审查质量评价
 
 > 评价对象: `GPT — web-v10-closure code review`
