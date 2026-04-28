@@ -3,7 +3,7 @@
 > 服务业务簇: `zero-to-real / ZX4 / transport-true-close + session-semantics`
 > 计划对象: 让 `internal-http-compat` 真正进入 `retired` 状态;同时把 facade-http-v1 必需的 session 语义闭环(permission / usage / elicitation / pending truth)在现有 durable truth 体系内补齐
 > 类型: `bug-fix + refactor + add + observation + cutover`
-> 作者: `Opus 4.7(2026-04-28 v1)— rebuilt after GPT review reset`
+> 作者: `Opus 4.7(2026-04-28 v2)— v1 + ZX4-ZX5 GPT review(R1-R3)修订`
 > 时间: `2026-04-28`
 > 文件位置:
 > - **Lane A(transport blocking close)**:
@@ -27,7 +27,7 @@
 > - `docs/issue/zero-to-real/ZX3-closure.md` §3.2(ZX2 carryover 承接)
 > - `docs/code-review/zero-to-real/ZX1-ZX2-reviewed-by-GPT.md` §6.5b rollout-surfaced findings
 > - `docs/runbook/zx2-rollback.md`
-> 文档状态: `draft (v1 post-GPT-review) — re-baseline 后,scope 收紧到 Lane A + Lane B`
+> 文档状态: `draft (v2 post-ZX4-ZX5-GPT-review) — v1 已被 approved-with-caveats;v2 把 status enum 冻结为单一表 + P4-P6 视为 session-interaction cluster + P7 标 whole-plan + ops gate`
 
 ---
 
@@ -89,11 +89,34 @@ GPT 审查后的核心修订: **早做 seam extraction → R28/R29 修 + targete
 1. **Phase 0(early seam extraction)**: 把 `user-do.ts` 1900+ 行先按职责 seam 拆为 4 模块 — `session-lifecycle.ts`(handleStart / handleInput / handleCancel / handleVerify)/ `session-read-model.ts`(handleStatus / handleTimeline / handleHistory / handleMeSessions / handleUsage)/ `ws-bridge.ts`(WebSocket attach / emitServerFrame / heartbeat)/ `parity-bridge.ts`(forwardInternalRaw / forwardInternalJsonShadow / logParityFailure)。**不加新功能**,纯重组 + 测试零回归。完成后 Phase 1-6 才能在小文件上各自演进。
 2. **Phase 1(R28 + R29 P0 fix)**: R28 — `verifyCapabilityCancel` 改为"取消与执行同一请求生命周期 / 同一运行链条",不依赖第二条独立 cancel request 作为主路径(per GPT Q1 修订 — 结果约束而非实现文字)。R29 — 在 `verifyInitialContext()` 输出层统一 RPC vs HTTP 两轨 body shape;若需要,先把 parity log 升级到 body diff 再定位 field-level 分歧。**Exit gate: R28/R29 targeted preview smoke + 单元测试 pass(per GPT 3.2 不要求 cross-e2e 14/14)**。
 3. **Phase 2(parity log body diff)**: `logParityFailure(action, sessionUuid, rpcResult, fetchResult)` 升级为 emit JSON pointer + field-level delta — 让未来类似 R29 的分歧能直接定位 field。
-4. **Phase 3(/me/sessions pending truth — 在现有 truth 内扩展)**: per GPT 3.4 严正反对建新 `pending_sessions` 表(会与 `nano_conversation_sessions` / `nano_conversations` / `nano_conversation_turns` 形成双重真相)。改方案: 在现有 `nano_conversation_sessions` 加 `pending` 状态值(从 `pending` → `active` → `ended` 的状态机);POST `/me/sessions` 时写一行 `pending`;`handleStart()` 时迁到 `active`;DO alarm 24h 扫 `pending` 且 `created_at + 24h < now` 的行 → `expired`。GET `/me/sessions` 合并 `pending` + `active` + `ended` 状态做完整视图。**单一 session truth model 保持**。
-5. **Phase 4(permission round-trip)**: agent runtime permission gate(`workers/agent-core/src/hooks/permission.ts`)在需要询问时通过 `emitServerFrame()` 发 `session.permission.request` server frame;客户端 decision 通过 WS 或 HTTP `/sessions/{id}/permission/decision` 回到 orchestrator-core,然后通过 promise resolver 回流到 agent runtime 阻塞中的 gate。
-6. **Phase 5(usage live push + 真预算)**: `/usage` 不再返 null;返 `tokens_used` / `tokens_remaining` / `budget_total` 真数字;runtime 在每次 LLM/tool call 完成后通过 `emitServerFrame()` 推 `session.usage.update`。
-7. **Phase 6(elicitation round-trip + live e2e 扩展)**: 同 permission 模式;新增 cross-e2e 测试覆盖 `start → permission deny → usage update → elicit answer → cancel → list` full path。
-8. **Phase 7(live e2e 全面回归)**: 此处才是 cross-e2e 14/14 + zx2-transport 扩展全绿的 **whole-plan gate**(per GPT 3.2)。Phase 1 的 P0 修复后 R28/R29 类失败已不存在;Phase 4-6 后 permission/usage/elicitation 真接通;Phase 7 跑通就证明 Lane A + Lane B 已闭合,可以进入观察期。
+4. **Phase 3(/me/sessions pending truth — 在现有 truth 内扩展)**: per GPT 3.4 严正反对建新 `pending_sessions` 表(会与 `nano_conversation_sessions` / `nano_conversations` / `nano_conversation_turns` 形成双重真相)。改方案: 扩展现有 `nano_conversation_sessions.session_status` enum,加入 `pending` + `expired` 两个新值;POST `/me/sessions` 时写一行 `pending`;`handleStart()` 时迁到 `active`;DO alarm 24h 扫 `pending` 且 `created_at + 24h < now` 的行 → `expired`。**单一 session truth model 保持**。
+
+   **R1 修订(ZX4-ZX5 GPT review §2.2 R1)— Session Status Enum 冻结表**: 当前 `nano_conversation_sessions.session_status` 仅允许 `starting | active | detached | ended`;ZX4 必须**同步**扩展以下 4 处,任何一处遗漏即为 P3 失败:
+
+   | 落点 | 当前状态 | ZX4 P3 后状态 |
+   |---|---|---|
+   | `migrations/0XX-pending-status.sql` CHECK 约束 | `IN ('starting','active','detached','ended')` | `IN ('pending','starting','active','detached','ended','expired')` |
+   | `workers/orchestrator-core/src/session-truth.ts` `DurableSessionStatus` TypeScript union | `'starting' \| 'active' \| 'detached' \| 'ended'` | `'pending' \| 'starting' \| 'active' \| 'detached' \| 'ended' \| 'expired'` |
+   | `/me/sessions` read-model 可见状态(GET 响应) | `active / detached / ended` | `pending / active / detached / ended / expired` |
+   | DO alarm GC 状态转移 | n/a | `pending` 且 `created_at + 24h < now` → `expired` |
+
+   **状态机**:`pending` →(handleStart)→ `starting` →(runtime ready)→ `active` →(WS detach)→ `detached` →(终态)→ `ended`;另有兜底分支 `pending` →(24h 未 start + alarm)→ `expired`。`detached` 路径保留与 ZX2 行为一致,不属于 ZX4 改动范围。
+5. **Phase 4-6(per ZX4-ZX5 GPT review §2.2 R2 — Session-Interaction Cluster)**: P4 / P5 / P6 在文稿上看似三件事,但实际都会同时牵动 `orchestrator-core` read/write paths + `agent-core` runtime blocking seam + WS / HTTP mirror + live e2e。**应被视为一个连续的 session-interaction cluster,工作量按 cluster(>= L+M+M)整体预算,不按文稿长度低估**。
+
+   - **Phase 4(permission round-trip)**: agent runtime permission gate(`workers/agent-core/src/hooks/permission.ts`)在需要询问时通过 `emitServerFrame()` 发 `session.permission.request` server frame;客户端 decision 通过 WS 或 HTTP `/sessions/{id}/permission/decision` 回到 orchestrator-core,然后通过 promise resolver 回流到 agent runtime 阻塞中的 gate。**关键工程困难**: agent-core 当前没有"阻塞等待 orchestrator decision 再恢复执行"的现成 transport contract — P4 必须**同时建立这条 contract + 实现 producer + 实现 consumer**,不是三个独立 phase。
+   - **Phase 5(usage live push + 真预算)**: `/usage` 不再返 null placeholder;返 `tokens_used` / `tokens_remaining` / `budget_total` 真数字;runtime 在每次 LLM/tool call 完成后通过 `emitServerFrame()` 推 `session.usage.update`。**与 P4 共享同一 ws-bridge / emitServerFrame seam**;P5 必须在 P4 把 seam 真接通后做。
+   - **Phase 6(elicitation round-trip + live e2e 扩展)**: 同 P4 模式 — 双向阻塞-resume contract;若 P4 已建好 generic contract,P6 可复用。新增 cross-e2e 测试覆盖 `start → permission deny → usage update → elicit answer → cancel → list` full path。**这是 cluster 的最后一片 + 第一次真验证 cluster 整体行为**。
+8. **Phase 7(live e2e 全面回归)— per ZX4-ZX5 GPT review §2.2 R3 显式 whole-plan + ops gate**: 此处才是 cross-e2e 14/14 + zx2-transport 扩展全绿的 **whole-plan verification gate,含环境前置条件**。该 gate 不是"代码 phase 内部的自足 gate",而是 **code + ops + creds + budget** 的联合 gate,前置条件包括:
+
+   | 前置条件 | 内容 |
+   |---|---|
+   | code | Phase 0 - Phase 6 全部完成,worker tests 全绿 + root-guardians 全绿 |
+   | ops | preview deploy 路径已就绪(对照 ZX5 D1 ops 前置 — 当前为 owner local `wrangler deploy --env preview`)|
+   | creds | `NANO_AGENT_LIVE_E2E=1` + `JWT_SIGNING_KEY_v1` + `WECHAT_APPID/SECRET` + `TEAM_UUID` 在执行环境注入 |
+   | budget | live LLM smoke(test 12)有 Workers AI quota / provider key |
+   | env | preview env 6 worker 已 deploy 到最新 ZX4 P0-P6 代码 |
+
+   Phase 1 的 P0 修复后 R28/R29 类失败已不存在;Phase 4-6 后 permission/usage/elicitation 真接通;Phase 7 跑通就证明 Lane A + Lane B 已闭合,可以进入观察期。**若 ops/creds/budget 任何一项不就绪导致 14/14 跑不出来,要在 closure 中明确写"代码层完成 + ops gate pending",不允许把"环境没准备好"误写成"代码未完成"或"代码完成"。**
 9. **Phase 8(7-day parity observation)**: per GPT Q4 — 在所有会影响 parity 结果的代码冻结后启动观察(等价于 P0-P6 + P7 全绿后)。preview env wrangler tail grep `agent-rpc-parity-failed`;0 误报 + ≥ 1000 turns 后 owner 批准翻转。
 10. **Phase 9(P3-05 flip + R31 + retired)**: 按 `runbook/zx2-rollback.md` 反向流程:删 `forwardInternalJsonShadow` 中的 fetch fallback;删 `agent-core/host/internal.ts` 中除 stream/stream_snapshot 外的所有 fetch action handlers;`wrangler unpublish-route` × 5 leaf workers 撤销旧 workers.dev URL;`docs/transport/transport-profiles.md` `internal-http-compat: retired-with-rollback` → `retired`。runbook 保留 2 周作为反向通道,之后归档。
 
@@ -176,17 +199,18 @@ ZX4-transport-true-close-and-session-semantics
 | P1-02 | Phase 1 | A | R29 verify body 双轨发散修 | `bug-fix` | `workers/agent-core/src/host/do/nano-session-do.ts:verifyInitialContext` | RPC + HTTP 两轨返回 body shape 统一 | high |
 | P1-03 | Phase 1 | A | R28/R29 targeted preview smoke | `verify` | preview env + targeted reproduction | **exit gate(per GPT 3.2)** — 不要求 cross-e2e 14/14;只要求 R28/R29 类型已修 | medium |
 | P2-01 | Phase 2 | A | parity log body diff 升级 | `add` | `workers/orchestrator-core/src/parity-bridge.ts:logParityFailure` | emit JSON pointer + field-level delta | medium |
-| P3-01 | Phase 3 | B | D1 migration: `nano_conversation_sessions` 加 'pending' 状态值 | `add` | `workers/orchestrator-core/migrations/0XX-pending-status.sql` | 在现有 truth 表上加 status enum 'pending';不建平行表(per GPT 3.4) | medium |
-| P3-02 | Phase 3 | B | POST `/me/sessions` 写 D1 pending row | `update` | `workers/orchestrator-core/src/index.ts:handleMeSessions` | mint UUID 后写 D1 pending 行 | high |
-| P3-03 | Phase 3 | B | DO alarm 24h GC pending(状态机 'pending' → 'expired') | `add` | `workers/orchestrator-core/src/session-lifecycle.ts` + DO alarm | scan `nano_conversation_sessions WHERE status='pending' AND created_at + 24h < now` | medium |
-| P3-04 | Phase 3 | B | GET `/me/sessions` 合并 pending+active+ended 视图 | `update` | `workers/orchestrator-core/src/session-read-model.ts:handleMeSessions` | 完整 session 列表 | medium |
-| P3-05 | Phase 3 | B | handleStart 状态机 'pending' → 'active' | `update` | `workers/orchestrator-core/src/session-lifecycle.ts:handleStart` | 不用 INSERT,改 UPDATE pending row;保留 duplicate-start 409 guard | medium |
+| P3-01 | Phase 3 | B | D1 migration: `nano_conversation_sessions.session_status` enum 加 'pending' + 'expired' | `add` | `workers/orchestrator-core/migrations/0XX-pending-status.sql` | CHECK 约束扩到 6 个值;不建平行表(per GPT 3.4 + R1 status enum 冻结表) | medium |
+| P3-02 | Phase 3 | B | TypeScript `DurableSessionStatus` union 同步扩展 | `update` | `workers/orchestrator-core/src/session-truth.ts` | union 加 'pending' + 'expired';所有 narrow / exhaustive switch 同步(R1)| medium |
+| P3-03 | Phase 3 | B | POST `/me/sessions` 写 D1 pending row | `update` | `workers/orchestrator-core/src/index.ts:handleMeSessions` | mint UUID 后写 D1 一行 `session_status='pending'` | high |
+| P3-04 | Phase 3 | B | DO alarm 24h GC pending → expired | `add` | `workers/orchestrator-core/src/session-lifecycle.ts` + DO alarm | scan `WHERE session_status='pending' AND created_at + 24h < now` → UPDATE → 'expired' | medium |
+| P3-05 | Phase 3 | B | GET `/me/sessions` read-model 5 状态合并视图 | `update` | `workers/orchestrator-core/src/session-read-model.ts:handleMeSessions` | 返 pending / active / detached / ended / expired 全集(R1) | medium |
+| P3-06 | Phase 3 | B | handleStart 状态机 'pending' → 'starting' → 'active' | `update` | `workers/orchestrator-core/src/session-lifecycle.ts:handleStart` | 不用 INSERT,改 UPDATE pending row;保留 duplicate-start 409 guard | medium |
 | P4-01 | Phase 4 | B | permission request producer | `add` | `workers/agent-core/src/hooks/permission.ts` + `workers/orchestrator-core/src/ws-bridge.ts:emitServerFrame` | runtime permission gate emit `session.permission.request` server frame | high |
 | P4-02 | Phase 4 | B | permission decision consumer + resolver | `add` | `workers/orchestrator-core/src/index.ts:handlePermissionDecision` + `workers/orchestrator-core/src/session-lifecycle.ts` | decision 通过 WS 或 HTTP 回流到等待中的 runtime resolver | high |
 | P5-01 | Phase 5 | B | usage live push + 真预算 snapshot | `update` | `workers/orchestrator-core/src/index.ts:handleUsage` + runtime usage emit | `/usage` 返真数字 + `session.usage.update` server frame | medium |
 | P6-01 | Phase 6 | B | elicitation round-trip producer + consumer | `add` | 同 P4 模式 | elicitation 接通 | medium |
 | P6-02 | Phase 6 | B | live e2e 扩展(start → permission deny → usage → elicit → cancel → list)| `test` | `test/cross-e2e/zx2-transport.test.mjs` | 7 个 facade endpoint full path 覆盖 | medium |
-| P7-01 | Phase 7 | A | preview deploy + cross-e2e 14/14 验证 | `verify` | preview env + cross-e2e | **whole-plan gate** — 14/14 全绿(per GPT 3.2) | medium |
+| P7-01 | Phase 7 | A | preview deploy + cross-e2e 14/14 验证 | `verify` | preview env + cross-e2e | **whole-plan + ops gate(R3)** — code + ops + creds + budget + env 5 项前置全部就绪;14/14 全绿;若任何一项 not-ready 须诚实记入 closure | medium |
 | P8-01 | Phase 8 | A | 7-day parity observation | `verify` | preview env wrangler tail grep `agent-rpc-parity-failed` | 0 误报 + ≥ 1000 turns | medium |
 | P9-01 | Phase 9 | A | P3-05 flip 执行 | `remove` | `workers/orchestrator-core/src/parity-bridge.ts:forwardInternalJsonShadow` + `workers/agent-core/src/host/internal.ts` | 删 fetch fallback + 删非 stream/stream_snapshot fetch handlers | high |
 | P9-02 | Phase 9 | A | R31 workers_dev 撤销 | `update` | `wrangler unpublish-route` × 5 leaf workers | 5 个 leaf worker 旧 workers.dev URL 真撤销 | medium |
@@ -275,13 +299,11 @@ ZX4-transport-true-close-and-session-semantics
 1. P0 user-do.ts 4 模块 seam 完成 + 全量 tests 零回归
 2. P1 R28 + R29 修复 + targeted smoke pass
 3. P2 parity log body diff 升级
-4. P3 `/me/sessions` D1 pending truth(扩 nano_conversation_sessions)
-5. P4 permission round-trip 真接通
-6. P5 usage live push + 真预算
-7. P6 elicitation round-trip + live e2e 扩展
-8. P7 cross-e2e 14/14 全绿
-9. P8 parity log 0 误报 + ≥ 1000 turns
-10. P9 P3-05 flip + R31 撤销 + `internal-http-compat: retired`
+4. P3 `/me/sessions` D1 pending truth — **R1 status enum 4 处同步扩展(migration CHECK / TS union / read-model / alarm GC),任何一处遗漏即 P3 失败**
+5. P4-P6 session-interaction cluster — permission / usage / elicitation 三件作为 cluster 整体收口(per R2)
+6. P7 cross-e2e 14/14 全绿 — **R3 whole-plan + ops gate;code/ops/creds/budget/env 5 项前置全部就绪**
+7. P8 parity log 0 误报 + ≥ 1000 turns
+8. P9 P3-05 flip + R31 撤销 + `internal-http-compat: retired`
 
 ### 7.3 完成定义(Definition of Done)
 
@@ -310,7 +332,7 @@ ZX4-transport-true-close-and-session-semantics
 ZX4 经 GPT 审查后 re-baseline 为单点目标 plan: **transport 真收口 + session 语义闭环**。原 unified draft 的 4 类工作(transport / session / protocol-auth / product)拆为:
 
 - **本 plan(ZX4)**: Lane A(transport blocking close)+ Lane B(session semantics)— 是 transport 真退役的硬条件
-- **ZX5(独立 plan)**: Lane C(protocol/auth hygiene)+ Lane D(product surface)+ Lane E(架构 refactor)— 不阻塞 transport close
+- **ZX5(独立 plan)**: Lane C(protocol/auth hygiene)+ Lane D(product surface)+ Lane E(library worker RPC 升级,**保持 6-worker 不变**)— 不阻塞 transport close;**owner direction 已硬冻结禁止 ZX5 新增 worker**(详见 ZX5 v2 §1.3 Lane E)
 
 ZX4 完成后,`internal-http-compat: retired` 真正落地;facade-http-v1 必需的 7 个 session 语义 endpoint 业务可用。**ZX4 是 ZX2 transport 主线的真正终点**;ZX5 是后续协议卫生 + 业务面 + 架构演进。
 

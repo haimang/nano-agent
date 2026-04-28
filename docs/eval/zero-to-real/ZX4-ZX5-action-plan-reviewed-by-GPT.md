@@ -457,3 +457,100 @@ Lane C 的文稿把 C5 写成：
 这次拆分总体上，我给出的是 **明确正面评价**：
 
 > **拆分是对的，边界比上一版健康很多；ZX4 可以按当前方向推进，ZX5 则必须先接受一条硬边界：按 owner direction，不允许在本阶段拆分出新的 worker。**
+
+---
+
+## 6. 二次审核追加章节（Opus 更新版复审后）
+
+这次二审之后，我对两份 plan 的判断要更新成一句更精确的话：
+
+> **ZX5 已明显比上一版更健康，且 owner direction 已真正写进正文；但 ZX4 仍残留一个 session truth 级别的断点，需要在执行前再冻结一次。**
+
+### 6.1 这次二审里，我确认已经被修正的点
+
+1. **ZX5 的 Lane E 已不再保留“隐性 7-worker 路径”**。`workers/session-do/` 不再是可执行选项，这一点现在既是 review 结论，也是正文硬边界。
+2. **ZX5 的 Q7 / Q8 / Q9 已完成冻结**。C5 的文档落点、D3 的 `/messages` 语义、D6 的 device truth / revoke 粒度，都不再处于“做到一半再决定”的状态。
+3. **ZX5 的 D1 已从双分支假设收紧到 owner-local 单路径**。现在不再一边说 owner local、一边又在正文里保留 GitHub Actions 作为同 plan 并行分支。
+4. **ZX5 的 Lane E 也补上了 agent-core binding 这一层真实改动面**。当前 `workers/agent-core/wrangler.jsonc` 里 `CONTEXT_CORE` / `FILESYSTEM_CORE` 还是注释态，所以这层若不写进 plan，执行时一定会漏。
+
+换句话说，**ZX5 现在已经不是“方向对但文本还在打架”**，而是一个基本能指导执行的 6-worker 内收口计划。
+
+### 6.2 这次二审后仍然存在、而且更值得重视的盲点
+
+### R10 — ZX4 Phase 3 的 `pending` 方案，仍然隐含一个尚未冻结的 schema 设计点
+
+当前真实 schema 里，`nano_conversation_sessions` 至少有两条硬约束：
+
+- `conversation_uuid TEXT NOT NULL`
+- `started_at TEXT NOT NULL`
+
+而 ZX4 Phase 3 现在写的是：
+
+- `POST /me/sessions` mint UUID 后，直接在 `nano_conversation_sessions` 写一行 `session_status='pending'`
+- 之后 `handleStart` 不再 `INSERT`，而是把 pending row `UPDATE` 成 `starting/active`
+
+这套思路**方向上仍然是对的**，因为我依旧反对再建 `pending_sessions` 平行表。  
+但它现在还欠一个关键冻结：
+
+> **mint 阶段到底是否同时预建 `nano_conversations` row，并提前确定 `conversation_uuid`？**
+
+如果不预建，那么 `conversation_uuid NOT NULL` 就会卡住；  
+如果预建，那么 ZX4 就不只是“多一个 pending 状态”，而是**把 conversation allocation 时点前移到了 mint 阶段**。
+
+这不是措辞小问题，而是**真实数据模型决策**。  
+所以我现在建议把 ZX4 的 caveat 再明确一层：
+
+1. 保持“单表扩状态”，不回退到平行表
+2. 但必须在开工前冻结 **mint 是否预建 conversation row**
+3. 同时把文中的 pending GC 口径和真表字段对齐：`nano_conversation_sessions` 当前是 `started_at`，不是 `created_at`
+
+### R11 — ZX4 一旦引入 `pending`，现有 session guard 也必须同步改写
+
+当前真实代码里，`workers/orchestrator-core/src/user-do.ts` 对 follow-up / cancel / verify 一类路径的保护逻辑，本质上还是：
+
+- session 不存在：拒绝
+- `status === 'ended'`：terminal response
+- 其他状态：继续走
+
+这意味着如果 ZX4 只是把 `pending` 加进 union / SQL CHECK，但**没有同步收紧 ingress guard**，那后面就会出现一个新裂缝：
+
+- 文档说：`pending` 只能走 `/start`
+- 代码却可能把“未 ended 的 pending session”继续当成可写 session
+
+而 ZX5 Q8 这次已经明确冻结为：
+
+> **`/messages` 只作为 session-running ingress；`pending` 必须走 `/start`，不能离线补写。**
+
+所以 ZX4 / ZX5 现在已经形成一个明确耦合：
+
+1. ZX4 要加 `pending`
+2. ZX4 或 ZX5 必须同步把 `/input` / `/messages` / 相关 follow-up guard 改成**拒绝 `pending`**
+3. 否则文档冻结与 runtime 行为会再次分叉
+
+### R12 — ZX4 仍留着一条过时 handoff：`[O9] DO 提取独立 worker → ZX5 Lane E`
+
+这条 handoff 在 owner direction 固化之后已经过时了。
+
+因为现在的真实结论是：
+
+- ZX5 Lane E **不再承接** `NanoSessionDO` 物理提取
+- 该议题已经冻结 / 延后
+- 如未来重谈，也必须是 owner 重新授权后的独立议题
+
+所以 ZX4 里的 `[O9]` 现在会造成一个文档层误导：
+
+> 看起来像是“ZX4 不做，ZX5 会继续做”
+
+但现在事实已经不是这样。  
+我建议把这条 handoff 在后续文档维护中直接改成：
+
+- `R24 / NanoSessionDO 拆分议题冻结 + 延后，不属于当前 ZX5 scope`
+
+### 6.3 二次审核后的最终更新判断
+
+- **ZX4**：仍然是 `approved-with-caveats`，但 caveat 现在应明确升级为 **“pending 写入单表时的 schema 冻结 + ingress guard 同步”**
+- **ZX5**：仍然是 `approved-with-caveats`，但比上一轮已经更接近 **可直接执行**
+
+如果用一句话概括这次二审追加结论：
+
+> **ZX5 已经基本摆脱了“旧 scope 残影”；真正还需要 owner / 执行者在开工前钉死的，反而是 ZX4 的 pending/session-truth 落库时点与 guard 语义。**
