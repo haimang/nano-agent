@@ -209,7 +209,7 @@ ZX4-transport-true-close-and-session-semantics
 - **为什么必须确认**: 原 Q1 把实现文字冻结为"AbortController 同 fetch 链";GPT 5.Q1 建议改写为结果约束(取消与执行同一请求生命周期 / 同一运行链条),不冻结实现名词
 - **当前建议 / 倾向**: 采用 GPT 修订表述
 - **Q**: R28 修复约束是否冻结为"取消与执行处于同一请求生命周期 / 同一运行链条;不依赖第二条独立 cancel request 作为 preview 主路径;本次不做 transport 大重构"?
-- **A**: ___
+- **A**: 同意,按结果约束冻结;实现可自由选择,但 preview 主路径不得再依赖第二条独立 cancel request,且本次不扩大为 transport 大重构。
 
 ### Q2(per GPT 修订 — 不再问整 stream 并行)
 
@@ -217,7 +217,7 @@ ZX4-transport-true-close-and-session-semantics
 - **为什么必须确认**: GPT 3.3 反对整 stream 并行;同意低交集子项并行(P2 parity log 升级 vs P3 D1 schema migration)
 - **当前建议 / 倾向**: 串行为主;允许 P2 与 P3-01 / P3-02 cross-phase 并行(前提 git conflict 可控)
 - **Q**: 是否同意 phase-by-phase 串行 + 仅低交集子项允许跨 phase 并行?
-- **A**: ___
+- **A**: 同意。以 phase-by-phase 串行为默认,只允许像 P2 与 P3-01/P3-02 这类低交集子项跨 phase 并行,并要求独立 PR + 不触碰同一热点文件。
 
 ### Q3(per GPT 修订 — 4 模块 seam 而非行数)
 
@@ -225,7 +225,7 @@ ZX4-transport-true-close-and-session-semantics
 - **为什么必须确认**: GPT Q3 建议 4 模块 — `session-lifecycle` / `session-read-model` / `ws-bridge` / `parity-bridge`(按职责 seam 不按机械行数)
 - **当前建议 / 倾向**: 采用 GPT 4 模块 seam
 - **Q**: user-do.ts 4 模块 seam 拆分是否冻结?
-- **A**: ___
+- **A**: 同意。冻结为 4 模块 seam(`session-lifecycle` / `session-read-model` / `ws-bridge` / `parity-bridge`),按职责边界拆分,不按机械行数拆分。
 
 ### Q4(per GPT 修订 — 全部代码冻结后再启动观察)
 
@@ -233,7 +233,7 @@ ZX4-transport-true-close-and-session-semantics
 - **为什么必须确认**: GPT Q4 反对 S1-P1 后立刻观察(后续变更会污染观察窗口);建议在所有会影响 parity/path 行为的代码冻结后启动
 - **当前建议 / 倾向**: P0-P6 + P7 cross-e2e 14/14 全部完成后启动观察(等价于本 plan P8)
 - **Q**: 7 天观察启动时机冻结为"所有 parity 影响代码冻结 + cross-e2e 14/14 全绿之后"?
-- **A**: ___
+- **A**: 同意。观察期必须放在所有会影响 parity/path 的代码冻结且 P7 14/14 全绿之后,否则观察窗口会被后续变更污染。
 
 ### Q5(新增)
 
@@ -241,7 +241,7 @@ ZX4-transport-true-close-and-session-semantics
 - **为什么必须确认**: GPT 3.4 反对新建 `pending_sessions` 表;建议在现有 `nano_conversation_sessions` 加 'pending' 状态值
 - **当前建议 / 倾向**: 采用 GPT 单一 truth 模型 — 扩展现有表
 - **Q**: `/me/sessions` pending truth 是否冻结为"扩展 `nano_conversation_sessions` 加 'pending' 状态值,不新建平行表"?
-- **A**: ___
+- **A**: 同意。冻结为扩展 `nano_conversation_sessions` 的单一 truth 模型,不新建平行表;若保留 `expired` 语义,必须同步更新 migration CHECK、TypeScript 状态 union 与 read-model,否则只做定时清理不引入文字状态。
 
 ---
 
