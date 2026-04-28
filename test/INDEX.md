@@ -10,7 +10,7 @@
 
 **不是什么**：
 - 不是 `workers/*/test/` 下的包内单测
-- 不是 `test-legacy/` 里的旧 contract / root guardian 树
+- 不是已归档的 legacy contract 树(ZX3 Phase 5 已物理删除 `test-legacy/`,有价值的 guardians 已迁到 `test/root-guardians/`,fixtures 已迁到 `test/shared/fixtures/`)
 - 不是 production 域名 smoke
 
 **运行前提**：
@@ -173,9 +173,15 @@ node --test test/package-e2e/orchestrator-core/*.test.mjs
 
 ---
 
-## 7. 与 `test-legacy/` 的关系
+## 7. 与 `test-legacy/` 的关系(已归档)
 
-`test-legacy/` 继续保留历史 contract / guardian 价值；新的 `test/` 只负责 **deploy-time live E2E**。两棵树的职责不要再混写。
+`test-legacy/` 已在 ZX3 Phase 5(2026-04-27)物理删除。原树中:
+- 5 个有价值的 contract guardians 已迁到 `test/root-guardians/`(参见 `pnpm test:contracts`)。
+- 1 个 meta-guardian(`test-command-coverage.test.mjs`)守护测试脚本覆盖,合计 6 文件。
+- external-seam fixtures 已迁到 `test/shared/fixtures/external-seams/`。
+- 14 个无活跃契约价值的 guardian 已 retire(对应 runtime 已被 absorbed 到 worker,各 worker 的 unit test 自带契约保护)。
+
+新树职责:`test/` 只负责 **deploy-time live E2E**;ZX3 后两棵树的混写已不存在。
 
 ---
 
@@ -183,6 +189,7 @@ node --test test/package-e2e/orchestrator-core/*.test.mjs
 
 | 版本 | 日期 | 修改者 | 主要变更 |
 | --- | --- | --- | --- |
-| `v0.3` | 2026-04-24 | GPT-5.4 | F3 cutover：升级到 5-worker index，orchestrator 成为 canonical public owner，agent legacy 退役进入 live negative suite |
-| `v0.2` | 2026-04-23 | Claude Opus 4.7 | 扩展 v0.1，加入更多 lifecycle / error / concurrency coverage |
+| `v0.4` | 2026-04-28 | Opus 4.7 | ZX3-ZX4 review followup:删除 §7 对 test-legacy 仍然存在的描述(实际已 ZX3 P5 删除);§0 "不是什么" 补加 ZX3 cutover 说明 |
+| `v0.3` | 2026-04-24 | GPT-5.4 | F3 cutover:升级到 5-worker index,orchestrator 成为 canonical public owner,agent legacy 退役进入 live negative suite |
+| `v0.2` | 2026-04-23 | Claude Opus 4.7 | 扩展 v0.1,加入更多 lifecycle / error / concurrency coverage |
 | `v0.1` | 2026-04-23 | Claude Opus 4.7 | 初版 live E2E 索引 |
