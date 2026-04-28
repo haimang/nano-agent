@@ -1,17 +1,27 @@
 # WeChat auth API
 
+> Public facade owner: `orchestrator-core`
+> Profile: `facade-http-v1`
+
+## Base URLs
+
+| 环境 | Base URL |
+|---|---|
+| preview | `https://nano-agent-orchestrator-core-preview.haimang.workers.dev` |
+| production | `https://nano-agent-orchestrator-core.haimang.workers.dev` |
+
 ## Route
 
-| Route | Method | Auth | 说明 |
-|------|--------|------|------|
-| `/auth/wechat/login` | `POST` | no | 微信 code 登录；优先走 decrypt 自动登录 |
+| Route | Method | Auth |
+|---|---|---|
+| `/auth/wechat/login` | `POST` | no |
 
 ## Request
 
 ```http
 POST /auth/wechat/login
 content-type: application/json
-x-trace-uuid: <uuid>
+x-trace-uuid: 11111111-1111-4111-8111-111111111111
 
 {
   "code": "021x...",
@@ -23,40 +33,74 @@ x-trace-uuid: <uuid>
 
 ## Field policy
 
-| Field | 当前策略 |
-|------|----------|
+| Field | 当前事实 |
+|---|---|
 | `code` | 必填 |
-| `encrypted_data` | 推荐提供；与 `iv` 成对出现 |
-| `iv` | 推荐提供；与 `encrypted_data` 成对出现 |
-| `display_name` | 仅 bootstrap fallback，不是身份真相 |
+| `encrypted_data` + `iv` | 要么都传，要么都不传；只传一个会被 schema reject |
+| `display_name` | 仅 bootstrap fallback；若 decrypt 成功，以解密资料优先 |
 
-当前服务端流程：
+## Success envelope
+
+成功形状与邮箱注册/登录相同，返回 `tokens + user + team + snapshot`：
+
+```json
+{
+  "ok": true,
+  "data": {
+    "tokens": {
+      "access_token": "eyJ...",
+      "refresh_token": "opaque-refresh-token",
+      "expires_in": 3600,
+      "refresh_expires_in": 2592000,
+      "kid": "v1"
+    },
+    "user": {
+      "user_uuid": "11111111-1111-4111-8111-111111111111",
+      "display_name": "小程序用户",
+      "identity_provider": "wechat",
+      "login_identifier": "openid:abc"
+    },
+    "team": {
+      "team_uuid": "22222222-2222-4222-8222-222222222222",
+      "membership_level": 100,
+      "plan_level": 0
+    },
+    "snapshot": {
+      "sub": "11111111-1111-4111-8111-111111111111",
+      "user_uuid": "11111111-1111-4111-8111-111111111111",
+      "team_uuid": "22222222-2222-4222-8222-222222222222",
+      "tenant_uuid": "22222222-2222-4222-8222-222222222222",
+      "tenant_source": "claim",
+      "membership_level": 100,
+      "exp": 1760000000
+    }
+  },
+  "trace_uuid": "11111111-1111-4111-8111-111111111111"
+}
+```
+
+## Server-side flow
 
 1. `code -> jscode2session`
-2. 获取 `openid + session_key`
-3. 如果收到 `encrypted_data + iv`，则在服务端解密
-4. 校验 decrypted `openid` 与 `jscode2session.openid` 一致
-5. 命中已有身份则复用；否则 bootstrap 新用户
-
-## Success notes
-
-- `session_key` 只在服务端短暂使用，不回传客户端
-- decrypt 成功时，优先使用解密后的 `display_name`
-- 当前仍保留 code-only compatibility，便于旧调用方平滑迁移
+2. 拿到 `openid + session_key`
+3. 若请求携带 `encrypted_data + iv`，服务端解密 profile
+4. 若解密 profile 中的 `openid` 与 `jscode2session.openid` 不一致，返回 `invalid-wechat-payload`
+5. 命中已有 wechat identity 则复用；否则 bootstrap 新用户并签发 tokens
 
 ## Common errors
 
-| Code | 含义 |
-|------|------|
-| `invalid-wechat-code` | `wx.login` code 不合法、过期，或微信接口未返回 `openid/session_key` |
-| `invalid-wechat-payload` | `encrypted_data/iv` 半缺失、解密失败，或解密后的 `openid` 与 `jscode2session` 不一致 |
-| `worker-misconfigured` | auth worker 未注入 `WECHAT_APPID/WECHAT_SECRET` |
+| HTTP | `error.code` | 触发 |
+|---|---|---|
+| 400 | `invalid-request` | body 不通过 schema 校验 |
+| 400 / 502 / 504 | `invalid-wechat-code` | `code` 无效、微信接口失败或超时 |
+| 400 | `invalid-wechat-payload` | `encrypted_data/iv` 半缺失、解密失败、或解密 `openid` 不一致 |
+| 503 | `worker-misconfigured` | 缺 `WECHAT_APPID/WECHAT_SECRET` 或数据库配置 |
 
-## Mini Program client recommendation
+## Mini Program recommendation
 
-优先在用户点击“微信一键登录”后同时调用：
+推荐在用户点击“一键登录”后同时获取：
 
-1. `wx.login()`
-2. `wx.getUserProfile()`
+1. `wx.login()` 的 `code`
+2. `wx.getUserProfile()` 的 `encryptedData + iv + nickName`
 
-然后把 `code + encrypted_data + iv + userInfo.nickName` 一起发给后端。
+然后一次性发给 `/auth/wechat/login`。这样可以避免 code-only fallback 导致的展示名不完整。

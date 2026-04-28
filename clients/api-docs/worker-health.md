@@ -1,12 +1,25 @@
 # Worker health API
 
+> Public facade owner: `orchestrator-core`
+> Profile: `debug-health`
+> 说明: **debug / ops 接口，不是业务 facade envelope**
+
+## Base URLs
+
+| 环境 | Base URL |
+|---|---|
+| preview | `https://nano-agent-orchestrator-core-preview.haimang.workers.dev` |
+| production | `https://nano-agent-orchestrator-core.haimang.workers.dev` |
+
 ## Route
 
-| Route | Method | Auth | 说明 |
-|------|--------|------|------|
-| `/debug/workers/health` | `GET` | no | 聚合 6 个 worker 的 live/version/debug truth |
+| Route | Method | Auth |
+|---|---|---|
+| `/debug/workers/health` | `GET` | no |
 
-## Response
+## Response shape
+
+> 注意：这个接口**不是** `{ ok:true, data, trace_uuid }`。当前真实返回就是下面这种 debug JSON：
 
 ```json
 {
@@ -26,7 +39,8 @@
       "details": {
         "worker": "orchestrator-core",
         "status": "ok",
-        "phase": "orchestration-facade-closed"
+        "phase": "orchestration-facade-closed",
+        "public_facade": true
       }
     }
   ]
@@ -35,7 +49,7 @@
 
 ## Worker set
 
-当前聚合目标固定为：
+当前固定聚合 6 个 worker：
 
 1. `orchestrator-core`
 2. `orchestrator-auth`
@@ -46,11 +60,21 @@
 
 ## Field notes
 
-| Field | 说明 |
-|------|------|
-| `live` | probe 是否成功且 worker 自报 `status="ok"` |
-| `status` | worker 自报状态，或 `binding-missing` / `unreachable` |
-| `worker_version` | 由各 worker 的 `WORKER_VERSION` env 提供 |
-| `details` | worker 的原始 probe body，便于调试 phase/binding flags |
+| Field | 含义 |
+|---|---|
+| `summary.live` | `live === true` 的 worker 数量 |
+| `summary.total` | 当前探测集合总数 |
+| `worker` | worker 名称 |
+| `live` | probe 成功且 worker 自报 `status === "ok"` |
+| `status` | `ok` / `binding-missing` / `unreachable` / `http-<status>` |
+| `worker_version` | worker 自报版本；缺失时为 `null` |
+| `details` | worker 原始 probe body；便于 debug |
+| `error` | 仅在探测失败时出现 |
 
-该接口是前端 debug 面，不是业务查询 API；字段会保持克制，不直接暴露内部 secret 或大块 topology 细节。
+## Intended use
+
+- 前端 debug 面板
+- preview / production deploy 后的肉眼确认
+- 非业务监控 UI
+
+不要把它当成业务 API 的可用性真相源，也不要拿它替代真正的 session / auth 状态查询。
