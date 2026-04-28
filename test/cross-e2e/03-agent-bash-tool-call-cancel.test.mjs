@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { fetchJson, liveTest, randomSessionId } from "../shared/live.mjs";
 import { createOrchestratorAuth } from "../shared/orchestrator-auth.mjs";
 
-liveTest("orchestrator-core verifies a real bash-core cancel path", ["orchestrator-core", "bash-core"], async ({ getUrl }) => {
+liveTest("orchestrator-core verifies a real bash-core cancel path", ["orchestrator-core"], async ({ getUrl }) => {
   const base = getUrl("orchestrator-core");
   const sessionId = randomSessionId();
   const { jsonHeaders } = await createOrchestratorAuth("cross-e2e");

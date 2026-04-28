@@ -2,34 +2,22 @@ import assert from "node:assert/strict";
 import { fetchJson, liveTest } from "../shared/live.mjs";
 
 /**
- * Cross e2e — 6-worker probe fan-out under concurrent load.
+ * Cross e2e — orchestrator-core public facade probe fan-out under concurrent load.
  *
- * Stack-preview-inventory (01) probes each worker once. This test
- * fans out **8 concurrent probes per worker** to catch:
- *   - cold-start DO race conditions (worker-wakeup under load)
- *   - Cloudflare edge caching drift (identical probes must return
- *     identical JSON body — phase / absorbed_runtime / worker name)
- *   - session namespace independence: the probe path is session-less
- *     (`GET /`), so concurrent probes MUST NOT interfere with each
- *     other or leak state between workers
- *   - subrequest budget health at the edge (48 concurrent requests
- *     total across 6 workers)
+ * ZX3 P4-04 / R30 fix(2026-04-27): ZX2 P1-02 set 5 leaf workers'
+ * `workers_dev: false`. Only orchestrator-core has a public workers.dev URL.
+ * Pre-ZX3 this test fanned out 48 concurrent probes across all 6 workers'
+ * public URLs, but 5 of them are now unreachable.  Post-ZX3: fan-out 48
+ * probes against the orchestrator-core public facade only — that's still
+ * the right concurrency stress test for the public entry under load.
  *
  * Passing criteria:
  *   - all 48 responses 200
- *   - response bodies are identical per worker (deep-equal)
+ *   - response bodies are identical(deep-equal canonical probe fields)
  *   - no request takes > 10s(timeout guard for cold-start pathology)
  */
 
-const WORKERS = [
-  "agent-core",
-  "orchestrator-auth",
-  "orchestrator-core",
-  "bash-core",
-  "context-core",
-  "filesystem-core",
-];
-const FANOUT = 8;
+const FANOUT = 48;
 const TIMEOUT_MS = 10_000;
 
 function withTimeout(promise, ms, label) {
@@ -45,20 +33,17 @@ function withTimeout(promise, ms, label) {
 }
 
 liveTest(
-  "6-worker probe fan-out (8×6=48 concurrent) stays identical-body and under 10s",
-  WORKERS,
+  "orchestrator-core facade 48 concurrent probes stay identical-body and under 10s",
+  ["orchestrator-core"],
   async ({ getUrl }) => {
+    const base = getUrl("orchestrator-core");
     const started = Date.now();
-    const probes = WORKERS.flatMap((worker) =>
-      Array.from({ length: FANOUT }, (_, i) => {
-        const label = `${worker}#${i}`;
-        return withTimeout(
-          fetchJson(`${getUrl(worker)}/`),
-          TIMEOUT_MS,
-          label,
-        ).then((result) => ({ worker, label, ...result }));
-      }),
-    );
+    const probes = Array.from({ length: FANOUT }, (_, i) => {
+      const label = `orchestrator-core#${i}`;
+      return withTimeout(fetchJson(`${base}/`), TIMEOUT_MS, label).then(
+        (result) => ({ label, ...result }),
+      );
+    });
     const results = await Promise.all(probes);
     const elapsed = Date.now() - started;
 
@@ -71,38 +56,22 @@ liveTest(
       );
     }
 
-    // Per-worker body identity: canonical probe fields must match
-    // across the 8 fan-out calls
-    for (const worker of WORKERS) {
-      const group = results.filter((r) => r.worker === worker);
-      assert.equal(group.length, FANOUT);
-      const first = group[0].json;
-      assert.ok(first, `${worker} first probe has JSON body`);
-      for (const r of group.slice(1)) {
-        assert.deepEqual(
-          r.json?.worker,
-          first.worker,
-          `${r.label} worker field drift`,
-        );
-        assert.deepEqual(
-          r.json?.phase,
-          first.phase,
-          `${r.label} phase field drift`,
-        );
-        assert.deepEqual(
-          r.json?.absorbed_runtime,
-          first.absorbed_runtime,
-          `${r.label} absorbed_runtime drift`,
-        );
-      }
+    // Body identity: canonical probe fields must match across the fan-out
+    const first = results[0].json;
+    assert.ok(first, "first probe has JSON body");
+    for (const r of results.slice(1)) {
+      assert.deepEqual(r.json?.worker, first.worker, `${r.label} worker field drift`);
+      assert.deepEqual(r.json?.phase, first.phase, `${r.label} phase field drift`);
+      assert.deepEqual(
+        r.json?.public_facade,
+        first.public_facade,
+        `${r.label} public_facade drift`,
+      );
     }
 
-    // Sanity: 48 probes should not take the full 10s × 48 — they run
-    // concurrently; if the wall clock exceeds 10s it suggests cold-start
-    // pathology or serialization.
     assert.ok(
       elapsed < TIMEOUT_MS,
-      `48 concurrent probes took ${elapsed}ms (>${TIMEOUT_MS}ms — suspect serialization or cold-start pathology)`,
+      `${FANOUT} concurrent probes took ${elapsed}ms (>${TIMEOUT_MS}ms — suspect serialization or cold-start pathology)`,
     );
   },
 );

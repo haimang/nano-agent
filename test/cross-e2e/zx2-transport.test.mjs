@@ -21,7 +21,9 @@
 import assert from "node:assert/strict";
 import { fetchJson, liveTest } from "../shared/live.mjs";
 
-const WORKERS = ["orchestrator-core", "orchestrator-auth"];
+// ZX3 P4-04 / R30(2026-04-27): orchestrator-auth `workers_dev:false` —
+// only orchestrator-core has public URL; auth reached via service binding.
+const WORKERS = ["orchestrator-core"];
 const TRACE = "11111111-1111-4111-8111-111111111111";
 
 liveTest("ZX2 facade-must-have endpoints work end-to-end", WORKERS, async ({ getUrl }) => {

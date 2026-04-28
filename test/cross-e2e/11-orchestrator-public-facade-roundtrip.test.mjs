@@ -44,10 +44,9 @@ function waitForMatchingMessage(ws, predicate) {
 
 liveTest(
   "orchestrator-core final public facade roundtrip stays coherent across agent-core and bash-core",
-  ["orchestrator-core", "agent-core", "bash-core"],
+  ["orchestrator-core"],
   async ({ getUrl }) => {
     const base = getUrl("orchestrator-core");
-    const agentBase = getUrl("agent-core");
     const wsBase = base.replace(/^http/, "ws");
     const sessionId = randomSessionId();
     const { token, traceUuid, authHeaders, jsonHeaders } = await createOrchestratorAuth("cross-e2e");
@@ -95,9 +94,12 @@ liveTest(
     assert.equal(timeline.response.status, 200);
     assert.ok(Array.isArray(timeline.json?.events));
 
-    const legacy = await fetchJson(`${agentBase}/sessions/${sessionId}/status`);
-    assert.equal(legacy.response.status, 410);
-    assert.equal(legacy.json?.canonical_worker, "orchestrator-core");
+    // ZX3 P4-04 / R30 fix(2026-04-27): pre-ZX3 this asserted that probing
+    // agent-core direct URL returns 410 with canonical_worker hint. ZX2 P1-02
+    // set agent-core `workers_dev: false`, so the URL is now unreachable at
+    // the edge (CF returns 404 from the edge, agent-core's internal 410
+    // handler is never reached). The canonical guarantee that orchestrator-core
+    // is the *only* public facade is now enforced by 01-stack-preview-inventory.
 
     ws.close();
   },

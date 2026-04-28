@@ -1,13 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+// ZX3 P4-04 / R30(2026-04-27): post-ZX2 P1-02, only orchestrator-core has a
+// public workers.dev URL(`workers_dev: true`). 5 leaf workers are
+// `workers_dev: false` and only reachable via service binding from the facade.
+// DEFAULT_URLS now reflects that — only orchestrator-core. cross-e2e tests
+// that need to verify leaf-worker behavior must do so by traversing the
+// facade(start session → start runtime turn → bash-core invocation), not
+// by direct URL probe.
 const DEFAULT_URLS = {
-  "agent-core": "https://nano-agent-agent-core-preview.haimang.workers.dev",
   "orchestrator-core": "https://nano-agent-orchestrator-core-preview.haimang.workers.dev",
-  "orchestrator-auth": "https://nano-agent-orchestrator-auth-preview.haimang.workers.dev",
-  "bash-core": "https://nano-agent-bash-core-preview.haimang.workers.dev",
-  "context-core": "https://nano-agent-context-core-preview.haimang.workers.dev",
-  "filesystem-core": "https://nano-agent-filesystem-core-preview.haimang.workers.dev",
 };
 
 const ENV_KEYS = {

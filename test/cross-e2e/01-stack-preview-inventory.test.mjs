@@ -1,33 +1,25 @@
 import assert from "node:assert/strict";
 import { fetchJson, liveTest } from "../shared/live.mjs";
 
-const WORKERS = [
-  "agent-core",
-  "orchestrator-auth",
-  "orchestrator-core",
-  "bash-core",
-  "context-core",
-  "filesystem-core",
-];
+// ZX3 P4-04 / R30 fix(2026-04-27): ZX2 P1-02 set 5 leaf workers'
+// `workers_dev: false`. Only orchestrator-core has a public workers.dev URL.
+// Pre-ZX3 this test probed all 6 workers' `/` directly — that fails on real
+// deploy. Post-ZX3: only probe orchestrator-core's facade `/`, which
+// exposes `nacp_core_version` / `nacp_session_version` / `worker_version`
+// / `public_facade` / `agent_binding` — proving the facade aggregates
+// downstream workers via service binding without needing them publicly
+// reachable.
 
-liveTest("6-worker preview inventory stays coherent", WORKERS, async ({ getUrl }) => {
-  const probes = await Promise.all(
-    WORKERS.map(async (worker) => {
-      const { response, json } = await fetchJson(`${getUrl(worker)}/`);
-      assert.equal(response.status, 200);
-      return [worker, json];
-    }),
-  );
+liveTest("orchestrator-core public facade reports coherent stack metadata", ["orchestrator-core"], async ({ getUrl }) => {
+  const { response, json } = await fetchJson(`${getUrl("orchestrator-core")}/`);
+  assert.equal(response.status, 200);
 
-  const byWorker = Object.fromEntries(probes);
-  assert.equal(byWorker["agent-core"]?.worker, "agent-core");
-  assert.equal(byWorker["orchestrator-auth"]?.worker, "orchestrator-auth");
-  assert.equal(byWorker["orchestrator-core"]?.worker, "orchestrator-core");
-  assert.equal(byWorker["bash-core"]?.worker, "bash-core");
-  assert.equal(byWorker["context-core"]?.worker, "context-core");
-  assert.equal(byWorker["filesystem-core"]?.worker, "filesystem-core");
-
-  for (const worker of WORKERS) {
-    assert.equal(typeof byWorker[worker]?.worker_version, "string");
-  }
+  // facade probe contract surface
+  assert.equal(json?.worker, "orchestrator-core");
+  assert.equal(typeof json?.worker_version, "string");
+  assert.equal(typeof json?.nacp_core_version, "string");
+  assert.equal(typeof json?.nacp_session_version, "string");
+  assert.equal(json?.status, "ok");
+  assert.equal(json?.public_facade, true);
+  assert.equal(json?.agent_binding, true);
 });
