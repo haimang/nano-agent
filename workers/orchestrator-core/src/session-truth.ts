@@ -278,6 +278,15 @@ export class D1SessionTruthRepository {
   // even under concurrent retries (per Q11 owner-frozen修法 b: D1
   // conditional UPDATE,no client-side cache). Caller treats false as
   // "another request already claimed,respond 409".
+  //
+  // ZX5 review (deepseek R8 low-priority deferred): Q11(b) literal原文 also
+  // includes `AND started_at = :minted_at`. In the current scenario this is
+  // functionally equivalent (started_at is stamped at mint and immutable for
+  // pending rows; only one row exists per session_uuid because session_uuid
+  // is a UUIDv4 minted by /me/sessions). The extra guard would protect against
+  // a future hypothetical "expire+remint same UUID" path which is not on the
+  // current product roadmap. Tracked as residual; not enforced here to avoid
+  // an unnecessary extra D1 read trip per /start.
   async claimPendingForStart(session_uuid: string): Promise<boolean> {
     const result = await this.db.prepare(
       `UPDATE nano_conversation_sessions

@@ -108,6 +108,23 @@ export interface DurableObjectStateLike {
 // 外部 import { SessionStatus, SessionEntry, ... } from './user-do.js' 仍然工作。
 export type { SessionStatus, TerminalKind, SessionEntry } from "./session-lifecycle.js";
 
+// ZX5 review fix (deepseek R5): read the orchestrator-core-supplied authority
+// from the internal request header. orchestrator-core sets
+// `x-nano-internal-authority: JSON.stringify(snapshot)` on every authenticated
+// User-DO route; read paths previously only consulted the KV-persisted snapshot
+// which is empty for users that haven't started a session yet.
+function readInternalAuthority(request: Request): IngressAuthSnapshot | null {
+  const raw = request.headers.get('x-nano-internal-authority');
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (isAuthSnapshot(parsed)) return parsed;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export class NanoOrchestratorUserDO {
   private readonly attachments = new Map<string, AttachmentState>();
 
@@ -143,7 +160,13 @@ export class NanoOrchestratorUserDO {
         if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0 || n > 200) return 50;
         return n;
       })();
-      return this.handleMeConversations(limit);
+      // ZX5 review fix (deepseek R5): orchestrator-core forwards authority via
+      // `x-nano-internal-authority` on every authenticated route, but the read
+      // paths previously fell back to the KV-persisted snapshot only — a fresh
+      // user (no /start yet) saw an empty list even with a valid token. Prefer
+      // the in-flight header, fall back to KV for compatibility.
+      const headerAuthority = readInternalAuthority(request);
+      return this.handleMeConversations(limit, headerAuthority);
     }
 
     const segments = pathname.split('/').filter(Boolean);
@@ -370,7 +393,11 @@ export class NanoOrchestratorUserDO {
       team_uuid: teamUuid,
       trace_uuid: traceUuid,
       turn_uuid: turn?.turn_uuid ?? null,
-      role: kind === 'user.input' ? 'user' : 'system',
+      // ZX5 review (deepseek R2): kind taxonomy was extended in D3 to include
+      // 'user.input.text' / 'user.input.multipart'; the role discriminator must
+      // accept the whole `user.input.*` family — strict equality silently mis-
+      // tagged D3 messages as `system` and corrupted history reads.
+      role: kind.startsWith('user.input') ? 'user' : 'system',
       kind,
       event_seq: null,
       body: payload,
@@ -949,129 +976,28 @@ export class NanoOrchestratorUserDO {
     });
   }
 
+  // ZX5 review fix (deepseek R3 / kimi R5 / Q8 owner direction):
+  // /input is now a thin compatibility alias. It validates `{text}` (preserving
+  // its historical 400 `invalid-input-body` shape for upstream callers) and
+  // normalizes the body into the /messages multipart shape `parts: [{kind:
+  // 'text', text}]` before delegating to handleMessages. Single 落库 path,
+  // single agent-core forward, single message_kind taxonomy.
   private async handleInput(sessionUuid: string, body: FollowupBody): Promise<Response> {
-    const entry = await this.requireSession(sessionUuid);
-    if (!entry) return this.sessionGateMiss(sessionUuid);
-    if (entry.status === 'ended') return sessionTerminalResponse(sessionUuid, await this.getTerminal(sessionUuid));
     if (typeof body.text !== 'string' || body.text.length === 0) {
       return jsonResponse(400, { error: 'invalid-input-body', message: 'input requires non-empty text' });
     }
-    if (body.auth_snapshot) await this.refreshUserState(body.auth_snapshot, body.initial_context_seed);
-    const authSnapshot =
-      body.auth_snapshot ??
-      (await this.get<IngressAuthSnapshot>(USER_AUTH_SNAPSHOT_KEY));
-    if (!authSnapshot) {
-      return jsonResponse(400, { error: 'missing-authority', message: 'input requires persisted auth snapshot' });
-    }
-    const traceUuid = typeof body.trace_uuid === 'string' ? body.trace_uuid : crypto.randomUUID();
-    const now = new Date().toISOString();
-    const durablePointer = await this.ensureDurableSession(sessionUuid, authSnapshot, traceUuid, now);
-    const durableTurn = await this.createDurableTurn(
-      sessionUuid,
-      durablePointer,
-      authSnapshot,
-      traceUuid,
-      'followup',
-      body.text,
-      now,
-    );
-    await this.recordUserMessage(
-      sessionUuid,
-      durablePointer,
-      authSnapshot,
-      traceUuid,
-      durableTurn,
-      'user.input',
-      { text: body.text },
-      now,
-    );
-    await this.appendDurableActivity({
-      pointer: durablePointer,
-      authSnapshot,
-      traceUuid,
-      turnUuid: durableTurn?.turn_uuid,
-      eventKind: 'session.followup.request',
-      severity: 'info',
-      payload: { text: body.text },
-      timestamp: now,
-    });
-
-    // ZX4 Phase 9 — RPC-only after P3-05 flip. forwardInternalJsonShadow
-    // returns 503 `agent-rpc-unavailable` when AGENT_CORE.input is unbound
-    // or no authority is available; HTTP fallback was deleted in ZX4 P9.
-    const inputAck = await this.forwardInternalJsonShadow(
-      sessionUuid,
-      'input',
-      {
-        text: body.text,
-        ...(body.context_ref !== undefined ? { context_ref: body.context_ref } : {}),
-        ...(body.stream_seq !== undefined ? { stream_seq: body.stream_seq } : {}),
-        ...(typeof body.trace_uuid === 'string' ? { trace_uuid: body.trace_uuid } : {}),
-        ...(body.auth_snapshot ? { authority: body.auth_snapshot } : {}),
-      },
-      'input',
-    );
-    if (!inputAck.response.ok) {
-      if (durableTurn) {
-        await this.sessionTruth()?.closeTurn({
-          turn_uuid: durableTurn.turn_uuid,
-          status: 'failed',
-          ended_at: new Date().toISOString(),
-        });
-      }
-      return this.cloneJsonResponse(inputAck.response.status, inputAck.body);
-    }
-
-    const stream = await this.readInternalStream(sessionUuid);
-    if (!stream.ok) return stream.response;
-    const frames = stream.frames;
-    let nextEntry: SessionEntry = {
-      ...entry,
-      last_seen_at: new Date().toISOString(),
-      last_phase: extractPhase(inputAck.body) ?? entry.last_phase,
-      status: this.attachments.has(sessionUuid) ? 'active' : 'detached',
-      ended_at: null,
+    const messagesBody: Record<string, unknown> = {
+      parts: [{ kind: 'text', text: body.text }],
+      ...(body.auth_snapshot ? { auth_snapshot: body.auth_snapshot } : {}),
+      ...(body.initial_context_seed ? { initial_context_seed: body.initial_context_seed } : {}),
+      ...(typeof body.trace_uuid === 'string' ? { trace_uuid: body.trace_uuid } : {}),
+      ...(body.context_ref !== undefined ? { context_ref: body.context_ref } : {}),
+      ...(body.stream_seq !== undefined ? { stream_seq: body.stream_seq } : {}),
+      // mark origin so downstream observability can still tell /input apart
+      // from /messages without splitting落库 path.
+      _origin: 'input',
     };
-    await this.put(sessionKey(sessionUuid), nextEntry);
-    await this.sessionTruth()?.updateSessionState({
-      session_uuid: sessionUuid,
-      status: nextEntry.status,
-      last_phase: nextEntry.last_phase,
-      touched_at: nextEntry.last_seen_at,
-    });
-    nextEntry = await this.forwardFramesToAttachment(sessionUuid, nextEntry, frames);
-    await this.recordStreamFrames(
-      sessionUuid,
-      durablePointer,
-      authSnapshot,
-      traceUuid,
-      durableTurn,
-      frames,
-      nextEntry.last_seen_at,
-    );
-    await this.updateConversationIndex(durablePointer, nextEntry);
-    await this.updateActivePointers(durablePointer, durableTurn);
-    if (durableTurn) {
-      const terminal =
-        frames.find((frame): frame is Extract<StreamFrame, { kind: 'terminal' }> => frame.kind === 'terminal') ?? null;
-      await this.sessionTruth()?.closeTurn({
-        turn_uuid: durableTurn.turn_uuid,
-        status:
-          terminal?.terminal === 'cancelled'
-            ? 'cancelled'
-            : terminal?.terminal === 'error'
-              ? 'failed'
-              : 'completed',
-        ended_at: new Date().toISOString(),
-      });
-    }
-
-    return jsonResponse(inputAck.response.status, {
-      ...(inputAck.body ?? { ok: true, action: 'input' }),
-      session_uuid: sessionUuid,
-      session_status: nextEntry.status,
-      relay_cursor: nextEntry.relay_cursor,
-    });
+    return this.handleMessages(sessionUuid, messagesBody);
   }
 
   private async handleCancel(sessionUuid: string, body: CancelBody): Promise<Response> {
@@ -1606,10 +1532,99 @@ export class NanoOrchestratorUserDO {
       payload: { message_kind: messageKind, part_count: parts.length },
       timestamp: now,
     });
-    return jsonResponse(200, {
-      ok: true,
-      action: 'messages',
+
+    // ZX5 review fix (deepseek R1 / GLM R1 / GPT R1 / kimi R5):
+    // /messages must drive the agent-runtime, not just write D1. Reduce parts
+    // to a `text` representation for the existing agent-core 'input' RPC
+    // (per turn-ingress.ts session.followup_input.text contract) — text parts
+    // join with newlines, artifact_ref parts surface as `[artifact:<uuid>]`
+    // placeholders so the agent kernel sees the multipart shape end-to-end.
+    // The richer `parts` array is also passed through for future agent-core
+    // multipart consumption without another protocol cut.
+    const combinedText = parts
+      .map((p) =>
+        p.kind === 'text'
+          ? (p.text ?? '')
+          : `[artifact:${p.artifact_uuid}${p.summary ? `|${p.summary}` : ''}]`,
+      )
+      .filter((s) => s.length > 0)
+      .join('\n');
+    const inputAck = await this.forwardInternalJsonShadow(
+      sessionUuid,
+      'input',
+      {
+        text: combinedText,
+        parts,
+        message_kind: messageKind,
+        ...(body.context_ref !== undefined ? { context_ref: body.context_ref } : {}),
+        ...(typeof body.stream_seq === 'number' ? { stream_seq: body.stream_seq } : {}),
+        ...(typeof body.trace_uuid === 'string' ? { trace_uuid: body.trace_uuid } : {}),
+        authority: authSnapshot,
+      },
+      'input',
+    );
+    if (!inputAck.response.ok) {
+      if (durableTurn) {
+        await this.sessionTruth()?.closeTurn({
+          turn_uuid: durableTurn.turn_uuid,
+          status: 'failed',
+          ended_at: new Date().toISOString(),
+        });
+      }
+      return this.cloneJsonResponse(inputAck.response.status, inputAck.body);
+    }
+
+    const stream = await this.readInternalStream(sessionUuid);
+    if (!stream.ok) return stream.response;
+    const frames = stream.frames;
+    let nextEntry: SessionEntry = {
+      ...entry,
+      last_seen_at: new Date().toISOString(),
+      last_phase: extractPhase(inputAck.body) ?? entry.last_phase,
+      status: this.attachments.has(sessionUuid) ? 'active' : 'detached',
+      ended_at: null,
+    };
+    await this.put(sessionKey(sessionUuid), nextEntry);
+    await this.sessionTruth()?.updateSessionState({
       session_uuid: sessionUuid,
+      status: nextEntry.status,
+      last_phase: nextEntry.last_phase,
+      touched_at: nextEntry.last_seen_at,
+    });
+    nextEntry = await this.forwardFramesToAttachment(sessionUuid, nextEntry, frames);
+    await this.recordStreamFrames(
+      sessionUuid,
+      durablePointer,
+      authSnapshot,
+      traceUuid,
+      durableTurn,
+      frames,
+      nextEntry.last_seen_at,
+    );
+    await this.updateConversationIndex(durablePointer, nextEntry);
+    await this.updateActivePointers(durablePointer, durableTurn);
+    if (durableTurn) {
+      const terminal =
+        frames.find((frame): frame is Extract<StreamFrame, { kind: 'terminal' }> => frame.kind === 'terminal') ?? null;
+      await this.sessionTruth()?.closeTurn({
+        turn_uuid: durableTurn.turn_uuid,
+        status:
+          terminal?.terminal === 'cancelled'
+            ? 'cancelled'
+            : terminal?.terminal === 'error'
+              ? 'failed'
+              : 'completed',
+        ended_at: new Date().toISOString(),
+      });
+    }
+
+    const action = body._origin === 'input' ? 'input' : 'messages';
+    return jsonResponse(inputAck.response.status, {
+      ...(inputAck.body ?? { ok: true, action }),
+      action,
+      session_uuid: sessionUuid,
+      session_status: nextEntry.status,
+      relay_cursor: nextEntry.relay_cursor,
       message_kind: messageKind,
       part_count: parts.length,
       turn_uuid: durableTurn?.turn_uuid ?? null,
@@ -1780,9 +1795,13 @@ export class NanoOrchestratorUserDO {
   // ZX5 Lane D D5 — GET /me/conversations.
   // Per Q5 owner direction:仅复用现有 D1 truth(`nano_conversation_sessions`),
   // 不新建平行表。Group session by conversation_uuid → 每 conversation 一行。
-  private async handleMeConversations(limit: number): Promise<Response> {
+  private async handleMeConversations(
+    limit: number,
+    headerAuthority?: IngressAuthSnapshot | null,
+  ): Promise<Response> {
     const repo = this.sessionTruth();
-    const authority = await this.get<IngressAuthSnapshot>(USER_AUTH_SNAPSHOT_KEY);
+    const authority =
+      headerAuthority ?? (await this.get<IngressAuthSnapshot>(USER_AUTH_SNAPSHOT_KEY));
     if (!repo || !authority) {
       return jsonResponse(200, {
         ok: true,
@@ -1798,12 +1817,18 @@ export class NanoOrchestratorUserDO {
       });
     }
 
+    // ZX5 review (GPT R4): `last_seen_at` was an honest name for "latest
+    // session.started_at in this conversation"; the field has been renamed to
+    // `latest_session_started_at` so client code doesn't conflate it with a
+    // real "user activity" timestamp. The legacy key is preserved as an alias
+    // for one release to avoid breaking any in-flight client.
     type Conversation = {
       conversation_uuid: string;
       latest_session_uuid: string;
       latest_status: string;
       started_at: string;
-      last_seen_at: string;
+      latest_session_started_at: string;
+      last_seen_at: string; // legacy alias of latest_session_started_at — to be removed in a future cut
       last_phase: string | null;
       session_count: number;
     };
@@ -1838,6 +1863,7 @@ export class NanoOrchestratorUserDO {
           latest_session_uuid: row.session_uuid,
           latest_status: row.session_status,
           started_at: row.started_at,
+          latest_session_started_at: row.started_at,
           last_seen_at: row.started_at,
           last_phase: row.last_phase ?? null,
           session_count: 1,
@@ -1846,14 +1872,16 @@ export class NanoOrchestratorUserDO {
       }
       existing.session_count += 1;
       // listSessionsForUser ORDER BY started_at DESC → 第一条是最新的。
-      // existing 已是最新,保留 started_at = max,update 最早 started_at。
+      // existing 已是最新,保留 latest_session_started_at = max,update 最早 started_at。
       if (row.started_at < existing.started_at) {
         existing.started_at = row.started_at;
       }
     }
 
     const conversations = Array.from(byConv.values())
-      .sort((a, b) => b.last_seen_at.localeCompare(a.last_seen_at))
+      .sort((a, b) =>
+        b.latest_session_started_at.localeCompare(a.latest_session_started_at),
+      )
       .slice(0, limit);
 
     return jsonResponse(200, {

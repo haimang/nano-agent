@@ -691,6 +691,20 @@ export class NanoSessionDO {
    * - kernel hook 在 emit `session.permission.request` 后调用本方法
    * - 返回 Promise 直到 decision storage write 触发 resolve,或 timeout
    * - timeout 视为 fail-closed deny,caller 应据此驱动 verdict
+   *
+   * ZX5 review (GLM R8) — Cloudflare DO hibernation behavior:
+   * If the DO hibernates while a Promise is in-flight, the in-memory
+   * `deferredAnswers` Map and the `setTimeout` timer are both lost. Recovery
+   * relies on `alarm()` calling `sweepDeferredAnswers()`, which re-checks
+   * storage for any decisions that arrived while the deferred entry was alive
+   * and resolves the freshly registered Promise. This is why every awaiter
+   * also performs an early storage probe — a decision recorded during
+   * hibernation is found on the next awaiter's attempt without depending on
+   * alarm sweep timing. If hibernation extends past the timeoutMs window the
+   * Promise will reject with the standard fail-closed timeout error and the
+   * kernel hook treats it as deny — caller must therefore set timeoutMs to
+   * cover the worst-case hibernate-and-revive interval (default 60s; clamp
+   * to ≤5 min).
    */
   async awaitAsyncAnswer(input: {
     kind: "permission" | "elicitation";

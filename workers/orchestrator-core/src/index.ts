@@ -12,10 +12,16 @@ import { NanoOrchestratorUserDO } from "./user-do.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-// ZX2 Phase 3 P3-01/02 — agent-core RPC method signature shared by all
-// dual-track parity entry points. Each callable returns the same
-// `{status, body}` shape (which orchestrator-core compares to the
-// HTTP-truth result via jsonDeepEqual).
+// ZX2 Phase 3 P3-01/02 — agent-core RPC method signature.
+//
+// History: this contract was originally introduced for dual-track parity
+// (ZX2 P3-01 RPC vs HTTP, jsonDeepEqual fan-out). ZX4 P9 P9-01 retired the
+// HTTP shadow path; the binding is now the **sole** transport for input /
+// cancel / verify / timeline (P3-05 flip executed). The "shadow"-era
+// comparison helpers and `forwardInternalJsonShadow` method name are kept
+// purely for diff hygiene — no HTTP-truth comparison is performed.
+// Tracked for rename in the next envelope refactor (per ZX5 closure §3.2 +
+// 4-reviewer review O11).
 type AgentRpcMethod = (
   input: Record<string, unknown>,
   meta: { trace_uuid: string; authority: unknown },
@@ -585,8 +591,10 @@ async function handleMeSessions(
 //         conversation_uuid: string,
 //         latest_session_uuid: string,
 //         latest_status: 'pending'|'starting'|'active'|'detached'|'ended'|'expired',
-//         started_at: string,         // earliest session.started_at in conv
-//         last_seen_at: string,       // latest session.started_at in conv
+//         started_at: string,                     // earliest session.started_at in conv
+//         latest_session_started_at: string,      // latest session.started_at in conv (sort key)
+//         last_seen_at: string,                   // legacy alias of latest_session_started_at
+//                                                 // — kept for one release per ZX5 GPT R4
 //         last_phase: string | null,
 //         session_count: number,
 //       }>,
@@ -692,6 +700,19 @@ async function handleMeDevicesList(
 //    在 orchestrator-auth/src/jwt.ts 的 verifyAccessToken 之后,可加一个
 //    "device active check" — 留作 D6 的 second-half / 第二次 PR);
 //    本期产出 schema + endpoint + D1 写入。
+//
+// TODO (D6 second-half, per ZX5 review GLM R9 + kimi R6):
+//   - extend orchestrator-auth's verifyAccessToken / authenticateRequest to
+//     SELECT nano_user_devices.status WHERE device_uuid = ?; status='revoked'
+//     → 401 immediately (single D1 read, idempotent, no caching layer per Q11)
+//   - extend IngressAuthSnapshot with device_uuid (claim-backed) so the WS
+//     attach gate can drop revoked devices on the next attach attempt
+//   - emit best-effort `session.terminate` server frame on already-attached
+//     sessions whose device was just revoked (orchestrator-core User-DO has
+//     the attachment map; needs a /me/devices/revoke → User-DO fan-out)
+// Until that lands, the access token issued **before** revoke continues to
+// authenticate until its `exp` claim — this is acceptable for the current
+// product surface but documented here so it's not silently overlooked.
 async function handleMeDevicesRevoke(
   request: Request,
   env: OrchestratorCoreEnv,

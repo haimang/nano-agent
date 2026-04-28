@@ -5,6 +5,7 @@
 // 后两个 worker 共用一份代码,行为 100% 等价。
 import {
   collectVerificationKeys as sharedCollectVerificationKeys,
+  verifyJwt as sharedVerifyJwt,
   verifyJwtAgainstKeyring as sharedVerifyJwtAgainstKeyring,
   type VerifiedJwtPayload,
 } from "@haimang/jwt-shared";
@@ -69,11 +70,15 @@ export type AuthResult =
   | { ok: true; value: AuthContext }
   | { ok: false; response: Response };
 
-// ZX5 Lane C C2 — verifyJwt re-export that narrows JwtShared payload to
+// ZX5 Lane C C2 — verifyJwt re-export that narrows the jwt-shared payload to
 // orchestrator-core's local `JwtPayload` shape(向后兼容外部 import)。
-// jwt-shared.verifyJwt 接受同样的 generic,这里只是给一个 narrower 名字。
+//
+// ZX5 review fix (GLM R4): both worker entry points now use top-level static
+// `import { ... } from "@haimang/jwt-shared"` — uniform across orchestrator-
+// core and orchestrator-auth. The earlier dynamic `await import()` form
+// caused asymmetric loader behavior across workers without any benefit; static
+// imports also make module-resolution failures deterministic at bundle time.
 export async function verifyJwt(token: string, secret: string): Promise<JwtPayload | null> {
-  const { verifyJwt: sharedVerifyJwt } = await import("@haimang/jwt-shared");
   return sharedVerifyJwt<JwtPayload>(token, secret);
 }
 

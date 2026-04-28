@@ -21,7 +21,7 @@ function createShellResponse(env: ContextCoreEnv): ContextCoreShellResponse {
 // 但通过 service binding 的 RPC 调用走 WorkerEntrypoint method。
 //
 // 调用方:agent-core 在 wrangler.jsonc 打开 CONTEXT_CORE binding 后,
-// 通过 `env.CONTEXT_CORE.assemblerOps(...)` 触达本 worker 的 RPC。
+// 通过 `env.CONTEXT_CORE.contextOps(...)` 触达本 worker 的 RPC。
 // 短期 shim 期间 agent-core 同时保留 in-process library import(per Q6
 // owner direction:短期 shim 允许 + 长期双轨禁)。
 //
@@ -63,11 +63,17 @@ const worker = {
 //   - `probe()`              — health probe via RPC,validate binding 工作
 //   - `nacpVersion()`        — return NACP versions(便于 cross-worker
 //                               compat 自检)
-//   - `assemblerOps()`       — return  worker 暴露的 op 名单;ZX5 后续 phase
+//   - `contextOps()`         — return  worker 暴露的 op 名单;ZX5 后续 phase
 //                               按业务驱动逐项 land
 //
 // 短期 shim 期(≤ 2 周)agent-core 仍保留 library import;cross-e2e 稳定
 // 后(per Q6 + R9 时间盒化)再删除 library 依赖。
+//
+// ZX5 review (GLM R11): RPC op-list method renamed `assemblerOps` →
+// `contextOps` so the {domain}Ops naming matches filesystem-core's
+// `filesystemOps`. The legacy alias `assemblerOps` is kept on the class for
+// any in-flight caller that bound to it during the Q6 short-term shim period
+// and will be removed when agent-core flips to RPC-first.
 export class ContextCoreEntrypoint extends WorkerEntrypoint<ContextCoreEnv> {
   async fetch(request: Request): Promise<Response> {
     return worker.fetch(request, this.env);
@@ -89,13 +95,13 @@ export class ContextCoreEntrypoint extends WorkerEntrypoint<ContextCoreEnv> {
   }
 
   /**
-   * Returns the supported assembler op names that agent-core can call via
-   * RPC after Lane E migration completes. Current ZX5 list is the minimal
-   * seam exposed by `@haimang/context-core-worker/context-api/*`;agent-core
+   * Returns the supported context op names that agent-core can call via RPC
+   * after Lane E migration completes. Current ZX5 list is the minimal seam
+   * exposed by `@haimang/context-core-worker/context-api/*`;agent-core
    * adapter chooses RPC vs library import based on `CONTEXT_CORE_RPC_FIRST`
    * env flag(deploy-time toggle 期短期 shim period)。
    */
-  async assemblerOps(): Promise<{ ops: string[] }> {
+  async contextOps(): Promise<{ ops: string[] }> {
     return {
       ops: [
         "appendInitialContextLayer",
@@ -103,6 +109,13 @@ export class ContextCoreEntrypoint extends WorkerEntrypoint<ContextCoreEnv> {
         "peekPendingInitialContextLayers",
       ],
     };
+  }
+
+  /** @deprecated Renamed to `contextOps()` per ZX5 review GLM R11. Kept as
+   * an alias during the short-term shim period; remove when agent-core flips
+   * to RPC-first. */
+  async assemblerOps(): Promise<{ ops: string[] }> {
+    return this.contextOps();
   }
 }
 
