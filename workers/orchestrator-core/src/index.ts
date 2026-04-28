@@ -7,6 +7,7 @@ import {
 } from "@haimang/orchestrator-auth-contract";
 import { authenticateRequest, type AuthEnv } from "./auth.js";
 import { ensureConfiguredTeam, jsonPolicyError, readTraceUuid } from "./policy/authority.js";
+import { D1SessionTruthRepository } from "./session-truth.js";
 import { NanoOrchestratorUserDO } from "./user-do.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -31,6 +32,9 @@ export interface OrchestratorCoreEnv extends AuthEnv {
     verify?: AgentRpcMethod;
     timeline?: AgentRpcMethod;
     streamSnapshot?: AgentRpcMethod;
+    // ZX4 Phase 4 P4-01 / Phase 6 P6-01 — decision-forwarding RPCs.
+    permissionDecision?: AgentRpcMethod;
+    elicitationAnswer?: AgentRpcMethod;
   };
   readonly ORCHESTRATOR_AUTH?: OrchestratorAuthRpcService & Fetcher;
   readonly BASH_CORE?: Fetcher;
@@ -194,6 +198,8 @@ type SessionAction =
   // ZX2 Phase 5 P5-01 — facade-必需 HTTP endpoints
   | "permission/decision"
   | "policy/permission_mode"
+  // ZX4 Phase 6 P6-01 — elicitation answer return path.
+  | "elicitation/answer"
   | "usage"
   | "resume";
 type AuthAction =
@@ -237,7 +243,11 @@ function parseSessionRoute(request: Request): { sessionUuid: string; action: Ses
     const sessionUuid = segments[1]!;
     if (!UUID_RE.test(sessionUuid)) return null;
     const compound = `${segments[2]}/${segments[3]}` as SessionAction;
-    if (compound === "permission/decision" || compound === "policy/permission_mode") {
+    if (
+      compound === "permission/decision" ||
+      compound === "policy/permission_mode" ||
+      compound === "elicitation/answer"
+    ) {
       return { sessionUuid, action: compound };
     }
   }
@@ -468,6 +478,38 @@ async function handleMeSessions(
     const sessionUuid = crypto.randomUUID();
     const ttlSeconds = 24 * 60 * 60;
     const createdAt = new Date().toISOString();
+    // ZX4 P3-03 — D1 pending truth: insert nano_conversations + nano_conversation_sessions
+    // pair so GET /me/sessions can surface the pending row before /start arrives,
+    // and so alarm GC has a row to expire after 24h. NANO_AGENT_DB may be absent
+    // in tests / shell-only runs; in that case we fall back to the previous
+    // KV-only behavior so the F3 probe and unit-test paths keep working.
+    if (env.NANO_AGENT_DB) {
+      const teamUuid = auth.value.snapshot.team_uuid ?? auth.value.snapshot.tenant_uuid;
+      const actorUserUuid = auth.value.snapshot.user_uuid ?? auth.value.snapshot.sub;
+      if (typeof teamUuid === "string" && teamUuid.length > 0) {
+        const repo = new D1SessionTruthRepository(env.NANO_AGENT_DB);
+        try {
+          await repo.mintPendingSession({
+            session_uuid: sessionUuid,
+            team_uuid: teamUuid,
+            actor_user_uuid: actorUserUuid,
+            trace_uuid: traceUuid,
+            minted_at: createdAt,
+          });
+        } catch (error) {
+          console.warn(
+            `me-sessions-mint-d1-failed session=${sessionUuid}`,
+            { tag: "me-sessions-mint-d1-failed", session_uuid: sessionUuid, error: String(error) },
+          );
+          return jsonPolicyError(
+            500,
+            "internal-error",
+            "failed to persist pending session row",
+            traceUuid,
+          );
+        }
+      }
+    }
     return Response.json(
       {
         ok: true,

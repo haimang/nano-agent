@@ -73,4 +73,60 @@ liveTest("ZX2 facade-must-have endpoints work end-to-end", WORKERS, async ({ get
   assert.equal(listed.response.status, 200);
   assert.equal(listed.json.ok, true);
   assert.ok(Array.isArray(listed.json.data?.sessions));
+
+  // ZX4 P3-05 + P3-07 — read-model 5-state view + ingress guard. The
+  // freshly minted UUID must show up in the list as 'pending', and any
+  // follow-up endpoint must reject pending session with the new error.
+  const mintedRow = listed.json.data?.sessions?.find(
+    (row) => row.session_uuid === sessionUuid,
+  );
+  assert.ok(mintedRow, "minted session must appear in /me/sessions list");
+  assert.equal(mintedRow.status, "pending", "minted session must be pending");
+
+  const followupReject = await fetchJson(
+    `${base}/sessions/${sessionUuid}/input`,
+    {
+      method: "POST",
+      headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify({ text: "follow-up before start" }),
+    },
+  );
+  assert.equal(followupReject.response.status, 409);
+  assert.equal(followupReject.json.error?.code, "session-pending-only-start-allowed");
+
+  // ZX4 P4-01 — permission decision contract: orchestrator accepts the
+  // decision and returns 200 even when no agent runtime is awaiting it
+  // (KV fallback path). This proves the decision pipeline is wired.
+  const requestUuid = "99999999-9999-4999-8999-999999999999";
+  const permission = await fetchJson(
+    `${base}/sessions/${sessionUuid}/permission/decision`,
+    {
+      method: "POST",
+      headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify({
+        request_uuid: requestUuid,
+        decision: "allow",
+        scope: "once",
+      }),
+    },
+  );
+  assert.equal(permission.response.status, 200);
+  assert.equal(permission.json.ok, true);
+  assert.equal(permission.json.data?.request_uuid, requestUuid);
+
+  // ZX4 P6-01 — elicitation answer contract: parallel pipeline.
+  const answerUuid = "88888888-8888-4888-8888-888888888888";
+  const elicit = await fetchJson(
+    `${base}/sessions/${sessionUuid}/elicitation/answer`,
+    {
+      method: "POST",
+      headers: { ...auth, "content-type": "application/json" },
+      body: JSON.stringify({
+        request_uuid: answerUuid,
+        answer: "forty-two",
+      }),
+    },
+  );
+  assert.equal(elicit.response.status, 200);
+  assert.equal(elicit.json.data?.request_uuid, answerUuid);
 });

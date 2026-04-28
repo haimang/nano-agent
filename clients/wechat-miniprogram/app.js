@@ -1,21 +1,36 @@
 // app.js - 全局入口
 
 const api = require('./utils/api');
+const { verifyToken } = require('./api/auth');
 
 App({
   globalData: {
     userInfo: null,
     isLoggedIn: false,
     isLoadingProfile: false,
+    baseUrl: 'https://nano-agent-orchestrator-core-preview.haimang.workers.dev',
   },
 
-  onLaunch() {
+  async onLaunch() {
     console.log('App Launch');
     // 尝试恢复登录状态
     const token = api.getJwtToken();
     if (token) {
-      console.log('Token found in storage on launch, will validate on first page show');
-      this.globalData.isLoggedIn = true;
+      console.log('Token found in storage on launch, validating...');
+      try {
+        const result = await verifyToken(token);
+        if (result.ok) {
+          this.globalData.isLoggedIn = true;
+          this.globalData.userInfo = result.data || null;
+          console.log('Token validation passed');
+        } else {
+          console.warn('Token validation failed:', result.error);
+          this.clearLoginState();
+        }
+      } catch (error) {
+        console.error('Token validation error:', error);
+        this.clearLoginState();
+      }
     }
   },
 

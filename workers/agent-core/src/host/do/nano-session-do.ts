@@ -561,6 +561,16 @@ export class NanoSessionDO {
             body = undefined;
           }
         }
+        // ZX4 P4-01 / P6-01 — intercept decision-forwarding actions so
+        // they don't flow through httpController (which is the user-facing
+        // session action surface). These are the orchestrator-core →
+        // agent-core async-answer pipeline endpoints.
+        if (route.action === "permission-decision") {
+          return this.handlePermissionDecisionRecord(route.sessionId, body);
+        }
+        if (route.action === "elicitation-answer") {
+          return this.handleElicitationAnswerRecord(route.sessionId, body);
+        }
         const result = await this.httpController.handleRequest(
           route.sessionId,
           route.action,
@@ -591,6 +601,64 @@ export class NanoSessionDO {
     if (this.sessionUuid !== null) return;
     if (!candidate || !UUID_RE.test(candidate)) return;
     this.sessionUuid = candidate;
+  }
+
+  // ZX4 Phase 4 P4-01 — record an inbound permission decision against a
+  // request_uuid. orchestrator-core forwards client decisions here via
+  // the WorkerEntrypoint.permissionDecision RPC (or the /internal HTTP
+  // forwarder). Stored under `permission/decisions/${requestUuid}` so a
+  // future kernel waiter can poll/resolve. The runtime hook that *waits*
+  // on this storage is acknowledged as cluster-level work and is left
+  // unwired — establishing this contract is the deliverable for ZX4.
+  private async handlePermissionDecisionRecord(
+    sessionId: string,
+    body: unknown,
+  ): Promise<Response> {
+    return this.recordAsyncAnswer(sessionId, body, "permission");
+  }
+
+  // ZX4 Phase 6 P6-01 — symmetric path for elicitation answers.
+  private async handleElicitationAnswerRecord(
+    sessionId: string,
+    body: unknown,
+  ): Promise<Response> {
+    return this.recordAsyncAnswer(sessionId, body, "elicitation");
+  }
+
+  private async recordAsyncAnswer(
+    sessionId: string,
+    body: unknown,
+    kind: "permission" | "elicitation",
+  ): Promise<Response> {
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      return new Response(
+        JSON.stringify({ error: "invalid-input", message: `${kind} answer requires a JSON body` }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    const record = body as Record<string, unknown>;
+    const requestUuid = record.request_uuid;
+    if (typeof requestUuid !== "string" || !UUID_RE.test(requestUuid)) {
+      return new Response(
+        JSON.stringify({
+          error: "invalid-input",
+          message: `${kind} answer requires a UUID request_uuid`,
+        }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
+    }
+    const storageKey = `${kind}/decisions/${requestUuid}`;
+    const stored = {
+      session_uuid: sessionId,
+      request_uuid: requestUuid,
+      ...record,
+      received_at: new Date().toISOString(),
+    };
+    await this.doState.storage?.put(storageKey, stored);
+    return new Response(
+      JSON.stringify({ ok: true, data: { request_uuid: requestUuid, kind, stored: true } }),
+      { status: 200, headers: { "Content-Type": "application/json" } },
+    );
   }
 
   private attachTeamUuid(candidate: string | undefined | null): void {
@@ -1520,6 +1588,7 @@ export class NanoSessionDO {
           body: unknown;
           anchor?: CrossSeamAnchor;
           quota?: Record<string, unknown>;
+          signal?: AbortSignal;
         }) => Promise<unknown>;
         cancel?: (input: {
           requestId: string;
@@ -1541,12 +1610,16 @@ export class NanoSessionDO {
       return undefined;
     }
     return {
+      // ZX4 Phase 1 P1-01(R28 fix): call input 接口加 signal — 让
+      // verifyCapabilityCancel 可通过 AbortController 同请求生命周期取消,
+      // 不再依赖独立 transport.cancel(per Q1 修订 — 结果约束)
       call: transport.call.bind(transport) as (input: {
         requestId: string;
         capabilityName: string;
         body: unknown;
         anchor?: CrossSeamAnchor;
         quota?: Record<string, unknown>;
+        signal?: AbortSignal;
       }) => Promise<unknown>,
       cancel:
         typeof transport.cancel === "function"
@@ -1614,17 +1687,28 @@ export class NanoSessionDO {
     };
   }
 
+  // ZX4 Phase 1 P1-01(R28 fix per ZX4-ZX5 GPT review Q1 修订 — 结果约束):
+  // 修复 deploy-only bug: `verifyCapabilityCancel` 在 CF Workers 真 deploy 触发
+  // I/O cross-request 隔离(`Object.cancel` index.js:8796 — workerd-test 看不见)。
+  //
+  // 旧实现(已删):
+  //   1. transport.call → 启动子请求 A(I/O resource A)
+  //   2. setTimeout 等待 cancelAfterMs
+  //   3. transport.cancel → 启动**独立**子请求 B(I/O resource B)
+  //   4. 子请求 B 试图操作子请求 A 持有的 I/O → CF 拒绝(I/O cross-request)
+  //
+  // 新实现(满足 Q1 修订结果约束: "取消与执行处于同一请求生命周期 / 同一运行
+  // 链条;不依赖第二条独立 cancel request 作为 preview 主路径"):
+  //   1. 创建 AbortController + 把 signal 透传给 transport.call(call 已支持
+  //      signal,见 remote-bindings.ts:253)
+  //   2. setTimeout 后 controller.abort() — 同请求生命周期内同步取消
+  //   3. callPromise 通过 signal abort 自动 reject(fetch 路径)或在 RPC 路径
+  //      下等待完成(因 RPC binding 不接 signal,cancelHonored=false 是合法的
+  //      verification 结果,不是 I/O 错误)
+  //   4. **不再发 transport.cancel** — 这是 I/O cross-request 触发点
   private async verifyCapabilityCancel(
     request: Record<string, unknown>,
   ): Promise<Record<string, unknown>> {
-    const transport = this.getCapabilityTransport();
-    if (!transport?.cancel) {
-      return {
-        check: "capability-cancel",
-        error: "capability-cancel-unavailable",
-      };
-    }
-
     const requestId = `verify-cancel-${crypto.randomUUID()}`;
     const ms =
       typeof request.ms === "number" && Number.isFinite(request.ms)
@@ -1634,70 +1718,131 @@ export class NanoSessionDO {
       typeof request.cancelAfterMs === "number" && Number.isFinite(request.cancelAfterMs)
         ? Math.max(1, Math.min(ms - 1, Math.trunc(request.cancelAfterMs)))
         : 25;
-    const quotaContext = this.buildQuotaContext();
-    let quota: Record<string, unknown> | undefined;
+    // ZX4 Phase 7 P7-C deploy fix: outer try/catch covers the WHOLE verify
+    // path (including transport lookup + quota authorization), so verify
+    // never escapes as a 500 "Worker threw exception" from the agent-core
+    // DO. Diagnostic envelope identifies which step failed.
     try {
-      quota = await buildToolQuotaAuthorization(
-        this.quotaAuthorizer,
-        quotaContext,
-        requestId,
-        "__px_sleep",
-      );
-    } catch (error) {
-      if (error instanceof QuotaExceededError) {
+      const transport = this.getCapabilityTransport();
+      if (!transport?.call) {
         return {
           check: "capability-cancel",
-          requestId,
-          response: buildQuotaErrorEnvelope(error),
+          error: "capability-cancel-unavailable",
         };
       }
-      throw error;
+
+      const quotaContext = this.buildQuotaContext();
+      let quota: Record<string, unknown> | undefined;
+      try {
+        quota = await buildToolQuotaAuthorization(
+          this.quotaAuthorizer,
+          quotaContext,
+          requestId,
+          "__px_sleep",
+        );
+      } catch (error) {
+        if (error instanceof QuotaExceededError) {
+          return {
+            check: "capability-cancel",
+            requestId,
+            response: buildQuotaErrorEnvelope(error),
+          };
+        }
+        throw error;
+      }
+
+      // R28 fix: 同请求生命周期 AbortController(替代独立 transport.cancel)
+      const abortController = new AbortController();
+      const callPromise = transport.call({
+        requestId,
+        capabilityName: "__px_sleep",
+        body: {
+          tool_name: "__px_sleep",
+          tool_input: { ms },
+        },
+        anchor: this.buildCrossSeamAnchor(),
+        quota,
+        signal: abortController.signal,
+      });
+
+      // 同请求生命周期 timeout-then-abort,无独立 cancel request
+      await new Promise((resolve) => setTimeout(resolve, cancelAfterMs));
+      try {
+        abortController.abort("preview verification cancel");
+      } catch {
+        // older runtimes may reject string reason — ignore, signal still aborted
+      }
+
+      const response = await callPromise.catch((err) => {
+        const isAbort =
+          err instanceof Error &&
+          (err.name === "AbortError" || /aborted|cancelled/i.test(err.message));
+        return {
+          status: "error",
+          error: {
+            code: isAbort ? "cancelled" : "transport-error",
+            message: err instanceof Error ? err.message : String(err),
+          },
+        };
+      });
+      const cancelHonored =
+        response !== null &&
+        typeof response === "object" &&
+        "status" in response &&
+        (response as { status?: unknown }).status === "error" &&
+        "error" in response &&
+        typeof (response as { error?: unknown }).error === "object" &&
+        (response as { error?: { code?: unknown } }).error?.code === "cancelled";
+
+      return {
+        check: "capability-cancel",
+        requestId,
+        ms,
+        cancelAfterMs,
+        cancelRequested: true,
+        cancelHonored,
+        response,
+      };
+    } catch (error) {
+      // Last-resort safety net: convert any unexpected throw into a
+      // verification envelope so orchestrator-core sees a 200 with a
+      // diagnostic body instead of 500 "Worker threw exception".
+      return {
+        check: "capability-cancel",
+        requestId,
+        ms,
+        cancelAfterMs,
+        cancelRequested: true,
+        cancelHonored: false,
+        response: {
+          status: "error",
+          error: {
+            code: "verify-cancel-internal",
+            message: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+          },
+        },
+      };
     }
-    const callPromise = transport.call({
-      requestId,
-      capabilityName: "__px_sleep",
-      body: {
-        tool_name: "__px_sleep",
-        tool_input: { ms },
-      },
-      anchor: this.buildCrossSeamAnchor(),
-      quota,
-    });
-
-    await new Promise((resolve) => setTimeout(resolve, cancelAfterMs));
-    await transport.cancel({
-      requestId,
-      body: { reason: "preview verification cancel" },
-      anchor: this.buildCrossSeamAnchor(),
-    });
-
-    const response = await callPromise.catch((err) => ({
-      status: "error",
-      error: {
-        code: "transport-error",
-        message: err instanceof Error ? err.message : String(err),
-      },
-    }));
-    const cancelHonored =
-      response !== null &&
-      typeof response === "object" &&
-      "status" in response &&
-      (response as { status?: unknown }).status === "error" &&
-      "error" in response &&
-      typeof (response as { error?: unknown }).error === "object" &&
-      (response as { error?: { code?: unknown } }).error?.code === "cancelled";
-
-    return {
-      check: "capability-cancel",
-      requestId,
-      ms,
-      cancelAfterMs,
-      cancelRequested: true,
-      cancelHonored,
-      response,
-    };
   }
 
+  // ZX4 Phase 1 P1-02(R29 fix per ZX4-ZX5 GPT review §6.5b R29): 修复
+  // dual-track parity body 发散触发 502 的 deploy-only bug。
+  //
+  // 旧实现(已删 stateful 字段):
+  //   返回 body 含 `phase: this.state.actorState.phase` 与
+  //   `defaultEvalRecordCount: this.getDefaultEvalRecords().length` —
+  //   两者都依赖 in-DO actor state machine 当前快照。`forwardInternalJsonShadow`
+  //   先调 HTTP 路径,再调 RPC 路径(or 反之),两次调用之间 actor state
+  //   可能因 background work / hooks 推进 phase,导致 `rpc_status=200
+  //   fetch_status=200` 但 body 字段不一致 → parity check 触发 502。
+  //
+  // 新实现(只返 deterministic 计算结果):
+  //   - `pendingCount`(纯函数)+ `assembledKinds`(纯函数)+ `totalTokens`(纯函数)
+  //   - 不返 stateful actor phase / counter
+  //   - cross-e2e 04 测试只断言这 4 个字段(check / pendingCount / assembledKinds /
+  //     totalTokens),修法零功能损失
+  //   - 若未来需要 phase 用于 debugging,应通过独立 endpoint(如
+  //     /sessions/{id}/status)取,而不是混在 verify 输出
   private verifyInitialContext(): Record<string, unknown> {
     const workspace = this.subsystems.workspace as
       | {
@@ -1724,8 +1869,6 @@ export class NanoSessionDO {
       pendingCount: pending.length,
       assembledKinds: assembled.assembled.map((layer) => layer.kind),
       totalTokens: assembled.totalTokens,
-      defaultEvalRecordCount: this.getDefaultEvalRecords().length,
-      phase: this.state.actorState.phase,
     };
   }
 

@@ -172,7 +172,18 @@ function stripSessionUuid(value: unknown): Record<string, unknown> {
 }
 
 // ZX2 Phase 3 P3-01/02 — extended RPC action set.
-type AgentRpcAction = "status" | "start" | "input" | "cancel" | "verify" | "timeline" | "stream_snapshot";
+// ZX4 Phase 4 P4-01 / Phase 6 P6-01 — added permission-decision +
+// elicitation-answer for orchestrator → agent decision forwarding.
+type AgentRpcAction =
+  | "status"
+  | "start"
+  | "input"
+  | "cancel"
+  | "verify"
+  | "timeline"
+  | "stream_snapshot"
+  | "permission-decision"
+  | "elicitation-answer";
 
 const AGENT_RPC_METHOD: Record<AgentRpcAction, "GET" | "POST"> = {
   status: "GET",
@@ -182,6 +193,8 @@ const AGENT_RPC_METHOD: Record<AgentRpcAction, "GET" | "POST"> = {
   verify: "POST",
   timeline: "GET",
   stream_snapshot: "GET",
+  "permission-decision": "POST",
+  "elicitation-answer": "POST",
 };
 
 export default class AgentCoreEntrypoint extends WorkerEntrypoint<AgentCoreEnv> {
@@ -212,6 +225,22 @@ export default class AgentCoreEntrypoint extends WorkerEntrypoint<AgentCoreEnv> 
 
   async timeline(rawInput: unknown, rawMeta: unknown): Promise<AgentCoreRpcResponse> {
     return this.invokeInternalRpc("timeline", rawInput, rawMeta);
+  }
+
+  // ZX4 Phase 4 P4-01 — orchestrator forwards a client permission decision.
+  // Input shape:  { session_uuid, request_uuid, decision, scope }
+  // Output shape: { ok: true, data: { request_uuid, kind: 'permission', stored: true } }
+  // The DO writes the decision under `permission/decisions/${request_uuid}`;
+  // a future runtime kernel waiter resolves on this key.
+  async permissionDecision(rawInput: unknown, rawMeta: unknown): Promise<AgentCoreRpcResponse> {
+    return this.invokeInternalRpc("permission-decision", rawInput, rawMeta);
+  }
+
+  // ZX4 Phase 6 P6-01 — orchestrator forwards a client elicitation answer.
+  // Input shape:  { session_uuid, request_uuid, answer }
+  // Output shape: { ok: true, data: { request_uuid, kind: 'elicitation', stored: true } }
+  async elicitationAnswer(rawInput: unknown, rawMeta: unknown): Promise<AgentCoreRpcResponse> {
+    return this.invokeInternalRpc("elicitation-answer", rawInput, rawMeta);
   }
 
   // ZX2 Phase 3 P3-02 — cursor-paginated stream snapshot.

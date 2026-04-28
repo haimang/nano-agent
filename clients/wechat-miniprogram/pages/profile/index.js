@@ -1,5 +1,5 @@
 // pages/profile/index.js
-const api = require('../../utils/api');
+const { getMe } = require('../../api/auth');
 
 Page({
   data: {
@@ -60,13 +60,10 @@ Page({
     this.setData({ isLoading: true });
     
     try {
-      const res = await api.request('me', {
-        method: 'GET',
-        showLoading: false,
-      });
+      const result = await getMe();
 
-      if (res.ok) {
-        const userInfo = res.data && res.data.user ? res.data.user : res.data;
+      if (result.ok) {
+        const userInfo = result.data?.user || result.data;
         const app = getApp();
         app.updateUserInfo(userInfo);
         this.setData({
@@ -76,10 +73,15 @@ Page({
           userEmail: userInfo ? (userInfo.email || '') : '',
         });
         this.updateAvatarText(userInfo);
+      } else {
+        console.error('Fetch profile failed:', result.error);
+        if (result.error?.code === 'invalid-auth' || result.error?.status === 401) {
+          this.handleLogout();
+        }
       }
     } catch (error) {
       console.error('Fetch profile error:', error);
-      if (error.code === 'AUTH_FAILURE') {
+      if (error.code === 'AUTH_FAILURE' || error.statusCode === 401) {
         this.handleLogout();
       }
     } finally {

@@ -1,0 +1,13 @@
+{
+  "name": "nano-agent-wechat-miniprogram",
+  "version": "1.0.0",
+  "description": "Nano Agent WeChat Mini Program",
+  "scripts": {
+    "test": "vitest run --testTimeout=30000",
+    "test:watch": "vitest --testTimeout=30000"
+  },
+  "devDependencies": {
+    "vitest": "^1.0.0",
+    "node-fetch": "^2.7.0"
+  }
+}

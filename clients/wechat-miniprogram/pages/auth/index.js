@@ -1,5 +1,5 @@
 // pages/auth/index.js
-const api = require('../../utils/api');
+const { register, login, wechatLogin } = require('../../api/auth');
 const { collectWechatLoginPayload } = require('../../utils/wechat-auth');
 
 Page({
@@ -12,7 +12,6 @@ Page({
   },
 
   onLoad(options) {
-    // 如果带有 redirect 参数，记录跳转目标
     if (options.redirect) {
       this.redirectUrl = decodeURIComponent(options.redirect);
     }
@@ -60,38 +59,23 @@ Page({
   },
 
   async doRegister(email, password, displayName) {
-    const res = await api.request('register', {
-      method: 'POST',
-      data: {
-        email,
-        password,
-        display_name: displayName || email.split('@')[0],
-      },
-      requireAuth: false,
-      showLoading: false,
-    });
+    const result = await register(email, password, displayName);
 
-    if (res.ok) {
+    if (result.ok) {
       wx.showToast({ title: '注册成功', icon: 'success' });
-      // 注册成功后自动登录
       await this.doLogin(email, password);
     } else {
-      throw new Error(res.error?.message || '注册失败');
+      throw new Error(result.error?.message || '注册失败');
     }
   },
 
   async doLogin(email, password) {
-    const res = await api.request('login', {
-      method: 'POST',
-      data: { email, password },
-      requireAuth: false,
-      showLoading: false,
-    });
+    const result = await login(email, password);
 
-    if (res.ok) {
-      const token = res.data?.tokens?.access_token;
-      const refreshToken = res.data?.tokens?.refresh_token;
-      const user = res.data?.user;
+    if (result.ok) {
+      const token = result.data?.tokens?.access_token;
+      const refreshToken = result.data?.tokens?.refresh_token;
+      const user = result.data?.user;
 
       if (token) {
         const app = getApp();
@@ -102,7 +86,7 @@ Page({
         throw new Error('登录响应缺少 token');
       }
     } else {
-      throw new Error(res.error?.message || '登录失败');
+      throw new Error(result.error?.message || '登录失败');
     }
   },
 
@@ -111,17 +95,17 @@ Page({
     this.setData({ isLoading: true });
     try {
       const loginPayload = await collectWechatLoginPayload();
-      const loginRes = await api.request('wechatLogin', {
-        method: 'POST',
-        data: loginPayload,
-        requireAuth: false,
-        showLoading: false,
-      });
+      const result = await wechatLogin(
+        loginPayload.code,
+        loginPayload.encrypted_data,
+        loginPayload.iv,
+        loginPayload.display_name
+      );
 
-      if (loginRes.ok) {
-        const token = loginRes.data?.tokens?.access_token;
-        const refreshToken = loginRes.data?.tokens?.refresh_token;
-        const user = loginRes.data?.user;
+      if (result.ok) {
+        const token = result.data?.tokens?.access_token;
+        const refreshToken = result.data?.tokens?.refresh_token;
+        const user = result.data?.user;
 
         if (token) {
           const app = getApp();
@@ -132,7 +116,7 @@ Page({
           throw new Error('微信登录响应缺少 token');
         }
       } else {
-        throw new Error(loginRes.error?.message || '微信登录失败');
+        throw new Error(result.error?.message || '微信登录失败');
       }
     } catch (error) {
       console.error('Wechat login error:', error);

@@ -10,26 +10,16 @@ export interface AgentInternalEnv {
   readonly ENVIRONMENT?: string;
 }
 
-type SupportedInternalAction =
-  | "start"
-  | "input"
-  | "cancel"
-  | "status"
-  | "timeline"
-  | "verify"
-  | "stream"
-  // ZX2 Phase 3 P3-02 — cursor-paginated stream snapshot RPC. Returns
-  // an Envelope-shaped JSON body with events + next_cursor instead of
-  // an NDJSON stream over RPC.
-  | "stream_snapshot";
+// ZX4 Phase 9 P9-01 — P3-05 flip: non-stream HTTP fetch handlers retired.
+// Only `stream` (NDJSON relay) and `stream_snapshot` (cursor pagination)
+// remain on the worker-level /internal/ surface. start / input / cancel /
+// status / timeline / verify are reachable solely via the RPC binding
+// (AgentCoreEntrypoint methods → DO stub.fetch on `session.internal`).
+// permission-decision / elicitation-answer also bypass this path — they
+// route directly through the DO via stub.fetch.
+type SupportedInternalAction = "stream" | "stream_snapshot";
 
 const SUPPORTED_INTERNAL_ACTIONS = new Set<SupportedInternalAction>([
-  "start",
-  "input",
-  "cancel",
-  "status",
-  "timeline",
-  "verify",
   "stream",
   "stream_snapshot",
 ]);
@@ -71,22 +61,6 @@ function parseInternalRoute(request: Request):
     return { type: "unsupported-action", action };
   }
   return { type: "action", sessionId, action: action as SupportedInternalAction };
-}
-
-async function forwardHttpAction(
-  env: AgentInternalEnv,
-  validated: ValidatedInternalAuthority,
-  sessionId: string,
-  action: Exclude<SupportedInternalAction, "stream">,
-  method: string,
-  contentType: string | null,
-  bodyText?: string,
-): Promise<Response> {
-  const stub = env.SESSION_DO.get(env.SESSION_DO.idFromName(sessionId));
-  const targetUrl = `https://session.internal/sessions/${sessionId}/${action}`;
-  const headers = buildForwardHeaders(env, validated, contentType);
-  const body = method === "GET" || method === "HEAD" ? undefined : bodyText;
-  return stub.fetch(new Request(targetUrl, { method, headers, body }));
 }
 
 function buildNdjsonStream(lines: readonly string[]): ReadableStream<Uint8Array> {
@@ -322,21 +296,6 @@ export async function routeInternal(request: Request, env: AgentInternalEnv): Pr
         validated,
         route.sessionId,
         new URL(request.url),
-      );
-    case "start":
-    case "input":
-    case "cancel":
-    case "status":
-    case "timeline":
-    case "verify":
-      return forwardHttpAction(
-        env,
-        validated,
-        route.sessionId,
-        route.action,
-        request.method.toUpperCase(),
-        request.headers.get("content-type"),
-        validated.bodyText,
       );
     default:
       return jsonResponse(404, { error: "unsupported-action", message: "internal action not supported" });

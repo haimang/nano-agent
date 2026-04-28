@@ -1,6 +1,14 @@
 import { redactPayload } from "@haimang/nacp-session";
 
-export type DurableSessionStatus = "starting" | "active" | "detached" | "ended";
+// ZX4 P3-02 — extended per R1 status enum 冻结表; mirrors migration 006
+// CHECK + session-lifecycle SessionStatus + read-model 5-state view.
+export type DurableSessionStatus =
+  | "pending"
+  | "starting"
+  | "active"
+  | "detached"
+  | "ended"
+  | "expired";
 export type DurableTurnKind = "start" | "followup" | "cancel";
 export type DurableTurnStatus = "accepted" | "completed" | "cancelled" | "failed";
 export type DurableMessageRole = "user" | "assistant" | "system";
@@ -152,6 +160,167 @@ export class D1SessionTruthRepository {
       input.created_at,
       input.event_seq,
     );
+  }
+
+  // ZX4 P3-03 — POST /me/sessions mint path. Atomically writes a fresh
+  // `nano_conversations` row + a pending `nano_conversation_sessions` row
+  // so the schema NOT NULL FK is satisfied (per ZX4 plan §1.3 R10).
+  // The pair becomes the single source of truth for "this UUID was minted
+  // but not yet started"; alarm GC picks them up after 24h via P3-04.
+  async mintPendingSession(input: {
+    readonly session_uuid: string;
+    readonly team_uuid: string;
+    readonly actor_user_uuid: string;
+    readonly trace_uuid: string;
+    readonly minted_at: string;
+  }): Promise<DurableSessionPointer> {
+    const conversation_uuid = crypto.randomUUID();
+    await this.db.batch([
+      this.db.prepare(
+        `INSERT INTO nano_conversations (
+           conversation_uuid,
+           team_uuid,
+           owner_user_uuid,
+           conversation_status,
+           created_at,
+           updated_at,
+           latest_session_uuid,
+           latest_turn_uuid,
+           title
+         ) VALUES (?1, ?2, ?3, 'active', ?4, ?4, ?5, NULL, NULL)`,
+      ).bind(
+        conversation_uuid,
+        input.team_uuid,
+        input.actor_user_uuid,
+        input.minted_at,
+        input.session_uuid,
+      ),
+      this.db.prepare(
+        `INSERT INTO nano_conversation_sessions (
+           session_uuid,
+           conversation_uuid,
+           team_uuid,
+           actor_user_uuid,
+           trace_uuid,
+           session_status,
+           started_at,
+           ended_at,
+           last_phase,
+           last_event_seq
+         ) VALUES (?1, ?2, ?3, ?4, ?5, 'pending', ?6, NULL, NULL, 0)`,
+      ).bind(
+        input.session_uuid,
+        conversation_uuid,
+        input.team_uuid,
+        input.actor_user_uuid,
+        input.trace_uuid,
+        input.minted_at,
+      ),
+    ]);
+    return {
+      conversation_uuid,
+      session_uuid: input.session_uuid,
+      conversation_created: true,
+    };
+  }
+
+  // ZX4 P3-04 — alarm GC: mark pending rows older than ttlMs as 'expired'
+  // and delete their orphan conversation rows in one batch. Returns the
+  // number of session rows that flipped to 'expired' for telemetry.
+  async expireStalePending(input: {
+    readonly now: string;
+    readonly cutoff: string; // ISO timestamp; sessions with started_at < cutoff get expired
+  }): Promise<number> {
+    const stale = await this.db.prepare(
+      `SELECT session_uuid, conversation_uuid
+         FROM nano_conversation_sessions
+        WHERE session_status = 'pending'
+          AND started_at < ?1
+        LIMIT 200`,
+    ).bind(input.cutoff).all<Record<string, unknown>>();
+    const rows = stale.results ?? [];
+    if (rows.length === 0) return 0;
+    const stmts: D1PreparedStatement[] = [];
+    for (const row of rows) {
+      const sessionUuid = String(row.session_uuid);
+      const conversationUuid = String(row.conversation_uuid);
+      stmts.push(
+        this.db.prepare(
+          `UPDATE nano_conversation_sessions
+              SET session_status = 'expired',
+                  ended_at = ?2
+            WHERE session_uuid = ?1
+              AND session_status = 'pending'`,
+        ).bind(sessionUuid, input.now),
+      );
+      // Conversation orphan cleanup: only delete if no non-expired session
+      // ever attached. Using NOT EXISTS on the post-update state keeps the
+      // batch idempotent.
+      stmts.push(
+        this.db.prepare(
+          `DELETE FROM nano_conversations
+            WHERE conversation_uuid = ?1
+              AND NOT EXISTS (
+                SELECT 1 FROM nano_conversation_sessions
+                 WHERE conversation_uuid = ?1
+                   AND session_status NOT IN ('pending', 'expired')
+                 LIMIT 1
+              )`,
+        ).bind(conversationUuid),
+      );
+    }
+    await this.db.batch(stmts);
+    return rows.length;
+  }
+
+  // ZX4 P3-07 — ingress guard support: cheap point lookup of session_status
+  // when the KV entry is missing, so handlers can distinguish pending /
+  // expired / ended / not-found without hydrating the full snapshot.
+  async readSessionStatus(session_uuid: string): Promise<DurableSessionStatus | null> {
+    const row = await this.db.prepare(
+      `SELECT session_status
+         FROM nano_conversation_sessions
+        WHERE session_uuid = ?1
+        LIMIT 1`,
+    ).bind(session_uuid).first<Record<string, unknown>>();
+    if (!row) return null;
+    return String(row.session_status) as DurableSessionStatus;
+  }
+
+  // ZX4 P3-05 — read-model 5-state view: list this user's recent sessions
+  // (across pending/active/detached/ended/expired) joined with conversation
+  // metadata. Pending sessions don't have a hot-index entry, so this read
+  // path is the only way GET /me/sessions can surface them.
+  async listSessionsForUser(input: {
+    readonly team_uuid: string;
+    readonly actor_user_uuid: string;
+    readonly limit?: number;
+  }): Promise<Array<{
+    readonly conversation_uuid: string;
+    readonly session_uuid: string;
+    readonly session_status: DurableSessionStatus;
+    readonly started_at: string;
+    readonly ended_at: string | null;
+    readonly last_phase: string | null;
+  }>> {
+    const limit = Math.max(1, Math.min(input.limit ?? 50, 200));
+    const rows = await this.db.prepare(
+      `SELECT session_uuid, conversation_uuid, session_status,
+              started_at, ended_at, last_phase
+         FROM nano_conversation_sessions
+        WHERE team_uuid = ?1
+          AND actor_user_uuid = ?2
+        ORDER BY started_at DESC
+        LIMIT ?3`,
+    ).bind(input.team_uuid, input.actor_user_uuid, limit).all<Record<string, unknown>>();
+    return (rows.results ?? []).map((row) => ({
+      conversation_uuid: String(row.conversation_uuid),
+      session_uuid: String(row.session_uuid),
+      session_status: String(row.session_status) as DurableSessionStatus,
+      started_at: String(row.started_at),
+      ended_at: typeof row.ended_at === "string" ? row.ended_at : null,
+      last_phase: typeof row.last_phase === "string" ? row.last_phase : null,
+    }));
   }
 
   async beginSession(input: {
@@ -624,6 +793,53 @@ export class D1SessionTruthRepository {
       body: parseJsonRecord(row.body_json),
       created_at: String(row.created_at),
     }));
+  }
+
+  // ZX4 P5-01 — usage live read for GET /sessions/{id}/usage. Aggregates
+  // session-scoped llm + tool usage rows (allow verdicts only — denies
+  // didn't actually consume) and joins team-level remaining balance for
+  // budget headline numbers. Returns null when no rows exist for the
+  // session yet (caller falls back to placeholder shape).
+  async readUsageSnapshot(input: {
+    readonly session_uuid: string;
+    readonly team_uuid: string;
+  }): Promise<{
+    readonly llm_input_tokens: number;
+    readonly llm_output_tokens: number;
+    readonly tool_calls: number;
+    readonly subrequest_used: number;
+    readonly subrequest_budget: number | null;
+    readonly estimated_cost_usd: number | null;
+  } | null> {
+    const sessionAggregate = await this.db.prepare(
+      `SELECT
+         COALESCE(SUM(CASE WHEN resource_kind='llm' AND unit='input_token' THEN quantity ELSE 0 END), 0) AS llm_input,
+         COALESCE(SUM(CASE WHEN resource_kind='llm' AND unit='output_token' THEN quantity ELSE 0 END), 0) AS llm_output,
+         COALESCE(SUM(CASE WHEN resource_kind='tool' THEN 1 ELSE 0 END), 0) AS tool_calls,
+         COALESCE(SUM(quantity), 0) AS subrequest_used,
+         COUNT(*) AS row_count
+         FROM nano_usage_events
+        WHERE session_uuid = ?1
+          AND verdict = 'allow'`,
+    ).bind(input.session_uuid).first<Record<string, unknown>>();
+    if (!sessionAggregate || toCount(sessionAggregate.row_count) === 0) {
+      return null;
+    }
+    const balanceRow = await this.db.prepare(
+      `SELECT remaining
+         FROM nano_quota_balances
+        WHERE team_uuid = ?1
+          AND quota_kind = 'llm'
+        LIMIT 1`,
+    ).bind(input.team_uuid).first<Record<string, unknown>>();
+    return {
+      llm_input_tokens: toCount(sessionAggregate.llm_input),
+      llm_output_tokens: toCount(sessionAggregate.llm_output),
+      tool_calls: toCount(sessionAggregate.tool_calls),
+      subrequest_used: toCount(sessionAggregate.subrequest_used),
+      subrequest_budget: balanceRow ? toCount(balanceRow.remaining) : null,
+      estimated_cost_usd: null,
+    };
   }
 
   async readSnapshot(session_uuid: string): Promise<DurableSessionSnapshot | null> {

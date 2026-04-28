@@ -110,8 +110,17 @@ describe('NanoOrchestratorUserDO', () => {
       return Response.json({ error: 'not-found' }, { status: 404 });
     };
 
+    // ZX4 P9-01: post-flip RPC binding is the sole transport. Provide
+    // an `start` RPC method alongside fetch so the test mirrors the
+    // production deploy contract.
     const userDo = new NanoOrchestratorUserDO(state, {
-      AGENT_CORE: { fetch: agentFetch } as Fetcher,
+      AGENT_CORE: {
+        fetch: agentFetch,
+        start: async () => ({
+          status: 200,
+          body: { ok: true, action: 'start', phase: 'attached' },
+        }),
+      } as any,
       NANO_INTERNAL_BINDING_SECRET: 'secret',
     });
 
@@ -164,8 +173,13 @@ describe('NanoOrchestratorUserDO', () => {
       return Response.json({ error: 'unexpected' }, { status: 500 });
     });
 
+    // ZX4 P9-01: post-flip RPC is sole transport.
     const userDo = new NanoOrchestratorUserDO(state, {
-      AGENT_CORE: { fetch: agentFetch } as Fetcher,
+      AGENT_CORE: {
+        fetch: agentFetch,
+        status: async () => ({ status: 200, body: { ok: true, action: 'status', phase: 'attached' } }),
+        verify: async () => ({ status: 400, body: { error: 'unknown-verify-check', action: 'verify' } }),
+      } as any,
       NANO_INTERNAL_BINDING_SECRET: 'secret',
     });
 
@@ -368,6 +382,8 @@ describe('NanoOrchestratorUserDO', () => {
       captureContextSnapshot: vi.fn().mockResolvedValue(undefined),
       appendActivity: vi.fn().mockResolvedValue(1),
       rollbackSessionStart: vi.fn().mockResolvedValue(undefined),
+      // ZX4 P3-06 — fresh-mint case: D1 row not yet present, status=null.
+      readSessionStatus: vi.fn().mockResolvedValue(null),
     };
     const userDo = new NanoOrchestratorUserDO(state, {
       AGENT_CORE: {
@@ -838,8 +854,15 @@ describe('NanoOrchestratorUserDO', () => {
       return Response.json({ error: 'not-found' }, { status: 404 });
     };
 
+    // ZX4 P9-01: post-flip — start RPC mock alongside fetch (used for /stream NDJSON).
     const userDo = new NanoOrchestratorUserDO(state, {
-      AGENT_CORE: { fetch: agentFetch } as Fetcher,
+      AGENT_CORE: {
+        fetch: agentFetch,
+        start: async () => ({
+          status: 200,
+          body: { ok: true, action: 'start', phase: 'attached' },
+        }),
+      } as any,
       NANO_INTERNAL_BINDING_SECRET: 'secret',
     });
 
@@ -903,5 +926,253 @@ describe('NanoOrchestratorUserDO', () => {
     expect(agentFetch).not.toHaveBeenCalled();
     // Existing entry must NOT be overwritten.
     expect((store.get(`sessions/${SESSION_UUID}`) as { status: string }).status).toBe('detached');
+  });
+
+  // ZX4 P3-07 — ingress guard: KV miss + D1 'pending' returns a distinct
+  // 409 (`session-pending-only-start-allowed`) instead of generic 404,
+  // so clients can tell "minted but never started" apart from "never minted".
+  describe('ZX4 P3-07 pending ingress guard', () => {
+    function userDoWithDurableStatus(status: string | null) {
+      const { state, store } = createState();
+      const userDo = new NanoOrchestratorUserDO(state, {
+        AGENT_CORE: {
+          fetch: async () => Response.json({ ok: true }),
+        } as Fetcher,
+        NANO_INTERNAL_BINDING_SECRET: 'secret',
+      });
+      (userDo as any).sessionTruth = () => ({
+        readSessionStatus: vi.fn().mockResolvedValue(status),
+        readSnapshot: vi.fn().mockResolvedValue(null),
+      });
+      return { userDo, store };
+    }
+
+    const followups: Array<{ method: 'POST' | 'GET'; action: string; body?: object }> = [
+      { method: 'POST', action: 'input', body: { text: 'hi', auth_snapshot: { sub: USER_UUID } } },
+      { method: 'POST', action: 'cancel', body: { reason: 'stop' } },
+      { method: 'POST', action: 'verify', body: { check: 'initial-context' } },
+      { method: 'GET', action: 'status' },
+      { method: 'GET', action: 'history' },
+      { method: 'GET', action: 'timeline' },
+      { method: 'GET', action: 'usage' },
+    ];
+
+    for (const { method, action, body } of followups) {
+      it(`rejects ${method} /${action} with session-pending-only-start-allowed when D1 row is pending`, async () => {
+        const { userDo } = userDoWithDurableStatus('pending');
+        const response = await userDo.fetch(
+          new Request(`https://orchestrator.internal/sessions/${SESSION_UUID}/${action}`, {
+            method,
+            headers: body ? { 'content-type': 'application/json' } : undefined,
+            body: body ? JSON.stringify(body) : undefined,
+          }),
+        );
+        expect(response.status).toBe(409);
+        expect(await response.json()).toMatchObject({
+          error: 'session-pending-only-start-allowed',
+          session_uuid: SESSION_UUID,
+          current_status: 'pending',
+        });
+      });
+    }
+
+    it('rejects POST /input with session-expired when D1 row is expired', async () => {
+      const { userDo } = userDoWithDurableStatus('expired');
+      const response = await userDo.fetch(
+        new Request(`https://orchestrator.internal/sessions/${SESSION_UUID}/input`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ text: 'hi' }),
+        }),
+      );
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({
+        error: 'session-expired',
+        session_uuid: SESSION_UUID,
+        current_status: 'expired',
+      });
+    });
+
+    it('falls through to 404 session_missing when D1 row is absent', async () => {
+      const { userDo } = userDoWithDurableStatus(null);
+      const response = await userDo.fetch(
+        new Request(`https://orchestrator.internal/sessions/${SESSION_UUID}/input`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ text: 'hi' }),
+        }),
+      );
+      expect(response.status).toBe(404);
+      expect(await response.json()).toMatchObject({ error: 'session_missing' });
+    });
+
+    it('rejects POST /start with session-expired when D1 row is expired', async () => {
+      const { userDo } = userDoWithDurableStatus('expired');
+      const response = await userDo.fetch(
+        new Request(`https://orchestrator.internal/sessions/${SESSION_UUID}/start`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            initial_input: 'hi',
+            auth_snapshot: { sub: USER_UUID, tenant_source: 'deploy-fill' },
+            initial_context_seed: { default_layers: [], user_memory_ref: null },
+          }),
+        }),
+      );
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({
+        error: 'session-expired',
+        session_uuid: SESSION_UUID,
+        current_status: 'expired',
+      });
+    });
+
+    // ZX4 Phase 4 / 6 — decision forwarding contract. orchestrator-core
+    // forwards to agent-core via the RPC binding; the KV-side fallback
+    // record must persist regardless of RPC availability so a future
+    // kernel waiter can resolve via storage scan.
+    it('P4-01: forwards permission decision to agent-core RPC and stores KV fallback', async () => {
+      const { state, store } = createState();
+      store.set(USER_AUTH_SNAPSHOT_KEY, {
+        sub: USER_UUID,
+        user_uuid: USER_UUID,
+        team_uuid: '44444444-4444-4444-8444-444444444444',
+        tenant_uuid: '44444444-4444-4444-8444-444444444444',
+        tenant_source: 'claim',
+      });
+      store.set(`sessions/${SESSION_UUID}`, {
+        created_at: 'a', last_seen_at: 'a', status: 'active',
+        last_phase: 'attached', relay_cursor: -1, ended_at: null,
+      });
+      const permissionDecision = vi.fn().mockResolvedValue({ status: 200, body: { ok: true } });
+      const userDo = new NanoOrchestratorUserDO(state, {
+        AGENT_CORE: { fetch: async () => Response.json({}), permissionDecision } as any,
+        NANO_INTERNAL_BINDING_SECRET: 'secret',
+      });
+
+      const requestUuid = '99999999-9999-4999-8999-999999999999';
+      const response = await userDo.fetch(
+        new Request(`https://orchestrator.internal/sessions/${SESSION_UUID}/permission/decision`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ request_uuid: requestUuid, decision: 'allow', scope: 'once' }),
+        }),
+      );
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        ok: true,
+        data: { request_uuid: requestUuid, decision: 'allow', scope: 'once' },
+      });
+      expect(permissionDecision).toHaveBeenCalledTimes(1);
+      expect(permissionDecision.mock.calls[0][0]).toMatchObject({
+        session_uuid: SESSION_UUID,
+        request_uuid: requestUuid,
+        decision: 'allow',
+        scope: 'once',
+      });
+      expect(store.get(`permission_decision/${requestUuid}`)).toMatchObject({
+        request_uuid: requestUuid,
+        decision: 'allow',
+        scope: 'once',
+      });
+    });
+
+    it('P4-01: returns 200 even if agent-core RPC throws (fallback to KV record)', async () => {
+      const { state, store } = createState();
+      store.set(USER_AUTH_SNAPSHOT_KEY, { sub: USER_UUID, tenant_source: 'deploy-fill' });
+      const permissionDecision = vi.fn().mockRejectedValue(new Error('rpc-down'));
+      const userDo = new NanoOrchestratorUserDO(state, {
+        AGENT_CORE: { fetch: async () => Response.json({}), permissionDecision } as any,
+        NANO_INTERNAL_BINDING_SECRET: 'secret',
+      });
+      const requestUuid = '99999999-9999-4999-8999-999999999991';
+      const response = await userDo.fetch(
+        new Request(`https://orchestrator.internal/sessions/${SESSION_UUID}/permission/decision`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ request_uuid: requestUuid, decision: 'deny' }),
+        }),
+      );
+      expect(response.status).toBe(200);
+      expect(store.get(`permission_decision/${requestUuid}`)).toMatchObject({
+        request_uuid: requestUuid,
+        decision: 'deny',
+      });
+    });
+
+    it('P6-01: elicitation/answer forwards to agent-core RPC and stores KV fallback', async () => {
+      const { state, store } = createState();
+      store.set(USER_AUTH_SNAPSHOT_KEY, {
+        sub: USER_UUID,
+        user_uuid: USER_UUID,
+        team_uuid: '44444444-4444-4444-8444-444444444444',
+        tenant_source: 'claim',
+      });
+      const elicitationAnswer = vi.fn().mockResolvedValue({ status: 200, body: { ok: true } });
+      const userDo = new NanoOrchestratorUserDO(state, {
+        AGENT_CORE: { fetch: async () => Response.json({}), elicitationAnswer } as any,
+        NANO_INTERNAL_BINDING_SECRET: 'secret',
+      });
+      const requestUuid = '99999999-9999-4999-8999-999999999992';
+      const response = await userDo.fetch(
+        new Request(`https://orchestrator.internal/sessions/${SESSION_UUID}/elicitation/answer`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ request_uuid: requestUuid, answer: 'forty-two' }),
+        }),
+      );
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        ok: true,
+        data: { request_uuid: requestUuid, answer: 'forty-two' },
+      });
+      expect(elicitationAnswer).toHaveBeenCalledTimes(1);
+      expect(elicitationAnswer.mock.calls[0][0]).toMatchObject({
+        session_uuid: SESSION_UUID,
+        request_uuid: requestUuid,
+        answer: 'forty-two',
+      });
+      expect(store.get(`elicitation_answer/${requestUuid}`)).toMatchObject({
+        request_uuid: requestUuid,
+        answer: 'forty-two',
+      });
+    });
+
+    it('P6-01: rejects elicitation/answer without answer field', async () => {
+      const { state } = createState();
+      const userDo = new NanoOrchestratorUserDO(state, {
+        AGENT_CORE: { fetch: async () => Response.json({}) } as any,
+        NANO_INTERNAL_BINDING_SECRET: 'secret',
+      });
+      const response = await userDo.fetch(
+        new Request(`https://orchestrator.internal/sessions/${SESSION_UUID}/elicitation/answer`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ request_uuid: '99999999-9999-4999-8999-999999999993' }),
+        }),
+      );
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ error: 'invalid-input' });
+    });
+
+    it('rejects POST /start with session-already-started when D1 row is ended', async () => {
+      const { userDo } = userDoWithDurableStatus('ended');
+      const response = await userDo.fetch(
+        new Request(`https://orchestrator.internal/sessions/${SESSION_UUID}/start`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            initial_input: 'hi',
+            auth_snapshot: { sub: USER_UUID, tenant_source: 'deploy-fill' },
+            initial_context_seed: { default_layers: [], user_memory_ref: null },
+          }),
+        }),
+      );
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({
+        error: 'session-already-started',
+        current_status: 'ended',
+      });
+    });
   });
 });

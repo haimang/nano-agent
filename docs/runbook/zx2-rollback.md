@@ -1,8 +1,9 @@
 # ZX2 Rollback Runbook — internal-http-compat retirement
 
 > 写于: 2026-04-27（ZX2 Phase 3 P3-05）
+> ZX4 Phase 9 update(2026-04-28): P3-05 flip 已 land。本 runbook 仍保留作为反向通道,**保留至 2026-05-12 后归档**(2 周窗口,per ZX4 plan + owner direction fast-track)。归档前任何 prod regression 仍按本 runbook 执行;归档后回滚需走更重的"重新启用 internal-http-compat profile"流程,见 §6。
 > 适用范围: agent-core 内部 HTTP 路径（`/internal/sessions/:id/{start,input,cancel,verify,timeline,stream}` 与 `https://*.internal/...` relay）翻转到 RPC 之后的回滚动作
-> 关联文档: `docs/transport/transport-profiles.md`、`docs/action-plan/zero-to-real/ZX2-transport-enhance.md`
+> 关联文档: `docs/transport/transport-profiles.md`、`docs/action-plan/zero-to-real/ZX2-transport-enhance.md`、`docs/action-plan/zero-to-real/ZX4-transport-true-close-and-session-semantics.md`
 
 ---
 

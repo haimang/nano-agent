@@ -138,11 +138,21 @@ describe("agent-core shell smoke", () => {
     const body = (await response.json()) as { error: string };
     expect(body.error).toBe("Not found");
   });
-  it("forwards authenticated /internal/sessions/:sessionId/start without touching legacy routing", async () => {
+  // ZX4 P9-01: re-targeted to GET /internal/.../stream which is the
+  // remaining /internal/ surface after the P3-05 flip. Original test
+  // exercised /internal/.../start which retired with this phase.
+  it("forwards authenticated /internal/sessions/:sessionId/stream through the guarded internal surface", async () => {
     const sessionId = "11111111-1111-4111-8111-111111111111";
-    const stubFetch = vi.fn<(req: Request) => Promise<Response>>().mockResolvedValue(
-      new Response(JSON.stringify({ forwarded: true }), { status: 200 }),
-    );
+    const stubFetch = vi.fn(async (req: Request) => {
+      const pathname = new URL(req.url).pathname;
+      if (pathname.endsWith("/timeline")) {
+        return new Response(JSON.stringify({ ok: true, action: "timeline", events: [] }), { status: 200 });
+      }
+      if (pathname.endsWith("/status")) {
+        return new Response(JSON.stringify({ ok: true, action: "status", phase: "attached" }), { status: 200 });
+      }
+      return new Response(JSON.stringify({ error: "unexpected" }), { status: 500 });
+    });
     const get = vi.fn().mockReturnValue({ fetch: stubFetch });
     const idFromName = vi.fn().mockReturnValue({ __kind: "mock-id" });
     const env = {
@@ -151,12 +161,9 @@ describe("agent-core shell smoke", () => {
     };
 
     const response = await worker.fetch(
-      new Request(`https://example.com/internal/sessions/${sessionId}/start`, {
-        method: "POST",
-        headers: internalHeaders({
-          "content-type": "application/json",
-        }),
-        body: JSON.stringify({ initial_input: "hello", trace_uuid: TRACE_UUID, auth_snapshot: AUTHORITY }),
+      new Request(`https://example.com/internal/sessions/${sessionId}/stream`, {
+        method: "GET",
+        headers: internalHeaders(),
       }),
       { ...env, TEAM_UUID: "nano-agent" } as any,
     );
@@ -164,7 +171,6 @@ describe("agent-core shell smoke", () => {
     expect(response.status).toBe(200);
     expect(idFromName).toHaveBeenCalledWith(sessionId);
     const forwarded = stubFetch.mock.calls[0]![0]!;
-    expect(new URL(forwarded.url).pathname).toBe(`/sessions/${sessionId}/start`);
     expect(forwarded.headers.get("x-trace-uuid")).toBe(TRACE_UUID);
     expect(forwarded.headers.get("x-nano-internal-binding-secret")).toBe("secret");
     expect(JSON.parse(forwarded.headers.get("x-nano-internal-authority") ?? "{}")).toEqual(NORMALIZED_AUTHORITY);
@@ -174,7 +180,7 @@ describe("agent-core shell smoke", () => {
     const idFromName = vi.fn();
     const get = vi.fn();
     const response = await worker.fetch(
-      new Request("https://example.com/internal/sessions/11111111-1111-4111-8111-111111111111/start", { method: "POST" }),
+      new Request("https://example.com/internal/sessions/11111111-1111-4111-8111-111111111111/stream_snapshot", { method: "POST" }),
       {
         NANO_INTERNAL_BINDING_SECRET: "secret",
         SESSION_DO: { idFromName, get } as unknown as DurableObjectNamespace,
@@ -188,7 +194,7 @@ describe("agent-core shell smoke", () => {
 
   it("rejects /internal/* when trace uuid is missing", async () => {
     const response = await worker.fetch(
-      new Request("https://example.com/internal/sessions/11111111-1111-4111-8111-111111111111/start", {
+      new Request("https://example.com/internal/sessions/11111111-1111-4111-8111-111111111111/stream_snapshot", {
         method: "POST",
         headers: {
           "x-nano-internal-binding-secret": "secret",
@@ -213,7 +219,7 @@ describe("agent-core shell smoke", () => {
 
   it("rejects /internal/* when body authority diverges from the header", async () => {
     const divergentAuthority = await worker.fetch(
-      new Request("https://example.com/internal/sessions/11111111-1111-4111-8111-111111111111/start", {
+      new Request("https://example.com/internal/sessions/11111111-1111-4111-8111-111111111111/stream_snapshot", {
         method: "POST",
         headers: internalHeaders({
           "content-type": "application/json",
@@ -238,7 +244,7 @@ describe("agent-core shell smoke", () => {
     expect((await divergentAuthority.json()).error).toBe("authority-escalation");
 
     const escalation = await worker.fetch(
-      new Request("https://example.com/internal/sessions/11111111-1111-4111-8111-111111111111/start", {
+      new Request("https://example.com/internal/sessions/11111111-1111-4111-8111-111111111111/stream_snapshot", {
         method: "POST",
         headers: internalHeaders({
           "content-type": "application/json",
@@ -299,32 +305,10 @@ describe("agent-core shell smoke", () => {
   });
 
 
-  it("forwards /internal/sessions/:sessionId/status and verify through the guarded internal surface", async () => {
-    const sessionId = "11111111-1111-4111-8111-111111111111";
-    const stubFetch = vi.fn<(req: Request) => Promise<Response>>().mockResolvedValue(new Response(JSON.stringify({ ok: true }), { status: 200 }));
-    const get = vi.fn().mockReturnValue({ fetch: stubFetch });
-    const idFromName = vi.fn().mockReturnValue({ __kind: "mock-id" });
-    const env = {
-      NANO_INTERNAL_BINDING_SECRET: "secret",
-      TEAM_UUID: "nano-agent",
-      SESSION_DO: { idFromName, get } as unknown as DurableObjectNamespace,
-    };
-
-    await worker.fetch(new Request(`https://example.com/internal/sessions/${sessionId}/status`, { headers: internalHeaders() }), env as any);
-    await worker.fetch(new Request(`https://example.com/internal/sessions/${sessionId}/verify`, {
-      method: "POST",
-      headers: internalHeaders({ "content-type": "application/json" }),
-      body: JSON.stringify({ check: "bogus", trace_uuid: TRACE_UUID, authority: AUTHORITY }),
-    }), env as any);
-
-    expect(new URL(stubFetch.mock.calls[0]![0]!.url).pathname).toBe(`/sessions/${sessionId}/status`);
-    expect(new URL(stubFetch.mock.calls[1]![0]!.url).pathname).toBe(`/sessions/${sessionId}/verify`);
-    for (const [request] of stubFetch.mock.calls) {
-      expect(request.headers.get("x-trace-uuid")).toBe(TRACE_UUID);
-      expect(request.headers.get("x-nano-internal-binding-secret")).toBe("secret");
-      expect(JSON.parse(request.headers.get("x-nano-internal-authority") ?? "{}")).toEqual(NORMALIZED_AUTHORITY);
-    }
-  });
+  // ZX4 P9-01: deleted — `/internal/.../status` + `/internal/.../verify`
+  // retired with the P3-05 flip. status / verify reach the DO via the
+  // RPC binding (AgentCoreEntrypoint.status / .verify), not /internal/.
+  // Auth/routing coverage stays via the stream_snapshot variant above.
 
   it("serializes internal stream replay as NDJSON meta/event/terminal frames", async () => {
     const sessionId = "11111111-1111-4111-8111-111111111111";

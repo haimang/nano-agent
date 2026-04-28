@@ -1,10 +1,75 @@
-import type { IngressAuthSnapshot, InitialContextSeed } from './auth.js';
-import { redactPayload } from "@haimang/nacp-session";
+import type { IngressAuthSnapshot } from './auth.js';
 import {
   D1SessionTruthRepository,
   type DurableSessionPointer,
   type DurableTurnPointer,
 } from "./session-truth.js";
+
+// ZX4 Phase 0 — seam extraction(per ZX4-ZX5 GPT review Q3 4-module seam):
+// types + pure helpers 已抽到 4 个 seam 模块,本文件只保留 NanoOrchestratorUserDO
+// 类骨架。Phase 0 是 pure refactor,零行为变更。Phase 1+ 在小文件上各自演进。
+import {
+  InvalidStreamFrameError,
+  isRecord,
+  isNonNegativeInteger,
+  jsonDeepEqual,
+  logParityFailure,
+  parseStreamFrame,
+  readJson,
+  readNdjsonFrames,
+  type StreamFrame,
+  type StreamReadResult,
+} from "./parity-bridge.js";
+import {
+  CLIENT_WS_HEARTBEAT_INTERVAL_MS,
+  createWebSocketPair,
+  isWebSocketUpgrade,
+  parseLastSeenSeq,
+  type AttachmentState,
+  type WorkerSocketLike,
+} from "./ws-bridge.js";
+import {
+  extractPhase,
+  isAuthSnapshot,
+  jsonResponse,
+  redactActivityPayload,
+  sessionKey,
+  sessionMissingResponse,
+  sessionTerminalResponse,
+  terminalKey,
+  type CancelBody,
+  type FollowupBody,
+  type SessionEntry,
+  type SessionStatus,
+  type SessionTerminalRecord,
+  type StartSessionBody,
+  type TerminalKind,
+  type VerifyBody,
+} from "./session-lifecycle.js";
+import {
+  ACTIVE_POINTERS_KEY,
+  CACHE_PREFIX,
+  CACHE_TTL_MS,
+  CONVERSATION_INDEX_KEY,
+  ENDED_INDEX_KEY,
+  ENDED_TTL_MS,
+  HOT_STATE_ALARM_MS,
+  MAX_CONVERSATIONS,
+  MAX_ENDED_SESSIONS,
+  MAX_RECENT_FRAMES,
+  PENDING_TTL_MS,
+  RECENT_FRAMES_PREFIX,
+  USER_AUTH_SNAPSHOT_KEY,
+  USER_META_KEY,
+  USER_SEED_KEY,
+  cacheKey,
+  recentFramesKey,
+  type ActivePointers,
+  type ConversationIndexItem,
+  type EndedIndexItem,
+  type EphemeralCacheEntry,
+  type RecentFramesState,
+} from "./session-read-model.js";
 
 // ZX2 Phase 3 P3-01 — extended agent-core RPC binding (input/cancel/verify/
 // timeline/streamSnapshot in addition to start/status). Each method has the
@@ -38,364 +103,9 @@ export interface DurableObjectStateLike {
   };
 }
 
-export type SessionStatus = 'starting' | 'active' | 'detached' | 'ended';
-export type TerminalKind = 'completed' | 'cancelled' | 'error';
-
-export interface SessionEntry {
-  readonly created_at: string;
-  readonly last_seen_at: string;
-  readonly status: SessionStatus;
-  readonly last_phase: string | null;
-  readonly relay_cursor: number;
-  readonly ended_at: string | null;
-}
-
-interface SessionTerminalRecord {
-  readonly terminal: TerminalKind;
-  readonly last_phase: string | null;
-  readonly ended_at: string;
-}
-
-interface ConversationIndexItem {
-  readonly conversation_uuid: string;
-  readonly latest_session_uuid: string;
-  readonly status: SessionStatus;
-  readonly updated_at: string;
-}
-
-interface ActivePointers {
-  readonly conversation_uuid: string | null;
-  readonly session_uuid: string | null;
-  readonly turn_uuid: string | null;
-}
-
-interface RecentFramesState {
-  readonly updated_at: string;
-  readonly frames: StreamFrame[];
-}
-
-interface EphemeralCacheEntry {
-  readonly key: string;
-  readonly value: Record<string, unknown> | null;
-  readonly expires_at: string;
-}
-
-interface StartSessionBody {
-  readonly initial_input?: string;
-  readonly text?: string;
-  readonly initial_context?: unknown;
-  readonly trace_uuid?: string;
-  readonly auth_snapshot?: IngressAuthSnapshot;
-  readonly initial_context_seed?: InitialContextSeed;
-}
-
-interface FollowupBody {
-  readonly text?: string;
-  readonly context_ref?: unknown;
-  readonly stream_seq?: number;
-  readonly trace_uuid?: string;
-  readonly auth_snapshot?: IngressAuthSnapshot;
-  readonly initial_context_seed?: InitialContextSeed;
-}
-
-interface CancelBody {
-  readonly reason?: string;
-  readonly trace_uuid?: string;
-  readonly auth_snapshot?: IngressAuthSnapshot;
-  readonly initial_context_seed?: InitialContextSeed;
-}
-
-interface VerifyBody {
-  readonly trace_uuid?: string;
-  readonly auth_snapshot?: IngressAuthSnapshot;
-  readonly initial_context_seed?: InitialContextSeed;
-  readonly [key: string]: unknown;
-}
-
-type StreamFrame =
-  | { kind: 'meta'; seq: 0; event: 'opened'; session_uuid: string }
-  | { kind: 'event'; seq: number; name: 'session.stream.event'; payload: Record<string, unknown> }
-  | { kind: 'terminal'; seq: number; terminal: TerminalKind; payload?: Record<string, unknown> };
-
-type StreamReadResult =
-  | { ok: true; frames: StreamFrame[] }
-  | { ok: false; response: Response };
-
-interface WorkerSocketLike {
-  accept?(): void;
-  send(data: string): void;
-  close(code?: number, reason?: string): void;
-  addEventListener?: (type: 'message' | 'close', handler: (event?: unknown) => void) => void;
-}
-
-interface AttachmentState {
-  readonly socket: WorkerSocketLike;
-  readonly attached_at: string;
-  readonly heartbeat_timer?: ReturnType<typeof setInterval>;
-}
-
-interface EndedIndexItem {
-  readonly session_uuid: string;
-  readonly ended_at: string;
-}
-
-const USER_META_KEY = 'user/meta';
-const USER_AUTH_SNAPSHOT_KEY = 'user/auth-snapshot';
-const USER_SEED_KEY = 'user/seed';
-const ENDED_INDEX_KEY = 'sessions/ended-index';
-const CONVERSATION_INDEX_KEY = 'conversation/index';
-const ACTIVE_POINTERS_KEY = 'conversation/active-pointers';
-const RECENT_FRAMES_PREFIX = 'recent-frames/';
-const CACHE_PREFIX = 'cache/';
-const MAX_CONVERSATIONS = 200;
-const MAX_RECENT_FRAMES = 50;
-const CLIENT_WS_HEARTBEAT_INTERVAL_MS = 15_000;
-const CACHE_TTL_MS = 5 * 60 * 1000;
-const HOT_STATE_ALARM_MS = 10 * 60 * 1000;
-const MAX_ENDED_SESSIONS = 100;
-const ENDED_TTL_MS = 24 * 60 * 60 * 1000;
-
-function sessionKey(sessionUuid: string): string {
-  return `sessions/${sessionUuid}`;
-}
-
-function terminalKey(sessionUuid: string): string {
-  return `session-terminal/${sessionUuid}`;
-}
-
-function recentFramesKey(sessionUuid: string): string {
-  return `${RECENT_FRAMES_PREFIX}${sessionUuid}`;
-}
-
-function cacheKey(name: string): string {
-  return `${CACHE_PREFIX}${name}`;
-}
-
-function jsonResponse(status: number, body: Record<string, unknown>): Response {
-  return Response.json(body, { status });
-}
-
-function isAuthSnapshot(value: unknown): value is IngressAuthSnapshot {
-  return (
-    Boolean(value) &&
-    typeof value === 'object' &&
-    typeof (value as { sub?: unknown }).sub === 'string' &&
-    ((value as { tenant_source?: unknown }).tenant_source === undefined ||
-      (value as { tenant_source?: unknown }).tenant_source === 'claim' ||
-      (value as { tenant_source?: unknown }).tenant_source === 'deploy-fill')
-  );
-}
-
-function sessionMissingResponse(sessionUuid: string): Response {
-  return jsonResponse(404, { error: 'session_missing', session_uuid: sessionUuid });
-}
-
-function sessionTerminalResponse(
-  sessionUuid: string,
-  terminal: SessionTerminalRecord | null,
-): Response {
-  return jsonResponse(409, {
-    error: 'session_terminal',
-    session_uuid: sessionUuid,
-    terminal: terminal?.terminal ?? 'completed',
-    ...(terminal?.last_phase ? { last_phase: terminal.last_phase } : {}),
-  });
-}
-
-class InvalidStreamFrameError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'InvalidStreamFrameError';
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
-}
-
-function jsonDeepEqual(left: unknown, right: unknown): boolean {
-  if (left === right) return true;
-  if (Array.isArray(left) && Array.isArray(right)) {
-    return (
-      left.length === right.length &&
-      left.every((value, index) => jsonDeepEqual(value, right[index]))
-    );
-  }
-  if (isRecord(left) && isRecord(right)) {
-    const leftKeys = Object.keys(left).sort();
-    const rightKeys = Object.keys(right).sort();
-    return (
-      leftKeys.length === rightKeys.length &&
-      leftKeys.every((key, index) =>
-        key === rightKeys[index] && jsonDeepEqual(left[key], right[key]),
-      )
-    );
-  }
-  return false;
-}
-
-// ZX1-ZX2 review (Kimi §6.3 #1): emit a structured warn line on every
-// parity failure so 7-day preview observation can grep `agent-rpc-parity-failed`
-// in worker logs and count mismatches per action / session. The 502 response
-// already carries the bodies; this is the trace tag.
-function logParityFailure(
-  action: string,
-  sessionUuid: string,
-  rpcResult: { status: number; body: unknown },
-  fetchResult: { response: Response; body: Record<string, unknown> | null },
-): void {
-  const fetchStatus = fetchResult.response.status;
-  console.warn(
-    `agent-rpc-parity-failed action=${action} session=${sessionUuid} rpc_status=${rpcResult.status} fetch_status=${fetchStatus}`,
-    {
-      action,
-      session_uuid: sessionUuid,
-      rpc_status: rpcResult.status,
-      fetch_status: fetchStatus,
-      tag: 'agent-rpc-parity-failed',
-    },
-  );
-}
-
-function redactActivityPayload(payload: Record<string, unknown>): Record<string, unknown> {
-  return redactPayload(payload, [
-    'access_token',
-    'refresh_token',
-    'authority',
-    'auth_snapshot',
-    'password',
-    'secret',
-    'openid',
-    'unionid',
-  ]);
-}
-
-function isNonNegativeInteger(value: unknown): value is number {
-  return typeof value === 'number' && Number.isInteger(value) && value >= 0;
-}
-
-function parseLastSeenSeq(request: Request): number | null {
-  const raw = new URL(request.url).searchParams.get('last_seen_seq');
-  if (raw === null || raw.length === 0) return null;
-  const seq = Number(raw);
-  return Number.isInteger(seq) && seq >= 0 ? seq : null;
-}
-
-function parseStreamFrame(value: unknown, context: string): StreamFrame {
-  if (!isRecord(value)) {
-    throw new InvalidStreamFrameError(`${context}: frame must be an object`);
-  }
-  if (value.kind === 'meta') {
-    if (value.seq !== 0 || value.event !== 'opened' || typeof value.session_uuid !== 'string' || value.session_uuid.length === 0) {
-      throw new InvalidStreamFrameError(`${context}: invalid meta frame`);
-    }
-    return {
-      kind: 'meta',
-      seq: 0,
-      event: 'opened',
-      session_uuid: value.session_uuid,
-    };
-  }
-  if (value.kind === 'event') {
-    if (!isNonNegativeInteger(value.seq) || value.seq < 1 || value.name !== 'session.stream.event' || !isRecord(value.payload)) {
-      throw new InvalidStreamFrameError(`${context}: invalid event frame`);
-    }
-    return {
-      kind: 'event',
-      seq: value.seq,
-      name: 'session.stream.event',
-      payload: value.payload,
-    };
-  }
-  if (value.kind === 'terminal') {
-    if (!isNonNegativeInteger(value.seq) || value.seq < 1) {
-      throw new InvalidStreamFrameError(`${context}: invalid terminal seq`);
-    }
-    if (value.terminal !== 'completed' && value.terminal !== 'cancelled' && value.terminal !== 'error') {
-      throw new InvalidStreamFrameError(`${context}: invalid terminal kind`);
-    }
-    if (value.payload !== undefined && !isRecord(value.payload)) {
-      throw new InvalidStreamFrameError(`${context}: invalid terminal payload`);
-    }
-    return {
-      kind: 'terminal',
-      seq: value.seq,
-      terminal: value.terminal,
-      ...(value.payload !== undefined ? { payload: value.payload } : {}),
-    };
-  }
-  throw new InvalidStreamFrameError(`${context}: unknown frame kind`);
-}
-
-async function readJson(response: Response): Promise<Record<string, unknown> | null> {
-  const text = await response.text();
-  if (text.length === 0) return null;
-  try {
-    return JSON.parse(text) as Record<string, unknown>;
-  } catch {
-    return { raw: text };
-  }
-}
-
-async function readNdjsonFrames(response: Response): Promise<StreamFrame[]> {
-  if (!response.body) return [];
-  const frames: StreamFrame[] = [];
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    while (true) {
-      const idx = buffer.indexOf('\n');
-      if (idx === -1) break;
-      const line = buffer.slice(0, idx).trim();
-      buffer = buffer.slice(idx + 1);
-      if (!line) continue;
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(line);
-      } catch {
-        throw new InvalidStreamFrameError(`stream line ${frames.length + 1}: malformed JSON`);
-      }
-      frames.push(parseStreamFrame(parsed, `stream line ${frames.length + 1}`));
-    }
-  }
-
-  buffer += decoder.decode();
-  const lastLine = buffer.trim();
-  if (lastLine) {
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(lastLine);
-    } catch {
-      throw new InvalidStreamFrameError(`stream line ${frames.length + 1}: malformed JSON`);
-    }
-    frames.push(parseStreamFrame(parsed, `stream line ${frames.length + 1}`));
-  }
-  return frames;
-}
-
-function isWebSocketUpgrade(request: Request): boolean {
-  return request.headers.get('upgrade')?.toLowerCase() === 'websocket';
-}
-
-function extractPhase(body: Record<string, unknown> | null): string | null {
-  return typeof body?.phase === 'string' ? body.phase : null;
-}
-
-function createWebSocketPair(): { client: unknown; server: WorkerSocketLike } | null {
-  const Pair = (
-    globalThis as unknown as {
-      WebSocketPair?: new () => { 0: WorkerSocketLike; 1: WorkerSocketLike };
-    }
-  ).WebSocketPair;
-  if (!Pair) return null;
-  const pair = new Pair();
-  return { client: pair[0], server: pair[1] };
-}
+// Re-export seam types for backward compatibility(ZX4 Phase 0):
+// 外部 import { SessionStatus, SessionEntry, ... } from './user-do.js' 仍然工作。
+export type { SessionStatus, TerminalKind, SessionEntry } from "./session-lifecycle.js";
 
 export class NanoOrchestratorUserDO {
   private readonly attachments = new Map<string, AttachmentState>();
@@ -408,6 +118,7 @@ export class NanoOrchestratorUserDO {
   async alarm(): Promise<void> {
     await this.trimHotState();
     await this.cleanupEndedSessions();
+    await this.expireStalePendingSessions();
     await this.ensureHotStateAlarm();
   }
 
@@ -490,6 +201,16 @@ export class NanoOrchestratorUserDO {
         });
       }
       return this.handlePolicyPermissionMode(sessionUuid, body);
+    }
+    if (request.method === 'POST' && action === 'elicitation/answer') {
+      const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+      if (!body) {
+        return jsonResponse(400, {
+          error: 'invalid-input',
+          message: 'elicitation/answer requires a JSON body',
+        });
+      }
+      return this.handleElicitationAnswer(sessionUuid, body);
     }
 
     return jsonResponse(404, { error: 'not-found', message: 'user DO route not found' });
@@ -782,103 +503,103 @@ export class NanoOrchestratorUserDO {
     await this.state.storage?.setAlarm?.(Date.now() + HOT_STATE_ALARM_MS);
   }
 
+  // ZX4 Phase 9 P9-01 — P3-05 flip executed: HTTP fetch fallback removed.
+  // The dual-track parity check served as a 7-day safety net during ZX2/ZX4;
+  // after the observation window (P8 fast-track 90/90 facade calls clean)
+  // the RPC binding is the sole truth path. fetch fallback handlers in
+  // agent-core/host/internal.ts (start/input/cancel/verify) are also
+  // pruned in this phase.
   private async forwardStart(
     sessionUuid: string,
     body: Record<string, unknown>,
   ): Promise<{ response: Response; body: Record<string, unknown> | null }> {
-    const fetchResult = await this.forwardInternalJson(sessionUuid, 'start', body);
     const rpcStart = this.env.AGENT_CORE?.start;
     const authority = isAuthSnapshot(body.authority) ? body.authority : null;
     const traceUuid = typeof body.trace_uuid === 'string' ? body.trace_uuid : crypto.randomUUID();
-    if (typeof rpcStart !== 'function' || !authority) return fetchResult;
-    const rpcResult = await rpcStart(
-      {
-        session_uuid: sessionUuid,
-        ...body,
-      },
-      {
-        trace_uuid: traceUuid,
-        authority,
-      },
-    );
-    const parityOk =
-      rpcResult.status === fetchResult.response.status &&
-      jsonDeepEqual(rpcResult.body ?? null, fetchResult.body ?? null);
-    if (!parityOk) {
-      logParityFailure('start', sessionUuid, rpcResult, fetchResult);
+    if (typeof rpcStart !== 'function' || !authority) {
       return {
-        response: jsonResponse(502, {
-          error: 'agent-rpc-parity-failed',
-          message: 'agent-core rpc start diverged from fetch implementation',
-          rpc: rpcResult,
-          fetch: {
-            status: fetchResult.response.status,
-            body: fetchResult.body,
-          },
+        response: jsonResponse(503, {
+          error: 'agent-rpc-unavailable',
+          message: 'agent-core RPC binding required after P3-05 flip',
         }),
-        body: null,
+        body: { error: 'agent-rpc-unavailable' },
       };
     }
-    return {
-      response: this.cloneJsonResponse(rpcResult.status, rpcResult.body),
-      body: rpcResult.body,
-    };
+    try {
+      const rpcResult = await rpcStart(
+        { session_uuid: sessionUuid, ...body },
+        { trace_uuid: traceUuid, authority },
+      );
+      return {
+        response: this.cloneJsonResponse(rpcResult.status, rpcResult.body),
+        body: rpcResult.body,
+      };
+    } catch (error) {
+      console.warn(
+        `agent-rpc-throw action=start session=${sessionUuid}`,
+        { tag: 'agent-rpc-throw', action: 'start', session_uuid: sessionUuid,
+          error: error instanceof Error ? `${error.name}: ${error.message}` : String(error) },
+      );
+      return {
+        response: jsonResponse(502, {
+          error: 'agent-rpc-throw',
+          message: error instanceof Error ? error.message : String(error),
+        }),
+        body: { error: 'agent-rpc-throw' },
+      };
+    }
   }
 
   private async forwardStatus(sessionUuid: string): Promise<Response> {
     const rpcStatus = this.env.AGENT_CORE?.status;
     const authority = await this.get<IngressAuthSnapshot>(USER_AUTH_SNAPSHOT_KEY);
     if (typeof rpcStatus !== 'function' || !authority) {
-      return this.forwardInternalRaw(sessionUuid, 'status');
-    }
-    const fetchResult = await this.forwardInternalJson(sessionUuid, 'status');
-    const traceUuid = crypto.randomUUID();
-    const rpcResult = await rpcStatus(
-      { session_uuid: sessionUuid },
-      {
-        trace_uuid: traceUuid,
-        authority,
-      },
-    );
-    const parityOk =
-      rpcResult.status === fetchResult.response.status &&
-      jsonDeepEqual(rpcResult.body ?? null, fetchResult.body ?? null);
-    if (!parityOk) {
-      logParityFailure('status', sessionUuid, rpcResult, fetchResult);
-      return jsonResponse(502, {
-        error: 'agent-rpc-parity-failed',
-        message: 'agent-core rpc status diverged from fetch implementation',
-        rpc: rpcResult,
-        fetch: {
-          status: fetchResult.response.status,
-          body: fetchResult.body,
-        },
+      return jsonResponse(503, {
+        error: 'agent-rpc-unavailable',
+        message: 'agent-core RPC binding required after P3-05 flip',
       });
     }
-    return this.cloneJsonResponse(rpcResult.status, rpcResult.body);
+    try {
+      const rpcResult = await rpcStatus(
+        { session_uuid: sessionUuid },
+        { trace_uuid: crypto.randomUUID(), authority },
+      );
+      return this.cloneJsonResponse(rpcResult.status, rpcResult.body);
+    } catch (error) {
+      console.warn(
+        `agent-rpc-throw action=status session=${sessionUuid}`,
+        { tag: 'agent-rpc-throw', action: 'status', session_uuid: sessionUuid,
+          error: error instanceof Error ? `${error.name}: ${error.message}` : String(error) },
+      );
+      return jsonResponse(502, {
+        error: 'agent-rpc-throw',
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
   }
 
-  // ZX2 Phase 3 P3-01 — generic dual-track parity forwarder for the four
-  // session actions: input / cancel / verify (POST) and timeline (GET).
-  // Returns the same {response, body} shape as forwardInternalJson so
-  // handlers can swap in the shadow path with no other code changes.
-  // Falls back to plain HTTP forwarding when the RPC method is not
-  // callable or the authority is unavailable.
+  // ZX4 Phase 9 P9-01 — P3-05 flip executed: dual-track parity removed.
+  // RPC binding is the sole transport for input / cancel / verify / timeline.
+  // Method name preserved (forwardInternalJsonShadow) so call sites stay
+  // unchanged; the "Shadow" semantic is now historical, not behavioral.
   private async forwardInternalJsonShadow(
     sessionUuid: string,
     action: 'input' | 'cancel' | 'verify' | 'timeline',
     body: Record<string, unknown> | undefined,
     rpcMethod: AgentRpcMethodKey,
   ): Promise<{ response: Response; body: Record<string, unknown> | null }> {
-    const fetchResult = body
-      ? await this.forwardInternalJson(sessionUuid, action, body)
-      : await this.forwardInternalJson(sessionUuid, action);
     const rpc = this.env.AGENT_CORE?.[rpcMethod];
     const authority = isAuthSnapshot(body?.authority)
       ? body?.authority
       : await this.get<IngressAuthSnapshot>(USER_AUTH_SNAPSHOT_KEY);
     if (typeof rpc !== 'function' || !authority) {
-      return fetchResult;
+      return {
+        response: jsonResponse(503, {
+          error: 'agent-rpc-unavailable',
+          message: `agent-core RPC binding required after P3-05 flip (action=${action})`,
+        }),
+        body: { error: 'agent-rpc-unavailable' },
+      };
     }
     const traceUuid =
       typeof body?.trace_uuid === 'string' ? body.trace_uuid : crypto.randomUUID();
@@ -886,38 +607,41 @@ export class NanoOrchestratorUserDO {
       session_uuid: sessionUuid,
       ...(body ?? {}),
     };
-    const rpcResult = await rpc(rpcInput, { trace_uuid: traceUuid, authority });
-    const parityOk =
-      rpcResult.status === fetchResult.response.status &&
-      jsonDeepEqual(rpcResult.body ?? null, fetchResult.body ?? null);
-    if (!parityOk) {
-      logParityFailure(action, sessionUuid, rpcResult, fetchResult);
-      const parityResponse = jsonResponse(502, {
-        error: 'agent-rpc-parity-failed',
-        message: `agent-core rpc ${action} diverged from fetch implementation`,
-        rpc: rpcResult,
-        fetch: {
-          status: fetchResult.response.status,
-          body: fetchResult.body,
-        },
-      });
+    try {
+      const rpcResult = await rpc(rpcInput, { trace_uuid: traceUuid, authority });
       return {
-        response: parityResponse,
-        body: {
-          error: 'agent-rpc-parity-failed',
-          message: `agent-core rpc ${action} diverged from fetch implementation`,
+        response: this.cloneJsonResponse(rpcResult.status, rpcResult.body),
+        body: rpcResult.body,
+      };
+    } catch (error) {
+      console.warn(
+        `agent-rpc-throw action=${action} session=${sessionUuid}`,
+        {
+          tag: 'agent-rpc-throw',
+          action,
+          session_uuid: sessionUuid,
+          error: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
         },
+      );
+      return {
+        response: jsonResponse(502, {
+          error: 'agent-rpc-throw',
+          message: `agent-core rpc ${action} threw: ${error instanceof Error ? error.message : String(error)}`,
+        }),
+        body: { error: 'agent-rpc-throw' },
       };
     }
-    return {
-      response: this.cloneJsonResponse(rpcResult.status, rpcResult.body),
-      body: rpcResult.body,
-    };
   }
 
   private async hydrateSessionFromDurableTruth(sessionUuid: string): Promise<SessionEntry | null> {
     const durable = await this.readDurableSnapshot(sessionUuid);
     if (!durable) return null;
+    // ZX4 P3-07 — pending / expired rows are not readable as live sessions;
+    // ingress guards must reject them with a specific 409 instead of letting
+    // hydrate fabricate a "fake" entry that downstream code treats as active.
+    if (durable.session_status === 'pending' || durable.session_status === 'expired') {
+      return null;
+    }
     const now = new Date().toISOString();
     const entry: SessionEntry = {
       created_at: durable.started_at,
@@ -986,6 +710,29 @@ export class NanoOrchestratorUserDO {
       });
     }
 
+    // ZX4 P3-06 — D1-aware pre-flight. mint() wrote a 'pending' D1 row
+    // before any KV entry existed; we accept that as the legitimate start
+    // path. But 'expired' / 'ended' D1 rows must reject — KV is empty
+    // because either alarm GC fired or cleanup already ran, NOT because
+    // this is a fresh UUID.
+    const durableStatus = await this.sessionTruth()?.readSessionStatus(sessionUuid);
+    if (durableStatus === 'expired') {
+      return jsonResponse(409, {
+        error: 'session-expired',
+        message: `session ${sessionUuid} expired (24h pending TTL); mint a new UUID via POST /me/sessions`,
+        session_uuid: sessionUuid,
+        current_status: 'expired',
+      });
+    }
+    if (durableStatus === 'ended') {
+      return jsonResponse(409, {
+        error: 'session-already-started',
+        message: `session ${sessionUuid} already ended; mint a new UUID via POST /me/sessions`,
+        session_uuid: sessionUuid,
+        current_status: 'ended',
+      });
+    }
+
     const traceUuid = typeof body.trace_uuid === 'string' ? body.trace_uuid : crypto.randomUUID();
     const now = new Date().toISOString();
     const startingEntry: SessionEntry = {
@@ -1005,6 +752,19 @@ export class NanoOrchestratorUserDO {
       traceUuid,
       now,
     );
+    // ZX4 P3-06 — explicit pending → starting transition once the row is
+    // committed to be the active run. Before this line the D1 row may still
+    // read 'pending' (mint inserted it; ensureDurableSession's INSERT OR
+    // IGNORE leaves the existing row untouched). updateSessionState on the
+    // success path moves it onward to 'active'/'detached'.
+    if (durableStatus === 'pending') {
+      await this.sessionTruth()?.updateSessionState({
+        session_uuid: sessionUuid,
+        status: 'starting',
+        last_phase: null,
+        touched_at: now,
+      });
+    }
     const durableTurn = await this.createDurableTurn(
       sessionUuid,
       durablePointer,
@@ -1140,7 +900,7 @@ export class NanoOrchestratorUserDO {
 
   private async handleInput(sessionUuid: string, body: FollowupBody): Promise<Response> {
     const entry = await this.requireSession(sessionUuid);
-    if (!entry) return sessionMissingResponse(sessionUuid);
+    if (!entry) return this.sessionGateMiss(sessionUuid);
     if (entry.status === 'ended') return sessionTerminalResponse(sessionUuid, await this.getTerminal(sessionUuid));
     if (typeof body.text !== 'string' || body.text.length === 0) {
       return jsonResponse(400, { error: 'invalid-input-body', message: 'input requires non-empty text' });
@@ -1265,7 +1025,7 @@ export class NanoOrchestratorUserDO {
 
   private async handleCancel(sessionUuid: string, body: CancelBody): Promise<Response> {
     const entry = await this.requireSession(sessionUuid);
-    if (!entry) return sessionMissingResponse(sessionUuid);
+    if (!entry) return this.sessionGateMiss(sessionUuid);
     if (entry.status === 'ended') return sessionTerminalResponse(sessionUuid, await this.getTerminal(sessionUuid));
     if (body.auth_snapshot) await this.refreshUserState(body.auth_snapshot, body.initial_context_seed);
     const authSnapshot =
@@ -1367,7 +1127,7 @@ export class NanoOrchestratorUserDO {
 
   private async handleVerify(sessionUuid: string, body: VerifyBody): Promise<Response> {
     const entry = await this.requireSession(sessionUuid);
-    if (!entry) return sessionMissingResponse(sessionUuid);
+    if (!entry) return this.sessionGateMiss(sessionUuid);
     if (body.auth_snapshot) await this.refreshUserState(body.auth_snapshot, body.initial_context_seed);
     // ZX2 Phase 3 P3-01 — dual-track parity for verify.
     const verifyAck = await this.forwardInternalJsonShadow(
@@ -1392,7 +1152,7 @@ export class NanoOrchestratorUserDO {
 
   private async handleRead(sessionUuid: string, action: 'status' | 'timeline' | 'history'): Promise<Response> {
     const entry = await this.requireReadableSession(sessionUuid);
-    if (!entry) return sessionMissingResponse(sessionUuid);
+    if (!entry) return this.sessionGateMiss(sessionUuid);
     if (action === 'history') {
       await this.touchSession(sessionUuid, entry.status);
       const messages = await this.readDurableHistory(sessionUuid);
@@ -1463,29 +1223,44 @@ export class NanoOrchestratorUserDO {
     }
   }
 
-  // ZX2 Phase 5 P5-01 — usage read. v1 returns the usage snapshot stored
-  // in the SessionEntry / D1 truth, plus a stub for budgets so the
-  // shape stays stable as the budget plumbing arrives.
+  // ZX2 Phase 5 P5-01 → ZX4 Phase 5 P5-01 — usage read from D1 truth.
+  // When `nano_usage_events` has rows for this session we aggregate them
+  // (allow verdicts only) + join team-level llm balance for budget. The
+  // null-placeholder shape is preserved as the fallback when no rows
+  // exist yet (eg. session that hasn't called any LLM/tool capability).
   private async handleUsage(sessionUuid: string): Promise<Response> {
     const entry = await this.requireReadableSession(sessionUuid);
-    if (!entry) return sessionMissingResponse(sessionUuid);
+    if (!entry) return this.sessionGateMiss(sessionUuid);
     const durable = await this.readDurableSnapshot(sessionUuid);
+    const repo = this.sessionTruth();
+    let usage: Record<string, unknown> = {
+      llm_input_tokens: null,
+      llm_output_tokens: null,
+      tool_calls: null,
+      subrequest_used: null,
+      subrequest_budget: null,
+      estimated_cost_usd: null,
+    };
+    if (repo && durable?.team_uuid) {
+      try {
+        const live = await repo.readUsageSnapshot({
+          session_uuid: sessionUuid,
+          team_uuid: durable.team_uuid,
+        });
+        if (live) usage = live as unknown as Record<string, unknown>;
+      } catch (error) {
+        console.warn(
+          `usage-d1-read-failed session=${sessionUuid}`,
+          { tag: 'usage-d1-read-failed', error: String(error) },
+        );
+      }
+    }
     return jsonResponse(200, {
       ok: true,
       data: {
         session_uuid: sessionUuid,
         status: entry.status,
-        usage: {
-          // Placeholders until the real budget pipe lands. Frontend
-          // already gets the WS `session.usage.update` push for live
-          // numbers — this endpoint is the snapshot/refresh path.
-          llm_input_tokens: null,
-          llm_output_tokens: null,
-          tool_calls: null,
-          subrequest_used: null,
-          subrequest_budget: null,
-          estimated_cost_usd: null,
-        },
+        usage,
         last_seen_at: entry.last_seen_at,
         durable_truth: durable ?? null,
       },
@@ -1500,7 +1275,7 @@ export class NanoOrchestratorUserDO {
     request: Request,
   ): Promise<Response> {
     const entry = await this.requireReadableSession(sessionUuid);
-    if (!entry) return sessionMissingResponse(sessionUuid);
+    if (!entry) return this.sessionGateMiss(sessionUuid);
     const body = (await request.json().catch(() => ({}))) as {
       last_seen_seq?: number;
     };
@@ -1557,9 +1332,97 @@ export class NanoOrchestratorUserDO {
       scope,
       decided_at: new Date().toISOString(),
     });
+
+    // ZX4 P4-01 — forward the decision to agent-core so the runtime DO
+    // can resolve a waiting PermissionRequest. Best-effort: missing RPC
+    // binding, missing authority, or RPC failure does not break the
+    // user-facing 200 ack — the KV record above stays as the fallback
+    // contract for future kernel polling.
+    const rpcDecision = this.env.AGENT_CORE?.permissionDecision;
+    const authority = await this.get<IngressAuthSnapshot>(USER_AUTH_SNAPSHOT_KEY);
+    if (typeof rpcDecision === 'function' && authority) {
+      try {
+        await rpcDecision(
+          {
+            session_uuid: sessionUuid,
+            request_uuid: requestUuid,
+            decision,
+            scope,
+          },
+          {
+            trace_uuid: crypto.randomUUID(),
+            authority,
+          },
+        );
+      } catch (error) {
+        console.warn(
+          `permission-decision-forward-failed session=${sessionUuid} request=${requestUuid}`,
+          { tag: 'permission-decision-forward-failed', error: String(error) },
+        );
+      }
+    }
+
     return jsonResponse(200, {
       ok: true,
       data: { request_uuid: requestUuid, decision, scope },
+    });
+  }
+
+  // ZX4 Phase 6 P6-01 — elicitation answer ingress. Mirror of
+  // handlePermissionDecision: store locally + forward to agent-core via
+  // RPC so the runtime DO has the answer keyed by request_uuid.
+  private async handleElicitationAnswer(
+    sessionUuid: string,
+    body: Record<string, unknown>,
+  ): Promise<Response> {
+    const requestUuid = body.request_uuid;
+    const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (typeof requestUuid !== 'string' || !uuidRe.test(requestUuid)) {
+      return jsonResponse(400, {
+        error: 'invalid-input',
+        message: 'elicitation/answer requires a UUID request_uuid',
+      });
+    }
+    const answer = body.answer;
+    if (answer === undefined) {
+      return jsonResponse(400, {
+        error: 'invalid-input',
+        message: 'elicitation/answer requires an answer field',
+      });
+    }
+    await this.put(`elicitation_answer/${requestUuid}`, {
+      session_uuid: sessionUuid,
+      request_uuid: requestUuid,
+      answer,
+      decided_at: new Date().toISOString(),
+    });
+
+    const rpc = this.env.AGENT_CORE?.elicitationAnswer;
+    const authority = await this.get<IngressAuthSnapshot>(USER_AUTH_SNAPSHOT_KEY);
+    if (typeof rpc === 'function' && authority) {
+      try {
+        await rpc(
+          {
+            session_uuid: sessionUuid,
+            request_uuid: requestUuid,
+            answer,
+          },
+          {
+            trace_uuid: crypto.randomUUID(),
+            authority,
+          },
+        );
+      } catch (error) {
+        console.warn(
+          `elicitation-answer-forward-failed session=${sessionUuid} request=${requestUuid}`,
+          { tag: 'elicitation-answer-forward-failed', error: String(error) },
+        );
+      }
+    }
+
+    return jsonResponse(200, {
+      ok: true,
+      data: { request_uuid: requestUuid, answer },
     });
   }
 
@@ -1594,9 +1457,15 @@ export class NanoOrchestratorUserDO {
   // index. Each conversation has at most one `latest_session_uuid`; we
   // join with each session's per-uuid SessionEntry for last_seen_at /
   // status / last_phase so the response is render-ready.
+  //
+  // ZX4 P3-05 — read-model 5-state view: also merge D1 rows (pending /
+  // active / detached / ended / expired). Pending rows live ONLY in D1
+  // (mint path doesn't write KV), so without this merge GET /me/sessions
+  // would silently drop them. D1 is the authoritative status source when
+  // a row appears in both places.
   private async handleMeSessions(): Promise<Response> {
     const conversations = (await this.get<ConversationIndexItem[]>(CONVERSATION_INDEX_KEY)) ?? [];
-    const items: Array<{
+    type Item = {
       conversation_uuid: string;
       session_uuid: string;
       status: string;
@@ -1604,10 +1473,11 @@ export class NanoOrchestratorUserDO {
       last_seen_at: string;
       created_at: string | null;
       ended_at: string | null;
-    }> = [];
+    };
+    const bySessionUuid = new Map<string, Item>();
     for (const conv of conversations) {
       const entry = await this.get<SessionEntry>(sessionKey(conv.latest_session_uuid));
-      items.push({
+      bySessionUuid.set(conv.latest_session_uuid, {
         conversation_uuid: conv.conversation_uuid,
         session_uuid: conv.latest_session_uuid,
         status: entry?.status ?? conv.status,
@@ -1617,6 +1487,45 @@ export class NanoOrchestratorUserDO {
         ended_at: entry?.ended_at ?? null,
       });
     }
+
+    const repo = this.sessionTruth();
+    const authority = await this.get<IngressAuthSnapshot>(USER_AUTH_SNAPSHOT_KEY);
+    if (repo && authority) {
+      const teamUuid = authority.team_uuid ?? authority.tenant_uuid;
+      const actorUserUuid = authority.user_uuid ?? authority.sub;
+      if (typeof teamUuid === 'string' && teamUuid.length > 0) {
+        try {
+          const rows = await repo.listSessionsForUser({
+            team_uuid: teamUuid,
+            actor_user_uuid: actorUserUuid,
+            limit: 50,
+          });
+          for (const row of rows) {
+            const existing = bySessionUuid.get(row.session_uuid);
+            // D1 status wins — KV may carry a stale 'detached' for what
+            // D1 already moved to 'expired' via alarm GC.
+            bySessionUuid.set(row.session_uuid, {
+              conversation_uuid: row.conversation_uuid,
+              session_uuid: row.session_uuid,
+              status: row.session_status,
+              last_phase: row.last_phase ?? existing?.last_phase ?? null,
+              last_seen_at: existing?.last_seen_at ?? row.started_at,
+              created_at: row.started_at,
+              ended_at: row.ended_at ?? existing?.ended_at ?? null,
+            });
+          }
+        } catch (error) {
+          console.warn(
+            'me-sessions-d1-merge-failed',
+            { tag: 'me-sessions-d1-merge-failed', error: String(error) },
+          );
+        }
+      }
+    }
+
+    const items = Array.from(bySessionUuid.values()).sort((a, b) =>
+      (b.last_seen_at ?? '').localeCompare(a.last_seen_at ?? ''),
+    );
     return jsonResponse(200, {
       ok: true,
       data: { sessions: items, next_cursor: null },
@@ -1625,7 +1534,7 @@ export class NanoOrchestratorUserDO {
 
   private async handleWsAttach(sessionUuid: string, request: Request): Promise<Response> {
     const entry = await this.requireReadableSession(sessionUuid);
-    if (!entry) return sessionMissingResponse(sessionUuid);
+    if (!entry) return this.sessionGateMiss(sessionUuid);
     if (entry.status === 'ended') return sessionTerminalResponse(sessionUuid, await this.getTerminal(sessionUuid));
     if (!isWebSocketUpgrade(request)) {
       return jsonResponse(400, { error: 'invalid-upgrade', message: 'ws route requires websocket upgrade' });
@@ -1894,6 +1803,32 @@ export class NanoOrchestratorUserDO {
     return (await this.get<SessionEntry>(sessionKey(sessionUuid))) ?? null;
   }
 
+  // ZX4 P3-07 — ingress guard miss path (per R11). When the KV entry is
+  // missing AND D1 says the row is 'pending' or 'expired', return a
+  // distinct 409 instead of the generic 404 — clients/proxies need to
+  // distinguish "you minted but never started" from "this UUID was never
+  // minted at all".
+  private async sessionGateMiss(sessionUuid: string): Promise<Response> {
+    const status = await this.sessionTruth()?.readSessionStatus(sessionUuid);
+    if (status === 'pending') {
+      return jsonResponse(409, {
+        error: 'session-pending-only-start-allowed',
+        message: `session ${sessionUuid} is pending; only POST /sessions/{id}/start is allowed before it transitions to active`,
+        session_uuid: sessionUuid,
+        current_status: 'pending',
+      });
+    }
+    if (status === 'expired') {
+      return jsonResponse(409, {
+        error: 'session-expired',
+        message: `session ${sessionUuid} expired (24h pending TTL); mint a new UUID via POST /me/sessions`,
+        session_uuid: sessionUuid,
+        current_status: 'expired',
+      });
+    }
+    return sessionMissingResponse(sessionUuid);
+  }
+
   private async getTerminal(sessionUuid: string): Promise<SessionTerminalRecord | null> {
     return (await this.get<SessionTerminalRecord>(terminalKey(sessionUuid))) ?? null;
   }
@@ -1905,6 +1840,31 @@ export class NanoOrchestratorUserDO {
       { session_uuid: sessionUuid, ended_at: endedAt },
     ].sort((a, b) => a.ended_at.localeCompare(b.ended_at));
     await this.put(ENDED_INDEX_KEY, next);
+  }
+
+  // ZX4 P3-04 — alarm GC for pending rows older than 24h. Runs on every
+  // hot-state alarm tick (every 10 min); cheap when there's nothing to do
+  // (single index scan), bounded to 200 rows per tick to avoid alarm
+  // overrun. Uses `started_at` per R10 schema-field freeze (NOT created_at).
+  private async expireStalePendingSessions(now = Date.now()): Promise<void> {
+    const repo = this.sessionTruth();
+    if (!repo) return;
+    const cutoff = new Date(now - PENDING_TTL_MS).toISOString();
+    const nowIso = new Date(now).toISOString();
+    try {
+      const expired = await repo.expireStalePending({ now: nowIso, cutoff });
+      if (expired > 0) {
+        console.warn(
+          `pending-session-expired-gc count=${expired}`,
+          { tag: "pending-session-expired-gc", expired_count: expired, cutoff },
+        );
+      }
+    } catch (error) {
+      console.warn(
+        "pending-session-expired-gc-failed",
+        { tag: "pending-session-expired-gc-failed", error: String(error) },
+      );
+    }
   }
 
   private async cleanupEndedSessions(now = Date.now()): Promise<void> {

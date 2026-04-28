@@ -1,6 +1,6 @@
 // pages/session/index.js
-const api = require('../../utils/api');
-const { connectStream } = require('../../utils/nano-client');
+const { start, input } = require('../../api/session');
+const { connect } = require('../../api/stream');
 
 Page({
   data: {
@@ -15,16 +15,34 @@ Page({
     showLogPanel: false,
   },
 
-  socket: null,
+  socketController: null,
   messageIdCounter: 0,
   currentAssistantMessageId: null,
 
-  onLoad(options) {
+  async onLoad(options) {
     const sessionUuid = options.sessionUuid || this.generateUuid();
     this.setData({ sessionUuid });
     
     if (options.initialInput) {
       this.setData({ inputValue: options.initialInput });
+    }
+    
+    // 尝试自动启动 session（如果还没启动）
+    await this.ensureSessionStarted(options.initialInput || '');
+  },
+
+  async ensureSessionStarted(initialInput) {
+    try {
+      const result = await start(this.data.sessionUuid, initialInput);
+      if (result.ok) {
+        this.log('Session 自动启动成功');
+      } else if (result.error?.code === 'session-already-started') {
+        this.log('Session 已启动');
+      } else {
+        this.log('Session 启动检查: ' + (result.error?.message || result.error?.code || 'unknown'));
+      }
+    } catch (error) {
+      this.log('Session 启动检查: ' + (error.message || error.code || 'unknown'));
     }
   },
 
@@ -48,111 +66,83 @@ Page({
     return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
   },
 
-  // 连接 WebSocket
   connectWebSocket() {
-    const token = api.getJwtToken();
-    if (!token) {
-      this.log('未登录，无法连接 WebSocket');
-      return;
-    }
-
-    const baseUrl = 'https://nano-agent-orchestrator-core-preview.haimang.workers.dev';
-    
     this.log('正在连接 WebSocket...');
     
     try {
-      this.socket = connectStream(
-        baseUrl,
-        token,
+      this.socketController = connect(
         this.data.sessionUuid,
-        (event) => this.handleWebSocketMessage(event),
-        (state) => this.handleWebSocketState(state),
-        0
+        {
+          onEvent: (event) => this.handleStreamEvent(event),
+          onHeartbeat: () => {
+            // 心跳，忽略
+          },
+          onSuperseded: (data) => {
+            this.log(`连接被替换: ${data.reason || 'new attachment'}`);
+            this.showError('此会话已在其他设备上打开');
+            this.disconnectWebSocket();
+          },
+          onTerminal: (data) => {
+            this.log(`会话终态: ${data.terminal}, phase: ${data.last_phase}`);
+            this.finalizeAssistantMessage();
+            this.setData({ isSending: false });
+          },
+          onError: (err) => {
+            this.log(`WebSocket 错误: ${err.message || err.code || 'unknown'}`);
+          },
+          onState: (state) => {
+            const connected = state === 'open';
+            this.setData({ isConnected: connected });
+            this.log(`WebSocket 状态: ${state}`);
+          },
+          onPermanentDisconnect: (data) => {
+            this.log(`永久断开: ${data.reason}`);
+            this.showError('连接已断开，请重试');
+          },
+        }
       );
     } catch (error) {
       this.log(`WebSocket 连接失败: ${error.message}`);
     }
   },
 
-  // 断开 WebSocket
   disconnectWebSocket() {
-    if (this.socket) {
-      this.socket.close?.();
-      this.socket = null;
+    if (this.socketController) {
+      this.socketController.disconnect();
+      this.socketController = null;
       this.setData({ isConnected: false });
       this.log('WebSocket 已断开');
     }
   },
 
-  // 处理 WebSocket 消息
-  handleWebSocketMessage(event) {
+  handleStreamEvent(event) {
     this.log(`收到: ${JSON.stringify(event).slice(0, 300)}`);
-
-    // Agentic Loop 消息处理
-    const { message_type, body } = event;
-
-    switch (message_type) {
-      case 'session.stream.event':
-        this.handleStreamEvent(body);
-        break;
-      
-      case 'session.stream.chunk':
-        // 兼容旧格式
-        this.appendAssistantText(body?.text || '');
-        break;
-      
-      case 'session.stream.done':
-        this.finalizeAssistantMessage();
-        break;
-      
-      case 'session.error':
-        this.showError(body?.message || '会话错误');
-        break;
-      
-      case 'session.heartbeat':
-        // 心跳，忽略
-        break;
-      
-      default:
-        // 尝试从 body 解析
-        if (body?.text) {
-          this.appendAssistantText(body.text);
-        }
-        if (body?.kind) {
-          this.handleStreamEvent(body);
-        }
-    }
-  },
-
-  // 处理流事件（Agentic Loop）
-  handleStreamEvent(body) {
-    if (!body || !body.kind) return;
-
-    const { kind } = body;
-
-    switch (kind) {
+    
+    const { type, data } = event;
+    
+    switch (type) {
       case 'llm.delta':
-        this.handleLlmDelta(body);
+        this.handleLlmDelta(data);
         break;
       
       case 'tool.call.progress':
-        this.handleToolProgress(body);
+        this.handleToolProgress(data);
         break;
       
       case 'tool.call.result':
-        this.handleToolResult(body);
+        this.handleToolResult(data);
         break;
       
       case 'turn.begin':
-        this.handleTurnBegin(body);
+        this.handleTurnBegin(data);
         break;
       
       case 'turn.end':
-        this.handleTurnEnd(body);
+        this.handleTurnEnd(data);
         break;
       
       case 'system.notify':
-        this.addSystemMessage(body.message || '系统通知');
+        this.addSystemMessage(data.message || '系统通知');
         break;
       
       case 'session.update':
@@ -160,17 +150,15 @@ Page({
         break;
       
       default:
-        this.log(`未处理的事件类型: ${kind}`);
+        this.log(`未处理的事件类型: ${type}`);
     }
   },
 
-  // 处理 LLM 增量
   handleLlmDelta(body) {
     const contentType = body.content_type;
     const content = body.content || '';
 
     if (contentType === 'tool_use_start') {
-      // 工具调用开始
       try {
         const toolInfo = JSON.parse(content);
         this.startToolCall(toolInfo);
@@ -185,14 +173,11 @@ Page({
     }
   },
 
-  // 处理工具进度
   handleToolProgress(body) {
     const { tool_name, progress } = body;
     this.log(`工具执行中: ${tool_name} - ${progress}%`);
-    // 可以更新工具调用状态
   },
 
-  // 处理工具结果
   handleToolResult(body) {
     const { tool_name, result, error } = body;
     
@@ -203,24 +188,19 @@ Page({
     }
   },
 
-  // 回合开始
   handleTurnBegin(body) {
     this.log('回合开始');
-    // 可以添加回合开始标记
   },
 
-  // 回合结束
   handleTurnEnd(body) {
     this.log('回合结束');
     this.finalizeAssistantMessage();
   },
 
-  // 开始工具调用（UI 状态）
   startToolCall(toolInfo) {
     const messages = this.data.messages;
     const lastMessage = messages[messages.length - 1];
     
-    // 如果上一条是 assistant 消息，更新为工具调用状态
     if (lastMessage && lastMessage.role === 'assistant') {
       lastMessage.status = 'tool_calling';
       lastMessage.toolInfo = {
@@ -230,7 +210,6 @@ Page({
       };
       this.setData({ messages: [...messages] });
     } else {
-      // 创建新的工具调用消息
       this.addMessage('assistant', '', 'tool_calling', {
         name: toolInfo.name,
         arguments: JSON.stringify(toolInfo.arguments, null, 2),
@@ -240,11 +219,9 @@ Page({
     this.scrollToBottom();
   },
 
-  // 更新工具结果
   updateToolResult(toolName, result, error) {
     const messages = this.data.messages;
     
-    // 找到最近的工具调用消息
     for (let i = messages.length - 1; i >= 0; i--) {
       const msg = messages[i];
       if (msg.role === 'assistant' && msg.status === 'tool_calling' && msg.toolInfo?.name === toolName) {
@@ -258,59 +235,48 @@ Page({
     }
   },
 
-  // 追加文本到 assistant 消息
   appendAssistantText(text) {
     const messages = this.data.messages;
     const lastMessage = messages[messages.length - 1];
     
     if (lastMessage && lastMessage.role === 'assistant' && 
         (lastMessage.status === 'sending' || lastMessage.status === 'thinking')) {
-      // 追加到现有消息
       lastMessage.content += text;
       this.setData({ messages: [...messages] });
     } else {
-      // 创建新消息（可能是思考过程）
       this.addMessage('assistant', text, 'thinking', null, true);
     }
     this.scrollToBottom();
   },
 
-  // 添加系统消息
   addSystemMessage(content) {
     this.addMessage('system', content, 'success');
   },
 
-  // 输入变化
   onInputChange(e) {
     this.setData({ inputValue: e.detail.value });
   },
 
-  // 发送消息
   async sendMessage() {
     const { inputValue, sessionUuid, isSending } = this.data;
     
     if (!inputValue.trim() || isSending) return;
 
+    const text = inputValue.trim();
+
     // 添加用户消息
-    this.addMessage('user', inputValue.trim());
+    this.addMessage('user', text);
     this.setData({ inputValue: '', isSending: true });
     this.scrollToBottom();
 
     try {
-      if (this.socket && this.data.isConnected) {
-        const frame = JSON.stringify({
-          message_type: 'session.input',
-          body: { text: inputValue.trim() },
-        });
-        this.socket.send({ data: frame });
-        this.log('通过 WebSocket 发送消息');
-      } else {
-        await api.request('sessionInput', {
-          pathParams: { sessionUuid },
-          data: { text: inputValue.trim() },
-        });
-        this.log('通过 HTTP 发送消息');
+      // 当前 public WS 不会真正解析/消费客户端发来的 input body
+      // authoritative 发送入口仍是 HTTP POST /sessions/{uuid}/input
+      const result = await input(sessionUuid, text);
+      if (!result.ok) {
+        throw new Error(result.error?.message || '发送失败');
       }
+      this.log('通过 HTTP 发送消息');
 
       // 添加 AI 消息占位
       this.currentAssistantMessageId = this.addMessage('assistant', '', 'sending');
@@ -322,7 +288,6 @@ Page({
     }
   },
 
-  // 添加消息
   addMessage(role, content, status = 'success', toolInfo = null, isThinking = false) {
     const id = ++this.messageIdCounter;
     const messages = [...this.data.messages, {
@@ -338,20 +303,18 @@ Page({
     return id;
   },
 
-  // 完成 AI 消息
   finalizeAssistantMessage() {
     const messages = this.data.messages;
     const lastMessage = messages[messages.length - 1];
     
     if (lastMessage && lastMessage.role === 'assistant' && lastMessage.status !== 'tool_calling') {
       lastMessage.status = 'success';
-      lastMessage.isThinking = false; // 思考完成
+      lastMessage.isThinking = false;
       this.setData({ messages: [...messages], isSending: false });
     }
     this.currentAssistantMessageId = null;
   },
 
-  // 显示错误
   showError(message) {
     const messages = this.data.messages;
     const lastMessage = messages[messages.length - 1];
@@ -367,12 +330,10 @@ Page({
     }
   },
 
-  // 滚动到底部
   scrollToBottom() {
     this.setData({ scrollToView: 'bottom-anchor' });
   },
 
-  // 切换连接
   toggleConnection() {
     if (this.data.isConnected) {
       this.disconnectWebSocket();
@@ -381,12 +342,10 @@ Page({
     }
   },
 
-  // 返回上一页
   goBack() {
     wx.navigateBack({ delta: 1 });
   },
 
-  // 日志相关
   log(entry) {
     const line = typeof entry === 'string' ? entry : JSON.stringify(entry, null, 2);
     const logs = [line, ...this.data.logs].slice(0, 50);

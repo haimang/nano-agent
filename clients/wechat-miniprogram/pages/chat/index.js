@@ -1,5 +1,5 @@
 // pages/chat/index.js
-const api = require('../../utils/api');
+const { createSession, listSessions } = require('../../api/me');
 
 Page({
   data: {
@@ -32,7 +32,6 @@ Page({
     }
   },
 
-  // 开始新会话
   async startNewSession() {
     const app = getApp();
     
@@ -44,9 +43,7 @@ Page({
         cancelText: '取消',
         success: (res) => {
           if (res.confirm) {
-            wx.navigateTo({ 
-              url: '/pages/auth/index'
-            });
+            wx.navigateTo({ url: '/pages/auth/index' });
           }
         },
       });
@@ -56,38 +53,31 @@ Page({
     this.setData({ isLoading: true });
     
     try {
-      const sessionUuid = this.generateUuid();
+      const result = await createSession();
+      if (!result.ok) {
+        throw new Error(result.error?.message || '创建会话失败');
+      }
       
-      await api.request('sessionStart', {
-        pathParams: { sessionUuid },
-        data: { initial_input: '' },
-      });
+      const sessionUuid = result.data?.session_uuid;
+      if (!sessionUuid) {
+        throw new Error('服务器未返回会话ID');
+      }
 
       wx.navigateTo({
         url: '/pages/session/index?sessionUuid=' + sessionUuid,
       });
     } catch (error) {
       console.error('Start session error:', error);
-      wx.showToast({ title: '创建会话失败', icon: 'none' });
+      wx.showToast({ title: '创建会话失败: ' + (error.message || ''), icon: 'none' });
     } finally {
       this.setData({ isLoading: false });
     }
   },
 
-  generateUuid() {
-    const hex = Array.from({ length: 16 }, () => Math.floor(Math.random() * 256));
-    hex[6] = (hex[6] & 0x0f) | 0x40;
-    hex[8] = (hex[8] & 0x3f) | 0x80;
-    const h = hex.map((b) => b.toString(16).padStart(2, '0')).join('');
-    return h.slice(0, 8) + '-' + h.slice(8, 12) + '-' + h.slice(12, 16) + '-' + h.slice(16, 20) + '-' + h.slice(20);
-  },
-
-  // 查看历史记录
   viewHistory() {
     wx.showToast({ title: '历史记录功能开发中', icon: 'none' });
   },
 
-  // 打开已有会话
   openSession(e) {
     const uuid = e.currentTarget.dataset.uuid;
     wx.navigateTo({
@@ -95,22 +85,40 @@ Page({
     });
   },
 
-  // 去登录
   goToLogin() {
     wx.navigateTo({ url: '/pages/auth/index' });
   },
 
-  // 去个人中心
   goToProfile() {
     wx.switchTab({ url: '/pages/profile/index' });
   },
 
-  // 加载最近会话（预留）
   async loadRecentSessions() {
-    this.setData({ recentSessions: [] });
+    try {
+      const result = await listSessions();
+      if (!result.ok) {
+        console.error('Load sessions error:', result.error);
+        this.setData({ recentSessions: [] });
+        return;
+      }
+      
+      const sessions = (result.data?.sessions || []).slice(0, 10).map((s) => ({
+        session_uuid: s.session_uuid,
+        title: s.status || '对话',
+        updated_at: s.last_seen_at
+          ? new Date(s.last_seen_at).toLocaleString('zh-CN')
+          : '',
+        status: s.status,
+        last_phase: s.last_phase,
+      }));
+      
+      this.setData({ recentSessions: sessions });
+    } catch (error) {
+      console.error('Load recent sessions error:', error);
+      this.setData({ recentSessions: [] });
+    }
   },
 
-  // 去调试页面
   goToDebug() {
     wx.navigateTo({ url: '/pages/index/index' });
   },
