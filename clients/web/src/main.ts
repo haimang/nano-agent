@@ -1,4 +1,6 @@
-import { NanoClient, NanoClientError, type AuthState, type SessionEvent } from "./client";
+// Retired DOM demo — no longer the canonical UI entry.
+// Kept for reference. The product UI now lives in main.tsx + App.tsx.
+import { openSessionStream, type AuthState, type SessionEvent } from "./client";
 import "./styles.css";
 
 const DEFAULT_BASE_URL = "https://nano-agent-orchestrator-core-preview.haimang.workers.dev";
@@ -17,10 +19,6 @@ let sessionUuid = uuid();
 let socket: WebSocket | null = null;
 let lastSeenSeq = 0;
 const baseUrl = localStorage.getItem("nano.baseUrl") || envBaseUrl || DEFAULT_BASE_URL;
-const client = new NanoClient({
-  baseUrl,
-  traceUuid: uuid,
-});
 
 function appendLog(event: SessionEvent | string): void {
   const row = document.createElement("pre");
@@ -30,37 +28,9 @@ function appendLog(event: SessionEvent | string): void {
 
 app.innerHTML = `
   <section class="panel">
-    <h1>nano-agent Z4 + ZX2 web client</h1>
-    <label>Orchestrator URL <input id="baseUrl" value="${baseUrl}" /></label>
-    <label>Email <input id="email" value="z4-${Date.now()}@nano-agent.test" /></label>
-    <label>Password <input id="password" type="password" value="NanoAgent!z4-client" /></label>
-    <div class="row">
-      <button id="register">Register + Login</button>
-      <button id="login">Login</button>
-      <button id="me">/me</button>
-      <button id="workerHealth">Worker Health</button>
-    </div>
+    <h1>nano-agent web client (retired demo)</h1>
+    <p>This DOM demo has been retired. The product UI lives in the React app.</p>
   </section>
-  <section class="panel">
-    <label>Session UUID <input id="sessionUuid" value="${sessionUuid}" /></label>
-    <label>Prompt <textarea id="prompt">Reply with one short sentence and, if useful, call pwd.</textarea></label>
-    <div class="row">
-      <button id="start">Start</button>
-      <button id="input">Follow-up</button>
-      <button id="stream">Open WS</button>
-      <button id="timeline">Timeline</button>
-      <button id="newSession">New Session</button>
-      <button id="mintSession">Mint Server UUID</button>
-    </div>
-    <div class="row">
-      <button id="usage">Usage</button>
-      <button id="resume">Resume</button>
-      <button id="catalogSkills">Catalog: skills</button>
-      <button id="catalogCommands">Catalog: commands</button>
-      <button id="myList">List My Sessions</button>
-    </div>
-  </section>
-  <section class="panel"><h2>Events</h2><div id="log"></div></section>
 `;
 
 function value(id: string): string {
@@ -77,76 +47,5 @@ function refreshSessionUuid(): string {
   return sessionUuid;
 }
 
-async function run(label: string, task: () => Promise<unknown>): Promise<void> {
-  try {
-    const result = await task();
-    appendLog({ kind: `client.${label}.ok`, result });
-  } catch (error) {
-    appendLog(error instanceof NanoClientError
-      ? { ...error.details, kind: error.details.kind }
-      : { kind: `client.${label}.error`, message: error instanceof Error ? error.message : String(error) });
-  }
-}
-
-document.querySelector("#register")?.addEventListener("click", () => run("register", async () => {
-  auth = await client.register(value("email"), value("password"), "Z4 Web User");
-  return auth;
-}));
-
-document.querySelector("#login")?.addEventListener("click", () => run("login", async () => {
-  auth = await client.login(value("email"), value("password"));
-  return auth;
-}));
-
-document.querySelector("#me")?.addEventListener("click", () => run("me", () => client.me(requireAuth())));
-document.querySelector("#workerHealth")?.addEventListener("click", () => run("workerHealth", () => client.workerHealth()));
-document.querySelector("#start")?.addEventListener("click", () => run("start", () => client.startSession(requireAuth(), refreshSessionUuid(), value("prompt"))));
-document.querySelector("#input")?.addEventListener("click", () => run("input", () => client.sendInput(requireAuth(), refreshSessionUuid(), value("prompt"))));
-document.querySelector("#timeline")?.addEventListener("click", () => run("timeline", () => client.timeline(requireAuth(), refreshSessionUuid())));
-document.querySelector("#stream")?.addEventListener("click", () => {
-  try {
-    socket?.close();
-    socket = client.openStream(requireAuth(), refreshSessionUuid(), appendLog, { lastSeenSeq });
-    socket.addEventListener("nano:seq", (event) => {
-      const seq = (event as CustomEvent<number>).detail;
-      if (Number.isFinite(seq)) lastSeenSeq = Math.max(lastSeenSeq, seq);
-    });
-    socket.addEventListener("open", () => appendLog("websocket open"));
-    socket.addEventListener("close", () => appendLog("websocket close"));
-    socket.addEventListener("error", () => appendLog("websocket error"));
-  } catch (error) {
-    appendLog({ kind: "client.stream.error", message: error instanceof Error ? error.message : String(error) });
-  }
-});
-document.querySelector("#newSession")?.addEventListener("click", () => {
-  sessionUuid = uuid();
-  lastSeenSeq = 0;
-  const input = document.querySelector<HTMLInputElement>("#sessionUuid");
-  if (input) input.value = sessionUuid;
-  appendLog({ kind: "client.session.new", sessionUuid });
-});
-
-// ZX2 Phase 6 P6-01 — facade-必需 endpoints exercised from the UI.
-document.querySelector("#mintSession")?.addEventListener("click", () => run("mintSession", async () => {
-  const minted = await client.createSession(requireAuth());
-  sessionUuid = minted.session_uuid;
-  lastSeenSeq = 0;
-  const input = document.querySelector<HTMLInputElement>("#sessionUuid");
-  if (input) input.value = sessionUuid;
-  return minted;
-}));
-document.querySelector("#usage")?.addEventListener("click", () => run("usage", () =>
-  client.usage(requireAuth(), refreshSessionUuid()),
-));
-document.querySelector("#resume")?.addEventListener("click", () => run("resume", () =>
-  client.resume(requireAuth(), refreshSessionUuid(), lastSeenSeq),
-));
-document.querySelector("#catalogSkills")?.addEventListener("click", () => run("catalog.skills", () =>
-  client.catalog("skills"),
-));
-document.querySelector("#catalogCommands")?.addEventListener("click", () => run("catalog.commands", () =>
-  client.catalog("commands"),
-));
-document.querySelector("#myList")?.addEventListener("click", () => run("me.sessions", () =>
-  client.listMySessions(requireAuth()),
-));
+// This file is intentionally left as a reference; it is no longer the active UI entry.
+console.log("[nano-agent] DOM demo retired. Use the React app (main.tsx) instead.");
