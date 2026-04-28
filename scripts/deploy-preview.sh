@@ -19,8 +19,12 @@
 #
 # Ops gate hooks(per ZX4 closure §3.3 + runbook §2.4 prod hard gate):
 #   - prod deploy 时本脚本应被改写成调用 `wrangler d1 migrations apply
-#     --env prod --remote` 之前;**preview 不需要 migration gate**,因为
-#     ZX4 P3-01 migration 006 已经 apply 到 preview D1。
+#     --env prod --remote` 之前。
+#   - **preview**:本脚本以 best-effort 自动跑 `wrangler d1 migrations apply
+#     --env preview` (per ZX5 review GLM R3) — D6 新增的 migration
+#     007-user-devices.sql 必须先 apply,否则 /me/devices*  endpoint 会
+#     500;migration apply 是幂等的,已 apply 过会被 wrangler 跳过。
+#     设 SKIP_D1_MIGRATIONS=1 可跳过(用于本地仅 worker 重 deploy)。
 #
 # Exit codes:
 #   0 — all deploys succeeded
@@ -94,6 +98,29 @@ deploy_worker() {
 
 # ── §4 — entrypoint ──────────────────────────────────────────────────
 
+# ── §4 — D1 migrations apply (preview) ───────────────────────────────
+#
+# Per ZX5 review GLM R3:每次 preview deploy 之前自动 apply pending D1
+# migrations。orchestrator-core/migrations/ 下当前包含 005-006 (ZX4) 与
+# 007-user-devices.sql (ZX5 D6),wrangler 会跳过已 apply 过的版本。
+apply_d1_migrations_preview() {
+  if [[ "${SKIP_D1_MIGRATIONS:-0}" == "1" ]]; then
+    echo "▸ SKIP_D1_MIGRATIONS=1 — skipping wrangler d1 migrations apply"
+    return 0
+  fi
+  if [[ ! -d "${WORKERS_DIR}/orchestrator-core" ]]; then
+    echo "deploy-preview.sh: orchestrator-core dir missing,跳过 migration apply" >&2
+    return 0
+  fi
+  echo "▸ Applying D1 migrations to preview (NANO_AGENT_DB)"
+  (
+    cd "${WORKERS_DIR}/orchestrator-core"
+    npx wrangler d1 migrations apply NANO_AGENT_DB --env preview --remote
+  )
+}
+
+# ── §5 — entrypoint ──────────────────────────────────────────────────
+
 main() {
   local git_sha
   git_sha="$(resolve_git_sha)"
@@ -114,6 +141,8 @@ main() {
   fi
   echo "  WORKERS: ${targets[*]}"
   echo "═════════════════════════════════════════════════════════════════"
+
+  apply_d1_migrations_preview
 
   for worker in "${targets[@]}"; do
     deploy_worker "${worker}" "${git_sha}" "${suffix}"
