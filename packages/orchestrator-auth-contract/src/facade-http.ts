@@ -30,6 +30,7 @@
  */
 
 import { z } from "zod";
+import { RpcErrorCodeSchema } from "@haimang/nacp-core";
 import { AuthErrorCodeSchema } from "./index.js";
 
 // ═══════════════════════════════════════════════════════════════════
@@ -92,6 +93,25 @@ const _authErrorCodesAreFacadeCodes: z.infer<typeof AuthErrorCodeSchema> extends
   ? true
   : never = true;
 void _authErrorCodesAreFacadeCodes;
+
+/**
+ * ZX5 Lane C C4 — Cross-package compile-time guarantee that every
+ * `RpcErrorCode` (from `@haimang/nacp-core`) is also a `FacadeErrorCode`.
+ *
+ * **Single-direction constraint** (per ZX4-ZX5 GPT review §3.9):
+ *   FacadeErrorCode 必须 ⊇ RpcErrorCode(facade 是 RPC 的 superset)。
+ *   反向不要求 — facade 可以有 nacp-core 不知道的 codes(如 invalid-wechat-payload)。
+ *
+ * If `nacp-core` adds a new `RpcErrorCode` value and `FacadeErrorCode`
+ * doesn't enumerate it, this assignment will fail TS narrowing
+ * (`extends never`),迫使我们同步 facade 表。这是 build-time guard,运行时
+ * 走 `RpcErrorCodeSchema.safeParse → fallback to internal-error`(per
+ * `@haimang/nacp-core/rpc.ts` 现有路径)。
+ */
+const _rpcErrorCodesAreFacadeCodes: z.infer<typeof RpcErrorCodeSchema> extends FacadeErrorCode
+  ? true
+  : never = true;
+void _rpcErrorCodesAreFacadeCodes;
 
 // ═══════════════════════════════════════════════════════════════════
 // §2 — FacadeError + envelopes

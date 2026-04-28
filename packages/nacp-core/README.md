@@ -119,3 +119,23 @@ When ready, publish as a private package to GitHub Packages:
 - `docs/nacp-reviewed-by-GPT.md` — GPT review with 13 corrections
 - `docs/action-plan/nacp-core.md` — execution plan for this package
 - `docs/nacp-core-registry.md` — auto-generated message/error registry
+
+## Cross-link to facade-http-v1(per ZX5 Lane C C5)
+
+`@haimang/nacp-core` 是 worker ↔ worker / DO 内部 RPC truth 的源头(`Envelope<T>` /
+`RpcErrorCodeSchema`);`@haimang/orchestrator-auth-contract` 在此基础上叠加
+对外公网 facade-http-v1 wire(`FacadeEnvelope<T>` / `FacadeErrorCodeSchema`)。
+两者的关系遵循 **单向约束**:
+
+- `FacadeErrorCode ⊇ RpcErrorCode`(facade 是 RPC 的 superset)
+- 任意 `RpcErrorCode` 可无翻译 emit 到 facade,反向不要求
+
+**完整关系图、断言机制、helper 用法在 `packages/orchestrator-auth-contract/README.md`
+§1 envelope 关系总览**。本仓库不在 `docs/transport/` 复制这组真相,
+`transport-profiles.md` 仅作为索引跳转。
+
+升级注意:在 `packages/nacp-core/src/rpc.ts` 加新 `RpcErrorCode` 时,
+必须同步在 `packages/orchestrator-auth-contract/src/facade-http.ts` 的
+`FacadeErrorCodeSchema` 中加同名 entry,否则 `_rpcErrorCodesAreFacadeCodes`
+跨包断言会在 build 时报 `Type 'X' is not assignable to type 'never'`,
+build break。

@@ -1,8 +1,8 @@
 {
-  "name": "@haimang/orchestrator-auth-contract",
+  "name": "@haimang/jwt-shared",
   "version": "0.0.0",
   "type": "module",
-  "description": "Typed auth RPC contracts for orchestration-core and orchestrator-auth",
+  "description": "Shared HMAC JWT helpers used by orchestrator-core and orchestrator-auth (single source of truth — ZX5 Lane C).",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -19,18 +19,17 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
-  "dependencies": {
-    "@haimang/nacp-core": "*",
-    "zod": "^3.24.0"
-  },
   "devDependencies": {
     "typescript": "^5.6.0",
     "vitest": "^2.1.0"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/haimang/nano-agent.git",
-    "directory": "packages/orchestrator-auth-contract"
+    "url": "https://github.com/haimang-tech/nano-agent"
   },
-  "license": "UNLICENSED"
+  "license": "MIT",
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  }
 }
