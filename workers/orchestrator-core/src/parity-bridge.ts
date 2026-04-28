@@ -49,6 +49,14 @@ export function jsonDeepEqual(left: unknown, right: unknown): boolean {
 // R29-class divergences (e.g. stateful field drifting between rpc / fetch
 // samples) can be located at the exact field rather than diffed by hand.
 // `body_diff` is capped + value-truncated to keep the log line tractable.
+//
+// **ZX4 Phase 9 retain-as-reference note(per ZX3-ZX4 review deepseek R6)**:
+// 自 P3-05 flip 起 user-do.ts 已不再调用 logParityFailure / computeBodyDiff
+// (parity 比较代码整体删除)。这两个 helper 与下方的 jsonDeepEqual 一并保留
+// 在本模块中作为 "reference implementation" — 若 ZX5+ 因长期 RPC 不稳需重启
+// dual-track parity profile,可直接复用。如果 owner 确认 internal-http-compat
+// 永久 retired,后续 ZX5 cleanup 可加 @deprecated 标记或物理删除。当前文件
+// 保留是 deliberate 决策,不是 dead code 遗漏。
 
 export type BodyDiffKind = "value-mismatch" | "rpc-only" | "fetch-only";
 

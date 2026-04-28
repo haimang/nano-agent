@@ -8,12 +8,13 @@ import {
 // ZX4 Phase 0 — seam extraction(per ZX4-ZX5 GPT review Q3 4-module seam):
 // types + pure helpers 已抽到 4 个 seam 模块,本文件只保留 NanoOrchestratorUserDO
 // 类骨架。Phase 0 是 pure refactor,零行为变更。Phase 1+ 在小文件上各自演进。
+// ZX4 Phase 9 P9-01 — post P3-05 flip: jsonDeepEqual / logParityFailure
+// 不再被 user-do 使用(parity 比较已删除),仍在 parity-bridge.ts 中保留供
+// 未来 dual-track 重启时使用,但本文件不再 import。
 import {
   InvalidStreamFrameError,
   isRecord,
   isNonNegativeInteger,
-  jsonDeepEqual,
-  logParityFailure,
   parseStreamFrame,
   readJson,
   readNdjsonFrames,
@@ -945,9 +946,9 @@ export class NanoOrchestratorUserDO {
       timestamp: now,
     });
 
-    // ZX2 Phase 3 P3-01 — dual-track parity. forwardInternalJsonShadow falls
-    // back to HTTP-only when AGENT_CORE.input is unbound or no authority is
-    // available, so existing miniflare tests continue to pass.
+    // ZX4 Phase 9 — RPC-only after P3-05 flip. forwardInternalJsonShadow
+    // returns 503 `agent-rpc-unavailable` when AGENT_CORE.input is unbound
+    // or no authority is available; HTTP fallback was deleted in ZX4 P9.
     const inputAck = await this.forwardInternalJsonShadow(
       sessionUuid,
       'input',
@@ -1057,7 +1058,7 @@ export class NanoOrchestratorUserDO {
       now,
     );
 
-    // ZX2 Phase 3 P3-01 — dual-track parity for cancel.
+    // ZX4 Phase 9 — RPC-only forward for cancel (post P3-05 flip).
     const cancelAck = await this.forwardInternalJsonShadow(
       sessionUuid,
       'cancel',
@@ -1129,7 +1130,7 @@ export class NanoOrchestratorUserDO {
     const entry = await this.requireSession(sessionUuid);
     if (!entry) return this.sessionGateMiss(sessionUuid);
     if (body.auth_snapshot) await this.refreshUserState(body.auth_snapshot, body.initial_context_seed);
-    // ZX2 Phase 3 P3-01 — dual-track parity for verify.
+    // ZX4 Phase 9 — RPC-only forward for verify (post P3-05 flip).
     const verifyAck = await this.forwardInternalJsonShadow(
       sessionUuid,
       'verify',
