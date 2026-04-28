@@ -41,6 +41,11 @@ function updateLastSeen(current, event) {
   return current;
 }
 
+// ZX5 Lane C C6 — heartbeat adapter mirrors @haimang/nacp-session HeartbeatTracker
+// API。详见 ./heartbeat-adapter.js 的注释;wechat 小程序 build 接到 npm
+// 后可改用 root export 直接 require。
+const { HeartbeatTracker } = require("./heartbeat-adapter.js");
+
 function heartbeatFrame() {
   return JSON.stringify({ message_type: "session.heartbeat", body: { ts: Date.now() } });
 }
@@ -105,6 +110,10 @@ function onSocketMessage(task, event, onMessage, getLastSeenSeq, setLastSeenSeq)
 function bindSocketLifecycle(task, onMessage, onState, initialLastSeenSeq) {
   let lastSeenSeq = Math.max(0, Math.trunc(initialLastSeenSeq || 0));
   let heartbeatTimer = null;
+  let lastHeartbeatSentAt = 0;
+  // ZX5 C6 — HeartbeatTracker 替代 raw setInterval(15000);interval / timeout
+  // 阈值与 web client / nacp-session HeartbeatTracker 完全一致。
+  const heartbeat = new HeartbeatTracker({ intervalMs: 15000, timeoutMs: 45000 });
   const getLastSeenSeq = () => lastSeenSeq;
   const setLastSeenSeq = (seq) => {
     lastSeenSeq = seq;
@@ -115,11 +124,16 @@ function bindSocketLifecycle(task, onMessage, onState, initialLastSeenSeq) {
       heartbeatTimer = null;
     }
   };
+  const sendHeartbeat = () => {
+    if (!heartbeat.shouldSendHeartbeat(lastHeartbeatSentAt)) return;
+    lastHeartbeatSentAt = Date.now();
+    safeSend(task, heartbeatFrame());
+  };
   task.onOpen(() => {
     onState?.("open");
     safeSend(task, resumeFrame(lastSeenSeq));
-    safeSend(task, heartbeatFrame());
-    heartbeatTimer = setInterval(() => safeSend(task, heartbeatFrame()), 15000);
+    sendHeartbeat();
+    heartbeatTimer = setInterval(sendHeartbeat, heartbeat.interval);
   });
   task.onClose(() => {
     clearHeartbeat();
@@ -129,7 +143,12 @@ function bindSocketLifecycle(task, onMessage, onState, initialLastSeenSeq) {
     clearHeartbeat();
     onState?.(`error: ${err.errMsg || "unknown"}`);
   });
-  task.onMessage((event) => onSocketMessage(task, event, onMessage, getLastSeenSeq, setLastSeenSeq));
+  task.onMessage((event) => {
+    // ZX5 C6 — record liveness on inbound frame(server.heartbeat / event /
+    // terminal 都视为 liveness signal)。
+    heartbeat.recordHeartbeat();
+    onSocketMessage(task, event, onMessage, getLastSeenSeq, setLastSeenSeq);
+  });
   task.getLastSeenSeq = getLastSeenSeq;
   return task;
 }
