@@ -64,14 +64,23 @@
 | `session-ws-v1.md` | `/sessions/{uuid}/ws` | 只写**当前 live** 的 server frame / reconnect 事实 |
 | `permissions.md` | permission decision / mode | HTTP path 已有；WS round-trip **未真正落地** |
 | `usage.md` | usage snapshot | HTTP snapshot 已有；live WS push **未真正落地** |
-| `catalog.md` | `/catalog/skills` `/catalog/commands` `/catalog/agents` | 端点已实现，但内容仍为空数组 placeholder |
+| `catalog.md` | `/catalog/skills` `/catalog/commands` `/catalog/agents` | 端点已实现，**ZX5 起 registry 已填 11 entries(4 skills / 5 commands / 2 agents)**，不再是空数组 placeholder |
 | `worker-health.md` | `/debug/workers/health` | debug/ops 用，不是业务 envelope |
 
-## 尚未实现，不应被当前前端调用
+## ZX5 新增产品面（已实现）
 
-下面这些接口只存在于后续计划 /评审文档里，**当前代码未实现**，因此不在本目录写成“可用 API”：
+ZX5 Lane D 已 land 以下 4 个 product endpoint，前端可调用：
 
-- `POST /sessions/{id}/messages`
-- `GET /sessions/{id}/files`
-- `GET /me/conversations`
-- `POST /me/devices/revoke`
+| 路径 | Method | 状态 | 说明 |
+|---|---|---|---|
+| `/sessions/{id}/messages` | POST | **implemented** | `/input` 的多模态超集；body shape `{parts: [{kind:'text', text}\|{kind:'artifact_ref', artifact_uuid, mime?, summary?}, ...]}`。落同一 `nano_conversation_messages` 表（`message_kind = user.input.text \| user.input.multipart`）+ forward 到 agent-core `input` RPC（parts→text 归一化）。`/input` 现在是 `/messages` 的 thin alias，统一落库路径 |
+| `/sessions/{id}/files` | GET | **partial(metadata-only)** | 从 `nano_conversation_messages.body_json` 扫 `artifact_ref` parts；当前 owner 未创建 R2 bucket，因此**只返 metadata + artifact_uuid**，不返 bytes。R2 binding 接通后可加 `download_url` 字段 |
+| `/me/conversations` | GET | **implemented** | 复用 `nano_conversation_sessions` 5-state truth + group by `conversation_uuid`；返 `{conversation_uuid, latest_session_uuid, latest_status, started_at, latest_session_started_at, last_seen_at(legacy alias), last_phase, session_count}`，按 `latest_session_started_at DESC` sort |
+| `/me/devices` | GET | **implemented** | 列出 authenticated user 的 devices（`nano_user_devices` 表，ZX5 migration 007 新建） |
+| `/me/devices/revoke` | POST | **partial(D1 写入,auth-gate device-active check 待 second-half PR)** | body `{device_uuid, reason?}`；写 `nano_user_devices.status='revoked'` + 一行 audit；**当前已发出的 access token 在 exp 前仍可用**——`verifyAccessToken` 的 device-active lookup 是 D6 second-half follow-up |
+
+## 尚未实现 / 仍未 live 的客户端能力
+
+- `session.permission.request` / `session.elicitation.request` **WS round-trip** — 仍未 live；HTTP `permission/decision` 已有但 runtime kernel 不会等用户 decision，仍是同步 fail-closed 路径（per ZX5 closure §3.2 + 4-reviewer review F1/F2 partial）
+- `session.usage.update` **server frame live push** — 当前 client 仍只能用 `GET /sessions/{id}/usage` 拉取；runtime callback 已通，emit wiring 留 future PR（per ZX5 closure §3.2 F3 partial）
+- R2 file bytes — `/files` 只返 metadata，待 owner 创建 R2 bucket 后扩展

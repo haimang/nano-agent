@@ -6,7 +6,7 @@
 > 上游审查: `docs/eval/zero-to-real/ZX4-action-plan-reviewed-by-GPT.md`(re-baseline 来源)+ 4-reviewer ZX3-ZX4 review(GPT/kimi/GLM/deepseek)
 > 执行人: Opus 4.7(1M ctx)
 > 时间: 2026-04-28
-> 状态: **ZX5 全 4 lanes 完成 — Lane C 协议/auth 单一 source(jwt-shared)+ Lane D 4 个 product endpoint + Lane E 2 library worker uplift 真 RPC + Lane F runtime kernel hookup contract land(F1/F2/F3)+ F4 handleStart idempotency 修法落地 + F5 owner ops runbook stub。worker 总数恒等于 6**
+> 状态: **ZX5 全 4 lanes 主体收口 — Lane C 协议/auth 单一 source(jwt-shared)+ Lane D 4 个 product endpoint(D3 `/messages` 在 ZX5 review 后补 agent-core forward,见 §3.2 重审记录)+ Lane E 2 library worker uplift WorkerEntrypoint seam(short-term shim period,agent-core 仍 in-process import)+ Lane F4 handleStart idempotency 修法落地 + Lane F1/F2 wait-and-resume **infra** land(hook dispatcher integration deferred)+ Lane F3 runtime `onUsageCommit` callback 接通(NanoSessionDO emitServerFrame wiring deferred)+ F5 R28 owner-action runbook stub。worker 总数恒等于 6**
 
 ---
 
@@ -15,11 +15,15 @@
 ZX5 完成"非阻塞收尾 + cluster runtime kernel hookup"主线。仓库从 ZX4 留下的"`internal-http-compat: retired` + 6-state D1 truth + decision-forwarding storage contract / runtime kernel waiter deferred"中间态,推进到"jwt single source + RpcErrorCode⊂FacadeErrorCode 编译期断言 + 4 个 product endpoint + context/filesystem-core 升 真 WorkerEntrypoint RPC + alarm-driven kernel wait-and-resume infra + handleStart idempotency"。
 
 **已完成**:
-- ✅ **Lane C 协议/auth 卫生**:`@haimang/jwt-shared` package 创建 + 两 worker 切换 + kid rotation 集成测试(5 unit) + `_rpcErrorCodesAreFacadeCodes` 跨包断言 + envelope 关系文档化(README cross-link) + web/wechat client heartbeat shared helper migration
-- ✅ **Lane D 产品面 + ops**:catalog content registry 填充 + `POST /sessions/{id}/messages`(per Q8) + `GET /sessions/{id}/files` + `GET /me/conversations` + `GET /me/devices` + `POST /me/devices/revoke`(per Q9 device truth model + migration 007-user-devices.sql) + `scripts/deploy-preview.sh`(WORKER_VERSION env-fill,per Q2 owner-local 路径)
-- ✅ **Lane E library worker RPC uplift(保持 6-worker)**:context-core / filesystem-core 从 library-only(P1-03 binding-scope 401)升级为 `WorkerEntrypoint` + `probe / nacpVersion / assemblerOps / filesystemOps` RPC method;agent-core 短期 shim 期间保留 in-process library import(per Q6 + R9)
-- ✅ **Lane F runtime kernel hookup**:NanoSessionDO 加 alarm-driven `awaitAsyncAnswer / sweepDeferredAnswers / emitPermissionRequestAndAwait / emitElicitationRequestAndAwait`(per Q10 owner direction:b 选项 alarm-driven,反对 a polling 与 c WS 下放)+ runtime mainline `onUsageCommit` callback 在 LLM/tool quota commit 后驱动 emit `session.usage.update` server frame + `handleStart` D1 conditional UPDATE idempotency(per Q11 修法 b)+ R28 wrangler tail investigation runbook stub
-- ✅ **2055 tests 全绿,零回归**:20 jwt-shared + 19 orchestrator-auth-contract + 77 orchestrator-core(+2 vs ZX4)+ 1056 agent-core(零回归)+ 374 bash-core(零回归)+ 13 orchestrator-auth(+5 kid rotation)+ 171 context-core(+4)+ 294 filesystem-core(零回归)+ 31 root-guardians = **2055 / 2055 pass**
+- ✅ **Lane C 协议/auth 卫生**:`@haimang/jwt-shared` package 创建 + 两 worker 切换(orchestrator-core 与 orchestrator-auth 现均使用顶层静态 `import { ... } from "@haimang/jwt-shared"` — ZX5 review GLM R4 修正)+ kid rotation 集成测试(orchestrator-auth 5 unit + orchestrator-core 3 unit,per ZX5 review GLM R5)+ `_rpcErrorCodesAreFacadeCodes` 跨包断言 + envelope 关系文档化(README cross-link)+ web/wechat client heartbeat shared helper local mirror(TODOs 标注待 npm pipeline 接入)
+- ✅ **Lane D 产品面 + ops**:catalog content registry 填充 + `POST /sessions/{id}/messages`(per Q8;**ZX5 review 后的 4-reviewer R1 修正**:写 D1 后 forward 到 agent-core `input` RPC,parts→text 归一化;`/input` 改为 thin alias 转发到 `handleMessages`,统一 `message_kind` taxonomy)+ `GET /sessions/{id}/files`(metadata-only,R2 binding 待 owner)+ `GET /me/conversations`(read paths 现优先读 `x-nano-internal-authority` header,KV 仅作 fallback — ZX5 review deepseek R5 修正;字段 `latest_session_started_at` 新增,`last_seen_at` 保留为 alias — GPT R4 修正)+ `GET /me/devices` + `POST /me/devices/revoke`(per Q9;auth-gate device-active check 标注为 D6 second-half,per GLM R9+kimi R6)+ `scripts/deploy-preview.sh`(WORKER_VERSION env-fill 之外现包含 `wrangler d1 migrations apply --env preview` — ZX5 review GLM R3 修正)
+- ✅ **Lane E library worker RPC seam(保持 6-worker,short-term shim period)**:context-core / filesystem-core 从 library-only(P1-03 binding-scope 401)升级为 `WorkerEntrypoint` + `probe / nacpVersion / contextOps / filesystemOps` RPC method(`assemblerOps()` 重命名为 `contextOps()` 以匹配 `{domain}Ops` 模式,`assemblerOps` 保留为 `@deprecated` alias — ZX5 review GLM R11 修正);agent-core 仍走 in-process library import,wrangler.jsonc CONTEXT_CORE / FILESYSTEM_CORE binding 仍 commented(per Q6 + R9 短期 shim);**Lane E 当前状态是"RPC contract seam land,consumer migration deferred",非"agent-core 已切真 RPC"** — per GPT R2 + kimi R4 review 修正措辞
+- ✅ **Lane F4 + F5 done;F1/F2/F3 partial-by-design**:
+  - **F4 done**:`handleStart` D1 conditional UPDATE idempotency(per Q11 修法 b)+ 2 unit 测试
+  - **F5 done(template)**:R28 wrangler tail investigation runbook stub;owner 在自己环境复盘后回填 §3
+  - **F1/F2 partial — wait-and-resume infra land,hook dispatcher integration deferred**:NanoSessionDO 加 alarm-driven `awaitAsyncAnswer / sweepDeferredAnswers / emitPermissionRequestAndAwait / emitElicitationRequestAndAwait`(per Q10 owner direction:b 选项 alarm-driven)+ DO hibernation 行为现已在 `awaitAsyncAnswer` JSDoc 文档化(GLM R8);**`hooks/permission.ts` 仍走同步 `verdictOf(outcome)` 路径,未调 DO 的 await 方法** — closure §3.2 已列为 cluster-level future PR 承接
+  - **F3 partial — `onUsageCommit` callback contract land,emit wiring deferred**:`runtime-mainline.ts` 在 LLM/tool quota commit 后 invoke `options.onUsageCommit?.(...)`;**NanoSessionDO 未注册该 callback**,因此 `session.usage.update` server frame 当前不会推送到 attached client — `GET /sessions/{id}/usage` 拉取路径仍工作。closure §3.2 已列
+- ✅ **2058 tests 全绿,零回归(ZX5 review 后)**:20 jwt-shared + 19 orchestrator-auth-contract + 80 orchestrator-core(ZX4 75 + F4 idempotency 2 + ZX5 review GLM R5 kid rotation 3)+ 1056 agent-core + 374 bash-core + 13 orchestrator-auth + 171 context-core + 294 filesystem-core + 31 root-guardians = **2058 / 2058 pass**
 
 **owner direction key 决策(执行期内冻结)**:
 - Q10 wait-and-resume:**alarm-driven**(b 选项)— polling(a)与 WS 下放(c)被列为负面清单,与 cloud-native + DO alarm 能力冲突
@@ -298,13 +302,18 @@ const _rpcErrorCodesAreFacadeCodes: z.infer<typeof RpcErrorCodeSchema> extends F
 
 ## 5. 收尾签字
 
-### 5.1 ZX5 Lane C/D/E/F — done
+### 5.1 ZX5 Lane C/D/E/F — 主体收口(F1/F2/F3 partial,见下表)
 
-- ✅ Lane C C1-C6:jwt-shared package + 两 worker 切换 + kid rotation + RpcErrorCode 跨包断言 + envelope 文档化 + client heartbeat helper
-- ✅ Lane D D1-D6:deploy-preview.sh + catalog content + /messages + /files + /me/conversations + /me/devices + /me/devices/revoke + migration 007
-- ✅ Lane E E1-E2:context-core / filesystem-core 升级 WorkerEntrypoint(短期 shim period 维持 in-process library import)
-- ✅ Lane F F1-F5:NanoSessionDO alarm-driven wait-and-resume infra + onUsageCommit callback + handleStart idempotency + R28 owner-action runbook stub
-- ✅ 2055 tests + 31 root-guardians 全绿,零回归
+- ✅ Lane C C1-C6:jwt-shared package + 两 worker 切换(uniform static import — GLM R4 修正)+ kid rotation(orchestrator-auth 5 + orchestrator-core 3 — GLM R5 修正)+ RpcErrorCode 跨包断言 + envelope 文档化 + client heartbeat local mirror with TODO markers — kimi R3 + GLM R6
+- ✅ Lane D D1-D6:deploy-preview.sh(+ migration apply step,GLM R3 修正)+ catalog content + `/messages`(D1 + agent-core forward,deepseek R1/GLM R1/GPT R1/kimi R5 修正)+ `/input` 改为 alias 转发(deepseek R3 + Q8)+ `/files` + `/me/conversations`(authority header read,deepseek R5 修正;`latest_session_started_at` rename,GPT R4 修正)+ `/me/devices` + `/me/devices/revoke` + migration 007 + D6 second-half TODOs(GLM R9 + kimi R6)
+- ⚠️ Lane E E1-E2 — **partial(short-term shim period)**:context-core / filesystem-core WorkerEntrypoint seam land(`probe / nacpVersion / contextOps / filesystemOps`,GLM R11 命名统一);**agent-core wrangler.jsonc binding 仍 commented,agent-core 仍 in-process import** — per GPT R2 / kimi R4 review,Lane E 状态准确表述为 "RPC contract seam land,consumer migration deferred"
+- ⚠️ Lane F — **F4/F5 done,F1/F2/F3 partial(infra/contract land,wiring deferred)**:
+  - ✅ F4 handleStart idempotency:D1 conditional UPDATE + 2 unit + 注释中说明 Q11(b) `started_at` 守卫为 deferred carryover(deepseek R8)
+  - ✅ F5 R28 runbook stub(owner-action,§3 待回填)
+  - ⚠️ F1 PermissionRequest hook await/resume:**infra land**(`emitPermissionRequestAndAwait` + `awaitAsyncAnswer` + alarm sweep + hibernation JSDoc — GLM R8);**hook dispatcher 集成 deferred** — `hooks/permission.ts` 仍走 `verdictOf` 同步路径
+  - ⚠️ F2 ElicitationRequest hook await/resume:同 F1
+  - ⚠️ F3 runtime emit `session.usage.update`:**`onUsageCommit` callback land + 2 callsite invoke**(LLM / tool quota commit);**NanoSessionDO 未注册 callback,`emitServerFrame` wiring deferred** — 当前 client 仅能用 `GET /usage` 拉取
+- ✅ 2058 tests + 31 root-guardians 全绿,零回归
 - ✅ worker 数量恒等于 6(R8 hard freeze)
 - ✅ Q1-Q11 owner 答复全部落地(Q10 alarm-driven / Q11 D1 conditional UPDATE 是本期新增)
 
