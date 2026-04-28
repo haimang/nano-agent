@@ -5,10 +5,9 @@ import { ChatPage } from "./pages/ChatPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { CatalogPage } from "./pages/CatalogPage";
 import { HealthPage } from "./pages/HealthPage";
-import { getAuthState, setAuthState } from "./state/auth";
+import { getAuthState, setAuthState, requireAuth } from "./state/auth";
 import { getSessions, setSessions, type SessionSummary } from "./state/sessions";
 import * as sessionsApi from "./apis/sessions";
-import { requireAuth } from "./apis/auth";
 import { ApiRequestError } from "./apis/transport";
 import { InspectorTabs } from "./components/inspector/InspectorTabs";
 
@@ -55,6 +54,11 @@ export function App() {
       setPage("chat");
       await loadSessions();
     } catch (err) {
+      if (err instanceof ApiRequestError && err.details.kind === "auth.expired") {
+        setAuthState(null);
+        setPage("auth");
+        return;
+      }
       console.error("Failed to create session:", err);
     } finally {
       setSessionsLoading(false);

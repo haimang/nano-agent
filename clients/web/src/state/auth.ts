@@ -44,4 +44,9 @@ export function useAuth(): AuthState | null {
   return currentAuth;
 }
 
+export function requireAuth(): AuthState {
+  if (!currentAuth) throw new Error("login first");
+  return currentAuth;
+}
+
 currentAuth = loadPersisted();

@@ -554,3 +554,94 @@
 ---
 
 *End of review report*
+
+---
+
+## 附录 A. 审查质量评价
+
+> 评价对象: `kimi — web-v10-closure code review`
+> 评价人: `Copilot (post-fix evaluator)`
+> 评价时间: `2026-04-28`
+
+---
+
+### A.0 评价结论
+
+- **一句话评价**: `四位审查者中唯一发现了最关键架构 bug（WS 每次 send 重建连接）的审查者，以细粒度扫描和协议语义敏感性见长，但在跨层系统分析深度上略逊于 GPT。`
+- **综合评分**: `8.5 / 10`
+- **推荐使用场景**: WS/流式协议行为层审查、组件生命周期语义审查、发现"正在做错误的事"类问题（而非"缺少某项功能"）。
+- **不建议单独依赖的场景**: 后端链路完整性（facade 层转发行为等跨层问题）；kimi 的审查边界止步于前端代码，未检查后端实现。
+
+---
+
+### A.1 审查风格画像
+
+| 维度 | 观察 | 例证 |
+|------|------|------|
+| 主要切入点 | WS/协议语义正确性 + 组件行为契约 | R1 指出 handleSend 每次调用 connectWs 违背"建立一次、持续接收"的流式连接语义 |
+| 证据类型 | file:line 引用 + 协议文档逐条对照 | R2 同时引用 `ChatPage.tsx:176-185`、`session-ws-v1.md:138-143`、`web-v10-foundations.md §10.1` |
+| Verdict 倾向 | 严格，但 blocker 边界清晰 | 将 R1（WS 重建）和 R2（无重连）列为 critical blocker，其余降为 high/medium |
+| Finding 粒度 | 最细（18 个 finding） | 覆盖从架构级（R1 WS 生命周期）到防御性（R14 stale closure，R16 localStorage 版本） |
+| 修法建议风格 | 步骤化、可操作 | R1 给出 4 步重构方向（解耦 connectWs/handleSend、自动建连、session 切换时清理）；R2 给出 4 步重连实现方案 |
+
+---
+
+### A.2 优点与短板
+
+#### A.2.1 优点
+
+1. **独家发现最高价值的架构 bug（R1）**：是四位审查者中唯一指出 `handleSend` 每次调用 `connectWs()` 导致 WS 连接被反复重建的问题。这是 foundation 阶段 chat 主链最严重的架构语义错误——其他三位审查者都关注到"没有重连"，却没有发现"WS 正在被主动过度销毁"。该 finding 已修复（解耦 connectWs 与 handleSend）。
+2. **协议对照最精准（R3：sendInput 冗余字段）**：独家精确发现 `sessions.ts:64` 中 `session_uuid: sessionUuid` 与 `session.md POST /input` 契约不符，这是一个纯协议级别的 drift，其他三位均未发现。已修复。
+3. **BFF 安全分析有独到视角（R15）**：指出 `access-control-allow-origin: *` 对于 same-origin BFF 是不必要的，暴露了对部署拓扑和安全边界的系统化思考，其他审查者只关注 OPTIONS 缺失。
+
+#### A.2.2 短板 / 盲区
+
+1. **缺少跨层分析**：GPT 发现了 orchestrator-core facade 在转发 WS 时不传递 `last_seen_seq` query，是一个前后端协议链路断点。kimi 的 R2 建议了"重连时携带 last_seen_seq"，但没有验证后端是否实际能接收到，这是审查边界的盲区。
+2. **Session 切换状态重置问题表述不完整**：kimi 的 R5（started 状态与后端不同步）触及了相关问题，但没有像 GPT R2 那样完整描述"切换 session 时所有状态均未重置"的全貌，以及 `messagesRef/lastSeenSeqRef` 跨 session 污染的风险。
+3. **部分低价值 finding 稀释注意力**：R13（theme.ts layout 未消费）、R14（stale closure）、R16（localStorage 无版本校验）等属于防御性提升，在 foundation 阶段优先级极低。在 18 个 finding 中，这类低信号 finding 占比相对较高，可能分散实现者注意力。
+
+---
+
+### A.3 Findings 质量清点
+
+| 问题编号 | 原始严重程度 | 事后判定 | Finding 质量 | 分析与说明 |
+|----------|--------------|----------|--------------|------------|
+| R1 (WS 每次 send 重建连接) | critical | true-positive | excellent | 四位审查者独家，最高价值 finding，已修复 |
+| R2 (WS 无重连机制) | critical | true-positive | excellent | 与其他三位一致，已修复 |
+| R3 (sendInput 冗余 session_uuid) | high | true-positive | excellent | 独家发现，已修复 |
+| R4 (mutable state mutation) | high | true-positive | good | 正确，deferred |
+| R5 (started 与后端真实状态不同步) | high | true-positive | good | 正确，部分通过 session 切换重置修复；409 优雅降级 deferred |
+| R6 (InspectorTabs useEffect 依赖) | medium | true-positive | good | 正确，已通过 sessionUuid 变化 data 清空修复 |
+| R7 (Transport fetch 网络异常未处理) | medium | true-positive | good | 正确，deferred |
+| R8 (selectSession 竞态) | medium | true-positive | good | 正确，deferred |
+| R9 (token refresh 缺失) | medium | true-positive | mixed | 正确，但 foundation 阶段 deferred；blocker 定级稍高 |
+| R10 (ChatPage cleanup effect 空) | medium | true-positive | good | 正确，deferred |
+| R11 (WS URL 构建重复) | low | true-positive | good | 正确，deferred |
+| R12 (Topbar 硬编码) | low | true-positive | good | 已修复 |
+| R13 (theme.ts layout 未消费) | low | true-positive | mixed | 正确但价值极低 |
+| R14 (stale closure) | low | true-positive | mixed | 理论上正确，实践中影响极小 |
+| R15 (BFF CORS 过宽) | low | true-positive | mixed | 有洞察价值，same-origin 下实际风险低 |
+| R16 (localStorage 无版本校验) | low | true-positive | mixed | 防御性建议，低优先级 |
+| R17 (timeline 未覆盖所有 event kind) | medium | true-positive | good | 正确，属后续迭代扩展项 |
+| R18 (/me/conversations 未消费) | low | true-positive | mixed | Scope drift 识别正确，但 closure 已明确 deferred |
+
+**关键遗漏（未发现）**:
+- Facade 不转发 `last_seen_seq` 到 User DO（GPT R3 后端层面）
+- Session 切换时完整的 chat/inspector 状态重置（GPT R2 的完整描述）
+- BFF query string `split("=")` 解析 bug（GLM R9）
+- `catalogApi` dead import（DeepSeek R9）
+- BFF CORS OPTIONS 处理缺失（GLM R2）
+
+---
+
+### A.4 多维度评分
+
+| 维度 | 评分（1–10） | 说明 |
+|------|-------------|------|
+| 证据链完整度 | 8 | 18 个 finding 均有 file:line 支撑；协议文档引用精准 |
+| 判断严谨性 | 8 | 18 个全部 true-positive；个别 blocker 定级略高（R9） |
+| 修法建议可执行性 | 8 | R1/R2 给出清晰的步骤化重构方向，可执行性强 |
+| 对 action-plan / design / QNA 的忠实度 | 8 | 对照 charter §10.3 的"非成功退出识别"条款最为准确 |
+| 协作友好度 | 7 | 18 个 finding 总量较大，低价值 finding 影响阅读优先级 |
+| 找到问题的覆盖面 | 9 | 在前端代码层覆盖最全面；R1 独家发现是本轮最高价值 finding |
+| 严重级别 / verdict 校准 | 8 | R1 定 critical 完全正确；少数低优先级 finding 可降级 |

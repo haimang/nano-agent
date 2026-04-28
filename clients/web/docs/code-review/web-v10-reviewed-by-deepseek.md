@@ -411,3 +411,85 @@
 - **实现者回应入口**: `请按 docs/templates/code-review-respond.md 在本文档 §6 append 回应，不要改写 §0–§5。`
 
 > 本轮 review 不收口，等待实现者按 blocker 清单修正并再次验证。
+
+---
+
+## 附录 A. 审查质量评价
+
+> 评价对象: `DeepSeek — web-v10-closure code review`
+> 评价人: `Copilot (post-fix evaluator)`
+> 评价时间: `2026-04-28`
+
+---
+
+### A.0 评价结论
+
+- **一句话评价**: `结构严谨、证据链扎实的防守型审查者，覆盖了绝大多数实现断点，但在 WS 架构语义层面存在一个关键盲区。`
+- **综合评分**: `7.5 / 10`
+- **推荐使用场景**: 对已交付实现进行逐行对照 charter/API 契约的 diff 类审查；适合作为第一道质量门。
+- **不建议单独依赖的场景**: 需要发现架构级行为语义错误（如 "WS 连接每次发送都重建"）时，DeepSeek 的审查方法偏向 "是否缺少" 而非 "是否误用"。
+
+---
+
+### A.1 审查风格画像
+
+| 维度 | 观察 | 例证 |
+|------|------|------|
+| 主要切入点 | 契约对照 + 状态流核查 | 逐一检查 charter §10.1 硬闸、API-docs 契约、closure 声明的一致性 |
+| 证据类型 | 精确 file:line 引用 | R1 引用 `vite.config.ts` 完整文件、`transport.ts:71`；R2 引用 `auth.ts:10`、`state/auth.ts:5`、`App.tsx:50` 等多个调用点 |
+| Verdict 倾向 | 严格 | 将 R1-R4 全部标为 blocker，最终 verdict "no" |
+| Finding 粒度 | 均衡偏细 | 既有架构级问题（R2 双 auth state），也有代码级清理（R9 dead import，R10 空目录） |
+| 修法建议风格 | 高可执行性 | R1 直接给出完整 vite.config.ts proxy 代码块；R4 给出完整 catch 块代码 |
+
+---
+
+### A.2 优点与短板
+
+#### A.2.1 优点
+
+1. **证据质量最高**：每个 finding 均精确引用 file + 行号，方便实现者直接导航定位；没有模糊的描述性断言。
+2. **修法建议可直接复制**：R1、R4 的建议代码块可以零改动应用到目标文件，降低了实现者的摩擦成本。
+3. **In-Scope / Out-of-Scope 分层清晰**：§3 和 §4 逐项对账，覆盖率完整，没有遗漏 charter 已明确标记为 deferred 的项目。
+
+#### A.2.2 短板 / 盲区
+
+1. **错过最关键的架构级 bug**：`ChatPage.handleSend` 每次 send 后都调用 `connectWs()`，导致 WS 连接在每次消息发送时被拆除并重建。DeepSeek 指出了"WS 无重连"（R3），却没有发现"WS 被主动反复重建"这个更严重的根因，两者性质完全不同。
+2. **R3（WS 无重连）的建议方向部分偏差**：建议中包含"重连成功后调用 `POST /sessions/{uuid}/resume`"，但这一步在 WS open 时的 `session.resume` frame 中已有处理，真正缺少的是 close/error 事件触发后的自动重试逻辑。
+3. **没有发现 session 切换时状态未重置的问题**：GPT R2 明确指出切换 session 时 `started/messagesRef/lastSeenSeqRef` 未清空，可能导致新 session 的首消息走 `/input` 而非 `/start`。DeepSeek 的审查中未覆盖此路径。
+
+---
+
+### A.3 Findings 质量清点
+
+| 问题编号 | 原始严重程度 | 事后判定 | Finding 质量 | 分析与说明 |
+|----------|--------------|----------|--------------|------------|
+| R1 (Vite dev 无 proxy) | critical | true-positive | excellent | 精确定位 vite.config.ts 空配置，给出完整 proxy 代码，已修复 |
+| R2 (Dual auth state) | high | true-positive | excellent | 精确追踪两个 currentAuth 的写入路径和发散场景，已修复 |
+| R3 (WS 无自动重连) | high | true-positive | good | 方向正确，但未发现更根本的 WS 每次 send 重建问题；重连建议局部偏差 |
+| R4 (auth.expired 缺失) | high | true-positive | excellent | 准确指出 createSession/selectSession 的 catch 盲区，建议代码直接可用，已修复 |
+| R5 (InspectorTabs error 跨 tab) | medium | true-positive | good | 正确识别共享 error state 问题，建议方案可行，已修复 |
+| R6 (Topbar 硬编码) | medium | true-positive | good | 正确，但解决方案（通过 props 传 wsStatus）偏复杂；实际采用中性品牌替换 |
+| R7 (getWsBaseUrl 重复) | medium | true-positive | good | 正确识别代码重复，属于技术债，deferred |
+| R8 (timeline is_final 未处理) | medium | true-positive | mixed | 正确发现协议层不一致，但在当前 foundation 优先级中属于后续迭代项 |
+| R9 (catalogApi 死引用) | low | true-positive | excellent | 精准定位，已修复 |
+| R10 (hooks/ 空目录) | low | true-positive | mixed | 有效但价值有限；空目录不影响任何运行时行为 |
+
+**关键遗漏（未发现）**:
+- `ChatPage.handleSend` 每次 send 调用 `connectWs()` 重建 WS（kimi R1 — 最高优先级架构 bug）
+- `sendInput` body 携带冗余 `session_uuid`（kimi R3）
+- Session 切换时 chat/inspector 状态未重置（GPT R2）
+- Facade 未转发 `last_seen_seq` 到 User DO（GPT R3 后端层面）
+
+---
+
+### A.4 多维度评分
+
+| 维度 | 评分（1–10） | 说明 |
+|------|-------------|------|
+| 证据链完整度 | 9 | 每个 finding 均有精确 file:line 引用，可直接验证 |
+| 判断严谨性 | 8 | 所有 10 个 finding 全部为 true-positive，零误报 |
+| 修法建议可执行性 | 9 | R1/R4 建议代码可零改动应用，其余修法方向清晰 |
+| 对 action-plan / design / QNA 的忠实度 | 9 | 逐项对照 charter §10.1 和 closure §2，未漏 |
+| 协作友好度 | 8 | 格式规范，blockers 清单直接，便于实现者排期 |
+| 找到问题的覆盖面 | 6 | 漏掉最关键的架构 bug（WS every-send）和 session 切换状态重置 |
+| 严重级别 / verdict 校准 | 8 | blockers 定级合理；R3 严重级别"high"略低于实际（kimi 将类似根因定为 critical） |

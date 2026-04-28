@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { getAuthState } from "../state/auth";
-import { requireAuth } from "../apis/auth";
 import * as sessionsApi from "../apis/sessions";
 import { HeartbeatTracker } from "../heartbeat";
 import type { ApiResponse } from "../apis/transport";
@@ -32,6 +31,7 @@ interface ChatPageProps {
 }
 
 const UPSTREAM_WS_BASE = "wss://nano-agent-orchestrator-core-preview.haimang.workers.dev";
+const MAX_RECONNECT_ATTEMPTS = 5;
 
 function getWsBaseUrl(): string {
   const env = (import.meta as ImportMeta & { env?: { VITE_NANO_BASE_URL?: string } })
@@ -58,8 +58,15 @@ export function ChatPage({ activeSessionUuid, onCreateSession, onStatusChange }:
   const heartbeatTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastSeenSeqRef = useRef(0);
   const messagesRef = useRef<MessageItem[]>([]);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reconnectAttemptsRef = useRef(0);
+  const activeUuidRef = useRef<string | null>(null);
 
   const cleanupWs = useCallback(() => {
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
     if (heartbeatTimerRef.current) {
       clearInterval(heartbeatTimerRef.current);
       heartbeatTimerRef.current = null;
@@ -173,15 +180,37 @@ export function ChatPage({ activeSessionUuid, onCreateSession, onStatusChange }:
       }
     });
 
-    socket.addEventListener("close", () => {
+    socket.addEventListener("close", (event) => {
       setWsStatus("disconnected");
-      cleanupWs();
+      // Manual cleanup without clearing the reconnect timer we're about to set
+      if (heartbeatTimerRef.current) {
+        clearInterval(heartbeatTimerRef.current);
+        heartbeatTimerRef.current = null;
+      }
+      heartbeatRef.current = null;
+      socketRef.current = null;
+
+      // Schedule reconnect for non-intentional disconnects
+      if (
+        event.code !== 4001 &&
+        sessionUuid === activeUuidRef.current &&
+        reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS
+      ) {
+        const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 30_000);
+        reconnectAttemptsRef.current++;
+        setWsError(`Reconnecting... (attempt ${reconnectAttemptsRef.current}/${MAX_RECONNECT_ATTEMPTS})`);
+        reconnectTimerRef.current = setTimeout(() => {
+          if (sessionUuid === activeUuidRef.current) {
+            connectWs(sessionUuid);
+          }
+        }, delay);
+      }
     });
 
     socket.addEventListener("error", () => {
       setWsError("WebSocket connection error");
       setWsStatus("disconnected");
-      cleanupWs();
+      // close event will follow and handle reconnect
     });
   }, [cleanupWs, addMessage, onStatusChange]);
 
@@ -209,13 +238,13 @@ export function ChatPage({ activeSessionUuid, onCreateSession, onStatusChange }:
       } else {
         await sessionsApi.sendInput(auth, activeSessionUuid, text);
       }
-      connectWs(activeSessionUuid);
+      // WS is already connected — no need to reconnect after each send
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to send message");
     } finally {
       setSending(false);
     }
-  }, [input, activeSessionUuid, addMessage, connectWs]);
+  }, [input, activeSessionUuid, addMessage]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -229,6 +258,18 @@ export function ChatPage({ activeSessionUuid, onCreateSession, onStatusChange }:
   }, [cleanupWs]);
 
   useEffect(() => {
+    // Track active session for reconnect guard and reset retry counter
+    activeUuidRef.current = activeSessionUuid;
+    reconnectAttemptsRef.current = 0;
+
+    // Reset all session-scoped state on every session change
+    messagesRef.current = [];
+    setMessages([]);
+    setStarted(false);
+    lastSeenSeqRef.current = 0;
+    setError(null);
+    setWsError(null);
+
     if (activeSessionUuid) {
       const auth = getAuthState();
       if (!auth) return;
@@ -294,14 +335,10 @@ export function ChatPage({ activeSessionUuid, onCreateSession, onStatusChange }:
         .catch(() => onStatusChange(null));
 
       connectWs(activeSessionUuid);
-    } else {
-      setMessages([]);
-      messagesRef.current = [];
-      setStarted(false);
     }
 
     return () => {
-      // cleanup handled by effect above
+      // WS cleanup handled by first effect (on unmount)
     };
   }, [activeSessionUuid, connectWs, onStatusChange]);
 

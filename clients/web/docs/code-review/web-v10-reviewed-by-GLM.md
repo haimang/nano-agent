@@ -473,3 +473,90 @@
 - **实现者回应入口**：`请按 docs/templates/code-review-respond.md 在本文档 §6 append 回应，不要改写 §0–§5。`
 
 > 本轮 review 不收口，等待实现者按 §6 响应并再次更新代码。
+
+---
+
+## 附录 A. 审查质量评价
+
+> 评价对象: `GLM — web-v10-closure code review`
+> 评价人: `Copilot (post-fix evaluator)`
+> 评价时间: `2026-04-28`
+
+---
+
+### A.0 评价结论
+
+- **一句话评价**: `覆盖面最广的扫描型审查者，15 个 finding 全部为 true-positive，但在 blocker 优先级校准上存在过度拔高，且漏掉了最关键的 WS 架构语义 bug。`
+- **综合评分**: `7.5 / 10`
+- **推荐使用场景**: 全量代码扫描，发现技术债和配置类缺陷，适合作为"宽网"补充审查。
+- **不建议单独依赖的场景**: 严重级别排序和 blocker/non-blocker 边界划分；GLM 倾向于将产品体验类问题（token refresh）上升为 foundation blocker。
+
+---
+
+### A.1 审查风格画像
+
+| 维度 | 观察 | 例证 |
+|------|------|------|
+| 主要切入点 | 全量扫描 + 平台适配 + 安全合规 | 覆盖从 auth 架构到 BFF CORS、query string 解析、`useAuth` 命名误导、envelope 类型安全等 |
+| 证据类型 | file:line 引用 + 协议对账 | R9 引用 `[[path]].ts:14-18` 的具体代码片段；R14 引用协议文档 |
+| Verdict 倾向 | 严格偏激进 | 将 token refresh（R4）列为 blocker，但 refreshToken 字段存在只是类型定义未被消费 |
+| Finding 粒度 | 最细 (15 个 finding) | 从架构级（R1 dual auth）到代码风格（R15 envelope 类型断言）均覆盖 |
+| 修法建议风格 | 均衡，具体代码较少 | 多为方向描述，R9 给出了完整替换代码；其余以 bullet 方向为主 |
+
+---
+
+### A.2 优点与短板
+
+#### A.2.1 优点
+
+1. **覆盖面最广，15 个 finding 零误报**：从 auth 双状态、WS 重连、BFF CORS、query string 解析到 `useAuth` 命名误导和 envelope 类型安全，无一遗漏且全部验证为真。
+2. **独家发现 BFF CORS preflight 缺失（R2）和 query string 解析 bug（R9）**：其他三位审查者均未提及 OPTIONS 处理缺失；R9 是唯一精确指出 `split("=")` 破坏含 `=` 值场景的 finding，均已修复。
+3. **对 `useAuth` 命名误导（R10）的分析深入**：正确指出它不是真正的 React hook（无 useState/useEffect），组件调用后不会响应 auth 变化重新渲染，是防御性编程质量的重要隐患。
+
+#### A.2.2 短板 / 盲区
+
+1. **漏掉最关键的架构 bug**：`ChatPage.handleSend` 每次 send 后调用 `connectWs()`，导致 WS 连接被反复重建，这是 foundation 阶段最严重的 WS 架构语义错误。GLM 发现了"WS 无重连"（R3），却没有意识到 WS 正在被主动频繁销毁。
+2. **Token refresh（R4）blocker 定级过高**：将其列为与 auth 双状态、WS 无重连并列的 blocker。实际上 refreshToken 字段已在类型中定义，后端 API 存在，但未实现属于产品功能迭代（UX 问题），不是 foundation 正确性的 blocker。在 1 小时 session 中用户不会强制登出。
+3. **Session 切换状态重置问题未识别**：GPT 明确指出切换 session 时 `started/messagesRef/lastSeenSeqRef` 未清空导致新会话首消息走 `/input` 而非 `/start`。GLM 的 R8（Inspector 不刷新）触及了部分表象，但未识别出更深层的 chat 状态污染问题。
+
+---
+
+### A.3 Findings 质量清点
+
+| 问题编号 | 原始严重程度 | 事后判定 | Finding 质量 | 分析与说明 |
+|----------|--------------|----------|--------------|------------|
+| R1 (Auth 双状态) | critical | true-positive | excellent | 与 DeepSeek R2 / GPT R1 一致，已修复 |
+| R2 (BFF CORS preflight) | critical | true-positive | excellent | 独家发现，已修复（OPTIONS 204 早返回） |
+| R3 (WS 无重连) | high | true-positive | good | 正确，但未发现根因（每次 send 重建 WS） |
+| R4 (Token 过期无 refresh) | high | partial | mixed | Finding 为真但 blocker 定级过高；属产品迭代项 |
+| R5 (URL 散布 4 处) | medium | true-positive | good | 正确，deferred |
+| R6 (client.ts 废弃代码重复) | medium | true-positive | good | 正确，deferred |
+| R7 (消息 mutable 操作) | medium | true-positive | good | 正确，deferred |
+| R8 (Inspector 数据不刷新) | medium | true-positive | good | 已通过 session 切换 data 清空间接修复 |
+| R9 (BFF query string 解析) | medium | true-positive | excellent | 独家发现且最精准，已修复 |
+| R10 (useAuth 非真正 hook) | low | true-positive | good | 深入分析，正确识别命名误导 |
+| R11 (Topbar 硬编码) | low | true-positive | good | 已修复 |
+| R12 (main.ts 仍参与编译) | low | true-positive | mixed | 技术上正确，但不影响运行时行为 |
+| R13 (register 部分失败) | medium | true-positive | good | 正确识别 UX 断裂场景，deferred |
+| R14 (stream_uuid 硬编码) | low | true-positive | mixed | 正确但低优先级；协议文档未明确 |
+| R15 (Envelope 类型断言) | low | true-positive | mixed | 正确但属于 TypeScript 质量提升，非紧迫 |
+
+**关键遗漏（未发现）**:
+- `ChatPage.handleSend` 每次 send 调用 `connectWs()` 重建 WS（kimi R1 — 最高优先级架构 bug）
+- `sendInput` body 携带冗余 `session_uuid`（kimi R3）
+- Session 切换时 started/messages/lastSeenSeq 未重置（GPT R2）
+- Facade 未转发 `last_seen_seq`（GPT R3 后端层面）
+
+---
+
+### A.4 多维度评分
+
+| 维度 | 评分（1–10） | 说明 |
+|------|-------------|------|
+| 证据链完整度 | 8 | 15 个 finding 均有 file:line 支撑；R9 代码片段尤为精确 |
+| 判断严谨性 | 7 | 零误报，但 R4 blocker 定级过高影响优先级排序 |
+| 修法建议可执行性 | 7 | R9 给出完整替换代码；其余多为方向描述，可执行性参差 |
+| 对 action-plan / design / QNA 的忠实度 | 8 | 系统对照 charter 和 closure，Out-of-Scope 分析完整 |
+| 协作友好度 | 8 | 格式清晰，表格整齐，blocker 清单明确 |
+| 找到问题的覆盖面 | 8 | 15 finding 是最多的，覆盖从架构到代码风格；但漏掉最关键的 WS 架构 bug |
+| 严重级别 / verdict 校准 | 6 | R4（token refresh）blocker 定级明显过高；WS 相关问题的根因识别不足 |

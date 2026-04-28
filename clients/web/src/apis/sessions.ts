@@ -61,7 +61,7 @@ export async function sendInput(
   return transport.request(`/sessions/${sessionUuid}/input`, {
     method: "POST",
     headers: authHeaders(auth, true),
-    body: JSON.stringify({ text, session_uuid: sessionUuid }),
+    body: JSON.stringify({ text }),
   });
 }
 

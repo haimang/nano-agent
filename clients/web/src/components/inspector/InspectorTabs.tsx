@@ -1,7 +1,6 @@
 import { useState, useEffect } from "react";
 import { getAuthState } from "../../state/auth";
 import * as sessionsApi from "../../apis/sessions";
-import * as catalogApi from "../../apis/catalog";
 import { ApiRequestError } from "../../apis/transport";
 
 interface InspectorTabsProps {
@@ -27,7 +26,16 @@ export function InspectorTabs({ activeTab, onTabChange, sessionUuid, sessionStat
   const [historyData, setHistoryData] = useState<Record<string, unknown> | null>(null);
   const [usageData, setUsageData] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [errors, setErrors] = useState<Record<string, string | null>>({});
+
+  // Reset all cached data when session changes
+  useEffect(() => {
+    setTimelineData(null);
+    setHistoryData(null);
+    setUsageData(null);
+    setErrors({});
+    setLoading(null);
+  }, [sessionUuid]);
 
   useEffect(() => {
     const auth = getAuthState();
@@ -37,7 +45,10 @@ export function InspectorTabs({ activeTab, onTabChange, sessionUuid, sessionStat
       setLoading("timeline");
       sessionsApi.timeline(auth, sessionUuid)
         .then((data) => setTimelineData(data))
-        .catch((err) => setError(err instanceof ApiRequestError ? err.details.message : "Failed"))
+        .catch((err) => setErrors((prev) => ({
+          ...prev,
+          timeline: err instanceof ApiRequestError ? err.details.message : "Failed",
+        })))
         .finally(() => setLoading(null));
     }
 
@@ -45,7 +56,10 @@ export function InspectorTabs({ activeTab, onTabChange, sessionUuid, sessionStat
       setLoading("history");
       sessionsApi.history(auth, sessionUuid)
         .then((data) => setHistoryData(data))
-        .catch((err) => setError(err instanceof ApiRequestError ? err.details.message : "Failed"))
+        .catch((err) => setErrors((prev) => ({
+          ...prev,
+          history: err instanceof ApiRequestError ? err.details.message : "Failed",
+        })))
         .finally(() => setLoading(null));
     }
 
@@ -53,7 +67,10 @@ export function InspectorTabs({ activeTab, onTabChange, sessionUuid, sessionStat
       setLoading("usage");
       sessionsApi.usage(auth, sessionUuid)
         .then((data) => setUsageData(data))
-        .catch((err) => setError(err instanceof ApiRequestError ? err.details.message : "Failed"))
+        .catch((err) => setErrors((prev) => ({
+          ...prev,
+          usage: err instanceof ApiRequestError ? err.details.message : "Failed",
+        })))
         .finally(() => setLoading(null));
     }
   }, [activeTab, sessionUuid, timelineData, historyData, usageData]);
@@ -90,7 +107,7 @@ export function InspectorTabs({ activeTab, onTabChange, sessionUuid, sessionStat
 
   const renderTimeline = () => {
     if (loading === "timeline") return <div style={styles.empty}>Loading...</div>;
-    if (error) return <div style={styles.error}>{error}</div>;
+    if (errors.timeline) return <div style={styles.error}>{errors.timeline}</div>;
     if (!timelineData) return <div style={styles.empty}>No timeline data</div>;
 
     return (
@@ -117,7 +134,7 @@ export function InspectorTabs({ activeTab, onTabChange, sessionUuid, sessionStat
 
   const renderHistory = () => {
     if (loading === "history") return <div style={styles.empty}>Loading...</div>;
-    if (error) return <div style={styles.error}>{error}</div>;
+    if (errors.history) return <div style={styles.error}>{errors.history}</div>;
     if (!historyData) return <div style={styles.empty}>No history data</div>;
 
     const messages = historyData && typeof historyData === "object" && "messages" in historyData
@@ -143,7 +160,7 @@ export function InspectorTabs({ activeTab, onTabChange, sessionUuid, sessionStat
 
   const renderUsage = () => {
     if (loading === "usage") return <div style={styles.empty}>Loading...</div>;
-    if (error) return <div style={styles.error}>{error}</div>;
+    if (errors.usage) return <div style={styles.error}>{errors.usage}</div>;
     if (!usageData) return <div style={styles.empty}>No usage data</div>;
 
     return (

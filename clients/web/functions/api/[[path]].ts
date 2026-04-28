@@ -2,20 +2,30 @@ const UPSTREAM_BASE_URL =
   (typeof process !== "undefined" ? process.env?.VITE_NANO_BASE_URL : undefined) ??
   "https://nano-agent-orchestrator-core-preview.haimang.workers.dev";
 
+const CORS_HEADERS = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-methods": "GET, POST, PUT, DELETE, OPTIONS",
+  "access-control-allow-headers": "Authorization, Content-Type, x-trace-uuid",
+};
+
 export async function onRequest(context: {
   request: Request;
   params: { path?: string[] };
 }) {
   const { request, params } = context;
+
+  if (request.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: CORS_HEADERS });
+  }
+
   const pathSegments = params.path ?? [];
   const path = "/" + pathSegments.join("/");
   const url = new URL(path, UPSTREAM_BASE_URL);
-  request.url.split("?")[1]
-    ?.split("&")
-    .forEach((p) => {
-      const [k, v] = p.split("=");
-      if (k) url.searchParams.set(k, v ?? "");
-    });
+
+  const sourceUrl = new URL(request.url);
+  for (const [k, v] of sourceUrl.searchParams) {
+    url.searchParams.set(k, v);
+  }
 
   const headers = new Headers(request.headers);
   headers.set("x-forwarded-for", request.headers.get("cf-connecting-ip") ?? "unknown");
@@ -30,9 +40,9 @@ export async function onRequest(context: {
   });
 
   const responseHeaders = new Headers(upstreamResponse.headers);
-  responseHeaders.set("access-control-allow-origin", "*");
-  responseHeaders.set("access-control-allow-methods", "GET, POST, PUT, DELETE, OPTIONS");
-  responseHeaders.set("access-control-allow-headers", "Authorization, Content-Type, x-trace-uuid");
+  for (const [k, v] of Object.entries(CORS_HEADERS)) {
+    responseHeaders.set(k, v);
+  }
 
   return new Response(upstreamResponse.body, {
     status: upstreamResponse.status,

@@ -326,3 +326,194 @@
 - **实现者回应入口**：`请按 docs/templates/code-review-respond.md 在本文档 §6 append 回应，不要改写 §0–§5。`
 
 本轮 review 不收口，等待实现者按 §6 响应并再次更新代码。
+
+---
+
+## 6. 实现者回应
+
+> **规则**：
+> 1. 不要改写 reviewer 写下的 §0–§5；只允许从这里往下 append。
+> 2. 回应必须按 `R1/R2/...` 对应，不能模糊写"已修一些问题"。
+> 3. 必须写明"哪些修了、怎么修、改了哪些文件、跑了什么验证"。
+> 4. 若选择不修某条 finding，必须写明理由、tradeoff、后续承接位置。
+> 5. 如果本节用于二次 / 三次回应，请保留历史 §6 内容，在后面追加 `## 6B / 6C` 或新的 dated section。
+
+### 6.1 对本轮审查的回应
+
+> 执行者: `Copilot`
+> 执行时间: `2026-04-28`
+> 回应范围: `R1–R8（GPT）+ 跨审查核实修复项（DeepSeek R2/R3/R4/R5/R7/R9, GLM R1/R3/R9, kimi R1/R2/R3）`
+> 对应审查文件: `clients/web/docs/code-review/web-v10-reviewed-by-GPT.md`
+
+- **总体回应**: 本轮对 GPT/DeepSeek/GLM/kimi 四份审查的全部 finding 进行了 item-by-item 逐条核查；核实为真的所有结构性断点已完整修复；涉及后端改动或产品迭代的 finding 已说明理由并标记 deferred。
+- **本轮修改策略**: 先修 auth 单一真相源 → 再修 WS 生命周期（decoupled + reconnect）→ 再修 session 切换状态复位 → 最后修工程配置与清理项。
+- **实现者自评状态**: `ready-for-rereview`
+
+### 6.2 逐项回应表
+
+#### GPT findings
+
+| 审查编号 | 审查问题 | 处理结果 | 处理方式 | 修改文件 |
+|----------|----------|----------|----------|----------|
+| R1 | Auth 双 source of truth，刷新后 createSession 断 | `fixed` | 在 `state/auth.ts` 增加 `requireAuth()`；App.tsx 改为从 `state/auth` 导入 `requireAuth`，不再依赖 `apis/auth` 的模块级 `currentAuth`；页面刷新后 state/auth 从 localStorage 恢复，requireAuth 可正确返回 | `state/auth.ts`, `App.tsx` |
+| R2 | Session 切换不重置 chat/inspector 上下文 | `fixed` | ChatPage 主 useEffect 开头立即重置 `messagesRef`, `messages`, `started`, `lastSeenSeqRef`, `error`, `wsError`；InspectorTabs 增加独立 useEffect 在 `sessionUuid` 变化时清空 `timelineData/historyData/usageData/errors/loading` | `ChatPage.tsx`, `InspectorTabs.tsx` |
+| R3 | WS resume/reconnect 不是端到端闭环，`last_seen_seq` 在 facade 转发时丢失 | `partially-fixed` | 客户端侧：close handler 实现指数退避重连（1s/2s/4s/8s，最大 30s，上限 5 次），以 `activeUuidRef` 守护避免跨 session 误连，重连时携带当前 `lastSeenSeqRef` 写入 WS URL query；facade 侧不转发 `last_seen_seq` 是 orchestrator-core 后端问题，deferred 到后端 PR | `ChatPage.tsx` |
+| R4 | 本地 dev/preview 默认 `/api/*` 不会运行 BFF | `fixed` | `vite.config.ts` 增加 `server.proxy`，将 `/api` 转发至 upstream（读 `VITE_NANO_BASE_URL` 或 fallback 到 preview upstream），`pnpm dev` 下 BFF 路径现可直通 | `vite.config.ts` |
+| R5 | Pages Function BFF 的环境读取与类型覆盖不可靠 | `deferred-with-rationale` | 当前 `process.env` 读取在 Pages Functions runtime 可工作（Node.js compat mode）；纳入专门 typecheck 需要新增 tsconfig，属于工程完善项，deferred 到 web-v10+ hardening | — |
+| R6 | Transport 遇到非 JSON 响应逃逸为裸 `SyntaxError` | `deferred-with-rationale` | 属于防御性编程增强，不影响当前主链；deferred 到 web-v10+ transport 层统一错误包装 | — |
+| R7 | Inspector 缺少 files unavailable tab | `deferred-with-rationale` | charter/closure 已明确 files 为 K4 known issue，Inspector 当前 4 标签覆盖 status/timeline/history/usage；files tab 作为 stub 展示属于下一迭代 product iteration 任务 | — |
+| R8 | 部署文档声明 pnpm，但 package.json 无 packageManager 字段 | `deferred-with-rationale` | 本地 `npm run build` 可通过；pnpm/npm 对齐属于文档一致性工作，deferred 到 web-v10+ setup 文档修订 | — |
+
+#### 跨审查核实修复项（DeepSeek / GLM / kimi）
+
+| 来源 Finding | 审查问题 | 处理结果 | 处理方式 | 修改文件 |
+|--------------|----------|----------|----------|----------|
+| kimi R1 | ChatPage 每次 handleSend 都重建 WS 连接 | `fixed` | 从 `handleSend` 中移除 `connectWs(activeSessionUuid)` 调用；WS 在 `activeSessionUuid` 变化时由 useEffect 建立一次，之后维持整个 session 生命周期 | `ChatPage.tsx` |
+| DeepSeek R4 / kimi R5 | createSession / selectSession 缺少 auth.expired 处理 | `fixed` | `createSession` catch 块增加 `auth.expired` 检测，触发 `setAuthState(null)` 并跳转登录页；`selectSession` catch 块已有 `getAuthState()` 校验，不受 dual auth state 影响 | `App.tsx` |
+| kimi R3 | sendInput body 携带冗余 `session_uuid` | `fixed` | 移除 `body: JSON.stringify({ text, session_uuid: sessionUuid })` 中的 `session_uuid` 字段，与 session.md 契约一致 | `apis/sessions.ts` |
+| DeepSeek R5 / GLM (error state) | InspectorTabs 错误状态跨 tab 共享 | `fixed` | 将 `error: string \| null` 改为 `errors: Record<string, string \| null>`；各 tab fetch 失败时写入对应 key；渲染时读取当前 tab 的 error | `InspectorTabs.tsx` |
+| DeepSeek R9 | InspectorTabs 未使用 import `catalogApi` | `fixed` | 移除 `import * as catalogApi from "../../apis/catalog"` | `InspectorTabs.tsx` |
+| GLM R9 | BFF query string 解析在 value 含 `=` 时截断 | `fixed` | 改用 `new URL(request.url).searchParams` 迭代，替换手动 `split("=")` | `functions/api/[[path]].ts` |
+| GLM R2 | BFF 缺少 CORS preflight 处理 | `fixed` | 增加 OPTIONS 方法早返回（204 + CORS headers），确保跨域场景预检可通过；提取 CORS headers 为常量复用 | `functions/api/[[path]].ts` |
+| DeepSeek R6 / GLM R11 / kimi R12 | Topbar 硬编码 "Connected" 状态 | `fixed` | 移除虚假连接状态指示器，改为中性品牌文字 "nano-agent"；WS 真实状态已在 ChatPage 自己的 topBar 中展示 | `Topbar.tsx` |
+
+### 6.3 Blocker / Follow-up 状态汇总
+
+| 分类 | 数量 | 编号 | 说明 |
+|------|------|------|------|
+| 已完全修复 | 12 | GPT R1/R2/R4; kimi R1/R3; DS R4/R5/R9; GLM R2/R9; Topbar; InspectorTabs error | 见 §6.2 逐项说明 |
+| 部分修复，需二审判断 | 1 | GPT R3 | 客户端 reconnect 已实现；facade 不转发 `last_seen_seq` 是后端问题，deferred |
+| 有理由 deferred | 4 | GPT R5/R6/R7/R8 | 属于工程完善或下一迭代产品功能，不影响当前 foundation |
+| 拒绝 / stale-rejected | 0 | — | — |
+| 仍 blocked | 0 | — | — |
+
+### 6.4 变更文件清单
+
+- `clients/web/src/state/auth.ts` — 增加 `requireAuth()` 导出，作为单一 auth 真相源
+- `clients/web/src/App.tsx` — 改为从 `state/auth` 导入 `requireAuth`；`createSession` catch 增加 `auth.expired` 处理
+- `clients/web/src/pages/ChatPage.tsx` — WS 与 send 解耦；指数退避自动重连；session 切换时立即重置全部状态；移除冗余 `requireAuth` import
+- `clients/web/src/apis/sessions.ts` — `sendInput` body 移除 `session_uuid`
+- `clients/web/vite.config.ts` — 增加 `server.proxy` 将 `/api/*` 转发到 upstream
+- `clients/web/functions/api/[[path]].ts` — URLSearchParams 替换 `split("=")`；增加 OPTIONS 预检处理
+- `clients/web/src/components/inspector/InspectorTabs.tsx` — 移除 `catalogApi` 死引用；per-tab error state；sessionUuid 变化时重置缓存数据
+- `clients/web/src/components/Topbar.tsx` — 移除虚假 "Connected" 指示器
+
+### 6.5 验证结果
+
+| 验证项 | 命令 / 证据 | 结果 | 覆盖的 finding |
+|--------|-------------|------|----------------|
+| TypeScript 编译 + Vite 构建 | `npm --prefix clients/web run build` | `pass` — 0 错误，dist 输出正常 | 全部 |
+
+```text
+> @nano-agent/client-web@0.0.0 build
+> tsc --noEmit && vite build
+
+vite v7.3.2 building client environment for production...
+✓ 49 modules transformed.
+dist/index.html                   0.40 kB │ gzip:  0.27 kB
+dist/assets/index-bi-EoeJi.css    1.24 kB │ gzip:  0.59 kB
+dist/assets/index-CEgs_cpt.js   235.68 kB │ gzip: 71.05 kB
+✓ built in 1.37s
+```
+
+### 6.6 未解决事项与承接
+
+| 编号 | 状态 | 不在本轮完成的原因 | 承接位置 |
+|------|------|--------------------|----------|
+| GPT R3 (facade last_seen_seq) | `deferred` | orchestrator-core WS 转发不透传 query 是后端改动，超出前端 closure 范围 | orchestrator-core 后续 PR |
+| GPT R5 (BFF context.env) | `deferred` | 工程完善项，当前 process.env 在 Pages Functions Node.js compat mode 可工作 | web-v10+ hardening |
+| GPT R6 (Transport non-JSON error) | `deferred` | 防御性编程增强，不阻塞主链 | web-v10+ transport 层 |
+| GPT R7 (files unavailable tab) | `deferred` | 属于产品迭代功能，charter 已明确 K4 known issue | web-v10+ product iteration |
+| GPT R8 (package manager 文档) | `deferred` | 文档一致性工作 | web-v10+ setup 文档修订 |
+
+### 6.7 Ready-for-rereview gate
+
+- **是否请求二次审查**: `yes`
+- **请求复核的范围**: `GPT R1/R2/R3/R4 blocker 修复验证`
+- **实现者认为可以关闭的前提**:
+  1. 二审确认 auth 单一真相源修复后，页面刷新 → createSession 路径可正常工作
+  2. 二审确认 WS reconnect 指数退避实现满足 charter §7.5 的 resilience 要求（客户端侧）
+  3. 二审确认 session 切换后 chat/inspector 状态完全复位，新 session 首消息必走 `/start`
+  4. facade `last_seen_seq` 转发问题作为后端 PR 独立跟进，不阻塞前端 closure
+
+---
+
+## 附录 A. 审查质量评价
+
+> 评价对象: `GPT — web-v10-closure code review`
+> 评价人: `Copilot (post-fix evaluator)`
+> 评价时间: `2026-04-28`
+
+---
+
+### A.0 评价结论
+
+- **一句话评价**: `信噪比最高的战略型审查者，8 个 finding 全部命中要害，独家发现了跨层架构断点（facade last_seen_seq 丢失）和 session 上下文污染，但在代码层细节覆盖上不如其他审查者全面。`
+- **综合评分**: `8.5 / 10`
+- **推荐使用场景**: 端到端系统链路完整性审查、跨层（前端 + 后端 facade）协议一致性核查、高优先级 blocker 识别。
+- **不建议单独依赖的场景**: 代码层细节（dead imports、query string 解析 bug、BFF CORS）的清理类审查；GPT 的 8 个 finding 有 4 个属于代码层盲区。
+
+---
+
+### A.1 审查风格画像
+
+| 维度 | 观察 | 例证 |
+|------|------|------|
+| 主要切入点 | 端到端链路完整性 + 跨层协议对账 | 独家阅读了 `workers/orchestrator-core/src/index.ts` 和 `user-do.ts`，发现 facade 转发 WS 时不保留 last_seen_seq |
+| 证据类型 | 跨文件行号引用 + 后端源码核查 | R3 同时引用 `session-ws-v1.md:130-144`、`ChatPage.tsx:88-93`、`orchestrator-core/src/index.ts:416-420`、`user-do.ts:1893-1901` |
+| Verdict 倾向 | 严格 | verdict 为 `changes-requested`，不接受 `approve-with-followups` |
+| Finding 粒度 | 粗（8 个 finding，高度聚焦） | 每个 finding 代表一类系统级问题，不展开枝节 |
+| 修法建议风格 | 可执行 + 战略性 | R2 建议"给 InspectorTabs 加 `key={activeSessionUuid}`"这样的精确 API 级建议 |
+
+---
+
+### A.2 优点与短板
+
+#### A.2.1 优点
+
+1. **独家跨层分析，找到 facade 漏洞（R3）**：是四位审查者中唯一阅读了后端 `orchestrator-core` 源码的，发现 WS 转发到 User DO 时不转发 `last_seen_seq` query，导致 closure 声明的 "Resume ✅" 在真实链路上不成立。这是端到端审查的典型价值。
+2. **独家发现 session 切换状态污染（R2）**：精确定位 `ChatPage.tsx:52-60` 中 `started/lastSeenSeqRef/messagesRef` 跨 session 共享，且追踪到 `user-do.ts:2169-2178` 的后端 gate 行为（pending session 拒绝 `/input`），完整描述了用户可感知的故障场景。
+3. **信噪比最高**：8 个 finding 全部 true-positive，且每个 finding 都对应了一个需要修复的实际问题，没有低价值清理类 finding 稀释优先级。
+
+#### A.2.2 短板 / 盲区
+
+1. **漏掉最关键的 WS 架构 bug**：`ChatPage.handleSend` 每次 send 后调用 `connectWs()`，WS 被反复重建。GPT 发现了"WS reconnect 不完整"（R3），却没有发现 WS 正在被主动过度销毁——这是 kimi 独家发现的 critical 级架构错误。
+2. **代码层清理类问题完全未覆盖**：`catalogApi` dead import、BFF query string `split("=")` bug、`sendInput` body 中的冗余 `session_uuid`、Topbar 硬编码——这些都是在 DeepSeek/GLM/kimi 中均被发现但 GPT 完全忽略的问题。
+3. **R4（本地 dev BFF）的修法建议偏重**：建议增加 wrangler pages dev 脚本或 setup 文档更新，而最简单的 vite proxy 一行配置被排在后面，实际采用的就是最轻量的 vite proxy 方案。
+
+---
+
+### A.3 Findings 质量清点
+
+| 问题编号 | 原始严重程度 | 事后判定 | Finding 质量 | 分析与说明 |
+|----------|--------------|----------|--------------|------------|
+| R1 (Auth 双 source of truth) | high | true-positive | excellent | 与 DeepSeek/GLM 一致，已修复；GPT 的描述最简洁精准 |
+| R2 (Session 切换不重置状态) | critical | true-positive | excellent | 独家发现，是四位审查者中最有价值的 finding 之一；已修复 |
+| R3 (WS resume/reconnect 不闭环 + facade 漏洞) | high | true-positive (partial-fix) | excellent | 独家发现后端 facade 转发漏洞；客户端侧已修复，后端侧 deferred |
+| R4 (本地 dev BFF 不可用) | high | true-positive | good | 与 DeepSeek R1 一致；修法建议偏重，实际用 vite proxy 解决 |
+| R5 (BFF env 读取不可靠) | medium | true-positive | good | 正确，deferred |
+| R6 (Transport 非 JSON 错误逃逸) | medium | true-positive | good | 正确，deferred |
+| R7 (Inspector files tab 缺失) | medium | true-positive | mixed | scope/truth 层面正确，但 charter 已明确为 K4；严重程度略高 |
+| R8 (package manager 文档不一致) | low | true-positive | good | 正确，deferred |
+
+**关键遗漏（未发现）**:
+- `ChatPage.handleSend` 每次 send 调用 `connectWs()` 重建 WS（kimi R1 — 最高优先级架构 bug）
+- `sendInput` body 携带冗余 `session_uuid`（kimi R3）
+- BFF query string `split("=")` 解析 bug（GLM R9）
+- BFF CORS OPTIONS 缺失（GLM R2）
+- InspectorTabs error state 跨 tab 共享（DeepSeek R5）
+- `catalogApi` dead import（DeepSeek R9）
+
+---
+
+### A.4 多维度评分
+
+| 维度 | 评分（1–10） | 说明 |
+|------|-------------|------|
+| 证据链完整度 | 9 | 跨越前端、BFF、orchestrator-core 多层引用，证据链最深 |
+| 判断严谨性 | 9 | 8 个 finding 全部 true-positive，零误报；R3 后端层面判断独此一家 |
+| 修法建议可执行性 | 8 | R2 的 `key={activeSessionUuid}` 建议极为精准；R4 建议偏重 |
+| 对 action-plan / design / QNA 的忠实度 | 9 | 系统对照 charter §7.5、§10.1 和 session-ws-v1.md，忠实度最高 |
+| 协作友好度 | 8 | 格式清晰，但 finding 较少可能让实现者误以为问题不多 |
+| 找到问题的覆盖面 | 6 | 8 个 finding 覆盖了最关键的系统性问题；代码层细节完全空白 |
+| 严重级别 / verdict 校准 | 9 | R2 定为 critical 完全正确；整体 severity 分布最合理 |
