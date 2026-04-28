@@ -5,6 +5,8 @@
 > 讨论者: `Owner + GPT-5.4`
 > 关联调查报告: `docs/plan-orchestration-facade.md`、`test/INDEX.md`
 > 文档状态: `frozen (F0 closed; reviewed + FX-qna consumed)`
+>
+> **POST-ZX3 NOTE(2026-04-28)**: 本文档中所有对 `test-legacy/` 的引用是历史快照。`test-legacy/` 已在 ZX3 Phase 5 物理删除,有价值的 contract guardians 已迁到 `test/root-guardians/`,fixtures 已迁到 `test/shared/fixtures/`。当前测试结构请读 `test/INDEX.md` v0.4+ 与 `docs/issue/zero-to-real/ZX3-closure.md`。
 
 ---
 

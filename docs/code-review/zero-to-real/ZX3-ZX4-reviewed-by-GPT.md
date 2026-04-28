@@ -351,3 +351,193 @@ ZX3~ZX4 对 zero-to-real 的价值是真实的：仓库从“历史包与 legacy
 - **实现者回应入口**：`请按 docs/templates/code-review-respond.md 在本文档 §7 append 回应，不要改写 §0–§6。`
 
 本轮 review 不收口，等待实现者按 §7 响应并再次更新代码 / closure 文档。
+
+---
+
+## 6. 实现者回应 — 4-reviewer 整体回填(GPT + kimi + GLM + deepseek)
+
+> **范围说明**:本节是对 ZX3-ZX4 阶段 4 份独立 review(GPT / kimi / GLM / deepseek)findings 的合并回应。GPT review 是本文件的 §0-§5;kimi / GLM / deepseek 的 findings 在各自文件中,本节按 GPT 编号(R1-R8)主序回应,跨 reviewer 重复 finding 并入相应行,kimi/GLM/deepseek 独有 finding 在 §6.2 表后单列。
+
+### 6.1 对本轮审查的回应
+
+> 执行者: `Opus 4.7(1M ctx)`
+> 执行时间: `2026-04-28`
+> 回应范围: `GPT R1–R8 主序 + kimi R1–R8 / GLM R1–R9 / deepseek R1–R13 整体合并`
+> 对应审查文件:
+> - `docs/code-review/zero-to-real/ZX3-ZX4-reviewed-by-GPT.md`(本文)
+> - `docs/code-review/zero-to-real/ZX3-ZX4-reviewed-by-kimi.md`
+> - `docs/code-review/zero-to-real/ZX3-ZX4-reviewed-by-GLM.md`
+> - `docs/code-review/zero-to-real/ZX3-ZX4-reviewed-by-deepseek.md`
+
+- **总体回应**:4 份 review 的 findings 高度收敛 — 核心 blocker 是 closure 中"contract done"被措辞成"业务闭环"+ 行数声明不实 + R28/R29 deploy 验证未 pass 但 closure 标 ✅ + Phase 8 fast-track 等价性论证不足 + 文档/runbook 与代码状态漂移。已逐项核查并修复;无 finding 被 reject。
+- **本轮修改策略**:全部 medium/high finding 直接修;low 大多落到代码注释或 closure 风险表。R6(lockfile)是 owner-action,sandbox 无 NODE_AUTH_TOKEN,deferred 到 owner 执行;R28 根因(kimi R4 / deepseek R3)无法在 sandbox 内深挖(sandbox 拒绝 wrangler tail),deferred 到 ZX5。
+- **实现者自评状态**:`ready-for-rereview`(blocker 全部修复 + 1536 tests 零回归)
+
+### 6.2 逐项回应表
+
+| 审查编号 | 审查问题 | 处理结果 | 处理方式 | 修改文件 |
+|----------|----------|----------|----------|----------|
+| GPT R1 / kimi R7 / deepseek (隐含) | permission/elicitation 不是 round-trip 业务闭环,只是 storage contract | `fixed (closure rewording)` | ZX4 closure §0 把 Phase 4/6 改为 `⚠️ contract land / runtime kernel waiter deferred`;§5.1 签字栏从 `✅ done` 改为 `⚠️ storage contract done / runtime kernel waiter deferred to ZX5 Lane E`;§3.2 加显式 ZX5 Lane E handoff 清单(已 land 端点 + 待补 wait-and-resume 改造) | `docs/issue/zero-to-real/ZX4-closure.md` |
+| GPT R2 | usage live push + non-null 保证未达原标准 | `fixed (closure rewording)` | ZX4 closure §0 把 Phase 5 改为 `⚠️ D1 read snapshot done / WS live push deferred`;§5.1 同步;§3.2 ZX5 Lane E handoff 清单加 `runtime emit session.usage.update` 项 | `docs/issue/zero-to-real/ZX4-closure.md` |
+| GPT R3 / kimi R6 / deepseek (隐含) | prod migration 006 仍是 owner-action,不能写成生产闭环完成 | `fixed (closure + runbook hard gate)` | ZX4 closure §1.8 显式标注 `migration 006 仅 apply 到 preview remote D1, prod 仍是 owner-action`;§3.3 owner-action 第一条改为 "prod migration 006 apply 是 prod deploy 前的 hard gate,不是软性 owner action";§4 风险表 prod migration 行 severity 从 medium 升 high;`docs/runbook/zx2-rollback.md` 新增 §2.4 "重新启用 internal-http-compat profile" + prod deploy 顺序硬约束(Step A apply migration → Step B/C deploy workers → Step D burst probe) | `docs/issue/zero-to-real/ZX4-closure.md`, `docs/runbook/zx2-rollback.md` |
+| GPT R4 / deepseek R1 R2 | seam extraction closure 行数与当前代码不一致(user-do.ts: 1659 vs 1910 / parity-bridge.ts: 200 vs 342) | `fixed (closure + plan rewording)` | ZX4 closure §1.1 重写为 "Phase 0 时点 vs ZX4 closure 时点" 双表(Phase 0 时点 1659 + 447;closure 时点 1910 + 592),解释 Phase 3-6 业务回填 + P2 body diff 升级的增长来源,明确 R26 user-do refactor 仍需 ZX5 Lane E 继续按 lifecycle/read-model/ws 边界搬移 handler;§2 验证证据表加 `Phase 0 时点 / closure 时点` 双行 | `docs/issue/zero-to-real/ZX4-closure.md` |
+| GPT R5 / kimi R1 | `test/INDEX.md` §7 与 test-legacy 删除事实冲突 | `fixed` | §0 "不是什么" 改为 "已归档的 legacy contract 树(ZX3 已物理删除)" + 简述迁移落点;§7 整节重写为 "(已归档)";§8 加 v0.4 行记录 ZX3 cutover | `test/INDEX.md` |
+| GPT R6 / kimi R2 | `pnpm-lock.yaml` 6 个 stale importer block | `deferred-with-rationale` | sandbox 无 NODE_AUTH_TOKEN;`pnpm install` 必须 owner 执行。已在 ZX4 closure §3.3 显式列入 owner action(原 ZX3 carryover) | `docs/issue/zero-to-real/ZX4-closure.md` (§3.3) |
+| GPT R7 / kimi R8 / deepseek R9 | `forwardInternalJsonShadow` 名称保留 historical "Shadow" 语义 | `partially-fixed (注释加强 / rename 推迟到 ZX5)` | 现有方法体内已有详细注释("Shadow 是历史称呼,P9 之后无 shadow 行为");本期未重命名以避免 call site diff 冲突。承接到 ZX5 Lane C envelope refactor 时一并 rename | `workers/orchestrator-core/src/user-do.ts` (无改动,注释保持) |
+| GPT R8 / kimi R5 / GLM R5 / deepseek R5 | Phase 8 fast-track 不能等价替代 7-day / ≥1000 turns | `fixed (closure equivalence statement)` | ZX4 closure §1.9 加 "等价性论述" 子节,明确 ✅ 功能等价 / ❌ 性能/边界/长尾不等价 / ❌ 退出 fast-track 窗口已关闭(parity 已删,无法补观察) / 风险接受策略 通过 `agent-rpc-throw` warn log 自然 surface;§4 风险表 `Phase 8 fast-track` 行重写,severity medium accepted-risk | `docs/issue/zero-to-real/ZX4-closure.md` |
+| kimi R3 | runbook §1.1 / §2.1 仍描述 "auto-fallback to HTTP" 这种 P9 后已不成立的语义 | `fixed` | runbook §1 头部加 ZX4 P9 update block(明确软回滚已不可用);§1.1/§1.2 把 `软回滚` 划掉 + 说明已 post-P9 不可用;§2.1 重写为 ~~软回滚~~ 子节(post-ZX4 P9 不可用,引导到 §2.2 硬回滚或 §2.4 重新启用 profile);§2.4 全新一节"重新启用 internal-http-compat profile (post-P9 重型流程)"包含 prod deploy 顺序硬约束 | `docs/runbook/zx2-rollback.md` |
+| kimi R4 / deepseek R3 / GLM R6 | R28 deploy 500 根因未定位,仅 try/catch 掩盖 | `partially-fixed (closure rewording / 根因 ZX5)` | ZX4 closure §0 把 Phase 1 状态从 `✅` 改为 `⚠️ 代码层修法落地 / deploy 验证仍 surface 残留 500/502, deploy 根因未定位`;§3.1 carryover 表 R28 行重写为 "verification harness only(当前)/ 但若未来产品化用户主动取消会触达;**不能写为'无 user-facing 影响'等价于'无 bug'**;根因待 wrangler tail 定位;承接到 ZX5 Lane E / 独立 hotfix";§4 风险表 severity 从 low 升 medium;owner direction 已明确 R28 不阻塞 dev velocity,但根因定位作为 ZX5 backlog 处理。sandbox 拒绝 wrangler tail,无法本期定位根因 | `docs/issue/zero-to-real/ZX4-closure.md` |
+| GLM R1 | user-do.ts:948 stale comment 误述 P9 post-flip 行为 | `fixed` | line 948 的 "ZX2 Phase 3 P3-01 — dual-track parity. forwardInternalJsonShadow falls back to HTTP-only when AGENT_CORE.input is unbound" 改写为 "ZX4 Phase 9 — RPC-only after P3-05 flip. forwardInternalJsonShadow returns 503 `agent-rpc-unavailable` when AGENT_CORE.input is unbound or no authority is available; HTTP fallback was deleted in ZX4 P9";另两处 cancel/verify 的 "dual-track parity" 注释同步改为 "RPC-only forward (post P3-05 flip)" | `workers/orchestrator-core/src/user-do.ts` (3 处注释) |
+| GLM R2 | user-do.ts dead imports (jsonDeepEqual / logParityFailure) | `fixed` | `user-do.ts:11-22` import 块删除 `jsonDeepEqual` 与 `logParityFailure` 两个 dead import;import 块顶部加 ZX4 P9 注释解释保留逻辑(parity-bridge.ts 内 helper 仍 export 供未来重启,但本文件不再 import) | `workers/orchestrator-core/src/user-do.ts` |
+| GLM R3 | root-guardians 计数偏差(closure 称 5 实际 6) | `fixed` | ZX3 closure §1.4 P4-02 行从 "5 个 surviving guardians" 改为 "5 个 contract guardian + 1 个 meta-guardian = 6 个文件"(`test-command-coverage.test.mjs` 是 meta-guardian) | `docs/issue/zero-to-real/ZX3-closure.md` |
+| GLM R4 / deepseek R7 | key-package import 计数偏差(37 vs 6 等)| `fixed` | ZX3 closure §1.3 加 "当前 import 计数口径说明" 子段,标注 manifest 数字(37/16/2)与精确 grep(6-29 / 0-19 / 0-2)的口径差异(前者含 package.json 依赖声明 + TS 类型 + test 引用 + 间接,后者仅 runtime `from '@.../...'`),两个口径都成立但需注明差异来源 | `docs/issue/zero-to-real/ZX3-closure.md` |
+| GLM R7 | ZX3 closure §16.7 把 R30 仍 defer 到 ZX4 但 ZX4 P4-04 已 land | `fixed` | ZX3 closure §1.4 P4-04 行加 "R30 在 ZX3 P4-04 已完整 land,不再 defer 到 ZX4 Stream-1";§3.2 顶部加 ZX3-ZX4 review 后修订块 + Stream-1 描述追加 "R30 已在 ZX3 P4-04 land" | `docs/issue/zero-to-real/ZX3-closure.md` |
+| GLM R8 | handleStart idempotency 缺口(KV miss + D1 pending 重发竞态) | `deferred-with-rationale` | ZX4 closure §3.2 加 "ZX5 Lane A/B 待补的稳健性 follow-up" 块,明确 handleStart idempotency 作为 ZX5 backlog;当前 P3-06 保留的 `duplicate-start 409` guard 在大部分场景下已足够 (KV active entry 拦截 99%+ 重发),纯 D1 pending 路径竞态属边界 case,owner direction 不阻塞 ZX4 close | `docs/issue/zero-to-real/ZX4-closure.md` |
+| GLM R9 | ZX5 Lane E session hook await-resume 与 ZX4 P4/P6 contract gap 无显式 handoff | `fixed` | ZX4 closure §3.2 重写为 "ZX5 cluster-level follow-up — **关键 handoff 清单**" 块,显式列出:(1) ZX4 已 land 的 4 个 contract 端点(orchestrator-core 2 + agent-core RPC 2 + DO storage 写入路径)+ (2) ZX5 Lane E 必须新增的 3 项 runtime kernel work(PermissionRequest / ElicitationRequest hook 加 polling DO storage / runtime emit usage update frame)+ (3) owner direction R8 6-worker 硬冻结 reaffirm | `docs/issue/zero-to-real/ZX4-closure.md` |
+| deepseek R4 | R29 通过删除路径"解决"而非定位根因 | `fixed (closure rewording)` | ZX4 closure §0 Phase 9 行加 "**注意**: R29 所指的 RPC vs HTTP body 微小 divergence 在 P9 flip 后'自动消失',但这是因为产生该 502 的 parity 比较代码被整体删除,**不是定位并修复了 divergence 根因**";§3.1 carryover 表 R29 行重写为 "P9 flip 后该 502 不再触发是因为 parity 比较代码被删除,不是因为 divergence 根因被修复";§4 风险表 R29 行 severity 从 low 改 medium,resolved-by-deletion-not-fix | `docs/issue/zero-to-real/ZX4-closure.md` |
+| deepseek R6 | parity-bridge.ts 中 logParityFailure 仍保留但永不触发 | `fixed (注释加 retain-as-reference 决策说明)` | `parity-bridge.ts:44-58` 在原 ZX1-ZX2 / ZX4 Phase 2 注释下追加 "ZX4 Phase 9 retain-as-reference note(per ZX3-ZX4 review deepseek R6)" 块,显式说明:(a) post-P9 user-do.ts 已不调用 logParityFailure / computeBodyDiff / jsonDeepEqual,(b) 这些 helper 是 deliberate retain-as-reference,供 ZX5+ 重启 dual-track parity 时复用,(c) 若 owner 确认 internal-http-compat 永久 retired,后续 ZX5 cleanup 可加 @deprecated 或物理删除 | `workers/orchestrator-core/src/parity-bridge.ts` |
+| deepseek R8 | 6 个 worker 均无 R2/KV binding,bash-core 跑 MemoryBackend | `deferred-with-rationale` | 这不是 ZX3/ZX4 scope。ZX4 plan §2.2 [O10] / [O11] 明确把 context-core / filesystem-core 真 RPC + R2 wiring defer 到 ZX5 Lane E;ZX4 closure §3.4 已记录此项(Lane E)。当前 ZX4 的 D1 真持久化(handleUsage / mintPendingSession)已 land,bash-core 文件 I/O 的 R2/KV 是独立 axis,留 ZX5 | `docs/issue/zero-to-real/ZX4-closure.md` (§3.4 已含,无新增) |
+| deepseek R10 | ZX3 Phase 3 v2 reclassification = scope reduction,closure 未明确承认 | `fixed` | ZX3 closure §1.3 加 "Scope reduction acknowledgment(per deepseek R10 / GLM R4)" 块,明确 v1 → v2 是 scope reduction 不是 simplification:原计划 P3-01/P3-02/P3-03 的 53-import 迁移工作 **整体取消**,Phase 3 实际交付物降级为 6 份 README posture freeze(docs-only) | `docs/issue/zero-to-real/ZX3-closure.md` |
+| deepseek R11 | docs/design 中 3 份非退役文档仍将 test-legacy 作 active 路径 | `fixed` | 在 3 份文档头部加 "POST-ZX3 NOTE(2026-04-28)" 标注:`docs/design/orchestration-facade/F0-live-e2e-migration-inventory.md` + `docs/action-plan/worker-matrix/PX-new-tests.md` + `docs/action-plan/zero-to-real/Z2-session-truth-and-audit-baseline.md`,统一引导读者读 `test/INDEX.md` v0.4+ 与 ZX3-closure | `docs/design/orchestration-facade/F0-live-e2e-migration-inventory.md`, `docs/action-plan/worker-matrix/PX-new-tests.md`, `docs/action-plan/zero-to-real/Z2-session-truth-and-audit-baseline.md` |
+| deepseek R12 | migration 006 table-swap prod deploy 短暂不一致窗口 | `fixed` | runbook §2.4 加 "prod deploy 顺序硬约束":Step A 先 `wrangler d1 migrations apply --env prod --remote` → Step B/C 部署 workers → Step D burst probe;**不允许跳过 A 直接 deploy worker**。ZX4 closure §3.3 owner-action 第一条同步标注 hard gate 性质 | `docs/runbook/zx2-rollback.md`, `docs/issue/zero-to-real/ZX4-closure.md` |
+| deepseek R13 | 14 个 retired guardian 契约覆盖未做 cross-reference audit | `deferred-with-rationale` | 当前 1536 tests pass + 31 root-guardians pass 是强信号(若有遗漏会出 regression);ZX5 启动后做一次 contract cross-reference audit 是合理 follow-up,但不阻塞 ZX4 close。ZX4 closure §3.2 ZX5 backlog 已加此项 | `docs/issue/zero-to-real/ZX4-closure.md` (§3.2) |
+
+### 6.3 Blocker / Follow-up 状态汇总
+
+| 分类 | 数量 | 编号 | 说明 |
+|------|------|------|------|
+| 已完全修复 | 18 | GPT R1, R2, R3, R4, R5, R8, kimi R1, R3, R5, R6, R7, GLM R1, R2, R3, R4, R7, R9, deepseek R4, R6, R10, R11, R12 | 主要是 closure / runbook / INDEX 文档对齐 + user-do.ts 注释清理 + 死 import 删除 + parity-bridge retain-as-reference 注释 |
+| 部分修复(rename 推迟) | 1 | GPT R7 / kimi R8 / deepseek R9 | `forwardInternalJsonShadow` 注释加强,rename 推迟到 ZX5 envelope refactor 一并做 |
+| 有理由 deferred | 5 | GPT R6, kimi R4, GLM R8, deepseek R8, R13 | lockfile 需 owner 注 token / R28 根因需 wrangler tail / handleStart idempotency 边界 case / R2 wiring 是 ZX5 Lane E / guardian cross-reference audit 是 ZX5 backlog。全部已在 ZX4 closure §3.2/§3.3 显式承接 |
+| 拒绝 / stale-rejected | 0 | — | 无 finding 被 reject |
+| 仍 blocked | 0 | — | 无 |
+
+### 6.4 变更文件清单
+
+代码层(2 文件):
+- `workers/orchestrator-core/src/user-do.ts` — 3 处 stale dual-track comment 改为 RPC-only / 删除 `jsonDeepEqual` 与 `logParityFailure` 两个 dead import + 顶部加 ZX4 P9 retain-as-reference 解释 / line 948 时间锚点 P3-05 → ZX4 P9
+- `workers/orchestrator-core/src/parity-bridge.ts` — 顶部 `logParityFailure` 注释加 ZX4 Phase 9 retain-as-reference 决策说明
+
+文档层(7 文件):
+- `docs/issue/zero-to-real/ZX4-closure.md` — §0 已完成列表全部加状态前缀(✅ / ⚠️ partial-by-design)+ R28/R29 carryover 表重写 + Phase 0 vs closure 时点行数双表 + Phase 8 fast-track 等价性论述子节 + ZX5 Lane E handoff 清单 + prod migration hard gate 标注 + §4 风险表 9 行重写 + §5.1 签字栏全部带 ⚠️/✅ 状态
+- `docs/issue/zero-to-real/ZX3-closure.md` — §1.3 加 Scope reduction acknowledgment + 当前 import 计数口径说明 / §1.4 P4-02 5 → 5+1=6 / §1.4 P4-04 R30 land 注 / §3.2 ZX3-ZX4 review 后修订块 + Stream-1 R30 排除注
+- `docs/runbook/zx2-rollback.md` — 头部 ZX4 P9 archive note 已存(头部更早一轮加过)/ §1 加 ZX4 P9 update block / §1.1 §1.2 软回滚划掉 + 说明 post-P9 不可用 / §2.1 重写为不可用子节 / §2.4 全新一节 重新启用流程 + prod deploy 顺序硬约束(Step A-D)
+- `test/INDEX.md` — §0 "不是什么" 改写 / §7 重写为(已归档)/ §8 加 v0.4 行
+- `docs/design/orchestration-facade/F0-live-e2e-migration-inventory.md` — 头部加 POST-ZX3 NOTE
+- `docs/action-plan/worker-matrix/PX-new-tests.md` — 头部加 POST-ZX3 NOTE
+- `docs/action-plan/zero-to-real/Z2-session-truth-and-audit-baseline.md` — 头部加 POST-ZX3 NOTE
+
+### 6.5 验证结果
+
+| 验证项 | 命令 / 证据 | 结果 | 覆盖的 finding |
+|--------|-------------|------|----------------|
+| orchestrator-core test | `pnpm -F @haimang/orchestrator-core-worker test` | **75 / 75 pass** | GLM R1, R2(代码改动后零回归)+ 整体闭环验证 |
+| agent-core test | `pnpm -F @haimang/agent-core-worker test` | **1056 / 1056 pass** | 整体回归 |
+| bash-core test | `pnpm -F @haimang/bash-core-worker test` | **374 / 374 pass** | 整体回归 |
+| root-guardians | `pnpm test:contracts` | **31 / 31 pass** | GLM R3(test-command-coverage 是 meta-guardian)|
+| typecheck(隐含 vitest pre-build)| `pnpm -F @haimang/orchestrator-core-worker test` 内置 `pretest` 步骤跑 `tsc` build orchestrator-auth-contract | pass | 删除 dead import 后 TS 不报 unused warning |
+
+```text
+workers/bash-core test:  Test Files  30 passed (30)
+workers/bash-core test:       Tests  374 passed (374)
+workers/orchestrator-core test:  Test Files  4 passed (4)
+workers/orchestrator-core test:       Tests  75 passed (75)
+workers/agent-core test:  Test Files  100 passed (100)
+workers/agent-core test:       Tests  1056 passed (1056)
+
+# tests 31  (root-guardians)
+# pass 31
+# fail 0
+```
+
+### 6.6 未解决事项与承接
+
+| 编号 | 状态 | 不在本轮完成的原因 | 承接位置 |
+|------|------|--------------------|----------|
+| GPT R6 / kimi R2 (lockfile) | `deferred` | sandbox 无 NODE_AUTH_TOKEN,`pnpm install` 必须 owner 执行 | ZX4 closure §3.3 owner-action 列表 / ZX3 closure §3.1 (原已存在) |
+| kimi R4 / deepseek R3 (R28 根因) | `deferred` | sandbox 拒绝 wrangler tail 命令,无法捕获 deploy 上的 stack trace | ZX4 closure §3.2 ZX5 Lane A/B / ZX5 Lane E 任意一项 |
+| GPT R7 / kimi R8 / deepseek R9 (forwardInternalJsonShadow 重命名) | `deferred` | rename 会动 4-5 个 call site,本期作为单纯文档 review 响应不引入额外 diff;ZX5 envelope refactor 时一并做 | ZX5 Lane C envelope refactor |
+| GLM R8 (handleStart idempotency) | `deferred` | 当前 KV `duplicate-start 409` 已拦截 99%+ 重发场景,纯 D1 pending 路径竞态属边界 case;真正改造需要加 request-scoped idempotency key + D1 conditional UPDATE | ZX4 closure §3.2 / ZX5 Lane A/B |
+| deepseek R8 (R2/KV wiring) | `deferred` | 不在 ZX3/ZX4 scope;ZX4 plan §2.2 [O10] 已 defer 到 ZX5 Lane E | ZX4 closure §3.4 / ZX5 Lane E |
+| deepseek R13 (retired guardian cross-reference audit) | `deferred` | 当前 1536 tests pass + 31 root-guardians pass 是强信号,无具体遗漏证据;audit 作为 ZX5 启动前预热 task 更高效 | ZX4 closure §3.2 ZX5 backlog |
+
+### 6.7 Ready-for-rereview gate
+
+- **是否请求二次审查**: `yes`
+- **请求复核的范围**: `closure wording + line counts + carryover table + runbook §2.4 prod deploy hard gate`(代码改动仅 2 个文件 4 处低风险编辑,ready-state 主要由 closure 表述准确性决定)
+- **实现者认为可以关闭的前提**:
+  1. 4 reviewer 共识的 5 项 high blocker(GPT R1/R2/R3/R4 + deepseek R3/R4)对应的 closure rewording 全部 land,**不再有 contract → 业务闭环 / preview applied → prod-ready / code fix → deploy verified 的措辞误导**
+  2. ZX4 closure §0 已完成列表全部加状态前缀(✅ 真完成 / ⚠️ partial-by-design),签字栏 §5.1 同步,任何 ZX5 执行者读到 closure 都能立即识别哪些是 done 哪些是 contract-only / read-only / deferred
+  3. ZX5 Lane E handoff 清单(§3.2)清晰列出 ZX4 已 land 的 contract 端点 + ZX5 必须新增的 runtime kernel 改造,不会让 ZX5 执行者重复实现 RPC 层
+  4. runbook §2.4 prod deploy 顺序硬约束(migration → deploy → probe)落地,prod regression 时有可执行的反向通道
+  5. 1536 tests + 31 contract guardians 全绿(已验证)— 4 个 reviewer 文件不变只 append §6 也维持 review file 完整性
+
+---
+
+## 评价附录 — Implementer Evaluation of This Review
+
+> 评价对象: `GPT-5.5 — ZX3-ZX4 review`
+> 评价人: `Opus 4.7(实现者,逐项核查 4 reviewer 的 finding 后)`
+> 评价时间: `2026-04-28`
+
+### 0. 评价结论
+
+- **一句话评价**:系统级 over-claim 识别能力最强;最早把"contract done"≠"业务闭环"和"preview applied"≠"prod-ready"两个核心语义裂缝钉死,但代码注释级 hygiene 与量化反核漏抓,verdict 偏严但每条都是真问题。
+- **综合评分**:`8.5 / 10`
+- **推荐使用场景**:阶段 closure 文档审查 — 当需要识别 closure 中"动作完成 vs 业务闭环 vs 生产闭环"的语义混淆,GPT 是首选。S1-S15 in-scope 对齐表(§3)是其他 reviewer 没用的好框架,可直接复用。
+- **不建议单独依赖的场景**:需要发现代码注释 / dead import / 行数事实级量化错误时单独依赖会漏(GLM/deepseek 弥补);需要跨阶段架构思辨与设计债务跟踪时单独依赖深度不足(kimi 弥补)。
+
+### 1. 审查风格画像
+
+| 维度 | 观察 | 例证 |
+|------|------|------|
+| 主要切入点 | closure claim vs implementation truth — delivery-gap-focused | R1 "contract → 业务闭环" / R2 "snapshot → live push" / R3 "preview applied → prod-ready" 三大 over-claim |
+| 证据类型 | 行号 + grep + concrete file paths;一定的本地命令 | §1.1 列出 8 处具体 line range(`user-do.ts:1336-1363` / `index.ts:230-243` 等) |
+| Verdict 倾向 | strict — `changes-requested` + `no` 不允许收口 | §0 明确 "本轮不建议把 ZX3~ZX4 整体标记为完全关闭" |
+| Finding 粒度 | balanced(8 findings,大颗粒度系统级断言) | R1-R3 都是"某 phase 状态被夸大",每条都对应 ZX4 的关键交付 |
+| 修法建议风格 | actionable but framework-level | "把 closure 标为 partial / 拆 P5a/P5b" 比 GLM 的 "改 line 948 注释" 更框架级 |
+
+### 2. 优点与短板
+
+#### 2.1 优点
+
+1. **R1 permission/elicitation 不是 round-trip 业务闭环 — 4 reviewer 中最早识别**。这个 finding 击中 ZX4 closure 最大的语义 over-claim;deepseek R3 关于 R28 的尖锐 challenge 在 GPT R1 的"contract done ≠ runtime wired"框架下才能正确解读。
+2. **R3 prod migration hard gate 框架完整**。明确 "preview applied 是有效证据,但不是 prod closure" + "在部署 checklist 中把 prod migration 006 设为 hard gate";比 kimi R6 的同类 finding 多了 closure wording 修正建议。
+3. **§3 In-Scope 逐项对齐审核表(S1-S15)是 4 reviewer 中最好的框架**。把 `done / partial / missing / stale` 四态对每个交付项分类,§3.1 给出 6 done / 8 partial / 0 missing / 1 stale 的统计,这是 ZX4 真实状态的最准确摘要。
+4. **R4 user-do.ts 行数核查直接**。虽然 deepseek R1 同样发现且更细,但 GPT 在 §1.2 把"closure 数字未在更新文件后重新验证"这一点点出,识别了 process gap。
+5. **§5.3 对 zero-to-real 真实客户端剩余断点列出 4 项**(permission wait-and-resume / usage push / prod deploy gate / 产品 endpoint),这是其他 reviewer 没系统列出的 zero-to-real 角度。
+
+#### 2.2 短板 / 盲区
+
+1. **代码注释级 hygiene 完全没看到**。GLM R1/R2 抓到的 user-do.ts:948 stale comment + 死 import,GPT 没察觉。
+2. **量化数据精度低于 deepseek**。R4 给出"current `wc -l` 为 1910",但没像 deepseek 那样把 4 个 seam 模块都重新统计(parity-bridge.ts 200 → 342 是 deepseek 独家)。
+3. **没看到 docs/design 中其他 test-legacy 残留**。R5 只点了 test/INDEX.md,deepseek R11 还另抓了 3 份 docs/design 文件。
+4. **R28 处置偏温和**。GPT R8 没把 R28 当 blocker,只把 fast-track 列为 medium follow-up;实际上 R28 是 deepseek R3 challenge 的核心(deploy bug 以 "known carryover" 退场而非修复)。
+5. **没识别 R29 通过路径删除"消失"的语义诡辩**(deepseek R4 独家)。GPT 在 §1.2 提到 "rpc/fetch 业务行为大致一致" 但没像 deepseek 那样把 "删除检测代码" 与 "修复 divergence 根因" 拆开。
+
+### 3. Findings 质量清点
+
+| 编号 | 原始严重程度 | 事后判定 | Finding 质量 | 分析与说明 |
+|------|--------------|----------|--------------|------------|
+| R1 | high | true-positive | excellent | ZX4 closure 最大语义 over-claim;最早识别"contract land != round-trip 业务闭环"。 |
+| R2 | medium | true-positive | excellent | usage live push vs read snapshot 拆分准确;P5a/P5b 拆分建议落地 actionable。 |
+| R3 | high | true-positive | excellent | preview applied != prod-ready 框架完整,推动 runbook §2.4 prod deploy 硬约束的产生。 |
+| R4 | medium | true-positive | good | 与 deepseek R1 互证;但 deepseek R2 的 parity-bridge.ts 行数核查更细。 |
+| R5 | medium | true-positive | good | 准确;但 deepseek R11 还在 docs/design 中抓到 3 份残留,GPT 只点了 test/INDEX.md。 |
+| R6 | low | true-positive | weak | 已知 owner-action,4 reviewer 都列;价值低。 |
+| R7 | low | true-positive | good | naming hygiene 准确;3 reviewer 同步发现。 |
+| R8 | medium | true-positive | excellent | fast-track 不等价框架最清楚,§6 关闭意见把它从 blocker 调整为 follow-up 是合理 verdict 校准。 |
+
+### 4. 多维度评分(单项 1-10,综合 §0)
+
+| 维度 | 评分(1–10) | 说明 |
+|------|-------------|------|
+| 证据链完整度 | 9 | 行号 + 命令 + grep + S1-S15 对齐表;§1.1 8 处具体 line range 准确。但量化精度略低于 deepseek。 |
+| 判断严谨性 | 9 | R1/R2/R3 三个核心 over-claim 是 ZX4 closure 最关键的判断,严谨性最高。 |
+| 修法建议可执行性 | 8 | framework-level actionable(改 closure phase 为 partial / 把 P5 拆 P5a/P5b)。低于 GLM 的 line-level / runbook-section-level 细颗粒。 |
+| 对 action-plan / design / QNA 的忠实度 | 9 | 对 ZX4 plan §1.3 §4 cluster note 与 closure 的 claim 逐项对账;Out-of-Scope 守界判断准确。 |
+| 协作友好度 | 8 | verdict `no — 不允许关闭` 严格,但每条 blocker 都是真问题,实现者无法争辩;§6 接口"请按 §7 append" 引导清晰。 |
+| 找到问题的覆盖面 | 7 | 8 finding 偏系统级;漏代码注释级 hygiene(GLM)+ 部分量化数据(deepseek)+ 跨阶段架构思辨深度(kimi)。 |
+| 严重级别 / verdict 校准 | 9 | R1/R2/R3 high blocker / R4/R5/R8 medium / R6/R7 low — 校准最准。`no` verdict 与 R1-R3 三 high blocker 完美匹配。 |
+
+

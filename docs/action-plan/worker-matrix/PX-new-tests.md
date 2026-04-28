@@ -5,6 +5,8 @@
 > 类型: `rename`(现有 `test/` → `test-legacy/`) + `new`(新的 `test/` live E2E tree) + `reclassify`(legacy vs worker-matrix-first-wave) + `upgrade`(A6 verification ladder 迁入新测试体系)
 > 作者: `GPT-5.4`
 > 时间: `2026-04-23`
+>
+> **POST-ZX3 NOTE(2026-04-28)**: 本计划在 ZX3 Phase 5(2026-04-27)收口 — `test-legacy/` 已物理删除,有价值的 guardians 已迁到 `test/root-guardians/`,fixtures 迁到 `test/shared/fixtures/`,14 个无活跃契约的 guardian 已 retire。本文档中所有 `test-legacy/**` 引用仅作为 ZX2 阶段的历史结构快照。当前测试结构请读 `test/INDEX.md` v0.4+ 与 `docs/issue/zero-to-real/ZX3-closure.md`。
 > 文件位置:
 > - `test-legacy/**`（原根目录 `test/` 全量迁移后保留）
 > - `test/package-e2e/**`

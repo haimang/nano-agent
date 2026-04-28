@@ -5,6 +5,8 @@
 > 类型: `migration`
 > 作者: `GPT-5.4`
 > 时间: `2026-04-25`
+>
+> **POST-ZX3 NOTE(2026-04-28)**: 本文档中所有对 `test-legacy/` 路径的引用是历史快照。`test-legacy/` 已在 ZX3 Phase 5 物理删除,有价值 guardians 已迁到 `test/root-guardians/`(参见 `pnpm test:contracts`),fixtures 已迁到 `test/shared/fixtures/`。
 > 文件位置: `docs/action-plan/zero-to-real/Z2-session-truth-and-audit-baseline.md`
 > 关联设计 / 调研文档:
 > - `docs/charter/plan-zero-to-real.md`

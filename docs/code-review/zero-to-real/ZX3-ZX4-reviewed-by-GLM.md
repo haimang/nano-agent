@@ -397,3 +397,73 @@
 - **建议的二次审查方式**: `no rereview needed` — 本轮 all findings 为 non-blocking docs/cleanup 跟进项，无需二次审查。如 ZX5 执行 P4/P6 kernel hookup，建议在 ZX5 Phase 0 审查 session hook await-resume 的 contract 对齐。
 
 > **ZX3+ZX4 核心目标达成，允许收口。9 项 non-blocking follow-up 建议在 ZX5 启动前或启动时处理。**
+
+---
+
+## 评价附录 — Implementer Evaluation of This Review
+
+> 评价对象: `GLM-5.1 — ZX3-ZX4 review`
+> 评价人: `Opus 4.7(实现者,逐项核查 4 reviewer 的 finding 后)`
+> 评价时间: `2026-04-28`
+
+### 0. 评价结论
+
+- **一句话评价**:代码 hygiene + 跨阶段命名一致性 + 工程逻辑断点最扎实;独家抓到 user-do.ts 注释/dead import 与 handleStart idempotency 等其他 reviewer 漏掉的细节,但 verdict 偏乐观,9 项 finding 全标 non-blocking 与 GPT/deepseek 的 "changes-requested" 形成对照。
+- **综合评分**:`8.5 / 10`
+- **推荐使用场景**:阶段中后期需要"代码层细致 walkthrough + 跨阶段命名/状态/transport profile 一致性 audit"时,GLM 是首选。R1/R2 stale comment + dead import 这种 line-level hygiene 是其他 reviewer 漏抓的真问题。
+- **不建议单独依赖的场景**:阶段 closure 守门时单独依赖 GLM 会过于乐观(verdict 标 yes 允许收口,但 GPT/deepseek 的 high blocker 在 GLM 这里被降级为 medium follow-up);需要严格识别 closure 中 over-claim 时单独依赖会漏。
+
+### 1. 审查风格画像
+
+| 维度 | 观察 | 例证 |
+|------|------|------|
+| 主要切入点 | code hygiene + 跨阶段一致性 + 工程逻辑断点 | R1 stale comment / R2 dead import / §5.2 命名规范表 / §5.3 执行逻辑断点表 |
+| 证据类型 | 大量 wc -l / grep / 行号 + 跨阶段对账 | §1.1 列出 9 条命令证据,§5.1 ZX1-ZX2 设计债务 3 项跟踪 |
+| Verdict 倾向 | balanced-leaning-optimistic — `approve-with-follow-ups` + `yes` | §0 / §6 "0 critical / 0 blocker" 与 GPT 的 "no" 形成对照 |
+| Finding 粒度 | fine — 9 条,大量低风险但精确的小问题 | R3 5→6 计数 / R4 37 vs 6 import / R7 R30 defer 列表过时 |
+| 修法建议风格 | actionable + 细颗粒 | R1 "修正 line 948 注释为..." / R2 "删除 jsonDeepEqual / logParityFailure import" 直接给出代码级行动 |
+
+### 2. 优点与短板
+
+#### 2.1 优点
+
+1. **R1 user-do.ts:948 stale comment + R2 dead imports — 4 reviewer 中独家抓到**。GPT/kimi/deepseek 都没看到 user-do.ts 内部的注释 / import 级残留。这是 P9 flip 后清理不完全的真问题,虽然 low severity 但是 GLM 独家。
+2. **R8 handleStart idempotency — 唯一指出的并发竞态盲点**。其他 reviewer 都没察觉 `UPDATE ... WHERE status='pending'` 在客户端重发场景下的竞态。这是真正的 architecture-level finding。
+3. **R9 ZX5 Lane E handoff 缺口最详细**。明确列出 ZX4 已 land 的 contract 端点(orchestrator-core handlePermissionDecision / agent-core RPC / NanoSessionDO storage)+ ZX5 必须新增的(hook polling / WS push)— 这部分推动了 ZX4 closure §3.2 的 handoff 清单产生。
+4. **§5.2 命名规范一致性检查最扎实**。7 个维度(seam 模块 / status enum / error code / 方法名 / RPC 方法名 / 包命名 / transport profile)逐项核对;只有 GLM 做了这一层。
+5. **R7 ZX3→ZX4 包围界不清(R30 defer 列表过时)— 唯一发现**。ZX3 closure §16.7 把 R30 defer 到 ZX4 但实际 P4-04 已 land 这种文档陈旧只有 GLM 抓到。
+
+#### 2.2 短板 / 盲区
+
+1. **R6 R28 处置偏温和**。R28 deploy 500 标 medium "platform-fitness" + non-blocking,与 deepseek R3 直接 challenge "carryover 退场而非修复"形成对比。GLM 没把 ZX4 closure 中"R28 = ✅ Phase 1 已完成"和 deploy 上仍 fail 的矛盾点出。
+2. **没抓 prod migration hard gate**。R6 提到 "migration 仅 apply 到 preview" 但没像 GPT R3 / kimi R6 / deepseek R12 那样把它升级为 prod deploy hard gate。
+3. **R5 fast-track 论证较短**。"功能验证等价而非性能/边界等价" 一句话带过,不如 GPT R8 / deepseek R5 给出的"180 calls 不能在统计意义上替代 7 day × 1000 turns"那么硬。
+4. **verdict 偏乐观**。9 finding 全标 non-blocking + `yes` 允许收口,与 GPT/deepseek 的 `changes-requested` 形成对照。如果只看 GLM 报告,实现者会以为 ZX4 closure 已经合格;但 GPT R1-R3 / deepseek R1-R4 的 high blocker 全部落到 closure rewording,GLM 标的 medium 实际严重程度高于评估。
+5. **R4 import 计数偏差(37 vs 6)关注度低**。GLM 只标 low docs-gap;deepseek R7 把它升级为 medium delivery-gap("scope reduction 未承认")。
+
+### 3. Findings 质量清点
+
+| 编号 | 原始严重程度 | 事后判定 | Finding 质量 | 分析与说明 |
+|------|--------------|----------|--------------|------------|
+| R1 | medium | true-positive | excellent | **唯一**;line 948 stale comment 准确命中 P9 后清理遗漏。 |
+| R2 | low | true-positive | excellent | **唯一**;`jsonDeepEqual` / `logParityFailure` dead import 准确。 |
+| R3 | low | true-positive | good | 5+1=6 计数偏差准确;但 ZX3 closure 已标 5 个 surviving 是 contract guardian + 1 个 meta-guardian 的混合分类,不算严重。 |
+| R4 | low | true-positive | mixed | 37 vs 6 口径差异属实,但 GLM 标 low 偏温和;deepseek R7 升级为 medium 是合理的 verdict 校准。 |
+| R5 | medium | true-positive | good | 论证较短;比 GPT R8 / deepseek R5 简略。 |
+| R6 | medium | true-positive | mixed | R28 处置偏温和;medium platform-fitness 偏轻,deepseek R3 challenge 更准。 |
+| R7 | low | true-positive | excellent | **唯一**;ZX3→ZX4 R30 defer 列表过时是真文档陈旧。 |
+| R8 | medium | true-positive | excellent | **唯一**;handleStart idempotency 是真正的 architecture-level finding。 |
+| R9 | medium | true-positive | excellent | **唯一**;ZX5 Lane E handoff 清单推动 ZX4 closure §3.2 显式 handoff 块产生。 |
+
+### 4. 多维度评分(单项 1-10,综合 §0)
+
+| 维度 | 评分(1–10) | 说明 |
+|------|-------------|------|
+| 证据链完整度 | 9 | 9 条命令证据 + §1.1 大量 grep / wc -l 验证;§5.1 ZX1-ZX2 跨阶段债务跟踪扎实。 |
+| 判断严谨性 | 8 | 主体 finding 准确;但 R6 R28 处置偏温和 + verdict 偏乐观降低了严谨性评分。 |
+| 修法建议可执行性 | 9 | R1 "修正 line 948 注释为..." / R2 "删除两个 import" 是 4 reviewer 中最 line-level actionable 的。 |
+| 对 action-plan / design / QNA 的忠实度 | 8 | ZX3/ZX4 plan 引用准确;但对 R28 deploy 验证状态 vs Phase 1 ✅ 标记的矛盾未直接 challenge。 |
+| 协作友好度 | 9 | "0 critical / 0 blocker / no rereview needed" 对实现者最友好;但与 GPT/deepseek verdict 形成强对照,实现者需要交叉看才能避免被 GLM 单独 review 误导为"可以收口"。 |
+| 找到问题的覆盖面 | 9 | R1/R2/R7/R8/R9 共 5 项 4 reviewer 中唯一发现 — 覆盖面最广;特别是代码 hygiene + 工程逻辑断点 + 跨阶段命名一致性 3 块。 |
+| 严重级别 / verdict 校准 | 7 | 9 项全 non-blocking + `yes` 允许收口偏乐观;R6 R28 应升级,verdict 应至少与 kimi 一致(approve-with-followups + 3 blocker 必须先修)。 |
+

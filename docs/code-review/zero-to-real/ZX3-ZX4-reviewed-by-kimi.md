@@ -381,3 +381,71 @@ ZX3~ZX4 是 zero-to-real 阶段的收官之作。ZX3 把仓库从"12 packages + 
 zero-to-real 真正交付的不是"完美的终点"，而是"可审计、可交接、可继续演进的稳定基线"。ZX3~ZX4 做到了前者，接下来需要做的，是把 follow-up 项压成明确的 backlog，而不是让它们散落在 closure 的备注栏中。
 
 > kimi (K2p6), 2026-04-28
+
+---
+
+## 评价附录 — Implementer Evaluation of This Review
+
+> 评价对象: `kimi (K2p6) — ZX3-ZX4 review`
+> 评价人: `Opus 4.7(实现者,逐项核查 4 reviewer 的 finding 后)`
+> 评价时间: `2026-04-28`
+
+### 0. 评价结论
+
+- **一句话评价**:工程交接质量视角的均衡型审查;ops 文档缺口(R3 runbook 内文)是 4 reviewer 中独家发现,跨阶段架构思辨深度最强,但具体 finding 颗粒度偏中等,部分判断不如 deepseek 锐利。
+- **综合评分**:`8.0 / 10`
+- **推荐使用场景**:阶段收口前需要"既看 docs sync 也看代码 hygiene + ops gate"的全链路体检;当 review 需要跨阶段连续性判断(ZX1→ZX2→ZX3→ZX4)与设计债务跟踪时,kimi 的视角不可替代。
+- **不建议单独依赖的场景**:需要量化数据反向核查(行数 / import 计数 / 实际代码 vs closure claim)时单独依赖会漏掉 deepseek 那类硬证据;需要捕捉代码注释级 hygiene 问题(stale comment / dead import)时单独依赖会漏掉 GLM 那种细颗粒。
+
+### 1. 审查风格画像
+
+| 维度 | 观察 | 例证 |
+|------|------|------|
+| 主要切入点 | 工程交接质量 — closure claim 与运营文档的对齐(docs sync + runbook + ops gate)| R1 INDEX.md / R3 runbook 内文 / R6 prod migration 是 hard gate |
+| 证据类型 | 命令 + 文件 + 行号 + 跨阶段对账 | §1 列出 7 条本地命令 + ZX2 closure §11 carryover mapping 逐项核对 |
+| Verdict 倾向 | balanced(approve-with-followups,允许收口但 3 项 blocker 必须先修) | 整体允许 yes 关闭,但写明"3 blocker + 4 follow-up" |
+| Finding 粒度 | 中等(8 条,系统级 + 文档级混合) | R3 runbook 内文是 ops 级 / R8 时间锚点是 docs 级 |
+| 修法建议风格 | actionable(具体到子节 / 行 / 命令) | R3 给出 §1/§2 重写 + 删除"自动退化"句子的具体步骤 |
+
+### 2. 优点与短板
+
+#### 2.1 优点
+
+1. **R3 runbook 内文未随 P9 同步重写 — 4 reviewer 中独家发现**。GPT/GLM/deepseek 均未察觉 runbook §1.1/§2.1 仍描述 "auto-fallback to HTTP" 这种 P9 后已不成立的语义。这是真正的 ops 风险(运维人员按旧 runbook 执行会期望软回滚生效但得到 503)。
+2. **§6 跨阶段深度分析有真正的架构思辨**。给出 3 个架构断点(permission/usage/elicitation runtime hookup / KV-D1 同步裂缝 / 6-worker 与 RPC 升级冲突),不是简单 surface-level critique。
+3. **R6 prod migration hard gate 框架最清晰**。明确指出"这不是 ZX4 执行人的失误(preview 是唯一可验证环境),但必须在 prod deploy 前显式阻塞",并给出 CI/CD pipeline `--dry-run` 预检的具体建议。
+4. **协作友好度高**。verdict 是 "yes 但须先完成 3 blocker",对实现者 surgically 友好;不像 GPT/deepseek 直接给 no。
+
+#### 2.2 短板 / 盲区
+
+1. **代码注释级 hygiene 没看到**。GLM 抓到的 user-do.ts:948 stale comment + 死 import 这一层,kimi 只在 R8 提了"时间锚点混淆"但没具体到 line。
+2. **量化数据反向核查缺失**。deepseek R1/R2 直接 wc -l 拆穿了 closure 的行数声明,kimi 没做这一步,虽然 §1 引用了"user-do.ts(1910 行)"作为事实但未与 closure claim 对比。
+3. **R4 R28 处置偏温和**。kimi 给了 "follow-up,不阻塞 ZX4 close" 的口径;deepseek R3 直接 challenge 为 "carryover 退场而非修复"更尖锐,kimi 的措辞容易被读作"已知问题接受"。
+4. **R5 fast-track 论述偏文字**。"瞬时一致性 vs 时间敏感问题" 句式靠语义描述;GLM/deepseek 都给了"180 calls vs 7 day × 1000 turns 不在统计意义上等价"的更直接论证。
+
+### 3. Findings 质量清点
+
+| 编号 | 原始严重程度 | 事后判定 | Finding 质量 | 分析与说明 |
+|------|--------------|----------|--------------|------------|
+| R1 | medium | true-positive | good | 与 GPT R5 同步发现;颗粒度合理。 |
+| R2 | low | true-positive | weak | 已知 owner-action,价值不高,但 4 reviewer 都列了。 |
+| R3 | medium | true-positive | excellent | **唯一发现**;runbook §1.1/§2.1 旧语义残留属真正 ops 风险。 |
+| R4 | high (follow-up) | true-positive | excellent | R28 deploy bug 跟踪到位;deepseek R3 的 challenge 更尖锐但 kimi 处置合理。 |
+| R5 | medium | true-positive | good | 论证偏文字,颗粒度中等。 |
+| R6 | high | true-positive | excellent | prod migration hard gate 框架清晰;具体到 CI/CD `--dry-run` 建议。 |
+| R7 | medium | true-positive | good | 与 GPT R1 互补,强调 closure 标记醒目度;落点准确。 |
+| R8 | low | true-positive | good | "P3-05 flip" 时间锚点混淆点准确,但未抓 user-do.ts:948 具体 stale comment。 |
+
+### 4. 多维度评分(单项 1-10,综合 §0)
+
+| 维度 | 评分(1–10) | 说明 |
+|------|-------------|------|
+| 证据链完整度 | 8 | 命令 + 文件 + 行号 + 跨阶段对账齐全;但缺量化数据反向核查(行数/import 计数 vs closure claim)。 |
+| 判断严谨性 | 8 | 主体判断准确;R4 R28 的处置偏温和,R5 论述偏文字,稍弱于 deepseek 的尖锐性。 |
+| 修法建议可执行性 | 8 | 具体到子节 / 命令 / 删除哪些句子;R3 runbook 重写指导 actionable。 |
+| 对 action-plan / design / QNA 的忠实度 | 9 | ZX2 closure §11 carryover mapping 逐项核对 + ZX3/ZX4 plan §1.3 §4 cluster note 准确引用。 |
+| 协作友好度 | 9 | "yes 但须先完成 3 blocker" 的口径对实现者友好;§7 结语强调 "可审计、可交接、可继续演进的稳定基线" 是好的协作框架语言。 |
+| 找到问题的覆盖面 | 8 | 8 finding 覆盖 docs / runbook / ops / 命名 / R28/R29;但漏 user-do.ts 注释级 hygiene + 量化反核。 |
+| 严重级别 / verdict 校准 | 8 | severity 大致合理;R4 R28 follow-up 与 R6 prod migration blocker 的区分准确。 |
+
+

@@ -469,3 +469,80 @@
 ---
 
 > 本轮 review 不收口，等待实现者按 §6 响应修正 closure 文档中的 R1 (user-do.ts 行数)、R2 (parity-bridge.ts 行数)、R3 (R28 deploy 验证状态) 三项不实声明。其余 findings (R4-R13) 为非阻塞 follow-up，可在 ZX5 启动后逐项清理。
+
+---
+
+## 评价附录 — Implementer Evaluation of This Review
+
+> 评价对象: `DeepSeek — ZX3-ZX4 review`
+> 评价人: `Opus 4.7(实现者,逐项核查 4 reviewer 的 finding 后)`
+> 评价时间: `2026-04-28`
+
+### 0. 评价结论
+
+- **一句话评价**:量化反向核查与语义诡辩拆穿能力最强;独家抓到 user-do.ts/parity-bridge.ts 行数失实 + R29 "通过路径删除消失"≠ fix root cause + ZX3 Phase 3 scope reduction 等其他 reviewer 漏抓的硬证据,但 13 findings 颗粒度散、部分超出 ZX4 scope 边界稀释了核心 blocker 的注意力。
+- **综合评分**:`9.0 / 10`
+- **推荐使用场景**:阶段 closure 守门 — 当需要识别"closure 数字未在文件更新后重新验证 / 路径删除被措辞为 bug 修复 / scope reduction 被措辞为 simplification"这类语义诡辩时,deepseek 是首选。R1/R2/R3/R4 四个 finding 对 closure 的诚实性是决定性 challenge。
+- **不建议单独依赖的场景**:需要识别代码注释级 hygiene(GLM)+ ops/runbook 文档对齐(kimi)+ 系统级 over-claim 框架(GPT)时单独依赖会漏;13 findings 中部分(R8 R2/KV 不在 ZX4 scope / R13 cross-reference audit 价值低)需要交叉 review 来去噪。
+
+### 1. 审查风格画像
+
+| 维度 | 观察 | 例证 |
+|------|------|------|
+| 主要切入点 | closure factual accuracy — 量化数据反向验证 + 语义诡辩拆穿 | R1 wc -l 拆穿行数失实 / R3 "carryover 退场而非修复" / R4 "删除路径而非定位根因" / R10 "scope reduction 而非 simplification" |
+| 证据类型 | 大量 wc -l + grep + 直接对照 closure claim | §1.1 / §1.2 列出 8 条正面 + 8 条负面事实,每条带具体数字 / 行号 / SQL CHECK 内容 |
+| Verdict 倾向 | strict — `changes-requested` + `no` | §0 / §5 "需修正 R1/R2/R3 三项后才可收口" |
+| Finding 粒度 | fine — 13 条,既有量化失实也有 platform 边界提醒 | R1-R5 closure 内核 / R6-R10 hygiene + scope / R11-R13 docs / scope / audit |
+| 修法建议风格 | actionable + 量化精确 | "修正 ZX3 closure §1.4 + ZX4 closure §0/§1.1/§2 共 3 处行数声明" / "ZX4 closure §0 去掉 R28 ✅" 是 closure-section-level 精确度 |
+
+### 2. 优点与短板
+
+#### 2.1 优点
+
+1. **R1 user-do.ts 行数 1659 vs 1910 — 4 reviewer 中第一个对量化数据反向核查的**。GPT R4 后续也发现但 deepseek 更细 — 同时核查 4 个 seam 模块(parity-bridge.ts 200 vs 342 是 deepseek 独家)。这一发现击中 ZX4/ZX3 closure 的核心成功量化指标,推动 closure §1.1 重写为"Phase 0 时点 vs ZX4 closure 时点"双表。
+2. **R3 R28 "deploy-only carryover 退场而非修复" — 唯一直接 challenge**。kimi R4 / GLM R6 都看到了 R28 但都给了"follow-up 不阻塞 close"的温和处置;deepseek 直接拆穿"action-plan 目标是修复 R28,closure 却说 R28 没修复但不阻塞 close"的逻辑矛盾。这是最尖锐的判断。
+3. **R4 R29 "通过删除路径解决而非修复" — 唯一拆穿的语义诡辩**。其他 3 个 reviewer 都接受了"R29 通过 P9 flip 自动消失"的措辞;deepseek 把 "删除产生 502 的代码" 与 "修复 divergence 根因" 拆开,推动 ZX4 closure §3.1 carryover 表 R29 行重写。
+4. **R10 ZX3 Phase 3 scope reduction — 唯一直接命名**。其他 reviewer 都接受了 "v2 reclassification = simplification" 的口径;deepseek 把它命名为 "53-import 迁移目标整体取消" 的 scope reduction,推动 ZX3 closure §1.3 显式 acknowledgment 块产生。
+5. **§1.2 negative facts 列表是 4 reviewer 中最长最具体的**。8 项 confirmed negative facts 每项带具体数字(1910 行 / 342 行 / 29 import / 19 import / 161 docs 引用 / 6 worker R2-KV 全无),信息密度最高。
+6. **R12 migration 006 prod deploy 短暂不一致窗口 — 比 GPT/kimi 的同类 finding 多了 SQL table-swap 风险描述**。
+
+#### 2.2 短板 / 盲区
+
+1. **R8 R2/KV 仍未绑定 — scope 边界争议**。deepseek 自己也承认"这不是 ZX4 的责任",但仍标 medium platform-fitness。ZX4 plan §2.2 [O10] 明确 defer 到 ZX5 Lane E,这条 finding 实际是越界提醒,在严重级别里偏重。
+2. **R13 retired guardians cross-reference audit — 价值偏低**。当前 1536 tests + 31 guardians 全绿是强信号,且 deepseek 自己说"属于低风险的审慎提醒",但仍占用一条 finding slot。
+3. **代码注释级 hygiene 没看到**。GLM R1/R2 抓到的 user-do.ts:948 stale comment + 死 import,deepseek 完全没察觉。
+4. **没抓 runbook 内文未同步**。kimi R3 是独家,deepseek 在 §1.2 提到"docs/ 中 test-legacy 引用 161 处"但没具体到 runbook 的语义不一致。
+5. **没抓 ZX5 Lane E handoff 清单缺口**(GLM R9 独家)。deepseek R8/R10/R11/R13 都偏外延,但 GLM R9 那种"清单级 handoff"的 finding 没在 deepseek 报告里。
+6. **协作友好度偏低**。13 findings 让实现者初读时不知道 R1-R5 是真 blocker、R6-R13 是 hygiene/边界/audit;GPT R1-R8 的"3 high blocker / 5 medium follow-up"分层更清晰。
+
+### 3. Findings 质量清点
+
+| 编号 | 原始严重程度 | 事后判定 | Finding 质量 | 分析与说明 |
+|------|--------------|----------|--------------|------------|
+| R1 | high | true-positive | excellent | **量化失实唯一**(GPT R4 后续也发现但 deepseek 更细 — parity-bridge.ts 200 vs 342 是独家)。 |
+| R2 | medium | true-positive | excellent | **唯一**;parity-bridge.ts Phase 2 增长未在 closure 体现。 |
+| R3 | high | true-positive | excellent | **唯一直接 challenge**;"deploy-only carryover 退场而非修复"的措辞拆穿是核心。 |
+| R4 | medium | true-positive | excellent | **唯一拆穿语义诡辩**;"删除路径 vs 修复根因"的拆分推动 closure 重写。 |
+| R5 | medium | true-positive | good | 4 reviewer 共识;deepseek 论证"退出 fast-track 窗口已关闭"比 GPT/GLM/kimi 都更具体。 |
+| R6 | medium | true-positive | good | logParityFailure 保留但永不触发;推动 parity-bridge.ts retain-as-reference 注释。 |
+| R7 | medium | true-positive | good | 与 GLM R4 同源,deepseek 升级为 medium delivery-gap 是合理 verdict 校准(GLM 标 low 偏温和)。 |
+| R8 | medium | true-positive | mixed | 准确但 scope 越界(ZX4 plan §2.2 [O10] 已 defer),在严重级别里偏重。 |
+| R9 | low | true-positive | good | 3 reviewer 同步发现;颗粒度合理。 |
+| R10 | medium | true-positive | excellent | **唯一直接命名为 scope reduction**;推动 ZX3 closure §1.3 acknowledgment 块产生。 |
+| R11 | low | true-positive | good | **唯一**;docs/design 3 份残留是 deepseek 找到的真实文档陈旧。 |
+| R12 | medium | true-positive | good | 与 kimi R6 同源,但 deepseek 多了 table-swap 短暂不一致窗口的具体描述。 |
+| R13 | low | true-positive | weak | 价值偏低;当前 tests 全绿信号强,但 deepseek 自己也承认"属于低风险审慎提醒"。 |
+
+### 4. 多维度评分(单项 1-10,综合 §0)
+
+| 维度 | 评分(1–10) | 说明 |
+|------|-------------|------|
+| 证据链完整度 | 10 | 量化数据反向核查最强;§1.2 8 项 negative facts 每项带具体数字 / 行号 / SQL CHECK 内容,信息密度最高。 |
+| 判断严谨性 | 9 | R1/R2/R3/R4 四个核心 finding 严谨性最强;但 R8 R2/KV scope 越界与 R13 cross-reference audit 价值偏低拉低了 0.5。 |
+| 修法建议可执行性 | 8 | closure-section-level 精确度高(R1: "修正 ZX3 closure §1.4 + ZX4 closure §0/§1.1/§2 共 3 处");但低于 GLM 的 line-level 细颗粒。 |
+| 对 action-plan / design / QNA 的忠实度 | 9 | ZX3/ZX4 plan 引用准确;R8 R2/KV 越界但 deepseek 自己已标注 "not ZX4 responsibility",忠实度 OK。 |
+| 协作友好度 | 7 | `no` verdict + 13 findings 不分层让实现者初读较重;§5 关闭意见区分了 "blocker R1/R2/R3 vs follow-up R4-R13" 但不如 GPT 的 §0 一句话总结清晰。 |
+| 找到问题的覆盖面 | 9 | 5 项 4 reviewer 唯一发现(R2 / R3 / R4 / R10 / R11);量化失实 / 语义诡辩 / scope reduction 三个维度独家;但漏代码注释级 hygiene(GLM)+ runbook 内文(kimi)。 |
+| 严重级别 / verdict 校准 | 9 | R1/R3 high blocker 与 GPT R1/R3 一致;R7 升级 GLM R4 是合理校准;但 R8 R2/KV / R13 cross-reference 偏重 / 偏轻是小瑕疵。 |
+
+
