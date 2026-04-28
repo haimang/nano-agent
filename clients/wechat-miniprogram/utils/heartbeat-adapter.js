@@ -8,6 +8,12 @@
 // 删除并切到 root export(per Q3 owner direction:"以 @haimang/nacp-session
 // root export 为准;必要时先补 browser/wechat adapter")。
 //
+// TODO (post-ZX5, per kimi R3 + GLM R6): once the wechat build pipeline can
+// resolve `@haimang/nacp-session`, delete this adapter and require the root
+// export directly. **Keep this adapter's defaults and method shape 1:1 with
+// the upstream package** — silent desync between clients would corrupt the
+// heartbeat contract on the orchestrator side.
+//
 // API mirror — must stay 1:1 with packages/nacp-session/src/heartbeat.ts:
 //   new HeartbeatTracker({intervalMs?, timeoutMs?})
 //   tracker.recordHeartbeat()

@@ -1,3 +1,19 @@
+// ZX5 Lane C C6 — web client heartbeat tracker (local mirror).
+//
+// This file is a behavior-equivalent copy of
+// `packages/nacp-session/src/heartbeat.ts`'s `HeartbeatTracker`. The web
+// client's vite/react build does not currently consume `@haimang/nacp-session`
+// from the npm registry (the package is published to GitHub Packages, which
+// requires `NODE_AUTH_TOKEN` plumbing into the deploy/build pipeline). Until
+// that plumbing lands, this mirror keeps behavior in lockstep.
+//
+// TODO (post-ZX5, per kimi R3 + GLM R6): once the build pipeline gains
+// `NODE_AUTH_TOKEN` access, replace this file with a re-export from
+// `@haimang/nacp-session` and delete the local mirror. **The mirror's
+// `intervalMs` / `timeoutMs` defaults and method shape MUST stay 1:1 with the
+// upstream package** — diverging here will silently desync clients from the
+// orchestrator-core heartbeat contract.
+
 export interface HeartbeatOptions {
   intervalMs?: number;
   timeoutMs?: number;
