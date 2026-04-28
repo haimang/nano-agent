@@ -1,5 +1,0 @@
-{
-  "type": "module",
-  "private": true,
-  "comment": "A1-10 2nd-round R3: declare module type so node --test loader does not emit MODULE_TYPELESS_PACKAGE_JSON warnings when these fixture .ts files are imported by smokes."
-}
