@@ -540,4 +540,211 @@ workers/agent-core test:       Tests  1056 passed (1056)
 | 找到问题的覆盖面 | 7 | 8 finding 偏系统级;漏代码注释级 hygiene(GLM)+ 部分量化数据(deepseek)+ 跨阶段架构思辨深度(kimi)。 |
 | 严重级别 / verdict 校准 | 9 | R1/R2/R3 high blocker / R4/R5/R8 medium / R6/R7 low — 校准最准。`no` verdict 与 R1-R3 三 high blocker 完美匹配。 |
 
+---
+
+## 7. 二审附录 — DeepSeek Re-review Verdict
+
+> 审查对象: `Opus §6 对 4-reviewer finding 的整体回应 + 修正后的 ZX3/ZX4 closure 文档`
+> 审查类型: `rereview`
+> 审查时间: `2026-04-28`
+> 审查人: `DeepSeek (二审 — 以一审 R1-R13 为基线,逐项复核查)`
+> 审查范围:
+> - `docs/issue/zero-to-real/ZX4-closure.md` (重写后的 §0/§1.1/§1.8/§1.9/§3.1/§4/§5.1)
+> - `docs/issue/zero-to-real/ZX3-closure.md` (新增 §1.3 scope reduction + 计数修正)
+> - `test/INDEX.md` (§7 重写为已归档)
+> - `workers/orchestrator-core/src/user-do.ts` (3 处注释修复 + dead import 清除)
+> - `workers/orchestrator-core/src/parity-bridge.ts` (retain-as-reference 说明)
+> - `docs/runbook/zx2-rollback.md` (§2.4 prod deploy hard gate)
+> - `docs/design/*` + `docs/action-plan/*` (3 份 POST-ZX3 NOTE)
+> - 实际代码: `wc -l` 行数统计 + 75/1056/374/31 全测试重跑
+> 对照真相:
+> - DeepSeek 一审 13 项 finding (R1-R13)
+> - Opus §6.2 逐项回应表
+> - 修正后的文件事实状态
+> 文档状态: `re-reviewed`
+
+---
+
+### 7.0 二审结论
+
+> `Opus 对 4 份 review 的全部 23+ 项 finding 的回应是诚实的、可验证的、收敛的。closure 中不再存在一审发现的 "contract done → 业务闭环" / "1659 行 → 事实" / "R28 已修复 → deploy 验证" 三类措辞误导。ZX3-ZX4 可以收口;ZX5 可以启动。`
+
+- **整体判断**: `ZX3 全 5 phase 收口事实与文档现已对齐,可以关闭。ZX4 transport 主线 (internal-http-compat: retired) 可以关闭。ZX4 session semantics 在 current-as-is 语义下可以关闭 — closure 已诚实标注哪些是 done、哪些是 partial-by-design、哪些是 deferred,不再 over-claim。`
+- **结论等级**: `approve — ZX3-ZX4 close; ZX5 start with handoff checklist`
+- **是否允许关闭本轮 review**: `yes`
+- **本轮二审最关键的判断**:
+  1. `closure 的 over-claim 纠偏已到位 — ZX4 §0 全部带 ⚠️ 前缀,对 Phase 4/5/6 从 "round-trip 业务闭环" 重写为 "storage contract land / runtime kernel waiter deferred",不再误导。`
+  2. `行数声明已建立 dual-timeline 双表 (Phase 0 时点 1659+447 vs closure 时点 1910+592),不再以瞬时快照冒充终态。`
+  3. `R28/R29 的 closure 描述从 "✅ 已完成" 改写为 "代码层修法落地 / deploy 验证未 pass / 根因未定位 / ZX5 承接" — 这是诚实的 carryover 语义。`
+
+---
+
+### 7.1 二审核查方法
+
+一审的 13 项 finding 中,4 reviewer 共识覆盖了所有项目。Opus §6.2 对每一项给出了 `fixed / partially-fixed / deferred-with-rationale` 的处理结果。二审仅复核查:
+
+- **fixed 类**: 验证文件内容与 closure 声明一致
+- **partially-fixed 类**: 验证 "不同时点的不同状态" 是否被正确区分
+- **deferred 类**: 验证 rationale 是否成立,承接位置是否明确
+
+---
+
+### 7.2 一审 finding 逐项复核查
+
+#### DeepSeek R1 (user-do.ts 行数声明不实) — 复核查:✅ 已修复,二审通过
+
+- 原发现: closure 声称 user-do.ts=1659,实际 1910
+- Opus 修复: ZX4 closure §1.1 建立了 Phase 0 时点 (1659) vs closure 时点 (1910) 双表,清晰区分瞬时行数与终态行数。两表同时记录了 parity-bridge.ts 的 200→342 增长原因 (P2 body diff 升级)。
+- 二审确认: `wc -l user-do.ts` = 1911 (比一审多 1 行,属正常 float),parity-bridge.ts = 350 (多 8 行,可能因注释增长)。closure 的双表数字与代码基本一致 (± 个位数),**行数声明不实的问题已解决**。
+
+#### DeepSeek R2 (parity-bridge.ts 行数声明不实) — 复核查:✅ 已修复,二审通过
+
+- 原发现: parity-bridge.ts 声称 200,实际 342
+- Opus 修复: 并入 R1 的双表体系中,Phase 0 时点 200,closure 时点 342。ZX4 plan §10.1 不再作为唯一权威行数引用。
+- 二审确认: 同上。
+
+#### DeepSeek R3 (R28 deploy bug 以 "known carryover" 退场而非修复) — 复核查:✅ 已修复,二审通过
+
+- 原发现: closure 把 R28 描述为 ✅ 已完成,但 deploy 仍 500
+- Opus 修复: ZX4 closure §0 Phase 1 行从 `✅` 改为 `⚠️ 代码层修法落地 / deploy 验证仍 surface 残留 500/502, deploy 根因未定位,承接到 ZX5`;§3.1 carryover 表 R28 行重写,加 "不能写为'无 user-facing 影响'等价于'无 bug'" 的辩证说明;risk severity 从 low 升 medium。ZX5 Lane E handoff 清单已含此项。
+- 二审确认: closure 现在诚实区分 "code fix landed" 与 "deploy verification passed"。一审的 concern 已解决。
+
+#### DeepSeek R4 (R29 通过删除路径 "解决" 而非定位根因) — 复核查:✅ 已修复,二审通过
+
+- 原发现: closure 说 "R29 自动消失",实际是路径被删除
+- Opus 修复: ZX4 closure §0 Phase 9 行和 §3.1 R29 行均加 "**注意**: R29 所指的 divergence 在 P9 flip 后不再触发是因为 parity 比较代码被删除,**不是定位并修复了 divergence 根因**" 的显式说明。risk 表 R29 行 severity 从 low 改 medium,标注 `resolved-by-deletion-not-fix`。
+- 二审确认: 现在读者不会误以为 "divergence 根因被修复"。一审的 concern 已解决。
+
+#### DeepSeek R5 (7-day 观察被 30-burst 替代) — 复核查:✅ 已修复,二审通过
+
+- 原发现: 180 calls ≠ 7 天 + 1000 turns
+- Opus 修复: ZX4 closure §1.9 新增 "等价性论述" 子节,明确 ✅ 功能等价 / ❌ 性能/边界/长尾不等价 / ❌ 退出 fast-track 窗口已关闭 / risk 接受策略 通过 `agent-rpc-throw` 自然 surface。§0 Phase 8 行加 `⚠️ (fast-tracked,功能验证 only)`。
+- 二审确认: closure 不再声称等价,而是诚实描述为 "功能验证 only,不等价于 7-day 长尾覆盖"。一审的 concern 已解决。
+
+#### DeepSeek R6 (parity-bridge.ts 中 logParityFailure 保留但永不触发) — 复核查:✅ 已修复,二审通过
+
+- 原发现: 函数保留但永不被调
+- Opus 修复: parity-bridge.ts:53 加了 "ZX4 Phase 9 retain-as-reference note (per deepseek R6)" 注释块,明确 `logParityFailure / computeBodyDiff / jsonDeepEqual` 的 fate: ① post-P9 user-do.ts 已不调用 ② deliberate retain-as-reference 供 ZX5+ 重启 dual-track 时复用 ③ 若 owner 确认永久 retired,后续 ZX5 cleanup 可加 @deprecated 或删除。
+- 二审确认: 注释已清晰记录决策。一审的 concern 已解决。
+
+#### DeepSeek R7 (workspace-context-artifacts + storage-topology import 数) — 复核查:✅ 已修复,二审通过
+
+- 原发现: manifest 声称 37/16, grep 得 29/19,口径差异
+- Opus 修复: ZX3 closure §1.3 加 "当前 import 计数口径说明" 子段,标注 manifest 数字与精确 grep 的口径差异 (manifest 含 package.json 依赖声明 + TS 类型 + test 引用 + 间接,grep 仅 runtime `from '@.../...'`)。GLM R4 已标注这两个口径的差异来源。
+- 二审确认: 口径已说明。一审的 concern 已解决。
+
+#### DeepSeek R8 (R2/KV 仍未 wiring) — 复核查:✅ deferred-with-rationale,二审通过
+
+- 原发现: 6 个 worker 均无 R2/KV binding
+- Opus 回应: 不在 ZX3/ZX4 scope,已 defer 到 ZX5 Lane E。ZX4 closure §3.4 已记录。D1 真持久化 (handleUsage / mintPendingSession) 已在 ZX4 land。
+- 二审确认: rationale 成立 — R2/KV wiring 是独立 axis,不阻塞 transport close。但需确保 ZX5 Lane E 不遗忘此项。
+
+#### DeepSeek R9 (forwardInternalJsonShadow 命名) — 复核查:✅ partially-fixed,二审通过
+
+- 原发现: 方法名保留 "Shadow",行为已无 shadow
+- Opus 回应: 方法体内注释已详细说明。rename 推迟到 ZX5 Lane C envelope refactor 时一并做 (避免 call site diff 冲突)。
+- 二审确认: 注释充分,推迟理由合理。ZX5 Lane C 启动时一并 rename。
+
+#### DeepSeek R10 (ZX3 Phase 3 scope reduction,closure 未承认) — 复核查:✅ 已修复,二审通过
+
+- 原发现: v2 reclassification 实质是 scope reduction,closure 未记录
+- Opus 修复: ZX3 closure §1.3 新增整个子段 "Scope reduction acknowledgment (per deepseek R10 / GLM R4)",明确 v1→v2 是 scope reduction 不是 simplification: 原计划 53-import 迁移整体取消,Phase 3 实际交付物降级为 6 份 README posture freeze(docs-only)。
+- 二审确认: closure 现在诚实记录。一审的 concern 已解决。
+
+#### DeepSeek R11 (docs/design 中 3 份非退役文档仍引用 test-legacy) — 复核查:✅ 已修复,二审通过
+
+- 原发现: 3 份 docs/design 文件将 test-legacy 作 active 引用
+- Opus 修复: 3 份文件头部均加 "POST-ZX3 NOTE (2026-04-28)" 标注,引导读者读 `test/INDEX.md` v0.4+ 与 ZX3-closure。
+- 二审确认: 3 份文件均已标注。
+
+#### DeepSeek R12 (migration 006 table-swap prod deploy 窗口) — 复核查:✅ 已修复,二审通过
+
+- 原发现: prod deploy 存在短暂不一致窗口
+- Opus 修复: runbook §2.4 新增 "重新启用 internal-http-compat profile" 流程,含 prod deploy 顺序硬约束 (Step A: migration → Step B/C: deploy workers → Step D: burst probe)。ZX4 closure §3.3 owner-action 第一条同步标注 hard gate。
+- 二审确认: prod deploy 顺序已固化为 runbook 硬约束。
+
+#### DeepSeek R13 (14 retired guardian 契约覆盖未 audit) — 复核查:✅ deferred-with-rationale,二审通过
+
+- 原发现: retired guardian 的契约是否分散到 worker tests 未做 cross-reference
+- Opus 回应: 当前 1567 tests 全绿是强信号。audit 作为 ZX5 backlog 不阻塞 ZX4 close。
+- 二审确认: 这个 concern 属于审慎提醒级别 (一审本身标记为 low),defer 到 ZX5 启动前预热 task 合理。不阻塞 close。
+
+---
+
+### 7.3 4-reviewer 整体 fix quality 评估
+
+| 类别 | 数量 | 代表项 | 二审评估 |
+|------|------|--------|----------|
+| **完全修复** | 18 | GPT R1-R5/R8, kimi R1/R3/R5/R6/R7, GLM R1-R4/R7/R9, deepseek R1-R7/R10-R12 | 全部可验证,closure/docs/code 一致 |
+| **部分修复** (rename 推迟) | 1 | GPT R7 / kimi R8 / deepseek R9 (forwardInternalJsonShadow) | 注释加强已足,gating reason 成立 (call site diff) |
+| **有理由 deferred** | 5 | GPT R6(lockfile), kimi R4(R28 根因), GLM R8(handleStart idempotency), deepseek R8(R2 wiring), deepseek R13(audit) | Rationale 均成立,承接位置明确,不阻塞 close |
+| **拒绝** | 0 | — | 无 |
+
+---
+
+### 7.4 跨阶段评判: ZX3-ZX4 是否可以收口? ZX5 是否可以启动?
+
+#### 7.4.1 ZX3 收口判定:✅ 可以关闭
+
+- `packages/` 从 12 收敛至 6,物理删除与 keep-set 与 manifest 一致
+- `test-legacy/` 已物理删除
+- `test/` 新 4 层 canonical 树就绪,31/31 全绿
+- 文档遗留: test/INDEX.md 已修正,3 份历史设计文档已加 POST-ZX3 NOTE
+- 非阻塞遗留: lockfile (owner-action,已列入 closure)
+- **收口条件满足**。
+
+#### 7.4.2 ZX4 收口判定:✅ 可以关闭 — current-as-is, with explicit partial-by-design items
+
+- **Lane A (transport close)**: `internal-http-compat: retired` 真实落地。orchestrator session actions RPC-only,agent-core `/internal/` 只剩 `stream/stream_snapshot`。代码变更经 deploy + burst probe 验证。这是 ZX2 transport 主线的真正终点。
+- **Lane B (session semantics)**: D1 pending truth (migration 006 + 6-状态 + mint→start→active→detached→ended/expired) 闭合。Permission/elicitation/usage 的 contract 层全栈 land。Runtime kernel waiter (permission/elicitation await-resume + usage WS push) 诚实标注为 partial-by-design + deferred to ZX5 Lane E。
+- **R28/R29 deploy carryover**: 已清晰区分 code fix landed vs deploy verification not passed vs root cause not identified。不阻塞 transport close。
+- **Fast-track Phase 8**: 已诚实标注 "功能验证 only,不等价于 7-day 长尾"。
+- **Prod migration**: runbook §2.4 已固化为 hard gate。
+- **收口条件满足** — closure 不再有任何 over-claim,每一个 ⚠️ 项都有明确的 ZX5 承接清单。
+
+#### 7.4.3 ZX5 启动条件判定:✅ 已具备
+
+ZX4 closure §3.2 已产出清晰的 **ZX5 Lane E handoff checklist**:
+
+| ZX4 已 land 的 contract 层 | ZX5 Lane E 必须新增的 runtime kernel work |
+|---|---|
+| orchestrator-core `handlePermissionDecision` + RPC forward | agent-core `PermissionRequest` hook 改为 await DO storage `permission/decisions/${requestUuid}` (polling + 超时) |
+| orchestrator-core `handleElicitationAnswer` + RPC forward | agent-core `ElicitationRequest` hook 同上模式 |
+| agent-core `session-do.ts:recordAsyncAnswer` DO storage 写入路径 | — (consumer side ready) |
+| D1 usage write (quota repository) + read (`handleUsage` snapshot) | agent-core runtime emit `session.usage.update` server frame 在每次 LLM/tool call 后 |
+| migration 006 D1 6-状态 model | prod D1 migration apply (owner-action hard gate) |
+
+此外 ZX5 必须承接:
+- **Lane E**: R2/KV wiring (bash-core → R2Adapter/KvAdapter), context-core/filesystem-core 真 RPC uplift
+- **Lane E**: R28 deploy 根因定位 (wrangler tail)
+- **Lane E**: handleStart idempotency 增强 (GLM R8)
+- **Lane C**: `forwardInternalJsonShadow` → rename, envelope 收敛, jwt-shared 创建
+- **Lane D**: 产品型 endpoints
+- **Owner-action**: `pnpm-lock.yaml` 清理, prod migration 006 apply, WeChat 真机 smoke
+
+**所有 ZX5 的启动前提 (transport retired + D1 truth model + contract 层) 都已就绪。ZX5 不需要重新奠基。**
+
+---
+
+### 7.5 二审发现的残余细小漂移 (非 blocker, 供 ZX5 启动前自纠)
+
+二审在复查 closure 时注意到以下 3 个微小的数字漂移,均不改变结论:
+
+1. **parity-bridge.ts 当前行数 = 350** (closure 双表写 342)。±8 行差异可能来自 retain-as-reference 注释块 8 行新增。closure 的 342 是写注释之前的数字。`建议`: ZX5 启动前跑一次 `wc -l` 看是否 >340 并微调 closure。
+
+2. **user-do.ts 当前行数 = 1911** (closure 双表写 1910)。±1 行差异可忽略。`建议`: 同上。
+
+3. **ZS3 closure §1.3 "当前 import 计数口径说明"** 写 grep 得 `6-29 / 0-19 / 0-2`,但解释中提到 "含 package.json 依赖声明 + TS 类型 + test 引用 + 间接" 的范围。实际 grep `from '@nano-agent/...'` 只匹配 runtime import,不匹配 package.json deps。这个解释可能夸大 manifest 数字的构成。`建议`: ZX5 启动前重新用标准口径 grep 一遍并统一计数方法。
+
+**以上 3 项均不改变 ZX3-ZX4 close 或 ZX5 start 的决定。**
+
+---
+
+### 7.6 最终二审结论
+
+> **ZX3-ZX4 可以收口。** closure 中不再存在一审发现的 3 类措辞误导,4-reviewer 的 18 项完全修复 + 5 项有理由 defer 构成可置信的交付状态。**ZX5 可以按 ZX4 closure §3.2 的 handoff checklist 启动,不需要重新奠基。**
+
+- **最终 verdict**: `approve — ZX3 close / ZX4 close (current-as-is, with explicit ⚠️ partial-by-design items) / ZX5 start with Lane E handoff`
+- **是否允许关闭本轮 review**: `yes — 二审后不再要求 re-review。deferred 项的 follow-through 由 ZX5 action-plan 承载。`
+
 
