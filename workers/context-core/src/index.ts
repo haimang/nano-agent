@@ -1,5 +1,6 @@
 import { NACP_VERSION } from "@haimang/nacp-core";
 import { NACP_SESSION_VERSION } from "@haimang/nacp-session";
+import { WorkerEntrypoint } from "cloudflare:workers";
 import type { ContextCoreEnv, ContextCoreShellResponse } from "./types.js";
 
 function createShellResponse(env: ContextCoreEnv): ContextCoreShellResponse {
@@ -15,10 +16,18 @@ function createShellResponse(env: ContextCoreEnv): ContextCoreShellResponse {
   };
 }
 
-// ZX2 Phase 1 P1-03 (transport-profiles.md / binding-scope guard):
-// context-core is a library-only worker. The only legitimate public entry
-// is /health; every other path is denied with 401 to defend against any
-// accidental workers.dev exposure.
+// ZX5 Lane E E1 — context-core 从 library-only(P1-03 binding-scope 401)
+// uplift 为 WorkerEntrypoint RPC。保留 `/health` probe + 401 default,
+// 但通过 service binding 的 RPC 调用走 WorkerEntrypoint method。
+//
+// 调用方:agent-core 在 wrangler.jsonc 打开 CONTEXT_CORE binding 后,
+// 通过 `env.CONTEXT_CORE.assemblerOps(...)` 触达本 worker 的 RPC。
+// 短期 shim 期间 agent-core 同时保留 in-process library import(per Q6
+// owner direction:短期 shim 允许 + 长期双轨禁)。
+//
+// **保持 worker 总数 = 6**(per ZX5 Q4 + R8 owner direction;不新增 worker)。
+
+// ZX2 P1-03 binding-scope guard 保留:non-/health public path 仍 401。
 function bindingScopeForbidden(): Response {
   return Response.json(
     {
@@ -44,6 +53,58 @@ const worker = {
     return bindingScopeForbidden();
   },
 };
+
+// ZX5 Lane E E1 — WorkerEntrypoint RPC surface for context-core.
+// agent-core 通过 service binding 调 context-core 的 RPC method(取代
+// in-process `@haimang/context-core-worker/...` library import)。
+//
+// 当前 RPC 方法集是 minimal seam(per Q6 short-term shim — 不复制 agent-core
+// 全部 in-process 行为):
+//   - `probe()`              — health probe via RPC,validate binding 工作
+//   - `nacpVersion()`        — return NACP versions(便于 cross-worker
+//                               compat 自检)
+//   - `assemblerOps()`       — return  worker 暴露的 op 名单;ZX5 后续 phase
+//                               按业务驱动逐项 land
+//
+// 短期 shim 期(≤ 2 周)agent-core 仍保留 library import;cross-e2e 稳定
+// 后(per Q6 + R9 时间盒化)再删除 library 依赖。
+export class ContextCoreEntrypoint extends WorkerEntrypoint<ContextCoreEnv> {
+  async fetch(request: Request): Promise<Response> {
+    return worker.fetch(request, this.env);
+  }
+
+  async probe(): Promise<{ status: "ok"; worker: "context-core"; worker_version: string }> {
+    return {
+      status: "ok",
+      worker: "context-core",
+      worker_version: this.env.WORKER_VERSION ?? `context-core@${this.env.ENVIRONMENT ?? "dev"}`,
+    };
+  }
+
+  async nacpVersion(): Promise<{ nacp_core: string; nacp_session: string }> {
+    return {
+      nacp_core: NACP_VERSION,
+      nacp_session: NACP_SESSION_VERSION,
+    };
+  }
+
+  /**
+   * Returns the supported assembler op names that agent-core can call via
+   * RPC after Lane E migration completes. Current ZX5 list is the minimal
+   * seam exposed by `@haimang/context-core-worker/context-api/*`;agent-core
+   * adapter chooses RPC vs library import based on `CONTEXT_CORE_RPC_FIRST`
+   * env flag(deploy-time toggle 期短期 shim period)。
+   */
+  async assemblerOps(): Promise<{ ops: string[] }> {
+    return {
+      ops: [
+        "appendInitialContextLayer",
+        "drainPendingInitialContextLayers",
+        "peekPendingInitialContextLayers",
+      ],
+    };
+  }
+}
 
 export type { ContextCoreEnv };
 export default worker;

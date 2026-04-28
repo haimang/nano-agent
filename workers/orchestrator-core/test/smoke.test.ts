@@ -308,8 +308,9 @@ describe("orchestrator-core shell smoke", () => {
     );
   });
 
-  // ZX2 Phase 5 P5-01 — facade-必需 endpoints
-  it("GET /catalog/skills returns facade-http-v1 envelope with empty list", async () => {
+  // ZX2 Phase 5 P5-01 → ZX5 Lane D D2 — catalog content registry filled
+  // (per ZX5 Q5 owner direction). 每个 entry 含 name/description/version/status。
+  it("GET /catalog/skills returns facade-http-v1 envelope with non-empty registry", async () => {
     const response = await worker.fetch(
       new Request("https://example.com/catalog/skills", {
         headers: { "x-trace-uuid": TRACE_UUID },
@@ -323,10 +324,17 @@ describe("orchestrator-core shell smoke", () => {
     const body = await response.json();
     expect(body.ok).toBe(true);
     expect(body.trace_uuid).toBe(TRACE_UUID);
-    expect(body.data).toEqual({ skills: [] });
+    expect(Array.isArray(body.data.skills)).toBe(true);
+    expect(body.data.skills.length).toBeGreaterThan(0);
+    expect(body.data.skills[0]).toMatchObject({
+      name: expect.any(String),
+      description: expect.any(String),
+      version: expect.any(String),
+      status: expect.stringMatching(/^(stable|preview|experimental)$/),
+    });
   });
 
-  it("GET /catalog/commands returns commands array", async () => {
+  it("GET /catalog/commands returns commands registry", async () => {
     const response = await worker.fetch(
       new Request("https://example.com/catalog/commands", {
         headers: { "x-trace-uuid": TRACE_UUID },
@@ -339,10 +347,12 @@ describe("orchestrator-core shell smoke", () => {
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.ok).toBe(true);
-    expect(body.data.commands).toEqual([]);
+    expect(Array.isArray(body.data.commands)).toBe(true);
+    expect(body.data.commands.length).toBeGreaterThan(0);
+    expect(body.data.commands.map((c: { name: string }) => c.name)).toContain("/start");
   });
 
-  it("GET /catalog/agents returns agents array", async () => {
+  it("GET /catalog/agents returns agents registry", async () => {
     const response = await worker.fetch(
       new Request("https://example.com/catalog/agents", {
         headers: { "x-trace-uuid": TRACE_UUID },
@@ -355,7 +365,9 @@ describe("orchestrator-core shell smoke", () => {
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.ok).toBe(true);
-    expect(body.data.agents).toEqual([]);
+    expect(Array.isArray(body.data.agents)).toBe(true);
+    expect(body.data.agents.length).toBeGreaterThan(0);
+    expect(body.data.agents.map((a: { name: string }) => a.name)).toContain("nano-default");
   });
 
   // ZX2 Phase 5 P5-02 — POST /me/sessions mints UUID

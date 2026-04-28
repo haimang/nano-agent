@@ -1,9 +1,19 @@
+// ZX5 Lane C C2 — single source of truth: import HMAC JWT primitives from
+// `@haimang/jwt-shared`. Pre-ZX5 这些 helper(base64Url / importKey /
+// parseJwtHeader / collectVerificationKeys / verifyJwt /
+// verifyJwtAgainstKeyring)在 worker 内部本地实现一份;ZX5 抽到 jwt-shared
+// 后两个 worker 共用一份代码,行为 100% 等价。
+import {
+  collectVerificationKeys as sharedCollectVerificationKeys,
+  verifyJwtAgainstKeyring as sharedVerifyJwtAgainstKeyring,
+  type VerifiedJwtPayload,
+} from "@haimang/jwt-shared";
 import {
   jsonPolicyError,
   readTraceUuid,
 } from "./policy/authority.js";
 
-export interface JwtPayload {
+export interface JwtPayload extends VerifiedJwtPayload {
   readonly sub: string;
   readonly user_uuid?: string;
   readonly team_uuid?: string;
@@ -59,93 +69,12 @@ export type AuthResult =
   | { ok: true; value: AuthContext }
   | { ok: false; response: Response };
 
-const base64Url = {
-  encode(buf: ArrayBuffer | Uint8Array): string {
-    return btoa(String.fromCharCode(...new Uint8Array(buf)))
-      .replace(/\+/g, "-")
-      .replace(/\//g, "_")
-      .replace(/=+$/, "");
-  },
-  decode(str: string): Uint8Array {
-    let normalized = str.replace(/-/g, "+").replace(/_/g, "/");
-    while (normalized.length % 4) normalized += "=";
-    return Uint8Array.from(atob(normalized), (c) => c.charCodeAt(0));
-  },
-};
-
-async function importKey(secret: string): Promise<CryptoKey> {
-  return crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign", "verify"],
-  );
-}
-
-function parseJwtHeader(token: string): { kid?: string } | null {
-  const [headerB64] = token.split(".");
-  if (!headerB64) return null;
-  try {
-    const headerJson = new TextDecoder().decode(base64Url.decode(headerB64));
-    return JSON.parse(headerJson) as { kid?: string };
-  } catch {
-    return null;
-  }
-}
-
-function collectVerificationKeys(env: AuthEnv): Map<string, string> {
-  const keys = new Map<string, string>();
-  for (const [key, value] of Object.entries(env)) {
-    if (!key.startsWith("JWT_SIGNING_KEY_")) continue;
-    if (typeof value !== "string" || value.length < 32) continue;
-    keys.set(key.slice("JWT_SIGNING_KEY_".length), value);
-  }
-  if (typeof env.JWT_SECRET === "string" && env.JWT_SECRET.length >= 32) {
-    keys.set("legacy", env.JWT_SECRET);
-  }
-  return keys;
-}
-
+// ZX5 Lane C C2 — verifyJwt re-export that narrows JwtShared payload to
+// orchestrator-core's local `JwtPayload` shape(向后兼容外部 import)。
+// jwt-shared.verifyJwt 接受同样的 generic,这里只是给一个 narrower 名字。
 export async function verifyJwt(token: string, secret: string): Promise<JwtPayload | null> {
-  try {
-    const parts = token.split(".");
-    if (parts.length !== 3) return null;
-    const [headerB64, payloadB64, signatureB64] = parts;
-    if (!headerB64 || !payloadB64 || !signatureB64) return null;
-
-    const key = await importKey(secret);
-    const signature = base64Url.decode(signatureB64);
-    const data = new TextEncoder().encode(`${headerB64}.${payloadB64}`);
-    const valid = await crypto.subtle.verify("HMAC", key, signature, data);
-    if (!valid) return null;
-
-    const payloadJson = new TextDecoder().decode(base64Url.decode(payloadB64));
-    const payload = JSON.parse(payloadJson) as JwtPayload;
-    if (!payload || typeof payload.sub !== "string" || payload.sub.length === 0) return null;
-    if (typeof payload.exp === "number" && Date.now() / 1000 > payload.exp) return null;
-    return payload;
-  } catch {
-    return null;
-  }
-}
-
-async function verifyJwtAgainstKeyring(
-  token: string,
-  keyring: Map<string, string>,
-): Promise<JwtPayload | null> {
-  const header = parseJwtHeader(token);
-  const orderedSecrets =
-    header?.kid && keyring.has(header.kid)
-      ? [keyring.get(header.kid)!, ...Array.from(keyring.entries()).filter(([kid]) => kid !== header.kid).map(([, secret]) => secret)]
-      : keyring.has("legacy")
-        ? [keyring.get("legacy")!]
-        : [];
-  for (const secret of orderedSecrets) {
-    const payload = await verifyJwt(token, secret);
-    if (payload) return payload;
-  }
-  return null;
+  const { verifyJwt: sharedVerifyJwt } = await import("@haimang/jwt-shared");
+  return sharedVerifyJwt<JwtPayload>(token, secret);
 }
 
 function parseBearerToken(request: Request, allowQueryToken = false): string | null {
@@ -180,14 +109,14 @@ export async function authenticateRequest(
       response: jsonPolicyError(401, "invalid-auth", "missing bearer token"),
     };
   }
-  const keyring = collectVerificationKeys(env);
+  const keyring = sharedCollectVerificationKeys(env);
   if (keyring.size === 0) {
     return {
       ok: false,
       response: jsonPolicyError(503, "auth-misconfigured", "JWT secret missing or invalid"),
     };
   }
-  const payload = await verifyJwtAgainstKeyring(token, keyring);
+  const payload = await sharedVerifyJwtAgainstKeyring<JwtPayload>(token, keyring);
   if (!payload) {
     return {
       ok: false,

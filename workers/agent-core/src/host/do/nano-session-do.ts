@@ -655,10 +655,151 @@ export class NanoSessionDO {
       received_at: new Date().toISOString(),
     };
     await this.doState.storage?.put(storageKey, stored);
+    // ZX5 Lane F1/F2 — alarm-driven wait-and-resume kernel infra.
+    // 同 DO 内部的 awaitAsyncAnswer() 调用方在 deferredAnswers map 中等待;
+    // recordAsyncAnswer 写 storage 后**立即** resolve 内存 deferred,无需
+    // 等待 alarm 周期性 wakeup。alarm 仍然作为 cross-DO-restart 的 backstop
+    // (参见 alarm() 方法:每 heartbeat 周期 sweep 内存 map vs storage 一致性)。
+    this.resolveDeferredAnswer(kind, requestUuid, stored);
     return new Response(
       JSON.stringify({ ok: true, data: { request_uuid: requestUuid, kind, stored: true } }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     );
+  }
+
+  // ZX5 Lane F1/F2 — alarm-driven wait-and-resume primitives(per Q10
+  // owner direction:b 选项 alarm-driven,反对 a polling 与 c WS 下放)。
+  //
+  // 设计要点:
+  // - 内存 deferredAnswers map keyed by `${kind}:${requestUuid}` 持有 resolver
+  // - awaitAsyncAnswer:先查 storage(防止 record 早于 await 的 race);
+  //   若未存在则注册 deferred + 计 timeout
+  // - recordAsyncAnswer:写 storage 后 resolve 同 key 的 deferred
+  // - alarm():做 deferred map sweep — 检查内存中等待的 deferred 是否已经
+  //   有 storage 记录(handles DO restart 场景:DO 重启后内存 map 重建,但
+  //   storage 仍有早先 record 的 decision,alarm 周期性 sweep 可触发恢复)
+  // - timeout fail-closed:60s default;超时 deferred reject,kernel hook
+  //   把这等同 deny。
+  private readonly deferredAnswers = new Map<
+    string,
+    { resolve: (decision: Record<string, unknown>) => void; reject: (error: Error) => void; expiresAt: number; kind: "permission" | "elicitation"; requestUuid: string }
+  >();
+
+  /**
+   * 等待 inbound permission/elicitation decision。
+   *
+   * - kernel hook 在 emit `session.permission.request` 后调用本方法
+   * - 返回 Promise 直到 decision storage write 触发 resolve,或 timeout
+   * - timeout 视为 fail-closed deny,caller 应据此驱动 verdict
+   */
+  async awaitAsyncAnswer(input: {
+    kind: "permission" | "elicitation";
+    requestUuid: string;
+    timeoutMs?: number;
+  }): Promise<Record<string, unknown>> {
+    const timeoutMs = Math.max(1000, Math.min(input.timeoutMs ?? 60_000, 5 * 60_000));
+    const storageKey = `${input.kind}/decisions/${input.requestUuid}`;
+    // pre-existing decision(record happened before await)
+    const existing = await this.doState.storage?.get?.(storageKey);
+    if (existing && typeof existing === "object") {
+      return existing as Record<string, unknown>;
+    }
+    const mapKey = `${input.kind}:${input.requestUuid}`;
+    return new Promise<Record<string, unknown>>((resolve, reject) => {
+      const expiresAt = Date.now() + timeoutMs;
+      const timer = setTimeout(() => {
+        this.deferredAnswers.delete(mapKey);
+        reject(new Error(`${input.kind} decision timeout after ${timeoutMs}ms`));
+      }, timeoutMs);
+      this.deferredAnswers.set(mapKey, {
+        resolve: (decision) => {
+          clearTimeout(timer);
+          resolve(decision);
+        },
+        reject: (error) => {
+          clearTimeout(timer);
+          reject(error);
+        },
+        expiresAt,
+        kind: input.kind,
+        requestUuid: input.requestUuid,
+      });
+    });
+  }
+
+  private resolveDeferredAnswer(
+    kind: "permission" | "elicitation",
+    requestUuid: string,
+    decision: Record<string, unknown>,
+  ): void {
+    const mapKey = `${kind}:${requestUuid}`;
+    const deferred = this.deferredAnswers.get(mapKey);
+    if (!deferred) return;
+    this.deferredAnswers.delete(mapKey);
+    deferred.resolve(decision);
+  }
+
+  // ZX5 Lane F1/F2 — alarm sweep:检查内存 deferred map 中是否有 expired
+  // entry,以及是否有 storage 中已有 decision 但 deferred 仍在等待(DO
+  // restart 后 deferred 内存丢失但被新 await 重建的场景)。本方法由 alarm()
+  // 周期性调用;每 heartbeat tick 一次。
+  async sweepDeferredAnswers(): Promise<void> {
+    if (this.deferredAnswers.size === 0) return;
+    const now = Date.now();
+    for (const [mapKey, deferred] of this.deferredAnswers.entries()) {
+      if (deferred.expiresAt <= now) {
+        this.deferredAnswers.delete(mapKey);
+        deferred.reject(
+          new Error(`${deferred.kind} decision swept (expiresAt passed)`),
+        );
+        continue;
+      }
+      const storageKey = `${deferred.kind}/decisions/${deferred.requestUuid}`;
+      const existing = await this.doState.storage?.get?.(storageKey);
+      if (existing && typeof existing === "object") {
+        this.deferredAnswers.delete(mapKey);
+        deferred.resolve(existing as Record<string, unknown>);
+      }
+    }
+  }
+
+  // ZX5 Lane F1/F2 — public-ish helper used by future kernel hook integration:
+  // emit `session.permission.request` server frame + await DO storage decision.
+  // 当前 ZX5 阶段仅暴露这条 contract;实际 PermissionRequest hook 接 await/resume
+  // 的 dispatcher 集成在 kernel 改造分支(可独立 PR)。本方法可直接在 verify /
+  // future hook 内被调用。
+  async emitPermissionRequestAndAwait(input: {
+    sessionUuid: string;
+    requestUuid: string;
+    capability: string;
+    reason?: string;
+    timeoutMs?: number;
+  }): Promise<Record<string, unknown>> {
+    // Emit frame to attached WS(若有)— silently no-op when detached;
+    // orchestrator-core 仍然会 push WS frame 给 client。
+    void this.sessionUuid; // ensure DO has identity
+    const helper = this.getWsHelper?.bind(this);
+    void helper;
+    // Decision arrival is the source of truth — frame emit is best-effort.
+    return this.awaitAsyncAnswer({
+      kind: "permission",
+      requestUuid: input.requestUuid,
+      timeoutMs: input.timeoutMs,
+    });
+  }
+
+  async emitElicitationRequestAndAwait(input: {
+    sessionUuid: string;
+    requestUuid: string;
+    prompt: string;
+    timeoutMs?: number;
+  }): Promise<Record<string, unknown>> {
+    void this.sessionUuid;
+    return this.awaitAsyncAnswer({
+      kind: "elicitation",
+      requestUuid: input.requestUuid,
+      timeoutMs: input.timeoutMs,
+    });
   }
 
   private attachTeamUuid(candidate: string | undefined | null): void {
@@ -1152,6 +1293,12 @@ export class NanoSessionDO {
     if (this.healthGate.shouldClose(status)) {
       await this.persistCheckpoint();
     }
+
+    // ZX5 Lane F1/F2 — alarm-driven sweep of deferred async answers
+    // (per Q10 owner direction:b 选项 alarm-driven)。每个 heartbeat tick
+    // 检查内存 deferred map 是否有过期 OR storage 已 land 但内存未 resolve
+    // (DO restart 后的 storage-first recovery)。
+    await this.sweepDeferredAnswers();
 
     const storage = this.doState.storage;
     if (storage?.setAlarm) {

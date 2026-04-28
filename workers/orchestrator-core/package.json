@@ -13,16 +13,17 @@
     }
   },
   "scripts": {
-    "prebuild": "pnpm --filter @haimang/orchestrator-auth-contract build",
+    "prebuild": "pnpm --filter @haimang/jwt-shared build && pnpm --filter @haimang/orchestrator-auth-contract build",
     "build": "tsc",
-    "pretypecheck": "pnpm --filter @haimang/orchestrator-auth-contract build",
+    "pretypecheck": "pnpm --filter @haimang/jwt-shared build && pnpm --filter @haimang/orchestrator-auth-contract build",
     "typecheck": "tsc --noEmit",
-    "pretest": "pnpm --filter @haimang/orchestrator-auth-contract build",
+    "pretest": "pnpm --filter @haimang/jwt-shared build && pnpm --filter @haimang/orchestrator-auth-contract build",
     "test": "vitest run",
     "deploy:preview": "pnpm build && wrangler deploy --env preview",
     "deploy:dry-run": "pnpm build && wrangler deploy --dry-run"
   },
   "dependencies": {
+    "@haimang/jwt-shared": "workspace:*",
     "@haimang/nacp-core": "1.4.0",
     "@haimang/nacp-session": "1.3.0",
     "@haimang/orchestrator-auth-contract": "workspace:*"

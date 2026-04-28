@@ -201,7 +201,10 @@ type SessionAction =
   // ZX4 Phase 6 P6-01 — elicitation answer return path.
   | "elicitation/answer"
   | "usage"
-  | "resume";
+  | "resume"
+  // ZX5 Lane D D3/D4 — product surface endpoints.
+  | "messages"
+  | "files";
 type AuthAction =
   | "register"
   | "login"
@@ -231,6 +234,9 @@ function parseSessionRoute(request: Request): { sessionUuid: string; action: Ses
         "ws",
         "usage",
         "resume",
+        // ZX5 Lane D D3/D4 — multimodal messages + artifact files.
+        "messages",
+        "files",
       ].includes(action)
     )
       return null;
@@ -371,6 +377,23 @@ const worker = {
       return handleMeSessions(request, env, meSessionsRoute);
     }
 
+    // ZX5 Lane D D5 — GET /me/conversations:对 ZX4 P3-05 已 land 的
+    // 5 状态 D1 view 做 conversation 维度聚合(把同 conversation_uuid
+    // 的多个 session 收成一个 conversation row)。
+    if (method === "GET" && pathname === "/me/conversations") {
+      return handleMeConversations(request, env);
+    }
+
+    // ZX5 Lane D D6 — GET /me/devices(list)+ POST /me/devices/revoke
+    // (per Q9 owner direction:device truth in D1, single-device revoke
+    // granularity, refresh chain immediate kill + auth gate immediate reject).
+    if (method === "GET" && pathname === "/me/devices") {
+      return handleMeDevicesList(request, env);
+    }
+    if (method === "POST" && pathname === "/me/devices/revoke") {
+      return handleMeDevicesRevoke(request, env);
+    }
+
     const tenantError = ensureTenantConfigured(env);
     if (tenantError) return tenantError;
 
@@ -427,14 +450,18 @@ async function handleCatalog(
   kind: CatalogKind,
 ): Promise<Response> {
   const traceUuid = readTraceUuid(request) ?? crypto.randomUUID();
+  // ZX5 Lane D D2 — registry 从 catalog-content.ts 静态加载;每个 entry
+  // 含 name / description / version / status。后续若 owner 需要可改为
+  // D1 / KV / R2 加载,接口形状(facade-http-v1 envelope)不变。
+  const { CATALOG_SKILLS, CATALOG_COMMANDS, CATALOG_AGENTS } = await import("./catalog-content.js");
   const data = (() => {
     switch (kind) {
       case "skills":
-        return { skills: [] as Array<{ name: string; description: string }> };
+        return { skills: CATALOG_SKILLS };
       case "commands":
-        return { commands: [] as Array<{ name: string; description: string }> };
+        return { commands: CATALOG_COMMANDS };
       case "agents":
-        return { agents: [] as Array<{ name: string; description: string }> };
+        return { agents: CATALOG_AGENTS };
     }
   })();
   return Response.json(
@@ -540,6 +567,220 @@ async function handleMeSessions(
     }),
   );
   return wrapSessionResponse(response, traceUuid);
+}
+
+// ZX5 Lane D D5 — GET /me/conversations.
+// 对照 D5 owner direction(per Q5):仅复用现有 D1 truth(`nano_conversation_sessions`)
+// + ZX4 P3-05 落地的 5 状态视图;不新建平行表。
+//
+// 形态:
+//   GET /me/conversations
+//     ?limit=<n>       — 默认 50,上限 200
+//
+// Response(facade-http-v1 envelope):
+//   {
+//     ok: true,
+//     data: {
+//       conversations: Array<{
+//         conversation_uuid: string,
+//         latest_session_uuid: string,
+//         latest_status: 'pending'|'starting'|'active'|'detached'|'ended'|'expired',
+//         started_at: string,         // earliest session.started_at in conv
+//         last_seen_at: string,       // latest session.started_at in conv
+//         last_phase: string | null,
+//         session_count: number,
+//       }>,
+//       next_cursor: null,
+//     },
+//     trace_uuid: string,
+//   }
+//
+// 实现:authenticate → 通过 service binding 调 User-DO `/me/conversations`;
+// User-DO 内部复用 `D1SessionTruthRepository.listSessionsForUser({limit})`
+// 的结果,按 conversation_uuid group。
+async function handleMeConversations(
+  request: Request,
+  env: OrchestratorCoreEnv,
+): Promise<Response> {
+  const auth = await authenticateRequest(request, env);
+  if (!auth.ok) return auth.response;
+  const traceUuid = auth.value.trace_uuid;
+
+  const url = new URL(request.url);
+  const limitRaw = url.searchParams.get("limit");
+  const limit = (() => {
+    if (limitRaw === null) return 50;
+    const n = Number(limitRaw);
+    if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0 || n > 200) return 50;
+    return n;
+  })();
+
+  const stub = env.ORCHESTRATOR_USER_DO.get(env.ORCHESTRATOR_USER_DO.idFromName(auth.value.user_uuid));
+  const response = await stub.fetch(
+    new Request(`https://orchestrator.internal/me/conversations?limit=${limit}`, {
+      method: "GET",
+      headers: {
+        "x-trace-uuid": traceUuid,
+        "x-nano-internal-authority": JSON.stringify(auth.value.snapshot),
+      },
+    }),
+  );
+  return wrapSessionResponse(response, traceUuid);
+}
+
+// ZX5 Lane D D6 — GET /me/devices.
+// Per Q9 owner direction:device truth 放 D1 表 `nano_user_devices`。本路径
+// 直接读 D1,不走 service binding(orchestrator-auth 主要负责 sign/verify;
+// device 列表读取在 orchestrator-core 走 D1 即可,降耦合)。
+async function handleMeDevicesList(
+  request: Request,
+  env: OrchestratorCoreEnv,
+): Promise<Response> {
+  const auth = await authenticateRequest(request, env);
+  if (!auth.ok) return auth.response;
+  const traceUuid = auth.value.trace_uuid;
+  const db = env.NANO_AGENT_DB;
+  if (!db) {
+    return Response.json(
+      { ok: true, data: { devices: [] }, trace_uuid: traceUuid },
+      { status: 200, headers: { "x-trace-uuid": traceUuid } },
+    );
+  }
+  try {
+    const rows = await db.prepare(
+      `SELECT device_uuid, device_label, device_kind, status,
+              created_at, last_seen_at, revoked_at, revoked_reason
+         FROM nano_user_devices
+        WHERE user_uuid = ?1
+        ORDER BY last_seen_at DESC
+        LIMIT 100`,
+    ).bind(auth.value.user_uuid).all<Record<string, unknown>>();
+    const devices = (rows.results ?? []).map((r) => ({
+      device_uuid: String(r.device_uuid),
+      device_label: typeof r.device_label === "string" ? r.device_label : null,
+      device_kind: String(r.device_kind),
+      status: String(r.status),
+      created_at: String(r.created_at),
+      last_seen_at: String(r.last_seen_at),
+      revoked_at: typeof r.revoked_at === "string" ? r.revoked_at : null,
+      revoked_reason: typeof r.revoked_reason === "string" ? r.revoked_reason : null,
+    }));
+    return Response.json(
+      { ok: true, data: { devices }, trace_uuid: traceUuid },
+      { status: 200, headers: { "x-trace-uuid": traceUuid } },
+    );
+  } catch (error) {
+    console.warn(
+      `me-devices-list-d1-failed user=${auth.value.user_uuid}`,
+      { tag: "me-devices-list-d1-failed", error: String(error) },
+    );
+    return jsonPolicyError(500, "internal-error", "failed to list devices", traceUuid);
+  }
+}
+
+// ZX5 Lane D D6 — POST /me/devices/revoke.
+// Body shape:
+//   { device_uuid: string, reason?: string }
+//
+// 行为(per Q9 owner direction):
+// 1. 校验 device_uuid 属于当前 authenticated user(防止跨用户 revoke)
+// 2. 在 D1 把 nano_user_devices.status = 'revoked' + revoked_at = now
+// 3. 写一行 nano_user_device_revocations 用作 audit
+// 4. 通过 service binding 通知 orchestrator-auth(若有 RPC 接口)/ best-effort
+//    断开已 active session — 当前 ZX5 阶段 best-effort 仅记录 D1 状态;
+//    refresh / verify 路径在下一次 auth gate 时通过 D1 lookup 拒绝(实现
+//    在 orchestrator-auth/src/jwt.ts 的 verifyAccessToken 之后,可加一个
+//    "device active check" — 留作 D6 的 second-half / 第二次 PR);
+//    本期产出 schema + endpoint + D1 写入。
+async function handleMeDevicesRevoke(
+  request: Request,
+  env: OrchestratorCoreEnv,
+): Promise<Response> {
+  const auth = await authenticateRequest(request, env);
+  if (!auth.ok) return auth.response;
+  const traceUuid = auth.value.trace_uuid;
+
+  const body = await parseBody(request);
+  if (!body || typeof body !== "object") {
+    return jsonPolicyError(400, "invalid-input", "revoke requires a JSON body", traceUuid);
+  }
+  const record = body as Record<string, unknown>;
+  const deviceUuid = record.device_uuid;
+  if (typeof deviceUuid !== "string" || !UUID_RE.test(deviceUuid)) {
+    return jsonPolicyError(400, "invalid-input", "device_uuid must be a UUID", traceUuid);
+  }
+  const reason = typeof record.reason === "string" ? record.reason : null;
+
+  const db = env.NANO_AGENT_DB;
+  if (!db) {
+    return jsonPolicyError(503, "worker-misconfigured", "device store unavailable", traceUuid);
+  }
+
+  try {
+    // 1. ownership check
+    const owned = await db.prepare(
+      `SELECT user_uuid, status
+         FROM nano_user_devices
+        WHERE device_uuid = ?1
+        LIMIT 1`,
+    ).bind(deviceUuid).first<Record<string, unknown>>();
+    if (!owned) {
+      return jsonPolicyError(404, "not-found", "device not found", traceUuid);
+    }
+    if (String(owned.user_uuid) !== auth.value.user_uuid) {
+      return jsonPolicyError(403, "permission-denied", "device does not belong to caller", traceUuid);
+    }
+    if (String(owned.status) === "revoked") {
+      // idempotent: already revoked
+      return Response.json(
+        {
+          ok: true,
+          data: { device_uuid: deviceUuid, status: "revoked", already_revoked: true },
+          trace_uuid: traceUuid,
+        },
+        { status: 200, headers: { "x-trace-uuid": traceUuid } },
+      );
+    }
+
+    // 2 + 3. atomic UPDATE + audit insert
+    const now = new Date().toISOString();
+    const revocationUuid = crypto.randomUUID();
+    await db.batch([
+      db.prepare(
+        `UPDATE nano_user_devices
+            SET status = 'revoked',
+                revoked_at = ?2,
+                revoked_reason = ?3
+          WHERE device_uuid = ?1`,
+      ).bind(deviceUuid, now, reason),
+      db.prepare(
+        `INSERT INTO nano_user_device_revocations (
+           revocation_uuid, device_uuid, user_uuid, revoked_at,
+           revoked_by_user_uuid, reason, source
+         ) VALUES (?1, ?2, ?3, ?4, ?3, ?5, 'self-service')`,
+      ).bind(revocationUuid, deviceUuid, auth.value.user_uuid, now, reason),
+    ]);
+
+    return Response.json(
+      {
+        ok: true,
+        data: {
+          device_uuid: deviceUuid,
+          status: "revoked",
+          revoked_at: now,
+          revocation_uuid: revocationUuid,
+        },
+        trace_uuid: traceUuid,
+      },
+      { status: 200, headers: { "x-trace-uuid": traceUuid } },
+    );
+  } catch (error) {
+    console.warn(
+      `me-devices-revoke-d1-failed device=${deviceUuid} user=${auth.value.user_uuid}`,
+      { tag: "me-devices-revoke-d1-failed", error: String(error) },
+    );
+    return jsonPolicyError(500, "internal-error", "failed to revoke device", traceUuid);
+  }
 }
 
 async function wrapSessionResponse(

@@ -273,6 +273,21 @@ export class D1SessionTruthRepository {
     return rows.length;
   }
 
+  // ZX5 F4 — handleStart idempotency: atomic D1 UPDATE that claims a
+  // pending row only if it's still pending. Returns true exactly once
+  // even under concurrent retries (per Q11 owner-frozen修法 b: D1
+  // conditional UPDATE,no client-side cache). Caller treats false as
+  // "another request already claimed,respond 409".
+  async claimPendingForStart(session_uuid: string): Promise<boolean> {
+    const result = await this.db.prepare(
+      `UPDATE nano_conversation_sessions
+          SET session_status = 'starting'
+        WHERE session_uuid = ?1
+          AND session_status = 'pending'`,
+    ).bind(session_uuid).run();
+    return (result.meta?.changes ?? 0) > 0;
+  }
+
   // ZX4 P3-07 — ingress guard support: cheap point lookup of session_status
   // when the KV entry is missing, so handlers can distinguish pending /
   // expired / ended / not-found without hydrating the full snapshot.

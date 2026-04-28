@@ -99,6 +99,18 @@ export interface MainlineKernelOptions {
   readonly capabilityTransport?: CapabilityTransportLike;
   readonly contextProvider: () => QuotaRuntimeContext | null;
   readonly anchorProvider: () => CrossSeamAnchor | undefined;
+  /**
+   * ZX5 Lane F3 — runtime usage push:在每次 LLM/tool quota commit 后回调。
+   * Caller 的 NanoSessionDO 通过此 hook 取得 quota balance 与 commit 增量,
+   * 然后通过 emitServerFrame 推 `session.usage.update` 给 attached client。
+   * undefined 表示 deploy 还未接 push(向下兼容)。
+   */
+  readonly onUsageCommit?: (event: {
+    readonly kind: "llm" | "tool";
+    readonly remaining: number;
+    readonly limitValue: number;
+    readonly detail: Record<string, unknown>;
+  }) => void;
 }
 
 export const NANO_AGENT_SYSTEM_PROMPT =
@@ -226,9 +238,16 @@ export function createMainlineKernelRunner(
             const parsed = parseCapabilityEnvelope(response);
             if (parsed.status === "ok") {
               if (options.quotaAuthorizer && quotaContext) {
-                await options.quotaAuthorizer.commit("tool", quotaContext, requestId, {
+                const balance = await options.quotaAuthorizer.commit("tool", quotaContext, requestId, {
                   tool_name: toolName,
                   status: "ok",
+                });
+                // ZX5 F3 — emit `session.usage.update` server frame after commit
+                options.onUsageCommit?.({
+                  kind: "tool",
+                  remaining: balance.remaining,
+                  limitValue: balance.limitValue,
+                  detail: { tool_name: toolName, request_id: requestId },
                 });
               }
               yield {
@@ -301,10 +320,22 @@ export function createMainlineKernelRunner(
         const requestId = llmRequestIds.get(turnId);
         if (!requestId) return;
         llmRequestIds.delete(turnId);
-        await options.quotaAuthorizer.commit("llm", context, requestId, {
+        const balance = await options.quotaAuthorizer.commit("llm", context, requestId, {
           provider_key: "workers-ai",
           input_tokens: usage?.inputTokens ?? 0,
           output_tokens: usage?.outputTokens ?? 0,
+        });
+        // ZX5 F3 — emit `session.usage.update` server frame after commit
+        options.onUsageCommit?.({
+          kind: "llm",
+          remaining: balance.remaining,
+          limitValue: balance.limitValue,
+          detail: {
+            provider_key: "workers-ai",
+            input_tokens: usage?.inputTokens ?? 0,
+            output_tokens: usage?.outputTokens ?? 0,
+            turn_id: turnId,
+          },
         });
       },
     },

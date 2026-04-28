@@ -132,6 +132,19 @@ export class NanoOrchestratorUserDO {
     if (request.method === 'GET' && pathname === '/me/sessions') {
       return this.handleMeSessions();
     }
+    // ZX5 Lane D D5 — /me/conversations:对 5 状态 D1 view 做 conversation
+    // 维度聚合(把同 conversation_uuid 的多个 session 收成一个 conversation row)。
+    if (request.method === 'GET' && pathname === '/me/conversations') {
+      const url = new URL(request.url);
+      const limitParam = url.searchParams.get('limit');
+      const limit = (() => {
+        if (limitParam === null) return 50;
+        const n = Number(limitParam);
+        if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0 || n > 200) return 50;
+        return n;
+      })();
+      return this.handleMeConversations(limit);
+    }
 
     const segments = pathname.split('/').filter(Boolean);
     if (segments[0] !== 'sessions' || (segments.length !== 3 && segments.length !== 4)) {
@@ -212,6 +225,24 @@ export class NanoOrchestratorUserDO {
         });
       }
       return this.handleElicitationAnswer(sessionUuid, body);
+    }
+    // ZX5 Lane D D3 — POST /sessions/{id}/messages(per Q8 owner direction):
+    //   - /messages 是 /input 多模态超集
+    //   - 同表 nano_conversation_messages + message_kind / source tag 区分来源
+    //   - session-running ingress only(pending → 用 /start;ended/expired → 拒)
+    if (request.method === 'POST' && action === 'messages') {
+      const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+      if (!body) {
+        return jsonResponse(400, {
+          error: 'invalid-input',
+          message: 'messages requires a JSON body',
+        });
+      }
+      return this.handleMessages(sessionUuid, body);
+    }
+    // ZX5 Lane D D4 — GET /sessions/{id}/files
+    if (request.method === 'GET' && action === 'files') {
+      return this.handleFiles(sessionUuid);
     }
 
     return jsonResponse(404, { error: 'not-found', message: 'user DO route not found' });
@@ -326,7 +357,7 @@ export class NanoOrchestratorUserDO {
     authSnapshot: IngressAuthSnapshot,
     traceUuid: string,
     turn: DurableTurnPointer | null,
-    kind: 'user.input' | 'user.cancel',
+    kind: 'user.input' | 'user.cancel' | 'user.input.text' | 'user.input.multipart',
     payload: Record<string, unknown>,
     timestamp: string,
   ): Promise<void> {
@@ -744,6 +775,25 @@ export class NanoOrchestratorUserDO {
       relay_cursor: -1,
       ended_at: null,
     };
+
+    // ZX5 F4 — idempotency claim BEFORE side-effects.
+    // Per Q11 owner-frozen修法 (b): D1 conditional UPDATE WHERE pending.
+    // Concurrent /start retries on the same UUID will all reach this point
+    // (KV starts empty + readSessionStatus 'pending'). The first to land
+    // the UPDATE flips D1 'pending' → 'starting'; the rest see changes=0
+    // and return 409 immediately, avoiding double-write of KV / duplicate
+    // DurableSessionStart side-effects (turn / message / activity rows).
+    if (durableStatus === 'pending') {
+      const claimed = (await this.sessionTruth()?.claimPendingForStart(sessionUuid)) ?? true;
+      if (!claimed) {
+        return jsonResponse(409, {
+          error: 'session-already-started',
+          message: `session ${sessionUuid} already claimed by a concurrent /start; mint a new UUID via POST /me/sessions`,
+          session_uuid: sessionUuid,
+          current_status: 'starting',
+        });
+      }
+    }
 
     await this.refreshUserState(body.auth_snapshot, body.initial_context_seed);
     await this.put(sessionKey(sessionUuid), startingEntry);
@@ -1427,6 +1477,200 @@ export class NanoOrchestratorUserDO {
     });
   }
 
+  // ZX5 Lane D D3 — POST /sessions/{id}/messages.
+  // Per Q8 owner direction:`/messages` 是 `/input` 的多模态超集;统一落到
+  // 同一 `nano_conversation_messages` 表 + `message_kind` source tag 区分;
+  // 只作为 session-running ingress(pending → 用 /start;ended/expired → 拒)。
+  //
+  // body shape(前端契约):
+  //   {
+  //     parts: Array<{ kind: 'text', text: string }
+  //                 | { kind: 'artifact_ref', artifact_uuid: string, mime?: string, summary?: string }>,
+  //     trace_uuid?: string,
+  //     auth_snapshot?: IngressAuthSnapshot,
+  //     initial_context_seed?: InitialContextSeed,
+  //   }
+  //
+  // 与 `/input` 的兼容关系:`/input` 接受的 `{text}` 在服务端会被归一化为
+  // `parts: [{kind: 'text', text}]` 后落同一张表(自然 alias),所以前端
+  // 可以选 `/input`(text-only)或 `/messages`(任意 parts);worker 不
+  // 维护两套落库路径。
+  private async handleMessages(
+    sessionUuid: string,
+    body: Record<string, unknown>,
+  ): Promise<Response> {
+    // ingress guard:与 input/cancel/verify 同一族 — KV miss + D1 pending → 409
+    const entry = await this.requireSession(sessionUuid);
+    if (!entry) return this.sessionGateMiss(sessionUuid);
+    if (entry.status === 'ended') {
+      return sessionTerminalResponse(sessionUuid, await this.getTerminal(sessionUuid));
+    }
+
+    // parse parts
+    const partsRaw = body.parts;
+    if (!Array.isArray(partsRaw) || partsRaw.length === 0) {
+      return jsonResponse(400, {
+        error: 'invalid-input',
+        message: 'messages requires non-empty parts[] array',
+      });
+    }
+    const parts: Array<{
+      kind: 'text' | 'artifact_ref';
+      text?: string;
+      artifact_uuid?: string;
+      mime?: string;
+      summary?: string;
+    }> = [];
+    for (const raw of partsRaw) {
+      if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        return jsonResponse(400, { error: 'invalid-input', message: 'each part must be an object' });
+      }
+      const part = raw as Record<string, unknown>;
+      if (part.kind === 'text') {
+        if (typeof part.text !== 'string' || part.text.length === 0) {
+          return jsonResponse(400, { error: 'invalid-input', message: 'text part requires non-empty text' });
+        }
+        parts.push({ kind: 'text', text: part.text });
+        continue;
+      }
+      if (part.kind === 'artifact_ref') {
+        if (typeof part.artifact_uuid !== 'string' || part.artifact_uuid.length === 0) {
+          return jsonResponse(400, { error: 'invalid-input', message: 'artifact_ref part requires artifact_uuid' });
+        }
+        parts.push({
+          kind: 'artifact_ref',
+          artifact_uuid: part.artifact_uuid,
+          ...(typeof part.mime === 'string' ? { mime: part.mime } : {}),
+          ...(typeof part.summary === 'string' ? { summary: part.summary } : {}),
+        });
+        continue;
+      }
+      return jsonResponse(400, {
+        error: 'invalid-input',
+        message: `unsupported part kind '${String(part.kind)}'; expected 'text' | 'artifact_ref'`,
+      });
+    }
+
+    const authSnapshot = isAuthSnapshot(body.auth_snapshot)
+      ? body.auth_snapshot
+      : (await this.get<IngressAuthSnapshot>(USER_AUTH_SNAPSHOT_KEY));
+    if (!authSnapshot) {
+      return jsonResponse(400, {
+        error: 'missing-authority',
+        message: 'messages requires persisted auth snapshot',
+      });
+    }
+    if (body.auth_snapshot) {
+      await this.refreshUserState(
+        body.auth_snapshot as IngressAuthSnapshot,
+        body.initial_context_seed as InitialContextSeed | undefined,
+      );
+    }
+    const traceUuid =
+      typeof body.trace_uuid === 'string' ? body.trace_uuid : crypto.randomUUID();
+    const now = new Date().toISOString();
+
+    // 同一 nano_conversation_messages 表 + message_kind source tag 区分:
+    //   - 'user.input.text'      = single text part (alias-equivalent to /input)
+    //   - 'user.input.multipart' = any part list with > 1 part or non-text
+    const isMultipart = parts.length > 1 || parts.some((p) => p.kind !== 'text');
+    const messageKind = isMultipart ? 'user.input.multipart' : 'user.input.text';
+
+    const durablePointer = await this.ensureDurableSession(sessionUuid, authSnapshot, traceUuid, now);
+    const durableTurn = await this.createDurableTurn(
+      sessionUuid,
+      durablePointer,
+      authSnapshot,
+      traceUuid,
+      'followup',
+      isMultipart ? null : (parts[0] as { text: string }).text,
+      now,
+    );
+    await this.recordUserMessage(
+      sessionUuid,
+      durablePointer,
+      authSnapshot,
+      traceUuid,
+      durableTurn,
+      messageKind as 'user.input.text' | 'user.input.multipart',
+      { parts },
+      now,
+    );
+    await this.appendDurableActivity({
+      pointer: durablePointer,
+      authSnapshot,
+      traceUuid,
+      turnUuid: durableTurn?.turn_uuid,
+      eventKind: 'session.message.append',
+      severity: 'info',
+      payload: { message_kind: messageKind, part_count: parts.length },
+      timestamp: now,
+    });
+    return jsonResponse(200, {
+      ok: true,
+      action: 'messages',
+      session_uuid: sessionUuid,
+      message_kind: messageKind,
+      part_count: parts.length,
+      turn_uuid: durableTurn?.turn_uuid ?? null,
+    });
+  }
+
+  // ZX5 Lane D D4 — GET /sessions/{id}/files.
+  // 当前 6 worker 都没有 R2 binding(deepseek R8 已点出);本期实现仅
+  // 从 `nano_conversation_messages.body_json` 中扫 artifact_ref(D3 落的
+  // 多模态 part)+ context snapshots,返 list。**真正的 R2 拉取需 owner
+  // 创建 R2 bucket + binding 后扩展**;当前 endpoint 返 list 而不返 bytes。
+  private async handleFiles(sessionUuid: string): Promise<Response> {
+    const entry = await this.requireReadableSession(sessionUuid);
+    if (!entry) return this.sessionGateMiss(sessionUuid);
+
+    const repo = this.sessionTruth();
+    if (!repo) {
+      return jsonResponse(200, {
+        ok: true,
+        action: 'files',
+        session_uuid: sessionUuid,
+        files: [],
+      });
+    }
+    const messages = await repo.readHistory(sessionUuid);
+    const files: Array<{
+      message_uuid: string;
+      turn_uuid: string | null;
+      message_kind: string;
+      artifact_uuid: string;
+      mime: string | null;
+      summary: string | null;
+      created_at: string;
+    }> = [];
+    for (const msg of messages) {
+      const body = msg.body as { parts?: Array<{ kind?: string; artifact_uuid?: string; mime?: string; summary?: string }> };
+      if (!Array.isArray(body?.parts)) continue;
+      for (const part of body.parts) {
+        if (part.kind === 'artifact_ref' && typeof part.artifact_uuid === 'string') {
+          files.push({
+            message_uuid: msg.message_uuid,
+            turn_uuid: msg.turn_uuid,
+            message_kind: msg.kind,
+            artifact_uuid: part.artifact_uuid,
+            mime: typeof part.mime === 'string' ? part.mime : null,
+            summary: typeof part.summary === 'string' ? part.summary : null,
+            created_at: msg.created_at,
+          });
+        }
+      }
+    }
+    return jsonResponse(200, {
+      ok: true,
+      action: 'files',
+      session_uuid: sessionUuid,
+      files,
+      // 若未来加 R2 binding,可在 envelope 里加 `download_url` field;
+      // 当前仅返 metadata,前端用 artifact_uuid 构造 R2 path。
+    });
+  }
+
   private async handlePolicyPermissionMode(
     sessionUuid: string,
     body: Record<string, unknown>,
@@ -1530,6 +1774,91 @@ export class NanoOrchestratorUserDO {
     return jsonResponse(200, {
       ok: true,
       data: { sessions: items, next_cursor: null },
+    });
+  }
+
+  // ZX5 Lane D D5 — GET /me/conversations.
+  // Per Q5 owner direction:仅复用现有 D1 truth(`nano_conversation_sessions`),
+  // 不新建平行表。Group session by conversation_uuid → 每 conversation 一行。
+  private async handleMeConversations(limit: number): Promise<Response> {
+    const repo = this.sessionTruth();
+    const authority = await this.get<IngressAuthSnapshot>(USER_AUTH_SNAPSHOT_KEY);
+    if (!repo || !authority) {
+      return jsonResponse(200, {
+        ok: true,
+        data: { conversations: [], next_cursor: null },
+      });
+    }
+    const teamUuid = authority.team_uuid ?? authority.tenant_uuid;
+    const actorUserUuid = authority.user_uuid ?? authority.sub;
+    if (typeof teamUuid !== 'string' || teamUuid.length === 0) {
+      return jsonResponse(200, {
+        ok: true,
+        data: { conversations: [], next_cursor: null },
+      });
+    }
+
+    type Conversation = {
+      conversation_uuid: string;
+      latest_session_uuid: string;
+      latest_status: string;
+      started_at: string;
+      last_seen_at: string;
+      last_phase: string | null;
+      session_count: number;
+    };
+
+    let rows: Awaited<ReturnType<typeof repo.listSessionsForUser>> = [];
+    try {
+      // Pull more rows than `limit` so we can group by conversation;
+      // the result still respects `limit` in conversation count after
+      // grouping。上限 200(per session-truth.ts listSessionsForUser cap)。
+      rows = await repo.listSessionsForUser({
+        team_uuid: teamUuid,
+        actor_user_uuid: actorUserUuid,
+        limit: 200,
+      });
+    } catch (error) {
+      console.warn(
+        'me-conversations-d1-read-failed',
+        { tag: 'me-conversations-d1-read-failed', error: String(error) },
+      );
+      return jsonResponse(200, {
+        ok: true,
+        data: { conversations: [], next_cursor: null },
+      });
+    }
+
+    const byConv = new Map<string, Conversation>();
+    for (const row of rows) {
+      const existing = byConv.get(row.conversation_uuid);
+      if (!existing) {
+        byConv.set(row.conversation_uuid, {
+          conversation_uuid: row.conversation_uuid,
+          latest_session_uuid: row.session_uuid,
+          latest_status: row.session_status,
+          started_at: row.started_at,
+          last_seen_at: row.started_at,
+          last_phase: row.last_phase ?? null,
+          session_count: 1,
+        });
+        continue;
+      }
+      existing.session_count += 1;
+      // listSessionsForUser ORDER BY started_at DESC → 第一条是最新的。
+      // existing 已是最新,保留 started_at = max,update 最早 started_at。
+      if (row.started_at < existing.started_at) {
+        existing.started_at = row.started_at;
+      }
+    }
+
+    const conversations = Array.from(byConv.values())
+      .sort((a, b) => b.last_seen_at.localeCompare(a.last_seen_at))
+      .slice(0, limit);
+
+    return jsonResponse(200, {
+      ok: true,
+      data: { conversations, next_cursor: null },
     });
   }
 

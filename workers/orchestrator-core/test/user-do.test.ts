@@ -1175,4 +1175,105 @@ describe('NanoOrchestratorUserDO', () => {
       });
     });
   });
+
+  // ZX5 F4 — handleStart idempotency: D1 conditional UPDATE (per Q11 owner
+  // 修法 b). When two concurrent /start requests reach the pending row,
+  // only the first one's claimPendingForStart returns true; the rest get
+  // 409 immediately and don't run the start side-effects.
+  describe('ZX5 F4 handleStart idempotency', () => {
+    it('returns 409 when claimPendingForStart returns false (concurrent retry)', async () => {
+      const { state } = createState();
+      const userDo = new NanoOrchestratorUserDO(state, {
+        AGENT_CORE: { fetch: async () => Response.json({ ok: true }) } as Fetcher,
+        NANO_INTERNAL_BINDING_SECRET: 'secret',
+      });
+      const claim = vi.fn().mockResolvedValue(false);
+      const beginSession = vi.fn();
+      (userDo as any).sessionTruth = () => ({
+        readSessionStatus: vi.fn().mockResolvedValue('pending'),
+        claimPendingForStart: claim,
+        readSnapshot: vi.fn().mockResolvedValue(null),
+        beginSession,
+        appendActivity: vi.fn(),
+      });
+      const response = await userDo.fetch(
+        new Request(`https://orchestrator.internal/sessions/${SESSION_UUID}/start`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            initial_input: 'hi',
+            auth_snapshot: { sub: USER_UUID, tenant_source: 'deploy-fill' },
+            initial_context_seed: { default_layers: [], user_memory_ref: null },
+          }),
+        }),
+      );
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({
+        error: 'session-already-started',
+        current_status: 'starting',
+      });
+      expect(claim).toHaveBeenCalledTimes(1);
+      expect(beginSession).not.toHaveBeenCalled();
+    });
+
+    it('proceeds with start when claimPendingForStart returns true (winner)', async () => {
+      const { state, store } = createState();
+      const userDo = new NanoOrchestratorUserDO(state, {
+        AGENT_CORE: {
+          fetch: async (request: Request) => {
+            const pathname = new URL(request.url).pathname;
+            if (pathname.endsWith('/start')) {
+              return Response.json({ ok: true, action: 'start', phase: 'attached' });
+            }
+            if (pathname.endsWith('/stream')) {
+              return new Response(
+                makeNdjson([
+                  JSON.stringify({ kind: 'meta', seq: 0, event: 'opened', session_uuid: SESSION_UUID }),
+                ]),
+                { headers: { 'Content-Type': 'application/x-ndjson' } },
+              );
+            }
+            return Response.json({ error: 'not-found' }, { status: 404 });
+          },
+          start: async () => ({ status: 200, body: { ok: true, action: 'start', phase: 'attached' } }),
+        } as any,
+        NANO_INTERNAL_BINDING_SECRET: 'secret',
+      });
+      const claim = vi.fn().mockResolvedValue(true);
+      (userDo as any).sessionTruth = () => ({
+        readSessionStatus: vi.fn().mockResolvedValue('pending'),
+        claimPendingForStart: claim,
+        readSnapshot: vi.fn().mockResolvedValue(null),
+        beginSession: vi.fn().mockResolvedValue({
+          conversation_uuid: '44444444-4444-4444-8444-444444444444',
+          session_uuid: SESSION_UUID,
+          conversation_created: false,
+        }),
+        createTurn: vi.fn().mockResolvedValue({
+          turn_uuid: '55555555-5555-4555-8555-555555555555',
+          turn_index: 1,
+        }),
+        appendMessage: vi.fn(),
+        appendActivity: vi.fn(),
+        captureContextSnapshot: vi.fn(),
+        updateSessionState: vi.fn(),
+        closeTurn: vi.fn(),
+      });
+
+      const response = await userDo.fetch(
+        new Request(`https://orchestrator.internal/sessions/${SESSION_UUID}/start`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            initial_input: 'hello',
+            auth_snapshot: { sub: USER_UUID, tenant_source: 'deploy-fill' },
+            initial_context_seed: { default_layers: [], user_memory_ref: null },
+          }),
+        }),
+      );
+      expect(response.status).toBe(200);
+      expect(claim).toHaveBeenCalledTimes(1);
+      expect(store.has(`sessions/${SESSION_UUID}`)).toBe(true);
+    });
+  });
 });
