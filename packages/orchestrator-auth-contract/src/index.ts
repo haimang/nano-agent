@@ -202,7 +202,7 @@ export type VerifyApiKeyResult = z.infer<typeof VerifyApiKeyResultSchema>;
 
 export const CreateApiKeyResultSchema = z.object({
   key_id: z.string().min(1),
-  api_key: z.string().regex(/^nak_[A-Za-z0-9_-]+$/),
+  api_key: z.string().regex(/^nak_[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/),
   team_uuid: z.string().uuid(),
   label: z.string().trim().min(1).max(80),
 });

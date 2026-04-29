@@ -108,7 +108,7 @@ describe("orchestrator-auth-contract", () => {
       ok: true,
       data: {
         key_id: "nak_55555555-5555-4555-8555-555555555555",
-        api_key: "nak_55555555-5555-4555-8555-555555555555",
+        api_key: "nak_55555555-5555-4555-8555-555555555555.secret_part",
         team_uuid: "33333333-3333-4333-8333-333333333333",
         label: "preview-key",
       },
