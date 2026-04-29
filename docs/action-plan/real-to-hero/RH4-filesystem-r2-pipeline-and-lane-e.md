@@ -26,7 +26,7 @@
 > - `docs/design/real-to-hero/RH4-filesystem-r2-pipeline-and-lane-e.md`（含 §9 修订 + KV 职责限定）
 > 冻结决策来源:
 > - `docs/design/real-to-hero/RHX-qna.md` Q2（业主同意 ≤2 周 sunset + 4 项限定：起点=prod 启用日 / `@deprecated`+ESLint 阻止新引用 / 失败不 silent fallback / 到期物理删除）
-> 文档状态: `draft`
+> 文档状态: `executed`
 
 ---
 
@@ -354,3 +354,67 @@ RH4 Filesystem & Lane E
 | 文档 | files-api / r2-namespace / lane-e-sunset |
 | 风险收敛 | atomic 0 orphan；cross-tenant 0 漏 |
 | 可交付性 | RH5 multimodal 可启动 |
+
+---
+
+## 11. 工作日志回填（executed）
+
+> 执行日期: `2026-04-29`
+> 关联闭合文件: `docs/issue/real-to-hero/RH4-closure.md`
+
+本节按「schema / filesystem-core / façade / bindings / tests / preview」顺序回填 RH4 的实际落地内容；仅记录已经完成并验证过的改动，同时显式标注本轮未收口的 Lane E carry-over。
+
+### 11.1 新增文件
+
+| # | 文件路径 | 对应项 | 说明 |
+|---|---|---|---|
+| 1 | `workers/orchestrator-core/migrations/010-session-files.sql` | P4-01 | 新增 `nano_session_files` metadata 表与索引 |
+| 2 | `workers/filesystem-core/test/session-file-store.test.ts` | P4-03 / P4-05 | `SessionFileStore` 原子写入 / 读取 / cursor / 隔离 / rollback |
+| 3 | `test/package-e2e/orchestrator-core/10-files-smoke.test.mjs` | P4-13 / P4-15 | preview live upload/list/download smoke |
+| 4 | `test/cross-e2e/14-files-cross-tenant-deny.test.mjs` | P4-14 | cross-tenant list/download deny |
+| 5 | `docs/issue/real-to-hero/RH4-closure.md` | RH4 closure | 阶段闭合 memo |
+
+### 11.2 关键修改文件
+
+| 领域 | 文件 | 变更摘要 |
+|---|---|---|
+| filesystem store | `workers/filesystem-core/src/artifacts.ts` | 新增 `SessionFileStore`；R2 key=`tenants/{teamUuid}/sessions/{sessionUuid}/files/{fileUuid}`；D1 insert 失败时 cleanup R2；cursor 修正为“最后一条已返回记录” |
+| filesystem RPC | `workers/filesystem-core/src/index.ts` | `writeArtifact` / `listArtifacts` / `readArtifact` 真实化；binding-scope 文案改成 leaf RPC worker |
+| filesystem env | `workers/filesystem-core/src/types.ts` / `package.json` / `wrangler.jsonc` | 引入 `@nano-agent/storage-topology`；声明 `NANO_AGENT_DB` / `NANO_R2`；增加 RPC input/output types |
+| façade routes | `workers/orchestrator-core/src/index.ts` | 新增 `/sessions/{id}/files` upload/list/content 三条真实路由；multipart parse；25 MiB 上限；session ownership 校验；filesystem-core RPC 调用 |
+| façade tests | `workers/orchestrator-core/test/files-route.test.ts` | 从“User DO metadata stub”升级为 RH4 真实 façade 用例；`15` cases 覆盖 list/upload/content |
+| leaf probes | `workers/context-core/src/{index,types}.ts` / `workers/context-core/test/smoke.test.ts` | 移除 `library_worker` 标志；binding-scope message 改为 leaf worker |
+| agent binding | `workers/agent-core/wrangler.jsonc` | 启用 `CONTEXT_CORE` / `FILESYSTEM_CORE` preview+prod binding；增加 `LANE_E_RPC_FIRST=false` 基础变量 |
+| live posture test | `test/cross-e2e/06-agent-filesystem-host-local-posture.test.mjs` | 跟随 RH4 真实姿态更新为 `filesystemBindingActive=true` |
+
+### 11.3 测试与验证回填
+
+| 命令 / 验证 | 结果 |
+|---|---|
+| `pnpm --filter @haimang/context-core-worker typecheck && build && test` | ✅ `19` files / `171` tests |
+| `pnpm --filter @haimang/filesystem-core-worker typecheck && build && test` | ✅ `26` files / `299` tests |
+| `pnpm --filter @haimang/orchestrator-core-worker typecheck && build && test` | ✅ `17` files / `158` tests |
+| `pnpm --filter @haimang/agent-core-worker typecheck && build && test` | ✅ `100` files / `1062` tests |
+| `bash scripts/deploy-preview.sh orchestrator-core filesystem-core context-core` | ✅ apply 010 + deploy 3 workers |
+| `bash scripts/deploy-preview.sh agent-core` | ✅ deploy agent-core with Lane E bindings |
+| `NANO_AGENT_LIVE_E2E=1 node --test test/cross-e2e/06-agent-filesystem-host-local-posture.test.mjs test/package-e2e/orchestrator-core/10-files-smoke.test.mjs test/cross-e2e/14-files-cross-tenant-deny.test.mjs` | ✅ `3/3` live tests |
+| preview health probe | ✅ `/debug/workers/health` = `live: 6 / total: 6` |
+
+### 11.4 Preview 执行结果
+
+| 项 | 结果 |
+|---|---|
+| remote D1 apply | `010-session-files.sql` 成功执行 |
+| `nano-agent-orchestrator-core-preview` | Version `342425b5-9d1c-4372-9195-aec938847104` |
+| `nano-agent-filesystem-core-preview` | Version `ce5e5d26-6e8a-4e38-af0c-9236d59abfae` |
+| `nano-agent-context-core-preview` | Version `3caf48da-5aa7-44cd-bf42-a98277064bed` |
+| `nano-agent-agent-core-preview` | Version `411a2c9a-bd98-4cb9-bab3-2b5661603e01` |
+| `/debug/workers/health` | `live: 6 / total: 6` |
+| files smoke | upload → list → download 全链路通过 |
+| cross-tenant deny | stranger 对 owner session 的 list / content 均 `403` |
+
+### 11.5 本轮未一并闭合的 carry-over
+
+1. `agent-core` 只完成了 `CONTEXT_CORE / FILESYSTEM_CORE` binding 激活；**没有**完成 `workspace-context-artifacts` → filesystem/context RPC-first 的真实 consumer cutover。
+2. Phase 7 的 sunset（`@deprecated` / ESLint `no-restricted-imports` / +14d 删除 PR）未开始，因为 prod 启用日还没有 owner 冻结。
+3. `docs/api/files-api.md`、`docs/architecture/r2-namespace.md`、`docs/owner-decisions/lane-e-sunset.md` 未在本轮创建。
