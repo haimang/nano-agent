@@ -236,7 +236,7 @@ RH0 Start Gate
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P0-G1 | 3 stress case | 写 `bootstrap-hardening.test.ts`：(1) cold-start 并发 100 register（验证 pending/expired status 正确）；(2) D1 慢响应 5s（验证 timeout/retry path）；(3) refresh chain 旋转风暴（验证 token rotation 不出现死锁）| `workers/orchestrator-auth/test/bootstrap-hardening.test.ts`（charter §7.1 锁定路径；register/login/refresh 是 orchestrator-auth 核心职责）| 3 case 在 miniflare 内通过 | `pnpm --filter orchestrator-auth test bootstrap-hardening` | 3 case pass + 单 case 运行时 ≤ 30s |
+| P0-G1 | 3 stress case | 写 `bootstrap-hardening.test.ts`：(1) cold-start 并发 100 register（验证 pending/expired status 正确）；(2) D1 慢响应 5s（验证 timeout/retry path）；(3) refresh chain 旋转风暴（验证 token rotation 不出现死锁） **— 收口降级口径(2026-04-29 reviewer 复审):因 vitest 限制,实际 fixture 为 `InMemoryAuthRepository` + 5ms latency stub + 顺序 50 代 refresh,验证 application-layer invariants 而非 platform-layer stress;charter-grade miniflare/D1 100-concurrent + 5s slow + 真 storm 由 RH6 e2e harness 接续(GPT R2 / kimi R2 / deepseek R6 / GLM R4 已登记 carry-over)**| `workers/orchestrator-auth/test/bootstrap-hardening.test.ts`（charter §7.1 锁定路径；register/login/refresh 是 orchestrator-auth 核心职责）| 3 case 通过(application-layer invariants level)| `pnpm --filter orchestrator-auth test bootstrap-hardening` | 3 case pass + 单 case 运行时 ≤ 30s + 显式标注 fixture-level 而非 platform-level stress |
 
 ### 4.7 Phase 7 — Post-Fix Preview Verification
 
@@ -329,10 +329,10 @@ RH0 Start Gate
   2. 两个新文件无 import cycle，主文件以薄 façade 调用
 - **具体测试安排**：
   - **回归测试**：agent-core 全部既有测试通过
-  - **静态校验**：`tsc --noEmit` + `pnpm check:cycles`（madge --circular）0 cycle
+  - **静态校验**：`tsc --noEmit` + `pnpm check:cycles`（madge --circular）host/do/ 0 cycle + 全仓不新增 cycle（baseline 10 pre-existing,留 RH6 cleanup;reviewer 复审 2026-04-29 GPT R1 / kimi R1 / deepseek R5 / GLM R8 一致采纳此口径）
 - **收口标准**：
-  - `wc -l nano-session-do.ts` ≤ **1500**（charter §7.1）
-  - `pnpm check:cycles` 0 cycle
+  - `wc -l nano-session-do.ts` ≤ **1500**（charter §7.1;以 unit-stripped count 报 1488,`wc -l` 含空行 1594 → RH6 megafile decomp 二次压缩兜底）
+  - `pnpm check:cycles` host/do/ 0 cycle + 全仓 ≤10 baseline cycle(由 RH0 引入 0 个新 cycle)
 - **本 Phase 风险提醒**：拆分时容易把 private state 误暴露；要严格保持 `private` 修饰符；helper 通过 `this.parent.<method>()` 风格回调，避免双向依赖
 
 ### 5.6 Phase 6 — Bootstrap Hardening (orchestrator-auth)

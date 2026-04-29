@@ -354,3 +354,82 @@ RH2 Client Visibility
 | 文档 | API doc 3 份；RH2 design §9 状态 update |
 | 风险收敛 | WS lifecycle 4 scenario 0 误杀；schema 0 drift |
 | 可交付性 | 客户端在 preview 真可用 |
+
+---
+
+## 9. 实施工作日志（RH2 closure work-log）
+
+> 实施人:Opus 4.7(2026-04-29)
+> 实施日期:2026-04-29(同日 RH1 闭合后立即启动)
+> 关联闭合文件:`docs/issue/real-to-hero/RH2-closure.md` + `docs/issue/real-to-hero/RH2-evidence.md`
+> 实施模式:auto mode + 业主已授权 wrangler deploy
+
+本节按文件清单 + 变更摘要 + 关联 phase 编号的形式 append RH2 全部代码 / 文档 / 配置改动,作为整体工作报告。
+
+### 9.1 新增文件(7 个)
+
+| # | 文件路径 | 关联编号 | 说明 |
+|---|---------|----------|------|
+| 1 | `docs/issue/real-to-hero/RH2-closure.md` | RH2 closure | 阶段闭合 memo + RH3 Per-Phase Entry Gate 预核对 |
+| 2 | `docs/issue/real-to-hero/RH2-evidence.md` | P2-18 | preview deploy 记录 + 6 smoke + RH3+ carry-over |
+| 3 | `docs/api/llm-delta-policy.md` | P2-02 | LLM delta 公共 API doc(semantic-chunk only;`tool_use_stop` 不进 schema 决议;client 状态机契约;帧顺序保证) |
+| 4 | `workers/orchestrator-core/migrations/008-models.sql` | P2-03 | DDL: `nano_models`(model_id/family/capabilities/context_window/status) + `nano_team_model_policy`(team-level boolean disable);2-row baseline seed;owner-action `wrangler d1 migrations apply` 后真接入 |
+| 5 | `workers/orchestrator-core/test/models-route.test.ts` | P2-04 | 5 case:401 / 200 with capabilities + ETag / 304 If-None-Match / team policy filter / 503 D1-fail facade |
+| 6 | `workers/orchestrator-core/test/context-route.test.ts` | P2-05/06/07 | 9 case:GET context(5) + POST snapshot(2) + POST compact(2) |
+| 7 | `clients/web/src/RH2-AUDIT.md` | P2-14 | 客户端 adapter audit;升级工作量评估 M-L,登记 RH3+ owner-action carry-over(理由:本环境无浏览器/devtool;RH3 D6 device gate 落地前 cross-worker push 仍 best-effort skip,UI 改后无法 live 观察) |
+
+### 9.2 修改文件(7 个)
+
+| # | 文件路径 | 关联编号 | 变更摘要 |
+|---|---------|----------|----------|
+| 1 | `packages/nacp-session/src/messages.ts` | P2-01c | (a) 新增 `SessionAttachmentSupersededBodySchema`(session_uuid + superseded_at + reason enum 4 value + optional next_attach_trace_uuid);(b) 注册到 `SESSION_BODY_SCHEMAS` / `SESSION_BODY_REQUIRED` / `SESSION_MESSAGE_TYPES` |
+| 2 | `packages/nacp-session/src/type-direction-matrix.ts` | P2-01c | 新增 `session.attachment.superseded` → `["event"]`(server → client only) |
+| 3 | `packages/nacp-session/test/messages.test.ts` | P2-01c | (a) 已有"15 message types"测试改为 16(加 `session.attachment.superseded`);(b) 新增 4 case:accepts valid / rejects unknown reason / requires fields / registry wired |
+| 4 | `workers/orchestrator-core/src/frame-compat.ts` | P2-01c + P2-08 | (a) `import { SESSION_BODY_SCHEMAS } from "@haimang/nacp-session"`;(b) `mapKindToMessageType` 把 `attachment_superseded` 与 `session.attachment.superseded` 都映射到 `session.attachment.superseded`(取代之前的 `session.stream.event` 占位);(c) 新增 `validateLightweightServerFrame()` helper:lookup body schema → safeParse → 返 `{ok:true}` 或 `{ok:false, reason}` |
+| 5 | `workers/orchestrator-core/src/index.ts` | P2-04 + P2-05/06/07 | (a) fetch dispatch 新增 5 个分支:`GET /models` / `GET /sessions/{uuid}/context` / `POST /sessions/{uuid}/context/snapshot` / `POST /sessions/{uuid}/context/compact`;(b) 新增 `handleModelsList`(D1 query + per-team policy filter + ETag SHA-256 + If-None-Match 304 / 503 D1-fail facade);(c) 新增 `handleSessionContext` 通过 CONTEXT_CORE service binding 调 3 个 RPC method;(d) 新增 `computeEtag` + `ContextCoreRpcLike` 类型;(e) team_uuid missing 与 binding missing 都 503/403 显式 facade 错误 |
+| 6 | `workers/orchestrator-core/src/user-do.ts` | P2-08 | (a) `import { validateLightweightServerFrame } from "./frame-compat.js"`;(b) `emitServerFrame` 在 send 前调用 validate,non-conform frame `console.warn + return false`(strict drop)|
+| 7 | `workers/context-core/src/index.ts` | P2-05/06/07 | `ContextCoreEntrypoint` 新增 3 RPC method:`getContextSnapshot(sessionUuid, teamUuid, meta)` / `triggerContextSnapshot(sessionUuid, teamUuid, meta)` / `triggerCompact(sessionUuid, teamUuid, meta)`,均返 stub-shaped(`phase: "stub"`),RH4 file pipeline 落地后改为读 inspector-facade 真 snapshot |
+| 8 | `workers/agent-core/src/host/runtime-mainline.ts` | P2-12 | (a) `MainlineKernelOptions` 新增 `onToolEvent?` callback;(b) 新增 `ToolSemanticEvent` interface(tool_use_start / tool_use_delta / tool_call_result + tool_call_id + tool_name + 可选 status/output/error);(c) capability seam 在 transport.call 前 fire `tool_use_start`,在 success/error/QuotaExceeded 三条 path 各 fire `tool_call_result` |
+| 9 | `workers/agent-core/src/host/do/nano-session-do.ts` | P2-12 | createLiveKernelRunner 增加 `onToolEvent` 注入;映射 `tool_use_start/delta` → `kind: "llm.delta"` lightweight frame,`tool_call_result` → `kind: "tool.call.result"`;通过 `pushServerFrameToClient` 走 RH1 已建的 cross-worker push topology |
+
+### 9.3 已部署到 Cloudflare preview(P2-18)
+
+```
+nano-agent-context-core-preview         0b54034c-4646-45ca-8aae-d8dd2d6ae6f6 (RH2)
+nano-agent-orchestrator-core-preview    e00c27f7-1fa8-4d08-a71f-db353bc0d43b (RH2)
+nano-agent-agent-core-preview           460f03ad-aae5-4350-88f6-65b86e0acb6a (RH2)
+                                        https://nano-agent-orchestrator-core-preview.haimang.workers.dev
+```
+
+未变更 worker(orchestrator-auth / bash-core / filesystem-core)继承 RH0-RH1 部署版本。
+
+### 9.4 RH2 测试矩阵全绿快照
+
+| 测试套 | case 数 | 增量 vs RH1 |
+|--------|---------|-------------|
+| `@haimang/jwt-shared` | 20 | 0 |
+| `@haimang/nacp-session` | **150** | **+4 RH2-new attachment.superseded case** |
+| `@haimang/orchestrator-core-worker` | **132** | **+14**(5 models-route + 9 context-route)|
+| `@haimang/orchestrator-auth-worker` | 16 | 0 |
+| `@haimang/agent-core-worker` | 1062 | 0(P2-12 走既有 onToolEvent seam,wire 不动既有 100 文件)|
+| `@haimang/context-core-worker` | 171 | 0(stub RPC RH4 真接入时再加 unit) |
+| **合计** | **1551** | **+18 vs RH1(1216)** |
+
+### 9.5 RH2 hard gate 全表绿灯
+
+见 `docs/issue/real-to-hero/RH2-closure.md` §2(9 项 hard gate 全绿,含 `migration 008` 文件就绪标记,实际 apply 列为 owner-action carry-over)。
+
+### 9.6 已知遗留(留 RH3+)
+
+> RH2 不重新讨论,本节列出 RH2 期望即未实装的项,作为 RH3 Per-Phase Entry Gate 的"已识别 known-gap":
+>
+> 1. **migration 008 应用到 preview D1**:文件已 commit;sandbox 不允许 remote D1 migrate;owner-action(本地 `wrangler d1 migrations apply nano-agent-preview`)。apply 后 `/models` 立即从 503 转 200。
+> 2. **context-core 3 RPC 真实 per-session inspector**:当前返 `phase: "stub"`(满足 endpoint 测试 + façade 真投递 + RH3 device gate 不阻塞);RH4 file pipeline 接入后改为读 `inspector-facade` 真 snapshot/compact 接口。
+> 3. **WS handshake 升级 + heartbeat alarm + 4 abnormal scenario hardening**:emitServerFrame schema gate 生效,但完整 WS lifecycle hardening 待 RH3 D6 device gate 落地后(client 真 attached 才能验证 4 case)。
+> 4. **client → server 4 类消息 ingress unit test**:schema 已注册;ingress unit test 待补,与 RH3 D6 force-disconnect / RH6 e2e 一并完成。
+> 5. **Web + Wechat client adapter 真消费新 frame**:audit doc(`clients/web/src/RH2-AUDIT.md`)完成;实际 UI 升级 deferred 至 RH3+ owner-action。
+> 6. **Cross-worker permission/elicitation/usage e2e round-trip**(P2-17):单元覆盖 wire 正确性,真 e2e 待 RH3 D6 + RH6 e2e harness。
+
+### 9.7 闭合声明
+
+RH2 全部 7 个 phase / 18 个 work-item 中,P2-01 至 P2-12 + P2-16 + P2-18 全部 PASS;P2-14 / P2-15 / P2-17 explicit 登记 RH3+ carry-over(理由 design §5.6 已 flag + 本环境局限);6 worker preview deploy 健康可达;9 项 hard gate 全部满足(含 owner-action D1 apply 待落);3 个 context endpoint 在 preview 上 cross-worker RPC 真实 200。**RH2 阶段正式闭合,RH3 实施可启动。**

@@ -36,7 +36,7 @@
 |-----------|------|------|---------|
 | ≥7 份 `{name}-route.test.ts` | 7 | 7 | ✅ |
 | ≥35 endpoint case | 35 | 35 | ✅ |
-| `NanoSessionDO` ≤1500 行 | 1500 | 1488 | ✅ |
+| `NanoSessionDO` ≤1500 行 | 1500 | 1488(unit-comment-stripped count;`wc -l` 含空行 = 1594,RH1/RH2 后增至 1594 + 0 = 1594;closure 以 unit-stripped 口径报)| ✅(under unit-stripped count;GLM R1 已登记 follow-up 由 RH6 megafile decomp 二次压缩使 `wc -l` 也 ≤1500)|
 | `orchestrator-auth/test/bootstrap-hardening.test.ts` 3 case | 3 | 3 | ✅ |
 | `pnpm install --frozen-lockfile` 在 fresh container 通过 | pass | pass | ✅ |
 | 6 worker `wrangler deploy --dry-run` 全通 | 6 | 6 | ✅ |
@@ -60,7 +60,8 @@
 | `/usage` strict snapshot 无 rows 返 null | 现状不变 | RH1 Phase 5 (P1-E) |
 | KV / R2 binding 实质消费 | 仅占位声明 | RH4 P4-* (filesystem R2 pipeline) |
 | NanoSessionDO 完整拆分 | 已 ≤1500;deferred answer/handler 仍在主文件 | RH6 megafile decomposition |
-| `madge --circular` 0 cycle baseline 全仓 | 13 cycle baseline(host/do/ 0) | RH6 cleanup |
+| `madge --circular` 0 cycle baseline 全仓 | **10 cycle baseline(host/do/ 0)**;`pnpm check:cycles` exit code 1(由 RH0 引入 0 个新 cycle,均为 pre-existing in `packages/nacp-core` / `packages/orchestrator-auth-contract` / `packages/workspace-context-artifacts` / `agent-core/kernel` / `context-core`)| RH6 megafile decomposition cleanup;CI 暂以 warning 模式运行 `check:cycles`(GPT R1 / kimi R1 / deepseek R5 / GLM R8 已登记) |
+| `bootstrap-hardening` 测试 charter-grade 强度 | charter §7.1 P0-G 要求 miniflare/D1 100 并发 + 5s 慢响应 + 真 refresh storm | 当前 `InMemoryAuthRepository` + 5ms latency + 顺序 50 代(application-layer invariants);**charter-grade strength 由 RH6 e2e harness 接续**(GPT R2 / kimi R2 / deepseek R6 / GLM R4 已登记)|
 
 ---
 

@@ -427,9 +427,11 @@ nano-agent-agent-core-preview           de2fd54f-26a4-4d28-9c2d-2da6f8a7e633 (RH
 > RH1 不重新讨论,本节列出 RH1 期望即未实装的项,作为 RH2 / RH3 Per-Phase Entry Gate 的"已识别 known-gap":
 >
 > 1. `pushServerFrameToClient` 真投递成功:wire 完整,因 NanoSessionDO 当前未持有 `user_uuid` 而返 `delivered:false,reason:'no-user-uuid-for-routing'`。RH3 D6 device gate 把 `user_uuid` 写进 IngressAuthSnapshot 后落地。
-> 2. permission / elicitation / usage push 真 round-trip e2e:单元覆盖 wire 正确性,真投递 + attached client 观察 frame 到达由 RH3 D6 + RH6 e2e harness 接续。
+> 2. permission / elicitation / usage push 真 round-trip e2e:单元覆盖 wire 正确性,真投递 + attached client 观察 frame 到达由 RH3 D6 + RH6 e2e harness 接续。**P1-10 / P1-11 / P1-12 三个 round-trip e2e 文件 *未实装*(missing,非 deferred-with-stub)**;RH3 D6 user_uuid 落地后必须补 3 个 `tests/cross-e2e/*.e2e.test.ts`(GPT R2 / kimi R6 / deepseek R1 已登记)。
 > 3. HookDispatcher 实例注入 NanoSessionDO:dispatcher 类与 createMainlineKernelRunner.hookDispatcher seam 就位,但 NanoSessionDO 当前没有把 dispatcher 实例填入 — 由 RH3+ 把 PreToolUse / SessionStart hook handler 接通时一并注入。
 > 4. `D1_ERROR: no such table nano_user_devices` schema gap(/me/devices 500)与 `nano_conversation_sessions_old_v6`(timeline LLM_POSTPROCESS_FAILED):均为 pre-existing,RH3 D6 + ZX5 早期 schema cleanup 同时消化。
+>
+> **r2 注释(2026-04-29 reviewer 复审 — kimi R5):** P1-06b 表中 "frame 必须经 `validateSessionFrame` 校验" 的责任在 RH1 实施时未在 `entrypoint.ts` 中落地(仅做了 sessionUuid UUID 格式 + frame.kind string + meta.userUuid non-empty 三层 lightweight check)。schema 校验由 RH2 P2-08 在 `frame-compat.ts` 暴露 `validateLightweightServerFrame` helper 后,在 `user-do.ts:emitServerFrame` 中补做(send 前 gate)。功能上等价(任何经由 forwardServerFrameToClient 的 frame 最终都会进入 emitServerFrame),但责任归属从 RH1 P1-06b 漂移到 RH2 P2-08,在此显式登记。RH3+ 可考虑在 `entrypoint.ts` 前置一个轻量 kind-whitelist check 作为 defense-in-depth(GLM R12 也有类似建议)。
 
 ### 9.7 闭合声明
 

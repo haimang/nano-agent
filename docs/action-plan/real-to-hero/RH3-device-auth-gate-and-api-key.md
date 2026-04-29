@@ -112,6 +112,25 @@ RH3
 - **[S8]** team display：注册时自动生成 slug；`PATCH /me/team` 更新 team_name；`GET /me/team` 返回当前；`GET /me/teams` 列出全部
 - **[S9]** `/me/conversations` D1+KV 双源合并 + cursor（参考 `handleMeSessions`）
 
+#### 2.1.1 RH0-RH2 carry-over inheritance(2026-04-29 reviewer 复审追加)
+
+> 4 reviewer (GPT/deepseek/GLM/kimi) 在 RH0-RH2 复审中累积识别 17 项 carry-over,deepseek R10 警告 RH3 容量风险。本节显式登记 RH3 必须在自身 9 项 In-Scope 之外吸纳的关键 carry-over,并对每项做容量评估。
+>
+> | carry-over ID | 来源 | 状态 | RH3 处置 | 工作量 |
+> |---|---|---|---|---|
+> | C1 — `IngressAuthSnapshot.user_uuid` 进入 NanoSessionDO,解锁 `pushServerFrameToClient` 真投递 | RH1 P1-08 wire-only(deepseek R1 / GPT R2 / GLM R2 / kimi R6 一致 high blocker)| **RH3 D6 必须落地**(charter §10.3 NOT-成功退出第 1 条;否则 RH1 Lane F live runtime 不闭合)| **吸纳为 P3-S6 一部分**:device gate 落地时 IngressAuthSnapshot 加 `user_uuid` 字段,NanoSessionDO 在 attach/start 时从 snapshot 取 user_uuid 赋值给 `this.env.USER_UUID` 等价访问路径(或新增 `this.userUuid` 字段)| S(1 个 wire 字段 + 1 个赋值点 + 1 个 e2e 验证)|
+> | C2 — P1-10 / P1-11 / P1-12 三个 round-trip e2e 文件 | RH1 P1-10/11/12 missing | C1 落地后 RH3 必须补;无此 3 文件不能宣称 Lane F live runtime 闭合 | **吸纳为 P3 新增工作项 P3-CO-RH1**:补 `tests/cross-e2e/permission-round-trip.e2e.test.ts` / `elicitation-round-trip.e2e.test.ts` / `usage-push.e2e.test.ts` | M(3 个 e2e ≈ 200 行/each,需 miniflare wrap)|
+> | C3 — WS lifecycle hardening 4 must-cover scenario(normal close / abnormal disconnect / heartbeat miss / replay-after-reconnect)+ DO alarm wire | RH2 Phase 4 charter §7.3 P2-C deferred(deepseek R4 / GLM 隐含 / kimi 隐含)| **RH3 device gate 落地后 client 真 attached → 4 scenario 才可验证**;吸纳为 P3-S6 配套 | **吸纳为 P3 新增工作项 P3-CO-RH2-WS**:`user-do.ts` handleWsAttach 升级 + heartbeat alarm + 4 scenario 用例 | M-L(DO alarm + 4 lifecycle case ≈ 400 行)|
+> | C4 — migration 008-models.sql apply 到 preview D1 | RH2 owner-action(GPT R4 / GLM R6 / deepseek R7 / kimi 隐含)| **RH3 启动前 owner 必须 apply**(GLM R6 已要求 entry-gate enforce)| **RH3 entry-gate prereq**(本 action-plan §7 风险表显式补)| 0(owner-action,不占 RH3 工作量)|
+> | C5 — entrypoint.ts kind-whitelist defense-in-depth | GLM R12 / kimi R5 / RH1 P1-06b shift to RH2 | non-blocking | 在 P3-S5 access path 校验时一并加(轻量 if statement)| XS(5 行) |
+> | C6 — bootstrap-hardening charter-grade strength(miniflare/D1 100-concurrent + 5s slow + 真 storm)| RH0 P0-G partial(GPT R2 / kimi R2 / deepseek R6 / GLM R4)| **RH6 e2e harness 接续**,RH3 不吸纳 | 不在 RH3 scope | 0 |
+> | C7 — 7 份 RH0 route test 行为面与 action-plan 漂移(messages-route 403 wrong-device / me-devices revoked exclusion 等)| GPT F3 / kimi R3 / GLM R5 | **RH3 device gate 落地时同步升级 7 份 route test** | 吸纳为 P3-S5 / P3-S6 配套(行为面对齐:`me-devices` 加 status='active' 过滤 + assertion;`messages-route` 加 wrong-device 403 ;`permission-decision` 加 unknown request_uuid 等)| S-M(每文件 1-2 个 case 调整)|
+> | C8 — context-route.test.ts 9 → 15 case(GET 5 + snapshot 5 + compact 5)| RH2 r1 partial(kimi R4 / GLM R10)| **RH2 closure r2 已补足 6 case → 15 case**;无 RH3 吸纳工作 | 已闭合 | 0(已落地)|
+> | C9 — context-core 真实 per-session inspector(替换 `phase: "stub"`)| RH2 Phase 3 inspector-stub(deepseek R2 / GLM R3)| **RH4 file pipeline 落地后接入 inspector-facade** | 不在 RH3 scope | 0 |
+> | C10 — Web + Wechat client adapter 升级(消费 `session.attachment.superseded` / `tool.call.result` / `llm.delta` / `session.permission.request` / `session.elicitation.request` / `session.usage.update`)| RH2 Phase 6 audit-only(deepseek R8 / GPT O1)| **RH3 D6 落地后 owner-action**;UI live 观察 cross-worker push | 不在 RH3 scope(owner-action) | 0 |
+>
+> **RH3 容量评估**:S1-S9(原 9 项)+ C1(吸纳到 S6)+ C2 / C3(各为新工作项)+ C5 / C7(配套吸纳)= **RH3 实质规模从 M 上调到 M-L**(deepseek R10 警告吸收;C2 / C3 是其中最大增量)。如 C2 / C3 在 RH3 实施中暴露超容量,可降级 C2 到 RH4 / C3 到 RH3.5,但 **C1 不可降级**(无 user_uuid 则 Lane F live 不闭合,RH3 自身的 device gate 也无 attached client 可验证)。
+
 ### 2.2 Out-of-Scope
 
 - **[O1]** API key admin plane（list/create UI）→ hero-to-platform
