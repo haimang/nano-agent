@@ -24,7 +24,7 @@
 > - `docs/design/real-to-hero/RH6-do-megafile-decomposition.md`（含 §9 修订 + ZX5 seam 承认）
 > 冻结决策来源:
 > - `docs/design/real-to-hero/RHX-qna.md` Q4（业主同意 Opus 路线：5 套基线 + 4 项限定 must-cover scenario / 录像+HAR+WS log / closure ±3 工作日 / 真机 5G+Wi-Fi reconnect 各 1 次）
-> 文档状态: `draft`
+> 文档状态: `executed-with-known-issues`
 
 ---
 
@@ -342,3 +342,159 @@ RH6
 | 文档 | three-layer-truth + final-closure + dependency-graph |
 | 风险收敛 | 0 cycle；0 residue；0 evidence 缺口 |
 | 可交付性 | hero-to-platform 启动基线干净 |
+
+---
+
+## 9. 工作日志回填（2026-04-29 / Copilot）
+
+> 本节为 RH6 执行后的代码级回填。结论采用 `executed-with-known-issues`：自动化代码收口、truth freeze、cycle gate、preview deploy、RH0-RH6 live e2e 已完成；manual web/wechat-devtool/real-device evidence pack 与 runtime 内部深拆仍需后续补齐，未伪造为已完成。
+
+### 9.1 代码结构收口
+
+1. `workers/agent-core/src/host/do/nano-session-do.ts`
+   - 改成 thin public façade，仅 re-export `NanoSessionDO` 与 `DurableObjectStateLike`。
+   - 保留 `NANO_SESSION_DO_CANONICAL_SYSTEM_NOTIFY_MARKER`，避免既有 canonical frame guard 因 public file 变薄失效。
+2. `workers/agent-core/src/host/do/session-do-runtime.ts`
+   - 承接原 `NanoSessionDO` runtime implementation。
+   - 行为保持，不新增 endpoint / schema / product feature。
+3. `workers/orchestrator-core/src/user-do.ts`
+   - 改成 thin public façade，仅 re-export `NanoOrchestratorUserDO` 与 public types。
+4. `workers/orchestrator-core/src/user-do-runtime.ts`
+   - 承接原 User DO runtime implementation。
+   - 删除 deprecated `forwardInternalJson()`；活跃调用方继续使用 `forwardInternalJsonShadow()`。
+
+### 9.2 Cycle gate 真实化
+
+执行 `pnpm check:cycles` 时发现基线不是 0，而是 10 个 circular dependencies。已修复：
+
+1. `packages/nacp-core/src/type-direction-matrix.ts`
+   - 去掉对 `envelope.ts` 的 type import，改成本地 `CoreDeliveryKind` union。
+2. `packages/orchestrator-auth-contract/src/auth-error-codes.ts`
+   - 新增 leaf schema 文件。
+   - `facade-http.ts` 改 import leaf schema，解除 `facade-http.ts > index.ts` cycle。
+3. `packages/workspace-context-artifacts/src/evidence-emitters.ts`
+   - 用 structural evidence-like interfaces 替代对 `context-assembler / compact-boundary / snapshot` 的 type import。
+4. `workers/context-core/src/evidence-emitters-context.ts`
+   - 同步移除 evidence helper 对 context modules 的 type back-import。
+5. `workers/agent-core/src/kernel/session-stream-mapping.ts`
+   - `SessionStreamKind` 移到 mapping leaf module；`events.ts` re-export，解除 kernel cycle。
+6. `workers/context-core/src/async-compact/kernel-adapter.ts`
+   - 用 `AsyncCompactOrchestratorLike` structural interface 替代从 `index.ts` import class type。
+7. `.github/workflows/workers.yml`
+   - 加入 `Check dependency cycles` step。
+   - PR/push path 增加 `package.json`，确保 root `check:cycles` 脚本变化会触发 CI。
+
+验证：`pnpm check:cycles` 最终输出 `✔ No circular dependency found!`。
+
+### 9.3 Truth freeze 文档
+
+新增 `docs/architecture/three-layer-truth.md`，冻结：
+
+1. Session DO memory：active loop、WS helper、stream seq、trace、in-flight runner、checkpoint/replay 恢复状态。
+2. User DO storage：hot read model、attachment map、recent frames、短期 permission/elicitation answer、alarm cleanup。
+3. D1 / R2 durable truth：conversation/session/turn/timeline/history、usage events、models、API keys、device、session file metadata 与 R2 bytes。
+4. 禁令：D1 → DO/KV cold copy、DO/KV → D1 blind backfill、memory-only security gate、R2/D1 silent success。
+
+### 9.4 RH0-RH6 合并审查发现与修复
+
+| 编号 | 发现 | 修复 |
+|---|---|---|
+| RH6-F1 | `pnpm check:cycles` baseline 实际失败，CI hard gate 不能直接启用 | 拆除 10 个 cycle 后再接入 CI |
+| RH6-F2 | RH5 后 `@haimang/nacp-session` 已是 `1.4.0`，但 registry doc/root guardian 仍写死 `1.3.0` | 更新 `docs/nacp-session-registry.md`、`packages/nacp-session/README.md`、root guardian |
+| RH6-F3 | agent-core guard test 直接读取 public `nano-session-do.ts` 查 `system.notify`，public façade 变薄后误报 | 在 façade 保留 canonical marker |
+| RH6-F4 | e2e 对错误响应仍按 legacy flat `{error:"code"}` 断言 | 更新为兼容 structured `error.code` 与 legacy flat shape |
+| RH6-F5 | WS superseded live 已使用 canonical `session.attachment.superseded` / `reason=reattach`，测试只认 legacy kind/reason | e2e 兼容 canonical + legacy |
+| RH6-F6 | 48 并发 probe 与 full live suite 其他长链路并行时会互相干扰 | 加 warmup、提高单 case timeout；最终用 `--test-concurrency=1` 执行完整 live verdict |
+
+### 9.5 Preview deploy 记录
+
+已部署 RH6 触达 worker：
+
+| worker | preview version id |
+|---|---|
+| context-core | `ababc466-5cc8-4040-9a12-08e20a0f2735` |
+| agent-core | `a1744db3-018c-4b92-8d7e-2d7799b73e33` |
+| orchestrator-core | `a12936d0-1514-471e-bd4d-7b1100e449b5` |
+
+### 9.6 验证命令
+
+已通过：
+
+```bash
+pnpm --filter @haimang/nacp-core build && pnpm --filter @haimang/nacp-core test
+pnpm --filter @haimang/orchestrator-auth-contract build && pnpm --filter @haimang/orchestrator-auth-contract test
+pnpm --filter @nano-agent/workspace-context-artifacts build && pnpm --filter @nano-agent/workspace-context-artifacts test
+pnpm --filter @haimang/nacp-session typecheck && pnpm --filter @haimang/nacp-session build && pnpm --filter @haimang/nacp-session test
+pnpm --filter @haimang/context-core-worker build && pnpm --filter @haimang/context-core-worker test
+pnpm --filter @haimang/agent-core-worker build && pnpm --filter @haimang/agent-core-worker test
+pnpm --filter @haimang/orchestrator-core-worker build && pnpm --filter @haimang/orchestrator-core-worker test
+pnpm check:cycles
+pnpm test:contracts
+pnpm test:e2e
+pnpm --filter @haimang/context-core-worker deploy:dry-run
+pnpm --filter @haimang/agent-core-worker deploy:dry-run
+pnpm --filter @haimang/orchestrator-core-worker deploy:dry-run
+NANO_AGENT_LIVE_E2E=1 node --test --test-concurrency=1 test/package-e2e/**/*.test.mjs test/cross-e2e/**/*.test.mjs
+```
+
+live sequential result：`56` tests / `27` pass / `29` skipped / `0` fail。Skipped 项为 leaf worker public URL 直连测试；当前 topology 明确 leaf workers `workers_dev:false`，通过 orchestrator-core façade/service binding 验证。
+
+### 9.7 未完成 / carry-over
+
+1. **manual evidence pack**：5 套设备 × 4 scenario 的录像/HAR/WS log 未由本 agent 采集，需要业主侧设备补齐。不得把自动化 live e2e 伪装为 manual evidence。
+2. **runtime 深拆**：本轮纠偏后，`session-do-runtime.ts` 已从约 `1623` 行降到 `731` 行，并拆出 `runtime-assembly.ts` / `fetch-runtime.ts` / `ws-runtime.ts`；`user-do-runtime.ts` 已从约 `2508` 行降到 `1049` 行，并拆出 `durable-truth.ts` / `agent-rpc.ts` / `ws-runtime.ts` / `surface-runtime.ts` / `session-flow.ts` / `message-runtime.ts`。仍未完成的是 user-do 向 `handlers/*` 颗粒度的最后一段下沉，而不再是“两个 runtime 都几乎没动”。
+3. **RH4 Lane E**：agent-core workspace-context-artifacts runtime consumer 全量 sunset 仍是 carry-over；RH6 本轮未扩大该 scope。
+
+### 9.8 RH6 closure
+
+已新增 `docs/issue/real-to-hero/RH6-closure.md`，状态为 `closed-with-known-issues`。不建议在 manual evidence 与 user-do 最后一段 handler-granularity 深拆完成前发布 `real-to-hero-final-closure.md` 为 full closed。
+
+## 10. 工作日志回填（2026-04-29 / Copilot / RH6 纠偏补刀）
+
+> 本节用于纠正“public façade 已变薄，但真实 runtime 巨石仍未拆开”的问题。此次补刀后，Session DO 已完成主要 deep split，User DO 也已从 2508 行显著收缩，但仍保留进一步落到 `handlers/*` 的余量。
+
+### 10.1 Session DO deep split
+
+1. 新增 `workers/agent-core/src/host/do/session-do/runtime-assembly.ts`
+   - 负责 constructor 级 runtime 装配、composition wiring、quota/evidence anchor 组装。
+2. 新增 `workers/agent-core/src/host/do/session-do/fetch-runtime.ts`
+   - 负责 fetch/router、request 分发、checkpoint/verify/persistence delegation。
+3. 新增 `workers/agent-core/src/host/do/session-do/ws-runtime.ts`
+   - 负责 WS attach/message/close、helper attach、edge trace 相关逻辑。
+4. `workers/agent-core/src/host/do/session-do-runtime.ts`
+   - 从约 `1623` 行降到 `731` 行。
+   - 不再只是 façade re-export 后把原巨石完整搬到 `*-runtime.ts`。
+
+### 10.2 User DO deep split
+
+1. 新增 `workers/orchestrator-core/src/user-do/durable-truth.ts`
+   - 抽出 D1 durable truth / cache / ended-session cleanup。
+2. 新增 `workers/orchestrator-core/src/user-do/agent-rpc.ts`
+   - 抽出 agent-core RPC transport、NDJSON stream read、proxy read response。
+3. 新增 `workers/orchestrator-core/src/user-do/ws-runtime.ts`
+   - 抽出 WS attach / replay / device revoke / terminal notify。
+4. 新增 `workers/orchestrator-core/src/user-do/surface-runtime.ts`
+   - 抽出 usage / resume / permission / elicitation / files / me-* read surface。
+5. 新增 `workers/orchestrator-core/src/user-do/session-flow.ts`
+   - 抽出 start / input alias / cancel / verify / status-timeline-history 读取流程。
+6. 新增 `workers/orchestrator-core/src/user-do/message-runtime.ts`
+   - 抽出 RH5 `/messages` multipart / image_url / reasoning / model gate 流。
+7. `workers/orchestrator-core/src/user-do-runtime.ts`
+   - 从约 `2508` 行降到 `1049` 行。
+   - 仍未完全达到本 action-plan 设计的 `handlers/*` 颗粒度，因此保留 known issue，而不是宣称 full closed。
+
+### 10.3 验证
+
+1. `pnpm --filter @haimang/agent-core-worker typecheck`
+2. `pnpm --filter @haimang/agent-core-worker build`
+3. `pnpm --filter @haimang/agent-core-worker test -- test/host/do/nano-session-do.test.ts test/host/do/initial-context-consumer.test.ts test/host/integration/checkpoint-roundtrip.test.ts test/host/integration/ws-http-fallback.test.ts`
+4. `pnpm --filter @haimang/orchestrator-core-worker typecheck`
+5. `pnpm --filter @haimang/orchestrator-core-worker build`
+6. `pnpm --filter @haimang/orchestrator-core-worker test`
+7. `pnpm check:cycles`
+
+### 10.4 纠偏后的真实结论
+
+1. RH6 不应再继续写成“只有 public façade 薄化”。
+2. `session-do-runtime.ts` 的 deep split 主目标已完成。
+3. `user-do-runtime.ts` 已显著降体积，但仍存在最后一段向 `handlers/*` 颗粒度推进的 carry-over。

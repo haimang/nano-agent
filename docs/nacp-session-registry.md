@@ -1,4 +1,4 @@
-# NACP-Session Registry — v1.3.0
+# NACP-Session Registry — v1.4.0
 
 > Subprotocol: `nacp-session.v1`
 > Compat baseline: `1.0.0`
@@ -15,6 +15,14 @@
 | `session.stream.ack` | ✅ |
 | `session.heartbeat` | ✅ |
 | `session.followup_input` | ✅ |
+| `session.permission.request` | ✅ |
+| `session.permission.decision` | ✅ |
+| `session.usage.update` | ✅ |
+| `session.skill.invoke` | ✅ |
+| `session.command.invoke` | ✅ |
+| `session.elicitation.request` | ✅ |
+| `session.elicitation.answer` | ✅ |
+| `session.attachment.superseded` | ✅ |
 
 ## Stream Event Kinds (`session.stream.event`)
 
