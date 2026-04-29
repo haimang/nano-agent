@@ -414,7 +414,13 @@ const worker = {
     const stub = env.ORCHESTRATOR_USER_DO.get(env.ORCHESTRATOR_USER_DO.idFromName(auth.value.user_uuid));
 
     if (route.action === "ws") {
-      return stub.fetch(new Request(`https://orchestrator.internal/sessions/${route.sessionUuid}/ws`, {
+      const publicUrl = new URL(request.url);
+      const internalUrl = new URL(`https://orchestrator.internal/sessions/${route.sessionUuid}/ws`);
+      const lastSeenSeq = publicUrl.searchParams.get("last_seen_seq");
+      if (lastSeenSeq !== null) {
+        internalUrl.searchParams.set("last_seen_seq", lastSeenSeq);
+      }
+      return stub.fetch(new Request(internalUrl, {
         method: "GET",
         headers: isWebSocketUpgrade(request) ? { upgrade: "websocket" } : {},
       }));
