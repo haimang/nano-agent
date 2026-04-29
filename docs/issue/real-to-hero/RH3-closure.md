@@ -112,8 +112,18 @@
 
 ---
 
-## 6. 修订历史
+## 6. Opus 审核后校正
+
+- 已补上 RH3 两个此前确属遗漏的代码级修正：
+  1. `workers/orchestrator-auth/src/service.ts` 现在按 `nak_<keyId>.<secret>` 生成 API key，D1 `nano_team_api_keys.api_key_uuid` 只保存公开 `key_id`，verify 仍对完整 bearer 做 salted hash；历史单段 `nak_*` key 继续兼容。
+  2. `workers/agent-core/src/host/do/nano-session-do.ts` 已在 `session.internal` 入口锁存 internal authority 的 `sub`，并通过 `session-do-persistence.ts` 持久化；`pushServerFrameToClient()` 不再依赖恒为空的 `env.USER_UUID`。
+- 本节只校正代码与收口口径，不改写 §3 中首轮 RH3 preview/live 证据；若要把这两项修正纳入 live 证据，需要在后续 deploy 轮次重跑对应 smoke / e2e。
+
+---
+
+## 7. 修订历史
 
 | 版本 | 日期 | 作者 | 变更 |
 |------|------|------|------|
 | `r1` | `2026-04-29` | `Owner + Copilot` | RH3 首轮 closure：记录 migration 009 apply、preview deploy、worker/unit/live-e2e 结果，并显式保留 RH1/RH2 inherited carry-over |
+| `r2` | `2026-04-29` | `Copilot` | 根据 Opus 审核补记 API key 存储模型与 NanoSessionDO user routing 的后续代码修正，校正 RH3 收口口径 |

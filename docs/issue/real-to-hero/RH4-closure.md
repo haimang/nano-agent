@@ -15,7 +15,7 @@
 > **RH4 的 client-facing files 主链已闭合**：`010-session-files.sql` 已 apply 到 preview D1；filesystem-core 已切到真实 `R2 + D1` `SessionFileStore` 与 RPC；orchestrator-core 已提供 `POST /sessions/{id}/files` multipart upload、`GET /sessions/{id}/files` cursor list、`GET /sessions/{id}/files/{file_uuid}/content` bytes download；preview 6/6 workers 健康，RH4 的 upload/list/download smoke 与 cross-tenant deny live e2e 已通过。
 
 > **本 Phase 仍保留 2 个 known gap**：
-> 1. RH4 Phase 4 / Phase 7 的 **agent-core RPC-first consumer cutover 与 library import sunset** 还没有完成；本轮只把 `CONTEXT_CORE / FILESYSTEM_CORE` binding 与 `LANE_E_RPC_FIRST=false` 基础设施落下，runtime consumer 仍是 host-local。
+> 1. RH4 Phase 4 / Phase 7 的 **agent-core RPC-first consumer cutover 与 library import sunset** 还没有完成；本轮只把 `CONTEXT_CORE / FILESYSTEM_CORE` binding 与一个尚未被 consumer 读取的 `LANE_E_RPC_FIRST=false` 配置位落下，runtime consumer 仍是 host-local。
 > 2. `docs/api/files-api.md`、`docs/architecture/r2-namespace.md`、`docs/owner-decisions/lane-e-sunset.md` 没有在本轮创建：前两者不是用户本轮显式指定交付物，后者还依赖 owner 冻结 prod 启用日。
 
 ---
@@ -100,8 +100,18 @@
 
 ---
 
-## 6. 修订历史
+## 6. Opus 审核后校正
+
+- 已同步修正文档事实：
+  1. RH4 action-plan 中 migration 010 的 `created_at` 已从错误的 `INTEGER` 回填为实际实现的 `TEXT (ISO 8601)`。
+  2. RH3/RH4 action-plan 中 e2e 文件名已改回仓库真实存在的 numbered `.mjs` 路径。
+  3. Lane E 仍维持 binding-only 现状：`LANE_E_RPC_FIRST` 目前只是配置位，不代表 dual-track consumer 已落地，因此本 closure 继续保持 `close-with-known-issues`。
+
+---
+
+## 7. 修订历史
 
 | 版本 | 日期 | 作者 | 变更 |
 |------|------|------|------|
 | `r1` | `2026-04-29` | `Owner + Copilot` | RH4 首轮 closure：记录 migration 010 apply、filesystem/orchestrator files 主链、preview deploy、unit/live 验证，并显式保留 Lane E consumer / sunset carry-over |
+| `r2` | `2026-04-29` | `Copilot` | 根据 Opus 审核校正 RH4 文档事实：migration 字段类型、e2e 路径命名与 Lane E binding-only 口径 |

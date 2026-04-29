@@ -171,7 +171,7 @@ RH4 Filesystem & Lane E
 | P4-11 | 7 | sunset PR：删除 library import | remove | `agent-core/src/host/runtime-mainline.ts` 等 | medium |
 | P4-12 | 7 | sunset 起点冻结到 owner-decisions doc | manual | `docs/owner-decisions/lane-e-sunset.md` | low |
 | P4-13 | 8 | upload/list/download endpoint test ≥5×3 | add | test files | low |
-| P4-14 | 8 | 跨 team 拒绝 e2e | add | `test/cross-e2e/file-cross-tenant.e2e.test.ts` | medium |
+| P4-14 | 8 | 跨 team 拒绝 e2e | add | `test/cross-e2e/14-files-cross-tenant-deny.test.mjs` | medium |
 | P4-15 | 8 | preview smoke + 归档 | manual | `docs/issue/real-to-hero/RH4-evidence.md` | low |
 
 ---
@@ -182,7 +182,7 @@ RH4 Filesystem & Lane E
 
 | 编号 | 工作项 | 内容 | 文件 | 收口 |
 |------|--------|------|------|------|
-| P4-01 | migration 010 | `CREATE TABLE nano_session_files (file_uuid TEXT PK, session_uuid TEXT NOT NULL, team_uuid TEXT NOT NULL, r2_key TEXT NOT NULL, mime TEXT, size_bytes INTEGER, original_name TEXT, created_at INTEGER NOT NULL, INDEX(session_uuid), INDEX(team_uuid))` | `migrations/010-session-files.sql` | apply 全绿 |
+| P4-01 | migration 010 | `CREATE TABLE nano_session_files (file_uuid TEXT PK, session_uuid TEXT NOT NULL, team_uuid TEXT NOT NULL, r2_key TEXT NOT NULL, mime TEXT, size_bytes INTEGER, original_name TEXT, created_at TEXT NOT NULL, INDEX(session_uuid), INDEX(team_uuid))` | `migrations/010-session-files.sql` | apply 全绿 |
 | P4-02 | R2 namespace doc | 写 `docs/architecture/r2-namespace.md`：`tenants/{teamUuid}/sessions/{sessionUuid}/files/{fileUuid}` 严格命名规则 + 跨 tenant 拒绝逻辑 | new file | 文档 ≥1KB |
 
 ### 4.2 Phase 2 — SessionFileStore
@@ -231,7 +231,7 @@ RH4 Filesystem & Lane E
 | 编号 | 工作项 | 内容 | 文件 | 收口 |
 |------|--------|------|------|------|
 | P4-13 | endpoint tests | 3 endpoint × 5 case = 15 case | test files | 全绿 |
-| P4-14 | cross-tenant 拒绝 e2e | team A upload → team B 尝试 list/download → 403 | `test/cross-e2e/file-cross-tenant.e2e.test.ts` | 通过 |
+| P4-14 | cross-tenant 拒绝 e2e | team A upload → team B 尝试 list/download → 403 | `test/cross-e2e/14-files-cross-tenant-deny.test.mjs` | 通过 |
 | P4-15 | preview smoke | preview deploy → 业主 manual upload 1MB image + list + download；浏览器 + wechat-devtool 各 1 | `docs/issue/real-to-hero/RH4-evidence.md` | 文档 ≥1KB + 截图 |
 
 ---

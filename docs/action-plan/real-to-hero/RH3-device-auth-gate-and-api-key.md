@@ -118,7 +118,7 @@ RH3
 >
 > | carry-over ID | 来源 | 状态 | RH3 处置 | 工作量 |
 > |---|---|---|---|---|
-> | C1 — `IngressAuthSnapshot.user_uuid` 进入 NanoSessionDO,解锁 `pushServerFrameToClient` 真投递 | RH1 P1-08 wire-only(deepseek R1 / GPT R2 / GLM R2 / kimi R6 一致 high blocker)| **RH3 D6 必须落地**(charter §10.3 NOT-成功退出第 1 条;否则 RH1 Lane F live runtime 不闭合)| **吸纳为 P3-S6 一部分**:device gate 落地时 IngressAuthSnapshot 加 `user_uuid` 字段,NanoSessionDO 在 attach/start 时从 snapshot 取 user_uuid 赋值给 `this.env.USER_UUID` 等价访问路径(或新增 `this.userUuid` 字段)| S(1 个 wire 字段 + 1 个赋值点 + 1 个 e2e 验证)|
+> | C1 — internal authority `sub` / user_uuid 进入 NanoSessionDO,解锁 `pushServerFrameToClient` 真投递 | RH1 P1-08 wire-only(deepseek R1 / GPT R2 / GLM R2 / kimi R6 一致 high blocker)| **RH3 D6 必须落地**(charter §10.3 NOT-成功退出第 1 条;否则 RH1 Lane F live runtime 不闭合)| **吸纳为 P3-S6 一部分**:device gate 落地时把 `session.internal` 已校验 authority 的 `sub` 锁存到 NanoSessionDO（持久化到 DO storage），`pushServerFrameToClient` 走该 session user state，而不是读 `env.USER_UUID` 这种 deployment 常量路径| S(1 个 wire 字段 + 1 个赋值点 + 1 个 e2e 验证)|
 > | C2 — P1-10 / P1-11 / P1-12 三个 round-trip e2e 文件 | RH1 P1-10/11/12 missing | C1 落地后 RH3 必须补;无此 3 文件不能宣称 Lane F live runtime 闭合 | **吸纳为 P3 新增工作项 P3-CO-RH1**:补 `tests/cross-e2e/permission-round-trip.e2e.test.ts` / `elicitation-round-trip.e2e.test.ts` / `usage-push.e2e.test.ts` | M(3 个 e2e ≈ 200 行/each,需 miniflare wrap)|
 > | C3 — WS lifecycle hardening 4 must-cover scenario(normal close / abnormal disconnect / heartbeat miss / replay-after-reconnect)+ DO alarm wire | RH2 Phase 4 charter §7.3 P2-C deferred(deepseek R4 / GLM 隐含 / kimi 隐含)| **RH3 device gate 落地后 client 真 attached → 4 scenario 才可验证**;吸纳为 P3-S6 配套 | **吸纳为 P3 新增工作项 P3-CO-RH2-WS**:`user-do.ts` handleWsAttach 升级 + heartbeat alarm + 4 scenario 用例 | M-L(DO alarm + 4 lifecycle case ≈ 400 行)|
 > | C4 — migration 008-models.sql apply 到 preview D1 | RH2 owner-action(GPT R4 / GLM R6 / deepseek R7 / kimi 隐含)| **RH3 启动前 owner 必须 apply**(GLM R6 已要求 entry-gate enforce)| **RH3 entry-gate prereq**(本 action-plan §7 风险表显式补)| 0(owner-action,不占 RH3 工作量)|
@@ -168,8 +168,8 @@ RH3
 | P3-13 | 6 | `GET /me/teams` | add | 同上 | low |
 | P3-14 | 7 | `/me/conversations` 双源 + cursor | update | `orchestrator-core/src/index.ts:618-646` + `user-do.ts:1810+` | medium |
 | P3-15 | 8 | endpoint test ≥5×N | add | test files | low |
-| P3-16 | 8 | device revoke e2e（含 force-disconnect）| add | `test/cross-e2e/device-revoke.e2e.test.ts` | medium |
-| P3-17 | 8 | API key smoke | add | `tests/api-key-smoke.test.ts` | low |
+| P3-16 | 8 | device revoke e2e（含 force-disconnect）| add | `test/cross-e2e/13-device-revoke-force-disconnect.test.mjs` | medium |
+| P3-17 | 8 | API key smoke | add | `test/package-e2e/orchestrator-core/09-api-key-smoke.test.mjs` | low |
 | P3-18 | 8 | preview smoke + 归档 | manual | `docs/issue/real-to-hero/RH3-evidence.md` | low |
 
 ---
@@ -209,7 +209,7 @@ RH3
 |------|--------|------|------|------|
 | P3-08 | verifyApiKey | parse `nak_*` bearer → 通过 `key_id` prefix 查 `nano_team_api_keys` → HMAC-SHA256(salt:raw) 比对 hash → 返回 `{supported: true, team_uuid, key_id}`；keys 含 `revoked_at` 已撤销直接拒 | `orchestrator-auth/src/service.ts:402-414` | 单测 + smoke：`nak_*` bearer 通过；wrong key 401 |
 | P3-09 | authenticateRequest 双轨 | bearer 以 `nak_` 开头 → 走 verifyApiKey；否则走 JWT；填入相同 `AuthSnapshot` shape（device_uuid 对 API key 用空串占位） | `orchestrator-core/src/auth.ts` | endpoint test：JWT + API key 各 ≥3 case |
-| P3-10 | internal createApiKey | 新增 RPC method（**无 public route**）：参数 `{team_uuid, label}`；生成 `nak_<uuid>`、salt、hash 写 D1；返回 raw key 1 次 | `orchestrator-auth/src/service.ts` + RPC table | 单测：调用一次 + 返回 + 再调 verify 通过 |
+| P3-10 | internal createApiKey | 新增 RPC method（**无 public route**）：参数 `{team_uuid, label}`；生成 `nak_<keyId>.<secret>`；D1 仅保存公开 `key_id` + `salt/hash`，返回 raw key 1 次 | `orchestrator-auth/src/service.ts` + RPC table | 单测：调用一次 + 返回 + 再调 verify 通过 |
 
 ### 4.6 Phase 6 — Team Display + /me/team + /me/teams
 
@@ -230,8 +230,8 @@ RH3
 | 编号 | 工作项 | 内容 | 文件 | 收口 |
 |------|--------|------|------|------|
 | P3-15 | endpoint test | 所有新 endpoint 各 ≥5 case | test files | 全绿 |
-| P3-16 | device revoke e2e | 跨 worker：login → start session → revoke device → 验证 access 401 + WS 收 terminal | `test/cross-e2e/device-revoke.e2e.test.ts` | 1 e2e 通过 |
-| P3-17 | API key smoke | curl `nak_*` bearer 调 `/auth/me` 与 `/sessions/*` | `tests/api-key-smoke.test.ts` | 通过 |
+| P3-16 | device revoke e2e | 跨 worker：login → start session → revoke device → 验证 access 401 + WS 收 terminal | `test/cross-e2e/13-device-revoke-force-disconnect.test.mjs` | 1 e2e 通过 |
+| P3-17 | API key smoke | curl `nak_*` bearer 调 `/auth/me` 与 `/sessions/*` | `test/package-e2e/orchestrator-core/09-api-key-smoke.test.mjs` | 通过 |
 | P3-18 | preview smoke | preview deploy → live CLI smoke：注册 / 登录 / 第二设备 revoke 第一设备 / 第一设备 token 401 + WS close | `docs/issue/real-to-hero/RH3-closure.md` §3 | 证据已并入 closure |
 
 ---
