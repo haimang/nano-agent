@@ -469,11 +469,23 @@ export class NanoSessionDO {
       // coordination (deferred to follow-up PR); for now the event is logged
       // so it is at minimum visible in wrangler tail.
       onUsageCommit: (event) => {
+        // RH1 P1-08 — push `session.usage.update` server frame to client
+        // (cross-worker WS push via ORCHESTRATOR_CORE service binding).
+        // Best-effort: missing binding / detached client returns delivered=false
+        // and the trace log below stays as the audit anchor.
         console.log("usage-commit", {
           tag: "usage-commit",
           kind: event.kind,
           remaining: event.remaining,
           limitValue: event.limitValue,
+        });
+        void this.pushServerFrameToClient({
+          kind: "session.usage.update",
+          session_uuid: this.sessionUuid ?? "unknown",
+          quota_kind: event.kind,
+          remaining: event.remaining,
+          limit_value: event.limitValue,
+          detail: event.detail,
         });
       },
     });
@@ -631,9 +643,8 @@ export class NanoSessionDO {
     return sweepDeferredAnswersModule(this.buildPersistenceContext());
   }
 
-  // ZX5 Lane F1/F2 — public contract: emit `session.permission.request`
-  // server frame + await DO storage decision. RH1 wires the actual hook
-  // dispatcher; today this is await-only (frame emit is best-effort).
+  // RH1 P1-03 — emit `session.permission.request` to the client (via
+  // cross-worker push to orchestrator-core User DO), then await decision.
   async emitPermissionRequestAndAwait(input: {
     sessionUuid: string;
     requestUuid: string;
@@ -641,9 +652,13 @@ export class NanoSessionDO {
     reason?: string;
     timeoutMs?: number;
   }): Promise<Record<string, unknown>> {
-    void this.sessionUuid;
-    const helper = this.getWsHelper?.bind(this);
-    void helper;
+    await this.pushServerFrameToClient({
+      kind: "session.permission.request",
+      session_uuid: input.sessionUuid,
+      request_uuid: input.requestUuid,
+      capability: input.capability,
+      ...(input.reason !== undefined ? { reason: input.reason } : {}),
+    });
     return this.awaitAsyncAnswer({
       kind: "permission",
       requestUuid: input.requestUuid,
@@ -651,18 +666,78 @@ export class NanoSessionDO {
     });
   }
 
+  // RH1 P1-04 — symmetric for elicitation.
   async emitElicitationRequestAndAwait(input: {
     sessionUuid: string;
     requestUuid: string;
     prompt: string;
     timeoutMs?: number;
   }): Promise<Record<string, unknown>> {
-    void this.sessionUuid;
+    await this.pushServerFrameToClient({
+      kind: "session.elicitation.request",
+      session_uuid: input.sessionUuid,
+      request_uuid: input.requestUuid,
+      prompt: input.prompt,
+    });
     return this.awaitAsyncAnswer({
       kind: "elicitation",
       requestUuid: input.requestUuid,
       timeoutMs: input.timeoutMs,
     });
+  }
+
+  /**
+   * RH1 P1-07 — push a server frame to the client attached to this session
+   * via the cross-worker WS push topology:
+   *   agent-core ─[ORCHESTRATOR_CORE service binding]→ orchestrator-core
+   *     WorkerEntrypoint.forwardServerFrameToClient ─[ORCHESTRATOR_USER_DO.idFromName]
+   *     → User DO.emitServerFrame
+   *
+   * Best-effort by design: missing binding / detached client / RPC error is
+   * logged and returned as `delivered=false` rather than thrown — runtime
+   * truth (storage decision / quota commit) stays the source of truth.
+   */
+  private async pushServerFrameToClient(frame: {
+    readonly kind: string;
+    readonly [k: string]: unknown;
+  }): Promise<{ ok: boolean; delivered: boolean; reason?: string }> {
+    const env = this.env as Partial<SessionRuntimeEnv> | undefined;
+    const orch = env?.ORCHESTRATOR_CORE;
+    if (!orch || typeof orch.forwardServerFrameToClient !== "function") {
+      return { ok: false, delivered: false, reason: "orchestrator-core-binding-missing" };
+    }
+    const sessionUuid = this.sessionUuid;
+    if (!sessionUuid) {
+      return { ok: false, delivered: false, reason: "no-session-uuid" };
+    }
+    const teamUuid = this.currentTeamUuid();
+    // The User DO is keyed by user_uuid (sub) — RH1 carries no user_uuid
+    // attribute on NanoSessionDO yet (that wiring is RH3 D6 device gate
+    // territory). Fall back to a TEAM-keyed forward only when authority
+    // chain doesn't carry a user identity; the meta.userUuid field is
+    // declared optional on the orchestrator-core entrypoint to allow this
+    // best-effort behavior.
+    const userUuid = (this.env as { USER_UUID?: string } | undefined)?.USER_UUID;
+    if (!userUuid) {
+      // No user_uuid available locally — return best-effort skip; RH3 wires
+      // user_uuid into IngressAuthSnapshot so this branch becomes rare.
+      return { ok: false, delivered: false, reason: "no-user-uuid-for-routing" };
+    }
+    try {
+      return await orch.forwardServerFrameToClient(sessionUuid, frame, {
+        userUuid,
+        ...(teamUuid ? { teamUuid } : {}),
+        traceUuid: this.traceUuid ?? undefined,
+      });
+    } catch (error) {
+      console.warn("push-server-frame-failed", {
+        tag: "push-server-frame-failed",
+        session_uuid: sessionUuid,
+        kind: frame.kind,
+        error: String(error),
+      });
+      return { ok: false, delivered: false, reason: "rpc-error" };
+    }
   }
 
   private attachTeamUuid(candidate: string | undefined | null): void {

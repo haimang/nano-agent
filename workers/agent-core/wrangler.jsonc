@@ -45,7 +45,11 @@
   // on the host-local side until a later charter explicitly promotes them
   // to remote bindings.
   "services": [
-    { "binding": "BASH_CORE", "service": "nano-agent-bash-core" }
+    { "binding": "BASH_CORE", "service": "nano-agent-bash-core" },
+    // RH1 P1-06a — service binding to orchestrator-core for cross-worker
+    // WS push (NanoSessionDO emits server frames via
+    // OrchestratorCoreEntrypoint.forwardServerFrameToClient → User DO).
+    { "binding": "ORCHESTRATOR_CORE", "service": "nano-agent-orchestrator-core" }
     // { "binding": "CONTEXT_CORE", "service": "nano-agent-context-core" },
     // { "binding": "FILESYSTEM_CORE", "service": "nano-agent-filesystem-core" }
   ],
@@ -93,7 +97,8 @@
         ]
       },
       "services": [
-        { "binding": "BASH_CORE", "service": "nano-agent-bash-core-preview" }
+        { "binding": "BASH_CORE", "service": "nano-agent-bash-core-preview" },
+        { "binding": "ORCHESTRATOR_CORE", "service": "nano-agent-orchestrator-core-preview" }
       ],
       "d1_databases": [
         {

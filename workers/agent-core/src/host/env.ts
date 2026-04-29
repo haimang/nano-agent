@@ -73,6 +73,21 @@ export interface SessionRuntimeEnv {
   readonly BASH_CORE?: ServiceBindingLike;
   readonly HOOK_WORKER?: ServiceBindingLike;
   readonly FAKE_PROVIDER_WORKER?: ServiceBindingLike;
+  /**
+   * RH1 P1-06a — orchestrator-core service binding.
+   * NanoSessionDO uses `forwardServerFrameToClient(sessionUuid, frame, meta)`
+   * RPC to push server frames to the client attached to orchestrator-core's
+   * User DO (cross-worker WS push topology). agent-core never binds
+   * `ORCHESTRATOR_USER_DO` directly because that DO namespace lives in
+   * orchestrator-core's wrangler.
+   */
+  readonly ORCHESTRATOR_CORE?: ServiceBindingLike & {
+    forwardServerFrameToClient?(
+      sessionUuid: string,
+      frame: { readonly kind: string; readonly [k: string]: unknown },
+      meta: { readonly userUuid: string; readonly teamUuid?: string; readonly traceUuid?: string },
+    ): Promise<{ ok: boolean; delivered: boolean; reason?: string }>;
+  };
 
   // Reserved / legacy
   /** @deprecated Legacy alias for `BASH_CORE`. Prefer `BASH_CORE` in new code and bindings. */

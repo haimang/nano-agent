@@ -97,4 +97,57 @@ describe("scheduleNextStep", () => {
       expect(decision.requestId).toBe("tc-1");
     }
   });
+
+  // RH1 P1-01 — pendingHookEvents queue drains before tool/llm.
+  it("RH1: emits hook_emit when pendingHookEvents non-empty (post-compact, pre-tool)", () => {
+    const snap = runningSnapshot();
+    const decision = scheduleNextStep(
+      snap,
+      baseSignals({ pendingHookEvents: ["PreToolUse"] }),
+    );
+    expect(decision.kind).toBe("hook_emit");
+    if (decision.kind === "hook_emit") {
+      expect(decision.event).toBe("PreToolUse");
+    }
+  });
+
+  it("RH1: hook_emit drains FIFO (first event in queue is selected)", () => {
+    const snap = runningSnapshot();
+    const decision = scheduleNextStep(
+      snap,
+      baseSignals({ pendingHookEvents: ["UserPromptSubmit", "PreToolUse"] }),
+    );
+    expect(decision.kind).toBe("hook_emit");
+    if (decision.kind === "hook_emit") {
+      expect(decision.event).toBe("UserPromptSubmit");
+    }
+  });
+
+  it("RH1: compact takes priority over hook_emit", () => {
+    const snap = runningSnapshot();
+    const decision = scheduleNextStep(
+      snap,
+      baseSignals({
+        compactRequired: true,
+        pendingHookEvents: ["PreToolUse"],
+      }),
+    );
+    expect(decision.kind).toBe("compact");
+  });
+
+  it("RH1: hook_emit takes priority over tool_exec", () => {
+    let snap = runningSnapshot();
+    snap = applyAction(snap, {
+      type: "tool_calls_requested",
+      calls: [{ id: "tc-1", name: "bash" }],
+    });
+    const decision = scheduleNextStep(
+      snap,
+      baseSignals({
+        hasMoreToolCalls: true,
+        pendingHookEvents: ["PreToolUse"],
+      }),
+    );
+    expect(decision.kind).toBe("hook_emit");
+  });
 });

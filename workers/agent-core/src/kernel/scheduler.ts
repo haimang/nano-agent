@@ -18,6 +18,14 @@ export interface SchedulerSignals {
   cancelRequested: boolean;
   timeoutReached: boolean;
   llmFinished: boolean;
+  /**
+   * RH1 P1-01 — pending hook events queued by the host (e.g. tool-execution
+   * pre/post hooks waiting for dispatch). When non-empty and no higher-priority
+   * signal fires, scheduler drains one event per call by emitting a
+   * `hook_emit` decision. Caller is expected to remove the event from its own
+   * queue once the runner consumes the decision.
+   */
+  pendingHookEvents?: readonly string[];
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -41,6 +49,13 @@ export function scheduleNextStep(
   // Priority 3: compaction needed
   if (signals.compactRequired) {
     return { kind: "compact" };
+  }
+
+  // Priority 3.5 (RH1 P1-01): pending hook events drain before tool/llm.
+  // Hooks are emitted before the next tool execution / llm call so
+  // pre-* hooks (PreToolUse / PreCompact / SessionStart) can short-circuit.
+  if (signals.pendingHookEvents && signals.pendingHookEvents.length > 0) {
+    return { kind: "hook_emit", event: signals.pendingHookEvents[0]! };
   }
 
   // Priority 4: pending tool calls to execute

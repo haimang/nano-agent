@@ -6,6 +6,8 @@ import {
   buildWorkersAiExecutionRequestFromMessages,
 } from "../llm/gateway.js";
 import { QuotaAuthorizer, QuotaExceededError, type QuotaRuntimeContext } from "./quota/authorizer.js";
+import type { HookDispatcher, HookEmitContext } from "../hooks/dispatcher.js";
+import type { HookEventName } from "../hooks/catalog.js";
 
 export interface CapabilityTransportLike {
   call(input: {
@@ -111,6 +113,17 @@ export interface MainlineKernelOptions {
     readonly limitValue: number;
     readonly detail: Record<string, unknown>;
   }) => void;
+  /**
+   * RH1 P1-02 — wire `hook.emit` delegate to a real HookDispatcher.
+   * undefined → preserves the historical no-op (deploy-time backward compat
+   * with hosts that haven't seeded the dispatcher yet).
+   */
+  readonly hookDispatcher?: HookDispatcher;
+  /**
+   * Provider for per-emit context (sessionUuid / turnId / abortSignal).
+   * Without it, dispatcher gets {} — guards still apply.
+   */
+  readonly hookContextProvider?: () => HookEmitContext;
 }
 
 export const NANO_AGENT_SYSTEM_PROMPT =
@@ -293,8 +306,23 @@ export function createMainlineKernelRunner(
         },
       },
       hook: {
-        async emit(_event: string, _payload: unknown) {
-          return undefined;
+        // RH1 P1-02 — real delegate. dispatcher 不在时退化为 no-op(向下兼容
+        // 测试 fixture);注入后,blocking 类型 hook 失败必须 throw 而非 silent。
+        async emit(event: string, payload: unknown) {
+          const dispatcher = options.hookDispatcher;
+          if (!dispatcher) return undefined;
+          const context = options.hookContextProvider?.();
+          const outcome = await dispatcher.emit(
+            event as HookEventName,
+            payload,
+            context,
+          );
+          if (outcome.blocked) {
+            throw new Error(
+              `hook ${event} blocked: ${outcome.blockReason ?? "no reason"}`,
+            );
+          }
+          return outcome;
         },
       },
       compact: {
