@@ -26,7 +26,7 @@
 > - `docs/design/real-to-hero/RH5-multi-model-multimodal-reasoning.md`（含 §9 修订 + S0 schema 前置）
 > 冻结决策来源:
 > - `docs/design/real-to-hero/RHX-qna.md` Q3（业主同意 Opus 路线：no per-model quota，但 usage event 字段扩展为完整 evidence）
-> 文档状态: `draft`
+> 文档状态: `executed`
 
 ---
 
@@ -337,3 +337,74 @@ RH5
 | 文档 | models-and-capabilities.md |
 | 风险收敛 | reasoning 0 silent-drop；image url 0 注入 |
 | 可交付性 | RH6 closure 可启动 |
+
+---
+
+## 9. 工作日志回填
+
+### 9.1 代码级变更清单
+
+1. **nacp-session schema / package**
+   - `packages/nacp-session/src/messages.ts` 增加 `model_id`、`reasoning`、`SessionMessagePostBodySchema`、`SessionMessagePart`。
+   - `packages/nacp-session/src/index.ts` 导出 RH5 新 schema/type。
+   - `packages/nacp-session/src/version.ts` 与 `package.json` 升级到 `1.4.0`。
+   - `@haimang/nacp-session@1.4.0` 已发布到 GitHub Packages；workspace consumers 的 package.json 与 lockfile 已更新到 `1.4.0`。
+
+2. **model catalog / migrations**
+   - 新增 `workers/orchestrator-core/migrations/011-model-capabilities-seed.sql`：扩展 usage event evidence 字段，seed 25 个 Workers AI 模型（4 vision / 8 reasoning）。
+   - 新增 `workers/orchestrator-core/migrations/012-usage-events-fk-repair.sql`：修复 preview D1 中 `nano_usage_events.session_uuid` stale FK 指向 `nano_conversation_sessions_old_v6` 的 table-swap 残留。
+   - preview D1 已 apply `011` 与 `012`；`PRAGMA foreign_key_list(nano_usage_events)` 已指向 `nano_conversation_sessions`。
+
+3. **agent-core runtime**
+   - `CanonicalLLMRequest` 增加 `reasoning`。
+   - `ModelCapabilities` 增加 `supportsReasoning` / `reasoningEfforts`，`CapabilityName` 增加 `reasoning`。
+   - `request-builder` 增加 reasoning capability validation；不支持 reasoning 或 effort 不匹配时抛 `CAPABILITY_MISSING`。
+   - `gateway` 支持从 D1 `nano_models` 读取 runtime model capabilities，并保留 primary/fallback 默认。
+   - Workers AI adapter 使用显式 `exec.model.modelId` 调用，不再固定只跑 primary/fallback；同时传递 `reasoning_effort`，并保留 multipart image content。
+   - `TurnInput` / HTTP controller / orchestration 贯通 `model_id`、`reasoning`、`parts`。
+   - agent-core 在 LLM call 前通过 `FILESYSTEM_CORE.readArtifact` 读取 session file image，并将 `/sessions/{id}/files/{file_uuid}/content` 转为 data URL，避免把相对 URL 直接交给 provider。
+   - usage commit 记录 `model_id`、token、`is_reasoning`、`is_vision`、`request_uuid`。
+
+4. **orchestrator-core `/messages`**
+   - `/messages` 支持 `text` / `artifact_ref` / `image_url` parts。
+   - `image_url` 只允许当前 session 的 file content endpoint 或 `nano-file://{session}/{file}`，避免任意外部 URL 注入。
+   - 当 body 包含 `model_id` 时，User DO 会查询 D1 `nano_models` 与 `nano_team_model_policy`，拒绝 inactive 或 team-disabled model。
+   - multipart body 会继续写入 conversation message，并把 rich `parts`、`model_id`、`reasoning` 转发给 agent-core。
+
+5. **测试与文档**
+   - 新增/更新 nacp-session schema tests。
+   - 新增 request-builder reasoning tests、registry capability tests、gateway explicit model/reasoning/image tests、D1-backed capability injection test。
+   - 新增 User DO RH5 `/messages` positive forwarding test。
+   - 新增 live package e2e：`test/package-e2e/orchestrator-core/11-rh5-models-image-reasoning.test.mjs`。
+   - 新增 `docs/api/models-and-capabilities.md`。
+   - 新增 closure：`docs/issue/real-to-hero/RH5-closure.md`。
+
+### 9.2 Preview / live 操作记录
+
+1. `011-model-capabilities-seed.sql` preview apply 成功，D1 seed 结果：
+   - `model_count=25`
+   - `vision_count=4`
+   - `reasoning_count=8`
+2. live real LLM smoke 初次暴露 `nano_usage_events` stale FK 指向 `nano_conversation_sessions_old_v6`；新增并 apply `012-usage-events-fk-repair.sql` 后恢复。
+3. `@haimang/nacp-session@1.4.0` 已发布到 GitHub Packages。
+4. agent-core / orchestrator-core / bash-core / context-core / filesystem-core 已部署到 preview；`/debug/workers/health` 返回 `live=6,total=6`，5 个 NACP worker 均显示 `nacp_session_version=1.4.0`。
+5. final live image + reasoning smoke 通过：
+   - session `a5b13d38-e85d-4bb9-abcc-6530c025e696`
+   - file `482bb284-1787-4f5e-9f15-2fc2b319ef9c`
+   - model `@cf/meta/llama-4-scout-17b-16e-instruct`
+   - usage evidence `is_reasoning=1`, `is_vision=1`, `input_tokens=2169`, `output_tokens=9`
+
+### 9.3 验证命令
+
+| 命令 / 检查 | 结果 |
+|---|---|
+| `pnpm --filter @haimang/nacp-session typecheck && pnpm --filter @haimang/nacp-session build && pnpm --filter @haimang/nacp-session test` | ✅ |
+| `pnpm --filter @haimang/agent-core-worker typecheck && pnpm --filter @haimang/agent-core-worker build && pnpm --filter @haimang/agent-core-worker test` | ✅ |
+| `pnpm --filter @haimang/orchestrator-core-worker typecheck && pnpm --filter @haimang/orchestrator-core-worker build && pnpm --filter @haimang/orchestrator-core-worker test` | ✅ |
+| `NANO_AGENT_LIVE_E2E=1 NANO_AGENT_AGENT_CORE_URL=https://service-binding-only.invalid node --test test/cross-e2e/12-real-llm-mainline-smoke.test.mjs` | ✅ |
+| `NANO_AGENT_LIVE_E2E=1 node --test test/package-e2e/orchestrator-core/11-rh5-models-image-reasoning.test.mjs` | ✅ |
+| `/debug/workers/health` | ✅ `live=6,total=6` |
+
+### 9.4 收口意见
+
+RH5 的主目标已闭合：client 可指定模型、传入 session file image、启用 reasoning effort，agent-core 会以 D1 model catalog 为能力真相执行 Workers AI 请求，并把 RH5 evidence 写入 D1 usage events。RH6 可以启动；RH4 Lane E consumer sunset 仍按 RH4 closure 作为独立 carry-over 继续跟踪。
