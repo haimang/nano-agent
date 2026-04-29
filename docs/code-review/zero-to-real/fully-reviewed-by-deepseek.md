@@ -586,3 +586,90 @@
 ## 6. 实现者回应
 
 > *本行以下留给实现者按 `docs/templates/code-review-respond.md` 格式 append 回应。*
+
+> 注：本轮 4 家审查的 implementer response 已统一 append 至 `fully-reviewed-by-GPT.md §6`，以 GPT 为汇总入口。本文件不重复贴回应，仅在 §7 给出审查质量评价。
+
+---
+
+## 7. 审查质量评价
+
+> 评价对象: `DeepSeek 对 zero-to-real + 6-worker + packages 的全量代码审查`
+> 评价人: `Claude Sonnet 4.6（实现者，结合本轮真实修复结果）`
+> 评价时间: `2026-04-29`
+
+### 7.0 评价结论
+
+- **一句话评价**：以"路由→参数解析→handler→DO→持久化"全链路对账为切入点，独立发现了 4 家审查中唯一的运行时硬断点（needsBody / WorkerEntrypoint default export / hook.emit no-op），是本轮最具杀伤力的审查。
+- **综合评分**：`9.2 / 10`
+- **推荐使用场景**：runtime correctness 审计、跨文件调用链对账、`export default` 与运行时可达性核查、新功能落地后的 "代码已存在但运行时不可达" 检测。
+- **不建议单独依赖的场景**：纯协议层 / schema 层（如 NACP envelope 注册表）的合法性核查（GLM 在这块更深入），以及 charter 叙事 vs 代码现实的全局对账（GPT 更侧重于此）。
+
+### 7.1 审查风格画像
+
+| 维度 | 观察 | 例证 |
+|------|------|------|
+| 主要切入点 | `runtime correctness via cross-file call-chain tracing` | R1 串起 `index.ts:430 needsBody` → `index.ts:439 body=undefined` → `user-do.ts:258 handleMessages guard` 三层；R5 串起 `default export` → Cloudflare runtime → service binding RPC 不可达 |
+| 证据类型 | `精确行号 + 调用链回溯 + export 形态对比` | R5 同时对比 bash-core/orchestrator-auth（正确 WorkerEntrypoint 默认导出）与 context/filesystem-core（plain `{fetch}` 默认导出）形成仓库内一致性反证 |
+| Verdict 倾向 | `STRICT — 6 critical + 4 high blocker，无妥协口吻` | R1-R6 全部标 critical 且 blocker；不接受 "infra landed, wiring deferred" 这种 closure 措辞，要求"诚实化 closure"作为关闭前置 |
+| Finding 粒度 | `BALANCED-FINE — 23 findings 覆盖 6 critical→6 low 完整光谱` | 不止盯 critical，连 R23 (JWT_LEEWAY_SECONDS 定义但未应用) 这种纯卫生级 1 行 bug 都精确定位 |
+| 修法建议风格 | `ACTIONABLE — 给出 minimum-edit 与 honest-downgrade 二选一` | R5 明确给出 "改 default export" vs "移除 WorkerEntrypoint 继承+RPC 方法" 二选一；R2/R3 同时给出 "实装" 和 "降级 closure 措辞" 两条路径 |
+
+### 7.2 优点与短板
+
+#### 7.2.1 优点
+
+1. **唯一发现 needsBody 硬断点**：R1 是本轮 4 家审查中**唯一**指出 `/messages` `/resume` `/permission/decision` `/policy/permission_mode` `/elicitation/answer` 五条 POST 路由请求体被 silent-drop 的 reviewer。GPT/kimi/GLM 全部漏掉这个 production-broken 的 critical bug。修复仅 1 行代码，但发现需要做完整的 "路由→参数解析→handler" 三层对账。
+2. **WorkerEntrypoint 默认导出 reachability 核查**：R5 不止指出 RPC 方法定义存在（这是 GPT R2 / GLM R2 也观察到的），而是更深入一层指出 **default export 是 plain `{fetch}` 对象，类继承的 RPC 方法在 Cloudflare runtime 不可达**。这是部署层 reachability 而非代码层 correctness 的细致区分。
+3. **Lane F "看似 partial 实则 4 链全断" 的精确诊断**：R2/R3/R4/R6 把 GPT R1 笼统的 "Lane F infra/seam, wiring deferred" 拆成 4 条独立的断点：(a) hook.emit delegate 是 no-op；(b) onUsageCommit 从未被传入 createMainlineKernelRunner；(c) emitPermissionRequestAndAwait 零调用方；(d) scheduler 不产生 hook_emit 决策。这种拆分让 closure 不能再用 "infra landed" 一笔带过。
+4. **alarm() 无 try/catch 这种生产稳定性陷阱**：R9 指出 DO alarm 链一次 transient error 就永久断裂。这是 GPT/kimi/GLM 全部漏掉的高危项，修复成本极低（每步 try/catch + finally）。
+5. **修法建议给"二选一"而非单一路径**：R5 给出 "改 default export" 或 "移除 RPC 方法定义"；R2/R4 给出 "实装" 或 "降级 closure"。这种风格让 owner 在 implementation budget 紧张时仍有可行选项，不会卡在 "必须完整实装" 上。
+
+#### 7.2.2 短板 / 盲区
+
+1. **NACP 协议层断点未发现**：GLM R1（`NACP_ERROR_BODY_VERBS` 为空 vs `wrapAsError` 矛盾导致 `validateEnvelope` 拒绝错误信封）这种纯 schema-vs-runtime 矛盾未被 DeepSeek 发现。DeepSeek 的强项在调用链对账，弱在 schema 注册表完整性核查。
+2. **package scope 不一致 / 双 scope 并存未发现**：GLM R12 / GLM R11（NacpObservabilityEnvelopeSchema 未在主 index 导出 / `@nano-agent` vs `@haimang` 双 scope）这种 packaging 卫生级问题未被 DeepSeek 覆盖。
+3. **R20 (handleResume stub) 与 R19 (streamSnapshot 无调用方) 标 low 略偏轻**：handleResume 涉及客户端断线重连体感，标 low 在产品视角偏轻；不过这是判断风格差异，不算硬错误。
+4. **未对 charter 文案做主动对账**：DeepSeek 的判断完全基于代码，对 closure 文档的批评是"叙事与代码不一致"层面，缺少 GPT 那种逐句拿 charter 比对 In-Scope / Exit Criteria 的 paper-trail 工作。
+
+### 7.3 Findings 质量清点
+
+| 问题编号 | 原始严重程度 | 事后判定 | Finding 质量 | 分析与说明 |
+|----------|--------------|----------|--------------|------------|
+| R1 | critical | true-positive / missed-by-others | excellent | 唯一发现的 production-broken 硬断点；4 家中独有；修复 1 行代码即可 |
+| R2 | critical | true-positive | excellent | hook.emit no-op 是 GPT R1 笼统 "Lane F deferred" 的更深层诊断；deferred-with-rationale，需独立 sprint |
+| R3 | critical | true-positive | excellent | onUsageCommit 单一函数调用遗漏；本轮 partially-fixed（callback 已注册，WS push deferred） |
+| R4 | critical | true-positive | excellent | "infra exists but zero callers" 的精确判断；deferred 但 closure §4 已诚实标注 |
+| R5 | critical | true-positive / missed-by-others | excellent | default export 不是 WorkerEntrypoint → RPC 方法运行时不可达；与 GPT R2 / GLM R2 同方向但更深一层；本轮 fixed |
+| R6 | critical | true-positive | excellent | scheduler hook_emit 决策从未被产生；types-runner-delegate 三层都存在但 scheduler 永不触发；deferred |
+| R7 | high | true-positive | good | D1 先写后验产生孤儿数据；deferred；事实判断准确，修法建议合理 |
+| R8 | high | true-positive | good | /me/conversations vs /me/sessions 双源不一致；deferred；与 GPT R5 endpoint test 互补 |
+| R9 | high | true-positive / missed-by-others | excellent | alarm() 无 try/catch 是生产稳定性陷阱；4 家中独有；本轮 fixed |
+| R10 | high | true-positive | good | void promise rejection 静默吞错；本轮 fixed（改 .catch）|
+| R11 | high | true-positive | good | orchestrator-auth 非 AuthServiceError 逃逸；本轮 fixed（catch-all 包装为 worker-misconfigured）|
+| R12 | medium | true-positive | excellent | inferMessageRole 精确匹配错过 user.input.text/multipart；ZX5 D3 新增 message kind 的同步遗漏；本轮 fixed |
+| R13 | medium | true-positive | good | KV/D1 写入顺序事务性；deferred（低发生频率）|
+| R14 | medium | true-positive | good | expires_in 硬编码 vs JWT exp；本轮 fixed（从 claims 计算）|
+| R15 | medium | true-positive | good | last_seen_at 跨端点语义不一致；与 GLM R8 重叠；deferred |
+| R16 | medium | true-positive | good | D1 device revoke batch 非原子；deferred（仅影响 audit）|
+| R17 | medium | true-positive | good | R2_ARTIFACTS/KV_CONFIG 类型 vs wrangler 不一致；本轮 fixed（改 optional）|
+| R18 | low | true-positive | good | forwardInternalJson 死代码；本轮 fixed（@deprecated）|
+| R19 | low | true-positive | mixed | streamSnapshot 无调用方；判断准确但 severity 标定可商榷 |
+| R20 | low | true-positive | mixed | handleResume stub；从产品体感角度可能应标 medium；deferred |
+| R21 | low | true-positive | good | README 缺失；deferred |
+| R22 | low | true-positive | good | checkpointOnTurnEnd 永不消费；deferred |
+| R23 | low | true-positive / missed-by-others | excellent | JWT_LEEWAY_SECONDS 定义但未应用于 exp check；4 家中独有；本轮 fixed |
+
+**统计**：23 findings 全部 true-positive，0 false-positive，6 项是其他 3 家审查均未发现的 missed-by-others，本轮全部修复或明确 deferred 进 closure。
+
+### 7.4 多维度评分 — 单向总分 10 分
+
+| 维度 | 评分 | 说明 |
+|------|-----|------|
+| 证据链完整度 | `9.5` | 23 个 finding 全部有精确文件:行号 + 调用链回溯；R1 / R5 / R9 三处给出对比反证；唯一不足是部分 medium/low 项缺少独立 reproducer 命令 |
+| 判断严谨性 | `9.5` | 0 false-positive；critical 与 high 分级合理；R19/R20 的 low 标定略有商榷但不构成误判 |
+| 修法建议可执行性 | `9.0` | 大量"二选一"风格修法（实装 vs 降级 closure），让 owner 有 budget-aware 选项；R23 这种 1 行修复的 finding 直接给出代码修改路径 |
+| 对 action-plan / design / QNA 的忠实度 | `8.5` | 主要对照 plan-zero-to-real / plan-worker-matrix charter；In-Scope / Exit Criteria 逐项对齐扎实；但未深挖 NACP RFC §3.3 这类协议层文档 |
+| 协作友好度 | `9.0` | 不挑刺、不情绪化；明确指出"四份审查均未发现此问题"是事实陈述非贬低；deferred 项给出可承接位置 |
+| 找到问题的覆盖面 | `9.5` | 23 项覆盖 correctness / security / protocol-drift / platform-fitness / scope-drift / docs-gap / delivery-gap；6 项 missed-by-others 占比 26%，是本轮 4 家中绝对覆盖面最广的 |
+| 严重级别 / verdict 校准 | `9.5` | critical=correctness 硬断点、high=安全/事务/孤儿数据、medium=protocol drift、low=代码卫生；分级清晰且与"是否阻止 zero-to-real 闭合"高度对齐 |
+| **加权综合** | **`9.2`** | runtime correctness 审计的标杆；唯一短板是协议层 schema 注册表的盲区与 charter paper-trail 工作偏弱 |

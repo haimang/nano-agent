@@ -4,7 +4,8 @@
 > 闭合日期: `2026-04-25`
 > 作者: `GPT-5.4`
 > 关联 charter: `docs/charter/plan-zero-to-real.md`
-> 文档状态: `closed`
+> 文档状态: `partial-close / handoff-ready`
+> 状态更新日期: `2026-04-29`（全量四方审查后修订）
 
 ---
 
@@ -55,19 +56,24 @@
 
 ### criterion 4 — real runtime 已成立
 
-- **状态**：✅
+- **状态**：✅ partial（基础设施成立，Lane F runtime live hook 未闭合）
 - **证据**：
   1. Workers AI 已成为 production mainline provider。
   2. llm/tool shared quota gate 已成立。
   3. `nano_usage_events` 已保留 provider lineage 与 live anchor row。
+- **剩余断点（2026-04-29 四方审查确认）**：
+  - Permission/Elicitation wait-and-resume infra 存在但零调用方（scheduler 不产生 hook_emit 决策，hook.emit delegate 为 no-op）。
+  - `onUsageCommit` callback 已注册（本轮修复），但 WS push 到 client 的完整路径需 orchestrator-core 协调，deferred 至下一阶段。
 
 ### criterion 5 — real clients 已闭合
 
-- **状态**：✅（first-wave baseline）
+- **状态**：✅ partial（first-wave baseline 成立，product surface 有已知断点）
 - **证据**：
   1. Web 与 Mini Program 都已拥有真实 auth/session/ws/timeline 消费代码。
   2. review-fix 后，两端都已具备 replay/heartbeat/error baseline。
   3. live public/runtime suite 已证实它们依赖的后端链路不是 mock。
+- **已修复断点（本轮）**：`needsBody` 遗漏 5 条 POST 路由已修复；context/filesystem-core 默认导出现为 WorkerEntrypoint（RPC 方法可达）。
+- **剩余断点**：D6 device revoke 仍只写 D1，不进入 access/refresh/WS auth gate；API key verify 仍是 `supported: false` stub（与 Z1 charter 矛盾）。
 
 ### criterion 6 — 剩余问题已被压成明确 backlog
 
@@ -99,6 +105,14 @@
 5. tool registry 与 client session helper 的单一真相源抽取
 6. richer quota/bootstrap hardening、admin plane、billing/control plane
 7. broader multi-tenant-per-deploy 与更深的 internal RPC 演进
+8. **D6 device revoke auth gate**：将 revoke 接入 access/refresh/WS auth gate，当前只写 D1（GPT R1）
+9. **Lane F dispatcher 完整闭合**：scheduler 产生 hook_emit 决策、hook.emit delegate 实装、emitPermissionRequestAndAwait 找到调用方（DeepSeek R2/R4/R6）
+10. **onUsageCommit WS push**：`session.usage.update` 通过 orchestrator-core 推送到 client（DeepSeek R3 — callback 已注册，WS push deferred）
+11. **Lane E consumer migration**：context/filesystem-core binding 活化、agent-core 切 RPC-first 路径（kimi R1）
+12. **API key verify 运行时路径**：实装最小 `verifyApiKey` 或将 Z1 charter 条目降级（GLM R4）
+13. **jwt-shared lockfile**：在带 `NODE_AUTH_TOKEN` 环境中刷新 `pnpm-lock.yaml`，让 `@haimang/jwt-shared` 作为 workspace package 独立 build/test（GPT R4）
+14. **/me/conversations D1+KV 双源对齐**：与 handleMeSessions 对齐读取策略（DeepSeek R8）
+15. **ZX5 product endpoints 测试**：`/messages`, `/files`, `/me/conversations`, `/me/devices/revoke` 缺少直达测试（GPT R5）
 
 ---
 
@@ -114,6 +128,6 @@
 
 ## 6. 最终 verdict
 
-**zero-to-real closed.**
+**zero-to-real partial-close / handoff-ready baseline.**（2026-04-29 四方审查修订）
 
 这个阶段真正交付的不是“又补了几组 worker 功能”，而是 nano-agent 第一次拥有了一个可以持续验证、持续演进、并且不再依赖假主路径的真实基线。接下来的工作不再是证明“系统能不能第一次跑起来”，而是围绕已经成立的 baseline 去做 transport/client hardening、registry 收敛、manual evidence 与更深的产品化/运营化扩展。

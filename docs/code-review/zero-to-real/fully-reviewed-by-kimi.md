@@ -286,3 +286,72 @@
 ## 6. 实现者回应
 
 > （预留，供实现者按 docs/templates/code-review-respond.md 格式 append 回应）
+
+> 注：本轮 4 家审查的 implementer response 已统一 append 至 `fully-reviewed-by-GPT.md §6`，以 GPT 为汇总入口。本文件不重复贴回应，仅在 §7 给出审查质量评价。
+
+---
+
+## 7. 审查质量评价
+
+> 评价对象: `kimi (K2p6) 对 zero-to-real + 6-worker + ZX5 integration 的代码审查`
+> 评价人: `Claude Sonnet 4.6（实现者，结合本轮真实修复结果）`
+> 评价时间: `2026-04-29`
+
+### 7.0 评价结论
+
+- **一句话评价**：6 条 finding 精炼但全部命中要害，其中 R4（quota allowSeedMissingTeam 生产泄漏风险）是 4 家中唯一发现的安全类 finding；总量小但密度高、信噪比极佳的"轻量级 closure-aware reviewer"。
+- **综合评分**：`8.5 / 10`
+- **推荐使用场景**：closure 文档核查、charter DoD 对账、安全配置 (preview-only env vars 漏到 production) 巡检、技术债优先级排序。
+- **不建议单独依赖的场景**：runtime correctness 全链路审计（覆盖面不及 DeepSeek）、协议层 schema 完整性审计（不如 GLM 深入）。
+
+### 7.1 审查风格画像
+
+| 维度 | 观察 | 例证 |
+|------|------|------|
+| 主要切入点 | `closure DoD 对账 + 安全配置巡检` | R1 直接对照 plan-worker-matrix §6.2 的 P3/P4 DoD；R4 把 wrangler.jsonc 的 `NANO_AGENT_ALLOW_PREVIEW_TEAM_SEED: "true"` 标记为 production 泄漏风险 |
+| 证据类型 | `精确行号 + charter 章节引用 + DoD 对照` | 每个 finding 都附 `plan-zero-to-real §X.Y` 或 `plan-worker-matrix §X.Y DoD` 引用 |
+| Verdict 倾向 | `BALANCED — 3 high blocker + 3 medium follow-up，分级克制` | 不像 DeepSeek 那样把所有 critical 全归 blocker，把 user-do.ts 拆分这种技术债标 medium non-blocker |
+| Finding 粒度 | `COARSE — 仅 6 项，但每项压实` | 不追求数量；R3 (user-do.ts 2268 行) 这种"软指标"也只列一次，不拆成多条 |
+| 修法建议风格 | `ACTIONABLE，但偏宏观` | R1 给出 "打开注释 + RPC-first env flag + 移除 hardcode" 三步走；R4 给出 "默认改 false + 配置移到 preview-only + 加 warning log" 三步走 |
+
+### 7.2 优点与短板
+
+#### 7.2.1 优点
+
+1. **R4 是 4 家中唯一的安全类 finding**：`allowSeedMissingTeam` 默认 truthy + 顶层 wrangler `NANO_AGENT_ALLOW_PREVIEW_TEAM_SEED: "true"` 的组合可能在 production 自动建租户。GPT/DeepSeek/GLM 都漏掉了这个安全配置漂移。本轮已 fixed（移除 top-level vars，仅保留 env.preview.vars）。
+2. **DoD-aware closure 核查**：每个 finding 都附 charter §X.Y 引用，不是空对空判断 "看起来 partial"。R1 直接对照 plan-worker-matrix §6.2 P3/P4 DoD 才得出 "Lane E binding 未活化是 zero-to-real blocker" 而非 "ZX5 partial follow-up"——这种 charter-truthful 的 severity 升级判断很有用。
+3. **Finding 数量克制、信噪比高**：6 个 finding 全部 true-positive，没有为了凑数硬找小问题。这种密度让 reviewer fatigue 最低；如果只看 1 份审查就要做修复决策，kimi 的清单是最经济的。
+4. **修法建议三步走风格**：R1/R4 都给出"动作 1 + 动作 2 + 动作 3"的 ordered list，不只说"应该修复"。R4 的"默认值改 false / 配置位置移动 / 添加 warning log"这种三层防御建议特别有用。
+
+#### 7.2.2 短板 / 盲区
+
+1. **runtime correctness 覆盖面不足**：DeepSeek R1 (needsBody)、R5 (WorkerEntrypoint default export)、R9 (alarm try/catch)、R23 (JWT_LEEWAY_SECONDS) 这四个 missed-by-others 的 critical/high 全被 kimi 漏掉。原因是 kimi 的审查路径偏向 charter DoD 对账，没有深入跨文件调用链回溯。
+2. **协议层断点未发现**：GLM R1 (NACP error verb 未注册) 这种 schema-vs-runtime 矛盾未被 kimi 发现。kimi 没有审查 nacp-core 包内部实现。
+3. **三层错误信封 / facadeFromRpcEnvelope 未覆盖**：GLM R3 这种协议卫生级 finding 不在 kimi 的审查面内。
+4. **R5 (next_cursor null) 标 medium 偏轻**：当用户 conversation > 200 时是 silent data loss，从产品体感看更接近 high；不过 kimi 自己标了 "已知限制" 作为合理性依据。
+
+### 7.3 Findings 质量清点
+
+| 问题编号 | 原始严重程度 | 事后判定 | Finding 质量 | 分析与说明 |
+|----------|--------------|----------|--------------|------------|
+| R1 | high | true-positive | excellent | Lane E binding 活化是 zero-to-real blocker 而非 ZX5 partial follow-up；与 GPT R3 / GLM R2 同方向但更明确指出 charter 与 wrangler 注释的矛盾；本轮 partially-fixed（default export 修复，binding 仍 deferred）|
+| R2 | high | true-positive | good | onUsageCommit 未传入 createMainlineKernelRunner；与 DeepSeek R3 / GPT R2 重叠但 kimi 是首先指出"调用点遗漏，不是 wiring"；本轮 partially-fixed |
+| R3 | medium | true-positive | good | user-do.ts 2268 行未拆分；标 medium non-blocker 是合理的产品视角判断；deferred 到 post-zero-to-real |
+| R4 | medium / security | true-positive / missed-by-others | excellent | quota allowSeedMissingTeam 在 preview 默认 truthy 的安全风险；4 家中独有；3 步修法可执行；本轮 fixed |
+| R5 | medium | true-positive | good | /me/conversations next_cursor 恒 null；severity 标定可议（>200 是 silent data loss）；deferred |
+| R6 | medium | true-positive | good | D1 migration table-swap 模式风险；当前数据量小为合理性依据；deferred 到 production flip 前 owner dry-run |
+
+**统计**：6 findings 全部 true-positive，0 false-positive，1 项 missed-by-others (R4)，本轮已 fixed 2 项 / partially-fixed 2 项 / deferred 2 项。
+
+### 7.4 多维度评分 — 单向总分 10 分
+
+| 维度 | 评分 | 说明 |
+|------|-----|------|
+| 证据链完整度 | `8.0` | 6 个 finding 全部有精确行号 + charter 章节引用；不足是 finding 数量少，未做跨文件调用链对账（这是 DeepSeek 的强项）|
+| 判断严谨性 | `9.0` | 0 false-positive；分级合理；R5 的 medium 略偏轻但 kimi 自己附了合理性说明 |
+| 修法建议可执行性 | `8.5` | R1/R4 三步走 ordered list 风格特别可执行；R3 拆分建议偏宏观但配套了"先共用基础设施提取"的指引 |
+| 对 action-plan / design / QNA 的忠实度 | `9.5` | 每个 finding 附 plan-zero-to-real §X.Y / plan-worker-matrix §X.Y DoD 引用；charter-truthful 的 severity 升级判断（R1 升 ZX5 partial → zero-to-real blocker）很有价值 |
+| 协作友好度 | `9.0` | 友好、克制；不情绪化；finding 简洁让 reviewer fatigue 最低 |
+| 找到问题的覆盖面 | `7.0` | 6 项覆盖 scope-drift / delivery-gap / platform-fitness / security / protocol-drift；唯一安全 finding 是亮点；但 runtime correctness / 协议层覆盖偏弱 |
+| 严重级别 / verdict 校准 | `8.5` | high blocker / medium follow-up 分级清晰；R5 的 medium 标定是唯一可议项；其他全部校准合理 |
+| **加权综合** | **`8.5`** | 轻量级 closure-aware reviewer 的标杆；信噪比最高；唯一短板是覆盖面不及 DeepSeek 与协议层不及 GLM |

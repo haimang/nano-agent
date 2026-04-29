@@ -443,3 +443,77 @@
 | zero-to-real §1.7 | "orchestration.core 把 stream 相关过渡面显式收窄" | context-core / filesystem-core 的 stream-plane 仍为零业务（probe-only），收窄无从谈起 | 过渡面描述漂移 |
 | nacp-core error-body.ts | 注释标注 "Populated by the forthcoming per-verb migration PR (RFC §3.3)" | NACP_ERROR_BODY_VERBS 为空集，wrapAsError 产出的信封无法通过 validateEnvelope | 协议断点 |
 | `plan-worker-matrix.md §1.2` | `@haimang/nacp-core` 和 `@haimang/nacp-session` 是唯二永久外部包 | 3 个包使用 `@nano-agent/` scope 而非 `@haimang/` | scope 不一致 |
+
+---
+
+## 7. 审查质量评价
+
+> 评价对象: `GLM-5.1 对 zero-to-real + 6-worker + packages 的代码审查`
+> 评价人: `Claude Sonnet 4.6（实现者，结合本轮真实修复结果）`
+> 评价时间: `2026-04-29`
+
+### 7.0 评价结论
+
+- **一句话评价**：以 NACP 协议层 + charter-vs-代码 paper-trail 对账为切入点，在 4 家中协议完整性视角最深；唯一发现 `NACP_ERROR_BODY_VERBS` 空集与 `wrapAsError` 互斥这种纯 schema-vs-runtime 协议断点。
+- **综合评分**：`8.8 / 10`
+- **推荐使用场景**：协议层（NACP envelope / error-body / message_type 注册）完整性核查、charter §X.Y 与代码逐句对账、package scope / barrel export 一致性巡检、附录式差异清单（§6 charter-代码对账）。
+- **不建议单独依赖的场景**：runtime correctness 调用链对账（不及 DeepSeek 深入）、生产稳定性陷阱（如 alarm 链断裂）巡检（被 DeepSeek 独占）。
+
+### 7.1 审查风格画像
+
+| 维度 | 观察 | 例证 |
+|------|------|------|
+| 主要切入点 | `NACP 协议层完整性 + charter paper-trail 对账` | R1 串起 `error-body.ts:57 NACP_ERROR_BODY_VERBS 空集` ↔ `envelope.ts:312 validateEnvelope` ↔ `error-body.ts:73 wrapAsError` 三处文件证明协议路径不可用；§6 附录列 9 条 charter 与代码差异 |
+| 证据类型 | `精确行号 + schema 注册表对账 + RFC 注释引用` | R1 引用 `error-body.ts:18-37` 的 `Populated by the forthcoming per-verb migration PR (RFC §3.3)` 注释作为"故意留白但仍是协议断点"的论证 |
+| Verdict 倾向 | `STRICT-PROTOCOL — 12 finding 中 4 个 blocker，但 blocker 理由全在协议/charter 层` | 不像 DeepSeek 那样把 6 个 critical 全归 runtime correctness；GLM 的 critical (R1) 是协议层断点，blocker (R2/R3/R4) 是 charter 漂移与协议卫生 |
+| Finding 粒度 | `BALANCED — 12 项覆盖 1 critical → 5 low 完整光谱` | 同时覆盖 R1 协议层断点和 R12 双 scope 这种 packaging 卫生级；§6 附录补 9 条 charter-代码差异作为 finding 之外的完整性参考 |
+| 修法建议风格 | `ACTIONABLE，给方案 A/B 选择` | R1 给 "注册 verb to NACP_MESSAGE_TYPES_ALL" vs "废弃 wrapAsError 统一 Envelope<T>"；R4 给 "实装最小 verify" vs "降级 charter 为 reserved-for-future-phase" |
+
+### 7.2 优点与短板
+
+#### 7.2.1 优点
+
+1. **唯一发现 NACP 协议层断点**：R1 (`NACP_ERROR_BODY_VERBS` 空集 vs `wrapAsError` 互斥) 是 4 家中唯一的协议完整性 finding。GPT/DeepSeek/kimi 全部漏掉。判断扎实——不仅指出空集，还引用 RFC §3.3 注释作为"故意留白但当前不可用"的论证；同时澄清"runtime 不会立即触发"是因为活跃路径走 `Envelope<T>`，避免了误报。
+2. **NacpObservabilityEnvelopeSchema 主导出缺失（R11）**：4 家中独有；本轮已 fixed（在 nacp-core 主 index.ts 补导出 4 个 Schema + 类型）。这种 packaging 卫生级 finding 体现 GLM 对 barrel export 一致性的关注。
+3. **bash-core 幽灵 caller "runtime"（R6）**：4 家中独有；指出 `BashCoreAllowedCallers` 包含的 `"runtime"` 在 6-worker 拓扑中没有对应 worker，违反最小权限原则。本轮已 fixed（移除 + 测试更新）。
+4. **§6 附录式 charter-代码对账差异清单**：9 条差异（worker-matrix Exit #2、context-core §4.3、zero-to-real §7.2 Z1#5、Z1 §10.1 Exit#1、filesystem-core §4.4、§5.2 P3 DoD、zero-to-real §1.7、nacp-core RFC §3.3 注释、@haimang vs @nano-agent scope）作为 finding 之外的完整性参考——这种"不构成独立 finding 但作为审查 paper-trail"的补充非常有价值。
+5. **方案 A/B 选择风格修法**：R1 和 R4 都给 "实装" 与 "降级 charter" 二选一，让 owner 在 implementation budget 紧张时仍有可行选项。
+
+#### 7.2.2 短板 / 盲区
+
+1. **runtime correctness 硬断点全部漏掉**：DeepSeek R1 (needsBody)、R5 (WorkerEntrypoint default export，但 GLM R2 触及了周边问题)、R9 (alarm try/catch)、R23 (JWT_LEEWAY_SECONDS) 这些 missed-by-others 的 critical/high 全被 GLM 漏掉。GLM 的审查路径偏协议层，没有深入"路由→参数解析→handler"的调用链对账。
+2. **R8 (last_seen_at 语义) 与 DeepSeek R15 重叠但定位偏轻**：标 medium non-blocker；从内部字段 KV schema 一致性角度可能更接近 high（影响后续开发者误用）。
+3. **R7 (SHA-256 密码哈希) 标 medium 偏轻 OR 偏重不易判**：Workers 环境没有原生 bcrypt/argon2 是事实约束，GLM 自己标"已知妥协"；但建议方案"PBKDF2"可能在 Workers 环境也有性能成本，修法建议偏宏观。
+4. **§6 附录差异清单与 R1-R12 重叠度高**：9 条附录差异中有 5 条已在 R1-R12 中作为 finding 出现，剩下 4 条（context-core §4.3、§5.2 P3 DoD、zero-to-real §1.7、filesystem-core §4.4）严格说也可以并入 R2 主 finding；附录的独立性可以更强。
+
+### 7.3 Findings 质量清点
+
+| 问题编号 | 原始严重程度 | 事后判定 | Finding 质量 | 分析与说明 |
+|----------|--------------|----------|--------------|------------|
+| R1 | critical | true-positive / missed-by-others | excellent | NACP 错误信封生产路径与空 verb set 互斥；4 家中独有；GLM 还自我澄清 "runtime 不会立即触发" 避免误报；deferred（需 owner 决定方案 A/B）|
+| R2 | high | true-positive | good | context-core/filesystem-core 与 charter 叙事漂移；与 GPT R3 / kimi R1 同方向，但 GLM 更深入指出"3 个 RPC 方法只返回 op 名字符串"；本轮 partially-fixed（default export 修复 + closure 降级）|
+| R3 | high | true-positive | good | 三层错误信封 + 缺 facadeFromRpcEnvelope；deferred；需协议层重构 |
+| R4 | high | true-positive | good | VerifyApiKey supported:false vs charter Z2 矛盾；deferred；closure §4 已标注 |
+| R5 | medium | true-positive | good | handleRead timeline/status 双路径不一致；deferred |
+| R6 | medium | true-positive / missed-by-others | excellent | bash-core BashCoreAllowedCallers 含幽灵 "runtime" 调用者；4 家中独有；本轮 fixed（移除 + 测试更新）|
+| R7 | medium / security | true-positive | mixed | SHA-256 密码哈希边界；事实判断准确，但 Workers 环境约束强，severity 与建议方案都偏宏观；deferred |
+| R8 | medium | true-positive | good | last_seen_at 内部语义不一致；与 DeepSeek R15 重叠；deferred |
+| R9 | medium | true-positive | good | D1 single-writer 约束未文档化；deferred 为文档 follow-up |
+| R10 | low | true-positive | mixed | CapabilityCallDO 无持久状态；deferred；判断准确但 severity 略偏轻 |
+| R11 | low | true-positive / missed-by-others | excellent | NacpObservabilityEnvelopeSchema 未在主 index 导出；4 家中独有；本轮 fixed |
+| R12 | low | true-positive | good | @nano-agent/ vs @haimang/ 双 scope；与 closure §4 已标注的 P5 cutover 一致；deferred |
+
+**统计**：12 findings 全部 true-positive，0 false-positive，3 项 missed-by-others（R1 / R6 / R11），本轮 fixed 2 项 + partially-fixed 1 项 + deferred 9 项。
+
+### 7.4 多维度评分 — 单向总分 10 分
+
+| 维度 | 评分 | 说明 |
+|------|-----|------|
+| 证据链完整度 | `9.5` | 12 个 finding 全部精确行号 + schema 注册表对账；R1 跨 3 文件 (error-body.ts, envelope.ts, NACP_MESSAGE_TYPES_ALL 注册器) 对账；§6 附录补 9 条 charter-代码差异 |
+| 判断严谨性 | `9.5` | 0 false-positive；R1 自我澄清 "runtime 不会立即触发" 避免协议层 finding 误报为 runtime blocker，校准非常清晰 |
+| 修法建议可执行性 | `8.5` | 方案 A/B 选择风格让 owner 有 budget-aware 选项；R7 修法略宏观（建议 PBKDF2 但未给 Workers 实测） |
+| 对 action-plan / design / QNA 的忠实度 | `9.5` | 每个 finding 附 plan-zero-to-real / plan-worker-matrix §X.Y 引用；§6 附录式差异清单是 paper-trail 工作的极致 |
+| 协作友好度 | `9.0` | 友好；不情绪化；R1 自我澄清避免协议层 finding 被误读 |
+| 找到问题的覆盖面 | `8.5` | 12 项覆盖 NACP 协议 / 错误信封 / charter 漂移 / 安全 / package 卫生 / 双 scope；3 项 missed-by-others 体现协议层独到视角；但 runtime correctness 全部漏掉 |
+| 严重级别 / verdict 校准 | `8.5` | critical=协议断点、high=charter 漂移与协议卫生、medium=语义/可维护性、low=packaging 卫生；分级清晰；R7/R10 略偏轻但不构成误判 |
+| **加权综合** | **`8.8`** | 协议层完整性视角的标杆；NACP / charter paper-trail 对账深度 4 家最高；唯一短板是 runtime correctness 调用链审计偏弱 |

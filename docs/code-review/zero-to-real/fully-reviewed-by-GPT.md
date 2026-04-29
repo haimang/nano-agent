@@ -301,3 +301,256 @@
 - **实现者回应入口**：`请按 docs/templates/code-review-respond.md 在本文档 §6 append 回应，不要改写 §0–§5。`
 
 本轮 review 不收口，等待实现者按 §6 响应并再次更新代码或 closure 文档。
+
+---
+
+## 6. 实现者回应
+
+### 6.1 对本轮审查的回应
+
+> 执行者: `Claude Sonnet 4.6`
+> 执行时间: `2026-04-29`
+> 回应范围: `GPT R1–R7 / DeepSeek R1–R23 / kimi R1–R6 / GLM R1–R12（共 48 条 finding）`
+> 对应审查文件:
+> - `docs/code-review/zero-to-real/fully-reviewed-by-GPT.md`
+> - `docs/code-review/zero-to-real/fully-reviewed-by-deepseek.md`
+> - `docs/code-review/zero-to-real/fully-reviewed-by-kimi.md`
+> - `docs/code-review/zero-to-real/fully-reviewed-by-GLM.md`
+
+- **总体回应**：4 家审查员共提出 48 条 finding，本轮完全修复 14 条、部分修复 6 条、有理由 deferred 27 条、1 条 blocked（jwt-shared lockfile 需 NODE_AUTH_TOKEN 环境）；DeepSeek 独立发现的最关键 correctness critical（needsBody 遗漏 5 条路由、WorkerEntrypoint 默认导出错误、alarm 链断裂）已全部修复；closure 文档已诚实降级为 partial-close / handoff-ready。
+- **本轮修改策略**：优先修复影响运行时正确性的 critical/high 断点（needsBody 短路、RPC 方法不可达、alarm 链断裂、错误信封逃逸）；对需要 kernel 改造或复杂协议重构的 Lane F / NACP 问题明确 deferred 并写入 closure §4；安全类问题（quota auto-seed）直接修复。
+- **实现者自评状态**：`partially-closed`
+
+### 6.2 逐项回应表
+
+#### DeepSeek R1–R23
+
+| 审查编号 | 审查问题 | 处理结果 | 处理方式 | 修改文件 |
+|----------|----------|----------|----------|----------|
+| DS R1 | `needsBody` 遗漏 5 条路由，POST /messages 等请求体被丢弃 | `fixed` | 将 `messages / resume / permission/decision / policy/permission_mode / elicitation/answer` 加入 `needsBody`；同步修复 `optionalBody` 覆盖 `resume`（body 可选） | `workers/orchestrator-core/src/index.ts` |
+| DS R2 | hook.emit kernel delegate 为硬编码 no-op | `deferred-with-rationale` | 真实实现需修改 scheduler（R6）并补 dispatcher，属于 Lane F 整体工作；本轮时间盒内无法安全完成 | — |
+| DS R3 | onUsageCommit callback 未被传入 createMainlineKernelRunner | `partially-fixed` | 在 `createLiveKernelRunner()` 中注册 callback，当前实现为 `console.log` 可观测记录；WS push 到 client 的完整路径需 orchestrator-core 协调，deferred | `workers/agent-core/src/host/do/nano-session-do.ts` |
+| DS R4 | Permission/Elicitation wait-and-resume infra 完全孤立（零调用方） | `deferred-with-rationale` | 核心断点是 hook.emit delegate（R2）和 scheduler 不产生 hook_emit（R6），两者均 deferred，故 R4 无法本轮闭合 | — |
+| DS R5 | context-core / filesystem-core 默认导出非 WorkerEntrypoint | `fixed` | 将两个 worker 的默认导出从 `export default worker`（plain `{fetch}` 对象）改为 `export default ContextCoreEntrypoint / FilesystemCoreEntrypoint`；新增 `export { worker as fetchWorker }` 命名导出供测试使用 | `workers/context-core/src/index.ts`, `workers/filesystem-core/src/index.ts` |
+| DS R6 | kernel scheduler 无 hook_emit 决策生成路径 | `deferred-with-rationale` | 需在 scheduler 中引入 session pending-hook state 检测，属于 Lane F F4 后续工作 | — |
+| DS R7 | D1 先写后验（handleMessages RPC 失败产生孤儿数据） | `deferred-with-rationale` | 修复需 D1 rollback 或 RPC-first 改序，影响面较大；当前 turn 标记 failed 可限制影响范围；deferred | — |
+| DS R8 | /me/conversations D1-only 忽略 KV 热索引 | `deferred-with-rationale` | 需明确 KV-to-D1 迁移策略后再合并双源；已记录为 closure §4 item 14 | — |
+| DS R9 | alarm() 无 try/catch，任一步骤抛出导致 alarm 链永久断裂 | `fixed` | 在 alarm() 中用独立 try/catch 包裹三个步骤；每步失败仅 console.warn；ensureHotStateAlarm 移至 finally 保证必然执行 | `workers/orchestrator-core/src/user-do.ts` |
+| DS R10 | socket lifecycle KV 写使用 void 吞没错误 | `fixed` | 将 `void this.markDetached(...)` 和 `void this.touchSession(...)` 改为 `.catch((err) => console.warn(...))` | `workers/orchestrator-core/src/user-do.ts` |
+| DS R11 | orchestrator-auth 非 AuthServiceError 逃逸 envelope 体系 | `fixed` | 在 `invokeKnown` 中增加 catch-all，将未知错误包装为 `worker-misconfigured` 类型的 AuthServiceError | `workers/orchestrator-auth/src/index.ts` |
+| DS R12 | `inferMessageRole` 精确匹配导致 user.input.text/multipart 被误标 system | `fixed` | 改为 `kind.startsWith('user.input') ? 'user' : 'system'` | `workers/orchestrator-core/src/session-truth.ts` |
+| DS R13 | recordStreamFrames KV/D1 写入顺序缺事务保护 | `deferred-with-rationale` | 当前写入频率低，short-term risk 可控；补偿逻辑是独立 PR；deferred | — |
+| DS R14 | expires_in 硬编码 3600 与 JWT exp 可能不一致 | `fixed` | 改为 `access.exp - Math.floor(Date.now() / 1000)`，从实际 JWT claims 计算（2 处） | `workers/orchestrator-auth/src/service.ts` |
+| DS R15 | last_seen_at 跨端点语义不一致 | `deferred-with-rationale` | 与 GLM R8 重叠；内部字段语义对齐是技术债，deferred | — |
+| DS R16 | D1 device revoke 使用非原子 batch() | `deferred-with-rationale` | 影响仅限 audit 完整性，不影响 security enforcement；deferred | — |
+| DS R17 | agent-core R2_ARTIFACTS/KV_CONFIG required 类型但无 wrangler 绑定 | `fixed` | 改为 `readonly R2_ARTIFACTS?: unknown; readonly KV_CONFIG?: unknown;` | `workers/agent-core/src/host/env.ts` |
+| DS R18 | forwardInternalJson 为死代码 | `fixed` | 添加 `/** @deprecated Use forwardInternalJsonShadow instead */` | `workers/orchestrator-core/src/user-do.ts` |
+| DS R19 | streamSnapshot RPC 无调用方 | `deferred-with-rationale` | 保留为 reserved RPC slot；deferred | — |
+| DS R20 | handleResume 为只读 stub | `deferred-with-rationale` | resume 完整行为（重连 WS、更新 DO state）是 transport hardening 工作；closure §4 已标注 | — |
+| DS R21 | orchestrator-auth / jwt-shared 缺 README | `deferred-with-rationale` | 低优先级文档；deferred | — |
+| DS R22 | checkpointOnTurnEnd 标志永不被消费 | `deferred-with-rationale` | 属于 agent-core 技术债；deferred | — |
+| DS R23 | JWT_LEEWAY_SECONDS 未在 exp 检查中使用 | `fixed` | 在 `verifyJwt` 的 exp check 改为 `Date.now() / 1000 > payload.exp + JWT_LEEWAY_SECONDS` | `packages/jwt-shared/src/index.ts` |
+
+#### kimi R1–R6
+
+| 审查编号 | 审查问题 | 处理结果 | 处理方式 | 修改文件 |
+|----------|----------|----------|----------|----------|
+| KM R1 | Lane E binding 未活化，agent-core 仍走 library import | `partially-fixed` | context-core/filesystem-core 默认导出已改为 WorkerEntrypoint（DS R5 修复）；agent-core wrangler.jsonc binding 注释按 owner 短期 shim 决策保持；consumer migration deferred | `workers/context-core/src/index.ts`, `workers/filesystem-core/src/index.ts` |
+| KM R2 | Lane F onUsageCommit callback 未传入 kernel runner | `partially-fixed` | 同 DS R3 处理 | `workers/agent-core/src/host/do/nano-session-do.ts` |
+| KM R3 | user-do.ts 2268 行未按 domain 拆分 | `deferred-with-rationale` | post-zero-to-real 技术债首选；需完整测试矩阵保障；deferred | — |
+| KM R4 | quota allowSeedMissingTeam 在 preview 默认开启（生产泄漏风险） | `fixed` | 从 top-level `vars` 中移除 `NANO_AGENT_ALLOW_PREVIEW_TEAM_SEED`，确保只在 `env.preview.vars` 中保留 | `workers/agent-core/wrangler.jsonc` |
+| KM R5 | /me/conversations next_cursor 恒为 null | `deferred-with-rationale` | cursor-based pagination 是 follow-up；当前 limit=200 已知限制；deferred | — |
+| KM R6 | D1 migration 003/006 使用 table-swap 模式 | `deferred-with-rationale` | 当前数据量小，风险可控；production flip 前 owner dry-run 是 owner-action；deferred | — |
+
+#### GLM R1–R12
+
+| 审查编号 | 审查问题 | 处理结果 | 处理方式 | 修改文件 |
+|----------|----------|----------|----------|----------|
+| GL R1 | NACP 错误信封生产路径与空 verb set 互斥（wrapAsError 无法通过 validateEnvelope） | `deferred-with-rationale` | 当前所有活跃 RPC 路径使用 Envelope<T> 的 ok:false 路径，不走 NacpEnvelope 错误信封，不是运行时 blocker；协议层断点已记录 closure §4；修复需 owner 决定方案 A/B；deferred | — |
+| GL R2 | context-core/filesystem-core 脱离 probe-only shim，与 charter 叙事漂移 | `partially-fixed` | 默认导出已改为 WorkerEntrypoint（DS R5）；closure 文档更新为 partial-close 并明确标注 Lane E consumer migration deferred | `workers/context-core/src/index.ts`, `workers/filesystem-core/src/index.ts`, `docs/issue/zero-to-real/zero-to-real-final-closure.md` |
+| GL R3 | 三层错误信封并存，缺少 facadeFromRpcEnvelope 桥接 | `deferred-with-rationale` | 需协议层重构；当前 wrapSessionResponse heuristic 可工作；deferred 为协议卫生 follow-up | — |
+| GL R4 | VerifyApiKeyResultSchema 返回 supported:false，与 charter Z2 矛盾 | `deferred-with-rationale` | closure §4 item 12 已标注：需实装最小 verify 或将 Z1 charter 条目降级；deferred | — |
+| GL R5 | handleRead timeline/status 双路径结构不一致 | `deferred-with-rationale` | 可维护性问题，不影响当前正确性；deferred 到 user-do 重构阶段 | — |
+| GL R6 | bash-core BashCoreAllowedCallers 含幽灵调用者 "runtime" | `fixed` | 从 `BASH_CORE_ALLOWED_CALLERS` 数组中移除 `"runtime"`；rpc.test.ts 中对应测试更新为期望 `ok: false` | `workers/bash-core/src/index.ts`, `workers/bash-core/test/rpc.test.ts` |
+| GL R7 | SHA-256(salt:raw) 密码哈希未在 charter 中声明安全边界 | `deferred-with-rationale` | Workers 环境已知妥协；需在 design 文档中声明；deferred 为文档 follow-up | — |
+| GL R8 | last_seen_at 内部语义不一致 | `deferred-with-rationale` | 同 DS R15；内部字段 rename 影响多处；属于技术债；deferred | — |
+| GL R9 | D1 single-writer 约束未文档化 | `deferred-with-rationale` | 架构约束需在文档中声明；deferred 为文档 follow-up | — |
+| GL R10 | CapabilityCallDO 无持久状态，DO 语义冗余 | `deferred-with-rationale` | 低优先级平台优化；deferred | — |
+| GL R11 | NacpObservabilityEnvelopeSchema 未在 nacp-core 主 index 导出 | `fixed` | 在 `packages/nacp-core/src/index.ts` 补导出 `NacpObservabilityEnvelopeSchema`, `NacpAlertSeveritySchema`, `NacpAlertScopeSchema`, `NacpAlertPayloadSchema` 及对应类型 | `packages/nacp-core/src/index.ts` |
+| GL R12 | @nano-agent/ 与 @haimang/ 双 scope 并存 | `deferred-with-rationale` | @nano-agent/ 包（workspace-context-artifacts、eval-observability、storage-topology）已标记 DEPRECATED；cutover 是 P5 后续工作；deferred | — |
+
+#### GPT R1–R7
+
+| 审查编号 | 审查问题 | 处理结果 | 处理方式 | 修改文件 |
+|----------|----------|----------|----------|----------|
+| GP R1 | D6 device revoke 只写 D1，不进入 access/refresh/WS auth gate | `deferred-with-rationale` | 需 device_uuid 进入 AccessTokenClaimsSchema + refresh gate + WS auth gate，是完整 auth enforcement 重构；closure §4 item 8 已标注为下一阶段 blocker | — |
+| GP R2 | Permission/Elicitation/Usage 仍不是 live runtime | `partially-fixed` | onUsageCommit 已注册（DS R3）；hook dispatcher、WS frame emit、scheduler hook_emit deferred（DS R2/R4/R6）；closure 已更新 criterion 4 为 partial | `workers/agent-core/src/host/do/nano-session-do.ts`, `docs/issue/zero-to-real/zero-to-real-final-closure.md` |
+| GP R3 | context/filesystem 仍是 host-local/minimal seam | `partially-fixed` | 默认导出已修复为 WorkerEntrypoint（DS R5）；agent-core binding 注释按 owner short-term shim 决策保持；closure criterion 5 已更新为 partial | `workers/context-core/src/index.ts`, `workers/filesystem-core/src/index.ts`, `docs/issue/zero-to-real/zero-to-real-final-closure.md` |
+| GP R4 | jwt-shared lockfile/install truth 断裂 | `blocked` | pnpm install 需 NODE_AUTH_TOKEN（classic PAT w/ read:packages）；本轮无法在无 token 环境刷新 pnpm-lock.yaml；pre-existing 断点，closure §4 item 13 已标注 | — |
+| GP R5 | ZX5 新 product endpoints 缺直达测试 | `deferred-with-rationale` | /messages / /files / /me/conversations / /me/devices/revoke 缺 endpoint-level 测试；closure §4 item 15 已标注；deferred | — |
+| GP R6 | final closure 与代码事实分裂 | `fixed` | 将 zero-to-real-final-closure.md 状态改为 partial-close / handoff-ready；criterion 4 和 5 从 ✅ 改为 ✅ partial 并补充已知断点；新增 §4 items 8–15 覆盖全部审查后确认的未完成项；更新最终 verdict | `docs/issue/zero-to-real/zero-to-real-final-closure.md` |
+| GP R7 | worker-matrix package truth 与当前 repo 状态需重新对账 | `deferred-with-rationale` | worker-matrix closure 作为历史文档保留；需补 "post-zero-to-real current package reality" 段落；deferred 为文档 follow-up | — |
+
+### 6.3 Blocker / Follow-up 状态汇总
+
+| 分类 | 数量 | 编号 | 说明 |
+|------|------|------|------|
+| 已完全修复 | 14 | DS R1, R5, R9, R10, R11, R12, R14, R17, R18, R23; KM R4; GL R6, R11; GP R6 | correctness + security + docs；全量测试已通过 |
+| 部分修复，需二审判断 | 6 | DS R3; KM R1, R2; GL R2; GP R2, R3 | onUsageCommit console.log 注册 / WorkerEntrypoint export 修复；WS push 和 binding 活化 deferred |
+| 有理由 deferred | 27 | DS R2, R4, R6, R7, R8, R13, R15, R16, R19, R20, R21, R22; KM R3, R5, R6; GL R1, R3, R4, R5, R7, R8, R9, R10, R12; GP R1, R5, R7 | 需 kernel 改造 / 协议重构 / owner-action / 纯文档；均已写入 closure §4 |
+| blocked | 1 | GP R4 | jwt-shared lockfile 需 NODE_AUTH_TOKEN；CI 环境重建前无法完成 |
+
+### 6.4 变更文件清单
+
+- `workers/orchestrator-core/src/index.ts` — DS R1: needsBody 扩展至 messages / resume / permission/decision / policy/permission_mode / elicitation/answer
+- `workers/orchestrator-core/src/user-do.ts` — DS R9: alarm() try/catch；DS R10: void→.catch()；DS R18: forwardInternalJson @deprecated
+- `workers/orchestrator-core/src/session-truth.ts` — DS R12: inferMessageRole 改用 startsWith
+- `workers/orchestrator-auth/src/index.ts` — DS R11: invokeKnown 增加 catch-all 包装为 worker-misconfigured
+- `workers/orchestrator-auth/src/service.ts` — DS R14: expires_in 从 JWT claims 计算（2 处）
+- `workers/agent-core/src/host/do/nano-session-do.ts` — DS R3: 注册 onUsageCommit callback（console.log 观测）
+- `workers/agent-core/src/host/env.ts` — DS R17: R2_ARTIFACTS / KV_CONFIG 改为 optional 类型
+- `workers/agent-core/wrangler.jsonc` — KM R4: 移除 top-level NANO_AGENT_ALLOW_PREVIEW_TEAM_SEED
+- `workers/bash-core/src/index.ts` — GL R6: 移除幽灵 "runtime" 调用者
+- `workers/context-core/src/index.ts` — DS R5: 默认导出改为 ContextCoreEntrypoint；新增 fetchWorker 命名导出
+- `workers/filesystem-core/src/index.ts` — DS R5: 默认导出改为 FilesystemCoreEntrypoint；新增 fetchWorker 命名导出
+- `packages/jwt-shared/src/index.ts` — DS R23: verifyJwt exp check 应用 JWT_LEEWAY_SECONDS
+- `packages/nacp-core/src/index.ts` — GL R11: 补导出 NacpObservabilityEnvelopeSchema 及相关 Schema / 类型
+- `docs/issue/zero-to-real/zero-to-real-final-closure.md` — GP R6: 降级为 partial-close；更新 criterion 4/5；新增 §4 items 8–15；更新 verdict
+- `workers/orchestrator-core/test/auth.test.ts` — expired token 从 -10s 改为 -400s（超过 JWT_LEEWAY_SECONDS=300）
+- `workers/bash-core/test/rpc.test.ts` — "admits caller='runtime'" 改为期望 ok: false
+- `workers/context-core/test/smoke.test.ts` — 导入改为 `fetchWorker` 命名导出
+- `workers/filesystem-core/test/smoke.test.ts` — 导入改为 `fetchWorker` 命名导出
+
+### 6.5 验证结果
+
+| 验证项 | 命令 | 结果 | 覆盖的 finding |
+|--------|------|------|----------------|
+| orchestrator-core 全量测试 | `pnpm --filter @haimang/orchestrator-core-worker test` | `pass (80/80)` | DS R1, R9, R10, R12, R18 |
+| orchestrator-auth 全量测试 | `pnpm --filter @haimang/orchestrator-auth-worker test` | `pass (13/13)` | DS R11, R14 |
+| orchestrator-auth-contract 全量测试 | `pnpm --filter @haimang/orchestrator-auth-contract test` | `pass (19/19)` | — |
+| agent-core 全量测试 | `pnpm --filter @haimang/agent-core-worker test` | `pass (1056/1056)` | DS R3, R17, KM R4 |
+| bash-core 全量测试 | `pnpm --filter @haimang/bash-core-worker test` | `pass (374/374)` | GL R6 |
+| context-core 全量测试 | `pnpm --filter @haimang/context-core-worker test` | `pass (171/171)` | DS R5, KM R1 |
+| filesystem-core 全量测试 | `pnpm --filter @haimang/filesystem-core-worker test` | `pass (294/294)` | DS R5 |
+| root contracts | `pnpm test:contracts` | `pass (31/31)` | — |
+| jwt-shared standalone build/test | `pnpm --filter @haimang/jwt-shared build && test` | `fail (vitest/tsc not found)` | GP R4 — pre-existing lockfile 断点，非本轮回归 |
+
+```text
+orchestrator-core         80 / 80   pass
+orchestrator-auth         13 / 13   pass
+orchestrator-auth-contract 19 / 19  pass
+agent-core              1056 / 1056 pass
+bash-core                374 / 374  pass
+context-core             171 / 171  pass
+filesystem-core          294 / 294  pass
+contracts                 31 / 31   pass
+
+jwt-shared               FAIL — sh: 1: vitest: not found
+                         pre-existing lockfile issue (GP R4); not introduced by this PR
+```
+
+### 6.6 未解决事项与承接
+
+| 编号 | 状态 | 不在本轮完成的原因 | 承接位置 |
+|------|------|--------------------|----------|
+| DS R2, R4, R6（Lane F dispatcher 整体） | `deferred` | 需要 scheduler hook_emit 决策产生 + hook.emit 真实 delegate + emitPermissionRequestAndAwait 调用方；是 Lane F 整体工作，需独立 sprint | closure §4 item 9 |
+| DS R3 / KM R2 / GP R2（onUsageCommit WS push） | `partially-fixed` | callback 已注册；完整 session.usage.update WS push 需 orchestrator-core 侧 connected WS helper 协调 | closure §4 item 10 |
+| DS R7（D1 先写后验） | `deferred` | handleMessages 回滚逻辑需仔细设计；当前 turn 标 failed 作为临时保障 | 下一阶段 session-truth hardening |
+| DS R8（/me/conversations 双源） | `deferred` | KV-to-D1 迁移策略未定；需与 handleMeSessions 读取对齐 | closure §4 item 14 |
+| DS R13（recordStreamFrames 事务） | `deferred` | 低发生频率；补偿逻辑是独立 PR | 下一阶段 stream-truth hardening |
+| DS R15 / GL R8（last_seen_at 语义） | `deferred` | 全量 rename 影响多处 KV schema；是技术债清理 | 下一阶段 session schema cleanup |
+| DS R16（device revoke batch） | `deferred` | 仅影响 audit 完整性；可在 D6 auth gate 完整闭合时同步处理 | GP R1 承接位置 |
+| DS R19–R22（streamSnapshot / handleResume / README / checkpointOnTurnEnd） | `deferred` | 低优先级代码卫生 / 文档 | 下一阶段 polish |
+| KM R1 / GP R3（Lane E consumer migration） | `deferred` | agent-core binding 注释按 owner short-term shim 决策保持；RPC-first 路径需 CONTEXT_CORE_RPC_FIRST env flag 切换机制后启动 | closure §4 item 11 |
+| KM R3（user-do.ts 拆分） | `deferred` | 需完整测试矩阵保障的 domain 拆分；属于 post-zero-to-real 首选技术债 | 下一阶段 |
+| KM R5（next_cursor pagination） | `deferred` | cursor-based pagination 需 D1 view；当前 limit=200 已知限制已标注 | 下一阶段产品化 |
+| KM R6（D1 migration table-swap） | `deferred` | production flip 前 owner dry-run；低风险 | owner-action |
+| GL R1（NACP error verb 注册） | `deferred` | 协议层决策（注册 verb vs 废弃 wrapAsError）需 owner 定夺；当前 runtime 不走此路径 | 下一阶段协议演进 |
+| GL R3（三层错误信封 + facadeFromRpcEnvelope） | `deferred` | 需 auth-contract 重构；当前可工作 | 下一阶段协议演进 |
+| GL R4（VerifyApiKey supported:false） | `deferred` | 实装最小 verify 或降级 charter；closure §4 item 12 已标注 | closure §4 item 12 |
+| GL R5, R7, R9, R10, R12（medium/low） | `deferred` | 技术债 / 文档 / 安全声明；逐条在下一阶段处理 | 下一阶段 |
+| GP R1（D6 device revoke auth gate） | `deferred` | 需 device_uuid 进入 JWT claims + refresh gate + WS auth gate，是 auth enforcement 重构 | closure §4 item 8 |
+| GP R4（jwt-shared lockfile） | `blocked` | 需 NODE_AUTH_TOKEN（classic PAT w/ read:packages）重建 pnpm-lock.yaml；本轮环境无法完成 | closure §4 item 13 |
+| GP R5（endpoint tests） | `deferred` | /messages / /files / /me/conversations / /me/devices/revoke 需 endpoint-level 测试 | closure §4 item 15 |
+| GP R7（worker-matrix package truth） | `deferred` | 历史 closure 需补 "post-zero-to-real current package reality" 段落 | 下一阶段文档 |
+
+### 6.7 Ready-for-rereview gate
+
+- **是否请求二次审查**：`yes`
+- **请求复核的范围**：`DS R1 / DS R5 / DS R9–R12 / DS R14 / DS R17 / DS R23 / KM R4 / GL R6 / GL R11 / GP R6 的修复实现；以及 DS R3/KM R2/GP R2 的 partially-fixed 接受程度`
+- **实现者认为可以关闭的前提**：
+  1. 上述 14 个已修条目经二次审查确认符合预期。
+  2. DS R3/KM R2/GP R2 的 onUsageCommit console.log 注册被接受为 "partial close"（WS push 明确 deferred）。
+  3. DS R5/KM R1/GL R2/GP R3 的 WorkerEntrypoint 默认导出修复被接受；agent-core binding 注释作为 owner short-term shim 决策可接受。
+  4. GP R4（jwt-shared lockfile）被接受为 blocked，不阻塞本轮闭合。
+  5. zero-to-real-final-closure.md 的 partial-close / handoff-ready 表述被接受为阶段级 truth anchor。
+
+---
+
+## 7. 审查质量评价
+
+> 评价对象: `GPT-5.5 对 zero-to-real + ZX5 rereview + 6-worker/packages 的代码审查`
+> 评价人: `Claude Sonnet 4.6（实现者，结合本轮真实修复结果）`
+> 评价时间: `2026-04-29`
+
+### 7.0 评价结论
+
+- **一句话评价**：以"closure 真相 vs 代码现实 vs api-docs 三方对账"为切入点，是 4 家中阶段级 truth anchor 把握最强、对 closure 措辞降级要求最坚定的审查；唯一明确把 D6 device revoke auth gate 上升为 zero-to-real blocker 的 reviewer。
+- **综合评分**：`8.8 / 10`
+- **推荐使用场景**：阶段闭合（closure）的最终把关、charter exit criteria 与代码事实 vs 客户端 docs 的三方对账、D1/auth/security 语义的端到端核查、partial-close vs full-close 的判定。
+- **不建议单独依赖的场景**：runtime correctness 全链路调用链对账（不及 DeepSeek 深入）、协议层 schema 注册表完整性核查（不及 GLM 深入）。
+
+### 7.1 审查风格画像
+
+| 维度 | 观察 | 例证 |
+|------|------|------|
+| 主要切入点 | `closure 真相对账 + auth/security 端到端语义` | R1 串起 `migrations/007-user-devices.sql` 冻结的预期行为 ↔ `index.ts:710-721 TODO` ↔ `AccessTokenClaimsSchema 缺 device_uuid` ↔ `verifyAccessToken 不读 D1`，证明 D6 不是 partial 而是 auth gate 完全缺失 |
+| 证据类型 | `精确行号 + charter exit criteria + client api-docs 三方对账` | 几乎每个 finding 都同时引用代码行号、charter §X.Y、`clients/api-docs/README.md` 的对应描述，形成三方互证 |
+| Verdict 倾向 | `STRICT-CLOSURE — 7 finding 中 4 个 blocker，全部围绕"是否能闭合 zero-to-real"` | R6 (final closure 与代码事实分裂) 直接要求把 closure 改为 partial-close；R1/R2/R4 都把 zero-to-real 闭合作为判断尺度 |
+| Finding 粒度 | `COARSE — 仅 7 项，但每项都是阶段级判断` | 不追求 finding 数量；R7 (worker-matrix package truth) 这种纯 docs 项也被独立拎出来作为 P5 cutover 的真相要求 |
+| 修法建议风格 | `ACTIONABLE，强调 "实装 OR 降级 charter" 二选一` | R1/R2 都给"补 device_uuid claim+gate"或"把 zero-to-real charter 降级"二选一；R6 直接给"将 closure 改为 partial-close / handoff-ready"的具体措辞建议 |
+
+### 7.2 优点与短板
+
+#### 7.2.1 优点
+
+1. **唯一把 D6 device revoke 上升为 zero-to-real blocker**：R1 不止指出 D6 当前只写 D1（这是 closure §4 已经默认接受的），而是把它与"完整 end-user auth truth 已成立"的 zero-to-real exit criterion 直接对账，证明这个 exit criterion 当前不满足。其他 3 家审查没有上升到这个 charter 维度。
+2. **三方对账（代码 ↔ charter ↔ api-docs）的 paper-trail 最完整**：R6 直接列出 `zero-to-real-final-closure.md:56-70` 标 ✅ vs `ZX5-closure.md:309-315` 标 partial vs `clients/api-docs/README.md:82-86` 标 not-live 三个仓库内部说法不一致——这是 closure 治理上的硬证据。本轮已 fixed（closure 降级为 partial-close）。
+3. **R4 (jwt-shared lockfile) 是 4 家中唯一的 install/build truth 核查**：通过实际跑 `pnpm --filter @haimang/jwt-shared build/test` 暴露出 standalone build/test 失败 + lockfile 缺新 importer + 仍保留旧物理删除包的 importer 三层断点。这种"手动跑命令验证"的核查方式比静态分析更扎实。
+4. **R5 (endpoint tests gap) 视角独特**：明确指出 ZX5 D3-D6 新增的 `/messages` `/files` `/me/conversations` `/me/devices*` 缺直达测试。这与 DeepSeek/kimi/GLM 全部漏掉——他们都只看代码本身存在与否，没有上升到"测试矩阵未覆盖产品面"的判断。
+5. **R7 worker-matrix package truth 对账**：4 家中唯一指出 `worker-matrix-final-closure.md:56-75` 仍描述"9 个 Tier B + 7 CHANGELOG"但当前物理只有 7 packages 的差异；提醒 closure 文档作为下一阶段 truth anchor 不能继续陈旧化。
+
+#### 7.2.2 短板 / 盲区
+
+1. **needsBody 硬断点漏掉**：DeepSeek R1 (5 条 POST 路由请求体被 silent-drop) 是产品级 critical bug，GPT 完全没看出。原因是 GPT 的审查路径偏 closure / charter / endpoint metadata，没有深入 `index.ts:430` needsBody 判定的具体逻辑。
+2. **WorkerEntrypoint 默认导出错误漏掉**：DeepSeek R5 (context/filesystem-core default export 是 plain `{fetch}` 不是 WorkerEntrypoint，导致 RPC 不可达) 也漏掉。GPT R3 触及周边问题（context/filesystem 仍是 minimal seam）但没下沉到"default export 形态错误"这层。
+3. **alarm() 无 try/catch 漏掉**：DeepSeek R9 这种生产稳定性陷阱完全不在 GPT 的审查面内。
+4. **NACP 协议层断点漏掉**：GLM R1 (NACP_ERROR_BODY_VERBS 空集 vs wrapAsError 互斥) 也未被 GPT 发现。GPT 没有审查 nacp-core 包内部实现。
+5. **finding 粒度偏粗，medium 项未细分**：R3 把 context/filesystem 当 1 个 medium finding，但其实包含了 binding 注释、consumer migration、`/debug/workers/health` direct binding 三个独立子问题——拆分会让修复 priority 排序更清晰。
+
+### 7.3 Findings 质量清点
+
+| 问题编号 | 原始严重程度 | 事后判定 | Finding 质量 | 分析与说明 |
+|----------|--------------|----------|--------------|------------|
+| R1 | high / security | true-positive / missed-by-others | excellent | D6 device revoke 不是 partial 而是 auth gate 完全缺失；4 家中唯一上升到 zero-to-real exit criterion 维度；deferred（closure §4 item 8 标注为下一阶段 blocker）|
+| R2 | high | true-positive | good | Permission/Elicitation/Usage 不是 live runtime；与 DeepSeek R2/R3/R4/R6 同方向但 GPT 把判断停在 "wiring deferred" 层（DeepSeek 拆出 4 条具体断点更细）；本轮 partially-fixed |
+| R3 | medium | true-positive | mixed | context/filesystem 是 minimal seam；包含 3 个子问题（binding 注释 / consumer migration / `/debug/workers/health` direct binding）但合并为 1 finding 偏粗；本轮 partially-fixed |
+| R4 | medium | true-positive / missed-by-others | excellent | jwt-shared lockfile/install truth 断裂；4 家中独有；通过实际跑 build/test 命令验证；本轮 blocked（需 NODE_AUTH_TOKEN 环境）|
+| R5 | medium | true-positive / missed-by-others | excellent | ZX5 新 product endpoints 缺直达测试；4 家中独有；deferred；视角独到 |
+| R6 | medium | true-positive | excellent | final closure 与代码事实分裂；三方对账（代码 ↔ ZX5-closure ↔ api-docs）paper-trail 最完整；本轮 fixed（closure 降级为 partial-close）|
+| R7 | low | true-positive / missed-by-others | good | worker-matrix package truth 与 7 packages 现实对账；4 家中独有；deferred 为文档 follow-up |
+
+**统计**：7 findings 全部 true-positive，0 false-positive，4 项 missed-by-others（R1 / R4 / R5 / R7），本轮 fixed 1 项 + partially-fixed 2 项 + blocked 1 项 + deferred 3 项。
+
+### 7.4 多维度评分 — 单向总分 10 分
+
+| 维度 | 评分 | 说明 |
+|------|-----|------|
+| 证据链完整度 | `9.5` | 7 个 finding 全部三方对账（代码行号 + charter §X.Y + api-docs 描述）；R4 还附实际 build/test 命令的失败输出作为 install truth 断裂证据 |
+| 判断严谨性 | `9.5` | 0 false-positive；R1 把 D6 从 closure §4 已默认接受的 partial 上升为 zero-to-real blocker，校准非常清晰 |
+| 修法建议可执行性 | `9.0` | "实装 OR 降级 charter" 二选一风格；R6 直接给出具体措辞建议（"将 closure 改为 partial-close / handoff-ready"）|
+| 对 action-plan / design / QNA 的忠实度 | `10.0` | 4 家中最强；每个 finding 都对照 charter exit criteria；§3 In-Scope 逐项对齐表是阶段闭合判断的标准模板 |
+| 协作友好度 | `9.0` | 友好；不情绪化；明确给出"关闭前必须完成的 blocker"+"可后续跟进的 non-blocking follow-up"分级 |
+| 找到问题的覆盖面 | `7.5` | 7 项覆盖 security / delivery-gap / scope-drift / docs-gap；4 项 missed-by-others 是阶段级判断的独到视角；但 runtime correctness / 协议层 / 生产稳定性陷阱全部漏掉 |
+| 严重级别 / verdict 校准 | `9.0` | high blocker / medium follow-up 分级清晰；R3 略偏粗（应拆 3 项），其他全部校准合理 |
+| **加权综合** | **`8.8`** | 阶段闭合把关的标杆；charter-vs-代码-vs-api-docs 三方对账深度 4 家最强；唯一短板是 runtime correctness 调用链审计偏弱 |
