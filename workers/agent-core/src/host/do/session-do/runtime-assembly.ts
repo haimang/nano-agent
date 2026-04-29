@@ -115,7 +115,8 @@ function buildQuotaAuthorizer(
 }
 
 function createLiveKernelRunner(
-  ctx: SessionDoRuntimeAssemblyContext,
+  ctx: Omit<SessionDoRuntimeAssemblyContext, "getCapabilityTransport">,
+  capabilityTransport: CapabilityTransportLike | undefined,
   quotaAuthorizer: QuotaAuthorizer | null,
 ) {
   const runtimeEnv = ctx.env as Partial<SessionRuntimeEnv> | undefined;
@@ -125,7 +126,7 @@ function createLiveKernelRunner(
     modelCatalogDb: runtimeEnv.NANO_AGENT_DB,
     sessionFileReader: runtimeEnv.FILESYSTEM_CORE,
     quotaAuthorizer,
-    capabilityTransport: ctx.getCapabilityTransport(),
+    capabilityTransport,
     contextProvider: () => ctx.buildQuotaContext(),
     anchorProvider: () => ctx.buildCrossSeamAnchor(),
     onUsageCommit: (event) => {
@@ -175,7 +176,11 @@ function buildOrchestrationDeps(
   subsystems: SubsystemHandles,
   quotaAuthorizer: QuotaAuthorizer | null,
 ): OrchestrationDeps {
-  const liveKernel = createLiveKernelRunner(ctx, quotaAuthorizer);
+  const liveKernel = createLiveKernelRunner(
+    ctx,
+    readCapabilityTransport(subsystems),
+    quotaAuthorizer,
+  );
 
   return {
     advanceStep: async (snapshot, signals) => {
@@ -256,6 +261,16 @@ function buildOrchestrationDeps(
       if (stream?.pushStreamEvent) stream.pushStreamEvent(body);
     },
   };
+}
+
+function readCapabilityTransport(subsystems: SubsystemHandles): CapabilityTransportLike | undefined {
+  const capability = subsystems.capability as
+    | {
+        serviceBindingTransport?: CapabilityTransportLike;
+      }
+    | null
+    | undefined;
+  return capability?.serviceBindingTransport;
 }
 
 export function createSessionDoRuntimeAssembly(

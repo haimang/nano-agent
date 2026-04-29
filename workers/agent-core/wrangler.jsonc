@@ -54,7 +54,7 @@
     {
       "binding": "NANO_AGENT_DB",
       "database_name": "nano-agent-preview",
-      "database_id": "71a4b089-93e0-4d8f-afb8-bc9356a97cfa"
+      "database_id": "421bf213-f3af-4d79-9de0-9cdb5e61e747"
     }
   ],
   // RH0 P0-C1 — KV/R2 binding first-declaration (placeholder ids).
@@ -104,7 +104,7 @@
         {
           "binding": "NANO_AGENT_DB",
           "database_name": "nano-agent-preview",
-          "database_id": "71a4b089-93e0-4d8f-afb8-bc9356a97cfa"
+          "database_id": "421bf213-f3af-4d79-9de0-9cdb5e61e747"
         }
       ],
       "kv_namespaces": [

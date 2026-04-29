@@ -27,7 +27,7 @@
       "database_name": "nano-agent-preview",
       // Shared `nano-agent-preview` D1 instance — same UUID across all 6 workers
       // so they read/write the same truth. Production deploys override per-env.
-      "database_id": "71a4b089-93e0-4d8f-afb8-bc9356a97cfa",
+      "database_id": "421bf213-f3af-4d79-9de0-9cdb5e61e747",
       "migrations_dir": "migrations"
     }
   ],
@@ -82,7 +82,7 @@
           "binding": "NANO_AGENT_DB",
           "database_name": "nano-agent-preview",
           // Shared `nano-agent-preview` D1 instance — see top-of-file comment.
-          "database_id": "71a4b089-93e0-4d8f-afb8-bc9356a97cfa",
+          "database_id": "421bf213-f3af-4d79-9de0-9cdb5e61e747",
           "migrations_dir": "migrations"
         }
       ],
