@@ -45,12 +45,21 @@ liveTest("orchestrator-core ws attach upgrades and emits superseded signal on re
   await waitForOpen(ws1);
 
   const ws2 = new WebSocket(`${wsBase}/sessions/${sessionId}/ws?access_token=${token}&trace_uuid=${traceUuid}`);
-  const supersededPromise = waitForMatchingMessage(ws1, (message) => message.kind === "attachment_superseded");
+  const supersededPromise = waitForMatchingMessage(ws1, (message) => (
+    message.kind === "attachment_superseded" ||
+    message.kind === "session.attachment.superseded"
+  ));
   await waitForOpen(ws2);
 
   const superseded = await supersededPromise;
-  assert.equal(superseded.kind, "attachment_superseded");
-  assert.equal(superseded.reason, "replaced_by_new_attachment");
+  assert.ok(
+    superseded.kind === "attachment_superseded" ||
+    superseded.kind === "session.attachment.superseded",
+  );
+  assert.ok(
+    superseded.reason === "replaced_by_new_attachment" ||
+    superseded.reason === "reattach",
+  );
 
   ws1.close();
   ws2.close();

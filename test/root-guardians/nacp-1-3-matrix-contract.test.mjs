@@ -147,9 +147,9 @@ test("B9 §3 — NacpErrorBodySchema + wrapAsError produce a parseable error env
   });
 });
 
-test("W0 — nacp-core bumps to 1.4.0 while nacp-session stays on 1.3.0", () => {
+test("W0/RH5 — nacp-core and nacp-session are aligned on 1.4.0", () => {
   assert.equal(NACP_VERSION, "1.4.0");
-  assert.equal(NACP_SESSION_VERSION, "1.3.0");
+  assert.equal(NACP_SESSION_VERSION, "1.4.0");
 });
 
 // ─────────────────────────────────────────────────────────────────────────

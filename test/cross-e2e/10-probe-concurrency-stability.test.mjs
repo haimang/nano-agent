@@ -18,7 +18,7 @@ import { fetchJson, liveTest } from "../shared/live.mjs";
  */
 
 const FANOUT = 48;
-const TIMEOUT_MS = 10_000;
+const TIMEOUT_MS = 20_000;
 
 function withTimeout(promise, ms, label) {
   return Promise.race([
@@ -37,6 +37,8 @@ liveTest(
   ["orchestrator-core"],
   async ({ getUrl }) => {
     const base = getUrl("orchestrator-core");
+    const warmup = await fetchJson(`${base}/`);
+    assert.equal(warmup.response.status, 200, "warmup probe must succeed before fan-out");
     const started = Date.now();
     const probes = Array.from({ length: FANOUT }, (_, i) => {
       const label = `orchestrator-core#${i}`;

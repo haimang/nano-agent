@@ -28,8 +28,8 @@ liveTest("orchestrator-core routes input/status/timeline/verify/cancel through t
     body: JSON.stringify({}),
   });
   assert.equal(badInput.response.status, 400);
-  assert.equal(badInput.json?.error, "invalid-input-body");
-  assert.match(String(badInput.json?.message ?? ""), /requires .*text/i);
+  assert.equal(badInput.json?.error?.code ?? badInput.json?.error, "invalid-input-body");
+  assert.match(String(badInput.json?.error?.message ?? badInput.json?.message ?? ""), /requires .*text/i);
 
   const input = await fetchJson(`${base}/sessions/${sessionId}/input`, {
     method: "POST",

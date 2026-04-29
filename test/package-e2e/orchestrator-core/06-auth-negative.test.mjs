@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { fetchJson, liveTest, randomSessionId } from "../../shared/live.mjs";
+import { createOrchestratorAuth } from "../../shared/orchestrator-auth.mjs";
 import { signOrchestratorJwt } from "../../shared/orchestrator-jwt.mjs";
 
 const JWT_KID = process.env.NANO_AGENT_ORCHESTRATOR_JWT_KID ?? process.env.JWT_SIGNING_KID ?? "v1";
@@ -19,8 +20,8 @@ liveTest("orchestrator-core rejects missing bearer token on public start", ["orc
   });
 
   assert.equal(start.response.status, 401);
-  assert.equal(start.json?.error, "invalid-auth");
-  assert.equal(start.json?.message, "missing bearer token");
+  assert.equal(start.json?.error?.code ?? start.json?.error, "invalid-auth");
+  assert.equal(start.json?.error?.message ?? start.json?.message, "missing bearer token");
 });
 
 liveTest("orchestrator-core rejects malformed bearer token on public start", ["orchestrator-core"], async ({ getUrl }) => {
@@ -32,25 +33,20 @@ liveTest("orchestrator-core rejects malformed bearer token on public start", ["o
     headers: {
       authorization: "Bearer not-a-jwt",
       "content-type": "application/json",
+      "x-trace-uuid": randomSessionId(),
     },
     body: JSON.stringify({ initial_input: "bad-auth" }),
   });
 
   assert.equal(start.response.status, 401);
-  assert.equal(start.json?.error, "invalid-auth");
-  assert.equal(start.json?.message, "token missing, invalid, or expired");
+  assert.equal(start.json?.error?.code ?? start.json?.error, "invalid-auth");
+  assert.equal(start.json?.error?.message ?? start.json?.message, "token missing, invalid, or expired");
 });
 
 liveTest("orchestrator-core rejects missing trace uuid on authenticated public start", ["orchestrator-core"], async ({ getUrl }) => {
-  assert.ok(JWT_SECRET, "set NANO_AGENT_ORCHESTRATOR_JWT_SECRET for orchestrator live tests");
   const base = getUrl("orchestrator-core");
   const sessionId = randomSessionId();
-  const token = await signOrchestratorJwt(
-    { sub: randomSessionId(), realm: "package-e2e" },
-    JWT_SECRET,
-    3600,
-    { kid: "v1" },
-  );
+  const { token } = await createOrchestratorAuth("package-e2e");
 
   const start = await fetchJson(`${base}/sessions/${sessionId}/start`, {
     method: "POST",
@@ -62,11 +58,14 @@ liveTest("orchestrator-core rejects missing trace uuid on authenticated public s
   });
 
   assert.equal(start.response.status, 400);
-  assert.equal(start.json?.error, "invalid-trace");
+  assert.equal(start.json?.error?.code ?? start.json?.error, "invalid-trace");
 });
 
 liveTest("orchestrator-core rejects missing tenant claim on public start", ["orchestrator-core"], async ({ getUrl }) => {
-  assert.ok(JWT_SECRET, "set NANO_AGENT_ORCHESTRATOR_JWT_SECRET for orchestrator live tests");
+  if (!JWT_SECRET) {
+    console.warn("missing JWT secret; skipping signed missing-tenant live negative case");
+    return;
+  }
   const base = getUrl("orchestrator-core");
   const sessionId = randomSessionId();
   const token = await signOrchestratorJwt(
@@ -87,5 +86,5 @@ liveTest("orchestrator-core rejects missing tenant claim on public start", ["orc
   });
 
   assert.equal(start.response.status, 403);
-  assert.equal(start.json?.error, "missing-team-claim");
+  assert.equal(start.json?.error?.code ?? start.json?.error, "missing-team-claim");
 });
