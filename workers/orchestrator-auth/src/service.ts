@@ -663,11 +663,12 @@ export class AuthService {
     try {
       assertAuthMeta(rawMeta);
       const input = CreateApiKeyInputSchema.parse(rawInput);
-      const apiKey = `${API_KEY_PREFIX}${this.uuid()}`;
+      const keyId = `${API_KEY_PREFIX}${this.uuid()}`;
+      const apiKey = `${keyId}.${randomOpaqueToken(24)}`;
       const salt = randomOpaqueToken(12);
       const keyHash = await hashSecret(apiKey, salt);
       await this.deps.repo.createTeamApiKey({
-        api_key_uuid: apiKey,
+        api_key_uuid: keyId,
         team_uuid: input.team_uuid,
         key_hash: keyHash,
         key_salt: salt,
@@ -675,7 +676,7 @@ export class AuthService {
         created_at: this.nowIso(),
       });
       const result: CreateApiKeyResult = {
-        key_id: apiKey,
+        key_id: keyId,
         api_key: apiKey,
         team_uuid: input.team_uuid,
         label: input.label,

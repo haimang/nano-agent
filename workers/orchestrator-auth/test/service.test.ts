@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { AuthService } from "../src/service.js";
+import { hashSecret } from "../src/hash.js";
 import { mintAccessToken } from "../src/jwt.js";
 import type { WeChatClient } from "../src/wechat.js";
 import type {
@@ -166,6 +167,10 @@ class InMemoryAuthRepository implements AuthRepository {
 
   device(deviceUuid: string): UserDeviceRecord | null {
     return this.devicesByUuid.get(deviceUuid) ?? null;
+  }
+
+  apiKey(apiKeyUuid: string): TeamApiKeyRecord | null {
+    return this.apiKeysByUuid.get(apiKeyUuid) ?? null;
   }
 }
 
@@ -488,6 +493,9 @@ describe("AuthService", () => {
     );
     expect(created.ok).toBe(true);
     if (!created.ok) return;
+    expect(created.data.api_key.startsWith(`${created.data.key_id}.`)).toBe(true);
+    expect(repo.apiKey(created.data.key_id)?.api_key_uuid).toBe(created.data.key_id);
+    expect(repo.apiKey(created.data.api_key)).toBeNull();
 
     const verified = await service.verifyApiKey(
       { api_key: created.data.api_key },
@@ -501,5 +509,39 @@ describe("AuthService", () => {
     expect(me.ok).toBe(true);
     if (!me.ok) return;
     expect(me.data.snapshot.device_uuid).toBe("");
+  });
+
+  it("keeps verifying legacy single-segment API keys", async () => {
+    const repo = new InMemoryAuthRepository();
+    const service = createService(repo);
+    const register = await service.register(
+      {
+        email: "legacy-api@example.com",
+        password: "password-123",
+      },
+      META,
+    );
+    expect(register.ok).toBe(true);
+    if (!register.ok) return;
+
+    const legacyKey = "nak_legacy_key_id";
+    const salt = "legacy-salt";
+    await repo.createTeamApiKey({
+      api_key_uuid: legacyKey,
+      team_uuid: register.data.team.team_uuid,
+      key_hash: await hashSecret(legacyKey, salt),
+      key_salt: salt,
+      label: "legacy",
+      created_at: "2026-04-25T00:00:00.000Z",
+    });
+
+    const verified = await service.verifyApiKey(
+      { api_key: legacyKey },
+      META,
+    );
+    expect(verified.ok).toBe(true);
+    if (!verified.ok) return;
+    expect(verified.data.key_id).toBe(legacyKey);
+    expect(verified.data.team_uuid).toBe(register.data.team.team_uuid);
   });
 });
