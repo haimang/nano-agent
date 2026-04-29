@@ -72,7 +72,12 @@ export function App() {
     try {
       const status = await sessionsApi.sessionStatus(auth, uuid);
       setSessionStatus(status);
-    } catch {
+    } catch (err) {
+      if (err instanceof ApiRequestError && err.details.kind === "auth.expired") {
+        setAuthState(null);
+        setPage("auth");
+        return;
+      }
       setSessionStatus(null);
     }
   }, []);

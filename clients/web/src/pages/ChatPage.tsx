@@ -61,6 +61,8 @@ export function ChatPage({ activeSessionUuid, onCreateSession, onStatusChange }:
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const activeUuidRef = useRef<string | null>(null);
+  const ignoredCloseSocketsRef = useRef(new Set<WebSocket>());
+  const terminalCloseSocketsRef = useRef(new Set<WebSocket>());
 
   const cleanupWs = useCallback(() => {
     if (reconnectTimerRef.current) {
@@ -72,6 +74,7 @@ export function ChatPage({ activeSessionUuid, onCreateSession, onStatusChange }:
       heartbeatTimerRef.current = null;
     }
     if (socketRef.current) {
+      ignoredCloseSocketsRef.current.add(socketRef.current);
       socketRef.current.close();
       socketRef.current = null;
     }
@@ -82,6 +85,77 @@ export function ChatPage({ activeSessionUuid, onCreateSession, onStatusChange }:
     messagesRef.current = [...messagesRef.current, msg];
     setMessages([...messagesRef.current]);
   }, []);
+
+  const rebuildMessagesFromTimeline = useCallback((
+    timelineData: Array<{ kind?: string; seq?: number; [key: string]: unknown }>,
+  ) => {
+    messagesRef.current = [];
+    lastSeenSeqRef.current = 0;
+    setStarted(timelineData.length > 0);
+
+    for (const ev of timelineData) {
+      const kind = typeof ev.kind === "string" ? ev.kind : "";
+      const content = typeof ev.content === "string" ? ev.content : "";
+      const contentType = typeof ev.content_type === "string" ? ev.content_type : "";
+      const role = typeof ev.role === "string" ? ev.role : "";
+
+      if (role === "user" || kind === "user.input") {
+        const body = ev.body as { text?: string } | undefined;
+        const msgText = body?.text ?? content;
+        if (msgText) {
+          messagesRef.current.push({ role: "user", content: msgText, seq: ev.seq as number });
+        }
+      } else if (kind === "llm.delta" && contentType === "text") {
+        const last = messagesRef.current[messagesRef.current.length - 1];
+        if (last && last.role === "assistant" && last.kind === "llm.delta") {
+          last.content += content;
+        } else {
+          messagesRef.current.push({ role: "assistant", content, kind: "llm.delta" });
+        }
+      } else if (kind === "session.update") {
+        // tracking
+      } else if (kind && !["session.heartbeat", "session.resume", "session.stream.ack"].includes(kind)) {
+        messagesRef.current.push({
+          role: "system",
+          content: `[${kind}]`,
+          kind,
+          seq: ev.seq as number,
+        });
+      }
+
+      if (typeof ev.seq === "number" && ev.seq > 0) {
+        lastSeenSeqRef.current = Math.max(lastSeenSeqRef.current, ev.seq);
+      }
+    }
+
+    setMessages([...messagesRef.current]);
+  }, []);
+
+  const reconcileSessionReplay = useCallback(async (sessionUuid: string) => {
+    const auth = getAuthState();
+    if (!auth || sessionUuid !== activeUuidRef.current) return;
+
+    try {
+      const resume = await sessionsApi.resume(auth, sessionUuid, lastSeenSeqRef.current);
+      if (sessionUuid !== activeUuidRef.current) return;
+
+      const replayLost = Boolean(
+        resume &&
+        typeof resume === "object" &&
+        "replay_lost" in resume &&
+        (resume as { replay_lost?: unknown }).replay_lost,
+      );
+
+      if (replayLost) {
+        const timelineData = await sessionsApi.timeline(auth, sessionUuid);
+        if (sessionUuid !== activeUuidRef.current) return;
+        rebuildMessagesFromTimeline(timelineData);
+      }
+    } catch {
+      // Resume/timeline reconciliation is best-effort; the reconnect itself
+      // still relies on authoritative WS query replay using last_seen_seq.
+    }
+  }, [rebuildMessagesFromTimeline]);
 
   const connectWs = useCallback((sessionUuid: string) => {
     cleanupWs();
@@ -119,7 +193,9 @@ export function ChatPage({ activeSessionUuid, onCreateSession, onStatusChange }:
     heartbeatTimerRef.current = timer;
 
     socket.addEventListener("open", () => {
+      reconnectAttemptsRef.current = 0;
       setWsStatus("connected");
+      setWsError(null);
       sendHeartbeat();
       socket.send(JSON.stringify({
         message_type: "session.resume",
@@ -163,11 +239,13 @@ export function ChatPage({ activeSessionUuid, onCreateSession, onStatusChange }:
               addMessage({ role: "system", content: `[Complete]`, kind: "llm.complete", seq: parsed.seq });
             }
           } else if (payload.kind === "terminal" || payload.kind === "session.complete") {
+            terminalCloseSocketsRef.current.add(socket);
             addMessage({ role: "system", content: `[Session ended]`, kind: "terminal" });
           } else if (payload.kind) {
             addMessage({ role: "system", content: `[${payload.kind}]`, kind: payload.kind, seq: parsed.seq });
           }
         } else if (parsed.kind === "terminal") {
+          terminalCloseSocketsRef.current.add(socket);
           addMessage({ role: "system", content: `[Session ${parsed.terminal ?? "ended"}]`, kind: "terminal" });
         } else if (parsed.kind === "session.heartbeat") {
           // silent
@@ -181,8 +259,9 @@ export function ChatPage({ activeSessionUuid, onCreateSession, onStatusChange }:
     });
 
     socket.addEventListener("close", (event) => {
+      const intentionalClose = ignoredCloseSocketsRef.current.delete(socket);
+      const terminalClose = terminalCloseSocketsRef.current.delete(socket);
       setWsStatus("disconnected");
-      // Manual cleanup without clearing the reconnect timer we're about to set
       if (heartbeatTimerRef.current) {
         clearInterval(heartbeatTimerRef.current);
         heartbeatTimerRef.current = null;
@@ -190,9 +269,14 @@ export function ChatPage({ activeSessionUuid, onCreateSession, onStatusChange }:
       heartbeatRef.current = null;
       socketRef.current = null;
 
-      // Schedule reconnect for non-intentional disconnects
+      if (intentionalClose) {
+        return;
+      }
+
       if (
+        !terminalClose &&
         event.code !== 4001 &&
+        event.code !== 1000 &&
         sessionUuid === activeUuidRef.current &&
         reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS
       ) {
@@ -200,9 +284,12 @@ export function ChatPage({ activeSessionUuid, onCreateSession, onStatusChange }:
         reconnectAttemptsRef.current++;
         setWsError(`Reconnecting... (attempt ${reconnectAttemptsRef.current}/${MAX_RECONNECT_ATTEMPTS})`);
         reconnectTimerRef.current = setTimeout(() => {
-          if (sessionUuid === activeUuidRef.current) {
-            connectWs(sessionUuid);
-          }
+          if (sessionUuid !== activeUuidRef.current) return;
+          void reconcileSessionReplay(sessionUuid).finally(() => {
+            if (sessionUuid === activeUuidRef.current) {
+              connectWs(sessionUuid);
+            }
+          });
         }, delay);
       }
     });
@@ -212,7 +299,7 @@ export function ChatPage({ activeSessionUuid, onCreateSession, onStatusChange }:
       setWsStatus("disconnected");
       // close event will follow and handle reconnect
     });
-  }, [cleanupWs, addMessage, onStatusChange]);
+  }, [cleanupWs, addMessage, onStatusChange, reconcileSessionReplay]);
 
   const handleSend = useCallback(async (isFirst: boolean) => {
     if (!input.trim() || !activeSessionUuid) return;
@@ -235,6 +322,9 @@ export function ChatPage({ activeSessionUuid, onCreateSession, onStatusChange }:
       if (isFirst) {
         await sessionsApi.startSession(auth, activeSessionUuid, text);
         setStarted(true);
+        if (socketRef.current?.readyState !== WebSocket.OPEN) {
+          connectWs(activeSessionUuid);
+        }
       } else {
         await sessionsApi.sendInput(auth, activeSessionUuid, text);
       }
@@ -244,7 +334,7 @@ export function ChatPage({ activeSessionUuid, onCreateSession, onStatusChange }:
     } finally {
       setSending(false);
     }
-  }, [input, activeSessionUuid, addMessage]);
+  }, [input, activeSessionUuid, addMessage, connectWs]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -276,6 +366,7 @@ export function ChatPage({ activeSessionUuid, onCreateSession, onStatusChange }:
 
       sessionsApi.sessionStatus(auth, activeSessionUuid)
         .then(async (status) => {
+          if (activeSessionUuid !== activeUuidRef.current) return;
           onStatusChange(status);
 
           const durable = status && typeof status === "object"
@@ -286,61 +377,25 @@ export function ChatPage({ activeSessionUuid, onCreateSession, onStatusChange }:
             lastSeenSeqRef.current = Math.max(lastSeenSeqRef.current, durable.last_event_seq);
           }
 
+          connectWs(activeSessionUuid);
+
           try {
             const timelineData = await sessionsApi.timeline(auth, activeSessionUuid);
+            if (activeSessionUuid !== activeUuidRef.current) return;
             if (Array.isArray(timelineData) && timelineData.length > 0) {
-              setStarted(true);
-              messagesRef.current = [];
-
-              for (const ev of timelineData) {
-                const kind = typeof ev.kind === "string" ? ev.kind : "";
-                const content = typeof ev.content === "string" ? ev.content : "";
-                const contentType = typeof ev.content_type === "string" ? ev.content_type : "";
-                const role = typeof ev.role === "string" ? ev.role : "";
-
-                if (role === "user" || kind === "user.input") {
-                  const body = ev.body as { text?: string } | undefined;
-                  const msgText = body?.text ?? content;
-                  if (msgText) {
-                    messagesRef.current.push({ role: "user", content: msgText, seq: ev.seq as number });
-                  }
-                } else if (kind === "llm.delta" && contentType === "text") {
-                  const last = messagesRef.current[messagesRef.current.length - 1];
-                  if (last && last.role === "assistant" && last.kind === "llm.delta") {
-                    last.content += content;
-                  } else {
-                    messagesRef.current.push({ role: "assistant", content, kind: "llm.delta" });
-                  }
-                } else if (kind === "session.update") {
-                  // tracking
-                } else if (kind && !["session.heartbeat", "session.resume", "session.stream.ack"].includes(kind)) {
-                  messagesRef.current.push({
-                    role: "system",
-                    content: `[${kind}]`,
-                    kind,
-                    seq: ev.seq as number,
-                  });
-                }
-
-                if (typeof ev.seq === "number" && ev.seq > 0) {
-                  lastSeenSeqRef.current = Math.max(lastSeenSeqRef.current, ev.seq);
-                }
-              }
-              setMessages([...messagesRef.current]);
+              rebuildMessagesFromTimeline(timelineData);
             }
           } catch {
             // timeline may fail for new sessions
           }
         })
         .catch(() => onStatusChange(null));
-
-      connectWs(activeSessionUuid);
     }
 
     return () => {
       // WS cleanup handled by first effect (on unmount)
     };
-  }, [activeSessionUuid, connectWs, onStatusChange]);
+  }, [activeSessionUuid, connectWs, onStatusChange, rebuildMessagesFromTimeline]);
 
   if (!activeSessionUuid) {
     return (
