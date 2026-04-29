@@ -40,7 +40,7 @@ RH2 明确新增一份专项设计，专门冻结 `snapshot-vs-push` 与 `semant
 
 | 术语 | 定义 | 备注 |
 |------|------|------|
-| semantic-chunk | 工具语义块级别的 streaming | 如 tool_use_start / delta / stop |
+| semantic-chunk | 工具语义块级别的 streaming | `llm.delta.content_type` ∈ `{text, thinking, tool_use_start, tool_use_delta}`；**结束语义由 `tool_use_delta`（后续可加 `is_final` 标志）+ 独立 `tool.call.result` frame 表达**，不引入 `tool_use_stop` 枚举（当前 schema 不存在）|
 | token-level | 文本 token 级别逐 token 下发 | 明确不在 RH 阶段 |
 | strict snapshot | 以 HTTP/D1 为严格读模型 | push 丢失时的回读面 |
 | best-effort push | 面向 attached client 的实时预览 | 不承担严格一致性义务 |
@@ -268,5 +268,17 @@ RH2 明确新增一份专项设计，专门冻结 `snapshot-vs-push` 与 `semant
 
 | 文件:行 | 内容 | 借鉴点 | 备注 |
 |---------|------|--------|------|
-| `workers/agent-core/src/llm/adapters/workers-ai.ts:148-220` | provider SSE -> canonical chunk normalisation | semantic-chunk 应先在 runtime 吸收 provider 差异 | provider seam |
-| `workers/agent-core/src/host/runtime-mainline.ts:148-187` | delta/tool_call/finish event 处理 | RH2 只扩策略，不改变“先 canonical 再 relay”的方向 | current mainline |
+| `workers/agent-core/src/llm/adapters/workers-ai.ts:148-220` | provider SSE → `LlmChunk`（content/usage/tool_calls 三 variants）—— **第 1 层归一化** | semantic-chunk 在此先吸收 provider 差异；策略层不直接改这一层 | provider seam |
+| `workers/agent-core/src/host/runtime-mainline.ts:148-187` | `LlmChunk` → `NormalizedLLMEvent`（llm.request.started/delta/tool_call/finish/error 五 variants）—— **第 2 层归一化** | RH2 streaming policy 真正下发到 client 的入口在此层，frame 形态由 `nacp-session` schema 决定 | current mainline |
+
+> **两层归一化**：`LlmChunk`（adapter 出口）≠ `NormalizedLLMEvent`（runtime 出口）≠ WS frame body；任何 streaming 行为修改都需要同时审视这三层。
+
+---
+
+## 9. 多审查修订记录（2026-04-29 design rereview）
+
+| 编号 | 审查者 | 原 finding | 采纳的修订 |
+|------|--------|-------------|------------|
+| GPT-R2 | GPT | `tool_use_stop` 枚举在当前 `stream-event.ts` 不存在 | §1.1 关键术语改为"结束语义由 `tool_use_delta` + `tool.call.result` 表达"；选择 GPT 给出的方案 B（不扩 schema）|
+| GLM-R10 | GLM | RH2 未区分 `LlmChunk` vs `NormalizedLLMEvent` 两层归一化 | §8.2 重写为"两层归一化"明示，并加注 RH2 不改 adapter 层 |
+| GLM-R13 | GLM | orchestrator-core `emitServerFrame` / `handleWsAttach` 路径不走 `validateSessionFrame`，构成 protocol gap | 主设计 `RH2-models-context-inspection.md` §9 已补；本策略文不展开实施细节 |

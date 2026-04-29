@@ -130,13 +130,16 @@ RH6 是 real-to-hero 的收口 phase：它不再引入新功能，而是把 RH1-
 
 ### 4.2 当前 `user-do.ts` 的做法
 
-- **实现概要**：一个文件同时承担 façade ingress、session lifecycle、history/timeline、permission/elicitation mirror、files、me surface 等多域责任。
+- **实现概要**：一个文件同时承担 façade ingress、session lifecycle、history/timeline、permission/elicitation mirror、files、me surface 等多域责任；**ZX5 已有部分 seam 抽出**（`session-lifecycle.ts` / `session-read-model.ts` / `ws-bridge.ts` / `parity-bridge.ts`），types + pure helpers 已分离，但 domain handler 仍堆在 2285 行主文件内。
 - **亮点**：
   - façade 责任都集中在一个 owner 文件里
+  - 已有 4 个 seam 模块可作为拆分基线，不需要从零起步
 - **值得借鉴**：
   - 拆分后仍保留一个薄 façade 入口，而不是把 public contract 打散
+  - 在 ZX5 seam 之上**新增** `user-do/handlers/*.ts` 与 infrastructure，**保留**现有 lifecycle/read-model/ws/parity seam，不做重复抽取
 - **不打算照抄的地方**：
   - 继续让各个 domain 共居一个 2000+ 行文件
+  - 忽视已存在的 seam，把"拆分"从零重做
 
 ### 4.3 RH6 的设计倾向
 
@@ -163,11 +166,11 @@ RH6 是 real-to-hero 的收口 phase：它不再引入新功能，而是把 RH1-
 
 ### 5.1 In-Scope（本设计确认要支持）
 
-- **[S1]** NanoSessionDO 按职责拆 7 文件
-- **[S2]** user-do.ts 按 domain 拆 handlers / infrastructure
+- **[S1]** NanoSessionDO 按职责拆 ≥7 文件 — 包括独立切出 **`session-do-verify`**（覆盖 `nano-session-do.ts:1723-2078` 共 ~355 行的 preview verification subsystem，5 个 verify 方法）与 RH0 已切口的 `session-do-persistence`
+- **[S2]** user-do.ts 按 domain 拆 handlers / infrastructure，**在 ZX5 已有 seam（session-lifecycle / session-read-model / ws-bridge / parity-bridge）之上新增**，不重复抽取；同时复核 `user-do.ts:286-500` 的 D1 durable session truth helpers（~215 行）是否独立抽取为 `user-do/durable-truth.ts`
 - **[S3]** `docs/architecture/three-layer-truth.md`
 - **[S4]** web / wechat-devtool / real-device evidence pack
-- **[S5]** dead shim / deprecated bridge / Lane E residue cleanup
+- **[S5]** dead shim / deprecated bridge / Lane E residue cleanup（覆盖范围：`deploy-fill` 4 个源残留 + 文档残留；`forwardInternalJson @deprecated` 已无活跃调用方；Lane E library import 删除依赖 RH4 sunset）
 
 ### 5.2 Out-of-Scope（本设计确认不做）
 
@@ -208,9 +211,10 @@ RH6 是 real-to-hero 的收口 phase：它不再引入新功能，而是把 RH1-
 
 | 风险 | 触发条件 | 影响 | 缓解方案 |
 |------|----------|------|----------|
-| import cycle / duplicated infra | 粗暴拆文件 | 维护性变差 | 先按职责图拆，再抽 shared infra |
+| import cycle / duplicated infra | 粗暴拆文件 | 维护性变差；charter §10.3 NOT-成功退出第 1 条已硬纪律化 | **拆前**绘制当前模块依赖图（Madge 或 dpdm 等工具）识别潜在循环；**拆后**运行 `tsc --noEmit` + 循环依赖检测脚本（如 `madge --circular`）；任何循环必须在 PR 内修复 |
 | truth doc 只是复述 charter | 不回看代码现实 | 无法指导实现 | 文档必须回绑当前代码 ownership |
 | owner evidence 不齐 | 设备/时间不够 | closure 被卡 | 依赖 RHX-qna Q4 提前冻结范围 |
+| 重复抽 ZX5 已有 seam | 忽视 `session-lifecycle.ts` 等 4 个已抽 seam | 拆分变成"白做工" + 风险 import cycle | 设计与 action-plan 必须显式列出 ZX5 已有 seam 清单 |
 
 ### 6.3 本次 tradeoff 能带来的价值
 
@@ -299,6 +303,9 @@ RH6 是 real-to-hero 的收口 phase：它不再引入新功能，而是把 RH1-
 |---------|------|--------|------|
 | `workers/orchestrator-core/src/user-do.ts:1-2285` | 当前 façade megafile | RH6 的第二拆分目标 | 当前 2285 行 |
 | `workers/orchestrator-core/src/user-do.ts:755-1180,1262-1540` | start/cancel/verify/read/messages 多域逻辑并存 | RH6 可按 domain handler 切分 | current domain density |
+| `workers/orchestrator-core/src/user-do.ts:286-500` | D1 durable session truth helpers (~215 行) | RH6 候选独立抽取目标 `user-do/durable-truth.ts`（GLM R11） | candidate |
+| `workers/orchestrator-core/src/{session-lifecycle,session-read-model,ws-bridge,parity-bridge}.ts` | ZX5 已抽出的 4 个 seam 模块 | RH6 必须**保留**这些 seam，并在其上新增 `user-do/handlers/*.ts`，不重复抽取 | already extracted |
+| `workers/agent-core/src/host/do/nano-session-do.ts:1723-2078` | preview verification subsystem (~355 行，5 个 verify 方法) | RH6 F1 候选独立切出 `session-do-verify.ts` | candidate |
 
 ### 8.3 Truth / evidence anchors
 
@@ -306,3 +313,14 @@ RH6 是 real-to-hero 的收口 phase：它不再引入新功能，而是把 RH1-
 |---------|------|--------|------|
 | `docs/charter/plan-real-to-hero.md:258-270` | three-layer truth / evidence 硬纪律 | RH6 文档冻结的 charter 基础 | design must honor |
 | `docs/charter/plan-real-to-hero.md:806-815` | Tier-A/B/C evidence 定义 | RH6 evidence pack 的直接验收口径 | closure law |
+
+---
+
+## 9. 多审查修订记录（2026-04-29 design rereview）
+
+| 编号 | 审查者 | 原 finding | 采纳的修订 |
+|------|--------|-------------|------------|
+| GPT-R6 | GPT | RH6 把 `user-do.ts` 描述为完全单文件巨石，忽视 ZX5 已抽 4 个 seam | §4.2 改写为"在 ZX5 seam 之上新增 handlers"；§8.2 新增 ZX5 seam 引用并标注 already extracted；§6.2 新增"重复抽 seam"风险 |
+| GLM-R11 / kimi-R9 共识 | GLM/kimi | 拆分方案遗漏 verification subsystem (1723-2078, 355 行) 与 D1 durable truth helpers (286-500, 215 行)；未提 import cycle 预防步骤 | §5.1 [S1]/[S2] 显式列出这两个候选；§8.1/§8.2 加引用；§6.2 import cycle 缓解方案具体化（拆前依赖图 + 拆后 tsc + madge --circular）|
+| deepseek-H6-5/H6-6 | deepseek | `forwardInternalJson @deprecated` 已无活跃调用方；`deploy-fill` residue 范围被低估 | §5.1 [S5] cleanup 范围扩展，含 4 个源残留 + 文档残留 + Lane E |
+| kimi-R9 | kimi | 缺 import cycle 预防 | §6.2 风险表新增缓解方案行 |

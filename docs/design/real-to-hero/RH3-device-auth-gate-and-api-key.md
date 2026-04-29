@@ -164,11 +164,12 @@ RH3 的任务是把当前“看起来已经有 end-user auth truth，实际上 d
 
 ### 5.1 In-Scope（本设计确认要支持）
 
-- **[S1]** device_uuid claim 注入与 access/refresh/WS gate
-- **[S2]** team_name/team_slug 与 `/me/team` patch
-- **[S3]** verifyApiKey runtime path + `authenticateRequest` 双轨
-- **[S4]** `/me/conversations` D1+KV 对齐 + cursor pagination
+- **[S1]** device_uuid claim 注入与 access/refresh/WS gate（**当前全链路为零**：`AccessTokenClaims`/`AuthSnapshot`/`nano_auth_sessions` 均无 device_uuid 字段；login/register 不 mint device_uuid；migration 009 必须新增 `nano_auth_sessions.device_uuid` 列）
+- **[S2]** team_name/team_slug 与 `/me/team` patch（**migration 009 必须为 `nano_teams` 新增 `team_name TEXT NOT NULL DEFAULT ''` + `team_slug TEXT UNIQUE`**；当前表无这两列；同步更新 `AuthTeamSchema`，触发 `orchestrator-auth-contract` 版本升级）
+- **[S3]** verifyApiKey runtime path + `authenticateRequest` 双轨（**migration 009 必须为 `nano_team_api_keys` 新增 `key_salt TEXT NOT NULL` 列**；或改用无 salt 的 argon2 方案并在本设计内冻结决议）
+- **[S4]** `/me/conversations` D1+KV 对齐 + cursor pagination（参考 `handleMeSessions` 的双源合并逻辑）
 - **[S5]** `/me/devices` 与 refresh binding 对齐
+- **[S6]** `GET /me/teams` 只读 list（charter §4.3 灰区已 in-scope；用户可能已属多个 team —— 注册自动建 1 个 + 被邀请加入其他；不含 create/invite/remove/change-role）
 
 ### 5.2 Out-of-Scope（本设计确认不做）
 
@@ -227,10 +228,11 @@ RH3 的任务是把当前“看起来已经有 end-user auth truth，实际上 d
 
 | 编号 | 功能名 | 描述 | 一句话收口目标 |
 |------|--------|------|----------------|
-| F1 | Device Auth Gate | access/refresh/WS 全链检查 revoked device | ✅ `revoke 后设备立即失效` |
-| F2 | Team Display Surface | team_name/team_slug 进入 auth/me product surface | ✅ `客户端第一次看见稳定 team identity` |
-| F3 | API Key Runtime Verify | bearer 双轨支持 JWT + API key | ✅ `server-to-server caller 可通过 façade ingress` |
-| F4 | Conversation Read Model Alignment | `/me/conversations` 与 `/me/sessions` 同口径 | ✅ `客户端读模型不再分裂` |
+| F1 | Device Auth Gate | access/refresh/WS 全链检查 revoked device；**全链路 schema 落地**（AccessTokenClaims + AuthSnapshot + nano_auth_sessions + login/register mint + refresh rotation 绑定）| ✅ `revoke 后设备立即失效` |
+| F2 | Team Display Surface | team_name/team_slug 进入 auth/me product surface；**migration 009 表结构变更 + AuthTeamSchema 升版** | ✅ `客户端第一次看见稳定 team identity` |
+| F3 | API Key Runtime Verify | bearer 双轨支持 JWT + API key；**migration 009 为 `nano_team_api_keys` 加 salt 列** | ✅ `server-to-server caller 可通过 façade ingress` |
+| F4 | Conversation Read Model Alignment | `/me/conversations` 与 `/me/sessions` 同口径，D1+KV 双源合并参考 `handleMeSessions` | ✅ `客户端读模型不再分裂` |
+| F5 | Team List Read Surface | 只读 `GET /me/teams`，返回当前用户所属全部 team（charter §4.3 灰区 in-scope）| ✅ `多团队归属用户可见到自己所有 team，但不引入 admin plane` |
 
 ### 7.2 详细阐述
 
@@ -307,3 +309,33 @@ RH3 的任务是把当前“看起来已经有 end-user auth truth，实际上 d
 |---------|------|--------|------|
 | `workers/orchestrator-core/src/user-do.ts:1262-1415` | resume / permission / elicitation current relay | RH3 device revoke force-disconnect 复用同类 user-do relay owner | current relay owner |
 | `workers/orchestrator-core/src/index.ts:667-812` | D1 设备列表 / revoke SQL 现实 | RH3 在现有 D1 truth 基础上升级成真正 gate | current D1 truth |
+
+### 8.4 RH3 涉及的 migration 009 schema 变更清单
+
+> 来源：deepseek/kimi/GLM 多审查共识。RH3 是 real-to-hero 阶段唯一改写 `nano_teams` / `nano_team_api_keys` / `nano_auth_sessions` 的 phase；migration 009 必须一次到位。
+
+| 表 | 变更 | 影响 |
+|----|------|------|
+| `nano_teams` | `ALTER TABLE ADD COLUMN team_name TEXT NOT NULL DEFAULT ''` + `team_slug TEXT UNIQUE` | F2 |
+| `nano_team_api_keys` | `ALTER TABLE ADD COLUMN key_salt TEXT NOT NULL` | F3（HMAC-SHA256 方案）|
+| `nano_auth_sessions` | `ALTER TABLE ADD COLUMN device_uuid TEXT` + 索引 | F1 device-session 绑定 |
+
+### 8.5 contract package 影响
+
+| 文件 | 变更 |
+|------|------|
+| `packages/orchestrator-auth-contract/src/index.ts` | `AuthTeamSchema` 加 `team_name`/`team_slug`；`AccessTokenClaimsSchema` 加 `device_uuid`；`AuthSnapshotSchema` 加 `device_uuid`；`VerifyApiKeyResultSchema` 改为成功 shape；package version bump |
+
+---
+
+## 9. 多审查修订记录（2026-04-29 design rereview）
+
+| 编号 | 审查者 | 原 finding | 采纳的修订 |
+|------|--------|-------------|------------|
+| GPT-R3 | GPT | RH3 漏 charter §4.3 灰区已 in-scope 的 `GET /me/teams` 只读 | §5.1 新增 [S6]、§7.1 新增 F5 |
+| kimi-R4 / GLM-R8 共识 | kimi/GLM | `nano_teams` 当前完全无 `team_name`/`team_slug` 列 | §5.1 [S2] 显式 migration 009 schema；§8.4 schema 变更清单 |
+| kimi-R5 | kimi | `nano_team_api_keys` 无 `salt` 列，与设计 HMAC-SHA256 方案不兼容 | §5.1 [S3] 显式 migration 009 加 salt；§8.4 列入清单 |
+| GLM-R12 | GLM | device tracking 全链路为零（claim/snapshot/sessions/login/register/refresh 全部缺）| §5.1 [S1] 改写为"全链路为零"+全链路改造清单；§8.4 加 `nano_auth_sessions.device_uuid` |
+| GLM-R8 | GLM | AuthView 缺 team display 字段未量化 contract 影响 | §8.5 contract package 影响清单 + 版本升级要求 |
+| deepseek-R6 | deepseek | RH3 行号引用偏移（`/me/devices` 区域）| §8.2 行号在 action-plan 阶段以函数级边界（`handleMeDevicesList` / `handleMeDevicesRevoke`）二次校验 |
+| GLM-R5 | GLM | RH3 对 `/me/conversations` 的双源描述停留在 facade 层 | F4 描述补"参考 `handleMeSessions` 双源合并"|

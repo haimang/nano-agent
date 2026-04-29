@@ -43,7 +43,7 @@ RH2 负责把“客户端第一眼就能感知的断点”一次补齐：`GET /m
 | `/models` | 面向客户端的 team-filtered 模型可用性列表 | 真相源在 D1 `nano_models` |
 | `/context` | session 当前 context 状态与操作面 | 真相源在 context inspection / snapshot seam |
 | full frame | 以 `nacp-session` 为单一真相的 WS frame/body | 兼容 lightweight 1 release |
-| semantic-chunk | tool_use_start / delta / stop 与 tool.call.result 级别的流式 | 非 token-level text streaming |
+| semantic-chunk | `llm.delta.content_type ∈ {text, thinking, tool_use_start, tool_use_delta}` 加独立 `tool.call.result` frame；**不使用 `tool_use_stop` 枚举（当前 schema 不存在；结束语义由 `tool_use_delta` + 后续 `tool.call.result` 表达）** | 非 token-level text streaming |
 
 ### 1.2 参考调查报告
 
@@ -258,10 +258,11 @@ RH2 负责把“客户端第一眼就能感知的断点”一次补齐：`GET /m
 - **输入**：`nacp-session` frame/body schema、WS attach/reconnect state
 - **输出**：full frame server push 与四类 client -> server message
 - **主要调用者**：所有 attached client
-- **核心逻辑**：full frame 成为新主面，lightweight 兼容 1 release；heartbeat / replay / reconnect 规则与之同时升级。
+- **核心逻辑**：full frame 成为新主面，lightweight 兼容 1 release；heartbeat / replay / reconnect 规则与之同时升级。**实施步骤**：(a) 把 `orchestrator-core/src/user-do.ts:1196-1212` 的 `emitServerFrame` 与 `handleWsAttach` 路径升级到经 `validateSessionFrame` 出 frame（当前直接发 lightweight `{kind, ...}` JSON，未走 NACP schema 校验）；(b) `session.heartbeat` / `attachment_superseded` / `terminal` 等 orchestrator-core 自发 frame 需在 `nacp-session` schema 中注册；(c) 保留 lightweight 兼容 1 release 的 fallback。
 - **边界情况**：
   - abnormal disconnect / heartbeat miss / replay-after-reconnect 必须有显式行为。
-- **一句话收口目标**：✅ **`WS 协议 single source 从文档层变成运行时事实`**
+  - orchestrator-core / agent-core 双侧 emit 都必须经 NACP schema 校验，避免双协议状态。
+- **一句话收口目标**：✅ **`WS 协议 single source 从文档层变成运行时事实，agent-core 与 orchestrator-core 都走 NACP frame`**
 
 #### F4: `Tool Semantic Streaming`
 
@@ -306,3 +307,21 @@ RH2 负责把“客户端第一眼就能感知的断点”一次补齐：`GET /m
 |---------|------|--------|------|
 | `workers/agent-core/src/llm/registry/models.ts:8-18,23-58` | 模型 capability registry 结构 | RH2 `/models` 与 RH5 multi-model 都可复用此抽象 | current registry seam |
 | `workers/agent-core/src/llm/request-builder.ts:33-102` | model capability + vision validation | `/models` 与 RH5 需要与 runtime capability law 对齐 | current capability guard |
+
+### 8.4 当前 facade 路由层缺口
+
+| 文件:行 | 内容 | RH2 中的角色 |
+|---------|------|---------------|
+| `workers/orchestrator-core/src/index.ts:369-455` 路由白名单 | 当前没有 `/models` 与 `/sessions/{id}/context*` 匹配分支 | RH2 不仅要新建 handler，**还要在 facade 路由层首次注册路由入口**（kimi R8 提示） |
+| `workers/orchestrator-core/src/user-do.ts:1196-1212` `emitServerFrame` | 当前发 lightweight JSON，不经 `validateSessionFrame` | F3 必须把 orchestrator-core 自发 frame 也并入 NACP schema 校验（GLM R13 protocol gap）|
+
+---
+
+## 9. 多审查修订记录（2026-04-29 design rereview）
+
+| 编号 | 审查者 | 原 finding | 采纳的修订 |
+|------|--------|-------------|------------|
+| GPT-R2 | GPT | `tool_use_stop` 与当前 schema 不一致 | §1.1 关键术语改为"由 tool_use_delta + tool.call.result 表达"；不扩 schema |
+| GLM-R13 | GLM | orchestrator-core WS emit 不走 NACP schema 校验 | §7.2 F3 实施步骤补 (a)/(b)/(c)；§8.4 新增 facade 路由层缺口表 |
+| kimi-R8 | kimi | `/models`、`/context` 在 facade 路由层完全空白（连 route 入口都没有）| §8.4 facade 路由层缺口表显式列出 |
+| deepseek-R1 | deepseek 错认 | "RH2-models-context-inspection.md 不存在" | **不采纳** — 本文件即为该主设计，deepseek 核查偏差，已存在并被多份文档引用 |

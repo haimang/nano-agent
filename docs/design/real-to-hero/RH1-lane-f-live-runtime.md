@@ -132,13 +132,15 @@ RH1 的使命是把 zero-to-real 里“已经有 contract、还没有 live wirin
 
 ### 4.2 当前 facade 的做法
 
-- **实现概要**：user-do 已能接收 permission / elicitation HTTP mirror，并 best-effort 转发给 agent-core。
+- **实现概要**：user-do 已能接收 permission / elicitation HTTP mirror，并 best-effort 转发给 agent-core；DO 内 `emitPermissionRequestAndAwait` / `emitElicitationRequestAndAwait` **已具备完整 await 机制**（`awaitAsyncAnswer` + `deferredAnswers` + `sweepDeferredAnswers`）但 **零 WS frame emit、零调用方**（grep 全代码库零匹配）。`forwardServerFrameToClient` 跨 worker RPC handler 在代码中 **完全不存在**。
 - **亮点**：
   - facade 已是唯一 public ingress
 - **值得借鉴**：
   - 继续让 orchestrator-core 保持 public -> internal relay owner
+  - waiter 基础设施可直接复用，不需要重写
 - **不打算照抄的地方**：
   - 只 200 ack，不要求 runtime 真正消费
+  - 把"等待机制存在"误读为"frame emit 已成立"
 
 ### 4.3 RH1 的设计倾向
 
@@ -165,10 +167,11 @@ RH1 的使命是把 zero-to-real 里“已经有 contract、还没有 live wirin
 
 ### 5.1 In-Scope（本设计确认要支持）
 
-- **[S1]** hook dispatcher 激活 — `hook_emit` 必须从 kernel 意图变成真实 side-effect 路由。
-- **[S2]** permission round-trip — request frame、waiter、decision forward、timeout 形成闭环。
-- **[S3]** elicitation round-trip — 与 permission 对称的 ask/answer 路径成立。
-- **[S4]** usage push — quota commit 之后 attached client 能收到 live 更新。
+- **[S1]** hook dispatcher 激活 — `hook_emit` 必须从 kernel 意图变成真实 side-effect 路由（dispatcher 本体已建成 149 行，仅缺 wiring）。
+- **[S2]** permission round-trip — request frame、waiter、decision forward、timeout 形成闭环（**当前 `emitPermissionRequestAndAwait` 有 await 无 emit、零调用方**，需新增 frame emit + scheduler 触发器）。
+- **[S3]** elicitation round-trip — 与 permission 对称的 ask/answer 路径成立（同 S2 现实）。
+- **[S4]** usage push — quota commit 之后 attached client 能收到 live 更新；**含跨 worker `forwardServerFrameToClient` RPC 的全新实装**（agent-core NanoSessionDO → orchestrator-core User DO → client WS）。
+- **[S5]** Usage strict snapshot 真实化 — `handleUsage` 已查 D1，但无 rows 时仍返回 `{llm_input_tokens: null, ...}` 占位结构；RH1 必须把"无 rows"语义统一为 0/明确空快照而非 null（charter §7.2 P1-E）。
 
 ### 5.2 Out-of-Scope（本设计确认不做）
 
@@ -227,9 +230,10 @@ RH1 的使命是把 zero-to-real 里“已经有 contract、还没有 live wirin
 
 | 编号 | 功能名 | 描述 | 一句话收口目标 |
 |------|--------|------|----------------|
-| F1 | Hook Dispatcher Live | `hook_emit` 不再 no-op，而是进入真实 dispatcher | ✅ `hook event 能被真实消费` |
-| F2 | Permission / Elicitation Waiters | ask/answer 进入真等待与恢复 | ✅ `用户决策能影响运行中 turn` |
-| F3 | Usage Push Relay | quota commit 后经 user-do 推到 attached client | ✅ `client 能看到 live usage preview` |
+| F1 | Hook Dispatcher Live | `hook_emit` 不再 no-op；scheduler 产生 hook_emit 决策 + runtime delegate 调用已建成的 `HookDispatcher` | ✅ `hook event 能被真实消费`（dispatcher 本体已建成，仅缺 wiring）|
+| F2 | Permission / Elicitation Waiters | ask/answer 进入真等待与恢复；**真实 emit `session.permission.request` / `session.elicitation.request` WS frame**；连接到首个调用方（runtime hook） | ✅ `用户决策能影响运行中 turn`（当前 emit 方法零调用方零 frame） |
+| F3 | Usage Push Relay | quota commit 后经 user-do 推到 attached client；**新增跨 worker `forwardServerFrameToClient` RPC（当前不存在）** | ✅ `client 能看到 live usage preview` |
+| F4 | Usage Strict Snapshot No-Null (P1-E) | `handleUsage` 在无 rows 时返回 0/明确空 shape 而非 null fallback；与 WS push best-effort 语义分离 | ✅ `/sessions/{id}/usage HTTP 不再返回 null 字段` |
 
 ### 7.2 详细阐述
 
@@ -248,7 +252,7 @@ RH1 的使命是把 zero-to-real 里“已经有 contract、还没有 live wirin
 - **输入**：permission/elicitation request、`request_uuid`、client answer、timeout
 - **输出**：runtime 可消费的 allow/deny/answer 结果
 - **主要调用者**：`NanoSessionDO`、`orchestrator-core User DO`
-- **核心逻辑**：复用已有 storage + deferred map 原语，让 request frame 发出后，真正等待用户决策再恢复 turn。
+- **核心逻辑**：复用已有 storage + deferred map 原语，让 request frame 发出后，真正等待用户决策再恢复 turn。**实施步骤**：(a) 在 `emitPermissionRequestAndAwait` / `emitElicitationRequestAndAwait` 内真实 emit `session.permission.request` / `session.elicitation.request` WS frame（当前是 no-op 占位）；(b) 让 runtime hook（如 tool 执行前的 permission gate）真正调用这两个方法（当前零调用方）；(c) 保持 `awaitAsyncAnswer` + storage + sweep 不变。
 - **边界情况**：
   - timeout / disconnect 必须 fail-closed。
   - DO restart 后仍要靠 storage + sweep 恢复。
@@ -259,10 +263,21 @@ RH1 的使命是把 zero-to-real 里“已经有 contract、还没有 live wirin
 - **输入**：`onUsageCommit` 产生的 llm/tool usage 事件
 - **输出**：attached client WS 收到 `session.usage.update` live preview
 - **主要调用者**：`runtime-mainline`、`NanoSessionDO`、`orchestrator-core`
-- **核心逻辑**：quota commit 后经 session runtime -> user-do -> client WS 形成单向 push，HTTP `/usage` 保持 strict snapshot。
+- **核心逻辑**：quota commit 后经 session runtime → user-do → client WS 形成单向 push，HTTP `/usage` 保持 strict snapshot。**实施步骤**：(a) 在 `orchestrator-core User DO` 新增 `forwardServerFrameToClient(sessionUuid, frame)` RPC method（当前仅有 same-DO `emitServerFrame`）；(b) 在 agent-core `NanoSessionDO.onUsageCommit` callback 中通过 service binding 调用该 RPC，把 `session.usage.update` frame 推到 attached client。
 - **边界情况**：
   - client 未 attached 时允许 best-effort 丢失，但下一次 `/usage` 必须可读到严格真相。
 - **一句话收口目标**：✅ **`usage commit 对 client 可见，而不是只存在日志`**
+
+#### F4: `Usage Strict Snapshot No-Null`
+
+- **输入**：`handleUsage(sessionUuid)`、`readUsageSnapshot()`、D1 `nano_usage_events` 聚合
+- **输出**：`/sessions/{id}/usage` HTTP 响应不再含 null 占位字段
+- **主要调用者**：`orchestrator-core` HTTP `/usage` route
+- **核心逻辑**：当 `repo.readUsageSnapshot()` 返回 `null`（无 rows）时，返回明确的 0/空快照（`llm_input_tokens: 0`、`tool_calls: 0`、`subrequest_used: 0`、`subrequest_budget: <团队配额>`、`estimated_cost_usd: 0`），不再保留当前 `user-do.ts:1225-1232` 的 null 初始化 fallback。
+- **边界情况**：
+  - D1 读失败应继续返回明确空快照 + 记录 warning，不能退化为 null。
+  - WS push best-effort vs HTTP strict 的语义边界保持不变。
+- **一句话收口目标**：✅ **`charter §7.2 P1-E "handleUsage HTTP 不再返回 null" 真实成立`**
 
 ### 7.3 非功能性要求与验证策略
 
@@ -297,4 +312,39 @@ RH1 的使命是把 zero-to-real 里“已经有 contract、还没有 live wirin
 | 文件:行 | 内容 | 借鉴点 | 备注 |
 |---------|------|--------|------|
 | `workers/orchestrator-core/src/user-do.ts:1286-1415` | permission / elicitation HTTP mirror + best-effort RPC forward | RH1 要把“best-effort”升级为真实 round-trip 一部分 | current relay owner |
+| `workers/orchestrator-core/src/user-do.ts:1196-1212` | `emitServerFrame` 仅可推到 same-DO 已 attached WS | RH1 必须在此基础上**新增** `forwardServerFrameToClient` 跨 worker RPC（当前不存在） | current emit only same-DO |
 | `workers/agent-core/src/host/do/nano-session-do.ts:490-501` | `onUsageCommit` 当前仅 `console.log` | RH1 usage push 的明确断点 | log-only gap |
+| `workers/orchestrator-core/src/user-do.ts:1215-1257` | `handleUsage` 已查 D1，但无 rows 时回退到 `null` 占位 | F4 P1-E 的明确改造点 | current null-fallback gap |
+
+### 8.4 已建成但未激活的资产（直接复用，不要重新实装）
+
+| 文件:行 | 内容 | RH1 中的角色 |
+|---------|------|---------------|
+| `workers/agent-core/src/hooks/dispatcher.ts:1-149` | 完整 `HookDispatcher`（registry/matcher/runtime/timeout/exception/blocking/non-blocking）| F1 仅需 wiring，不需要实装 dispatcher 本体 |
+| `workers/agent-core/src/kernel/types.ts:30,62` + `kernel/runner.ts:111-115,415` | `StepKind/StepDecision` 已含 `hook_emit` 变体；runner 已有 `handleHookEmit` case | F1 P1-B 实际只需修改 `scheduler.ts` 让其在合适状态下产生 hook_emit 决策 |
+| `packages/nacp-session/src/messages.ts` 中 `session.permission.{request,decision}` / `session.elicitation.{request,answer}` body schema | RH1 frame emit 的 schema 直接复用 | F2 不需要新增 schema |
+| `nano-session-do.ts:640-829` `awaitAsyncAnswer` / `recordAsyncAnswer` / `sweepDeferredAnswers` | 等待原语已成立 | F2 仅需补 frame emit + 调用方，不需要重写 waiter |
+
+---
+
+## 9. 多审查修订记录（2026-04-29 design rereview）
+
+> 来源：`docs/eval/real-to-hero/design-docs-reviewed-by-{GPT,deepseek,GLM,kimi}.md`
+
+### 9.1 已采纳的修订
+
+| 编号 | 审查者 | 原 finding | 采纳的修订 |
+|------|--------|-------------|------------|
+| GPT-R1 | GPT | RH1 漏承接 charter §7.2 P1-E `/usage` strict snapshot | §5.1 新增 [S5]、§7.1 新增 F4、§7.2 新增 F4 详细阐述、§8.3 新增行号引用 |
+| GLM-R1 / kimi-R7 / deepseek-H1-3-4 共识 | 三方 | RH1 对 Lane F 状态描述倒置：当前是"等待机制完整但 frame emit 缺失 + 零调用方"而非"只记录不等待" | §4.2 / §5.1 / §7.2 F2 全部改写为"有 await、零 emit、零调用方" |
+| GLM-R2 / deepseek 5.3 共识 | 双方 | `forwardServerFrameToClient` 跨 worker RPC 在代码中完全不存在 | §5.1 [S4] 与 §7.2 F3 明确标注"全新 RPC 实装"；§8.3 加引用 `user-do.ts:1196-1212` |
+| GLM-R3 | GLM | `handleUsage` 已非完全 null placeholder（D1 已接），仅无 rows 时 fallback null | §7.2 F4 描述精确化为"无 rows 时 0/空快照而非 null"，与 P1-E 对齐 |
+| deepseek-R4 / R7 | deepseek | hooks/dispatcher.ts 已建成 149 行；kernel hook_emit 类型已预路由 | §8.4 新增"已建成资产清单"，明确 F1 工作仅缺 wiring |
+| kimi-R3 | kimi | scheduler 改造深度 | 部分采纳：scheduler 自身需修改产生 hook_emit；但 `StepDecision` 类型已含 `hook_emit` 变体（kimi 此点核查偏差），故无需扩 union |
+
+### 9.2 已审视但 **未采纳** 的建议
+
+| 编号 | 审查者 | 原建议 | 不采纳理由 |
+|------|--------|--------|-----------|
+| kimi-R3 "扩展 StepDecision union" | kimi | 在 P1-B 前置扩 StepDecision 类型 | `kernel/types.ts:30,62` 已含 `hook_emit` 变体；kimi 核查偏差，已在 §8.4 标注真实情况 |
+| GLM "AgentRpcMethodKey 扩 permissionDecision/elicitationAnswer" | GLM | 同时扩 RPC 表 | RH1 主线已通过 user-do HTTP mirror + agent-core RPC forward 闭合，不需要新 RPC key |

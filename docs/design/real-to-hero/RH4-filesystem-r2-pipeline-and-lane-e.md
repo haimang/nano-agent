@@ -14,7 +14,7 @@
 
 ## 0. 背景与前置约束
 
-RH4 要解决的是 filesystem 仍停留在“library-only + in-memory + binding commented”的现实，把它推进成真实业务 RPC consumer：image/file upload 真正落 R2，metadata 真正落 D1，agent-core 真正通过 service binding 访问 context/filesystem worker。它同时也是 RH5 多模态输入成立的硬前置。
+RH4 要解决的是 filesystem 仍停留在 **hybrid（WorkerEntrypoint 已建 + fetch 仍 401 + InMemoryArtifactStore + binding commented）** 的现实，把它推进成真实业务 RPC consumer：image/file upload 真正落 R2，metadata 真正落 D1，agent-core 真正通过 service binding 访问 context/filesystem worker。它同时也是 RH5 多模态输入成立的硬前置。**前置事实**：`workers/filesystem-core/src/storage/adapters/{r2,kv,d1}-adapter.ts` 已是 484 行生产级实现，RH4 的 storage 工作是"组装到 ArtifactStore 接口 + 启用 binding"，不是从零实装适配器。
 
 - **项目定位回顾**：RH4 是 `real persistence + Lane E consumer migration`。
 - **本次讨论的前置共识**：
@@ -163,11 +163,11 @@ RH4 要解决的是 filesystem 仍停留在“library-only + in-memory + binding
 
 ### 5.1 In-Scope（本设计确认要支持）
 
-- **[S1]** R2 / KV / D1 真实 artifact persistence
-- **[S2]** filesystem-core 业务 RPC 与 op surface
+- **[S1]** **R2 + D1 冷真相 artifact persistence；KV 仅作可选短 TTL 缓存 / upload idempotency / hot index，不拥有冷真相，不作为 list source**（GPT R4 修订；charter §4.4 三层真相纪律）
+- **[S2]** filesystem-core 业务 RPC 与 op surface（已建 WorkerEntrypoint hybrid，需把 fetch 401 / `library_worker:true` 残留收口）
 - **[S3]** agent-core CONTEXT_CORE / FILESYSTEM_CORE binding 启用 + RPC-first dual-track
 - **[S4]** `POST /sessions/{id}/files` multipart pipeline
-- **[S5]** multi-tenant namespace 与 download/list 隔离
+- **[S5]** multi-tenant namespace 与 download/list 隔离（R2 key namespace `tenants/{teamUuid}/sessions/{sessionUuid}/files/{fileUuid}`；KV key 同样需要 teamUuid prefix 与 TTL/invalidation 规则）
 
 ### 5.2 Out-of-Scope（本设计确认不做）
 
@@ -238,10 +238,11 @@ RH4 要解决的是 filesystem 仍停留在“library-only + in-memory + binding
 - **输入**：binary file、artifact metadata、team/session identity
 - **输出**：R2 object + D1 metadata row
 - **主要调用者**：filesystem-core、context-core、orchestrator-core
-- **核心逻辑**：binary 进 R2，metadata 进 D1，读写都带 tenant namespace。
+- **核心逻辑**：binary 进 R2，metadata 进 D1，读写都带 tenant namespace。**KV 职责严格限定**：可作为 (a) 短 TTL artifact 元信息热缓存（list 加速）、(b) upload idempotency marker（防止 multipart 重传重复入库）、(c) compatibility hot index；**禁止把 D1 metadata 完整复制到 KV 作为冷真相**，charter §4.4 已硬纪律化。**实施步骤**：(a) 在 `filesystem-core/src/artifacts.ts` 新增 `R2ArtifactStore` 实现，**直接消费已建成的** `storage/adapters/r2-adapter.ts` + `d1-adapter.ts`；(b) `nano-session-do.ts:353` 的 `new InMemoryArtifactStore()` 替换为通过 binding 调 filesystem-core RPC；(c) canonical 共享类型保留在 `packages/workspace-context-artifacts/src/artifacts.ts`，不做物理 fork。
 - **边界情况**：
   - 任一只写 R2 或只写 D1 都不算完成。
-- **一句话收口目标**：✅ **`artifact 终于脱离进程内内存，进入真实持久化`**
+  - 任何 KV cache key 必须带 `teamUuid` prefix 与显式 TTL；list/get/delete 操作必须有清晰的 invalidation 路径。
+- **一句话收口目标**：✅ **`artifact 终于脱离进程内内存，进入真实持久化；R2/D1 是冷真相，KV 仅可选缓存`**
 
 #### F2: `Filesystem RPC Surface`
 
@@ -290,8 +291,12 @@ RH4 要解决的是 filesystem 仍停留在“library-only + in-memory + binding
 
 | 文件:行 | 内容 | 借鉴点 | 备注 |
 |---------|------|--------|------|
-| `workers/filesystem-core/src/index.ts:19-23,50-85` | library-only 注释与 `filesystemOps()` 最小 surface | RH4 在此基础上升级业务 RPC，而不是另造 worker | current leaf seam |
+| `workers/filesystem-core/src/index.ts:19-23,50-85` | hybrid WorkerEntrypoint：RPC 已存在 + fetch 仍 `bindingScopeForbidden()` 401 + `library_worker:true` | RH4 在此基础上升级业务 RPC，而不是另造 worker；同时收口 hybrid 残留 | current leaf seam |
 | `workers/filesystem-core/src/artifacts.ts:27-60` | `ArtifactStore` 接口与 `InMemoryArtifactStore` | RH4 的明确替换点 | current in-memory gap |
+| `packages/workspace-context-artifacts/src/artifacts.ts` | `InMemoryArtifactStore` 的 **canonical 位置**（agent-core `nano-session-do.ts:353` 从此包导入，不是从 filesystem-core 导入）| RH4 替换 in-memory 时需同步处理共享包的导出 | shared canonical |
+| `workers/filesystem-core/src/storage/adapters/r2-adapter.ts:1-214` | R2 适配器（get/head/put/delete/list/listAll/putParallel + maxValueBytes guard + 分页游标）| F1 直接组装即可，**不要重新实装** | already built |
+| `workers/filesystem-core/src/storage/adapters/kv-adapter.ts:1-138` | KV 适配器（含 ctx.waitUntil async write + maxValueBytes guard）| 仅在 KV 被 §5.1 [S1] 限定的 cache/idempotency 场景下使用 | already built |
+| `workers/filesystem-core/src/storage/adapters/d1-adapter.ts:1-132` | D1 适配器（query/first/batch/prepare）| metadata 持久化层直接复用 | already built |
 
 ### 8.2 Agent-core cutover seam
 
@@ -306,3 +311,16 @@ RH4 要解决的是 filesystem 仍停留在“library-only + in-memory + binding
 |---------|------|--------|------|
 | `workers/orchestrator-core/src/user-do.ts:1651-1699` | 当前 `handleFiles` 所在位置 | RH4 要保持 public route owner 不变 | existing file surface |
 | `workers/orchestrator-core/src/index.ts:47-48,150-151` | façade 已持有 context/filesystem bindings | RH4 无需改 public topology，只需接真能力 | binding already present |
+
+---
+
+## 9. 多审查修订记录（2026-04-29 design rereview）
+
+| 编号 | 审查者 | 原 finding | 采纳的修订 |
+|------|--------|-------------|------------|
+| GPT-R4 | GPT | RH4 未给 KV 在 file pipeline 分配明确职责，与"DO/KV 不复制冷真相"自相矛盾 | §5.1 [S1] 改写为"R2+D1 冷真相 / KV 仅可选 cache+idempotency"；§7.2 F1 实施步骤 + 边界情况补 KV 范围 |
+| GLM-R5 | GLM | filesystem-core 当前为 hybrid 而非 library-only | §0 / §8.1 改写为 hybrid 描述并加注 fetch 401 + `library_worker:true` 残留 |
+| deepseek-R3 | deepseek | r2/kv/d1 storage adapters 已是 484 行生产级实现 | §7.2 F1 实施步骤明确"直接消费已建成 adapter"；§8.1 加 3 行引用，标注 already built |
+| GLM-R6 | GLM | `InMemoryArtifactStore` canonical 位置在 `packages/workspace-context-artifacts/`，不是 filesystem-core | §8.1 加 shared canonical 行 |
+| kimi-R1 / GLM-R14 | kimi/GLM | KV/R2 binding 在 6 worker 中完全缺失 | §5.1 [S5] 强化 namespace 要求；具体 binding 首次声明由 RH0 P0-C 收口（已交叉引用）|
+| GLM-R5（小项）| GLM | handleFiles 当前只返回 metadata，不返回字节 | §7.2 F4 在 RH2 主设计中已涵盖；本文件 [S4] multipart pipeline 同步把 download 内容路径写实 |
