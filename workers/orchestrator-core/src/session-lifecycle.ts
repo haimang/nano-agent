@@ -29,6 +29,7 @@ export interface SessionEntry {
   readonly last_phase: string | null;
   readonly relay_cursor: number;
   readonly ended_at: string | null;
+  readonly device_uuid?: string | null;
 }
 
 export interface SessionTerminalRecord {

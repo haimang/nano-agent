@@ -147,6 +147,7 @@ describe('NanoOrchestratorUserDO', () => {
       last_phase: 'attached',
       relay_cursor: -1,
       ended_at: null,
+      device_uuid: null,
     });
   });
 

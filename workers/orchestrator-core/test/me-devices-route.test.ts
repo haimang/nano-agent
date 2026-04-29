@@ -20,10 +20,18 @@ type Row = Record<string, unknown>;
 
 function createD1Mock(rowsFor: (userUuid: string) => Row[]) {
   return {
-    prepare: (_sql: string) => ({
+    prepare: (sql: string) => ({
       bind: (userUuid: string) => ({
-        all: async () => ({ results: rowsFor(userUuid) }),
-        first: async () => rowsFor(userUuid)[0] ?? null,
+        all: async () => ({
+          results: sql.includes("status = 'active'")
+            ? rowsFor(userUuid).filter((row) => row.status === "active")
+            : rowsFor(userUuid),
+        }),
+        first: async () => (
+          sql.includes("WHERE device_uuid = ?1")
+            ? { status: "active" }
+            : rowsFor(userUuid)[0] ?? null
+        ),
         run: async () => ({ success: true, meta: { changes: 1 } }),
       }),
     }),
@@ -133,13 +141,7 @@ describe("GET /me/devices route", () => {
     expect((await response.json()).error.code).toBe("invalid-auth");
   });
 
-  it("revoked device is included in row but its revoked_at is exposed (audit visibility)", async () => {
-    // ZX5 阶段 endpoint 直接读 D1,不做 status='active' filter
-    // (per src/index.ts handleMeDevicesList: "ORDER BY last_seen_at DESC LIMIT 100"
-    // 没有 WHERE status='active');revoked 仍出现在列表中,但 revoked_at !== null
-    // 让 client 自决是否隐藏。RH3 device gate 完成后,该路径应增加 query
-    // option `?status=active` 或 client 端按 status 过滤。本 case 锁定
-    // 当前 ZX5 真实行为,RH3 修改时若改为 active-only 默认,本 case 必须同步更新。
+  it("revoked device is excluded from the default active list", async () => {
     const token = await signTestJwt(
       { sub: USER_UUID, user_uuid: USER_UUID, team_uuid: TEAM_UUID },
       JWT_SECRET,
@@ -172,8 +174,7 @@ describe("GET /me/devices route", () => {
       } as any,
     );
     const body = (await response.json()) as { data: { devices: any[] } };
-    expect(body.data.devices[0].status).toBe("revoked");
-    expect(body.data.devices[0].revoked_at).toBe("2026-04-22T00:00:00Z");
+    expect(body.data.devices).toEqual([]);
   });
 
   it("cross-user — D1 binding receives current user's uuid", async () => {
@@ -187,9 +188,16 @@ describe("GET /me/devices route", () => {
     );
     const seen: string[] = [];
     const db = {
-      prepare: (_sql: string) => ({
-        bind: (userUuid: string) => {
-          seen.push(userUuid);
+      prepare: (sql: string) => ({
+        bind: (...args: string[]) => {
+          if (sql.includes("WHERE device_uuid = ?1")) {
+            return {
+              all: async () => ({ results: [] }),
+              first: async () => ({ status: "active" }),
+              run: async () => ({ success: true, meta: { changes: 1 } }),
+            };
+          }
+          seen.push(args[0]!);
           return {
             all: async () => ({ results: [] }),
             first: async () => null,

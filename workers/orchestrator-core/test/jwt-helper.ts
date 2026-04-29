@@ -33,6 +33,10 @@ export async function signTestJwt(
   const now = Math.floor(Date.now() / 1000);
   const finalPayload = {
     ...payload,
+    device_uuid:
+      typeof payload.device_uuid === 'string' && payload.device_uuid.length > 0
+        ? payload.device_uuid
+        : '11111111-1111-4111-8111-111111111111',
     iat: now,
     exp: typeof payload.exp === 'number' ? payload.exp : now + expiresIn,
   };

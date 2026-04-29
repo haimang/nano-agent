@@ -16,6 +16,7 @@ export interface WorkerSocketLike {
 export interface AttachmentState {
   readonly socket: WorkerSocketLike;
   readonly attached_at: string;
+  readonly device_uuid?: string | null;
   readonly heartbeat_timer?: ReturnType<typeof setInterval>;
 }
 

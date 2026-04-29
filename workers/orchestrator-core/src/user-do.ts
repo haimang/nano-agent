@@ -188,6 +188,13 @@ export class NanoOrchestratorUserDO {
       const headerAuthority = readInternalAuthority(request);
       return this.handleMeConversations(limit, headerAuthority);
     }
+    if (request.method === 'POST' && pathname === '/internal/devices/revoke') {
+      const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+      if (!body || typeof body.device_uuid !== 'string') {
+        return jsonResponse(400, { error: 'invalid-input', message: 'device revoke requires device_uuid' });
+      }
+      return this.handleDeviceRevoke(body.device_uuid, typeof body.reason === 'string' ? body.reason : null);
+    }
 
     const segments = pathname.split('/').filter(Boolean);
     if (segments[0] !== 'sessions' || (segments.length !== 3 && segments.length !== 4)) {
@@ -846,6 +853,7 @@ export class NanoOrchestratorUserDO {
       last_phase: null,
       relay_cursor: -1,
       ended_at: null,
+      device_uuid: body.auth_snapshot.device_uuid ?? null,
     };
 
     // ZX5 F4 — idempotency claim BEFORE side-effects.
@@ -1056,6 +1064,8 @@ export class NanoOrchestratorUserDO {
     if (!authSnapshot) {
       return jsonResponse(400, { error: 'missing-authority', message: 'cancel requires persisted auth snapshot' });
     }
+    const gatedEntry = await this.enforceSessionDevice(sessionUuid, entry, authSnapshot);
+    if (gatedEntry instanceof Response) return gatedEntry;
     const traceUuid = typeof body.trace_uuid === 'string' ? body.trace_uuid : crypto.randomUUID();
     const now = new Date().toISOString();
     const durablePointer = await this.ensureDurableSession(sessionUuid, authSnapshot, traceUuid, now);
@@ -1096,11 +1106,11 @@ export class NanoOrchestratorUserDO {
 
     const terminal: SessionTerminalRecord = {
       terminal: 'cancelled',
-      last_phase: extractPhase(cancelAck.body) ?? entry.last_phase,
+      last_phase: extractPhase(cancelAck.body) ?? gatedEntry.last_phase,
       ended_at: now,
     };
     const nextEntry: SessionEntry = {
-      ...entry,
+      ...gatedEntry,
       last_seen_at: now,
       status: 'ended',
       last_phase: terminal.last_phase,
@@ -1151,6 +1161,11 @@ export class NanoOrchestratorUserDO {
     const entry = await this.requireSession(sessionUuid);
     if (!entry) return this.sessionGateMiss(sessionUuid);
     if (body.auth_snapshot) await this.refreshUserState(body.auth_snapshot, body.initial_context_seed);
+    const authSnapshot = isAuthSnapshot(body.auth_snapshot)
+      ? body.auth_snapshot
+      : await this.get<IngressAuthSnapshot>(USER_AUTH_SNAPSHOT_KEY);
+    const gatedEntry = await this.enforceSessionDevice(sessionUuid, entry, authSnapshot);
+    if (gatedEntry instanceof Response) return gatedEntry;
     // ZX4 Phase 9 — RPC-only forward for verify (post P3-05 flip).
     const verifyAck = await this.forwardInternalJsonShadow(
       sessionUuid,
@@ -1159,7 +1174,7 @@ export class NanoOrchestratorUserDO {
       'verify',
     );
     const response = verifyAck.response;
-    const proxied = await this.proxyReadResponse(sessionUuid, entry, response);
+    const proxied = await this.proxyReadResponse(sessionUuid, gatedEntry, response);
     const durable_truth = await this.readDurableSnapshot(sessionUuid);
     const bodyJson = await readJson(proxied.clone());
     const nextBody = !durable_truth
@@ -1324,14 +1339,18 @@ export class NanoOrchestratorUserDO {
     if (!entry) return this.sessionGateMiss(sessionUuid);
     const body = (await request.json().catch(() => ({}))) as {
       last_seen_seq?: number;
+      auth_snapshot?: IngressAuthSnapshot;
     };
-    const acknowledged = entry.relay_cursor;
+    const authSnapshot = isAuthSnapshot(body.auth_snapshot) ? body.auth_snapshot : null;
+    const gatedEntry = await this.enforceSessionDevice(sessionUuid, entry, authSnapshot);
+    if (gatedEntry instanceof Response) return gatedEntry;
+    const acknowledged = gatedEntry.relay_cursor;
     return jsonResponse(200, {
       ok: true,
       data: {
         session_uuid: sessionUuid,
-        status: entry.status,
-        last_phase: entry.last_phase,
+        status: gatedEntry.status,
+        last_phase: gatedEntry.last_phase,
         relay_cursor: acknowledged,
         // If the client was further behind than what we have, signal
         // they need to reconcile via timeline read.
@@ -1561,6 +1580,8 @@ export class NanoOrchestratorUserDO {
         body.initial_context_seed as InitialContextSeed | undefined,
       );
     }
+    const gatedEntry = await this.enforceSessionDevice(sessionUuid, entry, authSnapshot);
+    if (gatedEntry instanceof Response) return gatedEntry;
     const traceUuid =
       typeof body.trace_uuid === 'string' ? body.trace_uuid : crypto.randomUUID();
     const now = new Date().toISOString();
@@ -1647,9 +1668,9 @@ export class NanoOrchestratorUserDO {
     if (!stream.ok) return stream.response;
     const frames = stream.frames;
     let nextEntry: SessionEntry = {
-      ...entry,
+      ...gatedEntry,
       last_seen_at: new Date().toISOString(),
-      last_phase: extractPhase(inputAck.body) ?? entry.last_phase,
+      last_phase: extractPhase(inputAck.body) ?? gatedEntry.last_phase,
       status: this.attachments.has(sessionUuid) ? 'active' : 'detached',
       ended_at: null,
     };
@@ -1963,6 +1984,9 @@ export class NanoOrchestratorUserDO {
     const entry = await this.requireReadableSession(sessionUuid);
     if (!entry) return this.sessionGateMiss(sessionUuid);
     if (entry.status === 'ended') return sessionTerminalResponse(sessionUuid, await this.getTerminal(sessionUuid));
+    const authority = readInternalAuthority(request) ?? await this.get<IngressAuthSnapshot>(USER_AUTH_SNAPSHOT_KEY);
+    const gatedEntry = await this.enforceSessionDevice(sessionUuid, entry, authority);
+    if (gatedEntry instanceof Response) return gatedEntry;
     if (!isWebSocketUpgrade(request)) {
       return jsonResponse(400, { error: 'invalid-upgrade', message: 'ws route requires websocket upgrade' });
     }
@@ -2013,6 +2037,7 @@ export class NanoOrchestratorUserDO {
     this.attachments.set(sessionUuid, {
       socket: pair.server,
       attached_at: new Date().toISOString(),
+      device_uuid: authority?.device_uuid ?? gatedEntry.device_uuid ?? null,
       heartbeat_timer: heartbeatTimer,
     });
     this.bindSocketLifecycle(sessionUuid, pair.server);
@@ -2022,7 +2047,7 @@ export class NanoOrchestratorUserDO {
         ? entry.relay_cursor
         : Math.min(entry.relay_cursor, clientLastSeenSeq);
     const nextEntry: SessionEntry = {
-      ...entry,
+      ...gatedEntry,
       last_seen_at: new Date().toISOString(),
       status: 'active',
       relay_cursor: replayCursor,
@@ -2242,6 +2267,62 @@ export class NanoOrchestratorUserDO {
 
   private async requireSession(sessionUuid: string): Promise<SessionEntry | null> {
     return (await this.get<SessionEntry>(sessionKey(sessionUuid))) ?? null;
+  }
+
+  private async enforceSessionDevice(
+    sessionUuid: string,
+    entry: SessionEntry,
+    authSnapshot: IngressAuthSnapshot | null | undefined,
+  ): Promise<SessionEntry | Response> {
+    const deviceUuid =
+      authSnapshot && typeof authSnapshot.device_uuid === 'string' && authSnapshot.device_uuid.length > 0
+        ? authSnapshot.device_uuid
+        : null;
+    if (!deviceUuid) return entry;
+    if (entry.device_uuid && entry.device_uuid !== deviceUuid) {
+      return jsonResponse(403, {
+        error: 'wrong-device',
+        message: 'session is bound to another device',
+        session_uuid: sessionUuid,
+      });
+    }
+    if (!entry.device_uuid) {
+      const nextEntry: SessionEntry = {
+        ...entry,
+        device_uuid: deviceUuid,
+      };
+      await this.put(sessionKey(sessionUuid), nextEntry);
+      return nextEntry;
+    }
+    return entry;
+  }
+
+  private async handleDeviceRevoke(deviceUuid: string, reason: string | null): Promise<Response> {
+    const now = new Date().toISOString();
+    const affected: string[] = [];
+    for (const [sessionUuid, attachment] of this.attachments.entries()) {
+      const entry = await this.get<SessionEntry>(sessionKey(sessionUuid));
+      if (!entry || entry.device_uuid !== deviceUuid) continue;
+      affected.push(sessionUuid);
+      this.emitServerFrame(sessionUuid, {
+        kind: 'session.attachment.superseded',
+        session_uuid: sessionUuid,
+        superseded_at: now,
+        reason: 'revoked',
+      });
+      try {
+        attachment.socket.close(4001, reason ?? 'device_revoked');
+      } catch {
+        // ignore close errors on best-effort revoke disconnect
+      }
+    }
+    return jsonResponse(200, {
+      ok: true,
+      data: {
+        device_uuid: deviceUuid,
+        disconnected_sessions: affected,
+      },
+    });
   }
 
   // ZX4 P3-07 — ingress guard miss path (per R11). When the KV entry is

@@ -5,7 +5,7 @@ import {
   type FacadeErrorCode,
   type OrchestratorAuthRpcService,
 } from "@haimang/orchestrator-auth-contract";
-import { authenticateRequest, type AuthEnv } from "./auth.js";
+import { authenticateRequest, clearDeviceGateCache, type AuthEnv } from "./auth.js";
 import { ensureConfiguredTeam, jsonPolicyError, readTraceUuid } from "./policy/authority.js";
 import { D1SessionTruthRepository } from "./session-truth.js";
 import { NanoOrchestratorUserDO } from "./user-do.js";
@@ -302,6 +302,17 @@ function readAccessToken(request: Request): string | null {
   return null;
 }
 
+function readDeviceMetadata(request: Request): Record<string, unknown> {
+  const deviceUuid = request.headers.get("x-device-uuid");
+  const deviceLabel = request.headers.get("x-device-label");
+  const deviceKind = request.headers.get("x-device-kind");
+  return {
+    ...(typeof deviceUuid === "string" && deviceUuid.length > 0 ? { device_uuid: deviceUuid } : {}),
+    ...(typeof deviceLabel === "string" && deviceLabel.length > 0 ? { device_label: deviceLabel } : {}),
+    ...(typeof deviceKind === "string" && deviceKind.length > 0 ? { device_kind: deviceKind } : {}),
+  };
+}
+
 async function proxyAuthRoute(
   request: Request,
   env: OrchestratorCoreEnv,
@@ -321,12 +332,13 @@ async function proxyAuthRoute(
   }
 
   const accessToken = readAccessToken(request);
+  const deviceMetadata = readDeviceMetadata(request);
   const input =
     action === "me" || action === "verify"
       ? { access_token: accessToken }
       : action === "resetPassword"
         ? { ...(body ?? {}), access_token: accessToken }
-        : body ?? {};
+        : { ...(body ?? {}), ...deviceMetadata };
 
   const envelope =
     action === "register"
@@ -341,7 +353,7 @@ async function proxyAuthRoute(
               ? await env.ORCHESTRATOR_AUTH.me(input, meta)
               : action === "resetPassword"
                 ? await env.ORCHESTRATOR_AUTH.resetPassword(input, meta)
-                : await env.ORCHESTRATOR_AUTH.wechatLogin(input, meta);
+                : await env.ORCHESTRATOR_AUTH.wechatLogin({ ...input, ...deviceMetadata }, meta);
 
   // ZX2 Phase 4 P4-02 — wrap the auth-contract envelope into facade-http-v1
   // so every public response shares the same `{ok,data,trace_uuid}` /
@@ -388,6 +400,13 @@ const worker = {
     // 的多个 session 收成一个 conversation row)。
     if (method === "GET" && pathname === "/me/conversations") {
       return handleMeConversations(request, env);
+    }
+
+    if ((method === "GET" || method === "PATCH") && pathname === "/me/team") {
+      return handleMeTeam(request, env);
+    }
+    if (method === "GET" && pathname === "/me/teams") {
+      return handleMeTeams(request, env);
     }
 
     // ZX5 Lane D D6 — GET /me/devices(list)+ POST /me/devices/revoke
@@ -438,7 +457,16 @@ const worker = {
       }
       return stub.fetch(new Request(internalUrl, {
         method: "GET",
-        headers: isWebSocketUpgrade(request) ? { upgrade: "websocket" } : {},
+        headers: isWebSocketUpgrade(request)
+          ? {
+              upgrade: "websocket",
+              "x-trace-uuid": auth.value.trace_uuid,
+              "x-nano-internal-authority": JSON.stringify(auth.value.snapshot),
+            }
+          : {
+              "x-trace-uuid": auth.value.trace_uuid,
+              "x-nano-internal-authority": JSON.stringify(auth.value.snapshot),
+            },
       }));
     }
 
@@ -454,7 +482,11 @@ const worker = {
 
     const response = await stub.fetch(new Request(`https://orchestrator.internal/sessions/${route.sessionUuid}/${route.action}`, {
       method,
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        "x-trace-uuid": auth.value.trace_uuid,
+        "x-nano-internal-authority": JSON.stringify(auth.value.snapshot),
+      },
       body: body === null ? undefined : JSON.stringify({
         ...body,
         trace_uuid: auth.value.trace_uuid,
@@ -631,6 +663,26 @@ async function handleMeSessions(
 // 实现:authenticate → 通过 service binding 调 User-DO `/me/conversations`;
 // User-DO 内部复用 `D1SessionTruthRepository.listSessionsForUser({limit})`
 // 的结果,按 conversation_uuid group。
+function parseListLimit(raw: string | null, fallback: number, max: number): number {
+  if (raw === null) return fallback;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || !Number.isInteger(value) || value <= 0 || value > max) {
+    return fallback;
+  }
+  return value;
+}
+
+function encodeConversationCursor(startedAt: string, conversationUuid: string): string {
+  return `${startedAt}|${conversationUuid}`;
+}
+
+function parseConversationCursor(raw: string | null): { started_at: string; conversation_uuid: string } | null {
+  if (typeof raw !== "string" || raw.length === 0) return null;
+  const [startedAt, conversationUuid] = raw.split("|");
+  if (!startedAt || !conversationUuid || !UUID_RE.test(conversationUuid)) return null;
+  return { started_at: startedAt, conversation_uuid: conversationUuid };
+}
+
 async function handleMeConversations(
   request: Request,
   env: OrchestratorCoreEnv,
@@ -638,27 +690,189 @@ async function handleMeConversations(
   const auth = await authenticateRequest(request, env);
   if (!auth.ok) return auth.response;
   const traceUuid = auth.value.trace_uuid;
+  const db = env.NANO_AGENT_DB;
+  if (!db) {
+    return Response.json(
+      { ok: true, data: { conversations: [], next_cursor: null }, trace_uuid: traceUuid },
+      { status: 200, headers: { "x-trace-uuid": traceUuid } },
+    );
+  }
 
   const url = new URL(request.url);
-  const limitRaw = url.searchParams.get("limit");
-  const limit = (() => {
-    if (limitRaw === null) return 50;
-    const n = Number(limitRaw);
-    if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0 || n > 200) return 50;
-    return n;
-  })();
+  const limit = parseListLimit(url.searchParams.get("limit"), 50, 200);
+  const cursor = parseConversationCursor(url.searchParams.get("cursor"));
+  const repo = new D1SessionTruthRepository(db);
+  const rows = await repo.listSessionsForUser({
+    team_uuid: auth.value.snapshot.team_uuid ?? auth.value.snapshot.tenant_uuid!,
+    actor_user_uuid: auth.value.user_uuid,
+    limit: 200,
+  });
 
-  const stub = env.ORCHESTRATOR_USER_DO.get(env.ORCHESTRATOR_USER_DO.idFromName(auth.value.user_uuid));
-  const response = await stub.fetch(
-    new Request(`https://orchestrator.internal/me/conversations?limit=${limit}`, {
-      method: "GET",
-      headers: {
-        "x-trace-uuid": traceUuid,
-        "x-nano-internal-authority": JSON.stringify(auth.value.snapshot),
-      },
-    }),
+  const byConversation = new Map<string, {
+    conversation_uuid: string;
+    latest_session_uuid: string;
+    latest_status: string;
+    started_at: string;
+    latest_session_started_at: string;
+    last_seen_at: string;
+    last_phase: string | null;
+    session_count: number;
+  }>();
+  for (const row of rows) {
+    const existing = byConversation.get(row.conversation_uuid);
+    if (!existing) {
+      byConversation.set(row.conversation_uuid, {
+        conversation_uuid: row.conversation_uuid,
+        latest_session_uuid: row.session_uuid,
+        latest_status: row.session_status,
+        started_at: row.started_at,
+        latest_session_started_at: row.started_at,
+        last_seen_at: row.started_at,
+        last_phase: row.last_phase ?? null,
+        session_count: 1,
+      });
+      continue;
+    }
+    existing.session_count += 1;
+    if (row.started_at < existing.started_at) {
+      existing.started_at = row.started_at;
+    }
+  }
+
+  const filtered = Array.from(byConversation.values())
+    .sort((a, b) =>
+      b.latest_session_started_at === a.latest_session_started_at
+        ? b.conversation_uuid.localeCompare(a.conversation_uuid)
+        : b.latest_session_started_at.localeCompare(a.latest_session_started_at),
+    )
+    .filter((item) => {
+      if (!cursor) return true;
+      if (item.latest_session_started_at < cursor.started_at) return true;
+      if (item.latest_session_started_at > cursor.started_at) return false;
+      return item.conversation_uuid < cursor.conversation_uuid;
+    });
+
+  const page = filtered.slice(0, limit + 1);
+  const nextCursor = page.length > limit
+    ? encodeConversationCursor(page[limit]!.latest_session_started_at, page[limit]!.conversation_uuid)
+    : null;
+  const conversations = page.slice(0, limit);
+
+  return Response.json(
+    { ok: true, data: { conversations, next_cursor: nextCursor }, trace_uuid: traceUuid },
+    { status: 200, headers: { "x-trace-uuid": traceUuid } },
   );
-  return wrapSessionResponse(response, traceUuid);
+}
+
+async function readCurrentTeam(
+  db: D1Database,
+  userUuid: string,
+  teamUuid: string,
+): Promise<Record<string, unknown> | null> {
+  return db.prepare(
+    `SELECT
+       t.team_uuid,
+       t.team_name,
+       t.team_slug,
+       t.plan_level,
+       m.membership_level
+     FROM nano_teams t
+     JOIN nano_team_memberships m
+       ON m.team_uuid = t.team_uuid
+    WHERE t.team_uuid = ?1
+      AND m.user_uuid = ?2
+    LIMIT 1`,
+  ).bind(teamUuid, userUuid).first<Record<string, unknown>>();
+}
+
+async function handleMeTeam(request: Request, env: OrchestratorCoreEnv): Promise<Response> {
+  const auth = await authenticateRequest(request, env);
+  if (!auth.ok) return auth.response;
+  const traceUuid = auth.value.trace_uuid;
+  const db = env.NANO_AGENT_DB;
+  if (!db) {
+    return jsonPolicyError(503, "worker-misconfigured", "team store unavailable", traceUuid);
+  }
+  const teamUuid = auth.value.snapshot.team_uuid ?? auth.value.snapshot.tenant_uuid;
+  if (!teamUuid) {
+    return jsonPolicyError(403, "missing-team-claim", "team_uuid missing from auth snapshot", traceUuid);
+  }
+
+  if (request.method.toUpperCase() === "PATCH") {
+    const body = await parseBody(request);
+    const teamName = typeof body?.team_name === "string" ? body.team_name.trim() : "";
+    if (teamName.length === 0 || teamName.length > 80) {
+      return jsonPolicyError(400, "invalid-input", "team_name must be a non-empty string up to 80 chars", traceUuid);
+    }
+    const membership = await readCurrentTeam(db, auth.value.user_uuid, teamUuid);
+    if (!membership) {
+      return jsonPolicyError(404, "not-found", "team not found", traceUuid);
+    }
+    if (Number(membership.membership_level ?? 0) < 100) {
+      return jsonPolicyError(403, "permission-denied", "only team owner can update team_name", traceUuid);
+    }
+    await db.prepare(
+      `UPDATE nano_teams
+          SET team_name = ?2
+        WHERE team_uuid = ?1`,
+    ).bind(teamUuid, teamName).run();
+  }
+
+  const row = await readCurrentTeam(db, auth.value.user_uuid, teamUuid);
+  if (!row) {
+    return jsonPolicyError(404, "not-found", "team not found", traceUuid);
+  }
+  return Response.json(
+    {
+      ok: true,
+      data: {
+        team_uuid: String(row.team_uuid),
+        team_name: String(row.team_name),
+        team_slug: String(row.team_slug),
+        membership_level: Number(row.membership_level),
+        plan_level: Number(row.plan_level),
+      },
+      trace_uuid: traceUuid,
+    },
+    { status: 200, headers: { "x-trace-uuid": traceUuid } },
+  );
+}
+
+async function handleMeTeams(request: Request, env: OrchestratorCoreEnv): Promise<Response> {
+  const auth = await authenticateRequest(request, env);
+  if (!auth.ok) return auth.response;
+  const traceUuid = auth.value.trace_uuid;
+  const db = env.NANO_AGENT_DB;
+  if (!db) {
+    return Response.json(
+      { ok: true, data: { teams: [] }, trace_uuid: traceUuid },
+      { status: 200, headers: { "x-trace-uuid": traceUuid } },
+    );
+  }
+  const rows = await db.prepare(
+    `SELECT
+       t.team_uuid,
+       t.team_name,
+       t.team_slug,
+       t.plan_level,
+       m.membership_level
+     FROM nano_team_memberships m
+     JOIN nano_teams t
+       ON t.team_uuid = m.team_uuid
+    WHERE m.user_uuid = ?1
+    ORDER BY t.created_at ASC`,
+  ).bind(auth.value.user_uuid).all<Record<string, unknown>>();
+  const teams = (rows.results ?? []).map((row) => ({
+    team_uuid: String(row.team_uuid),
+    team_name: String(row.team_name),
+    team_slug: String(row.team_slug),
+    membership_level: Number(row.membership_level),
+    plan_level: Number(row.plan_level),
+  }));
+  return Response.json(
+    { ok: true, data: { teams }, trace_uuid: traceUuid },
+    { status: 200, headers: { "x-trace-uuid": traceUuid } },
+  );
 }
 
 // ZX5 Lane D D6 — GET /me/devices.
@@ -684,9 +898,10 @@ async function handleMeDevicesList(
       `SELECT device_uuid, device_label, device_kind, status,
               created_at, last_seen_at, revoked_at, revoked_reason
          FROM nano_user_devices
-        WHERE user_uuid = ?1
-        ORDER BY last_seen_at DESC
-        LIMIT 100`,
+         WHERE user_uuid = ?1
+           AND status = 'active'
+         ORDER BY last_seen_at DESC
+         LIMIT 100`,
     ).bind(auth.value.user_uuid).all<Record<string, unknown>>();
     const devices = (rows.results ?? []).map((r) => ({
       device_uuid: String(r.device_uuid),
@@ -806,6 +1021,19 @@ async function handleMeDevicesRevoke(
          ) VALUES (?1, ?2, ?3, ?4, ?3, ?5, 'self-service')`,
       ).bind(revocationUuid, deviceUuid, auth.value.user_uuid, now, reason),
     ]);
+    clearDeviceGateCache(deviceUuid);
+    const stub = env.ORCHESTRATOR_USER_DO.get(env.ORCHESTRATOR_USER_DO.idFromName(auth.value.user_uuid));
+    await stub.fetch(
+      new Request("https://orchestrator.internal/internal/devices/revoke", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-trace-uuid": traceUuid,
+          "x-nano-internal-authority": JSON.stringify(auth.value.snapshot),
+        },
+        body: JSON.stringify({ device_uuid: deviceUuid, reason }),
+      }),
+    );
 
     return Response.json(
       {

@@ -31,7 +31,11 @@ function createD1Mock(opts: {
           }
           return { results: [] };
         },
-        first: async () => null,
+        first: async () => (
+          sql.includes("FROM nano_user_devices")
+            ? { status: "active" }
+            : null
+        ),
         run: async () => ({ success: true, meta: { changes: 1 } }),
       }),
       all: async () => {
