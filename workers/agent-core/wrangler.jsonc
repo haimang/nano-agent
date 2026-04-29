@@ -18,7 +18,8 @@
     "TEAM_UUID": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     "ORCHESTRATOR_PUBLIC_BASE_URL": "https://nano-agent-orchestrator-core-preview.haimang.workers.dev",
     "NANO_AGENT_LLM_CALL_LIMIT": "200",
-    "NANO_AGENT_TOOL_CALL_LIMIT": "400"
+    "NANO_AGENT_TOOL_CALL_LIMIT": "400",
+    "LANE_E_RPC_FIRST": "false"
     // NANO_AGENT_ALLOW_PREVIEW_TEAM_SEED is intentionally NOT set here so
     // production deployments do not auto-seed quota teams. It is only set in
     // the explicit preview env override below.
@@ -40,18 +41,14 @@
   // P2 Phase 4 (D07 activation): BASH_CORE service binding activated
   // — the downstream worker `nano-agent-bash-core-preview` is live
   // (P1.B Phase 5 deploy; Version ID 50335742-e9e9-4f49-b6d7-ec58e0d1cfb4).
-  // CONTEXT_CORE / FILESYSTEM_CORE stay commented in first-wave runtime:
-  // P3 / P4 absorb their code, but agent-core still keeps context/filesystem
-  // on the host-local side until a later charter explicitly promotes them
-  // to remote bindings.
   "services": [
     { "binding": "BASH_CORE", "service": "nano-agent-bash-core" },
     // RH1 P1-06a — service binding to orchestrator-core for cross-worker
     // WS push (NanoSessionDO emits server frames via
     // OrchestratorCoreEntrypoint.forwardServerFrameToClient → User DO).
-    { "binding": "ORCHESTRATOR_CORE", "service": "nano-agent-orchestrator-core" }
-    // { "binding": "CONTEXT_CORE", "service": "nano-agent-context-core" },
-    // { "binding": "FILESYSTEM_CORE", "service": "nano-agent-filesystem-core" }
+    { "binding": "ORCHESTRATOR_CORE", "service": "nano-agent-orchestrator-core" },
+    { "binding": "CONTEXT_CORE", "service": "nano-agent-context-core" },
+    { "binding": "FILESYSTEM_CORE", "service": "nano-agent-filesystem-core" }
   ],
   "d1_databases": [
     {
@@ -86,6 +83,7 @@
         "ORCHESTRATOR_PUBLIC_BASE_URL": "https://nano-agent-orchestrator-core-preview.haimang.workers.dev",
         "NANO_AGENT_LLM_CALL_LIMIT": "200",
         "NANO_AGENT_TOOL_CALL_LIMIT": "400",
+        "LANE_E_RPC_FIRST": "false",
         "NANO_AGENT_ALLOW_PREVIEW_TEAM_SEED": "true"
       },
       "durable_objects": {
@@ -98,7 +96,9 @@
       },
       "services": [
         { "binding": "BASH_CORE", "service": "nano-agent-bash-core-preview" },
-        { "binding": "ORCHESTRATOR_CORE", "service": "nano-agent-orchestrator-core-preview" }
+        { "binding": "ORCHESTRATOR_CORE", "service": "nano-agent-orchestrator-core-preview" },
+        { "binding": "CONTEXT_CORE", "service": "nano-agent-context-core-preview" },
+        { "binding": "FILESYSTEM_CORE", "service": "nano-agent-filesystem-core-preview" }
       ],
       "d1_databases": [
         {
