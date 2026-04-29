@@ -16,7 +16,7 @@
   },
   "dependencies": {
     "@haimang/nacp-core": "1.4.0",
-    "@haimang/nacp-session": "1.3.0",
+    "@haimang/nacp-session": "1.4.0",
     "@nano-agent/storage-topology": "workspace:*",
     "zod": "^3.25.76"
   },
