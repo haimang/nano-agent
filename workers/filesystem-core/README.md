@@ -1,66 +1,41 @@
-# workers/filesystem-core — library-only worker (ZX2 frozen)
+# workers/filesystem-core
 
-## Status
+`filesystem-core` is a library-runtime worker plus health-probe shell. It owns workspace paths, mounts, namespace routing, artifact references, prepared artifacts, promotion helpers, evidence emitters, and storage-topology mirrors. Public file ingress still goes through `orchestrator-core` and service bindings.
 
-**Library-only worker.** Per ZX2 (transport-profiles.md, 2026-04-27) this
-worker stays as a deployment placeholder + `health-probe` profile only.
-**Do not add business RPC routes here.** All real workspace / filesystem
-runtime code is consumed in-process by `agent-core` via the workspace
-package `@haimang/workspace-context-artifacts`. The deploy of
-`filesystem-core` exists so `/debug/workers/health` can keep reporting a
-stable 6-worker matrix.
+## Current role
 
-## Why this is a deliberate decision
+| Surface | Status | Notes |
+| --- | --- | --- |
+| `GET /`, `GET /health` | probe only | Keeps the 6-worker matrix observable. |
+| public business routes | forbidden | No public `/files/*` or `/artifacts/*` API here. |
+| runtime modules | active library code | Used by tests and future controlled internal service promotion. |
 
-- W4.A absorbed the runtime code into agent-core (host-local).
-- ZX2 evaluated promoting filesystem-core to a real RPC worker and
-  explicitly declined: workspace truth lives in tenant-scoped R2 + DO,
-  not at the worker boundary; promoting to RPC duplicates seam.
-- Promotion to a real RPC worker is reserved for ZX3 / W5 if a concrete
-  workload (e.g. cross-tenant sandbox) needs it.
+## Source map
 
-## What `filesystem-core` is allowed to expose
+```text
+src/
+├── index.ts                         # probe and forbidden-route guard
+├── paths.ts / refs.ts / types.ts    # workspace and artifact type system
+├── mounts.ts / namespace.ts         # mount router and namespace access
+├── artifacts.ts                     # artifact metadata and D1/R2 seam helpers
+├── prepared-artifacts.ts            # prepared-artifact references
+├── promotion.ts                     # artifact promotion helpers
+├── backends/                        # memory/reference backend seams
+├── storage/                         # topology mirror: keys, refs, placement, MIME, adapters
+└── evidence-emitters-filesystem.ts  # NACP evidence records for filesystem events
+```
 
-| profile | route | semantic |
-|---|---|---|
-| `health-probe` | `GET /` `GET /health` | shell response with worker identity + absorbed runtime flags |
-| (none) | every other path | 401 `binding-scope-forbidden` (ZX2 Phase 1 P1-03) |
+## Boundaries
 
-The `binding-scope-forbidden` 401 is enforced in code so accidental
-`workers_dev:true` exposure is defended even before wrangler config takes
-effect.
+- D1 stores metadata such as `nano_session_files`; R2 stores bytes. Do not make this worker a separate public truth source.
+- Tenant-scoped refs and keys must stay aligned with `@haimang/nacp-core`.
+- Public file APIs are facade-owned until the topology charter explicitly promotes this worker.
 
-## What `filesystem-core` is NOT allowed to do
+## Validation
 
-- ❌ Expose business HTTP routes (`/files/*`, `/artifacts/*`, etc).
-- ❌ Add new service bindings to other workers.
-- ❌ Expose business HTTP routes (`/files/*`, `/artifacts/*`, etc) on public fetch.
-- ✅ Expose service-binding RPC methods for internal callers.
-- ❌ Hold its own public ingress truth. File metadata lives in D1 and bytes live in R2 behind service bindings.
-
-## Scripts
-
-- `pnpm build`
-- `pnpm typecheck`
-- `pnpm test`
-- `pnpm deploy:dry-run`
-- `pnpm deploy:preview`
-
-## Binding strategy
-
-No active outgoing bindings. `wrangler.jsonc` declares `workers_dev: false`
-to keep this worker off the public internet.
-
-## Health probe shape
-
-```json
-{
-  "worker": "filesystem-core",
-  "status": "ok",
-  "worker_version": "filesystem-core@<env>",
-  "phase": "worker-matrix-P4-absorbed",
-  "absorbed_runtime": true,
-  "nacp_core_version": "...",
-  "nacp_session_version": "..."
-}
+```bash
+pnpm --filter @haimang/filesystem-core-worker typecheck
+pnpm --filter @haimang/filesystem-core-worker build
+pnpm --filter @haimang/filesystem-core-worker test
+pnpm --filter @haimang/filesystem-core-worker deploy:dry-run
 ```

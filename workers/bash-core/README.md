@@ -1,30 +1,41 @@
-# workers/bash-core — pre-worker-matrix shell
+# workers/bash-core
 
-## Status
+`bash-core` is the governed fake-bash capability worker. It owns the command registry, permission policy, target dispatch, and service-binding runtime used by `agent-core` when a session turns tool calls into executable capability work.
 
-**Shell-only. No business logic yet.**
+## Current role
 
-## Purpose
+| Surface | Status | Notes |
+| --- | --- | --- |
+| `GET /`, `GET /health` | public probe | Version and package compatibility check. |
+| capability RPC | internal only | Accepts NACP/RPC-shaped tool-call work from trusted callers. |
+| shell execution | governed fake-bash | No ambient host shell; commands pass registry and permission policy. |
 
-This is the pre-worker-matrix W4 shell for `bash-core`. Its job at this
-phase is to validate:
+## Source map
 
-- `wrangler.jsonc` parses
-- NACP package imports resolve
-- the shell bundles and can pass `wrangler deploy --dry-run`
+```text
+src/
+├── index.ts                    # worker fetch/probe entrypoint
+├── worker-runtime.ts           # internal request handling
+├── tool-call.ts                # tool-call envelope handling
+├── registry.ts                 # command registry
+├── policy.ts / permission.ts   # guardrails and permission decisions
+├── executor.ts / result.ts     # execution result normalization
+├── fake-bash/                  # fake-bash bridge, command parser, unsupported commands
+├── capabilities/               # exec, filesystem, network, search, text, vcs, workspace truth
+└── targets/                    # browser rendering, local TypeScript, service binding target
+```
 
-Current dependency mode: `workspace:*`. Real fake-bash absorption remains a
-worker-matrix P0 task per the W3 blueprints.
+## Execution rules
 
-## Scripts
+- Treat the command registry as the capability SSOT; do not bypass it with ad-hoc shell execution.
+- Preserve NACP envelopes and authority/trace metadata across service-boundary calls.
+- Browser/local/service-binding targets are selected by policy, not by untrusted client input alone.
 
-- `pnpm build`
-- `pnpm typecheck`
-- `pnpm test`
-- `pnpm deploy:dry-run`
-- `pnpm deploy:preview`
+## Validation
 
-## Binding strategy
-
-No outgoing bindings are active in W4. `bash-core` stays a plain fetch shell
-until worker-matrix Phase 0 absorbs the real capability runtime.
+```bash
+pnpm --filter @haimang/bash-core-worker typecheck
+pnpm --filter @haimang/bash-core-worker build
+pnpm --filter @haimang/bash-core-worker test
+pnpm --filter @haimang/bash-core-worker deploy:dry-run
+```

@@ -1,66 +1,42 @@
-# workers/context-core — library-only worker (ZX2 frozen)
+# workers/context-core
 
-## Status
+`context-core` is a library-runtime worker plus health-probe shell. It is not a public business HTTP API. The source tree owns context assembly, compact boundaries, async compact planning, budget policy, redaction, snapshot fragments and inspector helpers that can be consumed by trusted in-process or future service-binding paths.
 
-**Library-only worker.** Per ZX2 (transport-profiles.md, 2026-04-27) this
-worker stays as a deployment placeholder + `health-probe` profile only.
-**Do not add business RPC routes here.** All real context-substrate
-runtime code is consumed in-process by `agent-core` via the workspace
-package `@haimang/context-management`. The deploy of `context-core`
-exists so `/debug/workers/health` can keep reporting a stable 6-worker
-matrix.
+## Current role
 
-## Why this is a deliberate decision
+| Surface | Status | Notes |
+| --- | --- | --- |
+| `GET /`, `GET /health` | probe only | Keeps the 6-worker matrix observable. |
+| public business routes | forbidden | Non-probe HTTP paths return `binding-scope-forbidden`. |
+| runtime modules | active library code | Used by worker-local tests and ready for controlled internal promotion. |
 
-- W3.A absorbed the runtime code into agent-core (host-local).
-- ZX2 evaluated promoting context-core to a real RPC worker and explicitly
-  declined: the migration cost is non-trivial and the immediate value is
-  small (no cross-tenant boundary, no quota, no isolation gain).
-- Promotion to a real RPC worker is reserved for ZX3 / W5 if a concrete
-  workload needs it.
+## Source map
 
-## What `context-core` is allowed to expose
+```text
+src/
+├── index.ts                         # probe and forbidden-route guard
+├── context-assembler.ts             # layer selection and budget-aware assembly
+├── context-layers.ts                # layer types and helpers
+├── compact-boundary.ts              # compact request/response boundary contract
+├── snapshot.ts                      # workspace/context snapshot fragment
+├── redaction.ts                     # client-safe redaction helpers
+├── budget/                          # context budget policy/env/types
+├── async-compact/                   # planner, scheduler, committer, retry/fallback
+├── context-api/                     # append initial context layer facade
+└── inspector-facade/                # inspector auth/redaction/usage report helpers
+```
 
-| profile | route | semantic |
-|---|---|---|
-| `health-probe` | `GET /` `GET /health` | shell response with worker identity + absorbed runtime flags |
-| (none) | every other path | 401 `binding-scope-forbidden` (ZX2 Phase 1 P1-03) |
+## Boundaries
 
-The `binding-scope-forbidden` 401 is enforced in code (see
-`src/index.ts:bindingScopeForbidden`) so accidental `workers_dev:true`
-exposure is defended even before wrangler config takes effect.
+- Do not add public `/context/*` or `/compact/*` HTTP routes without changing the worker topology charter.
+- Storage operations must remain tenant-scoped through NACP/storage-topology seams.
+- This worker can grow internal RPC later, but current public exposure remains health-only.
 
-## What `context-core` is NOT allowed to do
+## Validation
 
-- ❌ Expose business HTTP routes (`/context/*`, `/compact/*`, etc).
-- ❌ Add new service bindings to other workers.
-- ❌ Expose business HTTP routes (`/context/*`, `/compact/*`, etc) on public fetch.
-- ✅ Expose service-binding RPC methods for internal callers.
-- ❌ Talk to D1 / R2 / KV. The workspace package owns storage truth.
-
-## Scripts
-
-- `pnpm build`
-- `pnpm typecheck`
-- `pnpm test`
-- `pnpm deploy:dry-run`
-- `pnpm deploy:preview`
-
-## Binding strategy
-
-No active outgoing bindings. `wrangler.jsonc` declares `workers_dev: false`
-to keep this worker off the public internet.
-
-## Health probe shape
-
-```json
-{
-  "worker": "context-core",
-  "status": "ok",
-  "worker_version": "context-core@<env>",
-  "phase": "worker-matrix-P3-absorbed",
-  "absorbed_runtime": true,
-  "nacp_core_version": "...",
-  "nacp_session_version": "..."
-}
+```bash
+pnpm --filter @haimang/context-core-worker typecheck
+pnpm --filter @haimang/context-core-worker build
+pnpm --filter @haimang/context-core-worker test
+pnpm --filter @haimang/context-core-worker deploy:dry-run
 ```

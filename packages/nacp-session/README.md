@@ -1,82 +1,46 @@
 # @haimang/nacp-session
 
-> NACP-Session — the client ↔ session DO WebSocket profile of the NACP Protocol Family.
-> **Baseline**: `1.4.0` (frozen) — shares `NACP_VERSION` with `@haimang/nacp-core`. `NACP_VERSION_COMPAT = "1.0.0"` (pre-freeze payloads are accepted via `migrate_v1_0_to_v1_1` at the envelope layer). B9 added the session-side `(message_type × delivery_kind)` matrix + `SessionStartInitialContextSchema` (see `docs/rfc/nacp-core-1-3-draft.md`); RH5/RH6 carry the public model/reasoning/image session body surface.
+NACP-Session is the client ↔ session WebSocket/profile package. It builds on `@haimang/nacp-core` and owns session frame schemas, client frame normalization, stream-event bodies, replay, heartbeat, ack delivery, redaction, and the Session DO WebSocket helper.
 
-## What this package provides
+**Baseline**: `1.4.0` (frozen). `NACP_VERSION_COMPAT = "1.0.0"` remains the accepted pre-freeze compatibility floor.
 
-- **16 Session message schemas** (`session.start / resume / cancel / end / stream.event / stream.ack / heartbeat / followup_input / permission / usage / skill / command / elicitation / attachment`) — `session.followup_input` is the A1 Phase 0 widened client-produced surface (minimum shape: `{ text, context_ref?, stream_seq? }`); RH5 additionally permits model/reasoning/image parts through the public body schema.
-- **Unified server-push channel** via `session.stream.event` with 9 event kinds (tool progress, hook broadcast, LLM delta, compact notify, system notify, turn lifecycle, session update)
-- **Client frame normalization + authority server-stamping** (ingress layer)
-- **Replay buffer** with per-stream ring buffer + DO storage checkpoint/restore for hibernation
-- **Ack window** with at-most-once / at-least-once delivery modes
-- **Heartbeat tracker** for liveness detection
-- **WebSocket helper** with attach/detach/resume/replay/close lifecycle
-- **Redaction** for scrubbing sensitive fields before client push
-- **Adapters** for tool/hook/compact/system/llm → stream event conversion
+## Current role
 
-## Quick Start
+| Area | SSOT |
+| --- | --- |
+| Session frame wire | `NacpSessionFrameSchema`, `normalizeClientFrame` |
+| Message bodies | `SESSION_BODY_SCHEMAS`, start/resume/cancel/`session.followup_input`/permission/usage/attachment bodies |
+| Stream push | `session.stream.event` and canonical event-kind adapters |
+| Liveness/replay | `HeartbeatTracker`, `ReplayBuffer`, `SessionWebSocketHelper` |
+| Client safety | redaction helpers and ingress server-stamping |
 
-```typescript
-import {
-  SessionWebSocketHelper,
-  normalizeClientFrame,
-  toolProgressToStreamEvent,
-} from "@haimang/nacp-session";
+## Source map
 
-// SessionContext is required — provides real tenant/session identity
-const helper = new SessionWebSocketHelper({
-  sessionContext: {
-    team_uuid: "your-team-uuid",
-    plan_level: "pro",
-    session_uuid: "your-session-uuid",
-    // Internal identity naming is being standardized to UUID-based fields.
-    // Pass the session/trace UUIDs and producer metadata required by your build.
-  },
-});
-helper.attach(webSocket);
-
-// Push a tool progress event
-helper.pushEvent("tool-call-42", toolProgressToStreamEvent("bash", "output chunk", false));
-
-// Client reconnects with last_seen_seq
-helper.handleResume("tool-call-42", lastSeenSeq);
-
-// Health checks (caller-managed — call these in your session DO loop)
-helper.checkHeartbeatHealth(); // throws NACP_SESSION_HEARTBEAT_TIMEOUT if stale
-helper.checkAckHealth();       // throws NACP_SESSION_ACK_MISMATCH if acks timed out
-
-// Hibernate: save state to DO storage
-await helper.checkpoint(ctx.storage);
-// Wake: restore
-await helper.restore(ctx.storage);
+```text
+src/
+├── frame.ts / ingress.ts                 # frame schema and client ingress normalization
+├── messages.ts                           # session body schemas, including RH5 model/image/reasoning surfaces
+├── stream-event.ts                       # canonical stream event body/kind truth
+├── delivery.ts / replay.ts / heartbeat.ts# delivery, replay and liveness helpers
+├── websocket.ts                          # SessionWebSocketHelper
+├── adapters/                             # tool/hook/compact/system/llm event adapters
+├── session-registry.ts                   # phase and message-direction rules
+├── type-direction-matrix.ts              # message_type x delivery_kind matrix
+└── index.ts                              # root exports
 ```
 
-## Relationship to NACP-Core
+## Boundaries
 
-This package **depends on** `@haimang/nacp-core` and extends its types:
-- `NacpSessionFrameSchema` extends `NacpEnvelopeBaseSchema`
-- `session-registry.ts` imports the `SessionPhase` type from Core but owns its **own** phase matrix (`SESSION_PHASE_ALLOWED`). Core's phase table only covers `session.start/resume/cancel/end`; the session profile adds `session.stream.event / stream.ack / heartbeat / followup_input`, which must be routed through Session's matrix rather than Core's `isMessageAllowedInPhase()`.
-- Error types extend Core's `NacpValidationError`
-- B9 / 1.3: session profile **also** owns its own `(message_type × delivery_kind)` matrix (`NACP_SESSION_TYPE_DIRECTION_MATRIX`) consumed by `validateSessionFrame()`; core's Layer 6 matrix only gates core-registered verbs.
+- Core's phase table only covers core protocol verbs; session profile routing must use this package's session matrix.
+- Runtime can validate provider/model capability, but public session body shape belongs here and in orchestrator facade tests.
+- Keep `NACP_SESSION_VERSION` aligned with the package version discipline used by workers.
 
-## Follow-up Input Family (A1 Phase 0 — frozen)
-
-`session.start.body.initial_input` remains the formal entry for the first turn. A1 Phase 3 widened the v1 surface with the minimum follow-up shape so multi-round input is a first-class protocol message instead of a runtime-private behaviour:
-
-| message_type | role | producer | consumer | min body |
-|---|---|---|---|---|
-| `session.followup_input` | client | client | session | `{ text: string, context_ref?: NacpRef, stream_seq?: number }` |
-
-Queue / replace / merge / approval-aware scheduling semantics are explicitly **not** part of v1 — they live in the post-runtime-closure expansion phase, and any richer behaviour must arrive as an additive protocol extension rather than an ad-hoc runtime path.
-
-## Commands
+## Validation
 
 ```bash
-pnpm build           # TypeScript compilation
-pnpm typecheck       # Type check only
-pnpm test            # Run all tests
-pnpm test:integration # Integration tests only
-pnpm build:schema    # Export → dist/nacp-session.schema.json
-pnpm build:docs      # Generate → docs/nacp-session-registry.md
+pnpm --filter @haimang/nacp-session typecheck
+pnpm --filter @haimang/nacp-session build
+pnpm --filter @haimang/nacp-session test
+pnpm --filter @haimang/nacp-session build:schema
+pnpm --filter @haimang/nacp-session build:docs
 ```

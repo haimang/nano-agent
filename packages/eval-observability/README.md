@@ -1,171 +1,36 @@
 # @nano-agent/eval-observability
 
-> ⚠️ **DEPRECATED — runtime residual absorbed 2026-04-23(worker-matrix P5/D09)**
->
-> 本包的 runtime residual(`TraceSink` interface / `BoundedEvalSink`(落在 agent-core host)/ `DoStorageTraceSink` / inspector / `DurablePromotionRegistry` / evidence bridge / evidence streams / timeline / replay / scenario runner / classification / truncation / metric names)已迁移到 `workers/agent-core/src/eval/`(A5 完整吸收,含 `sinks/` 子目录)。
->
-> **新 consumer 请 import 自 `workers/agent-core`;不要新增对本包 runtime 的 import。**
-> B7 LIVE 5 tests 作为 root guardians 继续在根 test-legacy 绿(保护 dedup / overflow disclosure 契约)。
-> 本包 `CHANGELOG.md` 已追加 P5 deprecation entry;共存期 bug 优先在本包修复(W3 pattern §6)。物理删除归下一阶段。
+`eval-observability` is the trace/evidence semantics package used by tests and mirrored by `agent-core` runtime code. It defines event classification, durable-promotion rules, trace sinks, evidence bridges, replay helpers, timelines, scenario harnesses and metric-name vocabulary.
 
-Trace taxonomy, durable sink, timeline, scenario runner, failure replay and
-attribution helpers for nano-agent.
+## Source map
 
-This package is a **validation-infrastructure library** — not a production
-APM. It frames what nano-agent persists, what it merely streams, and what
-gets replayed; it does **not** wire up storage, dashboards or telemetry
-exporters.
-
----
-
-## Three-way trace layers
-
-| Layer | Purpose | Examples |
-|-------|---------|----------|
-| `live` | Ephemeral, high-frequency, never persisted | `llm.delta`, `tool.call.progress`, `session.update`, `system.notify` |
-| `durable-audit` | Persisted structural + governance evidence | `turn.begin`, `turn.end`, `api.request/response/error`, `hook.outcome`, `compact.start/end`, `session.start/end` |
-| `durable-transcript` | User-visible conversation record | `user.message`, `assistant.message`, `tool.call.request`, `tool.call.result` |
-
-The `classifyEvent()` and `shouldPersist()` helpers are the single source of
-truth. `DurablePromotionRegistry` carries the per-kind *why* (granularity,
-replay visibility, revisit condition).
-
----
-
-## Main exports
-
-```ts
-import {
-  // Types
-  TraceEvent,
-  TraceTimelineReader,
-  AttributionRecord,
-
-  // Classification
-  classifyEvent,
-  shouldPersist,
-  LIVE_ONLY_EVENTS,
-  DURABLE_AUDIT_EVENTS,
-  DURABLE_TRANSCRIPT_EVENTS,
-  DurablePromotionRegistry,
-  createDefaultRegistry,
-
-  // Persistence
-  DoStorageTraceSink,
-  SessionTimeline,
-
-  // Live / replay
-  SessionInspector,
-  SESSION_STREAM_EVENT_KINDS,
-  ScenarioRunner,
-  FailureReplayHelper,
-
-  // Evidence
-  buildLlmAttribution,
-  buildToolAttribution,
-  StoragePlacementLog,
-
-  // Audit codec
-  traceEventToAuditBody,
-  auditBodyToTraceEvent,
-
-  // Budgets
-  truncateOutput,
-  TRACE_OUTPUT_MAX_BYTES,
-  METRIC_NAMES,
-} from "@nano-agent/eval-observability";
+```text
+src/
+├── trace-event.ts / types.ts             # trace event model
+├── classification.ts                     # live, durable-audit and durable-transcript classification
+├── durable-promotion-registry.ts         # why an event is durable or live-only
+├── sink.ts / sinks/do-storage.ts         # sink contract and DO storage sink
+├── timeline.ts / inspector.ts / replay.ts# timeline, live inspector and replay helpers
+├── attribution.ts / audit-record.ts      # attribution and audit body codecs
+├── evidence-bridge.ts / evidence-streams.ts / evidence-verdict.ts
+├── placement-log.ts                      # storage placement evidence
+├── scenario.ts / runner.ts               # scenario/test harness
+├── truncation.ts / metric-names.ts       # output limits and metric vocabulary
+└── index.ts                              # package exports
 ```
 
----
+## Runtime posture
 
-## Durable sink contract
+- `workers/agent-core/src/eval/` contains the active worker-local runtime mirror used by the session host.
+- This package remains the package-level contract/test helper and should stay behavior-compatible with the worker mirror.
+- Do not use this package as a production APM or billing engine; it is evidence/trace substrate, not an observability product.
 
-`DoStorageTraceSink` writes append-only JSONL under the
-**tenant-scoped** key pattern:
+## Validation
 
-```
-tenants/{teamUuid}/trace/{sessionUuid}/{YYYY-MM-DD}.jsonl
-```
-
-A companion `_index` key stores the set of date-keys written, so a brand
-new sink instance (e.g. after DO hibernation / restart) can reconstruct
-the full timeline without relying on in-process state. When the underlying
-storage exposes `list(prefix)`, the sink prefers it over the index.
-
-```ts
-const sink = new DoStorageTraceSink(storage, teamUuid, sessionUuid);
-await sink.emit({
-  eventKind: "turn.begin",
-  timestamp: new Date().toISOString(),
-  // Trace-law carriers (A3): every event MUST declare the owning
-  // trace UUID and the producing source role.
-  traceUuid,
-  sourceRole: "session",
-  sourceKey: "nano-agent.session.do@v1",
-  sessionUuid,
-  teamUuid,
-  audience: "internal",
-  layer: "durable-audit",
-});
-const timeline = await SessionTimeline.fromSink(sink);
-```
-
-`SessionTimeline.fromSink()` accepts any `TraceTimelineReader` — the same
-seam is used for HTTP-fallback durable reads from a reconnecting client.
-
----
-
-## Live inspector contract
-
-`SessionInspector` strictly consumes the **9 canonical
-`session.stream.event` kinds** mirrored locally from
-`@haimang/nacp-session`:
-
-```
-tool.call.progress   tool.call.result   hook.broadcast
-session.update       turn.begin         turn.end
-compact.notify       system.notify      llm.delta
-```
-
-Unknown kinds are rejected and surfaced via `getRejections()`. An optional
-body validator (e.g. `SessionStreamEventBodySchema.safeParse`) can be
-injected to also reject invalid bodies. `filterByKind()` and `getLatest()`
-preserve `seq` and `timestamp` so ordering and duplicate-delivery bugs can
-be diagnosed off the live stream.
-
-The inspector models WebSocket-first observation; HTTP-fallback durable
-reads go through `SessionTimeline.fromSink(fallbackReader)`. The two views
-are independently consumable and can be joined downstream.
-
----
-
-## v1 limits & out-of-scope
-
-This package deliberately does NOT include:
-
-- A production APM, alerting engine or dashboard.
-- Any cross-tenant audit query API.
-- A full OTEL SDK / OTLP exporter (`metric-names` is a naming baseline
-  only).
-- Billing / cost accounting pipelines.
-- An LLM quality benchmark platform.
-- Client-side UI framework bits.
-- D1 / structured-query storage for trace events — v1 is append + scan only.
-- Blind `durable`-ification of high-frequency `session.stream.event`s such
-  as `llm.delta` or `tool.call.progress`.
-- A long-running Worker-embedded scenario runner — `ScenarioRunner` is a
-  test harness.
-- Final R2 archive orchestration (`StoragePlacementLog` is evidence only).
-
----
-
-## Scripts
-
-```
-npm run build       # tsc → dist/
-npm run typecheck
-npm run test
-npm run test:coverage
-npx tsx scripts/export-schema.ts   # dist/eval-observability.schema.json
-npx tsx scripts/gen-trace-doc.ts   # dist/trace-contract.md
+```bash
+pnpm --filter @nano-agent/eval-observability typecheck
+pnpm --filter @nano-agent/eval-observability build
+pnpm --filter @nano-agent/eval-observability test
+pnpm --filter @nano-agent/eval-observability build:schema
+pnpm --filter @nano-agent/eval-observability build:docs
 ```

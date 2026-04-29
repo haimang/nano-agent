@@ -1,42 +1,46 @@
-# workers/agent-core — runtime host + retired public session edge
+# workers/agent-core
 
-## Status
+`agent-core` is the private session-runtime host. Public session ownership lives in `orchestrator-core`; this worker keeps the Session DO, kernel, tool/hook/eval/LLM runtime, and guarded internal HTTP/WS seam used by the public facade.
 
-`agent-core` is the absorbed session runtime host. The worker now reports the terminal probe marker `orchestration-facade-closed`, while continuing to avoid canonical public session ownership.
+## Current role
 
-- `GET /` / `GET /health` probe stays available
-- guarded `/internal/sessions/:session_uuid/*` remains active for `orchestrator-core`
-- legacy public `/sessions/:session_uuid/*` now returns typed retirement envelopes (`HTTP 410` / `WS 426`)
-
-## Purpose in F3+
-
-`agent-core` keeps the real session runtime loop and the guarded internal seam that
-lets `orchestrator-core` call:
-
-- `start`
-- `input`
-- `cancel`
-- `status`
-- `timeline`
-- `verify`
-- `stream`
-
-The runtime still reuses the existing DO/HTTP fallback/timeline machinery underneath; only public ownership moved.
-
-## Scripts
-
-- `pnpm build`
-- `pnpm typecheck`
-- `pnpm test`
-- `pnpm deploy:dry-run`
-- `pnpm deploy:preview`
-
-## Binding strategy
-
-| Binding | Status | Notes |
+| Surface | Status | Notes |
 | --- | --- | --- |
-| `SESSION_DO` | active | real session host |
-| `BASH_CORE` | active | current remote capability worker |
-| `CONTEXT_CORE` | commented | still host-local in first-wave |
-| `FILESYSTEM_CORE` | commented | still host-local in first-wave |
-| `NANO_INTERNAL_BINDING_SECRET` | runtime secret | required for `/internal/*` |
+| `GET /`, `GET /health` | public probe | Reports worker/version/package compatibility. |
+| `/internal/sessions/:session_uuid/*` | active internal seam | Called by `orchestrator-core` over service binding. |
+| legacy `/sessions/:session_uuid/*` | retired | Returns typed retirement envelopes instead of serving canonical traffic. |
+| `SESSION_DO` | active | Hosts the per-session runtime and WebSocket replay/heartbeat state. |
+
+## Source map
+
+```text
+src/
+├── index.ts                         # worker fetch entrypoint
+├── host/                            # HTTP/internal routes, runtime composition, env, probes
+│   ├── do/
+│   │   ├── nano-session-do.ts       # thin Durable Object facade
+│   │   ├── session-do-runtime.ts    # runtime coordinator
+│   │   └── session-do/              # RH6 split: fetch/ws/runtime assembly
+│   ├── runtime-mainline.ts          # host orchestration loop
+│   ├── session-edge.ts              # retired public edge helpers
+│   └── workspace-runtime.ts         # workspace/context package integration
+├── kernel/                          # turn scheduler, reducer, checkpoints, interrupts
+├── llm/                             # provider dispatch, attachments, stream adapters
+├── hooks/                           # hook catalog, dispatcher, permissions, session mapping
+└── eval/                            # trace, replay, evidence and timeline runtime mirror
+```
+
+## Runtime truth
+
+- Session DO memory/storage owns hot runtime state, replay buffer, heartbeat and stream lifecycle.
+- User/session durable truth is written through `orchestrator-core` and D1; `agent-core` should not become the public tenant/session source of truth.
+- Workspace/context helpers are still consumed in-process through `@nano-agent/workspace-context-artifacts` and related worker-local mirrors.
+
+## Validation
+
+```bash
+pnpm --filter @haimang/agent-core-worker typecheck
+pnpm --filter @haimang/agent-core-worker build
+pnpm --filter @haimang/agent-core-worker test
+pnpm --filter @haimang/agent-core-worker deploy:dry-run
+```
