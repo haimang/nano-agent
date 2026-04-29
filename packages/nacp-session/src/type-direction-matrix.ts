@@ -33,6 +33,8 @@ export const NACP_SESSION_TYPE_DIRECTION_MATRIX: Readonly<
   "session.command.invoke": new Set<NacpDeliveryKind>(["command"]),
   "session.elicitation.request": new Set<NacpDeliveryKind>(["command", "event"]),
   "session.elicitation.answer": new Set<NacpDeliveryKind>(["response", "command"]),
+  // RH2 P2-01c — server → client only (notify-and-disconnect)
+  "session.attachment.superseded": new Set<NacpDeliveryKind>(["event"]),
 });
 
 export function isLegalSessionDirection(

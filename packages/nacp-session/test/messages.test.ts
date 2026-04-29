@@ -68,11 +68,12 @@ describe("registries", () => {
   // ZX2 Phase 2 P2-03: registry now contains the original 8 (7 initial +
   // followup) plus 7 new ZX2 types — see test/zx2-messages.test.ts for
   // detailed coverage of the new families.
-  it("has 15 session message types (initial 7 + followup + ZX2 7-family)", () => {
-    expect(SESSION_MESSAGE_TYPES.size).toBe(15);
+  it("has 16 session message types (initial 7 + followup + ZX2 7 + RH2 attachment.superseded)", () => {
+    expect(SESSION_MESSAGE_TYPES.size).toBe(16);
     expect(SESSION_MESSAGE_TYPES.has("session.followup_input")).toBe(true);
     expect(SESSION_MESSAGE_TYPES.has("session.permission.request")).toBe(true);
     expect(SESSION_MESSAGE_TYPES.has("session.usage.update")).toBe(true);
+    expect(SESSION_MESSAGE_TYPES.has("session.attachment.superseded")).toBe(true);
   });
   it("body required set excludes cancel but includes followup", () => {
     expect(SESSION_BODY_REQUIRED.has("session.cancel")).toBe(false);
@@ -81,5 +82,45 @@ describe("registries", () => {
   });
   it("SESSION_BODY_SCHEMAS exposes the followup body schema", () => {
     expect(SESSION_BODY_SCHEMAS["session.followup_input"]).toBeDefined();
+  });
+});
+
+// RH2 P2-01c — session.attachment.superseded schema tests.
+describe("RH2 P2-01c: session.attachment.superseded", () => {
+  it("accepts a valid body", async () => {
+    const { SessionAttachmentSupersededBodySchema } = await import("../src/messages.js");
+    const body = SessionAttachmentSupersededBodySchema.parse({
+      session_uuid: "11111111-1111-4111-8111-111111111111",
+      superseded_at: "2026-04-29T09:00:00.000Z",
+      reason: "device-conflict",
+    });
+    expect(body.reason).toBe("device-conflict");
+  });
+
+  it("rejects unknown reason", async () => {
+    const { SessionAttachmentSupersededBodySchema } = await import("../src/messages.js");
+    expect(() =>
+      SessionAttachmentSupersededBodySchema.parse({
+        session_uuid: "11111111-1111-4111-8111-111111111111",
+        superseded_at: "2026-04-29T09:00:00.000Z",
+        reason: "rogue",
+      }),
+    ).toThrow();
+  });
+
+  it("requires session_uuid + superseded_at + reason", async () => {
+    const { SessionAttachmentSupersededBodySchema } = await import("../src/messages.js");
+    expect(() => SessionAttachmentSupersededBodySchema.parse({})).toThrow();
+    expect(() =>
+      SessionAttachmentSupersededBodySchema.parse({
+        session_uuid: "11111111-1111-4111-8111-111111111111",
+      }),
+    ).toThrow();
+  });
+
+  it("registry entries are wired (SESSION_BODY_SCHEMAS + SESSION_MESSAGE_TYPES + SESSION_BODY_REQUIRED)", () => {
+    expect(SESSION_BODY_SCHEMAS["session.attachment.superseded" as keyof typeof SESSION_BODY_SCHEMAS]).toBeDefined();
+    expect(SESSION_MESSAGE_TYPES.has("session.attachment.superseded")).toBe(true);
+    expect(SESSION_BODY_REQUIRED.has("session.attachment.superseded")).toBe(true);
   });
 });

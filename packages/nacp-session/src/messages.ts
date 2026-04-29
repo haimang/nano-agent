@@ -63,6 +63,23 @@ export const SessionHeartbeatBodySchema = z.object({
 });
 export type SessionHeartbeatBody = z.infer<typeof SessionHeartbeatBodySchema>;
 
+// ── session.attachment.superseded (RH2 P2-01c) ──
+// 当同一 session 出现新的 attach（例如另一台设备登录或刷新页面），先前
+// attached 的客户端应收到一条 `session.attachment.superseded` 帧并执行
+// graceful disconnect。`reason` 给客户端清晰的原因码以便决定是否提示用户重登。
+export const SessionAttachmentSupersededBodySchema = z.object({
+  session_uuid: z.string().uuid(),
+  superseded_at: z.string().datetime(),
+  // `device-conflict` — 同账号另一设备 attach;`reattach` — 同设备刷新；
+  // `revoked` — device revoke 触发；`policy` — 策略强制断开。
+  reason: z.enum(["device-conflict", "reattach", "revoked", "policy"]),
+  // 可选 trace 字段,供前端日志关联。
+  next_attach_trace_uuid: z.string().uuid().optional(),
+});
+export type SessionAttachmentSupersededBody = z.infer<
+  typeof SessionAttachmentSupersededBodySchema
+>;
+
 // ── session.followup_input (Phase 0 widened v1 surface) ──
 //
 // Owner decision (PX-QNA Q1 / AX-QNA Q1): the minimum frozen shape is a
@@ -216,6 +233,8 @@ export const SESSION_BODY_SCHEMAS = {
   "session.command.invoke": SessionCommandInvokeBodySchema,
   "session.elicitation.request": SessionElicitationRequestBodySchema,
   "session.elicitation.answer": SessionElicitationAnswerBodySchema,
+  // RH2 P2-01c — server → client supersede notification.
+  "session.attachment.superseded": SessionAttachmentSupersededBodySchema,
   // session.stream.event is handled separately via stream-event.ts
 } as const;
 
@@ -234,6 +253,8 @@ export const SESSION_BODY_REQUIRED = new Set([
   "session.command.invoke",
   "session.elicitation.request",
   "session.elicitation.answer",
+  // RH2 P2-01c
+  "session.attachment.superseded",
 ]);
 
 export const SESSION_MESSAGE_TYPES = new Set([
@@ -253,4 +274,6 @@ export const SESSION_MESSAGE_TYPES = new Set([
   "session.command.invoke",
   "session.elicitation.request",
   "session.elicitation.answer",
+  // RH2 P2-01c
+  "session.attachment.superseded",
 ]);
