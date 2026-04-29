@@ -1,0 +1,603 @@
+import type { InitialContextSeed, IngressAuthSnapshot } from "../auth.js";
+import { isAuthSnapshot } from "../session-lifecycle.js";
+import {
+  jsonResponse,
+  sessionKey,
+  sessionMissingResponse,
+  sessionTerminalResponse,
+  terminalKey,
+  type SessionEntry,
+  type SessionTerminalRecord,
+} from "../session-lifecycle.js";
+import {
+  CONVERSATION_INDEX_KEY,
+  USER_AUTH_SNAPSHOT_KEY,
+  USER_META_KEY,
+  USER_SEED_KEY,
+  type ConversationIndexItem,
+} from "../session-read-model.js";
+import type { D1SessionTruthRepository } from "../session-truth.js";
+
+type RpcMethod = (
+  input: Record<string, unknown>,
+  meta: { trace_uuid: string; authority: unknown },
+) => Promise<{ status: number; body: Record<string, unknown> | null }>;
+
+export interface UserDoSurfaceRuntimeContext {
+  env: {
+    AGENT_CORE?: Partial<Record<"permissionDecision" | "elicitationAnswer", RpcMethod>>;
+    NANO_AGENT_DB?: D1Database;
+  };
+  get<T>(key: string): Promise<T | undefined>;
+  put<T>(key: string, value: T): Promise<void>;
+  sessionTruth(): D1SessionTruthRepository | null;
+  readDurableSnapshot(sessionUuid: string): Promise<unknown>;
+  readDurableHistory(sessionUuid: string): Promise<
+    Array<{
+      message_uuid: string;
+      turn_uuid: string | null;
+      kind: string;
+      body: unknown;
+      created_at: string;
+    }>
+  >;
+  requireReadableSession(sessionUuid: string): Promise<SessionEntry | null>;
+}
+
+export function createUserDoSurfaceRuntime(ctx: UserDoSurfaceRuntimeContext) {
+  return {
+    async refreshUserState(
+      authSnapshot?: IngressAuthSnapshot,
+      seed?: InitialContextSeed,
+    ): Promise<void> {
+      if (authSnapshot) {
+        await ctx.put(USER_META_KEY, { user_uuid: authSnapshot.sub });
+        await ctx.put(USER_AUTH_SNAPSHOT_KEY, authSnapshot);
+      }
+      if (seed) await ctx.put(USER_SEED_KEY, seed);
+    },
+
+    async requireSession(sessionUuid: string): Promise<SessionEntry | null> {
+      return (await ctx.get<SessionEntry>(sessionKey(sessionUuid))) ?? null;
+    },
+
+    async enforceSessionDevice(
+      sessionUuid: string,
+      entry: SessionEntry,
+      authSnapshot: IngressAuthSnapshot | null | undefined,
+    ): Promise<SessionEntry | Response> {
+      const deviceUuid =
+        authSnapshot &&
+        typeof authSnapshot.device_uuid === "string" &&
+        authSnapshot.device_uuid.length > 0
+          ? authSnapshot.device_uuid
+          : null;
+      if (!deviceUuid) return entry;
+      if (entry.device_uuid && entry.device_uuid !== deviceUuid) {
+        return jsonResponse(403, {
+          error: "wrong-device",
+          message: "session is bound to another device",
+          session_uuid: sessionUuid,
+        });
+      }
+      if (!entry.device_uuid) {
+        const nextEntry: SessionEntry = {
+          ...entry,
+          device_uuid: deviceUuid,
+        };
+        await ctx.put(sessionKey(sessionUuid), nextEntry);
+        return nextEntry;
+      }
+      return entry;
+    },
+
+    async sessionGateMiss(sessionUuid: string): Promise<Response> {
+      const status = await ctx.sessionTruth()?.readSessionStatus(sessionUuid);
+      if (status === "pending") {
+        return jsonResponse(409, {
+          error: "session-pending-only-start-allowed",
+          message: `session ${sessionUuid} is pending; only POST /sessions/{id}/start is allowed before it transitions to active`,
+          session_uuid: sessionUuid,
+          current_status: "pending",
+        });
+      }
+      if (status === "expired") {
+        return jsonResponse(409, {
+          error: "session-expired",
+          message: `session ${sessionUuid} expired (24h pending TTL); mint a new UUID via POST /me/sessions`,
+          session_uuid: sessionUuid,
+          current_status: "expired",
+        });
+      }
+      return sessionMissingResponse(sessionUuid);
+    },
+
+    async getTerminal(sessionUuid: string): Promise<SessionTerminalRecord | null> {
+      return (await ctx.get<SessionTerminalRecord>(terminalKey(sessionUuid))) ?? null;
+    },
+
+    async handleUsage(sessionUuid: string): Promise<Response> {
+      const entry = await ctx.requireReadableSession(sessionUuid);
+      if (!entry) return this.sessionGateMiss(sessionUuid);
+      const durable = await ctx.readDurableSnapshot(sessionUuid);
+      const repo = ctx.sessionTruth();
+      let usage: Record<string, unknown> = {
+        llm_input_tokens: 0,
+        llm_output_tokens: 0,
+        tool_calls: 0,
+        subrequest_used: 0,
+        subrequest_budget: 0,
+        estimated_cost_usd: 0,
+      };
+      const durableRecord =
+        durable && typeof durable === "object" ? (durable as Record<string, unknown>) : null;
+      if (repo && typeof durableRecord?.team_uuid === "string") {
+        try {
+          const live = await repo.readUsageSnapshot({
+            session_uuid: sessionUuid,
+            team_uuid: durableRecord.team_uuid,
+          });
+          if (live) usage = live as unknown as Record<string, unknown>;
+        } catch (error) {
+          console.warn(`usage-d1-read-failed session=${sessionUuid}`, {
+            tag: "usage-d1-read-failed",
+            error: String(error),
+          });
+          return jsonResponse(503, {
+            ok: false,
+            error: {
+              code: "usage-d1-unavailable",
+              status: 503,
+              message: "usage ledger temporarily unavailable",
+            },
+          });
+        }
+      }
+      return jsonResponse(200, {
+        ok: true,
+        data: {
+          session_uuid: sessionUuid,
+          status: entry.status,
+          usage,
+          last_seen_at: entry.last_seen_at,
+          durable_truth: durable ?? null,
+        },
+      });
+    },
+
+    async handleResume(sessionUuid: string, request: Request): Promise<Response> {
+      const entry = await ctx.requireReadableSession(sessionUuid);
+      if (!entry) return this.sessionGateMiss(sessionUuid);
+      const body = (await request.json().catch(() => ({}))) as {
+        last_seen_seq?: number;
+        auth_snapshot?: IngressAuthSnapshot;
+      };
+      const authSnapshot = isAuthSnapshot(body.auth_snapshot) ? body.auth_snapshot : null;
+      const gatedEntry = await this.enforceSessionDevice(sessionUuid, entry, authSnapshot);
+      if (gatedEntry instanceof Response) return gatedEntry;
+      const acknowledged = gatedEntry.relay_cursor;
+      return jsonResponse(200, {
+        ok: true,
+        data: {
+          session_uuid: sessionUuid,
+          status: gatedEntry.status,
+          last_phase: gatedEntry.last_phase,
+          relay_cursor: acknowledged,
+          replay_lost:
+            typeof body.last_seen_seq === "number" && body.last_seen_seq > acknowledged,
+        },
+      });
+    },
+
+    async handlePermissionDecision(
+      sessionUuid: string,
+      body: Record<string, unknown>,
+    ): Promise<Response> {
+      const requestUuid = body.request_uuid;
+      const decision = body.decision;
+      const scope = typeof body.scope === "string" ? body.scope : "once";
+      const uuidRe =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      if (typeof requestUuid !== "string" || !uuidRe.test(requestUuid)) {
+        return jsonResponse(400, {
+          error: "invalid-input",
+          message: "permission/decision requires a UUID request_uuid",
+        });
+      }
+      if (
+        decision !== "allow" &&
+        decision !== "deny" &&
+        decision !== "always_allow" &&
+        decision !== "always_deny"
+      ) {
+        return jsonResponse(400, {
+          error: "invalid-input",
+          message: "decision must be allow|deny|always_allow|always_deny",
+        });
+      }
+      await ctx.put(`permission_decision/${requestUuid}`, {
+        session_uuid: sessionUuid,
+        request_uuid: requestUuid,
+        decision,
+        scope,
+        decided_at: new Date().toISOString(),
+      });
+
+      const rpcDecision = ctx.env.AGENT_CORE?.permissionDecision;
+      const authority = await ctx.get<IngressAuthSnapshot>(USER_AUTH_SNAPSHOT_KEY);
+      if (typeof rpcDecision === "function" && authority) {
+        try {
+          await rpcDecision(
+            {
+              session_uuid: sessionUuid,
+              request_uuid: requestUuid,
+              decision,
+              scope,
+            },
+            {
+              trace_uuid: crypto.randomUUID(),
+              authority,
+            },
+          );
+        } catch (error) {
+          console.warn(
+            `permission-decision-forward-failed session=${sessionUuid} request=${requestUuid}`,
+            { tag: "permission-decision-forward-failed", error: String(error) },
+          );
+        }
+      }
+
+      return jsonResponse(200, {
+        ok: true,
+        data: { request_uuid: requestUuid, decision, scope },
+      });
+    },
+
+    async handleElicitationAnswer(
+      sessionUuid: string,
+      body: Record<string, unknown>,
+    ): Promise<Response> {
+      const requestUuid = body.request_uuid;
+      const uuidRe =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      if (typeof requestUuid !== "string" || !uuidRe.test(requestUuid)) {
+        return jsonResponse(400, {
+          error: "invalid-input",
+          message: "elicitation/answer requires a UUID request_uuid",
+        });
+      }
+      const answer = body.answer;
+      if (answer === undefined) {
+        return jsonResponse(400, {
+          error: "invalid-input",
+          message: "elicitation/answer requires an answer field",
+        });
+      }
+      await ctx.put(`elicitation_answer/${requestUuid}`, {
+        session_uuid: sessionUuid,
+        request_uuid: requestUuid,
+        answer,
+        decided_at: new Date().toISOString(),
+      });
+
+      const rpc = ctx.env.AGENT_CORE?.elicitationAnswer;
+      const authority = await ctx.get<IngressAuthSnapshot>(USER_AUTH_SNAPSHOT_KEY);
+      if (typeof rpc === "function" && authority) {
+        try {
+          await rpc(
+            {
+              session_uuid: sessionUuid,
+              request_uuid: requestUuid,
+              answer,
+            },
+            {
+              trace_uuid: crypto.randomUUID(),
+              authority,
+            },
+          );
+        } catch (error) {
+          console.warn(
+            `elicitation-answer-forward-failed session=${sessionUuid} request=${requestUuid}`,
+            { tag: "elicitation-answer-forward-failed", error: String(error) },
+          );
+        }
+      }
+
+      return jsonResponse(200, {
+        ok: true,
+        data: { request_uuid: requestUuid, answer },
+      });
+    },
+
+    isAllowedSessionImageUrl(sessionUuid: string, rawUrl: string): boolean {
+      if (rawUrl.startsWith(`/sessions/${sessionUuid}/files/`) && rawUrl.endsWith("/content")) {
+        return true;
+      }
+      if (rawUrl.startsWith(`nano-file://${sessionUuid}/`)) {
+        return true;
+      }
+      try {
+        const url = new URL(rawUrl);
+        return (
+          url.pathname.startsWith(`/sessions/${sessionUuid}/files/`) &&
+          url.pathname.endsWith("/content")
+        );
+      } catch {
+        return false;
+      }
+    },
+
+    async requireAllowedModel(
+      authSnapshot: IngressAuthSnapshot,
+      modelId: string,
+    ): Promise<Response | null> {
+      const teamUuid = authSnapshot.team_uuid ?? authSnapshot.tenant_uuid;
+      if (typeof teamUuid !== "string" || teamUuid.length === 0) {
+        return jsonResponse(403, {
+          error: "missing-team-claim",
+          message: "team_uuid missing from auth snapshot",
+        });
+      }
+      const db = ctx.env.NANO_AGENT_DB;
+      if (!db) return null;
+      const model = await db
+        .prepare(`SELECT model_id, status FROM nano_models WHERE model_id = ?1 LIMIT 1`)
+        .bind(modelId)
+        .first<{ model_id: string; status: string }>();
+      if (!model || model.status !== "active") {
+        return jsonResponse(400, {
+          error: "model-unavailable",
+          message: "requested model is not active",
+        });
+      }
+      const policy = await db
+        .prepare(
+          `SELECT allowed FROM nano_team_model_policy WHERE team_uuid = ?1 AND model_id = ?2 LIMIT 1`,
+        )
+        .bind(teamUuid, modelId)
+        .first<{ allowed: number }>();
+      if (policy && Number(policy.allowed) === 0) {
+        return jsonResponse(403, {
+          error: "model-disabled",
+          message: "requested model is disabled for this team",
+        });
+      }
+      return null;
+    },
+
+    async handleFiles(sessionUuid: string): Promise<Response> {
+      const entry = await ctx.requireReadableSession(sessionUuid);
+      if (!entry) return this.sessionGateMiss(sessionUuid);
+
+      const repo = ctx.sessionTruth();
+      if (!repo) {
+        return jsonResponse(200, {
+          ok: true,
+          action: "files",
+          session_uuid: sessionUuid,
+          files: [],
+        });
+      }
+      const messages = await repo.readHistory(sessionUuid);
+      const files: Array<{
+        message_uuid: string;
+        turn_uuid: string | null;
+        message_kind: string;
+        artifact_uuid: string;
+        mime: string | null;
+        summary: string | null;
+        created_at: string;
+      }> = [];
+      for (const msg of messages) {
+        const body = msg.body as {
+          parts?: Array<{
+            kind?: string;
+            artifact_uuid?: string;
+            mime?: string;
+            summary?: string;
+          }>;
+        };
+        if (!Array.isArray(body?.parts)) continue;
+        for (const part of body.parts) {
+          if (part.kind === "artifact_ref" && typeof part.artifact_uuid === "string") {
+            files.push({
+              message_uuid: msg.message_uuid,
+              turn_uuid: msg.turn_uuid,
+              message_kind: msg.kind,
+              artifact_uuid: part.artifact_uuid,
+              mime: typeof part.mime === "string" ? part.mime : null,
+              summary: typeof part.summary === "string" ? part.summary : null,
+              created_at: msg.created_at,
+            });
+          }
+        }
+      }
+      return jsonResponse(200, {
+        ok: true,
+        action: "files",
+        session_uuid: sessionUuid,
+        files,
+      });
+    },
+
+    async handlePolicyPermissionMode(
+      sessionUuid: string,
+      body: Record<string, unknown>,
+    ): Promise<Response> {
+      const mode = body.mode;
+      if (
+        mode !== "auto-allow" &&
+        mode !== "ask" &&
+        mode !== "deny" &&
+        mode !== "always_allow"
+      ) {
+        return jsonResponse(400, {
+          error: "invalid-input",
+          message: "mode must be auto-allow|ask|deny|always_allow",
+        });
+      }
+      await ctx.put(`permission_mode/${sessionUuid}`, {
+        session_uuid: sessionUuid,
+        mode,
+        set_at: new Date().toISOString(),
+      });
+      return jsonResponse(200, {
+        ok: true,
+        data: { session_uuid: sessionUuid, mode },
+      });
+    },
+
+    async handleMeSessions(): Promise<Response> {
+      const conversations =
+        (await ctx.get<ConversationIndexItem[]>(CONVERSATION_INDEX_KEY)) ?? [];
+      type Item = {
+        conversation_uuid: string;
+        session_uuid: string;
+        status: string;
+        last_phase: string | null;
+        last_seen_at: string;
+        created_at: string | null;
+        ended_at: string | null;
+      };
+      const bySessionUuid = new Map<string, Item>();
+      for (const conv of conversations) {
+        const entry = await ctx.get<SessionEntry>(sessionKey(conv.latest_session_uuid));
+        bySessionUuid.set(conv.latest_session_uuid, {
+          conversation_uuid: conv.conversation_uuid,
+          session_uuid: conv.latest_session_uuid,
+          status: entry?.status ?? conv.status,
+          last_phase: entry?.last_phase ?? null,
+          last_seen_at: entry?.last_seen_at ?? conv.updated_at,
+          created_at: entry?.created_at ?? null,
+          ended_at: entry?.ended_at ?? null,
+        });
+      }
+
+      const repo = ctx.sessionTruth();
+      const authority = await ctx.get<IngressAuthSnapshot>(USER_AUTH_SNAPSHOT_KEY);
+      if (repo && authority) {
+        const teamUuid = authority.team_uuid ?? authority.tenant_uuid;
+        const actorUserUuid = authority.user_uuid ?? authority.sub;
+        if (typeof teamUuid === "string" && teamUuid.length > 0) {
+          try {
+            const rows = await repo.listSessionsForUser({
+              team_uuid: teamUuid,
+              actor_user_uuid: actorUserUuid,
+              limit: 50,
+            });
+            for (const row of rows) {
+              const existing = bySessionUuid.get(row.session_uuid);
+              bySessionUuid.set(row.session_uuid, {
+                conversation_uuid: row.conversation_uuid,
+                session_uuid: row.session_uuid,
+                status: row.session_status,
+                last_phase: row.last_phase ?? existing?.last_phase ?? null,
+                last_seen_at: existing?.last_seen_at ?? row.started_at,
+                created_at: row.started_at,
+                ended_at: row.ended_at ?? existing?.ended_at ?? null,
+              });
+            }
+          } catch (error) {
+            console.warn("me-sessions-d1-merge-failed", {
+              tag: "me-sessions-d1-merge-failed",
+              error: String(error),
+            });
+          }
+        }
+      }
+
+      const items = Array.from(bySessionUuid.values()).sort((a, b) =>
+        (b.last_seen_at ?? "").localeCompare(a.last_seen_at ?? ""),
+      );
+      return jsonResponse(200, {
+        ok: true,
+        data: { sessions: items, next_cursor: null },
+      });
+    },
+
+    async handleMeConversations(
+      limit: number,
+      headerAuthority?: IngressAuthSnapshot | null,
+    ): Promise<Response> {
+      const repo = ctx.sessionTruth();
+      const authority =
+        headerAuthority ?? (await ctx.get<IngressAuthSnapshot>(USER_AUTH_SNAPSHOT_KEY));
+      if (!repo || !authority) {
+        return jsonResponse(200, {
+          ok: true,
+          data: { conversations: [], next_cursor: null },
+        });
+      }
+      const teamUuid = authority.team_uuid ?? authority.tenant_uuid;
+      const actorUserUuid = authority.user_uuid ?? authority.sub;
+      if (typeof teamUuid !== "string" || teamUuid.length === 0) {
+        return jsonResponse(200, {
+          ok: true,
+          data: { conversations: [], next_cursor: null },
+        });
+      }
+
+      type Conversation = {
+        conversation_uuid: string;
+        latest_session_uuid: string;
+        latest_status: string;
+        started_at: string;
+        latest_session_started_at: string;
+        last_seen_at: string;
+        last_phase: string | null;
+        session_count: number;
+      };
+
+      let rows: Awaited<ReturnType<typeof repo.listSessionsForUser>> = [];
+      try {
+        rows = await repo.listSessionsForUser({
+          team_uuid: teamUuid,
+          actor_user_uuid: actorUserUuid,
+          limit: 200,
+        });
+      } catch (error) {
+        console.warn("me-conversations-d1-read-failed", {
+          tag: "me-conversations-d1-read-failed",
+          error: String(error),
+        });
+        return jsonResponse(200, {
+          ok: true,
+          data: { conversations: [], next_cursor: null },
+        });
+      }
+
+      const byConv = new Map<string, Conversation>();
+      for (const row of rows) {
+        const existing = byConv.get(row.conversation_uuid);
+        if (!existing) {
+          byConv.set(row.conversation_uuid, {
+            conversation_uuid: row.conversation_uuid,
+            latest_session_uuid: row.session_uuid,
+            latest_status: row.session_status,
+            started_at: row.started_at,
+            latest_session_started_at: row.started_at,
+            last_seen_at: row.started_at,
+            last_phase: row.last_phase ?? null,
+            session_count: 1,
+          });
+          continue;
+        }
+        existing.session_count += 1;
+        if (row.started_at < existing.started_at) {
+          existing.started_at = row.started_at;
+        }
+      }
+
+      const conversations = Array.from(byConv.values())
+        .sort((a, b) =>
+          b.latest_session_started_at.localeCompare(a.latest_session_started_at),
+        )
+        .slice(0, limit);
+
+      return jsonResponse(200, {
+        ok: true,
+        data: { conversations, next_cursor: null },
+      });
+    },
+  };
+}
