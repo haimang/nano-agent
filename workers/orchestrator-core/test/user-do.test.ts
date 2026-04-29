@@ -136,7 +136,8 @@ describe('NanoOrchestratorUserDO', () => {
       }),
     );
 
-    expect(response.status).toBe(200);
+    const responseBody = await response.clone().json().catch(() => null);
+    expect(response.status, JSON.stringify(responseBody)).toBe(200);
     const body = (await response.json()) as Record<string, unknown>;
     expect(body.ok).toBe(true);
     expect(body.status).toBe('detached');
@@ -148,6 +149,80 @@ describe('NanoOrchestratorUserDO', () => {
       relay_cursor: -1,
       ended_at: null,
       device_uuid: null,
+    });
+  });
+
+  it('accepts RH5 image_url/model/reasoning messages and forwards full payload to agent-core', async () => {
+    const { state, store } = createState();
+    store.set(`sessions/${SESSION_UUID}`, {
+      created_at: 'a',
+      last_seen_at: 'a',
+      status: 'detached',
+      last_phase: 'attached',
+      relay_cursor: -1,
+      ended_at: null,
+    });
+    store.set(USER_AUTH_SNAPSHOT_KEY, {
+      sub: USER_UUID,
+      team_uuid: 'team-1',
+      tenant_uuid: 'team-1',
+      tenant_source: 'jwt',
+    });
+    let forwarded: Record<string, unknown> | null = null;
+    const userDo = new NanoOrchestratorUserDO(state, {
+      AGENT_CORE: {
+        fetch: async (request: Request) => {
+          const pathname = new URL(request.url).pathname;
+          if (pathname.endsWith('/input')) return Response.json({ ok: true, action: 'input' });
+          if (pathname.endsWith('/stream')) {
+            return new Response(
+              makeNdjson([
+                JSON.stringify({ kind: 'meta', seq: 0, event: 'opened', session_uuid: SESSION_UUID }),
+              ]),
+              { headers: { 'Content-Type': 'application/x-ndjson' } },
+            );
+          }
+          return Response.json({ ok: true });
+        },
+        start: async () => ({ status: 200, body: { ok: true, action: 'start' } }),
+        input: async (input: Record<string, unknown>) => {
+          forwarded = input;
+          return { status: 200, body: { ok: true, action: 'input' } };
+        },
+      },
+      NANO_INTERNAL_BINDING_SECRET: 'secret',
+    });
+
+    const response = await userDo.fetch(
+      new Request(`https://orchestrator.internal/sessions/${SESSION_UUID}/messages`, {
+        method: 'POST',
+        body: JSON.stringify({
+          model_id: '@cf/meta/llama-4-scout-17b-16e-instruct',
+          reasoning: { effort: 'high' },
+          parts: [
+            { kind: 'text', text: 'describe' },
+            { kind: 'image_url', url: `/sessions/${SESSION_UUID}/files/file-1/content`, mime: 'image/png' },
+          ],
+          auth_snapshot: {
+            sub: USER_UUID,
+            team_uuid: 'team-1',
+            tenant_uuid: 'team-1',
+            tenant_source: 'jwt',
+          },
+        }),
+      }),
+    );
+
+    const responseBody = await response.clone().json().catch(() => null);
+    expect(response.status, JSON.stringify(responseBody)).toBe(200);
+    expect(forwarded).toMatchObject({
+      text: `describe\n[image:/sessions/${SESSION_UUID}/files/file-1/content]`,
+      model_id: '@cf/meta/llama-4-scout-17b-16e-instruct',
+      reasoning: { effort: 'high' },
+      parts: [
+        { kind: 'text', text: 'describe' },
+        { kind: 'image_url', url: `/sessions/${SESSION_UUID}/files/file-1/content`, mime: 'image/png' },
+      ],
     });
   });
 

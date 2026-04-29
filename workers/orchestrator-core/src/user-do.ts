@@ -1520,7 +1520,26 @@ export class NanoOrchestratorUserDO {
       return sessionTerminalResponse(sessionUuid, await this.getTerminal(sessionUuid));
     }
 
-    // parse parts
+    const modelId = typeof body.model_id === 'string' && /^[a-z0-9@/._-]{1,120}$/i.test(body.model_id)
+      ? body.model_id
+      : undefined;
+    if (body.model_id !== undefined && !modelId) {
+      return jsonResponse(400, {
+        error: 'invalid-input',
+        message: 'model_id has invalid format',
+      });
+    }
+    let reasoning: { effort: 'low' | 'medium' | 'high' } | undefined;
+    if (body.reasoning !== undefined) {
+      if (!body.reasoning || typeof body.reasoning !== 'object' || Array.isArray(body.reasoning)) {
+        return jsonResponse(400, { error: 'invalid-input', message: 'reasoning requires effort' });
+      }
+      const effort = (body.reasoning as Record<string, unknown>).effort;
+      if (effort !== 'low' && effort !== 'medium' && effort !== 'high') {
+        return jsonResponse(400, { error: 'invalid-input', message: 'reasoning effort must be low, medium, or high' });
+      }
+      reasoning = { effort };
+    }
     const partsRaw = body.parts;
     if (!Array.isArray(partsRaw) || partsRaw.length === 0) {
       return jsonResponse(400, {
@@ -1529,10 +1548,12 @@ export class NanoOrchestratorUserDO {
       });
     }
     const parts: Array<{
-      kind: 'text' | 'artifact_ref';
+      kind: 'text' | 'artifact_ref' | 'image_url';
       text?: string;
       artifact_uuid?: string;
+      url?: string;
       mime?: string;
+      mimeType?: string;
       summary?: string;
     }> = [];
     for (const raw of partsRaw) {
@@ -1541,10 +1562,10 @@ export class NanoOrchestratorUserDO {
       }
       const part = raw as Record<string, unknown>;
       if (part.kind === 'text') {
-        if (typeof part.text !== 'string' || part.text.length === 0) {
+        if (typeof part.text !== 'string' || part.text.length === 0 || part.text.length > 32768) {
           return jsonResponse(400, { error: 'invalid-input', message: 'text part requires non-empty text' });
         }
-        parts.push({ kind: 'text', text: part.text });
+        parts.push({ kind: 'text', text: part.text as string });
         continue;
       }
       if (part.kind === 'artifact_ref') {
@@ -1553,15 +1574,30 @@ export class NanoOrchestratorUserDO {
         }
         parts.push({
           kind: 'artifact_ref',
-          artifact_uuid: part.artifact_uuid,
+          artifact_uuid: part.artifact_uuid as string,
           ...(typeof part.mime === 'string' ? { mime: part.mime } : {}),
           ...(typeof part.summary === 'string' ? { summary: part.summary } : {}),
         });
         continue;
       }
-      return jsonResponse(400, {
-        error: 'invalid-input',
-        message: `unsupported part kind '${String(part.kind)}'; expected 'text' | 'artifact_ref'`,
+      if (part.kind !== 'image_url' || typeof part.url !== 'string' || part.url.length === 0 || part.url.length > 2048) {
+        return jsonResponse(400, {
+          error: 'invalid-input',
+          message: `unsupported part kind '${String(part.kind)}'; expected 'text' | 'artifact_ref' | 'image_url'`,
+        });
+      }
+      const url = part.url as string;
+      if (!this.isAllowedSessionImageUrl(sessionUuid, url)) {
+        return jsonResponse(400, {
+          error: 'invalid-input',
+          message: 'image_url must reference this session file content endpoint',
+        });
+      }
+      parts.push({
+        kind: 'image_url',
+        url,
+        ...(typeof part.mime === 'string' ? { mime: part.mime } : {}),
+        ...(typeof part.mimeType === 'string' ? { mimeType: part.mimeType } : {}),
       });
     }
 
@@ -1579,6 +1615,10 @@ export class NanoOrchestratorUserDO {
         body.auth_snapshot as IngressAuthSnapshot,
         body.initial_context_seed as InitialContextSeed | undefined,
       );
+    }
+    if (modelId) {
+      const modelGate = await this.requireAllowedModel(authSnapshot, modelId);
+      if (modelGate) return modelGate;
     }
     const gatedEntry = await this.enforceSessionDevice(sessionUuid, entry, authSnapshot);
     if (gatedEntry instanceof Response) return gatedEntry;
@@ -1635,7 +1675,9 @@ export class NanoOrchestratorUserDO {
       .map((p) =>
         p.kind === 'text'
           ? (p.text ?? '')
-          : `[artifact:${p.artifact_uuid}${p.summary ? `|${p.summary}` : ''}]`,
+          : p.kind === 'artifact_ref'
+            ? `[artifact:${p.artifact_uuid}${p.summary ? `|${p.summary}` : ''}]`
+            : `[image:${p.url}]`,
       )
       .filter((s) => s.length > 0)
       .join('\n');
@@ -1643,10 +1685,12 @@ export class NanoOrchestratorUserDO {
       sessionUuid,
       'input',
       {
-        text: combinedText,
-        parts,
-        message_kind: messageKind,
-        ...(body.context_ref !== undefined ? { context_ref: body.context_ref } : {}),
+         text: combinedText,
+         parts,
+         message_kind: messageKind,
+         ...(modelId ? { model_id: modelId } : {}),
+         ...(reasoning ? { reasoning } : {}),
+         ...(body.context_ref !== undefined ? { context_ref: body.context_ref } : {}),
         ...(typeof body.stream_seq === 'number' ? { stream_seq: body.stream_seq } : {}),
         ...(typeof body.trace_uuid === 'string' ? { trace_uuid: body.trace_uuid } : {}),
         authority: authSnapshot,
@@ -1719,6 +1763,46 @@ export class NanoOrchestratorUserDO {
       part_count: parts.length,
       turn_uuid: durableTurn?.turn_uuid ?? null,
     });
+  }
+
+  private isAllowedSessionImageUrl(sessionUuid: string, rawUrl: string): boolean {
+    if (rawUrl.startsWith(`/sessions/${sessionUuid}/files/`) && rawUrl.endsWith('/content')) {
+      return true;
+    }
+    if (rawUrl.startsWith(`nano-file://${sessionUuid}/`)) {
+      return true;
+    }
+    try {
+      const url = new URL(rawUrl);
+      return url.pathname.startsWith(`/sessions/${sessionUuid}/files/`) && url.pathname.endsWith('/content');
+    } catch {
+      return false;
+    }
+  }
+
+  private async requireAllowedModel(
+    authSnapshot: IngressAuthSnapshot,
+    modelId: string,
+  ): Promise<Response | null> {
+    const teamUuid = authSnapshot.team_uuid ?? authSnapshot.tenant_uuid;
+    if (typeof teamUuid !== 'string' || teamUuid.length === 0) {
+      return jsonResponse(403, { error: 'missing-team-claim', message: 'team_uuid missing from auth snapshot' });
+    }
+    const db = this.env.NANO_AGENT_DB;
+    if (!db) return null;
+    const model = await db.prepare(
+      `SELECT model_id, status FROM nano_models WHERE model_id = ?1 LIMIT 1`,
+    ).bind(modelId).first<{ model_id: string; status: string }>();
+    if (!model || model.status !== 'active') {
+      return jsonResponse(400, { error: 'model-unavailable', message: 'requested model is not active' });
+    }
+    const policy = await db.prepare(
+      `SELECT allowed FROM nano_team_model_policy WHERE team_uuid = ?1 AND model_id = ?2 LIMIT 1`,
+    ).bind(teamUuid, modelId).first<{ allowed: number }>();
+    if (policy && Number(policy.allowed) === 0) {
+      return jsonResponse(403, { error: 'model-disabled', message: 'requested model is disabled for this team' });
+    }
+    return null;
   }
 
   // ZX5 Lane D D4 — GET /sessions/{id}/files.
