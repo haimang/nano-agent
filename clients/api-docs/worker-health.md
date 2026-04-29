@@ -1,80 +1,75 @@
-# Worker health API
+# Worker Health API — ZX5 Snapshot
 
 > Public facade owner: `orchestrator-core`
 > Profile: `debug-health`
-> 说明: **debug / ops 接口，不是业务 facade envelope**
+> **debug / ops 接口，不是业务 facade envelope**
 
-## Base URLs
+---
 
-| 环境 | Base URL |
-|---|---|
-| preview | `https://nano-agent-orchestrator-core-preview.haimang.workers.dev` |
-| production | `https://nano-agent-orchestrator-core.haimang.workers.dev` |
+## `GET /debug/workers/health`
 
-## Route
+### Request
+```http
+GET /debug/workers/health HTTP/1.1
+```
+No auth required.
 
-| Route | Method | Auth |
-|---|---|---|
-| `/debug/workers/health` | `GET` | no |
-
-## Response shape
-
-> 注意：这个接口**不是** `{ ok:true, data, trace_uuid }`。当前真实返回就是下面这种 debug JSON：
-
+### Response (200)
 ```json
 {
   "ok": true,
   "environment": "preview",
-  "generated_at": "2026-04-25T00:00:00.000Z",
-  "summary": {
-    "live": 6,
-    "total": 6
-  },
+  "generated_at": "2026-04-29T00:00:00.000Z",
+  "summary": { "live": 6, "total": 6 },
   "workers": [
-    {
-      "worker": "orchestrator-core",
-      "live": true,
-      "status": "ok",
-      "worker_version": "orchestrator-core@preview",
-      "details": {
-        "worker": "orchestrator-core",
-        "status": "ok",
-        "phase": "orchestration-facade-closed",
-        "public_facade": true
-      }
-    }
+    { "worker": "orchestrator-core", "live": true, "status": "ok", "worker_version": "1.0.0" },
+    { "worker": "orchestrator-auth", "live": true, "status": "ok", "worker_version": "1.0.0" },
+    { "worker": "agent-core", "live": true, "status": "ok", "worker_version": "1.0.0" },
+    { "worker": "bash-core", "live": true, "status": "ok", "worker_version": "1.0.0" },
+    { "worker": "context-core", "live": true, "status": "ok", "worker_version": "1.0.0" },
+    { "worker": "filesystem-core", "live": true, "status": "ok", "worker_version": "1.0.0" }
   ]
 }
 ```
 
-## Worker set
+### Response (degraded — some workers unhealthy)
+```json
+{
+  "ok": true,
+  "environment": "preview",
+  "generated_at": "...",
+  "summary": { "live": 4, "total": 6 },
+  "workers": [
+    { "worker": "bash-core", "live": false, "status": "http-502", "error": "Bad Gateway" },
+    ...
+  ]
+}
+```
 
-当前固定聚合 6 个 worker：
+### Field Reference
 
-1. `orchestrator-core`
-2. `orchestrator-auth`
-3. `agent-core`
-4. `bash-core`
-5. `context-core`
-6. `filesystem-core`
+| 字段 | 说明 |
+|------|------|
+| `environment` | 部署环境 (preview/production) |
+| `generated_at` | 快照生成时间 (ISO) |
+| `summary.live` | 健康的 worker 数 |
+| `summary.total` | 总 worker 数 (恒为 6) |
+| `workers[].worker` | worker 名称 |
+| `workers[].live` | 是否健康 |
+| `workers[].status` | `ok` / `binding-missing` / `unreachable` / `http-<status>` |
+| `workers[].worker_version` | worker 版本号 |
+| `workers[].error` | 仅 probe 失败时出现 |
 
-## Field notes
+### Worker Set
+Fixed aggregation of 6 workers:
+- `orchestrator-core` (public facade)
+- `orchestrator-auth` (auth RPC)
+- `agent-core` (runtime host)
+- `bash-core` (capability engine)
+- `context-core` (library worker)
+- `filesystem-core` (library worker)
 
-| Field | 含义 |
-|---|---|
-| `summary.live` | `live === true` 的 worker 数量 |
-| `summary.total` | 当前探测集合总数 |
-| `worker` | worker 名称 |
-| `live` | probe 成功且 worker 自报 `status === "ok"` |
-| `status` | `ok` / `binding-missing` / `unreachable` / `http-<status>` |
-| `worker_version` | worker 自报版本；缺失时为 `null` |
-| `details` | worker 原始 probe body；便于 debug |
-| `error` | 仅在探测失败时出现 |
-
-## Intended use
-
-- 前端 debug 面板
-- preview / production deploy 后的肉眼确认
-- 非业务监控 UI
-
-不要把它当成业务 API 的可用性真相源，也不要拿它替代真正的 session / auth 状态查询。
+### Intended Use
+- Frontend debug panel / connection-status indicator
+- Post-deploy visual confirmation
+- NOT a business API health source or SLO metric

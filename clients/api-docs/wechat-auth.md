@@ -1,47 +1,50 @@
-# WeChat auth API
+# WeChat Auth API — ZX5 Snapshot
 
 > Public facade owner: `orchestrator-core`
 > Profile: `facade-http-v1`
+> 后端: proxy to `orchestrator-auth` → WeChat `jscode2session` API
 
-## Base URLs
-
-| 环境 | Base URL |
-|---|---|
-| preview | `https://nano-agent-orchestrator-core-preview.haimang.workers.dev` |
-| production | `https://nano-agent-orchestrator-core.haimang.workers.dev` |
+---
 
 ## Route
 
 | Route | Method | Auth |
-|---|---|---|
-| `/auth/wechat/login` | `POST` | no |
+|-------|--------|------|
+| `/auth/wechat/login` | `POST` | none |
 
-## Request
+---
 
+## `POST /auth/wechat/login`
+
+### Request
 ```http
-POST /auth/wechat/login
-content-type: application/json
-x-trace-uuid: 11111111-1111-4111-8111-111111111111
+POST /auth/wechat/login HTTP/1.1
+x-trace-uuid: <uuid>
+Content-Type: application/json
 
 {
-  "code": "021x...",
-  "encrypted_data": "CiyLU1Aw2KjvrjMdj8YKliAjtP4gsMZM...",
-  "iv": "r7BXXKkLb8qrSNn05n0qiA==",
-  "display_name": "Mini User"
+  "code": "wx-auth-code-from-wx.login()",
+  "encrypted_data": "optional-encrypted-data",
+  "iv": "optional-iv",
+  "display_name": "WeChat User"
 }
 ```
 
-## Field policy
+| 字段 | 必填 | 说明 |
+|------|------|------|
+| `code` | ✅ | 微信 `wx.login()` 返回的临时 auth code |
+| `encrypted_data` | no | 微信加密 profile（需与 `iv` 配对） |
+| `iv` | no | 解密向量（需与 `encrypted_data` 配对） |
+| `display_name` | no | fallback 显示名称 |
 
-| Field | 当前事实 |
-|---|---|
-| `code` | 必填 |
-| `encrypted_data` + `iv` | 要么都传，要么都不传；只传一个会被 schema reject |
-| `display_name` | 仅 bootstrap fallback；若 decrypt 成功，以解密资料优先 |
+### Field Policy
 
-## Success envelope
+- `encrypted_data` + `iv`：必须同时提供或同时省略
+- `display_name`：仅作为 fallback；若解密成功，优先使用解密后的昵称
 
-成功形状与邮箱注册/登录相同，返回 `tokens + user + team + snapshot`：
+### Success (200) — `AuthFlowResult`
+
+返回与 `register` / `login` / `refresh` 相同的 `AuthFlowResult` 形状：
 
 ```json
 {
@@ -49,58 +52,66 @@ x-trace-uuid: 11111111-1111-4111-8111-111111111111
   "data": {
     "tokens": {
       "access_token": "eyJ...",
-      "refresh_token": "opaque-refresh-token",
+      "refresh_token": "opaque-token",
       "expires_in": 3600,
       "refresh_expires_in": 2592000,
       "kid": "v1"
     },
     "user": {
-      "user_uuid": "11111111-1111-4111-8111-111111111111",
-      "display_name": "小程序用户",
+      "user_uuid": "...",
+      "display_name": "WeChat User",
       "identity_provider": "wechat",
-      "login_identifier": "openid:abc"
+      "login_identifier": "oxxx..."
     },
     "team": {
-      "team_uuid": "22222222-2222-4222-8222-222222222222",
+      "team_uuid": "...",
       "membership_level": 100,
       "plan_level": 0
     },
     "snapshot": {
-      "sub": "11111111-1111-4111-8111-111111111111",
-      "user_uuid": "11111111-1111-4111-8111-111111111111",
-      "team_uuid": "22222222-2222-4222-8222-222222222222",
-      "tenant_uuid": "22222222-2222-4222-8222-222222222222",
+      "sub": "...",
+      "user_uuid": "...",
+      "team_uuid": "...",
+      "tenant_uuid": "...",
       "tenant_source": "claim",
       "membership_level": 100,
+      "source_name": "orchestrator.auth",
       "exp": 1760000000
     }
   },
-  "trace_uuid": "11111111-1111-4111-8111-111111111111"
+  "trace_uuid": "..."
 }
 ```
 
-## Server-side flow
+### Server-Side Flow
 
-1. `code -> jscode2session`
-2. 拿到 `openid + session_key`
-3. 若请求携带 `encrypted_data + iv`，服务端解密 profile
-4. 若解密 profile 中的 `openid` 与 `jscode2session.openid` 不一致，返回 `invalid-wechat-payload`
-5. 命中已有 wechat identity 则复用；否则 bootstrap 新用户并签发 tokens
+1. `code` → WeChat `jscode2session` API → 获取 `openid` + `session_key`
+2. 若有 `encrypted_data` + `iv` → 解密用户 profile
+3. 校验 decrypted openid 与 `jscode2session` openid 一致
+4. 查找 / 创建 identity（provider=`wechat`）
+5. Bootstrap 或复用 user + team
+6. 签发 access token + refresh token
 
-## Common errors
+### Stable Runtime Errors
 
-| HTTP | `error.code` | 触发 |
-|---|---|---|
-| 400 | `invalid-request` | body 不通过 schema 校验 |
-| 400 / 502 / 504 | `invalid-wechat-code` | `code` 无效、微信接口失败或超时 |
-| 400 | `invalid-wechat-payload` | `encrypted_data/iv` 半缺失、解密失败、或解密 `openid` 不一致 |
-| 503 | `worker-misconfigured` | 缺 `WECHAT_APPID/WECHAT_SECRET` 或数据库配置 |
+| HTTP | error.code | 触发 |
+|------|-----------|------|
+| 400 / 502 / 504 | `invalid-wechat-code` | code 无效、WeChat 响应异常、上游超时 |
+| 400 | `invalid-wechat-payload` | encrypted payload 解密失败、watermark appid 不匹配、openid 不一致 |
+| 503 | `worker-misconfigured` | 缺 WeChat / D1 / JWT / salt 配置，或当前 wrapper 将 parser 错误归并为 503 |
 
-## Mini Program recommendation
+---
 
-推荐在用户点击“一键登录”后同时获取：
+## Environment Configuration (server-side)
 
-1. `wx.login()` 的 `code`
-2. `wx.getUserProfile()` 的 `encryptedData + iv + nickName`
+| Env Var | 说明 |
+|---------|------|
+| `WECHAT_APPID` | 微信小程序 AppID |
+| `WECHAT_SECRET` | 微信小程序 AppSecret |
+| `WECHAT_API_BASE_URL` | WeChat API base（默认 `https://api.weixin.qq.com/sns/jscode2session`） |
 
-然后一次性发给 `/auth/wechat/login`。这样可以避免 code-only fallback 导致的展示名不完整。
+---
+
+## Auth Mechanism
+
+WeChat login 使用 `identity_provider: "wechat"`，`login_identifier` 为 openid。返回的 JWT 与 email/password 登录返回的 JWT 等价，可用于所有 `Authorization: Bearer` 鉴权路由。

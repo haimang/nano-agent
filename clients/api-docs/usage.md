@@ -1,92 +1,106 @@
-# Usage API
+# Usage API — ZX5 Snapshot
 
 > Public facade owner: `orchestrator-core`
-> Profiles: `facade-http-v1` + reserved future `session-ws-v1` shapes
+> Profile: `facade-http-v1`
+> Auth: `Authorization: Bearer <access_token>`
+> Header: `x-trace-uuid: <uuid>`
 
-## Base URLs
-
-| 环境 | Base URL |
-|---|---|
-| preview | `https://nano-agent-orchestrator-core-preview.haimang.workers.dev` |
-| production | `https://nano-agent-orchestrator-core.haimang.workers.dev` |
-
-## Current live route
-
-| Route | Method | Auth |
-|---|---|---|
-| `/sessions/{sessionUuid}/usage` | `GET` | bearer |
+---
 
 ## `GET /sessions/{sessionUuid}/usage`
 
 ### Request
-
 ```http
-GET /sessions/11111111-1111-4111-8111-111111111111/usage
-authorization: Bearer <access_token>
-x-trace-uuid: 33333333-3333-4333-8333-333333333333
+GET /sessions/{sessionUuid}/usage HTTP/1.1
+Authorization: Bearer <access_token>
+x-trace-uuid: <uuid>
 ```
 
-### Success
-
+### Success (200)
 ```json
 {
   "ok": true,
   "data": {
-    "session_uuid": "11111111-1111-4111-8111-111111111111",
+    "session_uuid": "3333...",
     "status": "active",
     "usage": {
-      "llm_input_tokens": null,
-      "llm_output_tokens": null,
-      "tool_calls": null,
-      "subrequest_used": null,
-      "subrequest_budget": null,
+      "llm_input_tokens": 1280,
+      "llm_output_tokens": 342,
+      "tool_calls": 2,
+      "subrequest_used": 1624,
+      "subrequest_budget": 80000,
       "estimated_cost_usd": null
     },
-    "last_seen_at": "2026-04-27T08:00:00.000Z",
+    "last_seen_at": "2026-04-29T00:05:00.000Z",
     "durable_truth": {
-      "conversation_uuid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-      "session_uuid": "11111111-1111-4111-8111-111111111111",
+      "conversation_uuid": "4444...",
+      "session_uuid": "3333...",
+      "team_uuid": "2222...",
+      "actor_user_uuid": "1111...",
+      "trace_uuid": "aaaa...",
       "session_status": "active",
+      "started_at": "2026-04-29T00:00:00.000Z",
+      "ended_at": null,
       "last_phase": "turn_running",
-      "last_event_seq": 4,
-      "message_count": 2,
-      "activity_count": 5
+      "last_event_seq": 12,
+      "message_count": 12,
+      "activity_count": 5,
+      "latest_turn_uuid": "9999..."
     }
   },
-  "trace_uuid": "33333333-3333-4333-8333-333333333333"
+  "trace_uuid": "..."
 }
 ```
 
-### Current reality
+### Placeholder Shape
 
-这条接口现在是**稳定的 snapshot path**，但 usage 数值本身仍是 placeholder：
+当该 session 还没有任何 `nano_usage_events` 行时，`usage` 会退回到 null placeholder：
 
-- `llm_input_tokens`: `null`
-- `llm_output_tokens`: `null`
-- `tool_calls`: `null`
-- `subrequest_used`: `null`
-- `subrequest_budget`: `null`
-- `estimated_cost_usd`: `null`
+```json
+{
+  "llm_input_tokens": null,
+  "llm_output_tokens": null,
+  "tool_calls": null,
+  "subrequest_used": null,
+  "subrequest_budget": null,
+  "estimated_cost_usd": null
+}
+```
 
-因此客户端当前应把它理解成：
+### Field Reference
 
-1. session 是否存在、当前状态如何
-2. 可选 `durable_truth` 快照
-3. 为未来真实 usage 数值预留稳定字段位置
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `session_uuid` | string | 会话 UUID |
+| `status` | string | 当前 `SessionEntry.status`（starting / active / detached / ended） |
+| `usage.llm_input_tokens` | number\|null | `nano_usage_events` 中 `resource_kind='llm'` + `unit='input_token'` 的聚合 |
+| `usage.llm_output_tokens` | number\|null | `resource_kind='llm'` + `unit='output_token'` 的聚合 |
+| `usage.tool_calls` | number\|null | allow verdict 的 tool rows 数量 |
+| `usage.subrequest_used` | number\|null | allow verdict 的 `quantity` 总和 |
+| `usage.subrequest_budget` | number\|null | `nano_quota_balances(quota_kind='llm').remaining` |
+| `usage.estimated_cost_usd` | null | 当前固定为 `null` |
+| `last_seen_at` | string (ISO) | User DO session entry 的最后触碰时间 |
+| `durable_truth` | object\|null | D1 durable snapshot |
 
-而不是一个已经有真实预算数字的产品 API。
+### Behavior
 
-### Errors
+- endpoint 先构造 null placeholder usage
+- 若有 D1 binding 且能读到 durable `team_uuid`，则直接查询 D1：
+  - `nano_usage_events`
+  - `nano_quota_balances`
+- **当前没有独立的 KV hot usage snapshot merge 路径**
+- D1 读取失败只会 `warn`，不会让请求失败；此时仍返回 placeholder usage + durable snapshot
 
-| HTTP | `error.code` | 触发 |
-|---|---|---|
-| 401 | `invalid-auth` | bearer 缺失或无效 |
-| 404 | `session_missing` | session 不存在或不可读 |
+### Current Reality
 
-## WS live push status
+- **稳定部分**：`session_uuid`、`status`、`last_seen_at`、`durable_truth`
+- **usage 是否有数值**：取决于该 session 是否已有 D1 usage rows
+- **`estimated_cost_usd`**：当前恒为 `null`
 
-`@haimang/nacp-session` 已定义未来 `session.usage.update` body，但**当前 public WS 不会 live 发 usage update frame**。  
-因此：
+---
 
-- 当前前端若显示 usage，只能靠 `GET /sessions/{uuid}/usage`
-- 不要假设当前连接中的 WS 会持续推送 usage 数值
+## WS Live Push Status
+
+`session.usage.update` server frame live push —— **当前未 live**。
+
+唯一可用 usage 查询方式仍是 `GET /sessions/{id}/usage` HTTP polling。

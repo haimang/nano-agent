@@ -1,125 +1,186 @@
-# Permissions API
+# Permissions API — ZX5 Snapshot
 
 > Public facade owner: `orchestrator-core`
-> Profiles: `facade-http-v1` + reserved future `session-ws-v1` shapes
+> Profile: `facade-http-v1`
+> Auth: `Authorization: Bearer <access_token>`
+> Tenant guard: 需要 `TEAM_UUID` env + JWT 含 `team_uuid` / `tenant_uuid`
 
-## Base URLs
+---
 
-| 环境 | Base URL |
-|---|---|
-| preview | `https://nano-agent-orchestrator-core-preview.haimang.workers.dev` |
-| production | `https://nano-agent-orchestrator-core.haimang.workers.dev` |
+## Route Overview
 
-## Current live routes
+| Route | Method | Auth | 说明 |
+|-------|--------|------|------|
+| `/sessions/{id}/permission/decision` | `POST` | bearer | 提交 permission 决定 |
+| `/sessions/{id}/policy/permission_mode` | `POST` | bearer | 设置 permission 模式 |
+| `/sessions/{id}/elicitation/answer` | `POST` | bearer | 提交 elicitation 回答 |
 
-| Route | Method | Auth | 当前事实 |
-|---|---|---|---|
-| `/sessions/{sessionUuid}/permission/decision` | `POST` | bearer | 已实现；把 decision 记到 User DO hot state |
-| `/sessions/{sessionUuid}/policy/permission_mode` | `POST` | bearer | 已实现；把 mode 记到 User DO hot state |
+> ⚠️ **WS round-trip 未 live**：`session.permission.request` / `session.elicitation.request` 当前不会通过 public WS 下发。HTTP 路径是当前唯一 live 的 client API。
+
+---
+
+## Important Current Reality
+
+1. 这三条路由当前都会把 `sessionUuid` 当作**作用域 key** 使用。
+2. **它们当前不会校验 session 是否真实存在、是否 active、是否 terminal。**
+3. `permission/decision` 与 `elicitation/answer` 会先写 User DO KV，再 best-effort forward 到 agent-core RPC。
+4. runtime kernel 当前**不会等待**这些 decision / answer；wait-and-resume 基础设施在 DO 内部已存在，但 public runtime 尚未接上。
+
+---
 
 ## `POST /sessions/{sessionUuid}/permission/decision`
 
 ### Request
-
 ```http
-POST /sessions/11111111-1111-4111-8111-111111111111/permission/decision
-authorization: Bearer <access_token>
-content-type: application/json
-x-trace-uuid: 33333333-3333-4333-8333-333333333333
+POST /sessions/{sessionUuid}/permission/decision HTTP/1.1
+Authorization: Bearer <access_token>
+x-trace-uuid: <uuid>
+Content-Type: application/json
 
 {
-  "request_uuid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+  "request_uuid": "aaaa...",
   "decision": "allow",
   "scope": "once",
   "reason": "user approved"
 }
 ```
 
-### Success
+| 字段 | 必填 | 类型 | 说明 |
+|------|------|------|------|
+| `request_uuid` | ✅ | string (UUID) | permission request UUID |
+| `decision` | ✅ | `"allow"` \| `"deny"` \| `"always_allow"` \| `"always_deny"` | 决定 |
+| `scope` | no | string | 默认 `"once"` |
+| `reason` | no | string | 用户原因；当前仅透传，不参与判定 |
 
+### Success (200)
 ```json
 {
   "ok": true,
   "data": {
-    "request_uuid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "request_uuid": "aaaa...",
     "decision": "allow",
     "scope": "once"
   },
-  "trace_uuid": "33333333-3333-4333-8333-333333333333"
+  "trace_uuid": "..."
 }
 ```
 
-### Current reality
-
-这条接口当前会把 decision 写入 User DO hot state：
-
-- key: `permission_decision/{request_uuid}`
-- value: `{ session_uuid, request_uuid, decision, scope, decided_at }`
-
-但它**还不会**把 decision 回流给正在运行中的 turn resolver。  
-也就是说：**HTTP decision path 当前是“记录能力已落地，runtime unblock 尚未落地”。**
+### Behavior
+1. 写 User DO KV: `permission_decision/{request_uuid}`
+2. Best-effort forward 到 agent-core `permissionDecision` RPC
+3. RPC 失败不影响用户面 200 ack
+4. 当前 runtime 不会等待该 decision
 
 ### Errors
+| HTTP | error.code | 触发 |
+|------|-----------|------|
+| 400 | `invalid-input` | `request_uuid` 缺失/非 UUID，或 `decision` 非法 |
+| 401 | `invalid-auth` | bearer token 无效 |
+| 403 | `missing-team-claim` | JWT 无 team truth |
+| 503 | `worker-misconfigured` | `TEAM_UUID` 未配置 |
 
-| HTTP | `error.code` | 触发 |
-|---|---|---|
-| 400 | `invalid-input` | `request_uuid` 非 UUID，或 `decision` 不合法 |
-| 401 | `invalid-auth` | bearer 缺失或无效 |
-
-> 当前实现**不会**校验 `sessionUuid` 是否真的存在；path param 目前更像命名空间而不是强一致校验点。
+---
 
 ## `POST /sessions/{sessionUuid}/policy/permission_mode`
 
 ### Request
-
 ```http
-POST /sessions/11111111-1111-4111-8111-111111111111/policy/permission_mode
-authorization: Bearer <access_token>
-content-type: application/json
-x-trace-uuid: 33333333-3333-4333-8333-333333333333
+POST /sessions/{sessionUuid}/policy/permission_mode HTTP/1.1
+Authorization: Bearer <access_token>
+x-trace-uuid: <uuid>
+Content-Type: application/json
 
 {
   "mode": "ask"
 }
 ```
 
-### Success
+| 字段 | 必填 | 类型 | 说明 |
+|------|------|------|------|
+| `mode` | ✅ | `"auto-allow"` \| `"ask"` \| `"deny"` \| `"always_allow"` | 当前支持的 mode |
 
+### Success (200)
 ```json
 {
   "ok": true,
   "data": {
-    "session_uuid": "11111111-1111-4111-8111-111111111111",
+    "session_uuid": "3333...",
     "mode": "ask"
   },
-  "trace_uuid": "33333333-3333-4333-8333-333333333333"
+  "trace_uuid": "..."
 }
 ```
 
-### Supported modes
+### Behavior
+- 写 User DO KV: `permission_mode/{sessionUuid}`
+- 当前不参与 runtime enforcement
+- 当前不校验 session 是否存在
 
-- `auto-allow`
-- `ask`
-- `deny`
-- `always_allow`
+### Errors
+| HTTP | error.code | 触发 |
+|------|-----------|------|
+| 400 | `invalid-input` | mode 非法 |
+| 401 | `invalid-auth` | bearer token 无效 |
+| 403 | `missing-team-claim` | JWT 无 team truth |
+| 503 | `worker-misconfigured` | `TEAM_UUID` 未配置 |
 
-### Current reality
+---
 
-当前 mode 也只是写入 User DO hot state：
+## `POST /sessions/{sessionUuid}/elicitation/answer`
 
-- key: `permission_mode/{sessionUuid}`
-- value: `{ session_uuid, mode, set_at }`
+### Request
+```http
+POST /sessions/{sessionUuid}/elicitation/answer HTTP/1.1
+Authorization: Bearer <access_token>
+x-trace-uuid: <uuid>
+Content-Type: application/json
 
-它还**没有**成为 agent runtime 的完整强制执行入口。
-
-## WS round-trip status
-
-`@haimang/nacp-session` 已经定义了未来的 WS shape：
-
-```text
-server -> client: session.permission.request
-client -> server: session.permission.decision
+{
+  "request_uuid": "bbbb...",
+  "answer": "use pandas"
+}
 ```
 
-但**当前 public WS 并不会 live 发出 `session.permission.request`**，也**不会真正消费**客户端通过 WS 发回的 `session.permission.decision`。  
-因此当前前端如果要写 permission UI，应把 HTTP 路径视为**唯一 live API**。
+| 字段 | 必填 | 类型 | 说明 |
+|------|------|------|------|
+| `request_uuid` | ✅ | string (UUID) | elicitation request UUID |
+| `answer` | ✅ | any | 回答内容 |
+
+### Success (200)
+```json
+{
+  "ok": true,
+  "data": {
+    "request_uuid": "bbbb...",
+    "answer": "use pandas"
+  },
+  "trace_uuid": "..."
+}
+```
+
+### Behavior
+1. 写 User DO KV: `elicitation_answer/{request_uuid}`
+2. Best-effort forward 到 agent-core `elicitationAnswer` RPC
+3. RPC 失败不影响用户面 200 ack
+4. 当前 runtime 不会等待该 answer
+
+### Errors
+| HTTP | error.code | 触发 |
+|------|-----------|------|
+| 400 | `invalid-input` | `request_uuid` 缺失/非 UUID，或 `answer` 缺失 |
+| 401 | `invalid-auth` | bearer token 无效 |
+| 403 | `missing-team-claim` | JWT 无 team truth |
+| 503 | `worker-misconfigured` | `TEAM_UUID` 未配置 |
+
+---
+
+## WS Round-Trip Status
+
+| 方向 | 能力 | 状态 |
+|------|------|------|
+| Server→Client | `session.permission.request` | **未 live** |
+| Client→Server | `session.permission.decision` | **未支持**（HTTP 替代） |
+| Server→Client | `session.elicitation.request` | **未 live** |
+| Client→Server | `session.elicitation.answer` | **未支持**（HTTP 替代） |
+
+当前 ZX5 阶段，HTTP 路径是唯一可用的 permission / elicitation API。

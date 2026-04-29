@@ -1,64 +1,64 @@
-# Auth API
+# Auth API — ZX5 Snapshot
 
 > Public facade owner: `orchestrator-core`
 > Profile: `facade-http-v1`
+> Backend: proxy to `orchestrator-auth` via RPC service binding
+> Header: `x-trace-uuid: <uuid>`（建议全部路由显式携带）
 
-## Base URLs
+---
 
-| 环境 | Base URL |
-|---|---|
-| preview | `https://nano-agent-orchestrator-core-preview.haimang.workers.dev` |
-| production | `https://nano-agent-orchestrator-core.haimang.workers.dev` |
-
-## Routes
+## Route Overview
 
 | Route | Method | Auth | 说明 |
-|---|---|---|---|
-| `/auth/register` | `POST` | no | 注册并直接返回 tokens + user/team/snapshot |
-| `/auth/login` | `POST` | no | 邮箱密码登录 |
-| `/auth/refresh` | `POST` | no | 刷新 access token / rotate refresh token |
-| `/auth/verify` | `POST` | bearer recommended | 校验 access token 是否有效 |
-| `/auth/me` | `GET` / `POST` | bearer | 读取当前用户视图 |
-| `/me` | `GET` / `POST` | bearer | `/auth/me` 的兼容别名 |
+|-------|--------|------|------|
+| `/auth/register` | `POST` | none | email/password 注册 → tokens + user + team + snapshot |
+| `/auth/login` | `POST` | none | email/password 登录 → tokens + user + team + snapshot |
+| `/auth/refresh` | `POST` | none (refresh token in body) | 刷新 access token + refresh token |
+| `/auth/verify` | `POST` | bearer | 校验 access token 有效性，返回 `valid:true + AuthView` |
+| `/auth/me` | `GET` `POST` | bearer | 读取当前用户视图 |
+| `/me` | `GET` `POST` | bearer | `/auth/me` 别名 |
 | `/auth/password/reset` | `POST` | bearer | 修改密码 |
+| `/auth/wechat/login` | `POST` | none | 微信小程序登录（见 `wechat-auth.md`） |
 
-## Common success envelope
+---
 
-所有 auth 路由都返回标准 facade success envelope：
+## Common Envelope
 
+所有 auth 路由使用统一 facade envelope：
+
+**Success**
 ```json
 {
   "ok": true,
-  "data": {},
+  "data": { "...": "..." },
   "trace_uuid": "11111111-1111-4111-8111-111111111111"
 }
 ```
 
-所有失败都返回 facade error envelope：
-
+**Error**
 ```json
 {
   "ok": false,
   "error": {
-    "code": "password-mismatch",
+    "code": "invalid-auth",
     "status": 401,
-    "message": "password mismatch"
+    "message": "token missing, invalid, or expired"
   },
   "trace_uuid": "11111111-1111-4111-8111-111111111111"
 }
 ```
 
-## Shared response objects
+---
 
-### `AuthFlowResult`
+## Shared Response Objects
 
-`register` / `login` / `refresh` 共用：
+### `AuthFlowResult` — register / login / refresh / wechat login 共用
 
 ```json
 {
   "tokens": {
-    "access_token": "eyJ...",
-    "refresh_token": "opaque-refresh-token",
+    "access_token": "eyJhbGciOiJIUzI1NiIsImtpZCI6InYxIn0...",
+    "refresh_token": "opaque-refresh-token-string",
     "expires_in": 3600,
     "refresh_expires_in": 2592000,
     "kid": "v1"
@@ -81,167 +81,262 @@
     "tenant_uuid": "22222222-2222-4222-8222-222222222222",
     "tenant_source": "claim",
     "membership_level": 100,
+    "source_name": "orchestrator.auth",
     "exp": 1760000000
   }
 }
 ```
 
-### `AuthView`
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `tokens.access_token` | string | HMAC HS256 JWT，默认 1 小时有效期 |
+| `tokens.refresh_token` | string | opaque refresh token，默认 30 天有效期 |
+| `tokens.expires_in` | number | access token 有效期（秒） |
+| `tokens.refresh_expires_in` | number | refresh token 有效期（秒） |
+| `tokens.kid` | string | JWT key ID |
+| `user.user_uuid` | string | 用户 UUID |
+| `user.display_name` | string\|null | 显示名称；register 缺省时会从 email 推导 |
+| `user.identity_provider` | string | `"email_password"` 或 `"wechat"` |
+| `user.login_identifier` | string\|null | email 或 wechat openid |
+| `team.team_uuid` | string | 租户 UUID |
+| `team.membership_level` | number | 成员级别 |
+| `team.plan_level` | number | 计划级别 |
+| `snapshot` | object | 后续 session 请求使用的 auth snapshot |
 
-`/auth/me` / `/me` 共用：
+### `AuthView` — `/auth/me` / `/me` 共用
 
 ```json
 {
-  "user": {
-    "user_uuid": "11111111-1111-4111-8111-111111111111",
-    "display_name": "Nano User",
-    "identity_provider": "email_password",
-    "login_identifier": "user@example.com"
-  },
-  "team": {
-    "team_uuid": "22222222-2222-4222-8222-222222222222",
-    "membership_level": 100,
-    "plan_level": 0
-  },
-  "snapshot": {
-    "sub": "11111111-1111-4111-8111-111111111111",
-    "user_uuid": "11111111-1111-4111-8111-111111111111",
-    "team_uuid": "22222222-2222-4222-8222-222222222222",
-    "tenant_uuid": "22222222-2222-4222-8222-222222222222",
-    "tenant_source": "claim",
-    "membership_level": 100,
-    "exp": 1760000000
-  }
+  "user": { "user_uuid": "...", "display_name": "...", "identity_provider": "...", "login_identifier": "..." },
+  "team": { "team_uuid": "...", "membership_level": 100, "plan_level": 0 },
+  "snapshot": { "sub": "...", "user_uuid": "...", "team_uuid": "...", "tenant_uuid": "...", "tenant_source": "claim", "membership_level": 100, "source_name": "orchestrator.auth", "exp": 1760000000 }
 }
 ```
 
+### `VerifyTokenResult` — `/auth/verify`
+
+```json
+{
+  "valid": true,
+  "user": { "user_uuid": "...", "display_name": "...", "identity_provider": "...", "login_identifier": "..." },
+  "team": { "team_uuid": "...", "membership_level": 100, "plan_level": 0 },
+  "snapshot": { "sub": "...", "user_uuid": "...", "team_uuid": "...", "tenant_uuid": "...", "tenant_source": "claim", "membership_level": 100, "source_name": "orchestrator.auth", "exp": 1760000000 }
+}
+```
+
+### `ResetPasswordResult` — `/auth/password/reset`
+
+```json
+{
+  "password_reset": true,
+  "user": { "user_uuid": "...", "display_name": "...", "identity_provider": "...", "login_identifier": "..." },
+  "team": { "team_uuid": "...", "membership_level": 100, "plan_level": 0 },
+  "snapshot": { "sub": "...", "user_uuid": "...", "team_uuid": "...", "tenant_uuid": "...", "tenant_source": "claim", "membership_level": 100, "source_name": "orchestrator.auth", "exp": 1760000000 }
+}
+```
+
+---
+
 ## `POST /auth/register`
 
+### Request
 ```http
-POST /auth/register
-content-type: application/json
-x-trace-uuid: 11111111-1111-4111-8111-111111111111
+POST /auth/register HTTP/1.1
+x-trace-uuid: <uuid>
+Content-Type: application/json
 
 {
   "email": "user@example.com",
-  "password": "password-123",
+  "password": "secure-password",
   "display_name": "Nano User"
 }
 ```
 
-### Success
+| 字段 | 必填 | 类型 | 说明 |
+|------|------|------|------|
+| `email` | ✅ | string (email) | 注册邮箱 |
+| `password` | ✅ | string (min 8) | 密码 |
+| `display_name` | no | string | 显示名称 |
 
-返回 facade success envelope，`data` 完整符合上面的 `AuthFlowResult`。
+### Success (200) — `AuthFlowResult`
 
-### Common errors
+### Stable Runtime Errors
+| HTTP | error.code | 说明 |
+|------|-----------|------|
+| 409 | `identity-already-exists` | email 已被占用 |
+| 503 | `worker-misconfigured` | 缺 D1 / salt / JWT 配置，或当前 wrapper 将 parser 错误归并为 503 |
 
-| HTTP | `error.code` | 触发 |
-|---|---|---|
-| 400 | `invalid-request` | body 不通过 schema 校验 |
-| 409 | `identity-already-exists` | 邮箱已注册 |
-| 503 | `worker-misconfigured` | 缺数据库 / salt / key 配置 |
+---
 
 ## `POST /auth/login`
 
+### Request
 ```http
-POST /auth/login
-content-type: application/json
-x-trace-uuid: 11111111-1111-4111-8111-111111111111
+POST /auth/login HTTP/1.1
+x-trace-uuid: <uuid>
+Content-Type: application/json
 
 {
   "email": "user@example.com",
-  "password": "password-123"
+  "password": "secure-password"
 }
 ```
 
-### Success
+### Success (200) — `AuthFlowResult`
 
-和 `register` 相同，返回 facade success envelope，`data` 完整符合 `AuthFlowResult`。
+### Stable Runtime Errors
+| HTTP | error.code | 说明 |
+|------|-----------|------|
+| 401 | `password-mismatch` | 密码不匹配 |
+| 404 | `identity-not-found` | email identity 不存在 |
+| 503 | `worker-misconfigured` | 缺 D1 / salt / JWT 配置，或当前 wrapper 将 parser 错误归并为 503 |
 
-### Common errors
-
-| HTTP | `error.code` | 触发 |
-|---|---|---|
-| 400 | `invalid-request` | body 不通过 schema 校验 |
-| 404 | `identity-not-found` | 邮箱不存在 |
-| 401 | `password-mismatch` | 密码错误 |
-| 503 | `worker-misconfigured` | 缺数据库 / salt / key 配置 |
+---
 
 ## `POST /auth/refresh`
 
+### Request
 ```http
-POST /auth/refresh
-content-type: application/json
-x-trace-uuid: 11111111-1111-4111-8111-111111111111
+POST /auth/refresh HTTP/1.1
+x-trace-uuid: <uuid>
+Content-Type: application/json
 
 {
-  "refresh_token": "opaque-refresh-token"
+  "refresh_token": "opaque-refresh-token-string"
 }
 ```
 
-### Success
+### Success (200) — `AuthFlowResult`
 
-返回新的 `AuthFlowResult`。`refresh_token` 会被轮换，旧 token 再用会返回 `refresh-revoked`。
-
-### Common errors
-
-| HTTP | `error.code` | 触发 |
-|---|---|---|
-| 400 | `invalid-request` | body 不通过 schema 校验 |
-| 401 | `refresh-invalid` | refresh token 不存在 |
-| 401 | `refresh-revoked` | refresh token 已轮换或撤销 |
+### Stable Runtime Errors
+| HTTP | error.code | 说明 |
+|------|-----------|------|
+| 401 | `refresh-invalid` | refresh token 未找到 |
+| 401 | `refresh-revoked` | refresh token 已被撤销 |
 | 401 | `refresh-expired` | refresh token 已过期 |
-| 404 | `identity-not-found` | token 指向的 user/team 不存在 |
+| 404 | `identity-not-found` | user/team context 不存在 |
+| 503 | `worker-misconfigured` | 缺 D1 / salt / JWT 配置，或当前 wrapper 将 parser 错误归并为 503 |
+
+---
 
 ## `POST /auth/verify`
 
+> 当前 facade **只从 `Authorization: Bearer <access_token>` header 取 token**，不会从请求 body 读取 `access_token`。
+
+### Request
 ```http
-POST /auth/verify
-authorization: Bearer <access_token>
-x-trace-uuid: 11111111-1111-4111-8111-111111111111
+POST /auth/verify HTTP/1.1
+Authorization: Bearer <access_token>
+x-trace-uuid: <uuid>
+Content-Type: application/json
+
+{}
 ```
 
-> 当前 facade 从 bearer 头读取 token；推荐不再额外传 body。
-
-### Success
-
-返回 facade success envelope，`data` 形状为 `{ valid: true, ...AuthView }`。
-
-## `GET /auth/me` / `GET /me`
-
-```http
-GET /auth/me
-authorization: Bearer <access_token>
-x-trace-uuid: 11111111-1111-4111-8111-111111111111
-```
-
-### Success
-
-返回 facade success envelope，`data` 完整符合上面的 `AuthView`。
-
-## `POST /auth/password/reset`
-
-```http
-POST /auth/password/reset
-authorization: Bearer <access_token>
-content-type: application/json
-x-trace-uuid: 11111111-1111-4111-8111-111111111111
-
+### Success (200)
+```json
 {
-  "old_password": "password-123",
-  "new_password": "password-456"
+  "ok": true,
+  "data": {
+    "valid": true,
+    "user": { "user_uuid": "...", "display_name": "...", "identity_provider": "...", "login_identifier": "..." },
+    "team": { "team_uuid": "...", "membership_level": 100, "plan_level": 0 },
+    "snapshot": { "sub": "...", "user_uuid": "...", "team_uuid": "...", "tenant_uuid": "...", "tenant_source": "claim", "membership_level": 100, "source_name": "orchestrator.auth", "exp": 1760000000 }
+  },
+  "trace_uuid": "..."
 }
 ```
 
-### Success
+### Stable Runtime Errors
+| HTTP | error.code | 说明 |
+|------|-----------|------|
+| 401 | `invalid-auth` | token 缺失、格式错误、签名失败、过期、缺 team truth |
+| 404 | `identity-not-found` | token 合法但 user/team context 不存在 |
+| 503 | `worker-misconfigured` | 当前 wrapper 将 parser 错误归并为 503 |
 
-返回 facade success envelope，`data` 形状为 `{ password_reset: true, ...AuthView }`。
+---
 
-### Common errors
+## `GET /auth/me` / `GET /me`
 
-| HTTP | `error.code` | 触发 |
-|---|---|---|
-| 400 | `invalid-request` | body 不通过 schema 校验 |
-| 401 | `invalid-auth` | bearer 缺失或无效 |
-| 401 | `password-mismatch` | `old_password` 错误 |
-| 404 | `identity-not-found` | 当前 token 对应的密码身份不存在 |
+### Request
+```http
+GET /auth/me HTTP/1.1
+Authorization: Bearer <access_token>
+x-trace-uuid: <uuid>
+```
+
+### Success (200) — `AuthView`
+
+### Stable Runtime Errors
+| HTTP | error.code | 说明 |
+|------|-----------|------|
+| 401 | `invalid-auth` | token 缺失、格式错误、签名失败、过期、缺 team truth |
+| 404 | `identity-not-found` | user/team context 不存在 |
+| 503 | `worker-misconfigured` | 配置缺失或 wrapper 异常归并 |
+
+> `POST /auth/me` 与 `POST /me` 也可用，但 body 当前会被忽略；推荐优先使用 GET。
+
+---
+
+## `POST /auth/password/reset`
+
+### Request
+```http
+POST /auth/password/reset HTTP/1.1
+Authorization: Bearer <access_token>
+x-trace-uuid: <uuid>
+Content-Type: application/json
+
+{
+  "old_password": "old-password",
+  "new_password": "new-secure-password"
+}
+```
+
+### Success (200)
+```json
+{
+  "ok": true,
+  "data": {
+    "password_reset": true,
+    "user": { "user_uuid": "...", "display_name": "...", "identity_provider": "...", "login_identifier": "..." },
+    "team": { "team_uuid": "...", "membership_level": 100, "plan_level": 0 },
+    "snapshot": { "sub": "...", "user_uuid": "...", "team_uuid": "...", "tenant_uuid": "...", "tenant_source": "claim", "membership_level": 100, "source_name": "orchestrator.auth", "exp": 1760000000 }
+  },
+  "trace_uuid": "..."
+}
+```
+
+### Stable Runtime Errors
+| HTTP | error.code | 说明 |
+|------|-----------|------|
+| 401 | `invalid-auth` | bearer token 无效 |
+| 401 | `password-mismatch` | old password 不匹配 |
+| 404 | `identity-not-found` | user/team 或 password identity 不存在 |
+| 503 | `worker-misconfigured` | 配置缺失或 wrapper 异常归并 |
+
+---
+
+## Common Auth Error Notes
+
+| code | 当前 public route 是否稳定暴露 | 说明 |
+|------|------------------------------|------|
+| `invalid-auth` | yes | `/auth/verify`、`/auth/me`、`/auth/password/reset` 的主要 401 |
+| `identity-already-exists` | yes | register 冲突 |
+| `identity-not-found` | yes | login / refresh / me / verify / reset 可能出现 |
+| `password-mismatch` | yes | login / reset |
+| `refresh-invalid` | yes | refresh token 不存在 |
+| `refresh-expired` | yes | refresh token 已过期 |
+| `refresh-revoked` | yes | refresh token 已撤销 |
+| `worker-misconfigured` | yes | 缺 D1 / salt / JWT / WeChat 配置；当前 wrapper 也会把很多 parser/Zod 错误折叠到这里 |
+| `invalid-request` | no（对 public clients 不稳定） | contract 中存在，但当前 public facade 很少稳定暴露给客户端 |
+
+---
+
+## Auth Mechanism
+
+- **JWT**: HMAC HS256，默认 1 小时有效期
+- **Refresh token**: opaque string，默认 30 天有效期，D1 `nano_auth_sessions` 表存储
+- **Kid rotation**: 使用 `JWT_SIGNING_KID` + keyring 做签发 / 验签
+- **鉴权入口**: `orchestrator-core` 会验证 JWT，提取 `AuthSnapshot`（`sub/user_uuid/team_uuid/tenant_uuid/membership_level/source_name/exp`），再注入 session 请求
+- **Tenant guard**: session 路由要求 JWT 含 `team_uuid` 或 `tenant_uuid` claim
