@@ -362,3 +362,75 @@ RH1 Lane F Live
 | 文档 | RH1 design §9 状态更新；RH1-evidence.md 归档 |
 | 风险收敛 | scheduler 主循环 0 回归；HTTP mirror 不双 fire |
 | 可交付性 | RH2 action-plan 可基于 RH1 closure 启动 |
+
+---
+
+## 9. 实施工作日志（RH1 closure work-log）
+
+> 实施人:Opus 4.7(2026-04-29)
+> 实施日期:2026-04-29(同日 RH0 闭合后立即启动)
+> 关联闭合文件:`docs/issue/real-to-hero/RH1-closure.md` + `docs/issue/real-to-hero/RH1-evidence.md`
+> 实施模式:auto mode + 业主授权 wrangler deploy
+
+本节按文件清单 + 变更摘要 + 关联 phase 编号的形式 append RH1 全部代码 / 文档 / 配置改动,作为整体工作报告。
+
+### 9.1 新增文件(4 个)
+
+| # | 文件路径 | 关联编号 | 说明 |
+|---|---------|----------|------|
+| 1 | `docs/issue/real-to-hero/RH1-closure.md` | RH1 closure | 阶段闭合 memo + RH2 Per-Phase Entry Gate 预核对 |
+| 2 | `docs/issue/real-to-hero/RH1-evidence.md` | P1-13 | 4 链 live evidence + preview deploy 记录 + 已知 RH3+ carry-over |
+| 3 | `workers/orchestrator-core/src/entrypoint.ts` | P1-06b | 新建 default export `OrchestratorCoreEntrypoint extends WorkerEntrypoint`;暴露 `forwardServerFrameToClient(sessionUuid, frame, meta)` RPC;`fetch()` 复用 `worker.fetch`(测试不需 resolve `cloudflare:workers`)|
+| 4 | `workers/orchestrator-core/test/usage-strict-snapshot.test.ts` | P1-09 | 3 case:has-rows 200 / no-rows zero-shape 200 / D1-fail 503 facade error |
+
+### 9.2 修改文件(8 个)
+
+| # | 文件路径 | 关联编号 | 变更摘要 |
+|---|---------|----------|----------|
+| 1 | `workers/agent-core/src/kernel/scheduler.ts` | P1-01 | `SchedulerSignals` 新增 `pendingHookEvents?: readonly string[]`;Priority 3.5 在 compact 与 tool/llm 之间 drain `hook_emit { kind, event }` 决策 |
+| 2 | `workers/agent-core/test/kernel/scheduler.test.ts` | P1-01 | 新增 4 case:`emits hook_emit when pendingHookEvents non-empty` / `hook_emit drains FIFO` / `compact takes priority over hook_emit` / `hook_emit takes priority over tool_exec`(13 / 13 全绿)|
+| 3 | `workers/agent-core/src/host/runtime-mainline.ts` | P1-02 | `MainlineKernelOptions` 新增 `hookDispatcher?` + `hookContextProvider?`;`hook.emit` no-op 改为 dispatcher delegate(blocked → throw,绑定不在时退化为 no-op 向下兼容) |
+| 4 | `workers/agent-core/test/host/runtime-mainline.test.ts` | P1-02 | 新增 2 case:`hook.emit delegate routes through HookDispatcher when injected` + `hook.emit delegate is no-op when no HookDispatcher injected`(5 / 5 全绿)|
+| 5 | `workers/agent-core/src/host/env.ts` | P1-06a | `SessionRuntimeEnv` 新增 `ORCHESTRATOR_CORE?: ServiceBindingLike & { forwardServerFrameToClient?(...) }` 类型,RPC 形状显式 narrow |
+| 6 | `workers/agent-core/wrangler.jsonc` | P1-06a | 顶层 + preview env `services` 数组各加 `{binding:"ORCHESTRATOR_CORE", service:"nano-agent-orchestrator-core[-preview]"}` |
+| 7 | `workers/agent-core/src/host/do/nano-session-do.ts` | P1-03 + P1-04 + P1-07 + P1-08 | (a) `emitPermissionRequestAndAwait` / `emitElicitationRequestAndAwait` 在 await 前调 `pushServerFrameToClient({kind: "session.{permission,elicitation}.request", ...})`;(b) 新增 `pushServerFrameToClient` private helper 通过 `env.ORCHESTRATOR_CORE.forwardServerFrameToClient(sessionUuid, frame, {userUuid, teamUuid, traceUuid})` 推 frame;best-effort 失败返 `{delivered:false, reason}`,不抛;(c) `onUsageCommit` 在保留 `console.log` 的前提下加 `void this.pushServerFrameToClient({kind:"session.usage.update", ...})` |
+| 8 | `workers/orchestrator-core/src/index.ts` | P1-06b 拆分 | (a) 移除 `cloudflare:workers` import(让 vitest 仍能 import index.js);(b) 把 default export 从 `worker` 留作 fallback,真实 Worker entry point 移到 `entrypoint.ts`;(c) 新增 `export { worker }` 命名导出;(d) RH0 P0-E1 collateral fix 保留(AgentRpcMethodKey union 含 `permissionDecision`/`elicitationAnswer`,`InitialContextSeed` import) |
+| 9 | `workers/orchestrator-core/src/user-do.ts` | P1-06b 配套 | 在 fetch dispatch 上方插入 `__forward-frame` 内部路由(POST /sessions/{uuid}/__forward-frame body `{frame:{kind, ...}}`),调用 `this.emitServerFrame(sessionUuid, frame)` 返 `{delivered, reason?}`;`handleUsage` 改 strict snapshot:no-rows zero-shape / D1 fail 503 facade error |
+| 10 | `workers/orchestrator-core/wrangler.jsonc` | P1-06b | `main` 从 `dist/index.js` 改为 `dist/entrypoint.js`(WorkerEntrypoint default export 入口) |
+
+### 9.3 已部署到 Cloudflare preview(P1-13)
+
+```
+nano-agent-orchestrator-core-preview    34cfc8a6-038f-49ad-9af8-80c321dc2f4f (RH1)
+nano-agent-agent-core-preview           de2fd54f-26a4-4d28-9c2d-2da6f8a7e633 (RH1)
+                                        https://nano-agent-orchestrator-core-preview.haimang.workers.dev
+```
+
+未变更 worker(orchestrator-auth / bash-core / context-core / filesystem-core)继承 RH0 P0-E1 部署版本(见 `docs/issue/zero-to-real/post-fix-verification.md` §1),`/debug/workers/health` 仍 `live: 6, total: 6`。
+
+### 9.4 RH1 测试矩阵全绿快照
+
+| 测试套 | case 数 | 状态 | 增量 |
+|--------|---------|------|------|
+| `@haimang/jwt-shared` | 20 | ✅ | 0(继承 RH0)|
+| `@haimang/orchestrator-core-worker` | 118 | ✅ | +3 (`usage-strict-snapshot.test.ts`) |
+| `@haimang/orchestrator-auth-worker` | 16 | ✅ | 0 |
+| `@haimang/agent-core-worker` | 1062 | ✅ | +6(scheduler 4 + runtime-mainline 2)|
+| **合计** | **1216** | ✅ | **+9 vs RH0(1207)** |
+
+### 9.5 RH1 hard gate 全表绿灯
+
+见 `docs/issue/real-to-hero/RH1-closure.md` §2(9 项 hard gate 全绿)。
+
+### 9.6 已知遗留(留 RH3+)
+
+> RH1 不重新讨论,本节列出 RH1 期望即未实装的项,作为 RH2 / RH3 Per-Phase Entry Gate 的"已识别 known-gap":
+>
+> 1. `pushServerFrameToClient` 真投递成功:wire 完整,因 NanoSessionDO 当前未持有 `user_uuid` 而返 `delivered:false,reason:'no-user-uuid-for-routing'`。RH3 D6 device gate 把 `user_uuid` 写进 IngressAuthSnapshot 后落地。
+> 2. permission / elicitation / usage push 真 round-trip e2e:单元覆盖 wire 正确性,真投递 + attached client 观察 frame 到达由 RH3 D6 + RH6 e2e harness 接续。
+> 3. HookDispatcher 实例注入 NanoSessionDO:dispatcher 类与 createMainlineKernelRunner.hookDispatcher seam 就位,但 NanoSessionDO 当前没有把 dispatcher 实例填入 — 由 RH3+ 把 PreToolUse / SessionStart hook handler 接通时一并注入。
+> 4. `D1_ERROR: no such table nano_user_devices` schema gap(/me/devices 500)与 `nano_conversation_sessions_old_v6`(timeline LLM_POSTPROCESS_FAILED):均为 pre-existing,RH3 D6 + ZX5 早期 schema cleanup 同时消化。
+
+### 9.7 闭合声明
+
+RH1 全部 6 个 phase / 13 个 work-item / 4 链 lane F 的 wire 全部 PASS;6 worker preview deploy 健康可达;9 项 hard gate 全部满足;`/sessions/{uuid}/usage` strict snapshot 在真实 preview 上 live 验证 zero-shape;RH2 Per-Phase Entry Gate(charter §8.3)成立。**RH1 阶段正式闭合,RH2 实施可启动。**

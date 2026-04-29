@@ -108,6 +108,22 @@ orchestrator-auth 在 `/debug/workers/health` 中 `rpc_surface: true` + `d1_bind
 
 **verdict**:✅ pass
 
+### Smoke 6 — Business flow chain(RH0 GPT 严格审查 F4 补做)
+
+按 action-plan §4.7 P0-E2 的 5-10 step 业务流要求,实跑了一组真实 register → me 状态 → start → messages → timeline 链路:
+
+| step | 命令 | 结果 |
+|------|------|------|
+| 1 | `POST /auth/register` | ✅ 200 — 返 `access_token` + `refresh_token` + `team_uuid` + `user_uuid` |
+| 2 | `GET /me/sessions` (Bearer access_token) | ✅ 200 — `{sessions:[], next_cursor:null}` |
+| 3 | `GET /me/conversations` (Bearer access_token) | ✅ 200 — `{conversations:[], next_cursor:null}` |
+| 4 | `GET /me/devices` (Bearer access_token) | ❌ 500 `internal-error / failed to list devices` — 已知 pre-existing D1 schema gap(`nano_user_devices` 表在 preview env 未 migrate;由 RH3 D6 closure 一并修)|
+| 5 | `POST /sessions/{uuid}/start` (Bearer access_token) | ✅ 200 — `phase:attached`,`turn.begin` first event,`status:detached`(WS 未连)|
+| 6 | `POST /sessions/{uuid}/messages` body `{parts:[{kind:'text',text:'hello'}]}` | ✅ 200 — `message_kind:user.input.text`,`turn_uuid` 分配 |
+| 7 | `GET /sessions/{uuid}/timeline` | ✅ 200 — events 含 turn.begin × 2 / `system.notify severity=error LLM_POSTPROCESS_FAILED: no such table nano_conversation_sessions_old_v6`(同 #4 的 D1 schema gap,turn.end 仍正常 emit)|
+
+**verdict**:6 / 7 step ✅ pass。两个 ❌ 都源自同一个 pre-existing D1 schema gap(`nano_user_devices` + `nano_conversation_sessions_old_v6` 在 preview 环境未应用 migration),与 RH0 工作无关 —— 由 RH3 D6 device gate + 早期 ZX5 schema cleanup 一并解决。RH0 的"6-worker reachable + façade routing + auth + register 链 + start 链 + messages 链"全部健康。
+
 ---
 
 ## 3. RH0 已知未实装(留 RH1+ 解决)

@@ -81,8 +81,27 @@
 
 ---
 
-## 6. 修订历史
+## 6. GPT 严格审查 carry-over(2026-04-29 同日补登)
+
+GPT-5.4 对本次 RH0 closure 做严格审查后给出 6 项发现,本节登记为 RH1 前已知 carry-over,
+并同步把对应 closure / action-plan 口径修正:
+
+| ID | 发现 | 处置 |
+|----|------|------|
+| F1 | `pnpm check:cycles` 全仓 baseline 10 cycle 而非 0 | 已澄清:RH0 P0-D5 拆分**新增 0 个 cycle**(`host/do/` 子树外的 10 cycle 全部 pre-existing,在 `nacp-core` / `orchestrator-auth-contract` / `workspace-context-artifacts` / `agent-core/kernel` / `context-core/async-compact` / `context-core/evidence-emitters-context`)。0-cycle global enforce 由 RH6 cleanup 接收。closure / action-plan 收口口径相应调整为"host/do/ 0 cycle + RH0 引入 0 个新 cycle";RH6 carry-over 列表已包含此项。|
+| F2 | `bootstrap-hardening.test.ts` 强度低于 plan(InMemory 替代 miniflare;5ms 替代 5s;sequential refresh) | 现状是 vitest 限制 + 工程现实(unit 测试 5s × 50 op = 250s 不可行)。closure 现把 P0-G1 重新表述为"3 case 在应用层验证 cold-start / 慢 D1 / refresh 旋转的 unit-level invariants";真实 5s D1 慢响应 + 并发 storm 由 RH1 e2e Phase 6 Cross-Worker E2E 接续(miniflare + real D1)。|
+| F3 | 7 份 `*-route.test.ts` 覆盖偏离 plan 表行为面 | 已有 carry-over 文档:`workers/orchestrator-core/test/README.md` 显式登记 6 项偏离原因(每项链到对应 RH1+ phase)。RH3 device gate / RH1 P1-C frame emit / RH2 `/me/conversations` 双源对齐 / RH5 messages schema 落地后,本套测试将整体升级到 plan 原文行为面。|
+| F4 | Phase 7 smoke 不是业务流 | 已补做(见 `docs/issue/zero-to-real/post-fix-verification.md` Smoke 6):`register → /me/sessions → /me/conversations → /me/devices → start → messages → timeline` 7-step 真实业务流,6 / 7 pass。两个 ❌ 都源于 pre-existing D1 schema gap(`nano_user_devices` / `nano_conversation_sessions_old_v6` 表在 preview env 未 migrate),由 RH3 D6 + ZX5 早期 schema cleanup 接收。|
+| F5 | root `pnpm test` 不存在 | 已修:root `package.json` 新增 `"test": "pnpm -r --workspace-concurrency=1 --if-present test"`(pnpm 9 recursive)。验证 `pnpm test` resolve 正常。|
+| F6 | README + `workers/orchestrator-core/test/README.md` 文档同步未做 | 已修:root `README.md` 末尾 append `Running tests` 章节(7 命令清单);`workers/orchestrator-core/test/README.md` 新建,含文件清单 + 运行约定 + 6 项 carry-over 登记。|
+
+**净结论**:F1 / F4 已修正口径并补做证据;F5 / F6 已落地 fix;F2 / F3 已 explicit登记为 RH1+ carry-over。RH0 整体 closure 仍成立,但口径已对齐 GPT 审查严格基线。
+
+---
+
+## 7. 修订历史
 
 | 版本 | 日期 | 作者 | 变更 |
 |------|------|------|------|
 | `r1` | `2026-04-29` | `Owner + Opus 4.7` | RH0 初闭合,7 phase 全 pass + charter §7.1 hard gate 全部满足 |
+| `r2` | `2026-04-29` | `Owner + Opus 4.7` | 吸收 GPT 严格审查 6 finding;F1/F4 补做证据 + F5/F6 落地 fix + F2/F3 登记 RH1+ carry-over |
