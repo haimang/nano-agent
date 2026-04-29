@@ -11,6 +11,8 @@ import { D1SessionTruthRepository } from "./session-truth.js";
 import { NanoOrchestratorUserDO } from "./user-do.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const MAX_SESSION_FILE_BYTES = 25 * 1024 * 1024;
+const MIME_RE = /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/i;
 
 // ZX2 Phase 3 P3-01/02 — agent-core RPC method signature.
 //
@@ -219,6 +221,10 @@ type AuthAction =
   | "me"
   | "resetPassword"
   | "wechatLogin";
+type SessionFilesRoute =
+  | { kind: "list"; sessionUuid: string }
+  | { kind: "upload"; sessionUuid: string }
+  | { kind: "content"; sessionUuid: string; fileUuid: string };
 
 function parseSessionRoute(request: Request): { sessionUuid: string; action: SessionAction } | null {
   const segments = new URL(request.url).pathname.split("/").filter(Boolean);
@@ -264,6 +270,25 @@ function parseSessionRoute(request: Request): { sessionUuid: string; action: Ses
     }
   }
   return null;
+}
+
+function parseSessionFilesRoute(request: Request): SessionFilesRoute | null {
+  const pathname = new URL(request.url).pathname;
+  const method = request.method.toUpperCase();
+  const listOrUpload = pathname.match(/^\/sessions\/([^/]+)\/files$/);
+  if (listOrUpload) {
+    const sessionUuid = listOrUpload[1]!;
+    if (!UUID_RE.test(sessionUuid)) return null;
+    if (method === "GET") return { kind: "list", sessionUuid };
+    if (method === "POST") return { kind: "upload", sessionUuid };
+    return null;
+  }
+  const content = pathname.match(/^\/sessions\/([^/]+)\/files\/([^/]+)\/content$/);
+  if (!content || method !== "GET") return null;
+  const sessionUuid = content[1]!;
+  const fileUuid = content[2]!;
+  if (!UUID_RE.test(sessionUuid) || !UUID_RE.test(fileUuid)) return null;
+  return { kind: "content", sessionUuid, fileUuid };
 }
 
 // ZX2 Phase 5 P5-01 — catalog routes (non-session-bound).
@@ -437,6 +462,11 @@ const worker = {
 
     const tenantError = ensureTenantConfigured(env);
     if (tenantError) return tenantError;
+
+    const filesRoute = parseSessionFilesRoute(request);
+    if (filesRoute) {
+      return handleSessionFiles(request, env, filesRoute);
+    }
 
     const route = parseSessionRoute(request);
     if (!route) return jsonPolicyError(404, "not-found", "route not found");
@@ -1272,6 +1302,263 @@ interface ContextCoreRpcLike {
     teamUuid: string,
     meta: { trace_uuid: string; team_uuid: string },
   ): Promise<Record<string, unknown>>;
+}
+
+interface SessionFileRecord {
+  readonly file_uuid: string;
+  readonly session_uuid: string;
+  readonly team_uuid: string;
+  readonly r2_key: string;
+  readonly mime: string | null;
+  readonly size_bytes: number;
+  readonly original_name: string | null;
+  readonly created_at: string;
+}
+
+interface FilesystemCoreRpcLike {
+  writeArtifact?(
+    input: {
+      team_uuid: string;
+      session_uuid: string;
+      mime?: string | null;
+      original_name?: string | null;
+      bytes: ArrayBuffer;
+    },
+    meta: { trace_uuid: string; team_uuid: string },
+  ): Promise<{ file: SessionFileRecord }>;
+  listArtifacts?(
+    input: {
+      team_uuid: string;
+      session_uuid: string;
+      cursor?: string | null;
+      limit?: number;
+    },
+    meta: { trace_uuid: string; team_uuid: string },
+  ): Promise<{ files: SessionFileRecord[]; next_cursor: string | null }>;
+  readArtifact?(
+    input: {
+      team_uuid: string;
+      session_uuid: string;
+      file_uuid: string;
+    },
+    meta: { trace_uuid: string; team_uuid: string },
+  ): Promise<{ file: SessionFileRecord; bytes: ArrayBuffer } | null>;
+}
+
+async function handleSessionFiles(
+  request: Request,
+  env: OrchestratorCoreEnv,
+  route: SessionFilesRoute,
+): Promise<Response> {
+  const auth = await authenticateRequest(request, env);
+  if (!auth.ok) return auth.response;
+  const traceUuid = auth.value.trace_uuid;
+  const teamUuid = auth.value.snapshot.team_uuid ?? auth.value.snapshot.tenant_uuid;
+  if (typeof teamUuid !== "string" || teamUuid.length === 0) {
+    return jsonPolicyError(403, "missing-team-claim", "team_uuid missing from auth snapshot", traceUuid);
+  }
+  const fs = (env as { FILESYSTEM_CORE?: FilesystemCoreRpcLike }).FILESYSTEM_CORE;
+  if (!fs) {
+    return jsonPolicyError(503, "worker-misconfigured", "FILESYSTEM_CORE binding missing", traceUuid);
+  }
+  const access = await requireOwnedSession(env, route.sessionUuid, teamUuid, auth.value.user_uuid, traceUuid);
+  if (access) return access;
+
+  try {
+    const meta = { trace_uuid: traceUuid, team_uuid: teamUuid };
+    if (route.kind === "list") {
+      if (typeof fs.listArtifacts !== "function") {
+        return jsonPolicyError(503, "worker-misconfigured", "filesystem-core RPC listArtifacts missing", traceUuid);
+      }
+      const url = new URL(request.url);
+      const data = await fs.listArtifacts(
+        {
+          team_uuid: teamUuid,
+          session_uuid: route.sessionUuid,
+          limit: parseListLimit(url.searchParams.get("limit"), 50, 200),
+          cursor: url.searchParams.get("cursor"),
+        },
+        meta,
+      );
+      return Response.json(
+        { ok: true, data, trace_uuid: traceUuid },
+        { status: 200, headers: { "x-trace-uuid": traceUuid } },
+      );
+    }
+
+    if (route.kind === "upload") {
+      if (typeof fs.writeArtifact !== "function") {
+        return jsonPolicyError(503, "worker-misconfigured", "filesystem-core RPC writeArtifact missing", traceUuid);
+      }
+      const upload = await parseSessionFileUpload(request, traceUuid);
+      if ("response" in upload) return upload.response;
+      const result = await fs.writeArtifact(
+        {
+          team_uuid: teamUuid,
+          session_uuid: route.sessionUuid,
+          mime: upload.mime,
+          original_name: upload.original_name,
+          bytes: upload.bytes,
+        },
+        meta,
+      );
+      return Response.json(
+        {
+          ok: true,
+          data: {
+            file_uuid: result.file.file_uuid,
+            session_uuid: result.file.session_uuid,
+            mime: result.file.mime,
+            size_bytes: result.file.size_bytes,
+            original_name: result.file.original_name,
+            created_at: result.file.created_at,
+          },
+          trace_uuid: traceUuid,
+        },
+        { status: 201, headers: { "x-trace-uuid": traceUuid } },
+      );
+    }
+
+    if (typeof fs.readArtifact !== "function") {
+      return jsonPolicyError(503, "worker-misconfigured", "filesystem-core RPC readArtifact missing", traceUuid);
+    }
+    const result = await fs.readArtifact(
+      {
+        team_uuid: teamUuid,
+        session_uuid: route.sessionUuid,
+        file_uuid: route.fileUuid,
+      },
+      meta,
+    );
+    if (!result) {
+      return jsonPolicyError(404, "not-found", "file not found", traceUuid);
+    }
+    return new Response(result.bytes, {
+      status: 200,
+      headers: {
+        "content-type": result.file.mime ?? "application/octet-stream",
+        "content-length": String(result.file.size_bytes),
+        "cache-control": "no-store",
+        "x-trace-uuid": traceUuid,
+        ...(result.file.original_name
+          ? { "content-disposition": `inline; filename="${sanitizeContentDispositionFilename(result.file.original_name)}"` }
+          : {}),
+      },
+    });
+  } catch (error) {
+    const op = route.kind === "content" ? "read" : route.kind;
+    console.warn(
+      `filesystem-rpc-failed op=${op} session=${route.sessionUuid} team=${teamUuid}`,
+      { tag: "filesystem-rpc-failed", error: String(error) },
+    );
+    return jsonPolicyError(503, "filesystem-rpc-unavailable", `files ${op} failed`, traceUuid);
+  }
+}
+
+async function requireOwnedSession(
+  env: OrchestratorCoreEnv,
+  sessionUuid: string,
+  teamUuid: string,
+  userUuid: string,
+  traceUuid: string,
+): Promise<Response | null> {
+  const db = env.NANO_AGENT_DB;
+  if (!db) {
+    return jsonPolicyError(503, "worker-misconfigured", "session store unavailable", traceUuid);
+  }
+  const row = await db.prepare(
+    `SELECT team_uuid, actor_user_uuid
+       FROM nano_conversation_sessions
+      WHERE session_uuid = ?1
+      LIMIT 1`,
+  ).bind(sessionUuid).first<Record<string, unknown>>();
+  if (!row) {
+    return jsonPolicyError(404, "not-found", "session not found", traceUuid);
+  }
+  if (String(row.team_uuid) !== teamUuid || String(row.actor_user_uuid) !== userUuid) {
+    return jsonPolicyError(403, "permission-denied", "session does not belong to caller", traceUuid);
+  }
+  return null;
+}
+
+async function parseSessionFileUpload(
+  request: Request,
+  traceUuid: string,
+): Promise<
+  | { bytes: ArrayBuffer; mime: string | null; original_name: string | null }
+  | { response: Response }
+> {
+  const contentType = request.headers.get("content-type") ?? "";
+  if (!contentType.toLowerCase().includes("multipart/form-data")) {
+    return {
+      response: jsonPolicyError(400, "invalid-input", "files upload requires multipart/form-data", traceUuid),
+    };
+  }
+  let form: FormData;
+  try {
+    form = await request.formData();
+  } catch {
+    return {
+      response: jsonPolicyError(400, "invalid-input", "multipart body could not be parsed", traceUuid),
+    };
+  }
+  const entry = form.get("file");
+  if (!isUploadBlob(entry)) {
+    return {
+      response: jsonPolicyError(400, "invalid-input", "multipart field 'file' is required", traceUuid),
+    };
+  }
+  if (entry.size > MAX_SESSION_FILE_BYTES) {
+    return {
+      response: jsonPolicyError(413, "payload-too-large", "file exceeds 25 MiB limit", traceUuid),
+    };
+  }
+  const explicitMime = form.get("mime");
+  const mimeCandidate =
+    typeof explicitMime === "string" && explicitMime.trim().length > 0
+      ? explicitMime.trim()
+      : typeof entry.type === "string" && entry.type.trim().length > 0
+        ? entry.type.trim()
+        : null;
+  const mime = normalizeMime(mimeCandidate);
+  if (mimeCandidate !== null && mime === null) {
+    return {
+      response: jsonPolicyError(400, "invalid-input", "mime must be a valid type/subtype", traceUuid),
+    };
+  }
+  const bytes = await entry.arrayBuffer();
+  if (bytes.byteLength > MAX_SESSION_FILE_BYTES) {
+    return {
+      response: jsonPolicyError(413, "payload-too-large", "file exceeds 25 MiB limit", traceUuid),
+    };
+  }
+  const originalName =
+    typeof entry.name === "string" && entry.name.trim().length > 0
+      ? entry.name.trim().slice(0, 255)
+      : null;
+  return {
+    bytes,
+    mime,
+    original_name: originalName,
+  };
+}
+
+function isUploadBlob(value: unknown): value is File {
+  return typeof value === "object"
+    && value !== null
+    && typeof (value as Blob).arrayBuffer === "function"
+    && typeof (value as Blob).size === "number";
+}
+
+function normalizeMime(value: string | null): string | null {
+  if (value === null) return null;
+  const trimmed = value.trim().toLowerCase();
+  if (trimmed.length === 0 || trimmed.length > 255) return null;
+  return MIME_RE.test(trimmed) ? trimmed : null;
+}
+
+function sanitizeContentDispositionFilename(value: string): string {
+  return value.replace(/["\\\r\n]/g, "_");
 }
 
 async function wrapSessionResponse(
