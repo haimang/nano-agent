@@ -16,6 +16,13 @@
     "WORKER_VERSION": "filesystem-core@preview",
     "TEAM_UUID": "nano-agent"
   },
+  "d1_databases": [
+    {
+      "binding": "NANO_AGENT_DB",
+      "database_name": "nano-agent-preview",
+      "database_id": "71a4b089-93e0-4d8f-afb8-bc9356a97cfa"
+    }
+  ],
   // RH0 P0-C1 — KV/R2 binding first-declaration (placeholder ids).
   "kv_namespaces": [
     {
@@ -37,6 +44,13 @@
         "WORKER_VERSION": "filesystem-core@preview",
         "TEAM_UUID": "nano-agent"
       },
+      "d1_databases": [
+        {
+          "binding": "NANO_AGENT_DB",
+          "database_name": "nano-agent-preview",
+          "database_id": "71a4b089-93e0-4d8f-afb8-bc9356a97cfa"
+        }
+      ],
       "kv_namespaces": [
         {
           "binding": "NANO_KV",

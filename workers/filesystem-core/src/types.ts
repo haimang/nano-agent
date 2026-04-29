@@ -55,6 +55,8 @@ export interface FilesystemCoreEnv {
   readonly ENVIRONMENT?: string;
   readonly OWNER_TAG?: string;
   readonly WORKER_VERSION?: string;
+  readonly NANO_AGENT_DB?: D1Database;
+  readonly NANO_R2?: R2Bucket;
 }
 
 export interface FilesystemCoreShellResponse {
@@ -65,5 +67,51 @@ export interface FilesystemCoreShellResponse {
   readonly worker_version: string;
   readonly phase: "worker-matrix-P4-absorbed";
   readonly absorbed_runtime: true;
-  readonly library_worker: true;
+}
+
+export interface SessionFileRecord {
+  readonly file_uuid: string;
+  readonly session_uuid: string;
+  readonly team_uuid: string;
+  readonly r2_key: string;
+  readonly mime: string | null;
+  readonly size_bytes: number;
+  readonly original_name: string | null;
+  readonly created_at: string;
+}
+
+export interface SessionFileListResult {
+  readonly files: SessionFileRecord[];
+  readonly next_cursor: string | null;
+}
+
+export interface WriteArtifactInput {
+  readonly team_uuid: string;
+  readonly session_uuid: string;
+  readonly file_uuid?: string;
+  readonly mime?: string | null;
+  readonly original_name?: string | null;
+  readonly bytes: ArrayBuffer | Uint8Array;
+}
+
+export interface ReadArtifactInput {
+  readonly team_uuid: string;
+  readonly session_uuid: string;
+  readonly file_uuid: string;
+}
+
+export interface ListArtifactsInput {
+  readonly team_uuid: string;
+  readonly session_uuid: string;
+  readonly cursor?: string | null;
+  readonly limit?: number;
+}
+
+export interface WriteArtifactResult {
+  readonly file: SessionFileRecord;
+}
+
+export interface ReadArtifactResult {
+  readonly file: SessionFileRecord;
+  readonly bytes: ArrayBuffer;
 }

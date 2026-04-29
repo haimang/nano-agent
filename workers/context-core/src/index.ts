@@ -12,7 +12,6 @@ function createShellResponse(env: ContextCoreEnv): ContextCoreShellResponse {
     worker_version: env.WORKER_VERSION ?? `context-core@${env.ENVIRONMENT ?? "dev"}`,
     phase: "worker-matrix-P3-absorbed",
     absorbed_runtime: true,
-    library_worker: true,
   };
 }
 
@@ -33,7 +32,7 @@ function bindingScopeForbidden(): Response {
     {
       error: "binding-scope-forbidden",
       message:
-        "context-core is a library-only worker; runtime code is consumed in-process by agent-core",
+        "context-core is a leaf worker; business access must use service-binding RPC",
       worker: "context-core",
     },
     { status: 401 },

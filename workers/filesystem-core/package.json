@@ -5,6 +5,9 @@
   "type": "module",
   "description": "Pre-worker-matrix shell for filesystem-core",
   "scripts": {
+    "prebuild": "pnpm --filter @nano-agent/storage-topology build",
+    "pretypecheck": "pnpm --filter @nano-agent/storage-topology build",
+    "pretest": "pnpm --filter @nano-agent/storage-topology build",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
@@ -14,6 +17,7 @@
   "dependencies": {
     "@haimang/nacp-core": "1.4.0",
     "@haimang/nacp-session": "1.3.0",
+    "@nano-agent/storage-topology": "workspace:*",
     "zod": "^3.25.76"
   },
   "devDependencies": {

@@ -1,7 +1,17 @@
 import { NACP_VERSION } from "@haimang/nacp-core";
 import { NACP_SESSION_VERSION } from "@haimang/nacp-session";
 import { WorkerEntrypoint } from "cloudflare:workers";
-import type { FilesystemCoreEnv, FilesystemCoreShellResponse } from "./types.js";
+import { SessionFileStore } from "./artifacts.js";
+import type {
+  FilesystemCoreEnv,
+  FilesystemCoreShellResponse,
+  ListArtifactsInput,
+  ReadArtifactInput,
+  ReadArtifactResult,
+  SessionFileListResult,
+  WriteArtifactInput,
+  WriteArtifactResult,
+} from "./types.js";
 
 function createShellResponse(env: FilesystemCoreEnv): FilesystemCoreShellResponse {
   return {
@@ -12,7 +22,6 @@ function createShellResponse(env: FilesystemCoreEnv): FilesystemCoreShellRespons
     worker_version: env.WORKER_VERSION ?? `filesystem-core@${env.ENVIRONMENT ?? "dev"}`,
     phase: "worker-matrix-P4-absorbed",
     absorbed_runtime: true,
-    library_worker: true,
   };
 }
 
@@ -26,7 +35,7 @@ function bindingScopeForbidden(): Response {
     {
       error: "binding-scope-forbidden",
       message:
-        "filesystem-core is a library-only worker; runtime code is consumed in-process by agent-core",
+        "filesystem-core is a leaf worker; business access must use service-binding RPC",
       worker: "filesystem-core",
     },
     { status: 401 },
@@ -82,6 +91,40 @@ export class FilesystemCoreEntrypoint extends WorkerEntrypoint<FilesystemCoreEnv
         "listArtifacts",
       ],
     };
+  }
+
+  async writeArtifact(input: WriteArtifactInput, meta?: { trace_uuid?: string; team_uuid?: string }): Promise<WriteArtifactResult> {
+    const store = this.requireStore();
+    assertAuthority(input.team_uuid, meta?.team_uuid);
+    return store.put(input);
+  }
+
+  async listArtifacts(input: ListArtifactsInput, meta?: { trace_uuid?: string; team_uuid?: string }): Promise<SessionFileListResult> {
+    const store = this.requireStore();
+    assertAuthority(input.team_uuid, meta?.team_uuid);
+    return store.list(input);
+  }
+
+  async readArtifact(input: ReadArtifactInput, meta?: { trace_uuid?: string; team_uuid?: string }): Promise<ReadArtifactResult | null> {
+    const store = this.requireStore();
+    assertAuthority(input.team_uuid, meta?.team_uuid);
+    return store.get(input);
+  }
+
+  private requireStore(): SessionFileStore {
+    if (!this.env.NANO_AGENT_DB || !this.env.NANO_R2) {
+      throw new Error("filesystem-core requires NANO_AGENT_DB and NANO_R2");
+    }
+    return new SessionFileStore({
+      db: this.env.NANO_AGENT_DB,
+      r2: this.env.NANO_R2,
+    });
+  }
+}
+
+function assertAuthority(teamUuid: string, metaTeamUuid?: string): void {
+  if (typeof metaTeamUuid === "string" && metaTeamUuid.length > 0 && metaTeamUuid !== teamUuid) {
+    throw new Error(`team authority mismatch: ${metaTeamUuid} cannot access ${teamUuid}`);
   }
 }
 

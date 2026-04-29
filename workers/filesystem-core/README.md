@@ -23,7 +23,7 @@ stable 6-worker matrix.
 
 | profile | route | semantic |
 |---|---|---|
-| `health-probe` | `GET /` `GET /health` | shell response with `library_worker: true` |
+| `health-probe` | `GET /` `GET /health` | shell response with worker identity + absorbed runtime flags |
 | (none) | every other path | 401 `binding-scope-forbidden` (ZX2 Phase 1 P1-03) |
 
 The `binding-scope-forbidden` 401 is enforced in code so accidental
@@ -34,10 +34,9 @@ effect.
 
 - ❌ Expose business HTTP routes (`/files/*`, `/artifacts/*`, etc).
 - ❌ Add new service bindings to other workers.
-- ❌ Become a `WorkerEntrypoint` with RPC methods. If a future plan needs
-  this, it has to ship as a separate plan that updates this README first.
-- ❌ Hold its own R2 / KV truth. Workspace truth is owned by agent-core's
-  in-process consumer of `@haimang/workspace-context-artifacts`.
+- ❌ Expose business HTTP routes (`/files/*`, `/artifacts/*`, etc) on public fetch.
+- ✅ Expose service-binding RPC methods for internal callers.
+- ❌ Hold its own public ingress truth. File metadata lives in D1 and bytes live in R2 behind service bindings.
 
 ## Scripts
 
@@ -61,7 +60,6 @@ to keep this worker off the public internet.
   "worker_version": "filesystem-core@<env>",
   "phase": "worker-matrix-P4-absorbed",
   "absorbed_runtime": true,
-  "library_worker": true,
   "nacp_core_version": "...",
   "nacp_session_version": "..."
 }

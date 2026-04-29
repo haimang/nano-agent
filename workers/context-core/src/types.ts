@@ -12,5 +12,4 @@ export interface ContextCoreShellResponse {
   readonly worker_version: string;
   readonly phase: "worker-matrix-P3-absorbed";
   readonly absorbed_runtime: true;
-  readonly library_worker: true;
 }
