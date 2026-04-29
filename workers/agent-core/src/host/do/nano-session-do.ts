@@ -53,6 +53,7 @@ import {
   getTenantScopedStorage as getTenantScopedStorageModule,
   persistCheckpoint as persistCheckpointModule,
   persistTeamUuid as persistTeamUuidModule,
+  persistUserUuid as persistUserUuidModule,
   recordAsyncAnswer as recordAsyncAnswerModule,
   restoreFromStorage as restoreFromStorageModule,
   sweepDeferredAnswers as sweepDeferredAnswersModule,
@@ -202,6 +203,8 @@ export class NanoSessionDO {
   private sessionUuid: string | null = null;
   /** Session-scoped team truth, latched from ingress authority or restore. */
   private sessionTeamUuid: string | null = null;
+  /** Session-scoped user truth, latched from internal authority or restore. */
+  private sessionUserUuid: string | null = null;
 
   /** Per-stream sequence assigned to each accepted client frame. */
   private streamSeq = 0;
@@ -243,6 +246,10 @@ export class NanoSessionDO {
       const envTeamUuid = (env as { TEAM_UUID?: unknown } | undefined)?.TEAM_UUID;
       if (typeof envTeamUuid === "string" && envTeamUuid.length > 0) {
         this.sessionTeamUuid = envTeamUuid;
+      }
+      const envUserUuid = (env as { USER_UUID?: unknown } | undefined)?.USER_UUID;
+      if (typeof envUserUuid === "string" && envUserUuid.length > 0) {
+        this.sessionUserUuid = envUserUuid;
       }
     }
 
@@ -541,6 +548,13 @@ export class NanoSessionDO {
         )
       : null;
     if (validatedInternal && !validatedInternal.ok) return validatedInternal.response;
+    if (validatedInternal?.ok) {
+      this.attachTeamUuid(validatedInternal.authority.tenant_uuid);
+      this.attachUserUuid(validatedInternal.authority.sub);
+      if (!this.traceUuid && validatedInternal.traceUuid.length > 0) {
+        this.traceUuid = validatedInternal.traceUuid;
+      }
+    }
 
     switch (route.type) {
       case "websocket":
@@ -748,10 +762,8 @@ export class NanoSessionDO {
     // chain doesn't carry a user identity; the meta.userUuid field is
     // declared optional on the orchestrator-core entrypoint to allow this
     // best-effort behavior.
-    const userUuid = (this.env as { USER_UUID?: string } | undefined)?.USER_UUID;
+    const userUuid = this.currentUserUuid();
     if (!userUuid) {
-      // No user_uuid available locally — return best-effort skip; RH3 wires
-      // user_uuid into IngressAuthSnapshot so this branch becomes rare.
       return { ok: false, delivered: false, reason: "no-user-uuid-for-routing" };
     }
     try {
@@ -776,9 +788,20 @@ export class NanoSessionDO {
     void persistTeamUuidModule(this.buildPersistenceContext(), candidate);
   }
 
+  private attachUserUuid(candidate: string | undefined | null): void {
+    if (typeof candidate !== "string" || candidate.length === 0) return;
+    void persistUserUuidModule(this.buildPersistenceContext(), candidate);
+  }
+
   private currentTeamUuid(): string | null {
     return this.sessionTeamUuid && this.sessionTeamUuid.length > 0
       ? this.sessionTeamUuid
+      : null;
+  }
+
+  private currentUserUuid(): string | null {
+    return this.sessionUserUuid && this.sessionUserUuid.length > 0
+      ? this.sessionUserUuid
       : null;
   }
 
@@ -1413,6 +1436,10 @@ export class NanoSessionDO {
       getCurrentTeamUuid: () => self.currentTeamUuid(),
       setSessionTeamUuid: (value: string) => {
         self.sessionTeamUuid = value;
+      },
+      getCurrentUserUuid: () => self.currentUserUuid(),
+      setSessionUserUuid: (value: string) => {
+        self.sessionUserUuid = value;
       },
       getSessionState: () => self.state,
       setRestoredState: (next) => {

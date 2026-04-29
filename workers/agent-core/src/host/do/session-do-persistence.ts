@@ -29,6 +29,7 @@ import { validateSessionCheckpoint } from "../checkpoint.js";
 
 export const CHECKPOINT_STORAGE_KEY = "session:checkpoint";
 export const SESSION_TEAM_STORAGE_KEY = "session:teamUuid";
+export const SESSION_USER_STORAGE_KEY = "session:userUuid";
 
 /**
  * Map entry for the deferred-answer waiter (sweepDeferredAnswers consumer).
@@ -60,6 +61,8 @@ export interface PersistenceContext {
   getSessionUuid(): string | null;
   getCurrentTeamUuid(): string | null;
   setSessionTeamUuid(value: string): void;
+  getCurrentUserUuid(): string | null;
+  setSessionUserUuid(value: string): void;
   getSessionState(): OrchestrationState;
   setRestoredState(next: OrchestrationState): void;
   getWsHelper(): SessionWebSocketHelper | null;
@@ -194,6 +197,10 @@ export async function restoreFromStorage(ctx: PersistenceContext): Promise<void>
     if (typeof rawTeamUuid === "string" && rawTeamUuid.length > 0) {
       ctx.setSessionTeamUuid(rawTeamUuid);
     }
+    const rawUserUuid = await rawStorage.get<string>(SESSION_USER_STORAGE_KEY);
+    if (typeof rawUserUuid === "string" && rawUserUuid.length > 0) {
+      ctx.setSessionUserUuid(rawUserUuid);
+    }
   }
   const storage = getTenantScopedStorage(ctx);
   if (!storage) return;
@@ -255,6 +262,17 @@ export async function persistTeamUuid(
   const storage = ctx.doState.storage;
   if (storage) {
     void storage.put(SESSION_TEAM_STORAGE_KEY, candidate);
+  }
+}
+
+export async function persistUserUuid(
+  ctx: PersistenceContext,
+  candidate: string,
+): Promise<void> {
+  ctx.setSessionUserUuid(candidate);
+  const storage = ctx.doState.storage;
+  if (storage) {
+    void storage.put(SESSION_USER_STORAGE_KEY, candidate);
   }
 }
 

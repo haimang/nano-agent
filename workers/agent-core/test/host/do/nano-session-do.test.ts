@@ -146,6 +146,43 @@ describe("NanoSessionDO", () => {
       expect(ok.status).toBe(200);
     });
 
+    it("latches authority.sub for server-frame routing", async () => {
+      const forwardServerFrameToClient = vi.fn().mockResolvedValue({
+        ok: true,
+        delivered: true,
+      });
+      const internalDo = new NanoSessionDO({}, {
+        TEAM_UUID: "team-xyz",
+        NANO_INTERNAL_BINDING_SECRET: "secret",
+        ORCHESTRATOR_CORE: { forwardServerFrameToClient },
+      });
+
+      const ok = await internalDo.fetch(
+        new Request(`https://session.internal/sessions/${SESSION_UUID}/status`, {
+          headers: {
+            "x-nano-internal-binding-secret": "secret",
+            "x-trace-uuid": TRACE_UUID,
+            "x-nano-internal-authority": JSON.stringify(AUTHORITY),
+          },
+        }),
+      );
+      expect(ok.status).toBe(200);
+
+      const pushed = await (internalDo as unknown as {
+        pushServerFrameToClient: (frame: Record<string, unknown>) => Promise<Record<string, unknown>>;
+      }).pushServerFrameToClient({ kind: "session.permission.request" });
+      expect(pushed).toEqual({ ok: true, delivered: true });
+      expect(forwardServerFrameToClient).toHaveBeenCalledWith(
+        SESSION_UUID,
+        { kind: "session.permission.request" },
+        {
+          userUuid: AUTHORITY.sub,
+          teamUuid: "team-xyz",
+          traceUuid: TRACE_UUID,
+        },
+      );
+    });
+
     it("returns 404 for unrecognized paths", async () => {
       const request = makeRequest("https://example.com/unknown");
       const response = await doInstance.fetch(request);
