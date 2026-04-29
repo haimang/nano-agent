@@ -5,6 +5,7 @@
   "description": "Cloudflare-native agent runtime",
   "packageManager": "pnpm@9.15.0",
   "scripts": {
+    "test": "pnpm -r --workspace-concurrency=1 --if-present test",
     "test:contracts": "node --test test/root-guardians/*.test.mjs",
     "test:e2e": "node --test test/package-e2e/**/*.test.mjs test/cross-e2e/**/*.test.mjs",
     "test:cross": "node --test test/package-e2e/**/*.test.mjs test/cross-e2e/**/*.test.mjs",
