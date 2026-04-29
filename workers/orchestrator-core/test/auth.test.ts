@@ -93,13 +93,14 @@ describe("authenticateRequest", () => {
   });
 
   it("rejects expired tokens", async () => {
+    // Use -400s so the token is beyond the 300-second JWT_LEEWAY_SECONDS window.
     const token = await signTestJwt(
       {
         sub: "11111111-1111-4111-8111-111111111111",
         team_uuid: "22222222-2222-4222-8222-222222222222",
       },
       "z".repeat(32),
-      -10,
+      -400,
     );
     const result = await authenticateRequest(
       new Request("https://example.com/sessions/11111111-1111-4111-8111-111111111111/start", {

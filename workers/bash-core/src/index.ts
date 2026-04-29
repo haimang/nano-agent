@@ -438,7 +438,8 @@ export interface BashCoreCancelResult {
 const BASH_CORE_ALLOWED_CALLERS = new Set([
   "orchestrator-core",
   "agent-core",
-  "runtime",
+  // "runtime" removed: no worker named "runtime" exists; was a ghost value
+  // from an early design that pre-dated the final 6-worker topology.
 ] as const);
 
 function validateBashRpcMeta(rawMeta: unknown, requireRequestUuid: boolean): { ok: true; meta: RpcMeta } | { ok: false; envelope: Envelope<never> } {

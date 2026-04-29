@@ -57,8 +57,8 @@ export interface ServiceBindingLike {
  */
 export interface SessionRuntimeEnv {
   readonly SESSION_DO: unknown;
-  readonly R2_ARTIFACTS: unknown;
-  readonly KV_CONFIG: unknown;
+  readonly R2_ARTIFACTS?: unknown;
+  readonly KV_CONFIG?: unknown;
   readonly NANO_AGENT_DB?: D1Database;
   readonly AI?: {
     run(model: string, input: Record<string, unknown>): Promise<unknown>;

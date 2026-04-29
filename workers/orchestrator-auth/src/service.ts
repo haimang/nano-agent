@@ -143,7 +143,7 @@ export class AuthService {
       tokens: {
         access_token: access.token,
         refresh_token: refreshToken,
-        expires_in: 3600,
+        expires_in: access.exp - Math.floor(Date.now() / 1000),
         refresh_expires_in: refreshExpiresIn,
         kid: access.kid,
       },
@@ -253,7 +253,7 @@ export class AuthService {
         tokens: {
           access_token: access.token,
           refresh_token: nextRefreshToken,
-          expires_in: 3600,
+          expires_in: access.exp - Math.floor(Date.now() / 1000),
           refresh_expires_in: refreshExpiresIn,
           kid: access.kid,
         },

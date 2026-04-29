@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import worker from "../src/index.js";
+import { fetchWorker as worker } from "../src/index.js";
 import { NACP_VERSION } from "@haimang/nacp-core";
 import { NACP_SESSION_VERSION } from "@haimang/nacp-session";
 

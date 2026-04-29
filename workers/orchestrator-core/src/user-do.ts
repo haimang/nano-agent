@@ -134,9 +134,21 @@ export class NanoOrchestratorUserDO {
   ) {}
 
   async alarm(): Promise<void> {
-    await this.trimHotState();
-    await this.cleanupEndedSessions();
-    await this.expireStalePendingSessions();
+    try {
+      await this.trimHotState();
+    } catch (err) {
+      console.warn("alarm-trim-hot-state-failed", { tag: "alarm-trim-hot-state-failed", error: String(err) });
+    }
+    try {
+      await this.cleanupEndedSessions();
+    } catch (err) {
+      console.warn("alarm-cleanup-ended-sessions-failed", { tag: "alarm-cleanup-ended-sessions-failed", error: String(err) });
+    }
+    try {
+      await this.expireStalePendingSessions();
+    } catch (err) {
+      console.warn("alarm-expire-stale-pending-failed", { tag: "alarm-expire-stale-pending-failed", error: String(err) });
+    }
     await this.ensureHotStateAlarm();
   }
 
@@ -1974,11 +1986,15 @@ export class NanoOrchestratorUserDO {
       if (!current || current.socket !== socket) return;
       this.attachments.delete(sessionUuid);
       if (current.heartbeat_timer) clearInterval(current.heartbeat_timer);
-      void this.markDetached(sessionUuid);
+      this.markDetached(sessionUuid).catch((err) =>
+        console.warn("mark-detached-failed", { tag: "mark-detached-failed", error: String(err) }),
+      );
     });
 
     socket.addEventListener?.('message', () => {
-      void this.touchSession(sessionUuid, this.attachments.has(sessionUuid) ? 'active' : 'detached');
+      this.touchSession(sessionUuid, this.attachments.has(sessionUuid) ? 'active' : 'detached').catch((err) =>
+        console.warn("touch-session-failed", { tag: "touch-session-failed", error: String(err) }),
+      );
     });
   }
 
@@ -2074,6 +2090,7 @@ export class NanoOrchestratorUserDO {
     this.attachments.delete(sessionUuid);
   }
 
+  /** @deprecated Use forwardInternalJsonShadow instead — all active callers have migrated. */
   private async forwardInternalJson(
     sessionUuid: string,
     action: string,

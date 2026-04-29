@@ -426,8 +426,11 @@ const worker = {
       }));
     }
 
-    const optionalBody = route.action === "cancel";
-    const needsBody = route.action === "start" || route.action === "input" || route.action === "cancel" || route.action === "verify";
+    const optionalBody = route.action === "cancel" || route.action === "resume";
+    const needsBody = route.action === "start" || route.action === "input" || route.action === "cancel"
+      || route.action === "verify" || route.action === "messages"
+      || route.action === "resume" || route.action === "permission/decision"
+      || route.action === "policy/permission_mode" || route.action === "elicitation/answer";
     const body = needsBody ? await parseBody(request, optionalBody) : null;
     if (needsBody && body === null) {
         return jsonPolicyError(400, `invalid-${route.action}-body`, `${route.action} requires a JSON body`);

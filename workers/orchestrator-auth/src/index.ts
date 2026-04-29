@@ -54,7 +54,15 @@ async function invokeKnown<T>(
     if (error instanceof AuthServiceError) {
       return error.toEnvelope<never>() as T;
     }
-    throw error;
+    // Wrap unexpected errors (D1, crypto, Zod parse) into an internal-error
+    // envelope so the RPC caller always receives a typed AuthEnvelope, not a
+    // raw thrown exception that bypasses the auth envelope contract.
+    const wrapped = new AuthServiceError(
+      "worker-misconfigured",
+      503,
+      error instanceof Error ? error.message : "internal error",
+    );
+    return wrapped.toEnvelope<never>() as T;
   }
 }
 

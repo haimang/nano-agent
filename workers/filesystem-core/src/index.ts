@@ -86,4 +86,8 @@ export class FilesystemCoreEntrypoint extends WorkerEntrypoint<FilesystemCoreEnv
 }
 
 export type { FilesystemCoreEnv };
-export default worker;
+// Named export for tests and internal callers that need the raw fetch handler.
+export { worker as fetchWorker };
+// ZX5 Lane E: WorkerEntrypoint as the default so Cloudflare Workers runtime
+// exposes RPC methods via service binding.
+export default FilesystemCoreEntrypoint;

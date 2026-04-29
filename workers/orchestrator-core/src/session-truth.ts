@@ -92,7 +92,7 @@ function inferMessageRole(kind: string): DurableMessageRole {
   ) {
     return "assistant";
   }
-  return kind === "user.input" ? "user" : "system";
+  return kind.startsWith("user.input") ? "user" : "system";
 }
 
 function isUniqueConstraintError(error: unknown): boolean {

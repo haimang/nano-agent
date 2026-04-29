@@ -487,6 +487,18 @@ export class NanoSessionDO {
       capabilityTransport: this.getCapabilityTransport(),
       contextProvider: () => this.buildQuotaContext(),
       anchorProvider: () => this.buildCrossSeamAnchor(),
+      // ZX5 Lane F3: register usage-commit callback so quota events are
+      // observable. WS push to the attached client requires orchestrator-core
+      // coordination (deferred to follow-up PR); for now the event is logged
+      // so it is at minimum visible in wrangler tail.
+      onUsageCommit: (event) => {
+        console.log("usage-commit", {
+          tag: "usage-commit",
+          kind: event.kind,
+          remaining: event.remaining,
+          limitValue: event.limitValue,
+        });
+      },
     });
   }
 

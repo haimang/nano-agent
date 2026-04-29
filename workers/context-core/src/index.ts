@@ -120,4 +120,9 @@ export class ContextCoreEntrypoint extends WorkerEntrypoint<ContextCoreEnv> {
 }
 
 export type { ContextCoreEnv };
-export default worker;
+// Named export for tests and internal callers that need the raw fetch handler.
+export { worker as fetchWorker };
+// ZX5 Lane E: WorkerEntrypoint as the default so Cloudflare Workers runtime
+// exposes RPC methods via service binding. The fetch path is preserved via
+// ContextCoreEntrypoint.fetch() which delegates to the `worker` object.
+export default ContextCoreEntrypoint;

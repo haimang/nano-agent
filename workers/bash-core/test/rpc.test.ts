@@ -202,7 +202,7 @@ describe("bash-core rpc — caller enum check", () => {
     expect(res.ok).toBe(true);
   });
 
-  it("admits caller='runtime'", async () => {
+  it("rejects caller='runtime' (ghost value removed from allowlist)", async () => {
     const ep = makeEntrypoint();
     const res = await ep.cancel(
       { requestId: "rpc-caller-runtime" },
@@ -212,7 +212,7 @@ describe("bash-core rpc — caller enum check", () => {
         authority: NACP_AUTHORITY,
       },
     );
-    expect(res.ok).toBe(true);
+    expect(res.ok).toBe(false);
   });
 });
 
