@@ -7,9 +7,13 @@ import type {
   AuthSessionRecord,
   CreateAuthSessionInput,
   CreateBootstrapUserInput,
+  CreateTeamApiKeyInput,
   IdentityRecord,
   RotateAuthSessionInput,
+  TeamApiKeyRecord,
+  UpsertUserDeviceInput,
   UserContextRecord,
+  UserDeviceRecord,
 } from "../src/repository.js";
 
 class InMemoryAuthRepository implements AuthRepository {
@@ -17,6 +21,8 @@ class InMemoryAuthRepository implements AuthRepository {
   private readonly contexts = new Map<string, UserContextRecord>();
   private readonly sessionsByHash = new Map<string, AuthSessionRecord>();
   private readonly sessionsByUuid = new Map<string, AuthSessionRecord>();
+  private readonly devicesByUuid = new Map<string, UserDeviceRecord>();
+  private readonly apiKeysByUuid = new Map<string, TeamApiKeyRecord>();
 
   private identityKey(provider: string, normalized: string): string {
     return `${provider}:${normalized}`;
@@ -46,6 +52,8 @@ class InMemoryAuthRepository implements AuthRepository {
     const context: UserContextRecord = {
       user_uuid: input.user_uuid,
       team_uuid: input.team_uuid,
+      team_name: input.team_name,
+      team_slug: input.team_slug,
       display_name: input.display_name,
       identity_provider: input.provider,
       login_identifier: input.provider_subject,
@@ -68,6 +76,7 @@ class InMemoryAuthRepository implements AuthRepository {
       auth_session_uuid: input.auth_session_uuid,
       user_uuid: input.user_uuid,
       team_uuid: input.team_uuid,
+      device_uuid: input.device_uuid,
       refresh_token_hash: input.refresh_token_hash,
       expires_at: input.expires_at,
       rotated_from_uuid: input.rotated_from_uuid,
@@ -98,11 +107,65 @@ class InMemoryAuthRepository implements AuthRepository {
     await this.createAuthSession(input.next);
   }
 
+  async readUserDevice(deviceUuid: string): Promise<UserDeviceRecord | null> {
+    return this.devicesByUuid.get(deviceUuid) ?? null;
+  }
+
+  async upsertUserDevice(input: UpsertUserDeviceInput): Promise<void> {
+    const existing = this.devicesByUuid.get(input.device_uuid);
+    this.devicesByUuid.set(input.device_uuid, {
+      device_uuid: input.device_uuid,
+      user_uuid: input.user_uuid,
+      team_uuid: input.team_uuid,
+      device_label: input.device_label,
+      device_kind: input.device_kind,
+      status: "active",
+      created_at: existing?.created_at ?? input.seen_at,
+      last_seen_at: input.seen_at,
+      revoked_at: null,
+      revoked_reason: null,
+    });
+  }
+
+  async findTeamApiKey(apiKeyUuid: string): Promise<TeamApiKeyRecord | null> {
+    return this.apiKeysByUuid.get(apiKeyUuid) ?? null;
+  }
+
+  async createTeamApiKey(input: CreateTeamApiKeyInput): Promise<void> {
+    const firstContext = Array.from(this.contexts.values())[0];
+    this.apiKeysByUuid.set(input.api_key_uuid, {
+      api_key_uuid: input.api_key_uuid,
+      team_uuid: input.team_uuid,
+      owner_user_uuid: firstContext?.user_uuid ?? "00000000-0000-4000-8000-000000000999",
+      key_hash: input.key_hash,
+      key_salt: input.key_salt,
+      label: input.label,
+      key_status: "active",
+      created_at: input.created_at,
+      last_used_at: null,
+      revoked_at: null,
+    });
+  }
+
+  async touchTeamApiKey(apiKeyUuid: string, lastUsedAt: string): Promise<void> {
+    const existing = this.apiKeysByUuid.get(apiKeyUuid);
+    if (!existing) return;
+    this.apiKeysByUuid.set(apiKeyUuid, { ...existing, last_used_at: lastUsedAt });
+  }
+
   async updatePasswordSecret(identityUuid: string, passwordHash: string): Promise<void> {
     for (const [key, identity] of this.identities.entries()) {
       if (identity.identity_uuid !== identityUuid || identity.identity_provider !== "email_password") continue;
       this.identities.set(key, { ...identity, auth_secret_hash: passwordHash });
     }
+  }
+
+  latestSession(): AuthSessionRecord | null {
+    return Array.from(this.sessionsByUuid.values()).at(-1) ?? null;
+  }
+
+  device(deviceUuid: string): UserDeviceRecord | null {
+    return this.devicesByUuid.get(deviceUuid) ?? null;
   }
 }
 
@@ -140,6 +203,7 @@ const META = {
   trace_uuid: "11111111-1111-4111-8111-111111111111",
   caller: "orchestrator-core",
 } as const;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 describe("AuthService", () => {
   it("registers, logs in, refreshes, and reads me", async () => {
@@ -151,6 +215,8 @@ describe("AuthService", () => {
         email: "user@example.com",
         password: "password-123",
         display_name: "User",
+        device_uuid: "11111111-1111-4111-8111-111111111111",
+        device_kind: "web",
       },
       META,
     );
@@ -180,9 +246,15 @@ describe("AuthService", () => {
     expect(me.ok).toBe(true);
     if (!me.ok) return;
     expect(me.data.team.membership_level).toBe(100);
+    expect(me.data.team.team_name).toBe("User");
+    expect(me.data.team.team_slug).toMatch(/^[a-z0-9-]{1,32}$/);
+    expect(me.data.snapshot.device_uuid).toMatch(UUID_RE);
 
     const refreshed = await service.refresh(
-      { refresh_token: login.data.tokens.refresh_token },
+      {
+        refresh_token: login.data.tokens.refresh_token,
+        device_uuid: login.data.snapshot.device_uuid,
+      },
       META,
     );
     expect(refreshed.ok).toBe(true);
@@ -333,6 +405,7 @@ describe("AuthService", () => {
         sub: register.data.user.user_uuid,
         user_uuid: register.data.user.user_uuid,
         team_uuid: register.data.team.team_uuid,
+        device_uuid: register.data.snapshot.device_uuid,
         membership_level: register.data.team.membership_level,
         source_name: "orchestrator.auth",
       },
@@ -352,6 +425,7 @@ describe("AuthService", () => {
         sub: register.data.user.user_uuid,
         user_uuid: register.data.user.user_uuid,
         team_uuid: "99999999-9999-4999-8999-999999999999",
+        device_uuid: register.data.snapshot.device_uuid,
         membership_level: register.data.team.membership_level,
         source_name: "orchestrator.auth",
       },
@@ -365,5 +439,67 @@ describe("AuthService", () => {
     if (!foreignResult.ok) {
       expect(foreignResult.error.code).toBe("identity-not-found");
     }
+  });
+
+  it("binds refresh to device and rejects mismatched device_uuid", async () => {
+    const repo = new InMemoryAuthRepository();
+    const service = createService(repo);
+    const register = await service.register(
+      {
+        email: "device@example.com",
+        password: "password-123",
+        device_uuid: "22222222-2222-4222-8222-222222222222",
+        device_kind: "web",
+      },
+      META,
+    );
+    expect(register.ok).toBe(true);
+    if (!register.ok) return;
+
+    const refreshed = await service.refresh(
+      {
+        refresh_token: register.data.tokens.refresh_token,
+        device_uuid: "33333333-3333-4333-8333-333333333333",
+      },
+      META,
+    );
+    expect(refreshed.ok).toBe(false);
+    if (!refreshed.ok) {
+      expect(refreshed.error.code).toBe("invalid-auth");
+    }
+  });
+
+  it("creates and verifies API keys", async () => {
+    const repo = new InMemoryAuthRepository();
+    const service = createService(repo);
+    const register = await service.register(
+      {
+        email: "apikey@example.com",
+        password: "password-123",
+      },
+      META,
+    );
+    expect(register.ok).toBe(true);
+    if (!register.ok) return;
+
+    const created = await service.createApiKey(
+      { team_uuid: register.data.team.team_uuid, label: "preview" },
+      META,
+    );
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+
+    const verified = await service.verifyApiKey(
+      { api_key: created.data.api_key },
+      META,
+    );
+    expect(verified.ok).toBe(true);
+    if (!verified.ok) return;
+    expect(verified.data.team_uuid).toBe(register.data.team.team_uuid);
+
+    const me = await service.me({ access_token: created.data.api_key }, META);
+    expect(me.ok).toBe(true);
+    if (!me.ok) return;
+    expect(me.data.snapshot.device_uuid).toBe("");
   });
 });

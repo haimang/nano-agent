@@ -19,6 +19,8 @@ export interface IdentityRecord {
 export interface UserContextRecord {
   readonly user_uuid: string;
   readonly team_uuid: string;
+  readonly team_name: string;
+  readonly team_slug: string;
   readonly display_name: string | null;
   readonly identity_provider: IdentityProvider;
   readonly login_identifier: string | null;
@@ -30,6 +32,7 @@ export interface AuthSessionRecord {
   readonly auth_session_uuid: string;
   readonly user_uuid: string;
   readonly team_uuid: string;
+  readonly device_uuid: string | null;
   readonly refresh_token_hash: string;
   readonly expires_at: string;
   readonly rotated_from_uuid: string | null;
@@ -44,6 +47,8 @@ export interface CreateBootstrapUserInput {
   readonly user_uuid: string;
   readonly team_uuid: string;
   readonly membership_uuid: string;
+  readonly team_name: string;
+  readonly team_slug: string;
   readonly display_name: string | null;
   readonly provider: IdentityProvider;
   readonly provider_subject: string;
@@ -56,6 +61,7 @@ export interface CreateAuthSessionInput {
   readonly auth_session_uuid: string;
   readonly user_uuid: string;
   readonly team_uuid: string;
+  readonly device_uuid: string | null;
   readonly refresh_token_hash: string;
   readonly expires_at: string;
   readonly rotated_from_uuid: string | null;
@@ -73,6 +79,50 @@ export interface RotateAuthSessionInput {
   readonly next: CreateAuthSessionInput;
 }
 
+export interface UserDeviceRecord {
+  readonly device_uuid: string;
+  readonly user_uuid: string;
+  readonly team_uuid: string;
+  readonly device_label: string | null;
+  readonly device_kind: string;
+  readonly status: string;
+  readonly created_at: string;
+  readonly last_seen_at: string;
+  readonly revoked_at: string | null;
+  readonly revoked_reason: string | null;
+}
+
+export interface UpsertUserDeviceInput {
+  readonly device_uuid: string;
+  readonly user_uuid: string;
+  readonly team_uuid: string;
+  readonly device_label: string | null;
+  readonly device_kind: string;
+  readonly seen_at: string;
+}
+
+export interface TeamApiKeyRecord {
+  readonly api_key_uuid: string;
+  readonly team_uuid: string;
+  readonly owner_user_uuid: string;
+  readonly key_hash: string;
+  readonly key_salt: string;
+  readonly label: string;
+  readonly key_status: string;
+  readonly created_at: string;
+  readonly last_used_at: string | null;
+  readonly revoked_at: string | null;
+}
+
+export interface CreateTeamApiKeyInput {
+  readonly api_key_uuid: string;
+  readonly team_uuid: string;
+  readonly key_hash: string;
+  readonly key_salt: string;
+  readonly label: string;
+  readonly created_at: string;
+}
+
 export interface AuthRepository {
   findIdentityBySubject(
     provider: IdentityProvider,
@@ -84,6 +134,11 @@ export interface AuthRepository {
   createAuthSession(input: CreateAuthSessionInput): Promise<void>;
   findAuthSessionByHash(refreshTokenHash: string): Promise<AuthSessionRecord | null>;
   rotateAuthSession(input: RotateAuthSessionInput): Promise<void>;
+  readUserDevice(deviceUuid: string): Promise<UserDeviceRecord | null>;
+  upsertUserDevice(input: UpsertUserDeviceInput): Promise<void>;
+  findTeamApiKey(apiKeyUuid: string): Promise<TeamApiKeyRecord | null>;
+  createTeamApiKey(input: CreateTeamApiKeyInput): Promise<void>;
+  touchTeamApiKey(apiKeyUuid: string, lastUsedAt: string): Promise<void>;
   updatePasswordSecret(identityUuid: string, passwordHash: string, updatedAt: string): Promise<void>;
 }
 
@@ -100,6 +155,8 @@ function normalizeUserContextRow(row: Record<string, unknown> | null): UserConte
   return {
     user_uuid: String(row.user_uuid),
     team_uuid: String(row.team_uuid),
+    team_name: String(row.team_name ?? ""),
+    team_slug: String(row.team_slug ?? ""),
     display_name: toNullableString(row.display_name),
     identity_provider: String(row.identity_provider) as IdentityProvider,
     login_identifier: toNullableString(row.login_identifier),
@@ -130,6 +187,7 @@ function normalizeAuthSessionRow(row: Record<string, unknown> | null): AuthSessi
     auth_session_uuid: String(row.auth_session_uuid),
     user_uuid: String(row.user_uuid),
     team_uuid: String(row.team_uuid),
+    device_uuid: toNullableString(row.device_uuid),
     refresh_token_hash: String(row.refresh_token_hash),
     expires_at: String(row.expires_at),
     rotated_from_uuid: toNullableString(row.rotated_from_uuid),
@@ -137,6 +195,38 @@ function normalizeAuthSessionRow(row: Record<string, unknown> | null): AuthSessi
     revoked_at: toNullableString(row.revoked_at),
     rotated_at: toNullableString(row.rotated_at),
     last_used_at: toNullableString(row.last_used_at),
+  };
+}
+
+function normalizeUserDeviceRow(row: Record<string, unknown> | null): UserDeviceRecord | null {
+  if (!row) return null;
+  return {
+    device_uuid: String(row.device_uuid),
+    user_uuid: String(row.user_uuid),
+    team_uuid: String(row.team_uuid),
+    device_label: toNullableString(row.device_label),
+    device_kind: String(row.device_kind),
+    status: String(row.status),
+    created_at: String(row.created_at),
+    last_seen_at: String(row.last_seen_at),
+    revoked_at: toNullableString(row.revoked_at),
+    revoked_reason: toNullableString(row.revoked_reason),
+  };
+}
+
+function normalizeTeamApiKeyRow(row: Record<string, unknown> | null): TeamApiKeyRecord | null {
+  if (!row) return null;
+  return {
+    api_key_uuid: String(row.api_key_uuid),
+    team_uuid: String(row.team_uuid),
+    owner_user_uuid: String(row.owner_user_uuid),
+    key_hash: String(row.key_hash),
+    key_salt: String(row.key_salt ?? ""),
+    label: String(row.label),
+    key_status: String(row.key_status),
+    created_at: String(row.created_at),
+    last_used_at: toNullableString(row.last_used_at),
+    revoked_at: toNullableString(row.revoked_at),
   };
 }
 
@@ -196,9 +286,9 @@ export class D1AuthRepository implements AuthRepository {
          VALUES (?1, ?2, NULL, ?3)`,
       ).bind(input.user_uuid, input.display_name, input.created_at),
       this.db.prepare(
-        `INSERT INTO nano_teams (team_uuid, owner_user_uuid, created_at, plan_level)
-         VALUES (?1, ?2, ?3, 0)`,
-      ).bind(input.team_uuid, input.user_uuid, input.created_at),
+        `INSERT INTO nano_teams (team_uuid, owner_user_uuid, created_at, plan_level, team_name, team_slug)
+          VALUES (?1, ?2, ?3, 0, ?4, ?5)`,
+      ).bind(input.team_uuid, input.user_uuid, input.created_at, input.team_name, input.team_slug),
       this.db.prepare(
         `INSERT INTO nano_team_memberships (membership_uuid, team_uuid, user_uuid, membership_level, created_at)
          VALUES (?1, ?2, ?3, ?4, ?5)`,
@@ -237,6 +327,8 @@ export class D1AuthRepository implements AuthRepository {
     return {
       user_uuid: input.user_uuid,
       team_uuid: input.team_uuid,
+      team_name: input.team_name,
+      team_slug: input.team_slug,
       display_name: input.display_name,
       identity_provider: input.provider,
       login_identifier: input.provider_subject,
@@ -258,6 +350,8 @@ export class D1AuthRepository implements AuthRepository {
       `SELECT
          m.user_uuid,
          m.team_uuid,
+         t.team_name,
+         t.team_slug,
          p.display_name,
          i.identity_provider,
          i.provider_subject AS login_identifier,
@@ -291,6 +385,7 @@ export class D1AuthRepository implements AuthRepository {
          auth_session_uuid,
          user_uuid,
          team_uuid,
+         device_uuid,
          refresh_token_hash,
          expires_at,
          rotated_from_uuid,
@@ -298,12 +393,13 @@ export class D1AuthRepository implements AuthRepository {
          revoked_at,
          rotated_at,
          last_used_at
-       ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`,
+       ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`,
     )
       .bind(
         input.auth_session_uuid,
         input.user_uuid,
         input.team_uuid,
+        input.device_uuid ?? null,
         input.refresh_token_hash,
         input.expires_at,
         input.rotated_from_uuid,
@@ -321,6 +417,7 @@ export class D1AuthRepository implements AuthRepository {
          auth_session_uuid,
          user_uuid,
          team_uuid,
+         device_uuid,
          refresh_token_hash,
          expires_at,
          rotated_from_uuid,
@@ -352,31 +449,140 @@ export class D1AuthRepository implements AuthRepository {
         input.last_used_at,
       ),
       this.db.prepare(
-        `INSERT INTO nano_auth_sessions (
-           auth_session_uuid,
-           user_uuid,
-           team_uuid,
-           refresh_token_hash,
-           expires_at,
-           rotated_from_uuid,
-           created_at,
-           revoked_at,
-           rotated_at,
-           last_used_at
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)`,
-      ).bind(
-        input.next.auth_session_uuid,
-        input.next.user_uuid,
-        input.next.team_uuid,
-        input.next.refresh_token_hash,
-        input.next.expires_at,
-        input.next.rotated_from_uuid,
-        input.next.created_at,
+         `INSERT INTO nano_auth_sessions (
+            auth_session_uuid,
+            user_uuid,
+            team_uuid,
+            device_uuid,
+            refresh_token_hash,
+            expires_at,
+            rotated_from_uuid,
+            created_at,
+            revoked_at,
+            rotated_at,
+            last_used_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`,
+       ).bind(
+         input.next.auth_session_uuid,
+         input.next.user_uuid,
+         input.next.team_uuid,
+         input.next.device_uuid ?? null,
+         input.next.refresh_token_hash,
+         input.next.expires_at,
+         input.next.rotated_from_uuid,
+         input.next.created_at,
         input.next.revoked_at ?? null,
         input.next.rotated_at ?? null,
         input.next.last_used_at ?? null,
       ),
     ]);
+  }
+
+  async readUserDevice(deviceUuid: string): Promise<UserDeviceRecord | null> {
+    const row = await this.db.prepare(
+      `SELECT
+         device_uuid,
+         user_uuid,
+         team_uuid,
+         device_label,
+         device_kind,
+         status,
+         created_at,
+         last_seen_at,
+         revoked_at,
+         revoked_reason
+       FROM nano_user_devices
+      WHERE device_uuid = ?1
+      LIMIT 1`,
+    ).bind(deviceUuid).first<Record<string, unknown>>();
+    return normalizeUserDeviceRow(row ?? null);
+  }
+
+  async upsertUserDevice(input: UpsertUserDeviceInput): Promise<void> {
+    await this.db.prepare(
+      `INSERT INTO nano_user_devices (
+         device_uuid,
+         user_uuid,
+         team_uuid,
+         device_label,
+         device_kind,
+         status,
+         created_at,
+         last_seen_at,
+         revoked_at,
+         revoked_reason
+       ) VALUES (?1, ?2, ?3, ?4, ?5, 'active', ?6, ?6, NULL, NULL)
+       ON CONFLICT(device_uuid) DO UPDATE SET
+         user_uuid = excluded.user_uuid,
+         team_uuid = excluded.team_uuid,
+         device_label = excluded.device_label,
+         device_kind = excluded.device_kind,
+         status = 'active',
+         last_seen_at = excluded.last_seen_at,
+         revoked_at = NULL,
+         revoked_reason = NULL`,
+    ).bind(
+      input.device_uuid,
+      input.user_uuid,
+      input.team_uuid,
+      input.device_label,
+      input.device_kind,
+      input.seen_at,
+    ).run();
+  }
+
+  async findTeamApiKey(apiKeyUuid: string): Promise<TeamApiKeyRecord | null> {
+    const row = await this.db.prepare(
+      `SELECT
+         k.api_key_uuid,
+         k.team_uuid,
+         t.owner_user_uuid,
+         k.key_hash,
+         k.key_salt,
+         k.label,
+         k.key_status,
+         k.created_at,
+         k.last_used_at,
+         k.revoked_at
+       FROM nano_team_api_keys k
+       JOIN nano_teams t
+         ON t.team_uuid = k.team_uuid
+      WHERE k.api_key_uuid = ?1
+      LIMIT 1`,
+    ).bind(apiKeyUuid).first<Record<string, unknown>>();
+    return normalizeTeamApiKeyRow(row ?? null);
+  }
+
+  async createTeamApiKey(input: CreateTeamApiKeyInput): Promise<void> {
+    await this.db.prepare(
+      `INSERT INTO nano_team_api_keys (
+         api_key_uuid,
+         team_uuid,
+         key_hash,
+         key_salt,
+         label,
+         key_status,
+         scopes_json,
+         created_at,
+         last_used_at,
+         revoked_at
+       ) VALUES (?1, ?2, ?3, ?4, ?5, 'active', NULL, ?6, NULL, NULL)`,
+    ).bind(
+      input.api_key_uuid,
+      input.team_uuid,
+      input.key_hash,
+      input.key_salt,
+      input.label,
+      input.created_at,
+    ).run();
+  }
+
+  async touchTeamApiKey(apiKeyUuid: string, lastUsedAt: string): Promise<void> {
+    await this.db.prepare(
+      `UPDATE nano_team_api_keys
+          SET last_used_at = ?2
+        WHERE api_key_uuid = ?1`,
+    ).bind(apiKeyUuid, lastUsedAt).run();
   }
 
   async updatePasswordSecret(identityUuid: string, passwordHash: string, updatedAt: string): Promise<void> {

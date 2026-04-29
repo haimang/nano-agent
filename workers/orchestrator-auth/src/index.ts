@@ -1,4 +1,5 @@
 import {
+  type CreateApiKeyEnvelope,
   type LoginEnvelope,
   type MeEnvelope,
   type OrchestratorAuthRpcService,
@@ -103,7 +104,10 @@ export default class OrchestratorAuthEntrypoint
   }
 
   async verifyApiKey(rawInput: unknown, rawMeta: unknown): Promise<VerifyApiKeyEnvelope> {
-    void rawInput;
-    return invokeKnown(this.env, (service) => service.verifyApiKey(rawMeta));
+    return invokeKnown(this.env, (service) => service.verifyApiKey(rawInput, rawMeta));
+  }
+
+  async createApiKey(rawInput: unknown, rawMeta: unknown): Promise<CreateApiKeyEnvelope> {
+    return invokeKnown(this.env, (service) => service.createApiKey(rawInput, rawMeta));
   }
 }

@@ -13,9 +13,13 @@ import type {
   AuthSessionRecord,
   CreateAuthSessionInput,
   CreateBootstrapUserInput,
+  CreateTeamApiKeyInput,
   IdentityRecord,
   RotateAuthSessionInput,
+  TeamApiKeyRecord,
+  UpsertUserDeviceInput,
   UserContextRecord,
+  UserDeviceRecord,
 } from "../src/repository.js";
 import type { WeChatClient } from "../src/wechat.js";
 
@@ -39,6 +43,8 @@ class InMemoryAuthRepository implements AuthRepository {
   private readonly contexts = new Map<string, UserContextRecord>();
   private readonly sessionsByHash = new Map<string, AuthSessionRecord>();
   private readonly sessionsByUuid = new Map<string, AuthSessionRecord>();
+  private readonly devicesByUuid = new Map<string, UserDeviceRecord>();
+  private readonly apiKeysByUuid = new Map<string, TeamApiKeyRecord>();
 
   constructor(private readonly opts: RepoOptions = {}) {}
 
@@ -82,6 +88,8 @@ class InMemoryAuthRepository implements AuthRepository {
     const context: UserContextRecord = {
       user_uuid: input.user_uuid,
       team_uuid: input.team_uuid,
+      team_name: input.team_name,
+      team_slug: input.team_slug,
       display_name: input.display_name,
       identity_provider: input.provider,
       login_identifier: input.provider_subject,
@@ -111,6 +119,7 @@ class InMemoryAuthRepository implements AuthRepository {
       auth_session_uuid: input.auth_session_uuid,
       user_uuid: input.user_uuid,
       team_uuid: input.team_uuid,
+      device_uuid: input.device_uuid,
       refresh_token_hash: input.refresh_token_hash,
       expires_at: input.expires_at,
       rotated_from_uuid: input.rotated_from_uuid,
@@ -141,6 +150,57 @@ class InMemoryAuthRepository implements AuthRepository {
     this.sessionsByHash.set(updated.refresh_token_hash, updated);
     this.sessionsByUuid.set(updated.auth_session_uuid, updated);
     await this.createAuthSession(input.next);
+  }
+
+  async readUserDevice(deviceUuid: string): Promise<UserDeviceRecord | null> {
+    await this.delay();
+    return this.devicesByUuid.get(deviceUuid) ?? null;
+  }
+
+  async upsertUserDevice(input: UpsertUserDeviceInput): Promise<void> {
+    await this.delay();
+    const existing = this.devicesByUuid.get(input.device_uuid);
+    this.devicesByUuid.set(input.device_uuid, {
+      device_uuid: input.device_uuid,
+      user_uuid: input.user_uuid,
+      team_uuid: input.team_uuid,
+      device_label: input.device_label,
+      device_kind: input.device_kind,
+      status: "active",
+      created_at: existing?.created_at ?? input.seen_at,
+      last_seen_at: input.seen_at,
+      revoked_at: null,
+      revoked_reason: null,
+    });
+  }
+
+  async findTeamApiKey(apiKeyUuid: string): Promise<TeamApiKeyRecord | null> {
+    await this.delay();
+    return this.apiKeysByUuid.get(apiKeyUuid) ?? null;
+  }
+
+  async createTeamApiKey(input: CreateTeamApiKeyInput): Promise<void> {
+    await this.delay();
+    const firstContext = Array.from(this.contexts.values())[0];
+    this.apiKeysByUuid.set(input.api_key_uuid, {
+      api_key_uuid: input.api_key_uuid,
+      team_uuid: input.team_uuid,
+      owner_user_uuid: firstContext?.user_uuid ?? "00000000-0000-4000-8000-000000000999",
+      key_hash: input.key_hash,
+      key_salt: input.key_salt,
+      label: input.label,
+      key_status: "active",
+      created_at: input.created_at,
+      last_used_at: null,
+      revoked_at: null,
+    });
+  }
+
+  async touchTeamApiKey(apiKeyUuid: string, lastUsedAt: string): Promise<void> {
+    await this.delay();
+    const existing = this.apiKeysByUuid.get(apiKeyUuid);
+    if (!existing) return;
+    this.apiKeysByUuid.set(apiKeyUuid, { ...existing, last_used_at: lastUsedAt });
   }
 
   async updatePasswordSecret(identityUuid: string, passwordHash: string): Promise<void> {
