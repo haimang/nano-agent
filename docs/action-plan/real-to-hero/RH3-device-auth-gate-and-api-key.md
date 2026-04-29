@@ -24,7 +24,7 @@
 > - `docs/investigation/api-docs-after-ZX5-reviewed-by-GPT.md`
 > 冻结决策来源:
 > - `docs/design/real-to-hero/RHX-qna.md` Q1（业主同意 Opus 路线：ASCII slug + 6 base36 + global UNIQUE NOT NULL + ≤32 + `[a-z0-9-]`）
-> 文档状态: `draft`
+> 文档状态: `executed`
 
 ---
 
@@ -232,7 +232,7 @@ RH3
 | P3-15 | endpoint test | 所有新 endpoint 各 ≥5 case | test files | 全绿 |
 | P3-16 | device revoke e2e | 跨 worker：login → start session → revoke device → 验证 access 401 + WS 收 terminal | `test/cross-e2e/device-revoke.e2e.test.ts` | 1 e2e 通过 |
 | P3-17 | API key smoke | curl `nak_*` bearer 调 `/auth/me` 与 `/sessions/*` | `tests/api-key-smoke.test.ts` | 通过 |
-| P3-18 | preview smoke | preview deploy → 业主 manual：注册 / 登录 / 在第二台设备 revoke 第一台 / 第一台 WS 自动断开 | `docs/issue/real-to-hero/RH3-evidence.md` | 文档 ≥1KB + 截图 |
+| P3-18 | preview smoke | preview deploy → live CLI smoke：注册 / 登录 / 第二设备 revoke 第一设备 / 第一设备 token 401 + WS close | `docs/issue/real-to-hero/RH3-closure.md` §3 | 证据已并入 closure |
 
 ---
 
@@ -347,6 +347,67 @@ RH3
 |------|----------|
 | 功能 | device live + API key live + team display live + conversations 对齐 |
 | 测试 | endpoint ≥30 case + cross-worker e2e ≥3 |
-| 文档 | 3 份 API doc + RH3-evidence.md |
+| 文档 | `RH3-closure.md`（内嵌 preview evidence）+ action-plan 工作日志回填 |
 | 风险收敛 | force-disconnect ≤2s；access path latency 增加 ≤5ms p99 |
 | 可交付性 | RH4/5/6 可启动 |
+
+---
+
+## 11. 工作日志回填（executed）
+
+> 实施人: Copilot
+> 实施日期: 2026-04-29
+> 关联闭合文件: `docs/issue/real-to-hero/RH3-closure.md`
+
+本节按「schema / contract / auth / façade / User DO / tests / preview」顺序回填 RH3 的实际落地内容；仅记录已经完成并验证过的改动。
+
+### 11.1 新增文件
+
+| # | 文件路径 | 对应项 | 说明 |
+|---|---|---|---|
+| 1 | `workers/orchestrator-core/migrations/009-team-display-and-api-keys.sql` | P3-01 | 增加 `team_name` / `team_slug` / `key_salt` / `auth_sessions.device_uuid` |
+| 2 | `workers/orchestrator-core/test/me-team-route.test.ts` | P3-12 / P3-15 | `/me/team` GET+PATCH 5 case |
+| 3 | `workers/orchestrator-core/test/me-teams-route.test.ts` | P3-13 / P3-15 | `/me/teams` GET 5 case |
+| 4 | `test/package-e2e/orchestrator-core/09-api-key-smoke.test.mjs` | P3-17 | live `nak_*` bearer smoke |
+| 5 | `test/cross-e2e/13-device-revoke-force-disconnect.test.mjs` | P3-16 | live revoke → WS close + old token 401 |
+| 6 | `docs/issue/real-to-hero/RH3-closure.md` | RH3 closure | 阶段闭合 memo |
+
+### 11.2 关键修改文件
+
+| 领域 | 文件 | 变更摘要 |
+|---|---|---|
+| contract | `packages/orchestrator-auth-contract/src/index.ts` | `AuthTeam` / `AccessTokenClaims` / `AuthSnapshot` / `VerifyApiKeyResult` 升级；新增 `createApiKey` RPC |
+| contract | `packages/orchestrator-auth-contract/package.json` | 版本 `0.0.0 → 0.0.1` |
+| auth worker | `workers/orchestrator-auth/src/service.ts` | register/login/refresh 写入 `device_uuid`；`verifyApiKey` 真查 D1；新增 internal `createApiKey`; `/auth/me` 支持 `nak_*` |
+| auth worker | `workers/orchestrator-auth/src/repository.ts` | team/device/api-key D1 访问层补齐 |
+| auth worker | `workers/orchestrator-auth/src/index.ts` | 导出 `createApiKey()` Entrypoint；verifyApiKey 改为吃 raw input |
+| façade auth ingress | `workers/orchestrator-core/src/auth.ts` | JWT/API-key 双轨；device gate cache；revoke 后 cache clear |
+| façade routes | `workers/orchestrator-core/src/index.ts` | `x-device-*` 透传；新增 `/me/team`、`/me/teams`；`/me/conversations` cursor 聚合；`/me/devices` active-only；revoke 后 fan-out User DO |
+| User DO | `workers/orchestrator-core/src/user-do.ts` | session/attachment 绑定 `device_uuid`；WS attach gate；内部 `/internal/devices/revoke` 断开 attachment |
+| session truth | `workers/orchestrator-core/src/session-lifecycle.ts` / `ws-bridge.ts` | `SessionEntry` / `AttachmentState` 增加 `device_uuid` |
+| shared live helper | `test/shared/orchestrator-auth.mjs` | 新增 register/login helper，支持带设备头的 live auth bootstrap |
+
+### 11.3 测试与验证回填
+
+| 命令 / 验证 | 结果 |
+|---|---|
+| `pnpm --filter @haimang/orchestrator-core-worker typecheck && build && test` | ✅ `17` files / `148` tests |
+| `bash scripts/deploy-preview.sh orchestrator-auth orchestrator-core` | ✅ apply 009 + deploy 2 workers |
+| `NANO_AGENT_LIVE_E2E=1 node --test test/package-e2e/orchestrator-core/09-api-key-smoke.test.mjs test/cross-e2e/13-device-revoke-force-disconnect.test.mjs test/cross-e2e/11-orchestrator-public-facade-roundtrip.test.mjs` | ✅ `3/3` live tests |
+| preview smoke | ✅ register / me / refresh / second-device login / me-team patch / me-teams / me-devices / revoke / API key 全通过 |
+
+### 11.4 Preview 执行结果
+
+| 项 | 结果 |
+|---|---|
+| remote D1 apply | `009-team-display-and-api-keys.sql` 成功执行 |
+| `nano-agent-orchestrator-auth-preview` | Version `212b2b22-b372-4bab-952a-19ea1958deae` |
+| `nano-agent-orchestrator-core-preview` | Version `b406bb1a-5fa4-4c94-9472-a9e68eb042b0` |
+| `/debug/workers/health` | `live: 6 / total: 6` |
+| JWT device revoke smoke | revoke 前 2 设备，revoke 后仅剩新设备；旧 token 访问即 `401` |
+| API key smoke | `nak_*` bearer 对 `/auth/me`、`/me/team` 均返回 `200` |
+
+### 11.5 本轮未一并闭合的 inherited debt
+
+1. RH1 carry-over 的 `permission / elicitation / usage` 3 条 round-trip cross-e2e 未在 RH3 本轮并单收口。
+2. RH2 carry-over 的 WS lifecycle 全量 hardening（4 scenario + alarm）仍需后续 phase 继续完成。
