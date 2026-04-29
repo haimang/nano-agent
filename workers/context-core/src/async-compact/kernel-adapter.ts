@@ -19,8 +19,16 @@
  * the host directly via `tryArm` / `tryPrepare`.
  */
 
-import type { AsyncCompactOrchestrator } from "./index.js";
 import type { ContextLayer } from "../context-layers.js";
+import type { CommitOutcome } from "./types.js";
+
+interface AsyncCompactOrchestratorLike {
+  forceSyncCompact(input: {
+    layers: readonly ContextLayer[];
+    contextVersion: number;
+    reason: string;
+  }): Promise<CommitOutcome>;
+}
 
 /**
  * The kernel's compact delegate is intentionally typed loosely
@@ -37,7 +45,7 @@ export interface KernelCompactDelegate {
 }
 
 export interface CreateKernelAdapterConfig {
-  readonly orchestrator: AsyncCompactOrchestrator;
+  readonly orchestrator: AsyncCompactOrchestratorLike;
   /**
    * Snapshot of the live context layers + version. The host calls this
    * lazily so the adapter always sees the freshest state at compact

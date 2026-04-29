@@ -6,7 +6,16 @@
  * of the mapping from design doc appendix B.1.
  */
 
-import type { SessionStreamKind } from "./events.js";
+export type SessionStreamKind =
+  | "turn.begin"
+  | "turn.end"
+  | "llm.delta"
+  | "tool.call.progress"
+  | "tool.call.result"
+  | "hook.broadcast"
+  | "compact.notify"
+  | "system.notify"
+  | "session.update";
 
 // ═══════════════════════════════════════════════════════════════════
 // §1 — Mapping Table
