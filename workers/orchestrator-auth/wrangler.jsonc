@@ -32,6 +32,19 @@
       "database_id": "71a4b089-93e0-4d8f-afb8-bc9356a97cfa"
     }
   ],
+  // RH0 P0-C1 — KV/R2 binding first-declaration (placeholder ids).
+  "kv_namespaces": [
+    {
+      "binding": "NANO_KV",
+      "id": "f5de37a4139a480683368d39ca4bbb62"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "NANO_R2",
+      "bucket_name": "nano-agent-spike-do-storage-probe"
+    }
+  ],
   "env": {
     "preview": {
       "vars": {
@@ -47,6 +60,18 @@
           "database_name": "nano-agent-preview",
           // Shared `nano-agent-preview` D1 instance — see top-of-file comment.
           "database_id": "71a4b089-93e0-4d8f-afb8-bc9356a97cfa"
+        }
+      ],
+      "kv_namespaces": [
+        {
+          "binding": "NANO_KV",
+          "id": "f5de37a4139a480683368d39ca4bbb62"
+        }
+      ],
+      "r2_buckets": [
+        {
+          "binding": "NANO_R2",
+          "bucket_name": "nano-agent-spike-do-storage-probe"
         }
       ]
     }

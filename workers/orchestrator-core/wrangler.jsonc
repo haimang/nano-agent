@@ -52,6 +52,22 @@
     { "binding": "CONTEXT_CORE", "service": "nano-agent-context-core" },
     { "binding": "FILESYSTEM_CORE", "service": "nano-agent-filesystem-core" }
   ],
+  // RH0 P0-C1 — KV/R2 binding first-declaration (placeholder ids).
+  // RH0 only declares; downstream phases (RH3 KV idempotency / RH4 R2 file
+  // pipeline) actually consume. Placeholder ids point to existing
+  // `nano-agent-spike-do-storage-*` resources discovered by P0-F1 Step 4/5.
+  "kv_namespaces": [
+    {
+      "binding": "NANO_KV",
+      "id": "f5de37a4139a480683368d39ca4bbb62"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "NANO_R2",
+      "bucket_name": "nano-agent-spike-do-storage-probe"
+    }
+  ],
   "env": {
     "preview": {
       "vars": {
@@ -84,7 +100,19 @@
             "class_name": "NanoOrchestratorUserDO"
           }
         ]
-      }
+      },
+      "kv_namespaces": [
+        {
+          "binding": "NANO_KV",
+          "id": "f5de37a4139a480683368d39ca4bbb62"
+        }
+      ],
+      "r2_buckets": [
+        {
+          "binding": "NANO_R2",
+          "bucket_name": "nano-agent-spike-do-storage-probe"
+        }
+      ]
     }
   }
 }
