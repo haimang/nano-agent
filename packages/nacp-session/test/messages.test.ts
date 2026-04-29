@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   SessionStartBodySchema, SessionResumeBodySchema, SessionCancelBodySchema,
   SessionEndBodySchema, SessionStreamAckBodySchema, SessionHeartbeatBodySchema,
-  SessionFollowupInputBodySchema,
+  SessionFollowupInputBodySchema, SessionMessagePostBodySchema,
   SESSION_MESSAGE_TYPES, SESSION_BODY_REQUIRED, SESSION_BODY_SCHEMAS,
 } from "../src/messages.js";
 
@@ -10,8 +10,14 @@ const TEAM = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
 
 describe("Session message schemas", () => {
   it("session.start accepts valid body with initial_input", () => {
-    const r = SessionStartBodySchema.parse({ initial_input: "hello", cwd: "/workspace" });
+    const r = SessionStartBodySchema.parse({
+      initial_input: "hello",
+      cwd: "/workspace",
+      model_id: "@cf/meta/llama-4-scout-17b-16e-instruct",
+      reasoning: { effort: "low" },
+    });
     expect(r.initial_input).toBe("hello");
+    expect(r.reasoning?.effort).toBe("low");
   });
   it("session.start accepts empty body", () => {
     expect(SessionStartBodySchema.parse({})).toBeDefined();
@@ -61,6 +67,34 @@ describe("Session message schemas", () => {
     });
     expect(r.stream_seq).toBe(3);
     expect(r.context_ref?.kind).toBe("r2");
+  });
+
+  it("session.followup_input accepts RH5 model_id + reasoning + image parts", () => {
+    const r = SessionFollowupInputBodySchema.parse({
+      text: "describe",
+      model_id: "@cf/meta/llama-4-scout-17b-16e-instruct",
+      reasoning: { effort: "medium" },
+      parts: [
+        { kind: "text", text: "describe this" },
+        { kind: "image_url", url: `/sessions/s/files/f/content`, mime: "image/png" },
+      ],
+    });
+    expect(r.parts?.[1]?.kind).toBe("image_url");
+    expect(r.reasoning?.effort).toBe("medium");
+  });
+
+  it("SessionMessagePostBodySchema accepts text, artifact_ref, and image_url", () => {
+    const r = SessionMessagePostBodySchema.parse({
+      model_id: "@cf/meta/llama-4-scout-17b-16e-instruct",
+      reasoning: { effort: "high" },
+      parts: [
+        { kind: "text", text: "look" },
+        { kind: "artifact_ref", artifact_uuid: "file-1", summary: "uploaded image" },
+        { kind: "image_url", url: `/sessions/s/files/file-1/content`, mimeType: "image/png" },
+      ],
+    });
+    expect(r.parts).toHaveLength(3);
+    expect(r.reasoning?.effort).toBe("high");
   });
 });
 

@@ -14,6 +14,31 @@ import { z } from "zod";
 import { NacpRefSchema } from "@haimang/nacp-core";
 import { SessionStartInitialContextSchema } from "./upstream-context.js";
 
+const ModelIdSchema = z.string().regex(/^[a-z0-9@/._-]{1,120}$/i);
+const ReasoningEffortSchema = z.object({
+  effort: z.enum(["low", "medium", "high"]),
+});
+
+const SessionMessagePartSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("text"),
+    text: z.string().min(1).max(32768),
+  }),
+  z.object({
+    kind: z.literal("artifact_ref"),
+    artifact_uuid: z.string().min(1).max(128),
+    mime: z.string().max(128).optional(),
+    summary: z.string().max(2048).optional(),
+  }),
+  z.object({
+    kind: z.literal("image_url"),
+    url: z.string().min(1).max(2048),
+    mime: z.string().max(128).optional(),
+    mimeType: z.string().max(128).optional(),
+  }),
+]);
+export type SessionMessagePart = z.infer<typeof SessionMessagePartSchema>;
+
 // ── session.start ──
 export const SessionStartBodySchema = z.object({
   cwd: z.string().max(512).optional(),
@@ -22,6 +47,8 @@ export const SessionStartBodySchema = z.object({
   // so existing loose payloads (including {}) continue to parse.
   initial_context: SessionStartInitialContextSchema.optional(),
   initial_input: z.string().max(32768).optional(),
+  model_id: ModelIdSchema.optional(),
+  reasoning: ReasoningEffortSchema.optional(),
 });
 export type SessionStartBody = z.infer<typeof SessionStartBodySchema>;
 
@@ -93,8 +120,21 @@ export const SessionFollowupInputBodySchema = z.object({
   text: z.string().min(1).max(32768),
   context_ref: NacpRefSchema.optional(),
   stream_seq: z.number().int().min(0).optional(),
+  model_id: ModelIdSchema.optional(),
+  reasoning: ReasoningEffortSchema.optional(),
+  parts: z.array(SessionMessagePartSchema).min(1).max(32).optional(),
 });
 export type SessionFollowupInputBody = z.infer<typeof SessionFollowupInputBodySchema>;
+
+export const SessionMessagePostBodySchema = z.object({
+  parts: z.array(SessionMessagePartSchema).min(1).max(32),
+  model_id: ModelIdSchema.optional(),
+  reasoning: ReasoningEffortSchema.optional(),
+  trace_uuid: z.string().uuid().optional(),
+  context_ref: NacpRefSchema.optional(),
+  stream_seq: z.number().int().min(0).optional(),
+});
+export type SessionMessagePostBody = z.infer<typeof SessionMessagePostBodySchema>;
 
 // ═══════════════════════════════════════════════════════════════════
 // ZX2 Phase 2 P2-03 — 5 message_type families (7 message types) covering

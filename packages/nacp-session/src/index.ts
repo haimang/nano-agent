@@ -27,6 +27,7 @@ export {
   SessionStartBodySchema, SessionResumeBodySchema, SessionCancelBodySchema,
   SessionEndBodySchema, SessionStreamAckBodySchema, SessionHeartbeatBodySchema,
   SessionFollowupInputBodySchema,
+  SessionMessagePostBodySchema,
   // ZX2 Phase 2 P2-03 — 5 family / 7 message_types
   SessionPermissionDecisionEnumSchema,
   SessionPermissionScopeEnumSchema,
@@ -42,7 +43,7 @@ export {
 export type {
   SessionStartBody, SessionResumeBody, SessionCancelBody,
   SessionEndBody, SessionStreamAckBody, SessionHeartbeatBody,
-  SessionFollowupInputBody,
+  SessionFollowupInputBody, SessionMessagePostBody, SessionMessagePart,
   // ZX2 Phase 2 P2-03
   SessionPermissionDecisionEnum,
   SessionPermissionScopeEnum,

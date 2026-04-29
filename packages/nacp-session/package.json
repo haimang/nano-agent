@@ -1,6 +1,6 @@
 {
   "name": "@haimang/nacp-session",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "type": "module",
   "description": "NACP-Session — client ↔ session DO WebSocket profile for nano-agent",
   "main": "./dist/index.js",
