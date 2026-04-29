@@ -1,4 +1,7 @@
 import { z } from "zod";
+import { AuthErrorCodeSchema } from "./auth-error-codes.js";
+import type { AuthErrorCode } from "./auth-error-codes.js";
+export { AuthErrorCodeSchema, type AuthErrorCode } from "./auth-error-codes.js";
 
 // ZX2 Phase 2 P2-04: facade-http-v1 contract lives alongside auth in this
 // package. Re-exported below.
@@ -207,23 +210,6 @@ export const CreateApiKeyResultSchema = z.object({
   label: z.string().trim().min(1).max(80),
 });
 export type CreateApiKeyResult = z.infer<typeof CreateApiKeyResultSchema>;
-
-export const AuthErrorCodeSchema = z.enum([
-  "invalid-request",
-  "invalid-caller",
-  "invalid-auth",
-  "identity-already-exists",
-  "identity-not-found",
-  "password-mismatch",
-  "refresh-invalid",
-  "refresh-expired",
-  "refresh-revoked",
-  "invalid-wechat-code",
-  "invalid-wechat-payload",
-  "not-supported",
-  "worker-misconfigured",
-]);
-export type AuthErrorCode = z.infer<typeof AuthErrorCodeSchema>;
 
 export const AuthErrorSchema = z.object({
   code: AuthErrorCodeSchema,

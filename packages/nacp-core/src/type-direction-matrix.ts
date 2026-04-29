@@ -12,36 +12,36 @@
  * here. Narrowing is a later, opt-in concern.
  */
 
-import type { NacpDeliveryKind } from "./envelope.js";
+type CoreDeliveryKind = "command" | "response" | "event" | "error";
 
 export const NACP_CORE_TYPE_DIRECTION_MATRIX: Readonly<
-  Record<string, ReadonlySet<NacpDeliveryKind>>
+  Record<string, ReadonlySet<CoreDeliveryKind>>
 > = Object.freeze({
   // ── tool verbs ──
-  "tool.call.request": new Set<NacpDeliveryKind>(["command"]),
-  "tool.call.response": new Set<NacpDeliveryKind>(["response", "error"]),
-  "tool.call.cancel": new Set<NacpDeliveryKind>(["command"]),
+  "tool.call.request": new Set<CoreDeliveryKind>(["command"]),
+  "tool.call.response": new Set<CoreDeliveryKind>(["response", "error"]),
+  "tool.call.cancel": new Set<CoreDeliveryKind>(["command"]),
 
   // ── hook verbs ──
-  "hook.emit": new Set<NacpDeliveryKind>(["event"]),
-  "hook.outcome": new Set<NacpDeliveryKind>(["event", "response"]),
+  "hook.emit": new Set<CoreDeliveryKind>(["event"]),
+  "hook.outcome": new Set<CoreDeliveryKind>(["event", "response"]),
 
   // ── skill verbs ──
-  "skill.invoke.request": new Set<NacpDeliveryKind>(["command"]),
-  "skill.invoke.response": new Set<NacpDeliveryKind>(["response", "error"]),
+  "skill.invoke.request": new Set<CoreDeliveryKind>(["command"]),
+  "skill.invoke.response": new Set<CoreDeliveryKind>(["response", "error"]),
 
   // ── context verbs ──
-  "context.compact.request": new Set<NacpDeliveryKind>(["command"]),
-  "context.compact.response": new Set<NacpDeliveryKind>(["response", "error"]),
+  "context.compact.request": new Set<CoreDeliveryKind>(["command"]),
+  "context.compact.response": new Set<CoreDeliveryKind>(["response", "error"]),
 
   // ── system verbs ──
-  "system.error": new Set<NacpDeliveryKind>(["error"]),
-  "audit.record": new Set<NacpDeliveryKind>(["event"]),
+  "system.error": new Set<CoreDeliveryKind>(["error"]),
+  "audit.record": new Set<CoreDeliveryKind>(["event"]),
 });
 
 export function isLegalCoreDirection(
   messageType: string,
-  deliveryKind: NacpDeliveryKind,
+  deliveryKind: CoreDeliveryKind,
 ): boolean {
   const allowed = NACP_CORE_TYPE_DIRECTION_MATRIX[messageType];
   if (!allowed) {

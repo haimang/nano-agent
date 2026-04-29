@@ -1,11 +1,11 @@
 # @haimang/nacp-session
 
 > NACP-Session — the client ↔ session DO WebSocket profile of the NACP Protocol Family.
-> **Baseline**: `1.3.0` (frozen) — shares `NACP_VERSION` with `@haimang/nacp-core`. `NACP_VERSION_COMPAT = "1.0.0"` (pre-freeze payloads are accepted via `migrate_v1_0_to_v1_1` at the envelope layer). B9 added the session-side `(message_type × delivery_kind)` matrix + `SessionStartInitialContextSchema` (see `docs/rfc/nacp-core-1-3-draft.md`).
+> **Baseline**: `1.4.0` (frozen) — shares `NACP_VERSION` with `@haimang/nacp-core`. `NACP_VERSION_COMPAT = "1.0.0"` (pre-freeze payloads are accepted via `migrate_v1_0_to_v1_1` at the envelope layer). B9 added the session-side `(message_type × delivery_kind)` matrix + `SessionStartInitialContextSchema` (see `docs/rfc/nacp-core-1-3-draft.md`); RH5/RH6 carry the public model/reasoning/image session body surface.
 
 ## What this package provides
 
-- **8 Session message schemas** (`session.start / resume / cancel / end / stream.event / stream.ack / heartbeat / followup_input`) — `session.followup_input` is the A1 Phase 0 widened client-produced surface (minimum shape: `{ text, context_ref?, stream_seq? }`); richer queue/replace/merge semantics stay out of v1.
+- **16 Session message schemas** (`session.start / resume / cancel / end / stream.event / stream.ack / heartbeat / followup_input / permission / usage / skill / command / elicitation / attachment`) — `session.followup_input` is the A1 Phase 0 widened client-produced surface (minimum shape: `{ text, context_ref?, stream_seq? }`); RH5 additionally permits model/reasoning/image parts through the public body schema.
 - **Unified server-push channel** via `session.stream.event` with 9 event kinds (tool progress, hook broadcast, LLM delta, compact notify, system notify, turn lifecycle, session update)
 - **Client frame normalization + authority server-stamping** (ingress layer)
 - **Replay buffer** with per-stream ring buffer + DO storage checkpoint/restore for hibernation

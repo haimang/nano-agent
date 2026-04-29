@@ -31,7 +31,7 @@
 
 import { z } from "zod";
 import { RpcErrorCodeSchema } from "@haimang/nacp-core";
-import { AuthErrorCodeSchema } from "./index.js";
+import { AuthErrorCodeSchema } from "./auth-error-codes.js";
 
 // ═══════════════════════════════════════════════════════════════════
 // §1 — Facade error code taxonomy

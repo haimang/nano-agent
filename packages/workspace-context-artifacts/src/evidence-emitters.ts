@@ -26,9 +26,42 @@ export type {
   ArtifactLifecycleStage,
   CompactEvidencePhase,
 } from "@haimang/nacp-core";
-import type { AssemblyResult } from "./context-assembler.js";
-import type { ContextCompactRequestBody, ContextCompactResponseBody } from "./compact-boundary.js";
-import type { CompactBoundaryRecord, WorkspaceSnapshotFragment } from "./snapshot.js";
+
+interface AssemblyResultEvidenceLike {
+  readonly assembled: readonly { readonly kind: string }[];
+  readonly orderApplied: readonly string[];
+  readonly totalTokens: number;
+  readonly truncated: boolean;
+}
+
+interface RefEvidenceLike {
+  readonly key?: string;
+}
+
+interface ContextCompactRequestEvidenceLike {
+  readonly history_ref?: RefEvidenceLike;
+  readonly target_token_budget: number;
+}
+
+interface ContextCompactResponseEvidenceLike {
+  readonly tokens_before?: number;
+  readonly tokens_after?: number;
+  readonly summary_ref?: RefEvidenceLike;
+  readonly error?: { readonly code: string; readonly message: string };
+}
+
+interface CompactBoundaryRecordEvidenceLike {
+  readonly summaryRef?: RefEvidenceLike;
+  readonly turnRange: string;
+  readonly archivedAt: string;
+}
+
+interface WorkspaceSnapshotFragmentEvidenceLike {
+  readonly mountConfigs?: readonly unknown[];
+  readonly fileIndex?: readonly unknown[];
+  readonly artifactRefs?: readonly unknown[];
+  readonly contextLayers?: readonly unknown[];
+}
 
 // ─────────────────────────────────────────────────────────────────────
 // Structural aliases
@@ -46,7 +79,7 @@ export interface EvidenceSinkLike {
 // ─────────────────────────────────────────────────────────────────────
 
 export interface AssemblyEvidenceInput {
-  readonly result: AssemblyResult;
+  readonly result: AssemblyResultEvidenceLike;
   /**
    * The kinds the caller asked the assembler to consider before any
    * truncation. The helper computes `dropped = considered − assembled`.
@@ -94,17 +127,17 @@ export function emitAssemblyEvidence(
 
 export interface CompactRequestEvidenceInput {
   readonly phase: "request";
-  readonly request: ContextCompactRequestBody;
+  readonly request: ContextCompactRequestEvidenceLike;
 }
 
 export interface CompactResponseEvidenceInput {
   readonly phase: "response";
-  readonly response: ContextCompactResponseBody;
+  readonly response: ContextCompactResponseEvidenceLike;
 }
 
 export interface CompactBoundaryEvidenceInput {
   readonly phase: "boundary";
-  readonly boundary: CompactBoundaryRecord;
+  readonly boundary: CompactBoundaryRecordEvidenceLike;
 }
 
 export interface CompactErrorEvidenceInput {
@@ -225,12 +258,12 @@ export function emitArtifactEvidence(
 
 export interface SnapshotCaptureEvidenceInput {
   readonly phase: "capture";
-  readonly fragment: WorkspaceSnapshotFragment;
+  readonly fragment: WorkspaceSnapshotFragmentEvidenceLike;
 }
 
 export interface SnapshotRestoreEvidenceInput {
   readonly phase: "restore";
-  readonly fragment: WorkspaceSnapshotFragment;
+  readonly fragment: WorkspaceSnapshotFragmentEvidenceLike;
   /** 0..1 portion of fragment that was successfully re-applied. */
   readonly restoreCoverage: number;
   readonly missingFragments?: readonly string[];
@@ -240,7 +273,7 @@ export type SnapshotEvidenceInput =
   | SnapshotCaptureEvidenceInput
   | SnapshotRestoreEvidenceInput;
 
-function fragmentSummary(fragment: WorkspaceSnapshotFragment): {
+function fragmentSummary(fragment: WorkspaceSnapshotFragmentEvidenceLike): {
   mountCount: number;
   fileIndexCount: number;
   artifactRefCount: number;
