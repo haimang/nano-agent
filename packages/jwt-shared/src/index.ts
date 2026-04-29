@@ -142,7 +142,7 @@ export async function verifyJwt<T extends VerifiedJwtPayload = VerifiedJwtPayloa
     if (!payload || typeof (payload as VerifiedJwtPayload).sub !== "string" || (payload as VerifiedJwtPayload).sub.length === 0) {
       return null;
     }
-    if (typeof payload.exp === "number" && Date.now() / 1000 > payload.exp) return null;
+    if (typeof payload.exp === "number" && Date.now() / 1000 > payload.exp + JWT_LEEWAY_SECONDS) return null;
     return payload;
   } catch {
     return null;

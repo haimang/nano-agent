@@ -270,6 +270,20 @@ export type {
   BuildRefOptions,
 } from "./storage-law/index.js";
 
+// ── Observability envelope ──
+export {
+  NacpObservabilityEnvelopeSchema,
+  NacpAlertSeveritySchema,
+  NacpAlertScopeSchema,
+  NacpAlertPayloadSchema,
+} from "./observability/envelope.js";
+export type {
+  NacpAlertSeverity,
+  NacpAlertScope,
+  NacpAlertPayload,
+  NacpObservabilityEnvelope,
+} from "./observability/envelope.js";
+
 // ── Types (re-exported for convenience) ──
 export type {
   NacpHeader,
