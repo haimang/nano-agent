@@ -237,7 +237,9 @@ export class SessionOrchestrator {
         messages: [
           {
             role: "user",
-            content: input.content,
+            content: input.parts ?? input.content,
+            ...(input.modelId ? { model_id: input.modelId } : {}),
+            ...(input.reasoning ? { reasoning: input.reasoning } : {}),
             messageType: input.messageType,
             receivedAt: input.receivedAt,
           },

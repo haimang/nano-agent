@@ -467,6 +467,8 @@ export class NanoSessionDO {
     if (!runtimeEnv?.AI) return null;
     return createMainlineKernelRunner({
       ai: runtimeEnv.AI,
+      modelCatalogDb: runtimeEnv.NANO_AGENT_DB,
+      sessionFileReader: runtimeEnv.FILESYSTEM_CORE,
       quotaAuthorizer: this.quotaAuthorizer,
       capabilityTransport: this.getCapabilityTransport(),
       contextProvider: () => this.buildQuotaContext(),

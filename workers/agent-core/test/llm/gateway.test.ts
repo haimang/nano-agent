@@ -101,4 +101,81 @@ describe("WorkersAiGateway", () => {
     expect(toolNames).toEqual(registryNames);
     expect(toolNames).toContain("ts-exec");
   });
+
+  it("passes explicit model, reasoning effort, and image content to Workers AI", async () => {
+    const ai = {
+      run: vi.fn(async () => ({
+        response: "ok",
+        usage: { prompt_tokens: 1, completion_tokens: 1 },
+      })),
+    };
+    const gateway = new WorkersAiGateway(ai);
+    const exec = buildWorkersAiExecutionRequestFromMessages({
+      messages: [
+        {
+          role: "user",
+          model_id: "@cf/meta/llama-4-scout-17b-16e-instruct",
+          reasoning: { effort: "high" },
+          content: [
+            { kind: "text", text: "describe" },
+            { kind: "image_url", url: "/sessions/s/files/f/content" },
+          ],
+        },
+      ],
+      tools: false,
+    });
+
+    for await (const _event of gateway.executeStream(exec)) {
+      // drain
+    }
+
+    expect(ai.run).toHaveBeenCalledWith(
+      "@cf/meta/llama-4-scout-17b-16e-instruct",
+      expect.objectContaining({
+        reasoning_effort: "high",
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: "describe" },
+              { type: "image_url", image_url: { url: "/sessions/s/files/f/content" } },
+            ],
+          },
+        ],
+      }),
+    );
+  });
+
+  it("uses injected D1-backed model capabilities for runtime model selection", () => {
+    const exec = buildWorkersAiExecutionRequestFromMessages({
+      messages: [
+        {
+          role: "user",
+          model_id: "@cf/custom/reasoning-vision",
+          reasoning: { effort: "low" },
+          content: [
+            { kind: "text", text: "describe" },
+            { kind: "image_url", url: "/sessions/s/files/f/content" },
+          ],
+        },
+      ],
+      modelCapabilities: [
+        {
+          modelId: "@cf/custom/reasoning-vision",
+          provider: "workers-ai",
+          supportsStream: true,
+          supportsTools: true,
+          supportsVision: true,
+          supportsReasoning: true,
+          reasoningEfforts: ["low"],
+          supportsJsonSchema: false,
+          contextWindow: 8192,
+          maxOutputTokens: 1024,
+        },
+      ],
+    });
+
+    expect(exec.model.modelId).toBe("@cf/custom/reasoning-vision");
+    expect(exec.request.reasoning?.effort).toBe("low");
+  });
 });

@@ -67,6 +67,7 @@ export interface CanonicalMessage {
 export interface CanonicalLLMRequest {
   readonly model: string;
   readonly messages: CanonicalMessage[];
+  readonly reasoning?: { readonly effort: "low" | "medium" | "high" };
   readonly tools?: unknown[];
   readonly temperature?: number;
   readonly maxTokens?: number;

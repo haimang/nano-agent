@@ -195,9 +195,12 @@ export class HttpController {
     const initialContext = body && typeof body === "object"
       ? (body as Record<string, unknown>).initial_context
       : undefined;
+    const record = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
     const frame = this.buildClientFrame(sessionId, "session.start", {
       initial_input: initial,
       ...(initialContext !== undefined ? { initial_context: initialContext } : {}),
+      ...(typeof record.model_id === "string" ? { model_id: record.model_id } : {}),
+      ...(record.reasoning !== undefined ? { reasoning: record.reasoning } : {}),
     });
     await this.host.submitFrame(frame);
     return {
@@ -220,8 +223,14 @@ export class HttpController {
         body: { error: "input requires text" },
       };
     }
+    const record = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
     const frame = this.buildClientFrame(sessionId, "session.followup_input", {
       text,
+      ...(Array.isArray(record.parts) ? { parts: record.parts } : {}),
+      ...(typeof record.model_id === "string" ? { model_id: record.model_id } : {}),
+      ...(record.reasoning !== undefined ? { reasoning: record.reasoning } : {}),
+      ...(record.context_ref !== undefined ? { context_ref: record.context_ref } : {}),
+      ...(typeof record.stream_seq === "number" ? { stream_seq: record.stream_seq } : {}),
     });
     await this.host.submitFrame(frame);
     return {

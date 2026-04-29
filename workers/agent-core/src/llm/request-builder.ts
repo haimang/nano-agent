@@ -29,6 +29,7 @@ export interface ExecutionRequest {
  * - Tools capability (if request.tools present)
  * - JSON schema capability (if request.jsonSchema present)
  * - Vision capability (if request contains image_url parts)
+ * - Reasoning capability (if request.reasoning present)
  */
 export function buildExecutionRequest(
   canonical: CanonicalLLMRequest,
@@ -89,6 +90,24 @@ export function buildExecutionRequest(
       "CAPABILITY_MISSING",
       "invalid_request",
     );
+  }
+
+  if (canonical.reasoning) {
+    if (!modelCap.supportsReasoning) {
+      throw new LlmWrapperError(
+        `Model "${canonical.model}" does not support reasoning`,
+        "CAPABILITY_MISSING",
+        "invalid_request",
+      );
+    }
+    const allowedEfforts = modelCap.reasoningEfforts ?? ["low", "medium", "high"];
+    if (!allowedEfforts.includes(canonical.reasoning.effort)) {
+      throw new LlmWrapperError(
+        `Model "${canonical.model}" does not support reasoning effort "${canonical.reasoning.effort}"`,
+        "CAPABILITY_MISSING",
+        "invalid_request",
+      );
+    }
   }
 
   const apiKey = providers.getNextApiKey(modelCap.provider);

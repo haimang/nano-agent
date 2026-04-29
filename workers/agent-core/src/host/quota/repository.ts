@@ -15,6 +15,13 @@ export interface UsageEventRecord {
   readonly sessionUuid: string | null;
   readonly traceUuid: string;
   readonly providerKey: string | null;
+  readonly modelId: string | null;
+  readonly inputTokens: number;
+  readonly outputTokens: number;
+  readonly estimatedCostUsd: number;
+  readonly isReasoning: boolean;
+  readonly isVision: boolean;
+  readonly requestUuid: string | null;
   readonly resourceKind: QuotaKind;
   readonly verdict: UsageVerdict;
   readonly quantity: number;
@@ -45,6 +52,13 @@ function toUsageEventRecord(row: Record<string, unknown> | null): UsageEventReco
     sessionUuid: typeof row.session_uuid === "string" ? row.session_uuid : null,
     traceUuid: typeof row.trace_uuid === "string" ? row.trace_uuid : "",
     providerKey: typeof row.provider_key === "string" ? row.provider_key : null,
+    modelId: typeof row.model_id === "string" ? row.model_id : null,
+    inputTokens: toCount(row.input_tokens),
+    outputTokens: toCount(row.output_tokens),
+    estimatedCostUsd: typeof row.estimated_cost_usd === "number" ? row.estimated_cost_usd : 0,
+    isReasoning: row.is_reasoning === 1,
+    isVision: row.is_vision === 1,
+    requestUuid: typeof row.request_uuid === "string" ? row.request_uuid : null,
     resourceKind: row.resource_kind === "tool" ? "tool" : "llm",
     verdict: row.verdict === "deny" ? "deny" : "allow",
     quantity: toCount(row.quantity),
@@ -163,6 +177,13 @@ export class D1QuotaRepository {
     readonly sessionUuid: string | null;
     readonly traceUuid: string;
     readonly providerKey?: string | null;
+    readonly modelId?: string | null;
+    readonly inputTokens?: number;
+    readonly outputTokens?: number;
+    readonly estimatedCostUsd?: number;
+    readonly isReasoning?: boolean;
+    readonly isVision?: boolean;
+    readonly requestUuid?: string | null;
     readonly resourceKind: QuotaKind;
     readonly verdict: UsageVerdict;
     readonly quantity: number;
@@ -187,6 +208,16 @@ export class D1QuotaRepository {
       typeof input.providerKey === "string" && input.providerKey.length > 0
         ? input.providerKey
         : null;
+    const modelId =
+      typeof input.modelId === "string" && input.modelId.length > 0 ? input.modelId : null;
+    const requestUuid =
+      typeof input.requestUuid === "string" && input.requestUuid.length > 0 ? input.requestUuid : null;
+    const inputTokens = Math.max(0, Math.trunc(input.inputTokens ?? 0));
+    const outputTokens = Math.max(0, Math.trunc(input.outputTokens ?? 0));
+    const estimatedCostUsd =
+      typeof input.estimatedCostUsd === "number" && Number.isFinite(input.estimatedCostUsd)
+        ? Math.max(0, input.estimatedCostUsd)
+        : 0;
 
     const [insertResult, _updateResult, balanceResult] = await this.db.batch([
       this.db.prepare(
@@ -194,21 +225,35 @@ export class D1QuotaRepository {
            usage_event_uuid,
            team_uuid,
            session_uuid,
-           trace_uuid,
-           provider_key,
-           resource_kind,
+            trace_uuid,
+            provider_key,
+            model_id,
+            input_tokens,
+            output_tokens,
+            estimated_cost_usd,
+            is_reasoning,
+            is_vision,
+            request_uuid,
+            resource_kind,
            verdict,
            quantity,
            unit,
            idempotency_key,
            created_at
-         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)`,
+          ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)`,
       ).bind(
         usageEventUuid,
         input.teamUuid,
         input.sessionUuid,
         input.traceUuid,
         providerKey,
+        modelId,
+        inputTokens,
+        outputTokens,
+        estimatedCostUsd,
+        input.isReasoning ? 1 : 0,
+        input.isVision ? 1 : 0,
+        requestUuid,
         input.resourceKind,
         input.verdict,
         quantity,
@@ -268,6 +313,13 @@ export class D1QuotaRepository {
             sessionUuid: input.sessionUuid,
             traceUuid: input.traceUuid,
             providerKey,
+            modelId,
+            inputTokens,
+            outputTokens,
+            estimatedCostUsd,
+            isReasoning: input.isReasoning === true,
+            isVision: input.isVision === true,
+            requestUuid,
             resourceKind: input.resourceKind,
             verdict: input.verdict,
             quantity,
@@ -278,6 +330,8 @@ export class D1QuotaRepository {
         : (toUsageEventRecord(
             await this.db.prepare(
               `SELECT usage_event_uuid, team_uuid, session_uuid, trace_uuid, provider_key,
+                      model_id, input_tokens, output_tokens, estimated_cost_usd,
+                      is_reasoning, is_vision, request_uuid,
                       resource_kind, verdict, quantity, unit, idempotency_key, created_at
                  FROM nano_usage_events
                 WHERE idempotency_key = ?1
@@ -290,6 +344,13 @@ export class D1QuotaRepository {
             sessionUuid: input.sessionUuid,
             traceUuid: input.traceUuid,
             providerKey,
+            modelId,
+            inputTokens,
+            outputTokens,
+            estimatedCostUsd,
+            isReasoning: input.isReasoning === true,
+            isVision: input.isVision === true,
+            requestUuid,
             resourceKind: input.resourceKind,
             verdict: input.verdict,
             quantity,

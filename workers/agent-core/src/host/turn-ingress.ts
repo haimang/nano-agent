@@ -42,6 +42,9 @@ export type TurnIngressKind =
 export interface TurnInput {
   readonly kind: TurnIngressKind;
   readonly content: string;
+  readonly parts?: readonly unknown[];
+  readonly modelId?: string;
+  readonly reasoning?: { readonly effort: "low" | "medium" | "high" };
   readonly turnId: string;
   readonly receivedAt: string;
   readonly messageType: "session.start" | "session.followup_input";
@@ -79,6 +82,19 @@ export function extractTurnInput(
     return null;
   }
   const record = body as Record<string, unknown>;
+  const modelId = typeof record.model_id === "string" && record.model_id.length > 0
+    ? record.model_id
+    : undefined;
+  const reasoning =
+    record.reasoning &&
+    typeof record.reasoning === "object" &&
+    !Array.isArray(record.reasoning) &&
+    ((record.reasoning as Record<string, unknown>).effort === "low" ||
+      (record.reasoning as Record<string, unknown>).effort === "medium" ||
+      (record.reasoning as Record<string, unknown>).effort === "high")
+      ? { effort: (record.reasoning as { effort: "low" | "medium" | "high" }).effort }
+      : undefined;
+  const parts = Array.isArray(record.parts) ? record.parts : undefined;
 
   if (messageType === "session.start") {
     const initialInput = record["initial_input"];
@@ -88,6 +104,8 @@ export function extractTurnInput(
     return {
       kind: "session-start-initial-input",
       content: initialInput,
+      ...(modelId ? { modelId } : {}),
+      ...(reasoning ? { reasoning } : {}),
       turnId: crypto.randomUUID(),
       receivedAt: new Date().toISOString(),
       messageType: "session.start",
@@ -102,6 +120,9 @@ export function extractTurnInput(
     return {
       kind: "session-followup-input",
       content: text,
+      ...(parts ? { parts } : {}),
+      ...(modelId ? { modelId } : {}),
+      ...(reasoning ? { reasoning } : {}),
       turnId: crypto.randomUUID(),
       receivedAt: new Date().toISOString(),
       messageType: "session.followup_input",

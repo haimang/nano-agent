@@ -11,6 +11,8 @@ export interface ModelCapabilities {
   readonly supportsStream: boolean;
   readonly supportsTools: boolean;
   readonly supportsVision: boolean;
+  readonly supportsReasoning?: boolean;
+  readonly reasoningEfforts?: readonly ("low" | "medium" | "high")[];
   readonly supportsJsonSchema: boolean;
   readonly contextWindow: number;
   readonly maxOutputTokens: number;
@@ -18,7 +20,7 @@ export interface ModelCapabilities {
 }
 
 /** Capability names that can be queried via `checkCapability`. */
-export type CapabilityName = "stream" | "tools" | "vision" | "json-schema";
+export type CapabilityName = "stream" | "tools" | "vision" | "reasoning" | "json-schema";
 
 export class ModelRegistry {
   private readonly models = new Map<string, ModelCapabilities>();
@@ -52,6 +54,8 @@ export class ModelRegistry {
         return cap.supportsTools;
       case "vision":
         return cap.supportsVision;
+      case "reasoning":
+        return cap.supportsReasoning === true;
       case "json-schema":
         return cap.supportsJsonSchema;
     }

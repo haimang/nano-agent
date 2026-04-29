@@ -88,6 +88,19 @@ export interface SessionRuntimeEnv {
       meta: { readonly userUuid: string; readonly teamUuid?: string; readonly traceUuid?: string },
     ): Promise<{ ok: boolean; delivered: boolean; reason?: string }>;
   };
+  readonly FILESYSTEM_CORE?: ServiceBindingLike & {
+    readArtifact?(
+      input: {
+        readonly team_uuid: string;
+        readonly session_uuid: string;
+        readonly file_uuid: string;
+      },
+      meta?: { readonly trace_uuid?: string; readonly team_uuid?: string },
+    ): Promise<{
+      readonly file: { readonly mime?: string | null };
+      readonly bytes: ArrayBuffer;
+    } | null>;
+  };
 
   // Reserved / legacy
   /** @deprecated Legacy alias for `BASH_CORE`. Prefer `BASH_CORE` in new code and bindings. */

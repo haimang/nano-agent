@@ -22,6 +22,8 @@ const gpt4Cap: ModelCapabilities = {
   supportsStream: true,
   supportsTools: true,
   supportsVision: true,
+  supportsReasoning: true,
+  reasoningEfforts: ["low", "medium", "high"],
   supportsJsonSchema: true,
   contextWindow: 128_000,
   maxOutputTokens: 16_384,
@@ -153,6 +155,30 @@ describe("buildExecutionRequest", () => {
     expect(() => buildExecutionRequest(req, providers, models)).toThrow("does not support vision");
   });
 
+  it("throws CAPABILITY_MISSING when reasoning is requested on a non-reasoning model", () => {
+    const { providers, models } = makeRegistries();
+    const req: CanonicalLLMRequest = {
+      model: "text-only",
+      messages: [{ role: "user", content: "think" }],
+      reasoning: { effort: "high" },
+    };
+
+    expect(() => buildExecutionRequest(req, providers, models)).toThrow("does not support reasoning");
+  });
+
+  it("throws CAPABILITY_MISSING when reasoning effort is not supported", () => {
+    const { providers, models } = makeRegistries([openaiProfile], [
+      { ...gpt4Cap, reasoningEfforts: ["low"] },
+    ]);
+    const req: CanonicalLLMRequest = {
+      model: "gpt-4o",
+      messages: [{ role: "user", content: "think" }],
+      reasoning: { effort: "high" },
+    };
+
+    expect(() => buildExecutionRequest(req, providers, models)).toThrow("does not support reasoning effort");
+  });
+
   it("allows all capabilities for capable model", () => {
     const { providers, models } = makeRegistries();
     const req: CanonicalLLMRequest = {
@@ -169,6 +195,7 @@ describe("buildExecutionRequest", () => {
       stream: true,
       tools: [{ type: "function", function: { name: "test", parameters: {} } }],
       jsonSchema: { type: "object" },
+      reasoning: { effort: "medium" },
     };
 
     const exec = buildExecutionRequest(req, providers, models);

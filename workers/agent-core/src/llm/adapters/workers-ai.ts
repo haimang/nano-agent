@@ -12,13 +12,21 @@ export const WORKERS_AI_FALLBACK_MODEL =
 type WorkersAiMessage =
   | {
       readonly role: "system" | "user" | "assistant";
-      readonly content: string;
+      readonly content:
+        | string
+        | readonly (
+            | { readonly type: "text"; readonly text: string }
+            | { readonly type: "image_url"; readonly image_url: { readonly url: string } }
+          )[];
     }
   | {
       readonly role: "tool";
       readonly content: string;
       readonly tool_call_id: string;
     };
+type WorkersAiContentPart =
+  | { readonly type: "text"; readonly text: string }
+  | { readonly type: "image_url"; readonly image_url: { readonly url: string } };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -32,6 +40,24 @@ function stringifyContent(value: unknown): string {
   } catch {
     return String(value);
   }
+}
+
+function normalizeContentPart(part: unknown): WorkersAiContentPart | null {
+  if (!isRecord(part)) return { type: "text", text: stringifyContent(part) };
+  if (part.kind === "image_url" && typeof part.url === "string" && part.url.length > 0) {
+    return { type: "image_url", image_url: { url: part.url } };
+  }
+  if (part.kind === "text") {
+    return { type: "text", text: stringifyContent(part.text) };
+  }
+  return { type: "text", text: stringifyContent(part) };
+}
+
+function normalizeMessageContent(content: unknown): string | WorkersAiContentPart[] {
+  if (!Array.isArray(content)) return stringifyContent(content);
+  return content
+    .map((part) => normalizeContentPart(part))
+    .filter((part): part is NonNullable<ReturnType<typeof normalizeContentPart>> => part !== null);
 }
 
 export function normalizeWorkersAiMessages(
@@ -50,8 +76,9 @@ export function normalizeWorkersAiMessages(
       message.role === "tool"
         ? message.role
         : "user";
-    const content = stringifyContent(message.content);
+    const content = normalizeMessageContent(message.content);
     if (role === "tool") {
+      const toolContent = stringifyContent(message.content);
       const toolCallId =
         typeof message.tool_call_id === "string" && message.tool_call_id.length > 0
           ? message.tool_call_id
@@ -60,7 +87,7 @@ export function normalizeWorkersAiMessages(
             : "000000001";
       out.push({
         role: "tool",
-        content,
+        content: toolContent,
         tool_call_id: toolCallId,
       });
       continue;
@@ -232,9 +259,12 @@ function normalizeWorkersAiResponse(raw: unknown): LlmChunk[] {
 export async function* invokeWorkersAi(
   ai: AiBindingLike,
   input: {
+    readonly modelId?: string;
+    readonly fallbackModelIds?: readonly string[];
     readonly messages: readonly unknown[];
     readonly tools?: boolean;
     readonly temperature?: number;
+    readonly reasoning?: { readonly effort: "low" | "medium" | "high" };
   },
 ): AsyncGenerator<LlmChunk> {
   const payload: Record<string, unknown> = {
@@ -245,9 +275,16 @@ export async function* invokeWorkersAi(
   if (input.tools) {
     payload.tools = buildWorkersAiTools();
   }
+  if (input.reasoning) {
+    payload.reasoning_effort = input.reasoning.effort;
+  }
 
   let lastError: unknown;
-  for (const model of [WORKERS_AI_PRIMARY_MODEL, WORKERS_AI_FALLBACK_MODEL]) {
+  const modelIds = [
+    input.modelId ?? WORKERS_AI_PRIMARY_MODEL,
+    ...(input.fallbackModelIds ?? [WORKERS_AI_FALLBACK_MODEL]),
+  ].filter((model, index, arr) => arr.indexOf(model) === index);
+  for (const model of modelIds) {
     try {
       const response = await ai.run(model, payload);
       if (response instanceof ReadableStream) {

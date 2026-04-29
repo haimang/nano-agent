@@ -4,6 +4,7 @@ import type { AiBindingLike } from "../llm/adapters/workers-ai.js";
 import {
   WorkersAiGateway,
   buildWorkersAiExecutionRequestFromMessages,
+  loadWorkersAiModelCapabilities,
 } from "../llm/gateway.js";
 import { QuotaAuthorizer, QuotaExceededError, type QuotaRuntimeContext } from "./quota/authorizer.js";
 import type { HookDispatcher, HookEmitContext } from "../hooks/dispatcher.js";
@@ -99,6 +100,20 @@ export interface MainlineKernelOptions {
   readonly ai: AiBindingLike;
   readonly quotaAuthorizer: QuotaAuthorizer | null;
   readonly capabilityTransport?: CapabilityTransportLike;
+  readonly modelCatalogDb?: D1Database;
+  readonly sessionFileReader?: {
+    readArtifact?(
+      input: {
+        readonly team_uuid: string;
+        readonly session_uuid: string;
+        readonly file_uuid: string;
+      },
+      meta?: { readonly trace_uuid?: string; readonly team_uuid?: string },
+    ): Promise<{
+      readonly file: { readonly mime?: string | null };
+      readonly bytes: ArrayBuffer;
+    } | null>;
+  };
   readonly contextProvider: () => QuotaRuntimeContext | null;
   readonly anchorProvider: () => CrossSeamAnchor | undefined;
   /**
@@ -161,10 +176,118 @@ function withNanoAgentSystemPrompt(messages: readonly unknown[]): readonly unkno
   return [{ role: "system", content: NANO_AGENT_SYSTEM_PROMPT }, ...messages];
 }
 
+function readLlmRequestEvidence(messages: readonly unknown[]): {
+  readonly modelId: string;
+  readonly isReasoning: boolean;
+  readonly isVision: boolean;
+} {
+  const defaultModel = "@cf/ibm-granite/granite-4.0-h-micro";
+  for (const message of messages) {
+    if (!isRecord(message)) continue;
+    const modelId =
+      typeof message.model_id === "string" && message.model_id.length > 0
+        ? message.model_id
+        : typeof message.modelId === "string" && message.modelId.length > 0
+          ? message.modelId
+          : defaultModel;
+    const isReasoning = isRecord(message.reasoning);
+    const content = message.content;
+    const isVision =
+      Array.isArray(content) &&
+      content.some((part) => isRecord(part) && part.kind === "image_url");
+    return { modelId, isReasoning, isVision };
+  }
+  return { modelId: defaultModel, isReasoning: false, isVision: false };
+}
+
+function parseSessionFileImageUrl(
+  rawUrl: string,
+): { readonly sessionUuid: string; readonly fileUuid: string } | null {
+  const path = (() => {
+    if (rawUrl.startsWith("nano-file://")) {
+      const withoutScheme = rawUrl.slice("nano-file://".length);
+      const [sessionUuid, fileUuid] = withoutScheme.split("/");
+      return sessionUuid && fileUuid ? `/sessions/${sessionUuid}/files/${fileUuid}/content` : rawUrl;
+    }
+    if (rawUrl.startsWith("/")) return rawUrl;
+    try {
+      return new URL(rawUrl).pathname;
+    } catch {
+      return rawUrl;
+    }
+  })();
+  const match = /^\/sessions\/([^/]+)\/files\/([^/]+)\/content$/.exec(path);
+  return match ? { sessionUuid: match[1], fileUuid: match[2] } : null;
+}
+
+function arrayBufferToBase64(bytes: ArrayBuffer): string {
+  let binary = "";
+  const view = new Uint8Array(bytes);
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < view.length; offset += chunkSize) {
+    const chunk = view.subarray(offset, offset + chunkSize);
+    binary += String.fromCharCode(...chunk);
+  }
+  return btoa(binary);
+}
+
+async function resolveSessionFileImages(
+  messages: readonly unknown[],
+  options: MainlineKernelOptions,
+): Promise<readonly unknown[]> {
+  if (!options.sessionFileReader?.readArtifact) return messages;
+  const context = options.contextProvider();
+  if (!context) return messages;
+  const out: unknown[] = [];
+  for (const message of messages) {
+    if (!isRecord(message) || !Array.isArray(message.content)) {
+      out.push(message);
+      continue;
+    }
+    const content: unknown[] = [];
+    for (const part of message.content) {
+      if (!isRecord(part) || part.kind !== "image_url" || typeof part.url !== "string") {
+        content.push(part);
+        continue;
+      }
+      const parsed = parseSessionFileImageUrl(part.url);
+      if (!parsed) {
+        content.push(part);
+        continue;
+      }
+      const artifact = await options.sessionFileReader.readArtifact(
+        {
+          team_uuid: context.teamUuid,
+          session_uuid: parsed.sessionUuid,
+          file_uuid: parsed.fileUuid,
+        },
+        { trace_uuid: context.traceUuid, team_uuid: context.teamUuid },
+      );
+      if (!artifact) {
+        throw new Error(`session file image not found: ${parsed.fileUuid}`);
+      }
+      const mime =
+        typeof artifact.file.mime === "string" && artifact.file.mime.length > 0
+          ? artifact.file.mime
+          : typeof part.mime === "string" && part.mime.length > 0
+            ? part.mime
+            : "application/octet-stream";
+      content.push({
+        ...part,
+        url: `data:${mime};base64,${arrayBufferToBase64(artifact.bytes)}`,
+        mime,
+      });
+    }
+    out.push({ ...message, content });
+  }
+  return out;
+}
+
 export function createMainlineKernelRunner(
   options: MainlineKernelOptions,
 ): KernelRunner {
   const llmRequestIds = new Map<string, string>();
+  const llmEvidenceByTurn = new Map<string, ReturnType<typeof readLlmRequestEvidence>>();
   const gateway = new WorkersAiGateway(options.ai);
   let llmRequestSequence = 0;
   const runner = new KernelRunner(
@@ -172,10 +295,19 @@ export function createMainlineKernelRunner(
       llm: {
         async *call(request: unknown) {
           const messages = Array.isArray(request) ? request : [];
+          const evidence = readLlmRequestEvidence(messages);
+          const resolvedMessages = await resolveSessionFileImages(messages, options);
+          const modelCapabilities = options.modelCatalogDb
+            ? await loadWorkersAiModelCapabilities(options.modelCatalogDb)
+            : undefined;
           const exec = buildWorkersAiExecutionRequestFromMessages({
-            messages: withNanoAgentSystemPrompt(messages),
+            messages: withNanoAgentSystemPrompt(resolvedMessages),
             tools: true,
+            modelCapabilities,
           });
+          for (const [turnId] of llmRequestIds) {
+            llmEvidenceByTurn.set(turnId, evidence);
+          }
           for await (const event of gateway.executeStream(exec)) {
             switch (event.type) {
               case "delta":
@@ -407,9 +539,16 @@ export function createMainlineKernelRunner(
         llmRequestIds.delete(turnId);
         const balance = await options.quotaAuthorizer.commit("llm", context, requestId, {
           provider_key: "workers-ai",
+          model_id: (llmEvidenceByTurn.get(turnId) ?? readLlmRequestEvidence([])).modelId,
+          request_uuid: requestId,
           input_tokens: usage?.inputTokens ?? 0,
           output_tokens: usage?.outputTokens ?? 0,
+          estimated_cost_usd: 0,
+          is_reasoning: (llmEvidenceByTurn.get(turnId) ?? readLlmRequestEvidence([])).isReasoning,
+          is_vision: (llmEvidenceByTurn.get(turnId) ?? readLlmRequestEvidence([])).isVision,
         });
+        const evidence = llmEvidenceByTurn.get(turnId) ?? readLlmRequestEvidence([]);
+        llmEvidenceByTurn.delete(turnId);
         // ZX5 F3 — emit `session.usage.update` server frame after commit
         options.onUsageCommit?.({
           kind: "llm",
@@ -417,8 +556,13 @@ export function createMainlineKernelRunner(
           limitValue: balance.limitValue,
           detail: {
             provider_key: "workers-ai",
+            model_id: evidence.modelId,
+            request_uuid: requestId,
             input_tokens: usage?.inputTokens ?? 0,
             output_tokens: usage?.outputTokens ?? 0,
+            estimated_cost_usd: 0,
+            is_reasoning: evidence.isReasoning,
+            is_vision: evidence.isVision,
             turn_id: turnId,
           },
         });

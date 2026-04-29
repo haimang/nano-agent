@@ -14,6 +14,7 @@ import type {
 import { createEmptyUsage } from "./usage.js";
 import { buildExecutionRequest, type ExecutionRequest } from "./request-builder.js";
 import { loadRegistryFromConfig } from "./registry/loader.js";
+import type { ModelCapabilities } from "./registry/models.js";
 
 export const WORKERS_AI_PROVIDER_KEY = "workers-ai";
 
@@ -33,8 +34,9 @@ const WORKERS_AI_REGISTRY = loadRegistryFromConfig({
       supportsStream: true,
       supportsTools: true,
       supportsVision: false,
+      supportsReasoning: false,
       supportsJsonSchema: false,
-      contextWindow: 128_000,
+      contextWindow: 131_072,
       maxOutputTokens: 8_192,
       notes: "Z3 first-wave primary model",
     },
@@ -43,14 +45,65 @@ const WORKERS_AI_REGISTRY = loadRegistryFromConfig({
       provider: WORKERS_AI_PROVIDER_KEY,
       supportsStream: true,
       supportsTools: true,
-      supportsVision: false,
+      supportsVision: true,
+      supportsReasoning: true,
+      reasoningEfforts: ["low", "medium", "high"],
       supportsJsonSchema: false,
-      contextWindow: 128_000,
+      contextWindow: 131_072,
       maxOutputTokens: 8_192,
       notes: "Z3 first-wave fallback model",
     },
   ],
 });
+
+function toBooleanFlag(value: unknown): boolean {
+  return value === 1 || value === true || value === "1";
+}
+
+function toPositiveInt(value: unknown, fallback: number): number {
+  const n = typeof value === "number" ? value : typeof value === "string" ? Number(value) : NaN;
+  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : fallback;
+}
+
+export async function loadWorkersAiModelCapabilities(db: D1Database): Promise<ModelCapabilities[]> {
+  const rows = await db.prepare(
+    `SELECT model_id, context_window, is_reasoning, is_vision, is_function_calling
+       FROM nano_models
+      WHERE status = 'active'
+      ORDER BY model_id ASC`,
+  ).all<Record<string, unknown>>();
+  return (rows.results ?? []).flatMap((row) => {
+    const modelId = typeof row.model_id === "string" && row.model_id.length > 0 ? row.model_id : null;
+    if (!modelId) return [];
+    const supportsReasoning = toBooleanFlag(row.is_reasoning);
+    return [{
+      modelId,
+      provider: WORKERS_AI_PROVIDER_KEY,
+      supportsStream: true,
+      supportsTools: toBooleanFlag(row.is_function_calling),
+      supportsVision: toBooleanFlag(row.is_vision),
+      supportsReasoning,
+      reasoningEfforts: supportsReasoning ? ["low", "medium", "high"] : undefined,
+      supportsJsonSchema: false,
+      contextWindow: toPositiveInt(row.context_window, 8192),
+      maxOutputTokens: 8_192,
+    }];
+  });
+}
+
+function createWorkersAiRegistry(
+  extraModels: readonly ModelCapabilities[] | undefined,
+): typeof WORKERS_AI_REGISTRY {
+  if (!extraModels || extraModels.length === 0) return WORKERS_AI_REGISTRY;
+  const registry = loadRegistryFromConfig({
+    providers: WORKERS_AI_REGISTRY.providers.list(),
+    models: [
+      ...WORKERS_AI_REGISTRY.models.list(),
+      ...extraModels,
+    ],
+  });
+  return registry;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -109,6 +162,31 @@ function toCanonicalContentPart(part: unknown): CanonicalContentPart {
   }
 }
 
+function inferModelId(messages: readonly unknown[], fallback: string | undefined): string | undefined {
+  if (fallback) return fallback;
+  for (const message of messages) {
+    if (!isRecord(message)) continue;
+    const value = message.model_id ?? message.modelId;
+    if (typeof value === "string" && value.length > 0) return value;
+  }
+  return undefined;
+}
+
+function inferReasoning(
+  messages: readonly unknown[],
+  fallback: { readonly effort: "low" | "medium" | "high" } | undefined,
+): { readonly effort: "low" | "medium" | "high" } | undefined {
+  if (fallback) return fallback;
+  for (const message of messages) {
+    if (!isRecord(message) || !isRecord(message.reasoning)) continue;
+    const effort = message.reasoning.effort;
+    if (effort === "low" || effort === "medium" || effort === "high") {
+      return { effort };
+    }
+  }
+  return undefined;
+}
+
 export function toCanonicalMessage(message: unknown): CanonicalMessage | null {
   if (typeof message === "string") {
     return { role: "user", content: message };
@@ -132,20 +210,24 @@ export function buildWorkersAiExecutionRequestFromMessages(input: {
   readonly temperature?: number;
   readonly tools?: boolean;
   readonly modelId?: string;
+  readonly reasoning?: { readonly effort: "low" | "medium" | "high" };
+  readonly modelCapabilities?: readonly ModelCapabilities[];
 }): ExecutionRequest {
+  const registry = createWorkersAiRegistry(input.modelCapabilities);
   const messages = input.messages
     .map((message) => toCanonicalMessage(message))
     .filter((message): message is CanonicalMessage => message !== null);
   return buildExecutionRequest(
     {
-      model: input.modelId ?? WORKERS_AI_PRIMARY_MODEL,
+      model: inferModelId(input.messages, input.modelId) ?? WORKERS_AI_PRIMARY_MODEL,
       messages,
+      reasoning: inferReasoning(input.messages, input.reasoning),
       stream: true,
       temperature: input.temperature,
       tools: input.tools ? buildWorkersAiTools() : undefined,
     },
-    WORKERS_AI_REGISTRY.providers,
-    WORKERS_AI_REGISTRY.models,
+    registry.providers,
+    registry.models,
   );
 }
 
@@ -208,9 +290,11 @@ export class WorkersAiGateway implements InferenceGateway {
     let sawToolCalls = false;
     try {
       for await (const chunk of invokeWorkersAi(this.ai, {
+        modelId: exec.model.modelId,
         messages: exec.request.messages,
         tools: Array.isArray(exec.request.tools) && exec.request.tools.length > 0,
         temperature: exec.request.temperature,
+        reasoning: exec.request.reasoning,
       })) {
         switch (chunk.type) {
           case "content":

@@ -28,6 +28,8 @@ const gpt4Cap: ModelCapabilities = {
   supportsStream: true,
   supportsTools: true,
   supportsVision: true,
+  supportsReasoning: true,
+  reasoningEfforts: ["low", "medium", "high"],
   supportsJsonSchema: true,
   contextWindow: 128_000,
   maxOutputTokens: 16_384,
@@ -171,6 +173,7 @@ describe("ModelRegistry", () => {
       expect(reg.checkCapability("gpt-4o", "stream")).toBe(true);
       expect(reg.checkCapability("gpt-4o", "tools")).toBe(true);
       expect(reg.checkCapability("gpt-4o", "vision")).toBe(true);
+      expect(reg.checkCapability("gpt-4o", "reasoning")).toBe(true);
       expect(reg.checkCapability("gpt-4o", "json-schema")).toBe(true);
     });
 
@@ -180,6 +183,7 @@ describe("ModelRegistry", () => {
       expect(reg.checkCapability("text-only", "stream")).toBe(false);
       expect(reg.checkCapability("text-only", "tools")).toBe(false);
       expect(reg.checkCapability("text-only", "vision")).toBe(false);
+      expect(reg.checkCapability("text-only", "reasoning")).toBe(false);
       expect(reg.checkCapability("text-only", "json-schema")).toBe(false);
     });
 

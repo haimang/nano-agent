@@ -43,6 +43,16 @@ function pickProviderKey(detail: Record<string, unknown>): string | null {
     : null;
 }
 
+function pickString(detail: Record<string, unknown>, key: string): string | null {
+  const value = detail[key];
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function pickCount(detail: Record<string, unknown>, key: string): number {
+  const value = detail[key];
+  return typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.trunc(value)) : 0;
+}
+
 export class QuotaAuthorizer {
   constructor(
     private readonly repo: D1QuotaRepository,
@@ -66,6 +76,13 @@ export class QuotaAuthorizer {
         sessionUuid: context.sessionUuid,
         traceUuid: context.traceUuid,
         providerKey: pickProviderKey(detail),
+        modelId: pickString(detail, "model_id"),
+        requestUuid: pickString(detail, "request_uuid"),
+        inputTokens: pickCount(detail, "input_tokens"),
+        outputTokens: pickCount(detail, "output_tokens"),
+        estimatedCostUsd: typeof detail.estimated_cost_usd === "number" ? detail.estimated_cost_usd : 0,
+        isReasoning: detail.is_reasoning === true,
+        isVision: detail.is_vision === true,
         resourceKind: quotaKind,
         verdict: "deny",
         quantity: 0,
@@ -116,6 +133,13 @@ export class QuotaAuthorizer {
       sessionUuid: context.sessionUuid,
       traceUuid: context.traceUuid,
       providerKey: pickProviderKey(detail),
+      modelId: pickString(detail, "model_id"),
+      requestUuid: pickString(detail, "request_uuid"),
+      inputTokens: pickCount(detail, "input_tokens"),
+      outputTokens: pickCount(detail, "output_tokens"),
+      estimatedCostUsd: typeof detail.estimated_cost_usd === "number" ? detail.estimated_cost_usd : 0,
+      isReasoning: detail.is_reasoning === true,
+      isVision: detail.is_vision === true,
       resourceKind: quotaKind,
       verdict: "allow",
       quantity: 1,
