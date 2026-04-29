@@ -16,7 +16,8 @@ liveTest("orchestrator-core accepts nak_ bearer on auth/me and me/team", ["orche
     deviceLabel: "api-key-bootstrap",
     deviceKind: "web",
   });
-  const apiKey = `nak_${crypto.randomUUID()}`;
+  const keyId = `nak_${crypto.randomUUID()}`;
+  const apiKey = `${keyId}.${crypto.randomBytes(24).toString("base64url")}`;
   const salt = crypto.randomBytes(12).toString("base64url");
   const createdAt = new Date().toISOString();
   const keyHash = sha256Hex(`${salt}:${apiKey}`);
@@ -27,20 +28,20 @@ liveTest("orchestrator-core accepts nak_ bearer on auth/me and me/team", ["orche
       "wrangler",
       "d1",
       "execute",
-      "NANO_AGENT_DB",
-      "--config",
-      "workers/orchestrator-core/wrangler.jsonc",
+       "NANO_AGENT_DB",
+       "--config",
+       "workers/orchestrator-core/wrangler.jsonc",
       "--env",
       "preview",
       "--remote",
       "--command",
-      `INSERT INTO nano_team_api_keys (
-         api_key_uuid, team_uuid, key_hash, key_salt, label,
-         key_status, scopes_json, created_at, last_used_at, revoked_at
-       ) VALUES (
-         '${apiKey}', '${account.teamUuid}', '${keyHash}', '${salt}', 'package-e2e-api-key',
-         'active', NULL, '${createdAt}', NULL, NULL
-       );`,
+       `INSERT INTO nano_team_api_keys (
+          api_key_uuid, team_uuid, key_hash, key_salt, label,
+          key_status, scopes_json, created_at, last_used_at, revoked_at
+        ) VALUES (
+          '${keyId}', '${account.teamUuid}', '${keyHash}', '${salt}', 'package-e2e-api-key',
+          'active', NULL, '${createdAt}', NULL, NULL
+        );`,
     ],
     { cwd: "/workspace/repo/nano-agent", stdio: "pipe" },
   );
