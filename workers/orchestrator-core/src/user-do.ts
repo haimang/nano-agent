@@ -197,6 +197,31 @@ export class NanoOrchestratorUserDO {
     const action =
       segments.length === 4 ? `${segments[2]}/${segments[3]}` : segments[2]!;
 
+    // RH1 P1-06b — internal-only frame forward path. Called by
+    // `OrchestratorCoreEntrypoint.forwardServerFrameToClient` to push a
+    // server frame to the client attached to this User DO. Body shape:
+    //   { frame: { kind: string, ... } }
+    // Returns { delivered: boolean, reason?: string }
+    if (request.method === 'POST' && action === '__forward-frame') {
+      const body = (await request.json().catch(() => null)) as
+        | { frame?: { kind?: unknown; [k: string]: unknown } }
+        | null;
+      if (!body || typeof body !== 'object' || !body.frame || typeof body.frame.kind !== 'string') {
+        return jsonResponse(400, {
+          delivered: false,
+          reason: 'invalid-frame',
+        });
+      }
+      const delivered = this.emitServerFrame(
+        sessionUuid,
+        body.frame as { kind: string; [k: string]: unknown },
+      );
+      return jsonResponse(200, {
+        delivered,
+        reason: delivered ? undefined : 'no-attached-client',
+      });
+    }
+
     if (request.method === 'POST' && action === 'start') {
       const body = (await request.json().catch(() => null)) as StartSessionBody | null;
       if (!body || typeof body !== 'object') {
@@ -1229,13 +1254,19 @@ export class NanoOrchestratorUserDO {
     if (!entry) return this.sessionGateMiss(sessionUuid);
     const durable = await this.readDurableSnapshot(sessionUuid);
     const repo = this.sessionTruth();
+    // RH1 P1-09 — strict snapshot policy:
+    //   (a) no rows in nano_usage_events → return zero shape (NOT null)
+    //   (b) D1 read failed → 503 facade error (do NOT degrade to 200 + zero;
+    //       account ledger unavailability must not be disguised as
+    //       "user has zero usage")
+    //   (c) has rows → return live snapshot
     let usage: Record<string, unknown> = {
-      llm_input_tokens: null,
-      llm_output_tokens: null,
-      tool_calls: null,
-      subrequest_used: null,
-      subrequest_budget: null,
-      estimated_cost_usd: null,
+      llm_input_tokens: 0,
+      llm_output_tokens: 0,
+      tool_calls: 0,
+      subrequest_used: 0,
+      subrequest_budget: 0,
+      estimated_cost_usd: 0,
     };
     if (repo && durable?.team_uuid) {
       try {
@@ -1249,6 +1280,15 @@ export class NanoOrchestratorUserDO {
           `usage-d1-read-failed session=${sessionUuid}`,
           { tag: 'usage-d1-read-failed', error: String(error) },
         );
+        // RH1 P1-09 (b) — strict 503; preserve trace_uuid + warning log.
+        return jsonResponse(503, {
+          ok: false,
+          error: {
+            code: 'usage-d1-unavailable',
+            status: 503,
+            message: 'usage ledger temporarily unavailable',
+          },
+        });
       }
     }
     return jsonResponse(200, {

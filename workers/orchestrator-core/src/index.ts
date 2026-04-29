@@ -881,4 +881,5 @@ async function wrapSessionResponse(
 }
 
 export { NanoOrchestratorUserDO };
+export { worker };
 export default worker;

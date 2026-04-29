@@ -1,7 +1,7 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "nano-agent-orchestrator-core",
-  "main": "dist/index.js",
+  "main": "dist/entrypoint.js",
   // ZX2 Phase 1 P1-02 (transport-profiles.md):
   // orchestrator-core 是唯一 public facade。显式开启 workers.dev 公网入口。
   // profile = facade-http-v1 + session-ws-v1 + health-probe.
