@@ -117,6 +117,87 @@ export class ContextCoreEntrypoint extends WorkerEntrypoint<ContextCoreEnv> {
   async assemblerOps(): Promise<{ ops: string[] }> {
     return this.contextOps();
   }
+
+  // ──────────────────────────────────────────────────────────────────
+  // RH2 P2-05 / P2-06 / P2-07 — context inspection RPCs.
+  //
+  // 这 3 个 RPC 是 orchestrator-core 经 CONTEXT_CORE service binding 调用的
+  // 入口点。当前 RH2 阶段 context-core 内部还没有真实 per-session DO
+  // (那是 RH4 / RH6 工作),所以本 RPC 返回结构化 stub 形状(满足 endpoint 测试
+  // + façade 真投递),但显式标注 `phase: "stub"` 让 client 与监控可见。
+  //
+  // 真实 per-session inspector 在 RH4 file pipeline 落地后接入,届时把这 3
+  // 个 method 改为读取 `inspector-facade` 的真 snapshot/compact 接口。
+  // ──────────────────────────────────────────────────────────────────
+
+  async getContextSnapshot(
+    sessionUuid: string,
+    teamUuid: string,
+    meta: { trace_uuid: string; team_uuid: string },
+  ): Promise<{
+    session_uuid: string;
+    team_uuid: string;
+    status: string;
+    summary: string;
+    artifacts_count: number;
+    need_compact: boolean;
+    phase: string;
+  }> {
+    void meta;
+    return {
+      session_uuid: sessionUuid,
+      team_uuid: teamUuid,
+      status: "ready",
+      summary: "context-core RH2 stub: per-session inspector in RH4",
+      artifacts_count: 0,
+      need_compact: false,
+      phase: "stub",
+    };
+  }
+
+  async triggerContextSnapshot(
+    sessionUuid: string,
+    teamUuid: string,
+    meta: { trace_uuid: string; team_uuid: string },
+  ): Promise<{
+    session_uuid: string;
+    team_uuid: string;
+    snapshot_id: string;
+    created_at: string;
+    phase: string;
+  }> {
+    void meta;
+    return {
+      session_uuid: sessionUuid,
+      team_uuid: teamUuid,
+      snapshot_id: crypto.randomUUID(),
+      created_at: new Date().toISOString(),
+      phase: "stub",
+    };
+  }
+
+  async triggerCompact(
+    sessionUuid: string,
+    teamUuid: string,
+    meta: { trace_uuid: string; team_uuid: string },
+  ): Promise<{
+    session_uuid: string;
+    team_uuid: string;
+    compacted: boolean;
+    before_size: number;
+    after_size: number;
+    phase: string;
+  }> {
+    void meta;
+    return {
+      session_uuid: sessionUuid,
+      team_uuid: teamUuid,
+      compacted: true,
+      before_size: 0,
+      after_size: 0,
+      phase: "stub",
+    };
+  }
 }
 
 export type { ContextCoreEnv };

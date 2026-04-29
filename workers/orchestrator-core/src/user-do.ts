@@ -47,6 +47,7 @@ import {
   type TerminalKind,
   type VerifyBody,
 } from "./session-lifecycle.js";
+import { validateLightweightServerFrame } from "./frame-compat.js";
 import {
   ACTIVE_POINTERS_KEY,
   CACHE_PREFIX,
@@ -1225,15 +1226,24 @@ export class NanoOrchestratorUserDO {
     return this.proxyReadResponse(sessionUuid, entry, response);
   }
 
-  // ZX2 Phase 5 P5-03 — helper that emits a server→client WS frame to
-  // the currently-attached socket if any. Used by future plumbing
-  // (e.g. permission gate triggered by agent-core hooks) to push:
-  //   - session.permission.request
-  //   - session.usage.update
-  //   - session.elicitation.request
-  // The wire shape stays the lightweight `{kind, ...}` per ZX2 P4-04.
-  // Returns true if a frame was queued, false if no client is attached.
+  // ZX2 Phase 5 P5-03 / RH2 P2-08 — emit a server→client WS frame.
+  //
+  // RH2 P2-08:在 send 前调 `validateLightweightServerFrame()`,把已知 kind 走
+  // NACP schema 校验(via `frame-compat.mapKindToMessageType` + 对应 body
+  // schema)。校验失败 → log + drop(不 throw,因为 emitServerFrame 是
+  // best-effort push;但严格记录 schema bypass 数量)。
+  // The wire shape stays the lightweight `{kind, ...}` per ZX2 P4-04 — RH3
+  // device gate完成后,统一升级 attached client 到 full NACP frame。
   emitServerFrame(sessionUuid: string, frame: { kind: string; [k: string]: unknown }): boolean {
+    const validation = validateLightweightServerFrame(frame);
+    if (!validation.ok) {
+      console.warn(`server-frame-schema-rejected session=${sessionUuid}`, {
+        tag: "server-frame-schema-rejected",
+        kind: frame.kind,
+        reason: validation.reason,
+      });
+      return false;
+    }
     const attachment = this.attachments.get(sessionUuid);
     if (!attachment) return false;
     try {
@@ -1969,15 +1979,19 @@ export class NanoOrchestratorUserDO {
 
     const current = this.attachments.get(sessionUuid);
     if (current) {
+      // RH2 P2-01c follow-up (response to GPT R3 / deepseek R4):
+      // route superseded emit through emitServerFrame so the NACP schema gate
+      // validates it. Body fields conform to SessionAttachmentSupersededBodySchema
+      // (session_uuid / superseded_at / reason ∈ device-conflict|reattach|revoked|policy).
+      // Wire shape stays lightweight `{kind, ...}` per ZX2 P4-04 compat layer.
+      this.emitServerFrame(sessionUuid, {
+        kind: 'session.attachment.superseded',
+        session_uuid: sessionUuid,
+        superseded_at: new Date().toISOString(),
+        reason: 'reattach',
+      });
       this.attachments.delete(sessionUuid);
       if (current.heartbeat_timer) clearInterval(current.heartbeat_timer);
-      current.socket.send(
-        JSON.stringify({
-          kind: 'attachment_superseded',
-          reason: 'replaced_by_new_attachment',
-          new_attachment_at: new Date().toISOString(),
-        }),
-      );
       current.socket.close(4001, 'attachment_superseded');
     }
 
@@ -1987,10 +2001,12 @@ export class NanoOrchestratorUserDO {
         clearInterval(heartbeatTimer);
         return;
       }
-      pair.server.send(JSON.stringify({
+      // Response to GPT R3 / kimi R5: route heartbeat through emitServerFrame so
+      // the validateLightweightServerFrame gate applies (SessionHeartbeatBodySchema).
+      this.emitServerFrame(sessionUuid, {
         kind: 'session.heartbeat',
         ts: Date.now(),
-      }));
+      });
     }, CLIENT_WS_HEARTBEAT_INTERVAL_MS);
     (heartbeatTimer as unknown as { unref?: () => void }).unref?.();
 
@@ -2125,14 +2141,17 @@ export class NanoOrchestratorUserDO {
     const attachment = this.attachments.get(sessionUuid);
     if (!attachment) return;
 
-    attachment.socket.send(
-      JSON.stringify({
-        kind: 'terminal',
-        terminal: terminal.terminal,
-        session_uuid: sessionUuid,
-        ...(terminal.last_phase ? { last_phase: terminal.last_phase } : {}),
-      }),
-    );
+    // Response to GPT R3 / deepseek R4: terminal emit now goes through
+    // emitServerFrame so the NACP `session.end` schema gate validates the body.
+    // Map TerminalKind → SessionEndBodySchema.reason enum
+    // ("cancelled" → "user", "completed" → "completed", "error" → "error").
+    const reasonMap = { completed: 'completed', cancelled: 'user', error: 'error' } as const;
+    this.emitServerFrame(sessionUuid, {
+      kind: 'session.end',
+      reason: reasonMap[terminal.terminal] ?? 'error',
+      ...(terminal.last_phase ? { last_phase: terminal.last_phase } : {}),
+      session_uuid: sessionUuid,
+    });
     attachment.socket.close(1000, `session_${terminal.terminal}`);
     this.attachments.delete(sessionUuid);
   }

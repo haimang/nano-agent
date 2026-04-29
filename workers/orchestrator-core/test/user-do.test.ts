@@ -563,7 +563,11 @@ describe('NanoOrchestratorUserDO', () => {
     expect(second.status).toBe(200);
     const firstServer = created[0]!.server;
     expect(firstServer.sent[0]).toContain('"kind":"event"');
-    expect(firstServer.sent[1]).toContain('attachment_superseded');
+    // RH2 P2-01c follow-up (response to GPT R3): superseded path now emits
+    // NACP-conformant `session.attachment.superseded` body via emitServerFrame
+    // schema gate (was legacy `attachment_superseded` lightweight payload).
+    expect(firstServer.sent[1]).toContain('session.attachment.superseded');
+    expect(firstServer.sent[1]).toContain('"reason":"reattach"');
     expect(firstServer.closed).toBe(true);
     expect(store.get(`sessions/${SESSION_UUID}`)).toEqual(
       expect.objectContaining({ status: 'active' }),

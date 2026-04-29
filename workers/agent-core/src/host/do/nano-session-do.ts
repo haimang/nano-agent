@@ -488,6 +488,37 @@ export class NanoSessionDO {
           detail: event.detail,
         });
       },
+      // RH2 P2-12 — runtime tool semantic streaming. Map runtime
+      // `ToolSemanticEvent` → NACP-compatible lightweight frames:
+      //   - tool_use_start / tool_use_delta → `llm.delta` body
+      //   - tool_call_result → `tool.call.result` body
+      // (The `tool.call.result` kind is mapped to `session.stream.event` by
+      // frame-compat, so it's a stream event body. The `llm.delta` ones with
+      // tool_use_* content_type are also `session.stream.event` body.)
+      onToolEvent: (event) => {
+        if (event.kind === "tool_call_result") {
+          void this.pushServerFrameToClient({
+            kind: "tool.call.result",
+            session_uuid: this.sessionUuid ?? "unknown",
+            tool_call_id: event.tool_call_id,
+            tool_name: event.tool_name,
+            status: event.status ?? "ok",
+            ...(event.output !== undefined ? { output: event.output } : {}),
+            ...(event.error !== undefined ? { error: event.error } : {}),
+          });
+          return;
+        }
+        // tool_use_start / tool_use_delta — llm.delta body
+        void this.pushServerFrameToClient({
+          kind: "llm.delta",
+          session_uuid: this.sessionUuid ?? "unknown",
+          content_type: event.kind,
+          tool_call_id: event.tool_call_id,
+          tool_name: event.tool_name,
+          ...(event.tool_input !== undefined ? { tool_input: event.tool_input } : {}),
+          ...(event.args_chunk !== undefined ? { args_chunk: event.args_chunk } : {}),
+        });
+      },
     });
   }
 

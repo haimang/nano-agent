@@ -124,6 +124,24 @@ export interface MainlineKernelOptions {
    * Without it, dispatcher gets {} — guards still apply.
    */
   readonly hookContextProvider?: () => HookEmitContext;
+  /**
+   * RH2 P2-12 — runtime tool semantic streaming hook. NanoSessionDO wires
+   * this to push `llm.delta {content_type:"tool_use_start"|"tool_use_delta"}`
+   * + `tool.call.result` frames to the client. Best-effort:undefined 时
+   * runtime 不发 tool semantic frame(向下兼容)。
+   */
+  readonly onToolEvent?: (event: ToolSemanticEvent) => void;
+}
+
+export interface ToolSemanticEvent {
+  readonly kind: "tool_use_start" | "tool_use_delta" | "tool_call_result";
+  readonly tool_call_id: string;
+  readonly tool_name: string;
+  readonly tool_input?: Record<string, unknown>;
+  readonly args_chunk?: string;
+  readonly status?: "ok" | "error";
+  readonly output?: unknown;
+  readonly error?: { readonly code: string; readonly message: string };
 }
 
 export const NANO_AGENT_SYSTEM_PROMPT =
@@ -230,6 +248,14 @@ export function createMainlineKernelRunner(
             return;
           }
 
+          // RH2 P2-12 — emit tool_use_start before exec.
+          options.onToolEvent?.({
+            kind: "tool_use_start",
+            tool_call_id: requestId,
+            tool_name: toolName,
+            tool_input: toolInput as Record<string, unknown>,
+          });
+
           const quotaContext = options.contextProvider();
           try {
             const quota = await buildToolQuotaAuthorization(
@@ -263,6 +289,14 @@ export function createMainlineKernelRunner(
                   detail: { tool_name: toolName, request_id: requestId },
                 });
               }
+              // RH2 P2-12 — emit tool.call.result on success.
+              options.onToolEvent?.({
+                kind: "tool_call_result",
+                tool_call_id: requestId,
+                tool_name: toolName,
+                status: "ok",
+                output: parsed.output,
+              });
               yield {
                 type: "result" as const,
                 status: "ok" as const,
@@ -270,6 +304,14 @@ export function createMainlineKernelRunner(
               };
               return;
             }
+            // RH2 P2-12 — emit tool.call.result on error.
+            options.onToolEvent?.({
+              kind: "tool_call_result",
+              tool_call_id: requestId,
+              tool_name: toolName,
+              status: "error",
+              error: parsed.error,
+            });
             yield {
               type: "result" as const,
               status: "error" as const,
@@ -277,6 +319,13 @@ export function createMainlineKernelRunner(
             };
           } catch (error) {
             if (error instanceof QuotaExceededError) {
+              options.onToolEvent?.({
+                kind: "tool_call_result",
+                tool_call_id: requestId,
+                tool_name: toolName,
+                status: "error",
+                error: { code: error.code, message: error.message },
+              });
               yield {
                 type: "result" as const,
                 status: "error" as const,
@@ -287,13 +336,21 @@ export function createMainlineKernelRunner(
               };
               return;
             }
+            const errorBody = {
+              code: "capability-execution-error",
+              message: error instanceof Error ? error.message : String(error),
+            };
+            options.onToolEvent?.({
+              kind: "tool_call_result",
+              tool_call_id: requestId,
+              tool_name: toolName,
+              status: "error",
+              error: errorBody,
+            });
             yield {
               type: "result" as const,
               status: "error" as const,
-              result: {
-                code: "capability-execution-error",
-                message: error instanceof Error ? error.message : String(error),
-              },
+              result: errorBody,
             };
           }
         },

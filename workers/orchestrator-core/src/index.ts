@@ -400,6 +400,22 @@ const worker = {
       return handleMeDevicesRevoke(request, env);
     }
 
+    // RH2 P2-04 — GET /models(D1 真相源 + per-team policy filter + ETag)
+    if (method === "GET" && pathname === "/models") {
+      return handleModelsList(request, env);
+    }
+
+    // RH2 P2-05/06/07 — context inspection endpoints
+    if (method === "GET" && /^\/sessions\/[^/]+\/context$/.test(pathname)) {
+      return handleSessionContext(request, env, "get");
+    }
+    if (method === "POST" && /^\/sessions\/[^/]+\/context\/snapshot$/.test(pathname)) {
+      return handleSessionContext(request, env, "snapshot");
+    }
+    if (method === "POST" && /^\/sessions\/[^/]+\/context\/compact$/.test(pathname)) {
+      return handleSessionContext(request, env, "compact");
+    }
+
     const tenantError = ensureTenantConfigured(env);
     if (tenantError) return tenantError;
 
@@ -811,6 +827,223 @@ async function handleMeDevicesRevoke(
     );
     return jsonPolicyError(500, "internal-error", "failed to revoke device", traceUuid);
   }
+}
+
+// ───────────────────────────────────────────────────────────────────
+// RH2 P2-04 — GET /models
+//
+// D1 真相源 + per-team policy filter + ETag (sha256 of JSON body)。
+// 404 / 304 (If-None-Match) / 401 / 403 / 200 是合法 status set。
+// ───────────────────────────────────────────────────────────────────
+
+interface ModelRow {
+  readonly model_id: string;
+  readonly family: string;
+  readonly display_name: string;
+  readonly context_window: number;
+  readonly is_reasoning: number;
+  readonly is_vision: number;
+  readonly is_function_calling: number;
+  readonly status: string;
+}
+
+async function computeEtag(payload: string): Promise<string> {
+  const buf = new TextEncoder().encode(payload);
+  const digest = await crypto.subtle.digest("SHA-256", buf);
+  const hex = Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  // ETag must be quoted per RFC 7232.
+  return `"${hex.slice(0, 32)}"`;
+}
+
+async function handleModelsList(
+  request: Request,
+  env: OrchestratorCoreEnv,
+): Promise<Response> {
+  const auth = await authenticateRequest(request, env);
+  if (!auth.ok) return auth.response;
+  const traceUuid = auth.value.trace_uuid;
+  const db = env.NANO_AGENT_DB;
+  if (!db) {
+    return jsonPolicyError(503, "worker-misconfigured", "models D1 unavailable", traceUuid);
+  }
+  const teamUuid = auth.value.snapshot.team_uuid;
+  if (typeof teamUuid !== "string" || teamUuid.length === 0) {
+    return jsonPolicyError(403, "missing-team-claim", "team_uuid missing from auth snapshot", traceUuid);
+  }
+  try {
+    const modelsRes = await db.prepare(
+      `SELECT model_id, family, display_name, context_window,
+              is_reasoning, is_vision, is_function_calling, status
+         FROM nano_models
+        WHERE status = 'active'
+        ORDER BY model_id ASC`,
+    ).all<ModelRow>();
+    const allRows = modelsRes.results ?? [];
+    const policyRes = await db.prepare(
+      `SELECT model_id, allowed
+         FROM nano_team_model_policy
+        WHERE team_uuid = ?1`,
+    ).bind(teamUuid).all<{ model_id: string; allowed: number }>();
+    const denied = new Set<string>(
+      (policyRes.results ?? [])
+        .filter((p) => Number(p.allowed) === 0)
+        .map((p) => String(p.model_id)),
+    );
+    const models = allRows
+      .filter((m) => !denied.has(m.model_id))
+      .map((m) => ({
+        model_id: m.model_id,
+        family: m.family,
+        display_name: m.display_name,
+        context_window: m.context_window,
+        capabilities: {
+          reasoning: Number(m.is_reasoning) === 1,
+          vision: Number(m.is_vision) === 1,
+          function_calling: Number(m.is_function_calling) === 1,
+        },
+        status: m.status,
+      }));
+    const data = { models };
+    const payload = JSON.stringify(data);
+    const etag = await computeEtag(payload + ":" + teamUuid);
+    const ifNoneMatch = request.headers.get("if-none-match");
+    if (ifNoneMatch === etag) {
+      return new Response(null, {
+        status: 304,
+        headers: {
+          "x-trace-uuid": traceUuid,
+          etag,
+        },
+      });
+    }
+    return Response.json(
+      { ok: true, data, trace_uuid: traceUuid },
+      {
+        status: 200,
+        headers: {
+          "x-trace-uuid": traceUuid,
+          etag,
+          "cache-control": "private, max-age=60",
+        },
+      },
+    );
+  } catch (error) {
+    console.warn(`models-d1-read-failed team=${teamUuid}`, {
+      tag: "models-d1-read-failed",
+      error: String(error),
+    });
+    return jsonPolicyError(503, "models-d1-unavailable", "models lookup failed", traceUuid);
+  }
+}
+
+// ───────────────────────────────────────────────────────────────────
+// RH2 P2-05 / P2-06 / P2-07 — context inspection endpoints
+//
+// Routes:
+//   GET  /sessions/{uuid}/context           → context-core.getContextSnapshot
+//   POST /sessions/{uuid}/context/snapshot  → context-core.triggerContextSnapshot
+//   POST /sessions/{uuid}/context/compact   → context-core.triggerCompact
+//
+// Topology:
+//   client ─[façade auth + UUID gate]→ orchestrator-core
+//     ─[CONTEXT_CORE service binding RPC]→ context-core
+// ───────────────────────────────────────────────────────────────────
+
+async function handleSessionContext(
+  request: Request,
+  env: OrchestratorCoreEnv,
+  op: "get" | "snapshot" | "compact",
+): Promise<Response> {
+  const auth = await authenticateRequest(request, env);
+  if (!auth.ok) return auth.response;
+  const traceUuid = auth.value.trace_uuid;
+  const segments = new URL(request.url).pathname.split("/").filter(Boolean);
+  const sessionUuid = segments[1];
+  if (!sessionUuid || !UUID_RE.test(sessionUuid)) {
+    return jsonPolicyError(400, "invalid-input", "session_uuid must be a UUID", traceUuid);
+  }
+  const teamUuid = auth.value.snapshot.team_uuid;
+  if (typeof teamUuid !== "string" || teamUuid.length === 0) {
+    return jsonPolicyError(403, "missing-team-claim", "team_uuid missing from auth snapshot", traceUuid);
+  }
+  const ctx = (env as { CONTEXT_CORE?: ContextCoreRpcLike }).CONTEXT_CORE;
+  if (!ctx) {
+    return jsonPolicyError(
+      503,
+      "worker-misconfigured",
+      "CONTEXT_CORE binding missing",
+      traceUuid,
+    );
+  }
+  try {
+    const meta = { trace_uuid: traceUuid, team_uuid: teamUuid };
+    let body: Record<string, unknown>;
+    switch (op) {
+      case "get":
+        if (typeof ctx.getContextSnapshot !== "function") {
+          return jsonPolicyError(
+            503,
+            "worker-misconfigured",
+            "context-core RPC getContextSnapshot missing",
+            traceUuid,
+          );
+        }
+        body = await ctx.getContextSnapshot(sessionUuid, teamUuid, meta);
+        break;
+      case "snapshot":
+        if (typeof ctx.triggerContextSnapshot !== "function") {
+          return jsonPolicyError(
+            503,
+            "worker-misconfigured",
+            "context-core RPC triggerContextSnapshot missing",
+            traceUuid,
+          );
+        }
+        body = await ctx.triggerContextSnapshot(sessionUuid, teamUuid, meta);
+        break;
+      case "compact":
+        if (typeof ctx.triggerCompact !== "function") {
+          return jsonPolicyError(
+            503,
+            "worker-misconfigured",
+            "context-core RPC triggerCompact missing",
+            traceUuid,
+          );
+        }
+        body = await ctx.triggerCompact(sessionUuid, teamUuid, meta);
+        break;
+    }
+    return Response.json(
+      { ok: true, data: body, trace_uuid: traceUuid },
+      { status: 200, headers: { "x-trace-uuid": traceUuid } },
+    );
+  } catch (error) {
+    console.warn(
+      `context-rpc-failed op=${op} session=${sessionUuid} team=${teamUuid}`,
+      { tag: "context-rpc-failed", error: String(error) },
+    );
+    return jsonPolicyError(503, "context-rpc-unavailable", `context ${op} failed`, traceUuid);
+  }
+}
+
+interface ContextCoreRpcLike {
+  getContextSnapshot?(
+    sessionUuid: string,
+    teamUuid: string,
+    meta: { trace_uuid: string; team_uuid: string },
+  ): Promise<Record<string, unknown>>;
+  triggerContextSnapshot?(
+    sessionUuid: string,
+    teamUuid: string,
+    meta: { trace_uuid: string; team_uuid: string },
+  ): Promise<Record<string, unknown>>;
+  triggerCompact?(
+    sessionUuid: string,
+    teamUuid: string,
+    meta: { trace_uuid: string; team_uuid: string },
+  ): Promise<Record<string, unknown>>;
 }
 
 async function wrapSessionResponse(

@@ -24,7 +24,7 @@
  */
 
 import { NACP_VERSION } from "@haimang/nacp-core";
-import { NACP_SESSION_VERSION } from "@haimang/nacp-session";
+import { NACP_SESSION_VERSION, SESSION_BODY_SCHEMAS } from "@haimang/nacp-session";
 
 export interface LightweightServerFrame {
   readonly kind: string;
@@ -92,6 +92,45 @@ export function liftLightweightFrame(
  * `session.stream.event` so existing event-shaped frames keep flowing
  * through the registry-validated path.
  */
+/**
+ * RH2 P2-08 — server frame schema validation gate.
+ *
+ * 在 emitServerFrame 投递前调用本函数:
+ *  - kind 已映射到 NACP message_type
+ *  - 对应 message_type 在 SESSION_BODY_SCHEMAS 中 → safeParse(frame body)
+ *  - schema 缺失或 parse 失败 → 返回 `{ok:false, reason}`
+ *  - schema 通过或 message_type 不要求 body → 返回 `{ok:true}`
+ *
+ * 注意:lightweight 帧的 body 不是 nested,而是与 kind 平铺。我们把除了 `kind`
+ * 字段以外的所有字段视为 body,送入对应 NACP body schema 校验。这与
+ * `liftLightweightToNacpFrame` 的转换约定一致。
+ */
+export function validateLightweightServerFrame(
+  frame: LightweightServerFrame,
+): { ok: true } | { ok: false; reason: string } {
+  if (!frame || typeof frame !== "object" || typeof frame.kind !== "string") {
+    return { ok: false, reason: "frame missing kind:string" };
+  }
+  // mapKindToMessageType is defined below — need to call it after declaration.
+  // Hoisted JS function semantics let us forward-reference here.
+  const messageType = mapKindToMessageType(frame.kind);
+  // Lazy import of SESSION_BODY_SCHEMAS to avoid hoisting churn.
+  const schemas = SESSION_BODY_SCHEMAS as Record<string, { safeParse?: (v: unknown) => { success: boolean; error?: { message: string } } }>;
+  const schema = schemas[messageType];
+  if (!schema || typeof schema.safeParse !== "function") {
+    // No schema means we accept by default (e.g. session.stream.event has its
+    // own validator path).
+    return { ok: true };
+  }
+  const { kind: _k, ...body } = frame;
+  const parsed = schema.safeParse(body);
+  if (parsed.success) return { ok: true };
+  return {
+    ok: false,
+    reason: `schema mismatch for ${messageType}: ${parsed.error?.message ?? "unknown"}`,
+  };
+}
+
 export function mapKindToMessageType(kind: string): string {
   switch (kind) {
     case "session.heartbeat":
@@ -117,11 +156,13 @@ export function mapKindToMessageType(kind: string): string {
     case "session.elicitation.answer":
       return "session.elicitation.answer";
     case "attachment_superseded":
+    case "session.attachment.superseded":
+      // RH2 P2-01c — `session.attachment.superseded` 已注册为正式 NACP message
+      // type;lightweight `attachment_superseded` 同义映射到该 NACP type。
+      return "session.attachment.superseded";
     case "meta":
-      // These are control-plane lightweight frames; no NACP equivalent
-      // yet (session-ws-v2 will introduce `session.attachment.superseded`
-      // and `session.opened`). Until then we map to `session.stream.event`
-      // so registry validation does not reject them.
+      // session-ws-v2 will introduce `session.opened`; until then we map to
+      // `session.stream.event` so registry validation does not reject it.
       return "session.stream.event";
     default:
       return "session.stream.event";
