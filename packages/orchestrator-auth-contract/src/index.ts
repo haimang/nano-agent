@@ -31,12 +31,15 @@ export type AuthRpcMetadata = z.infer<typeof AuthRpcMetadataSchema>;
 
 export const OWNER_MEMBERSHIP_LEVEL = 100 as const;
 export const MembershipLevelSchema = z.number().int().nonnegative();
+export const TeamSlugSchema = z.string().regex(/^[a-z0-9-]{1,32}$/);
+export const SnapshotDeviceUuidSchema = z.union([z.string().uuid(), z.literal("")]);
 
 export const AccessTokenClaimsSchema = z.object({
   sub: z.string().uuid(),
   user_uuid: z.string().uuid().optional(),
   team_uuid: z.string().uuid().optional(),
   tenant_uuid: z.string().uuid().optional(),
+  device_uuid: z.string().uuid().optional(),
   membership_level: z.number().int().nonnegative().optional(),
   source_name: z.string().min(1).optional(),
   realm: z.string().min(1).optional(),
@@ -64,6 +67,7 @@ export const AuthSnapshotSchema = z.object({
   user_uuid: z.string().uuid(),
   team_uuid: z.string().uuid(),
   tenant_uuid: z.string().uuid(),
+  device_uuid: SnapshotDeviceUuidSchema,
   /**
    * `tenant_uuid` is currently an alias of `team_uuid` while zero-to-real
    * continues to bridge public auth truth into the NACP tenant model.
@@ -85,6 +89,8 @@ export type AuthUser = z.infer<typeof AuthUserSchema>;
 
 export const AuthTeamSchema = z.object({
   team_uuid: z.string().uuid(),
+  team_name: z.string().trim().min(1).max(80),
+  team_slug: TeamSlugSchema,
   membership_level: MembershipLevelSchema,
   plan_level: z.number().int().nonnegative(),
 });
@@ -163,6 +169,12 @@ export const VerifyApiKeyInputSchema = z.object({
 });
 export type VerifyApiKeyInput = z.infer<typeof VerifyApiKeyInputSchema>;
 
+export const CreateApiKeyInputSchema = z.object({
+  team_uuid: z.string().uuid(),
+  label: z.string().trim().min(1).max(80),
+});
+export type CreateApiKeyInput = z.infer<typeof CreateApiKeyInputSchema>;
+
 export const AuthFlowResultSchema = AuthViewSchema.extend({
   tokens: AuthTokensSchema,
 });
@@ -179,10 +191,22 @@ export const ResetPasswordResultSchema = AuthViewSchema.extend({
 export type ResetPasswordResult = z.infer<typeof ResetPasswordResultSchema>;
 
 export const VerifyApiKeyResultSchema = z.object({
-  supported: z.literal(false),
-  reason: z.literal("reserved-for-future-phase"),
+  supported: z.literal(true),
+  key_id: z.string().min(1),
+  team_uuid: z.string().uuid(),
+  user_uuid: z.string().uuid(),
+  membership_level: MembershipLevelSchema,
+  source_name: z.string().min(1),
 });
 export type VerifyApiKeyResult = z.infer<typeof VerifyApiKeyResultSchema>;
+
+export const CreateApiKeyResultSchema = z.object({
+  key_id: z.string().min(1),
+  api_key: z.string().regex(/^nak_[A-Za-z0-9_-]+$/),
+  team_uuid: z.string().uuid(),
+  label: z.string().trim().min(1).max(80),
+});
+export type CreateApiKeyResult = z.infer<typeof CreateApiKeyResultSchema>;
 
 export const AuthErrorCodeSchema = z.enum([
   "invalid-request",
@@ -254,6 +278,9 @@ export type WeChatLoginEnvelope = AuthEnvelope<AuthFlowResult>;
 export const VerifyApiKeyEnvelopeSchema = makeAuthEnvelopeSchema(VerifyApiKeyResultSchema);
 export type VerifyApiKeyEnvelope = AuthEnvelope<VerifyApiKeyResult>;
 
+export const CreateApiKeyEnvelopeSchema = makeAuthEnvelopeSchema(CreateApiKeyResultSchema);
+export type CreateApiKeyEnvelope = AuthEnvelope<CreateApiKeyResult>;
+
 export function okEnvelope<T>(data: T): AuthSuccessEnvelope<T> {
   return { ok: true, data };
 }
@@ -282,4 +309,5 @@ export interface OrchestratorAuthRpcService {
   resetPassword(input: unknown, meta: unknown): Promise<ResetPasswordEnvelope>;
   wechatLogin(input: unknown, meta: unknown): Promise<WeChatLoginEnvelope>;
   verifyApiKey(input: unknown, meta: unknown): Promise<VerifyApiKeyEnvelope>;
+  createApiKey(input: unknown, meta: unknown): Promise<CreateApiKeyEnvelope>;
 }

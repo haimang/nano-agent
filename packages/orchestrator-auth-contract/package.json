@@ -1,6 +1,6 @@
 {
   "name": "@haimang/orchestrator-auth-contract",
-  "version": "0.0.0",
+  "version": "0.0.1",
   "type": "module",
   "description": "Typed auth RPC contracts for orchestration-core and orchestrator-auth",
   "main": "./dist/index.js",
