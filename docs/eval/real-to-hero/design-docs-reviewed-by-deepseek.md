@@ -476,3 +476,67 @@ pnpm-lock.yaml 的问题有三个维度，但设计文档只覆盖了两维：
 ---
 
 > **本审查完成。不替代后续 action-plan review 或 implementation review。**
+
+---
+
+## 8. 审查质量评估（appended by Opus 4.7, 2026-04-29）
+
+### 8.0 评价结论
+
+- **一句话评价**：唯一系统性识别"仓库中已建成但未激活资产"的 reviewer，独家发现 hooks/dispatcher (149) + storage adapters (484) + kernel hook_emit 预路由共 3 类高价值资产；但 R1 把已存在的 RH2 主设计文件误判为"不存在"，是本轮唯一 false-positive。
+- **综合评分**：`8.0 / 10`
+- **推荐使用场景**：跨 phase 工作量评估、"是否要从零搭" vs "是否仅缺 wiring" 的判定、code reality vs design narrative 落差识别。
+- **不建议单独依赖的场景**：design 文档清单核查（R1 已说明 reviewer 容易看错文件存在性）；charter alignment review（GPT 更稳）；schema drift 探测（GLM/kimi 更细）。
+
+### 8.1 审查风格画像
+
+| 维度 | 观察 | 例证 |
+|------|------|------|
+| 主要切入点 | code reality vs design narrative | R3 / R4 / R7 都从"代码已建成但 design 假设需重建"切入 |
+| 证据类型 | line references + 行数核查 + grep | "storage adapters/r2-adapter.ts 214 行"等行数级核查 |
+| Verdict 倾向 | balanced（approve-with-followups）| 7 finding 全 non-blocker |
+| Finding 粒度 | balanced，但偏向"工作量评估"而非"功能正确性" | R3/R4 都是"工作量被高估" |
+| 修法建议风格 | actionable，常配"区分已有 vs 待写"的拆分建议 | R3 直接说"R4 工作 = 组装层 + binding，不是适配器实装" |
+
+### 8.2 优点与短板
+
+#### 8.2.1 优点
+
+1. **4 reviewer 中唯一深入"已建成资产"识别**：R3 (storage adapters)、R4 (hooks dispatcher)、R7 (kernel hook_emit 预路由) 三条都来自 deepseek，对 RH1/RH4 action-plan 的工作量校正 ≥ 30%。
+2. **行数级证据**：`wc -l` + `grep -c` 类硬证据让 finding 极难驳回；R5 关于 lockfile 的 "0 匹配" 是最强一手证据。
+3. **横向覆盖完整**：99 个 agent-core 文件 + 31 个 context-core 文件 + 32 个 filesystem-core 文件全部读过，coverage 是 4 reviewer 中最广的代码侧。
+4. **明确划分"认知准确 vs 认知偏差"**：3.1-3.7 的对齐审核每条都给 done/partial/missing/stale 四档，统计意义清晰。
+
+#### 8.2.2 短板 / 盲区
+
+1. **R1 false-positive（唯一）**：宣称 `RH2-models-context-inspection.md` 不存在，但该文件实际存在并被多份文档引用——这是 reviewer 没读全 design 目录的核查失误。
+2. **scheduler 改造深度判断保守**：R7 正确识别 kernel hook_emit 类型已预路由，但没继续深入 scheduler.ts 业务逻辑层（`SchedulerSignals` 是否需要新字段）；这一深度由 GLM R1 / kimi R3 各自补一半。
+3. **schema drift 不敏感**：RH5 `model_id` vs canonical `model`、`SessionStartBodySchema` 缺 model_id 等字段名级 drift 全部缺位。
+4. **verdict 偏宽松**：approve-with-followups + 7 全部 non-blocker 的口径，与 charter §8.3 Per-Phase Entry Gate 的硬纪律有距离；GPT 更准确给出 changes-requested。
+
+### 8.3 Findings 质量清点
+
+| 编号 | 原始严重 | 事后判定 | Finding 质量 | 分析 |
+|------|---------|----------|--------------|------|
+| R1 | high | **false-positive** | weak | `docs/design/real-to-hero/RH2-models-context-inspection.md` 实际存在；deepseek 的 review 范围声明遗漏该文件后顺势误判。本评估中已驳回，design 修订未采纳此条 |
+| R2 | medium | true-positive | good | 行号偏移识别准确，但属 minor；action-plan 阶段已纳入二次校验 |
+| R3 | medium | true-positive | excellent | RH4 §7.2 F1 实施步骤 + §8.1 已建成资产引用直接据此修订；4 reviewer 中独家发现 |
+| R4 | medium | true-positive | excellent | RH1 §8.4 已建成资产清单据此新增；RH1 工作量评估从"build dispatcher + connect"降为"connect only" |
+| R5 | medium | true-positive | excellent | 与 GLM R14 / kimi R1 三方共识；deepseek 给出最详尽的 stale importer 列表（6 个具体包名）|
+| R6 | low | true-positive | good | 行号偏移；与 R2 同类 |
+| R7 | low | true-positive | excellent | kernel `StepDecision.hook_emit` 已存在 + runner `handleHookEmit` case 已存在的发现，直接驳回了 kimi R3"需扩 union"的判断，是高质量交叉校准 |
+
+### 8.4 多维度评分
+
+| 维度 | 评分 | 说明 |
+|------|------|------|
+| 证据链完整度 | 9 | wc -l / grep -c / file existence 等命令级证据扎实 |
+| 判断严谨性 | 7 | 1/7 false-positive（R1）显著拉低；其他 6 条都很稳 |
+| 修法建议可执行性 | 9 | 多数 finding 直接配"已有 vs 待写" 拆分，对 action-plan 高度友好 |
+| 对 action-plan / design / QNA 的忠实度 | 7 | 没有引用 charter 段落级条款（GPT 强项）；charter §13.1 的产出清单理解偏差导致 R1 失误 |
+| 协作友好度 | 9 | 7 全部 non-blocker；不阻塞 design 收口 |
+| 找到问题的覆盖面 | 9 | 横向 162 个文件读过，是 4 reviewer 最广 |
+| 严重级别 / verdict 校准 | 6 | approve-with-followups 偏松；R1 标 high 与 false-positive 形成放大风险 |
+
+**综合**：`8.0 / 10`。R3/R4/R7 三条独家高价值发现，是 deepseek 在 4 reviewer 中最独特的贡献——任何 RH1/RH4/RH5 action-plan 如果不基于这三条，工作量都会被显著高估。但 R1 的 false-positive 提醒 implementer：deepseek 的 review 必须配合 GPT 的 charter alignment 一起读，单独依赖会被 reviewer 自身的核查偏差牵走。
+

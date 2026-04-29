@@ -438,3 +438,69 @@
 ---
 
 *End of review*
+
+---
+
+## 7. 审查质量评估（appended by Opus 4.7, 2026-04-29）
+
+### 7.0 评价结论
+
+- **一句话评价**：4 份审查中"业主可执行性最强"的一份；severity 校准最严格（4 reviewer 中第一个把 lockfile gap 标为 critical），R5（API key salt）是独家发现；R3（scheduler 改造深度）有一处核查偏差，但不影响整体可信度。
+- **综合评分**：`8.5 / 10`
+- **推荐使用场景**：业主直接拿来排 P0-A/P0-B/P0-C 优先级、向业主解释 severity 时；schema/DDL 现实缺口的 quick check。
+- **不建议单独依赖的场景**：runtime 协议运行态深度 trace（GLM 强）；charter alignment 治理问题（GPT 强）；已建成资产识别（deepseek 强）。
+
+### 7.1 审查风格画像
+
+| 维度 | 观察 | 例证 |
+|------|------|------|
+| 主要切入点 | platform fitness + DDL/schema 现实 vs 设计假设 | R1（lockfile）/ R2（KV/R2 binding）/ R4（nano_teams 表）/ R5（api_keys salt 列）|
+| 证据类型 | grep -c / wc -l / file existence + DDL 反向校验 | "grep -c 'jwt-shared' = 0"等命令级一手证据 |
+| Verdict 倾向 | strict-but-pragmatic | approve-with-followups + 3 blocker 显式标 yes |
+| Finding 粒度 | balanced | 9 finding 覆盖 7 个 phase，每条对应一个具体 action-plan 修整 |
+| 修法建议风格 | actionable + 业主可读 | 多数带"在 P0-A 中增加..."的具体定位 |
+
+### 7.2 优点与短板
+
+#### 7.2.1 优点
+
+1. **R5 独家发现**：`nano_team_api_keys` 表无 `salt` 列、与 RH3 设计的 HMAC-SHA256(salt:raw) 方案不兼容——这条 4 reviewer 中只有 kimi 抓到，进入 RH3 §8.4 migration 009 schema 变更清单 + Phase 1 直接落地。
+2. **severity 校准最严格**：在 lockfile / binding 两条 platform fitness finding 上，kimi 是 4 reviewer 中第一个明确标 critical（R1 critical / R2 high blocker），与 GPT changes-requested 形成共振，避免业主把 RH0 当 trivial pre-work。
+3. **业主可执行性最强**：每条 finding 后都有"在 RH0 P0-A 中增加..."、"在 RH3 action-plan P3-B 中明确..."这样的下游定位，让业主可以直接转发给 implementer 而不需 review re-translation。
+4. **R9（import cycle 风险）有前瞻**：拆前依赖图审核 + `madge --circular` 检测脚本的修法建议，直接进入 RH6 §6.2 风险表 + Phase 1 madge CI gate；charter §10.3 NOT-成功退出第 1 条因此可被自动化 enforcement。
+
+#### 7.2.2 短板 / 盲区
+
+1. **R3 核查偏差**：kimi 说"scheduler 数据模型里没有 hook 概念"，但实际上 `kernel/types.ts:30,62` 已含 `hook_emit` StepKind/StepDecision 变体；deepseek R7 已纠正此点。这条不是 false-positive（scheduler 自身确实需要扩业务逻辑），但严重度被高估为 high scope-drift。
+2. **missing finding 比例偏高**：3.4 表中 RH3 一个 phase 标 5 missing + 1 partial，但没区分"业主未答" vs "schema 未实装"；kimi 把"未冻结"和"未实装"放在一起看，可能让业主以为 RH3 工作量比实际更大。
+3. **runtime trace 不深**：与 GLM 相比，kimi 没有 dive 到 `forwardServerFrameToClient` 不存在 / `emitServerFrame` only same-DO 这一层运行态事实；R7 提到 frame emit 状态模糊但停在 description level。
+4. **缺 charter governance 维度**：RHX QNA 编号倒置（GPT R7）、charter §4.3 灰区 `GET /me/teams` 漏（GPT R3）—— kimi 9 条没覆盖。
+
+### 7.3 Findings 质量清点
+
+| 编号 | 原始严重 | 事后判定 | Finding 质量 | 分析 |
+|------|---------|----------|--------------|------|
+| R1 | critical | true-positive | excellent | 与 GLM R14 / deepseek R5 三方共识；kimi 是首个标 critical 的 reviewer，对业主严肃度传达起作用 |
+| R2 | high | true-positive | excellent | RH0 §7.1 F3 据此重写为"首次声明"；4 reviewer 独家把"占位声明" vs "完全缺失"区分清楚 |
+| R3 | high | **partial** | weak | kimi 部分判断有误（StepDecision 已含 hook_emit 变体）；scheduler 业务逻辑确实需扩，但不需扩 union；评估未采纳 kimi 关于 union 扩展的建议，仅采纳"业务逻辑改"部分 |
+| R4 | medium | true-positive | excellent | RH3 §5.1 [S2] / §8.4 migration 009 schema 直接据此 |
+| R5 | medium | true-positive | excellent | **4 reviewer 独家**；RH3 §5.1 [S3] / §8.4 加 `key_salt TEXT NOT NULL` 列直接据此 |
+| R6 | high | true-positive | excellent | 与 GPT R5 / GLM R4 / deepseek H5-5 多方共识；RH5 [S0] schema 前置据此 |
+| R7 | medium | true-positive | good | 描述级 finding；与 GLM R1 互补但深度低 |
+| R8 | low | true-positive | good | RH2 §8.4 facade 路由层缺口表据此新增；severity 校准偏松（kimi 标 low，但漏掉 facade 路由会让 RH2 整 phase 失败，应至少 medium）|
+| R9 | medium | true-positive | excellent | RH6 §6.2 + Phase 1 madge CI gate 据此；4 reviewer 独家把 import cycle 升为可自动化 enforce 项 |
+
+### 7.4 多维度评分
+
+| 维度 | 评分 | 说明 |
+|------|------|------|
+| 证据链完整度 | 9 | grep -c / wc -l / DDL 反向校验扎实；偶尔 schema 反向引用偏少 |
+| 判断严谨性 | 7 | 1/9 partial（R3 scheduler union）；其他 8 条都很稳 |
+| 修法建议可执行性 | 10 | 4 reviewer 中"业主可读"度最高；几乎每条带具体 PR 步骤 |
+| 对 action-plan / design / QNA 的忠实度 | 8 | charter §1.2 对账完整；RHX QNA 治理维度未覆盖 |
+| 协作友好度 | 9 | 9 finding 数量适中；severity 显式分级 |
+| 找到问题的覆盖面 | 8 | 横向覆盖 7 phase；R5/R9 独家；但 runtime 深度 trace 偏弱 |
+| 严重级别 / verdict 校准 | 8 | R1 critical / R2 high 校准准确；R8 标 low 偏松；R3 标 high 偏严 |
+
+**综合**：`8.5 / 10`。kimi 的"业主可执行性"和"severity 校准严格"是其他 3 reviewer 都比不上的；R5 和 R9 各是独家高价值发现。R3 的核查偏差被 deepseek R7 自动纠正，4 份合用时该偏差不会漏到 implementer。如果业主只读 1 份 review 给团队转发，kimi 是 4 份中可读性最高的一份。
+

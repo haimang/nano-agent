@@ -502,3 +502,75 @@
   10. RH4 标注 InMemoryArtifactStore canonical 位置（R6）
 - **建议的二次审查方式**：独立 reviewer rereview（修正后 cross-check）
 - **实现者回应入口**：请按 `docs/templates/code-review-respond.md` 在本文档 §6 append 回应，不要改写 §0–§5。
+
+---
+
+## 7. 审查质量评估（appended by Opus 4.7, 2026-04-29）
+
+### 7.0 评价结论
+
+- **一句话评价**：4 份审查中 finding 数量最多（16 条）、code reality 切入最深、独家发现两个 critical 根本性问题（R1 Lane F 描述倒置 + R2 forwardServerFrameToClient 不存在）；这两条若不修，RH1 implementer 必然走错方向，因此整体价值最高。
+- **综合评分**：`9.5 / 10`
+- **推荐使用场景**：design 与代码现实的全面对账、协议运行态 trace、字段名级 drift 探测、cross-cutting protocol gap（如 orchestrator-core WS bypass NACP）。
+- **不建议单独依赖的场景**：当只想要"≤5 条最关键 blocker"的精炼 verdict 时（GPT 更精炼）；当 reviewer 时间预算紧张时（GLM 16 条会让收口拖长）。
+
+### 7.1 审查风格画像
+
+| 维度 | 观察 | 例证 |
+|------|------|------|
+| 主要切入点 | code reality 深 trace + 协议字段反向校验 | R1 跟 `nano-session-do.ts:797-829` + 全代码库 grep 调用方；R2 全代码库 grep `forwardServerFrameToClient` 0 结果 |
+| 证据类型 | line references + grep + Zod schema parse + DDL 反向校验 | 几乎每 finding 都有 schema 或 DDL 级证据 |
+| Verdict 倾向 | strict（changes-requested）；2 critical + 5 high | 严格但与 finding 质量匹配 |
+| Finding 粒度 | fine | 同一 phase 内可拆出 2-3 条不同维度的 finding（如 RH3 R8/R12 + RH5 R4/R9/R16）|
+| 修法建议风格 | actionable，且常给"需要同时修改的 schema 清单" | R12 一次列出 6 个需改 schema/DDL；R8 列出 contract package 升版条件 |
+
+### 7.2 优点与短板
+
+#### 7.2.1 优点
+
+1. **2 个 critical 根本性 finding 是 4 reviewer 独家**：R1（Lane F 描述倒置：等待机制完整 vs 设计文档暗示的"只记录不等待"）+ R2（`forwardServerFrameToClient` 0 grep 匹配，是全新 RPC 而非"接线"）。这两条若不修，RH1 P1-D 工作量被低估 ≥ 50%，且方向错误。
+2. **schema/DDL 反向校验最深**：R4 同时核查 canonical.ts:68 / models.ts:15 两处字段名；R12 一次定位 6 处 schema/DDL 缺口；R16 把 "vision 激活" 拆成 capability flag + ingress + canonical 三个独立步骤。
+3. **cross-cutting protocol gap 嗅觉准确**：R13（orchestrator-core WS bypass NACP validation）是 4 reviewer 中独家——这条直接进入 RH2 P2-08 实施步骤，是协议 single source 真实落地的关键。
+4. **每 finding 配"如果不修会怎样"**：例如 R1 说"implementer 可能误以为只需接线"——为 implementer 提供决策依据，不只是 critique。
+
+#### 7.2.2 短板 / 盲区
+
+1. **finding 数量偏多导致优先级稀释**：R15（nacp-core 依赖版本 `*` vs `workspace:*`）虽 valid，但 severity 偏低混在 16 条里容易被埋。
+2. **没有抓 charter alignment 类的 governance 问题**：例如 RHX Q3/Q4 编号倒置（GPT R7）、charter §4.3 已 in-scope 的 `GET /me/teams` 漏掉（GPT R3）—— GLM 16 条没有覆盖到这层。
+3. **未识别"已建成但未激活"资产**：hooks dispatcher 149 行 / storage adapters 484 行（deepseek R3/R4 独家）—— GLM 在 R5 提到 filesystem-core hybrid 状态但没深入到 storage adapters 已生产级。
+4. **R3 表述偏严**：`handleUsage 已非 null placeholder` 标 high 略保守（实际是 partial：D1 已查但无 rows 仍 fallback null），与 charter §7.2 P1-E 的 in-scope 状态对接更准确（GPT R1 取的角度更恰当）。
+
+### 7.3 Findings 质量清点
+
+| 编号 | 原始严重 | 事后判定 | Finding 质量 | 分析 |
+|------|---------|----------|--------------|------|
+| R1 | critical | true-positive | excellent | 4 reviewer 独家 critical；RH1 §4.2/§5.1/§7.2 F2 全部据此重写 |
+| R2 | critical | true-positive | excellent | 全代码库 grep 0 匹配，是最强一手证据；RH1 §7.2 F3 + §8.3 据此新增 |
+| R3 | high | true-positive | good | partial 而非 fully stale；与 GPT R1 互补 |
+| R4 | high | true-positive | excellent | RH5 §1.1 关键术语据此重写；与 kimi R6 共识 |
+| R5 | high | true-positive | excellent | RH4 §0/§4.1 hybrid 状态描述据此修订 |
+| R6 | medium | true-positive | excellent | RH4 §8.1 canonical 位置 (workspace-context-artifacts) 据此修正 |
+| R7 | medium | true-positive | good | 行号偏移；批量发现，留 action-plan 校验 |
+| R8 | medium | true-positive | excellent | RH3 §8.5 contract package 影响清单据此新增 |
+| R9 | high | true-positive | excellent | RH5 §5.1 [S3] / §7.2 F3 实施步骤据此重写 |
+| R10 | medium | true-positive | excellent | RH2-llm-delta-policy §8.2 两层归一化据此重写 |
+| R11 | medium | true-positive | excellent | RH6 §5.1 [S1]/[S2] verification subsystem + durable truth helpers 据此新增 |
+| R12 | high | true-positive | excellent | RH3 §5.1 [S1] / §8.4 schema 变更清单据此细化 |
+| R13 | medium | true-positive | excellent | RH2 §7.2 F3 实施步骤 + §8.4 facade 路由层缺口表据此新增 |
+| R14 | medium | true-positive | good | 与 kimi R1 / deepseek R5 三方共识；术语精确化（absent vs stale） |
+| R15 | medium | true-positive | mixed | valid 但 severity 偏高；属轻量 action-plan 修整项 |
+| R16 | high | true-positive | excellent | RH5 vision 激活 3 步路线据此重写 |
+
+### 7.4 多维度评分
+
+| 维度 | 评分 | 说明 |
+|------|------|------|
+| 证据链完整度 | 10 | grep + schema parse + DDL 反向校验 + line references 全配套 |
+| 判断严谨性 | 10 | 0 false-positive；critical 标记节制（仅 R1/R2，且都验证为根本性）|
+| 修法建议可执行性 | 10 | 几乎每条带"修改 schema/DDL 清单" |
+| 对 action-plan / design / QNA 的忠实度 | 8 | charter alignment 维度覆盖弱；RHX QNA 编号倒置等治理问题没识别 |
+| 协作友好度 | 8 | 16 条略多；implementer 需较高 ROI 筛选成本（虽然每条都 valid）|
+| 找到问题的覆盖面 | 10 | 16/16 valid；横跨 schema/DDL/protocol/code-reality 四类 |
+| 严重级别 / verdict 校准 | 9 | 2 critical + 5 high + 9 medium 分布合理；R3 略保守 |
+
+**综合**：`9.5 / 10`。R1 + R2 两条 critical 是 RH1 的"方向问题"，独此一份；其余 14 条 100% 落地修订。GLM 这份 review 的价值不能用 finding 数量平摊衡量，而要用"如果实现者不读这份会走错多远"的反事实量度——RH1 / RH3 / RH5 三个 phase 各有一个根本性方向被 GLM 校正。

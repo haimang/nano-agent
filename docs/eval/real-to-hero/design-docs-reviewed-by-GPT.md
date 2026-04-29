@@ -343,3 +343,69 @@
 - **实现者回应入口**：`请按 docs/templates/code-review-respond.md 在本文档 §6 append 回应，不要改写 §0–§5。`
 
 本轮 review 不收口，等待设计文档按 §2 findings 修订后再次审查。
+
+---
+
+## 7. 审查质量评估（appended by Opus 4.7, 2026-04-29）
+
+> 本附录由 implementer 在完成 8 项 finding 全部核实与设计文档修订后回填，依据 `docs/templates/code-review-eval.md`。
+
+### 7.0 评价结论
+
+- **一句话评价**：8 个 finding 全部 true-positive，verdict 校准严谨，是 4 份审查中"对 charter 忠实度"与"修法 actionability"最均衡的一份。
+- **综合评分**：`9.2 / 10`
+- **推荐使用场景**：design 文档对照 charter 的 alignment review、Per-Phase Entry Gate 把关、scope drift 探测。
+- **不建议单独依赖的场景**：纯代码层面的 "已建成但未激活资产" 探测（这不是 GPT 本轮强项，由 deepseek 补强）；以及深度协议运行态 trace（由 GLM 补强）。
+
+### 7.1 审查风格画像
+
+| 维度 | 观察 | 例证 |
+|------|------|------|
+| 主要切入点 | charter alignment + protocol single source | R1 直接锚定 charter §7.2 P1-E；R2 直接锚定 `nacp-session/stream-event.ts:64-69` |
+| 证据类型 | line references + schema parse + charter 段落引用 | 每条 finding 都给出 file:line 与 charter §X.Y |
+| Verdict 倾向 | strict（changes-requested）但理由集中、不 over-claim | 8 finding 中只有 2 个标 non-blocker，说明判定克制 |
+| Finding 粒度 | balanced | R1/R3/R4/R5/R7 均落到具体修法决议，不是宽泛 critique |
+| 修法建议风格 | actionable，但保持设计层次（不滑入实现细节） | R5 给出"4 处修改点清单"而不是逐行 patch；R7 给出"双编号"或"统一编号"两条路 |
+
+### 7.2 优点与短板
+
+#### 7.2.1 优点
+
+1. **8 项 finding 100% true-positive**：在我对每一条做 grep / Read / charter 对账后，没有任何一条被驳回；连 R8（low severity）也是真实可观察的 RH0 deliverable 不一致。
+2. **修法建议自带"两条路"决议结构**：例如 R2 直接给"方案 A 加 schema / 方案 B 改语义"，让 implementer 不用再回到 design 阶段决议。
+3. **对 charter 忠实度最高**：R1 / R3 / R6 / R8 都不是"GPT 自己的 review 偏好"，而是"设计文档与 charter 已冻结条款不一致"——这是最难漂移的 finding 类型。
+4. **scope-drift 嗅觉准确**：R7 把 RHX Q3/Q4 编号倒置识别为 governance 风险，这是其他 3 位 reviewer 都没注意到的"系统级"问题。
+
+#### 7.2.2 短板 / 盲区
+
+1. **"已建成但未激活"资产未识别**：hooks/dispatcher.ts 149 行、storage adapters 484 行、kernel hook_emit 预路由——这三处工作量低估的根因，本轮没被 GPT 抓出，而是 deepseek R3/R4/R7 补的。GPT 的 review 视角偏 charter 文档而非"代码现实 vs 文档"。
+2. **缺乏 schema-level 字段名 drift 探测**：RH5 `model_id` vs canonical `model`、`context_window` vs `contextWindow`、`SessionStartBodySchema` 缺 model_id 等具体字段名级 drift 由 GLM R4 / kimi R6 补。
+3. **协议运行态 trace 不深**：例如 R1 知道"P1-E 应该做"，但没有进一步追到"forwardServerFrameToClient 根本不存在"这一核心 RPC gap（由 GLM R2 补）；GPT 在 RH1 上停在 charter 层面，没有 dive 到 user-do `emitServerFrame` only same-DO 的现实。
+
+### 7.3 Findings 质量清点
+
+| 编号 | 原始严重 | 事后判定 | Finding 质量 | 分析 |
+|------|---------|----------|--------------|------|
+| R1 | high | true-positive | excellent | RH1 [S5]/F4 直接据此新增；charter §7.2 P1-E 的 "handleUsage no-null" 真实落地 |
+| R2 | medium | true-positive | excellent | 选择方案 B（不扩 schema）直接被采纳，design 与 schema 重新对齐 |
+| R3 | medium | true-positive | excellent | RH3 [S6]/F5 据此新增 `GET /me/teams`；charter §4.3 灰区已 in-scope 但漏 |
+| R4 | medium | true-positive | good | RH4 §5.1 [S1] 重写为"R2+D1 冷真相 / KV 仅 cache"；R4 没有被 GPT 进一步细化为 "tenant namespace + TTL"，由 RH4 design §6.2 自行补 |
+| R5 | medium | true-positive | excellent | RH5 [S0] schema 前置完全采纳，列出 5 个修改点全部进入 action-plan |
+| R6 | medium | true-positive | good | 修订采纳；不过 GPT 没列出 ZX5 已抽 4 seam 的具体名字，由 GLM R11 / deepseek H6 补 |
+| R7 | medium | true-positive | excellent | RHX Q3/Q4 dual-numbering 直接落地；这条是 4 reviewer 中独家发现 |
+| R8 | low | true-positive | good | RH0 §7.1 加 F5/F6；GPT 标 non-blocker 校准合理 |
+
+### 7.4 多维度评分
+
+| 维度 | 评分 | 说明 |
+|------|------|------|
+| 证据链完整度 | 9 | 每 finding 都有 file:line + charter §X.Y；个别 finding 没补充"代码 grep 反向验证"，所以不是 10 |
+| 判断严谨性 | 10 | 0 false-positive；所有 high/medium 的 blocker 标记都经得起核实 |
+| 修法建议可执行性 | 9 | 多数给"两条路决议结构"；R4 KV 职责的修法略抽象（仅给原则没给字段约束）|
+| 对 action-plan / design / QNA 的忠实度 | 10 | charter §4.0/§7/§12 段落引用全部正确 |
+| 协作友好度 | 9 | verdict 严但理由集中；没有 over-prescribe 实现细节 |
+| 找到问题的覆盖面 | 8 | charter alignment 覆盖完整，但漏掉"已建成资产"和"字段名 drift"两类问题 |
+| 严重级别 / verdict 校准 | 10 | 8 finding 中 high=1 / medium=6 / low=1 的分布与实际修订成本基本吻合 |
+
+**综合**：`9.2 / 10`。这是 4 份审查中"治理纪律最强"的一份；与 GLM 的"代码现实最深"、deepseek 的"已建成资产识别最锐利"、kimi 的"业主可执行性最强" 形成互补，4 份合用价值远大于单份。
+
