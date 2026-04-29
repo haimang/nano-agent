@@ -32,9 +32,7 @@ import type { OrchestrationDeps, OrchestrationState } from "../orchestration.js"
 import { assertTraceLaw, type TraceContext } from "../traces.js";
 import { extractTurnInput } from "../turn-ingress.js";
 import { appendInitialContextLayer } from "@haimang/context-core-worker/context-api/append-initial-context-layer";
-import { peekPendingInitialContextLayers } from "@haimang/context-core-worker/context-api/append-initial-context-layer";
 import { transitionPhase as transitionPhaseImported } from "../actor-state.js";
-import { validateSessionCheckpoint } from "../checkpoint.js";
 import { createDefaultCompositionFactory } from "../composition.js";
 import type { CompositionFactory, SubsystemHandles } from "../composition.js";
 import { makeRemoteBindingsFactory } from "../remote-bindings.js";
@@ -42,11 +40,25 @@ import type { CrossSeamAnchor } from "../cross-seam.js";
 import type { SessionRuntimeEnv } from "../env.js";
 import { validateInternalAuthority } from "../internal-policy.js";
 import {
-  buildQuotaErrorEnvelope,
-  buildToolQuotaAuthorization,
   createMainlineKernelRunner,
 } from "../runtime-mainline.js";
-import type { CapabilityTransportLike } from "../runtime-mainline.js";
+import {
+  runPreviewVerification as runPreviewVerificationModule,
+  getCapabilityTransport as getCapabilityTransportModule,
+  type VerifyContext,
+} from "./session-do-verify.js";
+import {
+  awaitAsyncAnswer as awaitAsyncAnswerModule,
+  buildWsHelperStorage,
+  getTenantScopedStorage as getTenantScopedStorageModule,
+  persistCheckpoint as persistCheckpointModule,
+  persistTeamUuid as persistTeamUuidModule,
+  recordAsyncAnswer as recordAsyncAnswerModule,
+  restoreFromStorage as restoreFromStorageModule,
+  sweepDeferredAnswers as sweepDeferredAnswersModule,
+  type DeferredAnswerEntry,
+  type PersistenceContext,
+} from "./session-do-persistence.js";
 import {
   composeWorkspaceWithEvidence,
   type WorkspaceCompositionHandle,
@@ -64,19 +76,11 @@ import {
   type EvidenceAnchorLike,
 } from "@nano-agent/workspace-context-artifacts";
 
-/**
- * A4-A5 review R3 / Kimi R5: pick the right factory based on env
- * bindings. If any of the three v1 service bindings is present,
- * prefer `makeRemoteBindingsFactory()` so the deployed DO actually
- * consumes the remote seam instead of silently staying all-local.
- * Tests (which build a bare `{}` env) still fall back to the
- * default local factory, preserving the existing no-op behaviour.
- *
- * 2nd-round R1: when the caller passes an `anchorProvider`, thread
- * it into `makeRemoteBindingsFactory()` so live remote requests
- * carry `x-nacp-trace/session/team/request/...` headers without the
- * caller having to reach into adapter internals.
- */
+// Pick the composition factory based on env bindings: prefer
+// `makeRemoteBindingsFactory()` when any v1 service binding is present so
+// deployed DO consumes the remote seam; fall back to local factory for tests
+// with bare `{}` env. `anchorProvider` is threaded into the remote factory so
+// live remote requests carry `x-nacp-trace/session/team/request/...` headers.
 function selectCompositionFactory(
   env: unknown,
   anchorProvider?: () => CrossSeamAnchor | undefined,
@@ -100,15 +104,11 @@ import {
 } from "@haimang/nacp-session";
 import {
   verifyTenantBoundary,
-  tenantDoStorageGet,
-  tenantDoStoragePut,
-  tenantDoStorageDelete,
   type DoStorageLike,
 } from "@haimang/nacp-core";
 import { D1QuotaRepository } from "../quota/repository.js";
 import {
   QuotaAuthorizer,
-  QuotaExceededError,
   type QuotaRuntimeContext,
 } from "../quota/authorizer.js";
 
@@ -129,13 +129,10 @@ export interface DurableObjectStateLike {
   acceptWebSocket?(ws: unknown): void;
 }
 
-/** Key used to persist the full session checkpoint inside DO storage. */
-const CHECKPOINT_STORAGE_KEY = "session:checkpoint";
-
 /** Key used to persist the last-seen-seq hint from the client. */
 const LAST_SEEN_SEQ_KEY = "session:lastSeenSeq";
-/** Unscoped key that remembers the session-owned team UUID across hibernation. */
-const SESSION_TEAM_STORAGE_KEY = "session:teamUuid";
+// CHECKPOINT_STORAGE_KEY + SESSION_TEAM_STORAGE_KEY are owned by
+// `./session-do-persistence.ts` and re-imported above (RH0 P0-D2).
 const DEFAULT_LLM_CALL_LIMIT = 200;
 const DEFAULT_TOOL_CALL_LIMIT = 400;
 
@@ -175,29 +172,9 @@ export class NanoSessionDO {
   private readonly workspaceComposition: WorkspaceCompositionHandle;
   private readonly quotaAuthorizer: QuotaAuthorizer | null;
 
-  /**
-   * 3rd-round R2: bounded in-memory default eval/evidence sink. When
-   * the composition factory does NOT supply an `eval` handle (which
-   * is true for both `createDefaultCompositionFactory` and
-   * `makeRemoteBindingsFactory` today), the DO installs this sink so
-   * the default deploy assembly STILL emits evidence — instead of
-   * silently dropping records. Production deployments override
-   * `subsystems.eval` with `DoStorageTraceSink` (or equivalent), in
-   * which case this default sink is bypassed.
-   *
-   * **B6 upgrade (per `docs/rfc/nacp-core-1-2-0.md` §4.2 dedup
-   * contract)**: the raw append-then-splice array is replaced by a
-   * `BoundedEvalSink` that
-   *
-   *   - dedups on envelope `messageUuid` (when records carry one)
-   *   - surfaces an explicit `overflowCount` counter
-   *   - keeps a ring buffer of recent overflow disclosures
-   *
-   * The sink's capacity remains 1024 for parity with pre-B6
-   * behaviour. Capacity-driven FIFO eviction is still the default
-   * overflow mode, but it is no longer silent — every eviction
-   * produces a disclosure observable via `getDefaultEvalDisclosure()`.
-   */
+  // 3rd-round R2 + B6 dedup: bounded in-memory default eval/evidence sink
+  // (capacity 1024). Production deployments override `subsystems.eval`
+  // with `DoStorageTraceSink`; default sink is bypassed there.
   private static readonly DEFAULT_SINK_MAX = 1024;
   // P2 Phase 2 (D06 upgrade): if composition provides a `BoundedEvalSink`
   // on `eval`, the DO adopts that instance so getRecords/getDisclosure/
@@ -615,185 +592,48 @@ export class NanoSessionDO {
     this.sessionUuid = candidate;
   }
 
-  // ZX4 Phase 4 P4-01 — record an inbound permission decision against a
-  // request_uuid. orchestrator-core forwards client decisions here via
-  // the WorkerEntrypoint.permissionDecision RPC (or the /internal HTTP
-  // forwarder). Stored under `permission/decisions/${requestUuid}` so a
-  // future kernel waiter can poll/resolve. The runtime hook that *waits*
-  // on this storage is acknowledged as cluster-level work and is left
-  // unwired — establishing this contract is the deliverable for ZX4.
+  // ZX4 Phase 4 P4-01 — record permission decision (delegated to seam).
   private async handlePermissionDecisionRecord(
     sessionId: string,
     body: unknown,
   ): Promise<Response> {
-    return this.recordAsyncAnswer(sessionId, body, "permission");
+    return recordAsyncAnswerModule(this.buildPersistenceContext(), sessionId, body, "permission");
   }
 
-  // ZX4 Phase 6 P6-01 — symmetric path for elicitation answers.
+  // ZX4 Phase 6 P6-01 — symmetric elicitation answer path (delegated to seam).
   private async handleElicitationAnswerRecord(
     sessionId: string,
     body: unknown,
   ): Promise<Response> {
-    return this.recordAsyncAnswer(sessionId, body, "elicitation");
-  }
-
-  private async recordAsyncAnswer(
-    sessionId: string,
-    body: unknown,
-    kind: "permission" | "elicitation",
-  ): Promise<Response> {
-    if (!body || typeof body !== "object" || Array.isArray(body)) {
-      return new Response(
-        JSON.stringify({ error: "invalid-input", message: `${kind} answer requires a JSON body` }),
-        { status: 400, headers: { "Content-Type": "application/json" } },
-      );
-    }
-    const record = body as Record<string, unknown>;
-    const requestUuid = record.request_uuid;
-    if (typeof requestUuid !== "string" || !UUID_RE.test(requestUuid)) {
-      return new Response(
-        JSON.stringify({
-          error: "invalid-input",
-          message: `${kind} answer requires a UUID request_uuid`,
-        }),
-        { status: 400, headers: { "Content-Type": "application/json" } },
-      );
-    }
-    const storageKey = `${kind}/decisions/${requestUuid}`;
-    const stored = {
-      session_uuid: sessionId,
-      request_uuid: requestUuid,
-      ...record,
-      received_at: new Date().toISOString(),
-    };
-    await this.doState.storage?.put(storageKey, stored);
-    // ZX5 Lane F1/F2 — alarm-driven wait-and-resume kernel infra.
-    // 同 DO 内部的 awaitAsyncAnswer() 调用方在 deferredAnswers map 中等待;
-    // recordAsyncAnswer 写 storage 后**立即** resolve 内存 deferred,无需
-    // 等待 alarm 周期性 wakeup。alarm 仍然作为 cross-DO-restart 的 backstop
-    // (参见 alarm() 方法:每 heartbeat 周期 sweep 内存 map vs storage 一致性)。
-    this.resolveDeferredAnswer(kind, requestUuid, stored);
-    return new Response(
-      JSON.stringify({ ok: true, data: { request_uuid: requestUuid, kind, stored: true } }),
-      { status: 200, headers: { "Content-Type": "application/json" } },
-    );
+    return recordAsyncAnswerModule(this.buildPersistenceContext(), sessionId, body, "elicitation");
   }
 
   // ZX5 Lane F1/F2 — alarm-driven wait-and-resume primitives(per Q10
-  // owner direction:b 选项 alarm-driven,反对 a polling 与 c WS 下放)。
-  //
-  // 设计要点:
-  // - 内存 deferredAnswers map keyed by `${kind}:${requestUuid}` 持有 resolver
-  // - awaitAsyncAnswer:先查 storage(防止 record 早于 await 的 race);
-  //   若未存在则注册 deferred + 计 timeout
-  // - recordAsyncAnswer:写 storage 后 resolve 同 key 的 deferred
-  // - alarm():做 deferred map sweep — 检查内存中等待的 deferred 是否已经
-  //   有 storage 记录(handles DO restart 场景:DO 重启后内存 map 重建,但
-  //   storage 仍有早先 record 的 decision,alarm 周期性 sweep 可触发恢复)
-  // - timeout fail-closed:60s default;超时 deferred reject,kernel hook
-  //   把这等同 deny。
+  // owner direction:b alarm-driven). Map keyed by `${kind}:${requestUuid}`;
+  // deferred lifecycle implementation lives in `./session-do-persistence.ts`.
+  // GLM R8 hibernation safety: storage-probe + alarm sweepDeferredAnswers
+  // backstop guarantees recovery; timeout default 60s, clamped to ≤5 min.
   private readonly deferredAnswers = new Map<
     string,
     { resolve: (decision: Record<string, unknown>) => void; reject: (error: Error) => void; expiresAt: number; kind: "permission" | "elicitation"; requestUuid: string }
   >();
 
-  /**
-   * 等待 inbound permission/elicitation decision。
-   *
-   * - kernel hook 在 emit `session.permission.request` 后调用本方法
-   * - 返回 Promise 直到 decision storage write 触发 resolve,或 timeout
-   * - timeout 视为 fail-closed deny,caller 应据此驱动 verdict
-   *
-   * ZX5 review (GLM R8) — Cloudflare DO hibernation behavior:
-   * If the DO hibernates while a Promise is in-flight, the in-memory
-   * `deferredAnswers` Map and the `setTimeout` timer are both lost. Recovery
-   * relies on `alarm()` calling `sweepDeferredAnswers()`, which re-checks
-   * storage for any decisions that arrived while the deferred entry was alive
-   * and resolves the freshly registered Promise. This is why every awaiter
-   * also performs an early storage probe — a decision recorded during
-   * hibernation is found on the next awaiter's attempt without depending on
-   * alarm sweep timing. If hibernation extends past the timeoutMs window the
-   * Promise will reject with the standard fail-closed timeout error and the
-   * kernel hook treats it as deny — caller must therefore set timeoutMs to
-   * cover the worst-case hibernate-and-revive interval (default 60s; clamp
-   * to ≤5 min).
-   */
   async awaitAsyncAnswer(input: {
     kind: "permission" | "elicitation";
     requestUuid: string;
     timeoutMs?: number;
   }): Promise<Record<string, unknown>> {
-    const timeoutMs = Math.max(1000, Math.min(input.timeoutMs ?? 60_000, 5 * 60_000));
-    const storageKey = `${input.kind}/decisions/${input.requestUuid}`;
-    // pre-existing decision(record happened before await)
-    const existing = await this.doState.storage?.get?.(storageKey);
-    if (existing && typeof existing === "object") {
-      return existing as Record<string, unknown>;
-    }
-    const mapKey = `${input.kind}:${input.requestUuid}`;
-    return new Promise<Record<string, unknown>>((resolve, reject) => {
-      const expiresAt = Date.now() + timeoutMs;
-      const timer = setTimeout(() => {
-        this.deferredAnswers.delete(mapKey);
-        reject(new Error(`${input.kind} decision timeout after ${timeoutMs}ms`));
-      }, timeoutMs);
-      this.deferredAnswers.set(mapKey, {
-        resolve: (decision) => {
-          clearTimeout(timer);
-          resolve(decision);
-        },
-        reject: (error) => {
-          clearTimeout(timer);
-          reject(error);
-        },
-        expiresAt,
-        kind: input.kind,
-        requestUuid: input.requestUuid,
-      });
-    });
+    return awaitAsyncAnswerModule(this.buildPersistenceContext(), input);
   }
 
-  private resolveDeferredAnswer(
-    kind: "permission" | "elicitation",
-    requestUuid: string,
-    decision: Record<string, unknown>,
-  ): void {
-    const mapKey = `${kind}:${requestUuid}`;
-    const deferred = this.deferredAnswers.get(mapKey);
-    if (!deferred) return;
-    this.deferredAnswers.delete(mapKey);
-    deferred.resolve(decision);
-  }
-
-  // ZX5 Lane F1/F2 — alarm sweep:检查内存 deferred map 中是否有 expired
-  // entry,以及是否有 storage 中已有 decision 但 deferred 仍在等待(DO
-  // restart 后 deferred 内存丢失但被新 await 重建的场景)。本方法由 alarm()
-  // 周期性调用;每 heartbeat tick 一次。
+  // ZX5 Lane F1/F2 — alarm sweep delegated to seam (sweepDeferredAnswersModule).
   async sweepDeferredAnswers(): Promise<void> {
-    if (this.deferredAnswers.size === 0) return;
-    const now = Date.now();
-    for (const [mapKey, deferred] of this.deferredAnswers.entries()) {
-      if (deferred.expiresAt <= now) {
-        this.deferredAnswers.delete(mapKey);
-        deferred.reject(
-          new Error(`${deferred.kind} decision swept (expiresAt passed)`),
-        );
-        continue;
-      }
-      const storageKey = `${deferred.kind}/decisions/${deferred.requestUuid}`;
-      const existing = await this.doState.storage?.get?.(storageKey);
-      if (existing && typeof existing === "object") {
-        this.deferredAnswers.delete(mapKey);
-        deferred.resolve(existing as Record<string, unknown>);
-      }
-    }
+    return sweepDeferredAnswersModule(this.buildPersistenceContext());
   }
 
-  // ZX5 Lane F1/F2 — public-ish helper used by future kernel hook integration:
-  // emit `session.permission.request` server frame + await DO storage decision.
-  // 当前 ZX5 阶段仅暴露这条 contract;实际 PermissionRequest hook 接 await/resume
-  // 的 dispatcher 集成在 kernel 改造分支(可独立 PR)。本方法可直接在 verify /
-  // future hook 内被调用。
+  // ZX5 Lane F1/F2 — public contract: emit `session.permission.request`
+  // server frame + await DO storage decision. RH1 wires the actual hook
+  // dispatcher; today this is await-only (frame emit is best-effort).
   async emitPermissionRequestAndAwait(input: {
     sessionUuid: string;
     requestUuid: string;
@@ -801,12 +641,9 @@ export class NanoSessionDO {
     reason?: string;
     timeoutMs?: number;
   }): Promise<Record<string, unknown>> {
-    // Emit frame to attached WS(若有)— silently no-op when detached;
-    // orchestrator-core 仍然会 push WS frame 给 client。
-    void this.sessionUuid; // ensure DO has identity
+    void this.sessionUuid;
     const helper = this.getWsHelper?.bind(this);
     void helper;
-    // Decision arrival is the source of truth — frame emit is best-effort.
     return this.awaitAsyncAnswer({
       kind: "permission",
       requestUuid: input.requestUuid,
@@ -830,15 +667,13 @@ export class NanoSessionDO {
 
   private attachTeamUuid(candidate: string | undefined | null): void {
     if (typeof candidate !== "string" || candidate.length === 0) return;
-    this.sessionTeamUuid = candidate;
-    void this.doState.storage?.put(SESSION_TEAM_STORAGE_KEY, candidate);
+    void persistTeamUuidModule(this.buildPersistenceContext(), candidate);
   }
 
   private currentTeamUuid(): string | null {
-    if (this.sessionTeamUuid && this.sessionTeamUuid.length > 0) {
-      return this.sessionTeamUuid;
-    }
-    return null;
+    return this.sessionTeamUuid && this.sessionTeamUuid.length > 0
+      ? this.sessionTeamUuid
+      : null;
   }
 
   // ── webSocketMessage ───────────────────────────────────────
@@ -945,59 +780,10 @@ export class NanoSessionDO {
       : "_unknown";
   }
 
-  /**
-   * B9: returns a `DoStorageLike`-shaped proxy whose every put/get/delete
-   * is prefixed with `tenants/<team_uuid>/` via the shipped
-   * `tenantDoStorage*` helpers. All non-wrapper call sites inside
-   * `NanoSessionDO` go through this proxy so tenant-scoped keys are the
-   * only shape that appears on the wire.
-   *
-   * When the DO was constructed without storage (test harness), returns
-   * null — callers already handle that.
-   */
+  // RH0 P0-D2 — tenant-scoped storage proxy delegated to
+  // `./session-do-persistence.ts` (B9 invariant unchanged).
   private getTenantScopedStorage(): DoStorageLike | null {
-    const raw = this.doState.storage;
-    if (!raw) return null;
-    const team = this.tenantTeamUuid();
-    const base: DoStorageLike = {
-      async get<T = unknown>(key: string): Promise<T | undefined> {
-        return raw.get<T>(key);
-      },
-      async put<T>(key: string, value: T): Promise<void> {
-        await raw.put(key, value);
-      },
-      async delete(key: string | string[]): Promise<boolean> {
-        // The underlying DO storage API may not include delete in our
-        // minimal subset; when it is missing, return false rather than
-        // throwing. The wrapper nacp-core provides is also forgiving.
-        const anyStorage = raw as unknown as {
-          delete?: (k: string | string[]) => Promise<boolean>;
-        };
-        if (typeof anyStorage.delete === "function") {
-          return anyStorage.delete(key);
-        }
-        return false;
-      },
-    };
-    return {
-      async get<T = unknown>(key: string): Promise<T | undefined> {
-        return tenantDoStorageGet<T>(base, team, key);
-      },
-      async put<T>(key: string, value: T): Promise<void> {
-        await tenantDoStoragePut<T>(base, team, key, value);
-      },
-      async delete(key: string | string[]): Promise<boolean> {
-        if (Array.isArray(key)) {
-          let all = true;
-          for (const k of key) {
-            const r = await tenantDoStorageDelete(base, team, k);
-            all = all && r;
-          }
-          return all;
-        }
-        return tenantDoStorageDelete(base, team, key);
-      },
-    };
+    return getTenantScopedStorageModule(this.buildPersistenceContext());
   }
 
   /**
@@ -1482,104 +1268,51 @@ export class NanoSessionDO {
    * storage (e.g. the default test harness), in which case the helper
    * runs in isolate-memory-only mode.
    */
+  // RH0 P0-D2 — wsHelper storage adapter delegated to seam.
   private wsHelperStorage(): SessionStorageLike | null {
-    // B9: helper storage goes through the tenant-scoped wrapper so
-    // every key the helper writes is namespaced under `tenants/<team>/`.
-    const scoped = this.getTenantScopedStorage();
-    if (!scoped) return null;
-    return {
-      get: async <T,>(k: string) => scoped.get<T>(k),
-      put: async <T,>(k: string, v: T) => {
-        await scoped.put(k, v);
-      },
-    };
+    return buildWsHelperStorage(this.buildPersistenceContext());
   }
 
+  // RH0 P0-D2 — checkpoint persist delegated to seam.
   private async persistCheckpoint(): Promise<void> {
-    // B9: checkpoint persistence uses the tenant-scoped wrapper so
-    // CHECKPOINT_STORAGE_KEY lives under `tenants/<team>/` on disk.
-    const storage = this.getTenantScopedStorage();
-    if (!storage) return;
-
-    // 2nd-round R2: capture a workspace snapshot fragment via the
-    // live composition handle. The fragment itself is discarded
-    // (the DO owns its own checkpoint shape), but `buildFragment()`
-    // emits a `snapshot.capture` evidence record into the eval sink
-    // — that is what makes evidence flow at deploy time, not just in
-    // unit tests. Errors are swallowed on purpose: a failing
-    // snapshot must not block a successful checkpoint write.
-    try {
-      await this.workspaceComposition.captureSnapshot();
-    } catch {
-      // Evidence emission is best-effort by design.
-    }
-
-    // A4 P2-03: persist the WS helper's replay + stream seq state so a
-    // fresh DO instance can reconstruct the buffer after hibernation.
-    const helperStorage = this.wsHelperStorage();
-    if (this.wsHelper && helperStorage) {
-      await this.wsHelper.checkpoint(helperStorage);
-    }
-
-    // Refuse to persist an invalid checkpoint. This is the symmetry
-    // invariant for `validateSessionCheckpoint()`: a DO that cannot
-    // name itself with a real UUID must not create a record the
-    // validator will immediately reject.
-    if (this.sessionUuid === null) return;
-    const teamUuid = this.currentTeamUuid();
-    if (teamUuid === null) return;
-
-    const checkpoint = {
-      version: "0.1.0",
-      sessionUuid: this.sessionUuid,
-      teamUuid,
-      actorPhase: this.state.actorState.phase,
-      turnCount: this.state.turnCount,
-      kernelFragment: this.state.kernelSnapshot,
-      replayFragment: null,
-      streamSeqs: {},
-      workspaceFragment: null,
-      hooksFragment: null,
-      usageSnapshot: { totalTokens: 0, totalTurns: this.state.turnCount, totalDurationMs: 0 },
-      checkpointedAt: new Date().toISOString(),
-    };
-
-    // Symmetry guard: never persist a checkpoint that its own validator
-    // would reject. This protects against future drift where the
-    // validator tightens but the writer forgets to follow.
-    if (!validateSessionCheckpoint(checkpoint)) return;
-
-    await storage.put(CHECKPOINT_STORAGE_KEY, checkpoint);
+    return persistCheckpointModule(this.buildPersistenceContext());
   }
 
+  // RH0 P0-D2 — restore-from-storage delegated to seam.
   private async restoreFromStorage(): Promise<void> {
-    const rawStorage = this.doState.storage;
-    if (rawStorage) {
-      const rawTeamUuid = await rawStorage.get<string>(SESSION_TEAM_STORAGE_KEY);
-      if (typeof rawTeamUuid === "string" && rawTeamUuid.length > 0) {
-        this.sessionTeamUuid = rawTeamUuid;
-      }
-    }
-    // B9: checkpoint read goes through the tenant-scoped wrapper so
-    // we only restore our own `tenants/<team>/` namespace.
-    const storage = this.getTenantScopedStorage();
-    if (!storage) return;
+    return restoreFromStorageModule(this.buildPersistenceContext());
+  }
 
-    const raw = await storage.get(CHECKPOINT_STORAGE_KEY);
-    if (!raw) return;
-    if (!validateSessionCheckpoint(raw)) return;
-
-    // Restore just the kernel snapshot + turnCount for now — a richer
-    // subsystem restore path is the job of the concrete composition
-    // factory in production builds.
-    this.sessionTeamUuid = raw.teamUuid;
-    this.state = {
-      actorState: {
-        ...this.state.actorState,
-        phase: raw.actorPhase as typeof this.state.actorState.phase,
+  /**
+   * RH0 P0-D2 — narrow PersistenceContext bridging private state to seam.
+   * Mirror of buildVerifyContext: NanoSessionDO's private fields stay
+   * encapsulated behind these accessors.
+   */
+  private buildPersistenceContext(): PersistenceContext {
+    const self = this;
+    return {
+      get doState() {
+        return self.doState;
       },
-      kernelSnapshot: raw.kernelFragment,
-      turnCount: raw.turnCount,
+      get workspaceComposition() {
+        return self.workspaceComposition;
+      },
+      get subsystems() {
+        return self.subsystems;
+      },
+      get deferredAnswers() {
+        return self.deferredAnswers as unknown as Map<string, DeferredAnswerEntry>;
+      },
+      getSessionUuid: () => self.sessionUuid,
+      getCurrentTeamUuid: () => self.currentTeamUuid(),
+      setSessionTeamUuid: (value: string) => {
+        self.sessionTeamUuid = value;
+      },
+      getSessionState: () => self.state,
+      setRestoredState: (next) => {
+        self.state = next;
+      },
+      getWsHelper: () => self.wsHelper,
     };
   }
 
@@ -1721,358 +1454,35 @@ export class NanoSessionDO {
   }
 
   private async runPreviewVerification(
-    _sessionId: string,
+    sessionId: string,
     request: Record<string, unknown>,
   ): Promise<Record<string, unknown>> {
-    const check = typeof request.check === "string" ? request.check : "";
-
-    switch (check) {
-      case "capability-call":
-        return this.verifyCapabilityCall(request);
-      case "capability-cancel":
-        return this.verifyCapabilityCancel(request);
-      case "initial-context":
-        return this.verifyInitialContext();
-      case "compact-posture":
-        return this.verifyCompactPosture();
-      case "filesystem-posture":
-        return this.verifyFilesystemPosture();
-      default:
-        return {
-          check,
-          error: "unknown-verify-check",
-          supported: [
-            "capability-call",
-            "capability-cancel",
-            "initial-context",
-            "compact-posture",
-            "filesystem-posture",
-          ],
-        };
-    }
+    return runPreviewVerificationModule(this.buildVerifyContext(), sessionId, request);
   }
 
-  private getCapabilityTransport():
-    | CapabilityTransportLike
-    | {
-        call: (input: {
-          requestId: string;
-          capabilityName: string;
-          body: unknown;
-          anchor?: CrossSeamAnchor;
-          quota?: Record<string, unknown>;
-          signal?: AbortSignal;
-        }) => Promise<unknown>;
-        cancel?: (input: {
-          requestId: string;
-          body: unknown;
-          anchor?: CrossSeamAnchor;
-        }) => Promise<void>;
-      }
-    | undefined {
-    const capability = this.subsystems.capability as
-      | {
-          serviceBindingTransport?: {
-            call?: (input: unknown) => Promise<unknown>;
-            cancel?: (input: unknown) => Promise<void>;
-          };
-        }
-      | undefined;
-    const transport = capability?.serviceBindingTransport;
-    if (typeof transport?.call !== "function") {
-      return undefined;
-    }
+  /**
+   * RH0 P0-D1 — return the narrow VerifyContext that `session-do-verify.ts`
+   * needs. NanoSessionDO's private fields stay private; only this small
+   * accessor surface escapes the class.
+   */
+  private buildVerifyContext(): VerifyContext {
+    const self = this;
     return {
-      // ZX4 Phase 1 P1-01(R28 fix): call input 接口加 signal — 让
-      // verifyCapabilityCancel 可通过 AbortController 同请求生命周期取消,
-      // 不再依赖独立 transport.cancel(per Q1 修订 — 结果约束)
-      call: transport.call.bind(transport) as (input: {
-        requestId: string;
-        capabilityName: string;
-        body: unknown;
-        anchor?: CrossSeamAnchor;
-        quota?: Record<string, unknown>;
-        signal?: AbortSignal;
-      }) => Promise<unknown>,
-      cancel:
-        typeof transport.cancel === "function"
-          ? transport.cancel.bind(transport) as (input: {
-              requestId: string;
-              body: unknown;
-              anchor?: CrossSeamAnchor;
-            }) => Promise<void>
-          : undefined,
-    };
-  }
-
-  private async verifyCapabilityCall(
-    request: Record<string, unknown>,
-  ): Promise<Record<string, unknown>> {
-    const transport = this.getCapabilityTransport();
-    if (!transport) {
-      return {
-        check: "capability-call",
-        error: "capability-transport-unavailable",
-      };
-    }
-
-    const toolName =
-      typeof request.toolName === "string" ? request.toolName : "pwd";
-    const toolInput =
-      request.toolInput && typeof request.toolInput === "object"
-        ? request.toolInput
-        : {};
-    const requestId = `verify-call-${crypto.randomUUID()}`;
-    const quotaContext = this.buildQuotaContext();
-    let quota: Record<string, unknown> | undefined;
-    try {
-      quota = await buildToolQuotaAuthorization(
-        this.quotaAuthorizer,
-        quotaContext,
-        requestId,
-        toolName,
-      );
-    } catch (error) {
-      if (error instanceof QuotaExceededError) {
-        return {
-          check: "capability-call",
-          toolName,
-          response: buildQuotaErrorEnvelope(error),
-        };
-      }
-      throw error;
-    }
-    const response = await transport.call({
-      requestId,
-      capabilityName: toolName,
-      body: {
-        tool_name: toolName,
-        tool_input: toolInput,
+      get subsystems() {
+        return self.subsystems;
       },
-      anchor: this.buildCrossSeamAnchor(),
-      quota,
-    });
-
-    return {
-      check: "capability-call",
-      toolName,
-      response,
+      get env() {
+        return self.env;
+      },
+      get quotaAuthorizer() {
+        return self.quotaAuthorizer;
+      },
+      buildQuotaContext: (turnUuid?: string | null) => self.buildQuotaContext(turnUuid),
+      buildCrossSeamAnchor: () => self.buildCrossSeamAnchor(),
     };
   }
 
-  // ZX4 Phase 1 P1-01(R28 fix per ZX4-ZX5 GPT review Q1 修订 — 结果约束):
-  // 修复 deploy-only bug: `verifyCapabilityCancel` 在 CF Workers 真 deploy 触发
-  // I/O cross-request 隔离(`Object.cancel` index.js:8796 — workerd-test 看不见)。
-  //
-  // 旧实现(已删):
-  //   1. transport.call → 启动子请求 A(I/O resource A)
-  //   2. setTimeout 等待 cancelAfterMs
-  //   3. transport.cancel → 启动**独立**子请求 B(I/O resource B)
-  //   4. 子请求 B 试图操作子请求 A 持有的 I/O → CF 拒绝(I/O cross-request)
-  //
-  // 新实现(满足 Q1 修订结果约束: "取消与执行处于同一请求生命周期 / 同一运行
-  // 链条;不依赖第二条独立 cancel request 作为 preview 主路径"):
-  //   1. 创建 AbortController + 把 signal 透传给 transport.call(call 已支持
-  //      signal,见 remote-bindings.ts:253)
-  //   2. setTimeout 后 controller.abort() — 同请求生命周期内同步取消
-  //   3. callPromise 通过 signal abort 自动 reject(fetch 路径)或在 RPC 路径
-  //      下等待完成(因 RPC binding 不接 signal,cancelHonored=false 是合法的
-  //      verification 结果,不是 I/O 错误)
-  //   4. **不再发 transport.cancel** — 这是 I/O cross-request 触发点
-  private async verifyCapabilityCancel(
-    request: Record<string, unknown>,
-  ): Promise<Record<string, unknown>> {
-    const requestId = `verify-cancel-${crypto.randomUUID()}`;
-    const ms =
-      typeof request.ms === "number" && Number.isFinite(request.ms)
-        ? Math.max(50, Math.min(5_000, Math.trunc(request.ms)))
-        : 400;
-    const cancelAfterMs =
-      typeof request.cancelAfterMs === "number" && Number.isFinite(request.cancelAfterMs)
-        ? Math.max(1, Math.min(ms - 1, Math.trunc(request.cancelAfterMs)))
-        : 25;
-    // ZX4 Phase 7 P7-C deploy fix: outer try/catch covers the WHOLE verify
-    // path (including transport lookup + quota authorization), so verify
-    // never escapes as a 500 "Worker threw exception" from the agent-core
-    // DO. Diagnostic envelope identifies which step failed.
-    try {
-      const transport = this.getCapabilityTransport();
-      if (!transport?.call) {
-        return {
-          check: "capability-cancel",
-          error: "capability-cancel-unavailable",
-        };
-      }
-
-      const quotaContext = this.buildQuotaContext();
-      let quota: Record<string, unknown> | undefined;
-      try {
-        quota = await buildToolQuotaAuthorization(
-          this.quotaAuthorizer,
-          quotaContext,
-          requestId,
-          "__px_sleep",
-        );
-      } catch (error) {
-        if (error instanceof QuotaExceededError) {
-          return {
-            check: "capability-cancel",
-            requestId,
-            response: buildQuotaErrorEnvelope(error),
-          };
-        }
-        throw error;
-      }
-
-      // R28 fix: 同请求生命周期 AbortController(替代独立 transport.cancel)
-      const abortController = new AbortController();
-      const callPromise = transport.call({
-        requestId,
-        capabilityName: "__px_sleep",
-        body: {
-          tool_name: "__px_sleep",
-          tool_input: { ms },
-        },
-        anchor: this.buildCrossSeamAnchor(),
-        quota,
-        signal: abortController.signal,
-      });
-
-      // 同请求生命周期 timeout-then-abort,无独立 cancel request
-      await new Promise((resolve) => setTimeout(resolve, cancelAfterMs));
-      try {
-        abortController.abort("preview verification cancel");
-      } catch {
-        // older runtimes may reject string reason — ignore, signal still aborted
-      }
-
-      const response = await callPromise.catch((err) => {
-        const isAbort =
-          err instanceof Error &&
-          (err.name === "AbortError" || /aborted|cancelled/i.test(err.message));
-        return {
-          status: "error",
-          error: {
-            code: isAbort ? "cancelled" : "transport-error",
-            message: err instanceof Error ? err.message : String(err),
-          },
-        };
-      });
-      const cancelHonored =
-        response !== null &&
-        typeof response === "object" &&
-        "status" in response &&
-        (response as { status?: unknown }).status === "error" &&
-        "error" in response &&
-        typeof (response as { error?: unknown }).error === "object" &&
-        (response as { error?: { code?: unknown } }).error?.code === "cancelled";
-
-      return {
-        check: "capability-cancel",
-        requestId,
-        ms,
-        cancelAfterMs,
-        cancelRequested: true,
-        cancelHonored,
-        response,
-      };
-    } catch (error) {
-      // Last-resort safety net: convert any unexpected throw into a
-      // verification envelope so orchestrator-core sees a 200 with a
-      // diagnostic body instead of 500 "Worker threw exception".
-      return {
-        check: "capability-cancel",
-        requestId,
-        ms,
-        cancelAfterMs,
-        cancelRequested: true,
-        cancelHonored: false,
-        response: {
-          status: "error",
-          error: {
-            code: "verify-cancel-internal",
-            message: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
-          },
-        },
-      };
-    }
-  }
-
-  // ZX4 Phase 1 P1-02(R29 fix per ZX4-ZX5 GPT review §6.5b R29): 修复
-  // dual-track parity body 发散触发 502 的 deploy-only bug。
-  //
-  // 旧实现(已删 stateful 字段):
-  //   返回 body 含 `phase: this.state.actorState.phase` 与
-  //   `defaultEvalRecordCount: this.getDefaultEvalRecords().length` —
-  //   两者都依赖 in-DO actor state machine 当前快照。`forwardInternalJsonShadow`
-  //   先调 HTTP 路径,再调 RPC 路径(or 反之),两次调用之间 actor state
-  //   可能因 background work / hooks 推进 phase,导致 `rpc_status=200
-  //   fetch_status=200` 但 body 字段不一致 → parity check 触发 502。
-  //
-  // 新实现(只返 deterministic 计算结果):
-  //   - `pendingCount`(纯函数)+ `assembledKinds`(纯函数)+ `totalTokens`(纯函数)
-  //   - 不返 stateful actor phase / counter
-  //   - cross-e2e 04 测试只断言这 4 个字段(check / pendingCount / assembledKinds /
-  //     totalTokens),修法零功能损失
-  //   - 若未来需要 phase 用于 debugging,应通过独立 endpoint(如
-  //     /sessions/{id}/status)取,而不是混在 verify 输出
-  private verifyInitialContext(): Record<string, unknown> {
-    const workspace = this.subsystems.workspace as
-      | {
-          assembler?: {
-            assemble: (layers: readonly unknown[]) => {
-              readonly assembled: Array<{ readonly kind: string }>;
-              readonly totalTokens: number;
-            };
-          };
-        }
-      | undefined;
-    const assembler = workspace?.assembler;
-    if (!assembler) {
-      return {
-        check: "initial-context",
-        error: "assembler-unavailable",
-      };
-    }
-
-    const pending = peekPendingInitialContextLayers(assembler as never);
-    const assembled = assembler.assemble(pending as never);
-    return {
-      check: "initial-context",
-      pendingCount: pending.length,
-      assembledKinds: assembled.assembled.map((layer) => layer.kind),
-      totalTokens: assembled.totalTokens,
-    };
-  }
-
-  private verifyCompactPosture(): Record<string, unknown> {
-    const kernel = this.subsystems.kernel as
-      | { phase?: string; reason?: string }
-      | undefined;
-    return {
-      check: "compact-posture",
-      compactDefaultMounted: false,
-      kernelPhase: kernel?.phase ?? null,
-      kernelReason: kernel?.reason ?? null,
-      profile: this.subsystems.profile,
-    };
-  }
-
-  private verifyFilesystemPosture(): Record<string, unknown> {
-    const storage = this.subsystems.storage as
-      | { phase?: string; reason?: string }
-      | undefined;
-    const env = this.env as
-      | { FILESYSTEM_CORE?: unknown; BASH_CORE?: unknown }
-      | undefined;
-    return {
-      check: "filesystem-posture",
-      hostLocalFilesystem: true,
-      filesystemBindingActive: Boolean(env?.FILESYSTEM_CORE),
-      capabilityBindingActive: Boolean(env?.BASH_CORE),
-      storagePhase: storage?.phase ?? null,
-      storageReason: storage?.reason ?? null,
-      profile: this.subsystems.profile,
-    };
+  private getCapabilityTransport() {
+    return getCapabilityTransportModule(this.buildVerifyContext());
   }
 }

@@ -1,4 +1,4 @@
-import type { IngressAuthSnapshot } from './auth.js';
+import type { IngressAuthSnapshot, InitialContextSeed } from './auth.js';
 import {
   D1SessionTruthRepository,
   type DurableSessionPointer,
@@ -87,7 +87,14 @@ export type AgentRpcMethodKey =
   | 'cancel'
   | 'verify'
   | 'timeline'
-  | 'streamSnapshot';
+  | 'streamSnapshot'
+  // RH0 P0-E1 collateral fix — `permissionDecision` / `elicitationAnswer`
+  // forwarders are referenced at user-do.ts:1330 / 1389 but were absent from
+  // this union; without them, `pnpm build` fails on HEAD even before any RH0
+  // megafile-split work. Real RPC implementation for these lands with RH1
+  // Lane F live runtime.
+  | 'permissionDecision'
+  | 'elicitationAnswer';
 
 export interface OrchestratorUserEnv {
   readonly AGENT_CORE?: Fetcher & Partial<Record<AgentRpcMethodKey, AgentRpcMethodFn>>;
