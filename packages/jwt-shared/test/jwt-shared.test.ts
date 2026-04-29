@@ -74,8 +74,8 @@ describe("verifyJwt", () => {
     expect(payload).toMatchObject({ sub: "user1", exp });
   });
 
-  it("rejects expired token", async () => {
-    const past = Math.floor(Date.now() / 1000) - 60;
+  it("rejects expired token (beyond 5-min leeway)", async () => {
+    const past = Math.floor(Date.now() / 1000) - 600;
     const token = await mint({ sub: "user1", exp: past }, "v1", SECRET_V1);
     expect(await verifyJwt(token, SECRET_V1)).toBeNull();
   });

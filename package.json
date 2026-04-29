@@ -10,6 +10,10 @@
     "test:cross": "node --test test/package-e2e/**/*.test.mjs test/cross-e2e/**/*.test.mjs",
     "test:package-e2e": "node --test test/package-e2e/**/*.test.mjs",
     "test:cross-e2e": "node --test test/cross-e2e/**/*.test.mjs",
-    "test:live:e2e": "node --test test/package-e2e/**/*.test.mjs test/cross-e2e/**/*.test.mjs"
+    "test:live:e2e": "node --test test/package-e2e/**/*.test.mjs test/cross-e2e/**/*.test.mjs",
+    "check:cycles": "madge --circular --extensions ts,tsx --exclude '(\\.d\\.ts$|/dist/)' workers/agent-core/src workers/orchestrator-core/src workers/orchestrator-auth/src workers/bash-core/src workers/context-core/src workers/filesystem-core/src packages/jwt-shared/src packages/nacp-core/src packages/nacp-session/src packages/orchestrator-auth-contract/src packages/storage-topology/src packages/eval-observability/src packages/workspace-context-artifacts/src"
+  },
+  "devDependencies": {
+    "madge": "^8.0.0"
   }
 }
