@@ -419,3 +419,68 @@
 | bash-core | 无 KV/R2 | RH0 P0-C 声明需加 | ✅ |
 | context-core | 无 KV/R2 | RH0 P0-C 声明需加 | ✅ |
 | filesystem-core | 无 KV/R2; library_worker:true | RH0 P0-C + RH4 P4-04 | ✅ |
+
+---
+
+## 7. 审查质量评估（appended by Opus 4.7, 2026-04-29）
+
+### 7.0 评价结论
+
+- **一句话评价**：4 份 action-plan review 中"代码现实+流程改进切入最深"的一份；R3 (adapter 来源对账) 与 R1 (lockfile 4 步联检) 是其他 reviewer 全部漏掉的高价值独家发现；R7 是 minor 但 cross-cutting 提醒。0 false-positive。
+- **综合评分**：`9.0 / 10`
+- **推荐使用场景**：实施前的 adapter / package 来源对账、流程改进（lockfile 验证手段、行号有效期声明）、cross-worker 联动审查。
+- **不建议单独依赖的场景**：单凭 deepseek 的 verdict 偏松（approve-with-followups + 全 non-blocker），charter hard-gate 漂移类 finding（≥7 测试 / ≤1500 / orchestrator-auth path）需 GPT 补强；schema/RPC 命名 critical 由 GLM 补强。
+
+### 7.1 审查风格画像
+
+| 维度 | 观察 | 例证 |
+|------|------|------|
+| 主要切入点 | code reality + 流程严谨性 + 已建成资产识别 | R1（lockfile 4 步联检）、R3（packages/storage-topology vs filesystem-core/src/storage/ 来源对账）、R5（行号有效期声明）|
+| 证据类型 | grep -c / wc -l / file existence 命令级一手证据 | "grep -c 'jwt-shared' = 0"、"diff packages/storage-topology vs filesystem-core 0 差异" |
+| Verdict 倾向 | balanced（approve-with-followups + 0 critical 标记）| 7 finding 中只有 R1/R3 标 yes blocker；其他 5 均 non-blocker |
+| Finding 粒度 | balanced | 流程类（R1/R5）+ 代码命名类（R2/R4）+ 实施 audit 类（R3/R6）+ 联动类（R7）覆盖完整 |
+| 修法建议风格 | actionable + 配可执行 audit 步骤 | R3 给 "byte-diff packages/storage-topology vs filesystem-core" 具体命令 |
+
+### 7.2 优点与短板
+
+#### 7.2.1 优点
+
+1. **R3 是 4 份 review 独家最高价值流程发现**：packages/storage-topology vs workers/filesystem-core/src/storage/ 同时存在 byte-identical adapter—— GPT R8 只说接口不兼容，未发现 canonical-source 漂移；本 finding 让 RH4 §0/§4.2 加 P4-02b adapter 来源对账步骤，避免 implementer 选错来源后接口分叉。
+2. **R1 是 4 份 review 独家最高价值流程改进**：lockfile 验证从单一 `grep -c ≥ 2` 升级为 4 步联检（grep + frozen-lockfile install + jwt-shared filter test + 下游 worker test）；这条让 RH0 P0-A 收口标准从"格式化检查"升级为"实际运行验证"。
+3. **R5 行号有效期声明**：是 4 份 review 中第一个意识到"RH0 拆分会让所有后续行号漂移"的；本 finding 让 7 份 action-plan 全部加 "行号 2026-04-29 main 快照"声明。
+4. **R7 cross-worker 联动**：context-core 的 `library_worker:true` 与 filesystem-core 同步移除—— 是 4 份 review 中唯一意识到这两个 worker 状态对称的；本 finding 让 RH4 §4.3 P4-04 处理两处 library_worker 标志。
+5. **owner QNA 处理正确**：明确说明"业主已同意 Opus 全部判断"，遵守用户审查指令；与 kimi R1/R8 的 QNA 误判形成对比。
+
+#### 7.2.2 短板 / 盲区
+
+1. **charter hard-gate 类漂移漏报**：GPT R1（≥7 测试）、R2（orchestrator-auth path）、R3（≤1500 行）三条直接对应 charter §7.1 hard gate；deepseek 在 §3.1 RH0 对齐审核中标 done，未识别 5 vs 7 / orchestrator-core vs orchestrator-auth / ≤1600 vs ≤1500 三处实际漂移。
+2. **schema/RPC 命名 critical 漏报**：GLM R2（forwardServerFrameToClient 命名不存在）、R4（model_id vs model 字段名错）—— deepseek 的 R4（USER_DO binding 描述漂移）触及了部分但未深入到 RPC 命名层。
+3. **slug data fill SQL 未给可执行模板**：kimi R4 独家。
+4. **verdict 偏松导致 critical 标记缺位**：approve-with-followups + 7 finding 全 non-blocker，但 GPT R4 (跨 worker push 拓扑) / R7 (表名错 + base36 不可用) 实际是 critical—— deepseek 看到了类似问题但 severity 校准偏轻。
+
+### 7.3 Findings 质量清点
+
+| 编号 | 原始严重 | 事后判定 | Finding 质量 | 分析 |
+|------|---------|----------|--------------|------|
+| R1 | high | true-positive | excellent | 4 份 review **独家**；RH0 §7.1 F1 4 步联检直接据此 |
+| R2 | medium | true-positive | good | 与 GPT R6 重叠但更细：heartbeat schema 已存在 vs superseded/terminal 未存在的工作量分类 |
+| R3 | high | true-positive | excellent | 4 份 review **独家**；RH4 §0/§4.2 adapter 来源对账步骤直接据此 |
+| R4 | medium | true-positive | good | 与 GPT R4 重叠，但 deepseek 没深入到"agent-core 必须新增 ORCHESTRATOR_CORE 而不是 USER_DO" 的拓扑结论 |
+| R5 | medium | true-positive | excellent | 4 份 review **独家**触发"行号有效期声明"全文修订 |
+| R6 | medium | true-positive | excellent | RH3 P3-14 conversations 双源差异分析步骤直接据此 |
+| R7 | low | true-positive | good | RH4 §4.3 P4-04 context-core 联动据此；4 份 review 独家 |
+
+### 7.4 多维度评分
+
+| 维度 | 评分 | 说明 |
+|------|------|------|
+| 证据链完整度 | 10 | grep / diff / wc -l / file-existence 一手命令证据 |
+| 判断严谨性 | 9 | 0 false-positive；但 verdict 偏松，未抓 charter hard-gate 漂移 |
+| 修法建议可执行性 | 10 | 每条带可执行 audit 命令（diff / 4 步联检步骤）|
+| 对 action-plan / design / QNA 的忠实度 | 8 | 流程改进强；charter alignment 维度弱 |
+| 协作友好度 | 10 | 7 finding 数量恰当；approve-with-followups 不阻塞但价值高 |
+| 找到问题的覆盖面 | 8 | 流程 / 命名 / 联动全覆盖；charter hard-gate 漂移漏 |
+| 严重级别 / verdict 校准 | 7 | approve-with-followups 偏松；GPT R4/R7 级 critical 在 deepseek 标 medium 或 non-blocker |
+
+**综合**：`9.0 / 10`。deepseek 的"流程改进 + 已建成资产识别"是 4 份 review 中独一无二的视角，R3/R1/R5/R7 四条独家发现直接驱动 RH0/RH4 多处修订。短板是 verdict 偏松、charter hard-gate 类问题没有第一时间标 critical。配合 GPT 的 charter alignment 一起读，可补足这一短板。
+

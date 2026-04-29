@@ -393,3 +393,69 @@
 ---
 
 *审查结束。本审查仅基于 kim 独立推理完成，未参考 GPT/deepseek/GLM 等其他 reviewer 的分析报告。*
+
+---
+
+## 7. 审查质量评估（appended by Opus 4.7, 2026-04-29）
+
+### 7.0 评价结论
+
+- **一句话评价**：4 份 action-plan review 中"实施细节最具体（migration SQL 模板、catalog 验证命令、mock env 耦合）"的一份，R3/R4/R5 三条独家 high-value 发现可直接落地；但 R1/R8 两条 critical blocker 标记**违反用户明确给 reviewer 的指令**（用户已告知"业主已同意 Opus 推荐"），属于审查意图判定错误，是本轮 4 份 review 中唯一带有 critical false-positive 的版本。
+- **综合评分**：`6.5 / 10`
+- **推荐使用场景**：实施细节级 audit（migration 内 SQL 模板、catalog 命令、mock 兼容性 audit）；产出仍可在去除 R1/R8 后作为有价值 follow-up。
+- **不建议单独依赖的场景**：业主审查指令的遵守度为 4 份 review 中最低；任何"看 verdict 决定 go/no-go"的场景必须先剥离 R1/R8 误判。
+
+### 7.1 审查风格画像
+
+| 维度 | 观察 | 例证 |
+|------|------|------|
+| 主要切入点 | 实施细节 + 资源前置（mock env / catalog / SQL 模板）+ 业主 dependency 跟踪 | R3（mock env 耦合）、R4（slug data fill SQL）、R5（catalog 验证命令） |
+| 证据类型 | grep -c / sed / ls / file existence + 实施可行性反推 | "grep -c jwt-shared = 0"、"`Buffer.toString('base36')` 不是合法编码" |
+| Verdict 倾向 | strict（changes-requested + 1 critical + 2 high + 5 medium-low）| 但 critical (R1) 是 false-positive |
+| Finding 粒度 | balanced 偏细 | 8 finding 全部带具体下游 PR 步骤 |
+| 修法建议风格 | actionable + SQL/命令模板级 | R4 直接给完整 forward-only SQL 序列；R5 给 `wrangler ai models --json \| jq` 命令 |
+
+### 7.2 优点与短板
+
+#### 7.2.1 优点
+
+1. **R4 是 4 份 review 中独家**：migration 009 slug data fill SQL 模板；其他 reviewer 只说"NOT NULL 需要 fill"但没给可执行 SQL；本 finding 让 RH3 §4.1 P3-01 含完整 forward-only SQL 序列（ADD COLUMN + UPDATE fill + CREATE UNIQUE INDEX）。
+2. **R5 是 4 份 review 中独家**：Workers AI catalog 验证手段（`wrangler ai models --json | jq`）；本 finding 让 RH5 §4.2 P5-04 加 catalog 比对步骤 + `disabled=1` fallback；防止 25 模型 seed 出现拼写错误。
+3. **R3 mock env 耦合风险**：4 份 review 独家把"endpoint test 看似简单实际依赖 mock env 完整度"识别成 medium 风险；本 finding 让 RH0 P0-B 风险等级 low → medium + 新增 P0-B0 mock env audit。
+4. **owner QNA 题目层面识别准确**：每条 finding 跟到 Q1-Q5 的具体决策；问题不在于识别，而在于把"业主未填写"误判为 blocker。
+
+#### 7.2.2 短板 / 盲区
+
+1. **R1（QNA 业主答全空白 → critical blocker）违反审查指令**：用户在请审 prompt 中明确告知"业主已同意 Opus 推荐"。kimi 仍以 RHX-qna 文件 `业主回答：` 字段空白为依据标 critical blocker —— 这是把"文件序列化状态"凌驾于"业主审查意图"之上的判定错误。在用户已显式说明的前提下，仍标 critical 是 4 份 review 中唯一的 critical false-positive，对 verdict 严重性产生放大效应。
+2. **R8（RH4 sunset 触发依赖 Q2 未确认 → 不可计划）同性质**：与 R1 同类误判，让 RH4 Phase 7 被错误判定为 "不可计划状态"。两条合计影响 verdict 校准。
+3. **schema/RPC 命名 critical 漏报**：GPT R6 / R7 / R9 / GLM R2 的 critical 级 schema/RPC 命名 finding（heartbeat 已存在；nano_user_teams 不存在；SessionMessagesBodySchema 不存在；forwardServerFrameToClient 命名澄清）—— kimi 全部未触及。
+4. **charter hard-gate 类漂移漏报**：GPT R1（≥7 测试）/ R2（orchestrator-auth path）/ R3（≤1500）—— kimi 全未识别。
+5. **adapter 来源对账缺失**：deepseek R3 独家。
+
+### 7.3 Findings 质量清点
+
+| 编号 | 原始严重 | 事后判定 | Finding 质量 | 分析 |
+|------|---------|----------|--------------|------|
+| R1 | critical | **false-positive (审查意图判定错误)** | weak | 用户明确告知 reviewer "业主已同意 Opus"；kimi 仍以文件 `业主回答：` 空白为据标 critical blocker。本评估在 §6.2 stale-rejected |
+| R2 | high | true-positive | good | 与 GLM R4 共识：tests/cross-worker/ → test/cross-e2e/ |
+| R3 | high | true-positive | excellent | 4 份 review **独家**；RH0 P0-B 风险升 medium + 新增 P0-B0 audit |
+| R4 | medium | true-positive | excellent | 4 份 review **独家**；RH3 §4.1 P3-01 完整 SQL 模板据此 |
+| R5 | medium | true-positive | excellent | 4 份 review **独家**；RH5 §4.2 P5-04 catalog 验证命令据此 |
+| R6 | medium | true-positive | good | 与 GLM R11 共识：madge 移到 RH0 baseline |
+| R7 | low | true-positive | good | 与 deepseek R5 / GLM R1 共识：行号有效期声明 |
+| R8 | medium | **false-positive (同 R1)** | weak | Q2 已签字，但 kimi 标 RH4 Phase 7 "不可计划状态"；本评估在 §6.2 stale-rejected |
+
+### 7.4 多维度评分
+
+| 维度 | 评分 | 说明 |
+|------|------|------|
+| 证据链完整度 | 9 | grep / sed / SQL 模板 / 命令级证据扎实；R1/R8 的"业主答空白"也是事实，但忽略了用户的审查意图说明 |
+| 判断严谨性 | 5 | **2/8 critical false-positive (R1+R8) 因违反用户审查指令**；其他 6 条都很稳，但 critical 标记的误用对整体严谨性扣分较重 |
+| 修法建议可执行性 | 10 | R4 SQL 模板 / R5 jq 命令 / R3 audit 步骤都可直接抄到 PR description |
+| 对 action-plan / design / QNA 的忠实度 | 5 | **R1/R8 不忠实于用户给 reviewer 的指令** —— 本应理解 "owner has agreed" = 可信前提；其他 finding 忠实度尚可 |
+| 协作友好度 | 7 | 8 finding 数量恰当；但 R1 critical blocker 标记若被业主误信会让 RH 整阶段无谓阻塞 |
+| 找到问题的覆盖面 | 7 | R3/R4/R5 三条独家 high-value；但 charter hard-gate / 命名 critical / adapter 来源对账三类全空白 |
+| 严重级别 / verdict 校准 | 5 | R1 critical 是误判；R8 medium 也是误判；其他校准合理 |
+
+**综合**：`6.5 / 10`。kimi 的 R3/R4/R5 三条独家 high-value 实施细节让本份 review 仍有显著价值——尤其 R4 的 migration data fill SQL 模板让 RH3 P3-01 不需 implementer 现场写。但 R1/R8 violating 用户明确给 reviewer 的"业主已同意 Opus"指令，把"文件状态"凌驾于"审查意图"，让 verdict 严肃度被严重稀释。如果 review 对象是产出版（去除 R1/R8 + 把 critical 改 high），kimi 这份 review 的实际可用性 ≈ 8.5/10；按用户提示"违反审查意图 = 判定错误"扣分后综合 6.5/10。给 implementer 的实操建议：把 kimi 这份 review 当作 "R3/R4/R5 三条 high-value follow-up + R1/R8 stale-rejected" 处理。
+

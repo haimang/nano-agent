@@ -493,3 +493,73 @@
   10. RH3 Phase 3-4 的中间态风险分析（mint 出 device_uuid 但 gate 还未生效）
 - **建议的二次审查方式**：`independent reviewer` — 修正 blocker 后应由独立 reviewer 确认修正内容
 - **实现者回应入口**：`请按 docs/templates/code-review-respond.md 在本文档 §6 append 回应，不要改写 §0–§5。`
+
+---
+
+## 8. 审查质量评估（appended by Opus 4.7, 2026-04-29）
+
+### 8.0 评价结论
+
+- **一句话评价**：4 份 action-plan review 中"覆盖面最广（13 finding，全部 valid）+ 独家 high-value 发现最多（R7 context-core inspector RPC 缺口、R12 客户端 adapter 工作量、R2 forwardServerFrameToClient 命名澄清）"的一份；0 false-positive；但 13 条中有 5 条偏向行号微调，整体 ROI 略稀释。
+- **综合评分**：`9.2 / 10`
+- **推荐使用场景**：cross-worker RPC 拓扑澄清、客户端 adapter 工作量评估、命名一致性审查（forwardServerFrameToClient vs emitServerFrame vs forwardFramesToAttachment）。
+- **不建议单独依赖的场景**：13 条混合优先级在大型 PR 中筛选成本较高；charter hard-gate（≤1500 / orchestrator-auth path / ≥7 测试）由 GPT 补强 verdict 严肃度。
+
+### 8.1 审查风格画像
+
+| 维度 | 观察 | 例证 |
+|------|------|------|
+| 主要切入点 | 命名一致性 + 客户端工作量 + cross-worker 拓扑 | R2（命名澄清）、R7（context-core RPC）、R12（client adapter）、R13（service binding 启用） |
+| 证据类型 | grep / wc -l / 文件存在性 + 命名匹配 | "grep -c forwardServerFrameToClient = 0；最接近的是 emitServerFrame 与 forwardFramesToAttachment" |
+| Verdict 倾向 | balanced（approve-with-followups + 2 yes blocker）| R2/R3 标 yes blocker；其他 11 均 non-blocker |
+| Finding 粒度 | fine | 13 finding 中 5 条偏行号微调（R1/R5/R6/R8/R9）|
+| 修法建议风格 | actionable + 命名细化 | R2 给"forwardServerFrameToClient 是新增 RPC method，内部委托现有 emitServerFrame"清晰路径 |
+
+### 8.2 优点与短板
+
+#### 8.2.1 优点
+
+1. **R7 是 4 份 review 中除 GPT R4 外最高价值的独家 finding**：context-core inspector facade RPC 缺口（getContextSnapshot / triggerContextSnapshot / triggerCompact 当前不存在）—— GPT/deepseek/kimi 全部漏；本 finding 让 RH2 §4.3 P2-05/06/07 重写为"先在 context-core 新增 3 个 RPC method"，避免 RH2 实施时才发现 RPC 不可达。
+2. **R2 命名澄清细致到提议复用方向**："forwardServerFrameToClient 是新增 RPC method 内部委托现有 emitServerFrame"—— 比单纯说"不存在"更可执行；本 finding 让 RH1 §4.3 P1-06b 实施步骤明确"内部委托 User DO emitServerFrame，不重复实现 WS push"。
+3. **R12 客户端 adapter 工作量评估**：4 份 review 独家；指出 clients/web 是完整 React 应用、clients/wechat-miniprogram 是微信小程序，工作量可能从 S 膨胀到 M-L；本 finding 让 RH2 §4.6 P2-14/P2-15 加 audit 步骤。
+4. **R13 service binding 启用 phase 缺失**：与 GPT R4 / deepseek R4 形成 cross-cutting 共识；GLM 独立指出 "RH0 P0-C 只占位 KV/R2，不涉及 service binding 新增"，是 RH1 拓扑修复的辅助证据。
+5. **owner QNA 处理正确**：未把 QNA 业主未答当 blocker；遵守用户审查指令。
+
+#### 8.2.2 短板 / 盲区
+
+1. **5 条行号微调（R1/R5/R6/R8/R9）单独成 finding**：deepseek R5 用单条 "行号有效期声明" 覆盖整片；GLM 拆 5 条增加 reviewer / implementer 筛选成本。
+2. **未抓 charter hard-gate 漂移**：GPT R1（≥7 测试）/ R2（orchestrator-auth path）/ R3（≤1500）—— GLM R3 抓到了 7 vs 5 但未抓 path 与行数；与 deepseek 类似的盲区。
+3. **R10 ImageUrlContentPart "未确认存在" 是审慎而非确定**：实际上是 confirmed 存在于 canonical.ts:25-29；GLM 标注 medium correctness 但措辞 "未代码确认"，让 implementer 仍需自行核实——稍微扣可执行性。
+4. **lockfile 验证手段未提**：deepseek R1 独家；GLM 未触及。
+
+### 8.3 Findings 质量清点
+
+| 编号 | 原始严重 | 事后判定 | Finding 质量 | 分析 |
+|------|---------|----------|--------------|------|
+| R1 | medium | true-positive | good | 行号引用普遍漂移；用 deepseek R5 风格的"全局声明"更经济 |
+| R2 | high | true-positive | excellent | RH1 §4.3 P1-06b 实施步骤直接据此（"内部委托 emitServerFrame"）|
+| R3 | high | true-positive | excellent | 与 GPT R1 共识：5 vs ≥7 测试文件 |
+| R4 | medium | true-positive | excellent | tests/cross-worker/ → test/cross-e2e/ 全 7 份 action-plan 替换据此 |
+| R5 | low | true-positive | weak | 单条行号微调；价值低 |
+| R6 | medium | true-positive | mixed | 行号偏移 + 方法名定位；可与 R1 合并 |
+| R7 | medium | true-positive | excellent | 4 份 review **独家**最高价值之一；RH2 §4.3 P2-05/06/07 重写据此 |
+| R8 | low | true-positive | weak | 单条行号；ROI 低 |
+| R9 | low | true-positive | weak | 单条行号；ROI 低 |
+| R10 | medium | partial | good | "未确认 ImageUrlContentPart 存在" —— 实际存在；本评估在 RH5 §0 加澄清：已存在于 canonical.ts:25-29 |
+| R11 | low | true-positive | good | madge 安装步骤；与 kimi R6 共识；本评估让 madge 移到 RH0 P0-A2 |
+| R12 | medium | true-positive | excellent | 4 份 review **独家**；RH2 §4.6 P2-14/P2-15 audit 步骤据此 |
+| R13 | medium | true-positive | excellent | 与 GPT R4 / deepseek R4 共识；为 RH1 拓扑修正提供独立验证 |
+
+### 8.4 多维度评分
+
+| 维度 | 评分 | 说明 |
+|------|------|------|
+| 证据链完整度 | 10 | grep / wc -l / file-existence + 命名匹配证据全覆盖 |
+| 判断严谨性 | 9 | 0 false-positive；R10 偏审慎而非确定让 implementer 多一次核实 |
+| 修法建议可执行性 | 9 | 命名澄清 + 复用方向给得清楚；行号微调类略形式化 |
+| 对 action-plan / design / QNA 的忠实度 | 9 | charter alignment 部分覆盖；owner QNA 处理正确 |
+| 协作友好度 | 8 | 13 finding 数量略多；5 条行号微调可合并 |
+| 找到问题的覆盖面 | 10 | 13 finding 全 valid；4 份 review 中 coverage 最广 |
+| 严重级别 / verdict 校准 | 9 | 2 yes blocker / 11 non-blocker 校准合理；少 charter hard-gate critical |
+
+**综合**：`9.2 / 10`。GLM 是 4 份 review 中**广度最广 + 独家发现最多**的一份；R7 (context-core RPC 缺口) 与 R12 (客户端 adapter 工作量) 是 GPT/deepseek/kimi 全部漏掉的 high-value finding。短板是 13 条略多 + 5 条行号微调价值较低。如果 implementer 时间紧张，可先看 R2/R3/R7/R12/R13 五条最高价值；行号类作为 cross-cutting follow-up 处理。

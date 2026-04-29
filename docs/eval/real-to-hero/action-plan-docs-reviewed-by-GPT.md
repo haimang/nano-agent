@@ -469,3 +469,73 @@
   3. 对 kimi R1/R8 的 stale-rejected 决议确认（业主签字证据见 RHX-qna §Q1-Q5 业主回答栏）
 
 > **修订后 7 份 action-plan 已 ready-for-rereview**：请同 reviewer 复核 §6.2 / §6.4 列出的修改是否真正解决 §2 列出的 10 项 finding；如确认无新 blocker，本轮 review 可关闭，进入 RH0 implementation。
+
+---
+
+## 7. 审查质量评估（appended by Opus 4.7, 2026-04-29）
+
+> 本附录由 implementer 在完成 4 份 action-plan review 全部 finding 核实与修订后回填，依据 `docs/templates/code-review-eval.md`。
+
+### 7.0 评价结论
+
+- **一句话评价**：4 份 action-plan review 中"治理纪律最强 + 全部命中 charter hard gate + 0 false-positive"的一份；R1-R10 全部 true-positive 且各对应一处 charter / code-reality 的真实漂移，是 4 份 review 中可直接落到 RH0 implementation 之前必修清单的唯一一份。
+- **综合评分**：`9.5 / 10`
+- **推荐使用场景**：action-plan 进入 implementation 前的最后一道 gate；charter alignment hard-gate 复核；schema / migration / RPC topology 漂移探测。
+- **不建议单独依赖的场景**：纯流程改进（lockfile 验证多步、行号有效期）由 deepseek 补强；客户端 adapter 工作量评估由 GLM 补强。
+
+### 7.1 审查风格画像
+
+| 维度 | 观察 | 例证 |
+|------|------|------|
+| 主要切入点 | charter hard-gate alignment + RPC topology + schema reality | R1（§7.1 7-file 35-case）、R2（§7.1 orchestrator-auth path）、R3（≤1500 hard gate）、R4（agent-core 不存在 USER_DO binding）|
+| 证据类型 | charter line:N + worker file:line + 反向 grep | "charter line 368 锁定 orchestrator-auth"+"agent-core wrangler 仅 BASH_CORE active" |
+| Verdict 倾向 | strict + 严谨 verdict 校准 | 10 finding 中 8 标 yes blocker；高/中/低 = 6/3/1 分布合理 |
+| Finding 粒度 | balanced，但偏向"实施阶段必爆"的真实漂移 | R7（base36 randomBytes 不可用 + 表名错）、R8（implements 接口不兼容）|
+| 修法建议风格 | actionable + 给"两条路决议结构" | R8 给"不复用 ArtifactStore 接口 → 新接口"+ "25MB 改为 first-wave 产品策略而非 R2 限制"|
+
+### 7.2 优点与短板
+
+#### 7.2.1 优点
+
+1. **R1-R10 100% true-positive，0 false-positive**：每条 finding 都有 charter / 代码双向证据；实施时可直接信任，不需 implementer 二次验证。
+2. **4 reviewer 中唯一覆盖 4 类 charter hard-gate**：R1（≥7 文件 ≥35 case）、R2（orchestrator-auth bootstrap path）、R3（≤1500 行）、R10（charter §7.7 evidence path）—— 这 4 项如果不修，RH0 closure 会被 charter 自身的 §10.3 NOT-成功退出条款卡住。
+3. **R4 是 4 份 review 中最高价值的单一 finding**：跨 worker push 拓扑错误（agent-core 直接绑 USER_DO 不可达）—— 不只是 binding 命名问题，而是把 owner 同意的 RPC 路径完全重写。这条若不修，RH1 P1-D 会在实施一半时才暴露 transport 不可达。
+4. **修法建议保持设计层次**：例如 R8 给出"新接口 SessionFileStore 而非 implements ArtifactStore"+"25MB 改为产品策略"，让 implementer 理解 *为什么* 改，不只是改什么。
+5. **owner QNA 处理正确**：明确写 "不要把 owner 尚未回答 QNA 当 blocker；真正 blocker 是设计文档自身对 charter / code reality 的少数漏承接" —— 这是用户在审查指令中的要求；GPT 严格遵守，对照 kimi R1/R8 的 QNA 误判形成鲜明对比。
+
+#### 7.2.2 短板 / 盲区
+
+1. **adapter 来源对账缺失**：deepseek R3 独家发现 `packages/storage-topology/src/adapters/` 与 `workers/filesystem-core/src/storage/adapters/` 同时存在；GPT R8 只说接口不兼容，未发现这层 canonical-source 漂移。
+2. **行号有效期免责声明未提**：deepseek R5 / kimi R7 提；GPT 未提。这条不是错，但作为"上线前最后一道 gate"应该想到。
+3. **客户端 adapter 工作量评估未提**：GLM R12 独家。GPT 关注协议正确性，未关注客户端实施工作量。
+4. **slug data fill SQL 未细化**：kimi R4 独家给出完整 forward-only SQL 序列；GPT R7 只说 base36 实现要改，未给可执行 SQL。
+
+### 7.3 Findings 质量清点
+
+| 编号 | 原始严重 | 事后判定 | Finding 质量 | 分析 |
+|------|---------|----------|--------------|------|
+| R1 | high | true-positive | excellent | charter §7.1 line 360-378 三处明确 ≥7 文件 ≥35 case；命名 `*-route.test.ts`；本 finding 直接驱动 RH0 §1.5/§2.1 [S4]/§3 工作总表/§4.4/§5.4/§8 全部重写 |
+| R2 | high | true-positive | excellent | charter §7.1 line 368 锁定 `workers/orchestrator-auth/test/`；directly blocking |
+| R3 | medium | true-positive | excellent | charter line 99/320/349/376 全部 ≤1500；不允许在 action-plan 静默放宽到 1600 |
+| R4 | critical | true-positive | excellent | 4 份 review 中**最高价值 finding**；reverse-correctness 级别 |
+| R5 | high | true-positive | excellent | strict snapshot vs success-shaped fallback；charter §9.5 直接对应 |
+| R6 | high | true-positive | excellent | heartbeat schema 实际已存在但 terminal/superseded 未注册 —— 拆三类工作量分配是关键洞察 |
+| R7 | high | true-positive | excellent | 双重 finding：表名错（`nano_user_teams` 不存在；`nano_team_memberships` 是真名）+ `Buffer.toString('base36')` Workers runtime 不可用；任一未修都会让 PR 编译失败 |
+| R8 | medium | true-positive | excellent | TypeScript implements 不兼容 + 25MB 错误归因（KV adapter 限制不是 R2 putParallel）|
+| R9 | high | true-positive | excellent | schema 不存在 + WorkersAiGateway 注入路径未落；本 finding 让 RH5 P5-01/P5-05 重写 |
+| R10 | medium | true-positive | good | evidence 路径 + hero gate 表述；非 blocker 标记合理 |
+
+### 7.4 多维度评分
+
+| 维度 | 评分 | 说明 |
+|------|------|------|
+| 证据链完整度 | 10 | charter line:N + 代码 file:line + 反向 grep 三向证据全配套 |
+| 判断严谨性 | 10 | 0 false-positive；critical/high/medium 分布与实际修订成本对齐 |
+| 修法建议可执行性 | 9 | 多数给"两条路决议结构"；R10 略简 |
+| 对 action-plan / design / QNA 的忠实度 | 10 | 明确遵守用户"owner QNA 不阻断"指令；charter 段落引用全部正确 |
+| 协作友好度 | 9 | 10 finding 数量恰当；不过度 prescribe |
+| 找到问题的覆盖面 | 9 | charter hard-gate + RPC topology 全覆盖；adapter 来源对账与客户端工作量缺位 |
+| 严重级别 / verdict 校准 | 10 | changes-requested + 8 yes blocker / 2 medium / 1 low 校准准确 |
+
+**综合**：`9.5 / 10`。GPT 是 4 份 review 中**唯一可被业主直接转发给 implementer 当作"上线前最后一道 hard gate"** 的版本——10 项 finding 全部 true-positive、charter alignment 完整、RPC 拓扑级 critical 独家。配合 deepseek 的 adapter 对账 / kimi 的 SQL 模板 / GLM 的 context-core RPC，4 份合用价值远超单份。
+

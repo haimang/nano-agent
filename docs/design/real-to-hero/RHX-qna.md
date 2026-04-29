@@ -29,7 +29,7 @@
 - **Opus的最终回答**：**采纳 GPT 推荐路线，不做修改**。`slugify(ASCII-fallback)` + `'-'` + 6 个 base36 字符随机后缀，global unique（D1 `UNIQUE` constraint），长度上限 32，字符集 `[a-z0-9-]`；非 ASCII team_name 走 ICU/transliteration fallback 转 ASCII；slug 完全自动生成，first-wave 不暴露 user-supplied slug 入口。同时建议 `nano_teams.team_slug` 在 migration 009 中加 `UNIQUE NOT NULL`（不是 `DEFAULT ''`），让无 slug 注册路径直接失败，避免历史脏数据。
 
 - **问题**：`是否确认 real-to-hero 阶段的 team_slug baseline 采用 ASCII slug + random6chars、global unique、长度 ≤ 32、字符集 [a-z0-9-]？如果不同意，请直接给出唯一性范围、长度上限与字符集。`
-- **业主回答**：
+- **业主回答**：同意 Opus 的推荐线路。
 
 ---
 
@@ -48,7 +48,7 @@
 - **Opus的最终回答**：**采纳 GPT 路线 ≤ 2 周，但补 4 项限定**：(1) sunset 起点 = "RPC-first env flag 在 production 启用之日"（不是 merge 日）；(2) sunset 期间 `agent-core/src/host/runtime-mainline.ts` 的 library import 路径必须打 `@deprecated` 注解 + 加 ESLint `no-restricted-imports` rule，阻止新增引用；(3) sunset 期间 RPC-first 失败不允许 silent fallback 到 library import，必须 throw，让监控能看见真实问题；(4) sunset 到期当天必须 **物理删除** library import 代码 + `wrangler.jsonc` 内嵌 library 引用，并以 PR 形式归档。
 
 - **问题**：`是否确认 RH4 的 Lane E dual-track sunset 时间盒为 ≤ 2 周？如果不同意，请明确允许的最长并存窗口。`
-- **业主回答**：
+- **业主回答**：同意 Opus 的推荐线路。
 
 ### Q3 / Charter-Q4 — `per-model quota 是否在 RH5 引入`（来源：`docs/charter/plan-real-to-hero.md` §12 Q4、`docs/design/real-to-hero/RH5-multi-model-multimodal-reasoning.md`）
 
@@ -64,7 +64,7 @@
 - **Opus的最终回答**：**采纳 GPT 路线，不引入 per-model quota；但建议把 RH5 的 usage event 字段从 GPT 描述的"`model_id`"扩展为"`{model_id, input_tokens, output_tokens, estimated_cost_usd, is_reasoning, is_vision, request_uuid}`"完整 evidence**——这样 hero-to-platform 引入 quota 时只需要新增聚合 + budget table，不需要重新埋点。team policy filter 在 RH5 内实施粒度限定为：team-level boolean disable（默认 enable，业主可在 internal 命令把某 model_id 对某 team 设 disabled），**不**做按 reasoning/vision capability 做配额 / 不做按模型族做配额——这两类策略一旦做就回不去。
 
 - **问题**：`是否确认 RH5 不引入 per-model quota，只做 model_id usage 记录与 team policy filter？如果不同意，请明确是按模型、按模型族，还是按 reasoning/vision 能力做配额。`
-- **业主回答**：
+- **业主回答**：同意 Opus 的推荐线路。
 
 ---
 
@@ -84,7 +84,7 @@
 - **Opus的最终回答**：**采纳 GPT 路线 5 套基线，但补 4 项限定**：(1) 每套 sample 必须覆盖 4 条 must-cover scenario：(a) 注册→start session→发 1 条带 image_url 的消息→收到 LLM 响应；(b) 触发一次 permission request 并 deny；(c) 在另一台设备登录同帐号触发 device revoke，验证当前 WS 立即被 force-disconnect；(d) 主动断网 30s 再恢复，验证 WS reconnect + replay 不丢消息。(2) evidence 形态 = 屏幕录像（含网络指示）+ network log（HAR 或 chrome devtools dump）+ WS frame log（浏览器 console 或 wechat devtool 输出），三者合一打成 zip 入 `docs/evidence/real-to-hero/RH6/{device-name}/`。(3) owner 在 RH6 closure 当天 ±3 个工作日内完成采集，超时由业主决定延期还是放行。(4) 网络环境 = web 用 Wi-Fi，真机用 5G/Wi-Fi 各采集 1 次（仅针对 reconnect scenario），其他 scenario 默认 Wi-Fi 即可。这 4 项让 5-set baseline 从 "拍 5 张图" 升级为可被 reviewer 二次复核的 evidence pack。
 
 - **问题**：`是否确认 RH6 manual evidence 的基线覆盖范围为 iOS 17 Safari、Android 14 Chrome、微信 8.0 真机、微信开发者工具 stable、Chrome stable 浏览器各 1 套？如果不同意，请直接给出你要求的设备 / 版本组合。`
-- **业主回答**：
+- **业主回答**：同意 Opus 的推荐线路。
 
 ### Q5 — `RH0 P0-F owner-action 凭据 checklist 验证执行`（来源：`docs/charter/plan-real-to-hero.md` §12 Q5、`docs/design/real-to-hero/RH0-bug-fix-and-prep.md`）
 
@@ -98,7 +98,7 @@
 - **Opus的最终回答**：**采纳 GPT 路线 6 步，但扩至 8 步并补失败处置政策**：(1) 在 GPT 6 步基础上追加 (7) `pnpm install --frozen-lockfile`（验证 RH0 P0-A 完成的 lockfile 在 fresh checkout 下确定可解析）+ (8) `for w in 6 workers; do wrangler deploy --dry-run --config $w/wrangler.jsonc; done`（验证 RH0 P0-C 的 KV/R2 binding 占位声明在所有 worker 中 dry-run 通过）。(2) **失败处置政策**：8 步中任何 1 步失败都属于 RH0 Start Gate 失败，业主必须在 24h 内决定：(a) 修复后重跑 checklist；(b) 把失败步骤升级为 RH0 in-scope 工作（修配额 / 申请 R2 quota 等）；(c) 业主以书面形式写明可降级的理由并签字 —— 三选一，不允许"先开工再补"。(3) 执行时点 = RH0 启动当天，结果写入 `docs/owner-decisions/real-to-hero-tooling.md`，每条 step 记录 timestamp + 输出 hash + verdict（pass/fail/owner-override）。(4) RH0 implementation 期间如有 deploy / preview / build 路径失败，必须先回这份 checklist 文档复核是否凭据已变化，再决定是否需要 owner 重新执行。
 
 - **问题**：`是否确认 RH0 启动当天由 owner 执行并回填这 6 步 tooling checklist，并把结果写入 docs/owner-decisions/real-to-hero-tooling.md？`
-- **业主回答**：
+- **业主回答**：同意 Opus 的推荐线路。
 
 ---
 
