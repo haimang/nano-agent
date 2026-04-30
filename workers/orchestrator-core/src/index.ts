@@ -657,11 +657,23 @@ async function dispatchFetch(request: Request, env: OrchestratorCoreEnv): Promis
     if (method === "GET" && /^\/sessions\/[^/]+\/context$/.test(pathname)) {
       return handleSessionContext(request, env, "get");
     }
+    if (method === "GET" && /^\/sessions\/[^/]+\/context\/probe$/.test(pathname)) {
+      return handleSessionContext(request, env, "probe");
+    }
+    if (method === "GET" && /^\/sessions\/[^/]+\/context\/layers$/.test(pathname)) {
+      return handleSessionContext(request, env, "layers");
+    }
     if (method === "POST" && /^\/sessions\/[^/]+\/context\/snapshot$/.test(pathname)) {
       return handleSessionContext(request, env, "snapshot");
     }
+    if (method === "POST" && /^\/sessions\/[^/]+\/context\/compact\/preview$/.test(pathname)) {
+      return handleSessionContext(request, env, "compact-preview");
+    }
     if (method === "POST" && /^\/sessions\/[^/]+\/context\/compact$/.test(pathname)) {
       return handleSessionContext(request, env, "compact");
+    }
+    if (method === "GET" && /^\/sessions\/[^/]+\/context\/compact\/jobs\/[^/]+$/.test(pathname)) {
+      return handleSessionContext(request, env, "compact-job");
     }
 
     const tenantError = ensureTenantConfigured(env);
@@ -1441,7 +1453,14 @@ async function handleModelsList(
 async function handleSessionContext(
   request: Request,
   env: OrchestratorCoreEnv,
-  op: "get" | "snapshot" | "compact",
+  op:
+    | "get"
+    | "probe"
+    | "layers"
+    | "snapshot"
+    | "compact-preview"
+    | "compact"
+    | "compact-job",
 ): Promise<Response> {
   const auth = await authenticateRequest(request, env);
   if (!auth.ok) return auth.response;
@@ -1479,6 +1498,28 @@ async function handleSessionContext(
         }
         body = await ctx.getContextSnapshot(sessionUuid, teamUuid, meta);
         break;
+      case "probe":
+        if (typeof ctx.getContextProbe !== "function") {
+          return jsonPolicyError(
+            503,
+            "worker-misconfigured",
+            "context-core RPC getContextProbe missing",
+            traceUuid,
+          );
+        }
+        body = await ctx.getContextProbe(sessionUuid, teamUuid, meta);
+        break;
+      case "layers":
+        if (typeof ctx.getContextLayers !== "function") {
+          return jsonPolicyError(
+            503,
+            "worker-misconfigured",
+            "context-core RPC getContextLayers missing",
+            traceUuid,
+          );
+        }
+        body = await ctx.getContextLayers(sessionUuid, teamUuid, meta);
+        break;
       case "snapshot":
         if (typeof ctx.triggerContextSnapshot !== "function") {
           return jsonPolicyError(
@@ -1489,6 +1530,17 @@ async function handleSessionContext(
           );
         }
         body = await ctx.triggerContextSnapshot(sessionUuid, teamUuid, meta);
+        break;
+      case "compact-preview":
+        if (typeof ctx.previewCompact !== "function") {
+          return jsonPolicyError(
+            503,
+            "worker-misconfigured",
+            "context-core RPC previewCompact missing",
+            traceUuid,
+          );
+        }
+        body = await ctx.previewCompact(sessionUuid, teamUuid, meta);
         break;
       case "compact":
         if (typeof ctx.triggerCompact !== "function") {
@@ -1501,6 +1553,22 @@ async function handleSessionContext(
         }
         body = await ctx.triggerCompact(sessionUuid, teamUuid, meta);
         break;
+      case "compact-job": {
+        const jobId = segments[5];
+        if (!jobId || !UUID_RE.test(jobId)) {
+          return jsonPolicyError(400, "invalid-input", "job_id must be a UUID", traceUuid);
+        }
+        if (typeof ctx.getCompactJob !== "function") {
+          return jsonPolicyError(
+            503,
+            "worker-misconfigured",
+            "context-core RPC getCompactJob missing",
+            traceUuid,
+          );
+        }
+        body = await ctx.getCompactJob(sessionUuid, teamUuid, jobId, meta);
+        break;
+      }
     }
     return Response.json(
       { ok: true, data: body, trace_uuid: traceUuid },
@@ -1527,7 +1595,22 @@ interface ContextCoreRpcLike {
     teamUuid: string,
     meta: { trace_uuid: string; team_uuid: string },
   ): Promise<Record<string, unknown>>;
+  getContextProbe?(
+    sessionUuid: string,
+    teamUuid: string,
+    meta: { trace_uuid: string; team_uuid: string },
+  ): Promise<Record<string, unknown>>;
+  getContextLayers?(
+    sessionUuid: string,
+    teamUuid: string,
+    meta: { trace_uuid: string; team_uuid: string },
+  ): Promise<Record<string, unknown>>;
   triggerContextSnapshot?(
+    sessionUuid: string,
+    teamUuid: string,
+    meta: { trace_uuid: string; team_uuid: string },
+  ): Promise<Record<string, unknown>>;
+  previewCompact?(
     sessionUuid: string,
     teamUuid: string,
     meta: { trace_uuid: string; team_uuid: string },
@@ -1535,6 +1618,12 @@ interface ContextCoreRpcLike {
   triggerCompact?(
     sessionUuid: string,
     teamUuid: string,
+    meta: { trace_uuid: string; team_uuid: string },
+  ): Promise<Record<string, unknown>>;
+  getCompactJob?(
+    sessionUuid: string,
+    teamUuid: string,
+    jobId: string,
     meta: { trace_uuid: string; team_uuid: string },
   ): Promise<Record<string, unknown>>;
 }

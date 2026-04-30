@@ -29,6 +29,16 @@ import {
   persistErrorLogRecord,
 } from "./observability.js";
 import { cleanupObservabilityLogs } from "./cron/cleanup.js";
+import type {
+  ContextCompactCommitInput,
+  ContextSnapshotWriteInput,
+} from "./context-control-plane.js";
+import {
+  createCompactBoundaryJob as persistCompactBoundaryJob,
+  createContextSnapshotRecord as persistContextSnapshotRecord,
+  readContextCompactJob as loadContextCompactJob,
+  readContextDurableState as loadContextDurableState,
+} from "./context-control-plane.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -36,6 +46,11 @@ interface ForwardServerFrameMeta {
   readonly userUuid: string;
   readonly teamUuid?: string;
   readonly traceUuid?: string;
+}
+
+interface ContextBindingMeta {
+  readonly trace_uuid: string;
+  readonly team_uuid: string;
 }
 
 export { NanoOrchestratorUserDO };
@@ -67,6 +82,87 @@ export default class OrchestratorCoreEntrypoint extends WorkerEntrypoint<Orchest
   async recordAuditEvent(record: AuditRecord): Promise<{ ok: boolean }> {
     await persistAuditRecord(this.env, record);
     return { ok: true };
+  }
+
+  async readContextDurableState(
+    sessionUuid: string,
+    teamUuid: string,
+    meta: ContextBindingMeta,
+  ) {
+    if (
+      typeof sessionUuid !== "string" ||
+      !UUID_RE.test(sessionUuid) ||
+      typeof teamUuid !== "string" ||
+      teamUuid.length === 0
+    ) {
+      return null;
+    }
+    if (!meta || meta.team_uuid !== teamUuid) return null;
+    return loadContextDurableState(this.env.NANO_AGENT_DB, sessionUuid, teamUuid);
+  }
+
+  async createContextSnapshot(
+    sessionUuid: string,
+    teamUuid: string,
+    input: Omit<ContextSnapshotWriteInput, "session_uuid" | "team_uuid">,
+    meta: ContextBindingMeta,
+  ) {
+    if (
+      typeof sessionUuid !== "string" ||
+      !UUID_RE.test(sessionUuid) ||
+      typeof teamUuid !== "string" ||
+      teamUuid.length === 0
+    ) {
+      return null;
+    }
+    if (!meta || meta.team_uuid !== teamUuid) return null;
+    return persistContextSnapshotRecord(this.env.NANO_AGENT_DB, {
+      ...input,
+      session_uuid: sessionUuid,
+      team_uuid: teamUuid,
+    });
+  }
+
+  async commitContextCompact(
+    sessionUuid: string,
+    teamUuid: string,
+    input: Omit<ContextCompactCommitInput, "session_uuid" | "team_uuid">,
+    meta: ContextBindingMeta,
+  ) {
+    if (
+      typeof sessionUuid !== "string" ||
+      !UUID_RE.test(sessionUuid) ||
+      typeof teamUuid !== "string" ||
+      teamUuid.length === 0
+    ) {
+      return null;
+    }
+    if (!meta || meta.team_uuid !== teamUuid) return null;
+    return persistCompactBoundaryJob(this.env.NANO_AGENT_DB, {
+      ...input,
+      session_uuid: sessionUuid,
+      team_uuid: teamUuid,
+    });
+  }
+
+  async readContextCompactJob(
+    sessionUuid: string,
+    teamUuid: string,
+    jobId: string,
+    meta: ContextBindingMeta,
+  ) {
+    if (
+      typeof sessionUuid !== "string" ||
+      !UUID_RE.test(sessionUuid) ||
+      typeof teamUuid !== "string" ||
+      teamUuid.length === 0 ||
+      typeof jobId !== "string" ||
+      !UUID_RE.test(jobId)
+    ) {
+      return null;
+    }
+    if (!meta || meta.team_uuid !== teamUuid) return null;
+    return loadContextCompactJob(this.env.NANO_AGENT_DB, sessionUuid, teamUuid, jobId);
   }
 
   async forwardServerFrameToClient(

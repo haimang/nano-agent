@@ -13,8 +13,12 @@ const JWT_SECRET = "x".repeat(32);
 
 function makeContextCoreMock(overrides?: {
   getContextSnapshot?: any;
+  getContextProbe?: any;
+  getContextLayers?: any;
   triggerContextSnapshot?: any;
+  previewCompact?: any;
   triggerCompact?: any;
+  getCompactJob?: any;
   shouldThrow?: boolean;
 }) {
   const stub = (name: string, defaultValue: unknown) =>
@@ -27,19 +31,42 @@ function makeContextCoreMock(overrides?: {
       session_uuid: SESSION_UUID,
       team_uuid: TEAM_UUID,
       status: "ready",
-      summary: "stub",
+      summary: "durable",
       artifacts_count: 0,
       need_compact: false,
-      phase: "stub",
+      phase: "durable",
+    }),
+    getContextProbe: stub("getContextProbe", {
+      session_uuid: SESSION_UUID,
+      team_uuid: TEAM_UUID,
+      status: "active",
+      need_compact: false,
+    }),
+    getContextLayers: stub("getContextLayers", {
+      session_uuid: SESSION_UUID,
+      team_uuid: TEAM_UUID,
+      layers: [{ kind: "system", preview: "nano-agent runtime system prompt" }],
     }),
     triggerContextSnapshot: stub("triggerContextSnapshot", {
       snapshot_id: "snap-1",
       created_at: "2026-04-29T00:00:00Z",
     }),
+    previewCompact: stub("previewCompact", {
+      session_uuid: SESSION_UUID,
+      team_uuid: TEAM_UUID,
+      need_compact: true,
+      compacted_message_count: 4,
+    }),
     triggerCompact: stub("triggerCompact", {
       compacted: true,
       before_size: 0,
       after_size: 0,
+    }),
+    getCompactJob: stub("getCompactJob", {
+      session_uuid: SESSION_UUID,
+      team_uuid: TEAM_UUID,
+      job_id: "55555555-5555-4555-8555-555555555555",
+      status: "completed",
     }),
   };
 }
@@ -431,5 +458,63 @@ describe("RH2 P2-07: POST /sessions/{uuid}/context/compact", () => {
     expect(response.status).toBe(503);
     const body = (await response.json()) as { error: { code: string } };
     expect(body.error.code).toBe("worker-misconfigured");
+  });
+});
+
+describe("HP3 context surface routes", () => {
+  it.each([
+    [
+      "GET /context/probe",
+      "GET",
+      `https://example.com/sessions/${SESSION_UUID}/context/probe`,
+      "getContextProbe",
+      undefined,
+    ],
+    [
+      "GET /context/layers",
+      "GET",
+      `https://example.com/sessions/${SESSION_UUID}/context/layers`,
+      "getContextLayers",
+      undefined,
+    ],
+    [
+      "POST /context/compact/preview",
+      "POST",
+      `https://example.com/sessions/${SESSION_UUID}/context/compact/preview`,
+      "previewCompact",
+      {},
+    ],
+    [
+      "GET /context/compact/jobs/{id}",
+      "GET",
+      `https://example.com/sessions/${SESSION_UUID}/context/compact/jobs/55555555-5555-4555-8555-555555555555`,
+      "getCompactJob",
+      undefined,
+    ],
+  ] as const)("routes %s to the expected context-core RPC", async (_label, method, url, rpcName, body) => {
+    const token = await signTestJwt(
+      { sub: USER_UUID, team_uuid: TEAM_UUID },
+      JWT_SECRET,
+    );
+    const ctx = makeContextCoreMock();
+    const response = await worker.fetch(
+      new Request(url, {
+        method,
+        headers: {
+          authorization: `Bearer ${token}`,
+          "x-trace-uuid": TRACE_UUID,
+          ...(method === "POST" ? { "content-type": "application/json" } : {}),
+        },
+        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      }),
+      {
+        JWT_SECRET,
+        TEAM_UUID: "nano-agent",
+        CONTEXT_CORE: ctx,
+        ORCHESTRATOR_USER_DO: {} as any,
+      } as any,
+    );
+    expect(response.status).toBe(200);
+    expect((ctx as Record<string, any>)[rpcName]).toHaveBeenCalled();
   });
 });
