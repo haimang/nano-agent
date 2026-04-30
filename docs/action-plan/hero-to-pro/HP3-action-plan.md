@@ -137,6 +137,9 @@ hero-to-pro HP3 context state machine
 5. **`compact.notify` 已是正式 stream kind**
    - `packages/nacp-session/src/stream-event.ts:52-57,81-107`
    - HP3 应复用这条正式事件，而不是另造临时 compact event 名。
+6. **外部 precedent 已核对并支持 HP3 的 compact / reinject 分层策略**
+   - `context/codex/codex-rs/core/src/codex.rs:3948-3985`, `context/codex/codex-rs/core/tests/suite/compact.rs:132-142`, `context/claude-code/services/compact/sessionMemoryCompact.ts:45-61,188-230,232-259`, `context/claude-code/services/compact/microCompact.ts:40-50,164-205`, `context/gemini-cli/packages/core/src/context/contextCompressionService.ts:50-59,108-160,223-255`, `context/gemini-cli/packages/core/src/context/contextManager.ts:74-117,152-169`
+   - precedent 共同说明 compact / reinject / render 必须分层，且 `<model_switch>` 与 protected recent window 需要显式保护；HP3 吸收 contract 与 layering，不照抄外部具体 token 策略。
 
 ---
 
@@ -206,7 +209,7 @@ hero-to-pro HP3 context state machine
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
 | P3-01 | model-aware auto-compact | 用 `effective_context_pct * context_window` 与 `auto_compact_token_limit` 驱动 compact 阈值，不再硬编码 32K | runtime-mainline + model metadata consumption | 131K 与 24K 模型 compact 行为不同且可解释 | agent-core/context-core tests | budget law 与 model metadata 一致 |
-| P3-02 | manual compact preview/job | `preview` 只读返回 `budget/estimated_tokens/need_compact/latest_boundary/protected_recent_turns/layers/would_create_job_template`，同 session + 同 high-watermark 60s 内复用 in-memory cache；真实 `compact` 写 `checkpoint_kind = compact_boundary` 的 checkpoint，并以该 UUID 作为 `job_id` | façade + context-core + runtime | compact 成为可解释、可追踪操作 | orchestrator/context-core/agent-core tests | preview 不写 summary；job 可跨 worker 重读 |
+| P3-02 | manual compact preview/job | `preview` 只读返回 `budget/estimated_tokens/need_compact/latest_boundary/protected_recent_turns/layers/would_create_job_template`，同 session + 同 high-watermark 60s 内复用 in-memory cache；真实 `compact` 写 `checkpoint_kind = compact_boundary` 的 checkpoint，并以该 `checkpoint_uuid` 直接作为 `job_id`；`/compact/jobs/{id}` 读取 checkpoint + `compact.notify` 投影，严禁新建 `nano_compact_jobs`（承接 HP1 `P4-01`） | façade + context-core + runtime | compact 成为可解释、可追踪操作 | orchestrator/context-core/agent-core tests | preview 不写 summary；job 可跨 worker 重读 |
 
 ### 4.4 Phase 4 — Strip-Recover + Circuit Breaker
 
@@ -219,8 +222,8 @@ hero-to-pro HP3 context state machine
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P5-01 | long-conversation e2e | 覆盖 131K 模型 ~118K 自动 compact、24K 模型 ~22K 自动 compact、cross-turn recall、layer probe、compact fail breaker 至少 5 场景 | `test/cross-e2e/**` | 长对话与多窗口模型行为可审计 | `pnpm test:cross-e2e` | 5+ e2e 全绿，且 probe / stream / prompt 一致 |
-| P5-02 | HP3 closure | 回填 probe/layers verdict、preview/job verdict、stream event verdict、next-prompt verdict | `docs/issue/hero-to-pro/HP3-closure.md` | HP4/HP9 能直接消费 HP3 结果 | doc review | closure 能独立回答“context state machine 是否已经成型” |
+| P5-01 | long-conversation e2e | 覆盖 131K 模型 ~118K 自动 compact、24K 模型 ~22K 自动 compact、cross-turn recall、layer probe、compact fail breaker 至少 5 场景；建议文件名使用 `context-auto-compact-131k` / `context-auto-compact-24k` / `context-cross-turn-recall` / `context-layer-probe` / `context-breaker-fail-loud` 描述性前缀；若采用编号文件，必须为 HP5 预留 `15-18` | `test/cross-e2e/**` | 长对话与多窗口模型行为可审计 | `pnpm test:cross-e2e` | 5+ e2e 全绿，且 probe / stream / prompt 一致 |
+| P5-02 | HP3 closure | 回填 probe/layers verdict、preview/job verdict、stream event verdict、next-prompt verdict，并显式登记 F1-F17 chronic status（`closed / partial / not-touched / handed-to-platform`） | `docs/issue/hero-to-pro/HP3-closure.md` | HP4/HP9 能直接消费 HP3 结果 | doc review | closure 能独立回答“context state machine 是否已经成型” |
 
 ---
 
@@ -435,8 +438,11 @@ hero-to-pro HP3 context state machine
   - `pnpm test:cross-e2e`
 - **回归测试**：
   - 131K ~118K 自动 compact、24K ~22K 自动 compact、cross-turn recall、layer probe、compact fail breaker 至少 5 场景
+- **前序 phase 回归**：
+  - 至少回归 HP2 的 `<model_switch>` 注入 / fallback 语义，确认 HP3 strip-then-recover 不会把 HP2 冻结的模型语义打断。
 - **文档校验**：
   - `docs/issue/hero-to-pro/HP3-closure.md` 必须同时写明 probe / preview-job / stream / next-prompt 四层 verdict
+  - `docs/issue/hero-to-pro/HP3-closure.md` 必须显式登记 F1-F17 chronic status
 
 ### 8.2 Action-Plan 整体收口标准
 
@@ -446,6 +452,7 @@ hero-to-pro HP3 context state machine
 2. `CrossTurnContextManager` 已成为唯一 prompt owner，probe/layers 与真实 prompt 不漂移。
 3. auto-compact 由 model metadata 驱动，manual compact 支持 preview 与 durable job 分离。
 4. strip-recover 与 breaker 生效，长对话 cross-e2e 5+ 场景全绿。
+5. HP3 closure 已显式声明 F1-F17 的 phase 状态，并把 compact job truth 与 HP1 freeze 的连接写清。
 
 ### 8.3 完成定义（Definition of Done）
 

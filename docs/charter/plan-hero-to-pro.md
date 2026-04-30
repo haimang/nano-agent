@@ -262,7 +262,7 @@ charter 必须现在写,因为:
 | Logout endpoint(显式) | `out-of-scope` | device revoke 已覆盖核心;显式 logout 是 v2 polish | hero-to-platform |
 | F2 WeChat 真机 smoke | `in-scope (HP9)` | 六阶段 chronic carryover,owner D10 决断必须完成 | N/A,owner 必须配合 |
 | `forwardInternalJsonShadow` 物理删除 | `conditional in-scope (HP10 after HP8-B)` | 仅在 R29 postmortem 判定可删时进入 cleanup | 若 R29 判定需保留 reference implementation |
-| `runbook/zx2-rollback.md` 物理删除 | `in-scope (HP0)` | archive 日期 2026-05-12 已过 | 若 owner 决定保留为永久档案 |
+| `docs/runbook/zx2-rollback.md` 物理删除 | `in-scope (HP0)` | archive 日期 2026-05-12 已过 | 若 owner 决定保留为永久档案 |
 | WeChat miniprogram 完整适配 | `defer / later-phase` | RHX2 §5 已 explicit defer 到独立适配专项 | 客户端适配独立 plan |
 | F2 真机 smoke 与 WeChat miniprogram 适配的关系 | `两者分离` | F2 是已有最简 client 的真机回归;miniprogram 适配是新写完整客户端;HP9 只做 F2 evidence,不做完整适配 | N/A |
 
@@ -363,7 +363,7 @@ charter 必须现在写,因为:
 **仍需做(HP0 真正承担)**:
 1. `StartSessionBody` / `FollowupBody` 加 `model_id?` + `reasoning?` 字段;`forwardStart()` / `handleInput()` 透传字段(K2 / G1)。
 2. `withNanoAgentSystemPrompt()` 接受可选 `modelId` 参数,从 `nano_models.base_instructions_suffix` 读 per-model suffix(暂用空字符串占位,字段在 HP1 落地后真填)— **注意:此项依赖 HP1,HP0 仅落代码骨架,HP1 落表后真启用**。
-3. `runbook/zx2-rollback.md` 物理删除(archive 日期 2026-05-12 已过,G97)。
+3. `docs/runbook/zx2-rollback.md` 物理删除(archive 日期 2026-05-12 已过,G97)。
 4. `pnpm-lock.yaml` 6 stale importer 清理(若 RH0 P0-A1 后再次漂移)。
 
 **已完成需 verify(HP0 仅做存在性验证 + 测试加固)**:
@@ -387,7 +387,7 @@ charter 必须现在写,因为:
 1. `/start`/`/input` 路径 model_id+reasoning 透传 PR + 6 个回归测试用例(3 入口 × 2 case)。
 2. `withNanoAgentSystemPrompt(modelId?)` 改造 PR(suffix 暂空,占位 API)。
 3. `tests/binding-presence.test.ts` 新增 — 断言 CONTEXT_CORE binding 存在 + LANE_E_RPC_FIRST env var 存在(verify-only,不改 wrangler 配置)。
-4. `runbook/zx2-rollback.md` archive 物理删除 PR。
+4. `docs/runbook/zx2-rollback.md` archive 物理删除 PR。
 5. `pnpm-lock.yaml` stale importer 清理(若漂移)。
 6. `docs/issue/hero-to-pro/HP0-closure.md`,显式声明 forwardInternalJsonShadow / parity-bridge helpers 等 R29-dependent dead code 留 HP10 cleanup 决议。
 
@@ -395,7 +395,7 @@ charter 必须现在写,因为:
 
 1. ✅ `/start`/`/input`/`/messages` 三入口模型字段一致,e2e 覆盖。
 2. ✅ `tests/binding-presence.test.ts` 通过(断言 CONTEXT_CORE binding + LANE_E_RPC_FIRST env var 都存在)。
-3. ✅ runbook archive 物理删除验证(`runbook/zx2-rollback.md` 不存在)。
+3. ✅ runbook archive 物理删除验证(`docs/runbook/zx2-rollback.md` 不存在)。
 4. ✅ 现有测试全绿(orchestrator-core ~700+,agent-core ~1056,packages 全部)。
 5. ✅ HP0-closure.md 显式列出 forwardInternalJsonShadow / parity-bridge dead helpers 等 R29-dependent dead code 留 HP10 cleanup 决议。
 

@@ -132,6 +132,9 @@ hero-to-pro HP2 model state machine
 5. **当前没有 `model.fallback` stream kind**
    - `packages/nacp-session/src/stream-event.ts:81-107`
    - 现有 registry 只有 `compact.notify` 等事件，HP2 需要新增 fallback 事件。
+6. **外部 precedent 已核对并支持 HP2 的四层模型状态机边界**
+   - `context/codex/codex-rs/app-server/src/codex_message_processor.rs:7018-7028`, `context/codex/codex-rs/protocol/src/models.rs:471-474`, `context/codex/codex-rs/core/src/codex.rs:3954-3961`, `context/claude-code/utils/model/model.ts:49-98`, `context/claude-code/query.ts:572-578,659-670,894-897`, `context/gemini-cli/packages/core/src/config/config.ts:1872-1898`, `context/gemini-cli/packages/core/src/services/modelConfigService.ts:16-40,56-80,116-125,149-215,268-328,341-389`
+   - precedent 共同说明 requested / current / effective / fallback / `<model_switch>` 必须分层表达；HP2 只吸收状态机与审计边界，不引入 multi-provider routing 或 UI 级 `/model` 细节。
 
 ---
 
@@ -207,8 +210,8 @@ hero-to-pro HP2 model state machine
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P4-01 | cross-e2e matrix | 覆盖 reasoning↔non-reasoning、vision↔non-vision、131K↔24K、alias resolve、single-step fallback 至少 5 个 cross-e2e | `test/cross-e2e/**` | model control plane 在真实链路中闭环 | `pnpm test:cross-e2e` | 5+ e2e 全绿，且覆盖 API + D1 + stream/prompt 三层 |
-| P4-02 | HP2 closure | 回填 API verdict、D1 audit verdict、fallback/event verdict、`<model_switch>` prompt verdict | `docs/issue/hero-to-pro/HP2-closure.md` | HP3/HP9 可直接消费 HP2 输出 | doc review | closure 能独立回答“模型控制面是否已成产品面” |
+| P4-01 | cross-e2e matrix | 覆盖 reasoning↔non-reasoning、vision↔non-vision、131K↔24K、alias resolve、single-step fallback 至少 5 个 cross-e2e；建议文件名使用 `model-switch-reasoning` / `model-switch-vision` / `model-window-switch` / `model-alias-resolve` / `model-fallback` 描述性前缀；若采用编号文件，必须为 HP5 预留 `15-18` | `test/cross-e2e/**` | model control plane 在真实链路中闭环 | `pnpm test:cross-e2e` | 5+ e2e 全绿，且覆盖 API + D1 + stream/prompt 三层 |
+| P4-02 | HP2 closure | 回填 API verdict、D1 audit verdict、fallback/event verdict、`<model_switch>` prompt verdict，并显式登记 F1-F17 chronic status（`closed / partial / not-touched / handed-to-platform`） | `docs/issue/hero-to-pro/HP2-closure.md` | HP3/HP9 可直接消费 HP2 输出 | doc review | closure 能独立回答“模型控制面是否已成产品面” |
 
 ---
 
@@ -396,8 +399,11 @@ hero-to-pro HP2 model state machine
   - `pnpm test:cross-e2e`
 - **回归测试**：
   - reasoning↔non-reasoning、vision↔non-vision、131K↔24K、alias、fallback 至少 5 场景
+- **前序 phase 回归**：
+  - 至少回归 HP0 的三入口 model field/body law 与 `withNanoAgentSystemPrompt(modelId?)` seam，避免 HP2 wiring 把 HP0 已修好的入口一致性重新打破。
 - **文档校验**：
   - `docs/issue/hero-to-pro/HP2-closure.md` 必须同时记录 API / D1 / stream / prompt 四层 verdict
+  - `docs/issue/hero-to-pro/HP2-closure.md` 必须显式登记 F1-F17 chronic status
 
 ### 8.2 Action-Plan 整体收口标准
 
@@ -407,6 +413,8 @@ hero-to-pro HP2 model state machine
 2. D1 turn/session truth 能反查 requested / effective / fallback 事实。
 3. fallback 触发时有 `model.fallback` stream event，跨模型切换时 prompt 可见 `<model_switch>`。
 4. 5+ cross-e2e 全绿，且 closure 已清楚写出 HP2 的最终 verdict。
+5. HP2 closure 已显式声明 F1-F17 的 phase 状态，不把 chronic 判定留到后续 phase 猜测。
+5. HP2 closure 已显式声明 F1-F17 的 phase 状态，不把 chronic 判定留到后续 phase 猜测。
 
 ### 8.3 完成定义（Definition of Done）
 

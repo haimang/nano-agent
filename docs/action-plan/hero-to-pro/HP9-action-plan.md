@@ -211,14 +211,14 @@ hero-to-pro HP9 docs + evidence pack
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P3-01 | author 7 new docs + README reindex | 新增 `models/context/checkpoints/confirmations/todos/workspace/transport-profiles`，并重写 README 索引 | `clients/api-docs/*.md` | HP9 目标 surface 全部有独立入口 | cross-link self-check | 18 份 docs 都有明确定位、相互链接和 worker reference header |
+| P3-01 | author 7 new docs + README reindex | 新增 `models/context/checkpoints/confirmations/todos/workspace/transport-profiles`，并重写 README 索引；其中 `confirmations.md` 必须带 kind-by-kind readiness matrix，明确 `live / registry-only / future` 边界 | `clients/api-docs/*.md` | HP9 目标 surface 全部有独立入口 | cross-link self-check | 18 份 docs 都有明确定位、相互链接和 worker reference header |
 | P3-02 | stable docs sanity check | 对 `auth/catalog/me-sessions/session-ws-v1/wechat-auth/worker-health` 等稳定文档做事实核对、链接修正与必要升级 | remaining docs | 稳定文档不被遗漏，也不被过度重写 | sanity checklist | 如发现结构漂移，已即时升级为 rewrite，不留到 closure 前暴露 |
 
 ### 4.4 Phase 4 — Manual Evidence + Prod Baseline
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P4-01 | manual evidence pack | 按 5 设备矩阵执行完整手工流，并把 step log / screenshot or clip refs / failures / trace UUID 全部归档 | `docs/evidence/hero-to-pro-manual-*/**`, `docs/issue/hero-to-pro/manual-evidence-pack.md` | manual evidence 从历史 gap 升级为正式交付件 | device matrix checklist | 5 设备齐备；任何不适用步骤都写 `not-applicable-with-reason` |
+| P4-01 | manual evidence pack | 按 5 设备矩阵执行完整手工流，并把 step log / screenshot or clip refs / failures / trace UUID 全部归档；owner-action checklist 固定为：① HP9 启动日冻结 5 设备清单与录制脚本 owner；② 启动 + 3 日完成脚本与环境确认；③ 启动 + 7 日完成 5 设备录制；④ 启动 + 10 日完成 evidence 索引；任一节点延期即标 `cannot close`，不得降级为 partial | `docs/evidence/hero-to-pro-manual-*/**`, `docs/issue/hero-to-pro/manual-evidence-pack.md` | manual evidence 从历史 gap 升级为正式交付件 | device matrix checklist | 5 设备齐备；任何不适用步骤都写 `not-applicable-with-reason` |
 | P4-02 | prod schema baseline | 用 remote/prod 命令记录 wrangler 版本、captured_at、结果、差异与补救路径 | `docs/issue/hero-to-pro/prod-schema-baseline.md` | schema 事实第一次经过 prod remote 对照 | owner remote run + markdown review | 若无访问权，明确标 `blocked-by-owner-access`，绝不以本地 migrations 代替 |
 
 ### 4.5 Phase 5 — 4-Review Fixes + Closure
@@ -226,7 +226,7 @@ hero-to-pro HP9 docs + evidence pack
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
 | P5-01 | 4-review fixes | 对 11 份 deep-review docs 走 4-review 流程，并把 critical/high 问题全部修回 docs pack | `docs/eval/hero-to-pro/HP9-api-docs-reviewed-by-*.md`, `clients/api-docs/*.md` | docs pack 获得 reviewer-level 收口 | review diff audit | critical = 0，high 全部修复，低优先级问题有明确 disposition |
-| P5-02 | HP9 closure | 回填 docs pack / manual evidence / prod baseline / review 四层 verdict | `docs/issue/hero-to-pro/HP9-closure.md` | HP10 能直接消费 HP9 的 frozen public truth | doc review | HP9 closure 能独立回答“18 份文档、5 设备证据、prod baseline 是否齐备” |
+| P5-02 | HP9 closure | 回填 docs pack / manual evidence / prod baseline / review 四层 verdict，并显式登记 F1-F17 chronic status（`closed / partial / not-touched / handed-to-platform`） | `docs/issue/hero-to-pro/HP9-closure.md` | HP10 能直接消费 HP9 的 frozen public truth | doc review | HP9 closure 能独立回答“18 份文档、5 设备证据、prod baseline 是否齐备” |
 
 ---
 
@@ -347,6 +347,7 @@ hero-to-pro HP9 docs + evidence pack
   1. 5 设备矩阵会覆盖 register/login/start/ws/todo/workspace/compact/checkpoint/device revoke 全流程。
   2. evidence 索引记录 step log、media refs、failures/caveats、trace UUID，而不是把截图直接堆进 closure。
   3. prod baseline 会记录 remote command、remote result、committed migrations snapshot、一致性判断、差异与补救路径。
+  4. owner-action 时点会被固定到 HP9 启动日 / 启动 + 3 日 / +7 日 / +10 日，任一节点失守即显式 `cannot close`，而不是模糊等待。
 - **具体测试安排**：
   - **单测**：无新增单测。
   - **集成测试**：无；以 owner/ops 执行结果为主。
@@ -359,7 +360,7 @@ hero-to-pro HP9 docs + evidence pack
     - WeChat 开发者工具
     - WeChat 真机
 - **收口标准**：
-  - 5 套设备完整归档。
+  - 5 套设备完整归档，且 owner-action checklist 四个时点全部满足。
   - prod baseline 文档已写出 remote/prod 事实；若无访问权，显式 `blocked-by-owner-access`。
 - **本 Phase 风险提醒**：
   - owner 设备 / prod 权限一旦未准备好，HP9 就只能停在 `cannot close`，不能以本地替代品蒙混过关。
@@ -411,7 +412,7 @@ hero-to-pro HP9 docs + evidence pack
 | 风险 / 依赖 | 描述 | 当前判断 | 应对方式 |
 |-------------|------|----------|----------|
 | HP8 freeze 依赖 | HP8 未 closure 时 public truth 仍可能变动 | `high` | HP9 只在 HP8 closure 后正式启动 |
-| owner 设备矩阵依赖 | 5 套设备不齐会直接卡住 manual evidence gate | `high` | 按 Q30 提前准备设备，不等待 HP9 开始后再协调 |
+| owner 设备矩阵依赖 | 5 套设备不齐会直接卡住 manual evidence gate | `high` | HP9 启动日冻结设备与脚本 owner；若任一时点延期，直接标 `cannot close`，不再继续模糊等待 |
 | prod 权限依赖 | remote/prod D1 访问可能受 owner/ops 权限限制 | `high` | 明确 `blocked-by-owner-access`，并交给 HP10 retained registry |
 | review 成本高 | 11 份 deep-review docs × 4 reviewer 成本很高 | `medium` | 先锁定 routing，避免把 stable docs 也拉入深审 |
 | session/new docs 互相覆盖 | `session.md` 重写与新专题拆分可能产生交叉漂移 | `medium` | Phase 2 先定主文档边界，Phase 3 再补新文档 |
@@ -420,7 +421,7 @@ hero-to-pro HP9 docs + evidence pack
 
 - **技术前提**：HP9 不新增新 lint/tooling；文档事实只引用当前冻结代码、closure 和 owner-verified baseline。
 - **运行时前提**：manual evidence 验证的是 HP8 之后的 frozen runtime，不接受“边写 docs 边改代码”。
-- **组织协作前提**：owner / ops 负责设备和 prod remote 操作；reviewers 负责 4-review 修订意见。
+- **组织协作前提**：owner / ops 负责设备和 prod remote 操作；设备清单冻结最晚为 HP9 启动日；reviewers 负责 4-review 修订意见。
 - **上线 / 合并前提**：18 份 docs、5 设备 evidence、prod baseline、4-review disposition、HP9 closure 五项齐全。
 
 ### 7.3 文档同步要求
@@ -465,7 +466,8 @@ hero-to-pro HP9 docs + evidence pack
 - **文档校验**：
   - rewrite/new 11 份文档完成 4-review
   - stable docs 7 份完成 sanity check
-  - HP9 closure 必须记录 docs/evidence/baseline/review 四层 verdict
+  - `clients/api-docs/confirmations.md` 必须包含 readiness matrix
+  - HP9 closure 必须记录 docs/evidence/baseline/review 四层 verdict，并显式登记 F1-F17 chronic status
 
 ### 8.2 Action-Plan 整体收口标准
 
@@ -473,9 +475,10 @@ hero-to-pro HP9 docs + evidence pack
 
 1. `clients/api-docs/` 已形成 18 份 frozen pack，且按产品 surface 组织。
 2. 4 份 rewrite 与 7 份 new 文档已完成 deep-review；7 份 stable docs 已完成 sanity check。
-3. 5 设备 manual evidence 已完整归档。
+3. 5 设备 manual evidence 已完整归档；任一设备缺失即 HP9 `cannot close`。
 4. `prod-schema-baseline.md` 已记录 remote/prod 事实，或明确 `blocked-by-owner-access` 并在 closure 中登记。
 5. HP9 closure 已明确说明 docs / evidence / baseline / review 的最终 verdict。
+6. HP9 closure 已显式声明 F1-F17 的 phase 状态，并把 owner-action gate 的实际履约情况写入 closure。
 
 ### 8.3 完成定义（Definition of Done）
 

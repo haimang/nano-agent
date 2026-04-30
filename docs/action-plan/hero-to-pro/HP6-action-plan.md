@@ -145,6 +145,9 @@ hero-to-pro HP6 tool/workspace state machine
    - `workers/agent-core/src/host/remote-bindings.ts:305-331`
    - `workers/bash-core/src/index.ts:317-329,342-413`
    - 这说明 HP6 不需要从零定义 inflight/cancel，只需要把它从内部 seam 投影到产品面。
+7. **外部 precedent 已核对并支持 HP6 的 temp/workspace 分层**
+   - `context/gemini-cli/packages/core/src/config/storage.ts:185-189,317-365`
+   - precedent 说明临时工作状态必须有 project/session 两层边界与独立清理策略；HP6 借鉴 temp namespace 分层与 session-scoped cleanup，不照抄 Gemini 的本地目录布局。
 
 ---
 
@@ -222,14 +225,14 @@ hero-to-pro HP6 tool/workspace state machine
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
 | P4-01 | artifact promotion provenance | `POST /sessions/{id}/artifacts/promote` 读取 temp file，复制字节到新 artifact key，并写 `provenance_kind=workspace_promoted` + `source_workspace_path`；重复 promote 必须生成新 `file_uuid` | filesystem-core + orchestrator-core + file truth | temp 和 artifact 第一次有稳定血缘关系 | integration tests + D1/R2 assertions | promoted artifact 不受 workspace cleanup 影响 |
-| P4-02 | cleanup jobs + namespace audit | `POST /sessions/{id}/workspace/cleanup` + session.end + 24h cron；每次 cleanup 写 `nano_workspace_cleanup_jobs`，同时做 traversal / tenant prefix / bypass 单元测试 | orchestrator-core cleanup owner + filesystem-core | HP6 的生命周期与安全审计一起收口 | cleanup tests + security tests | cleanup 不误删 promoted artifact，tenant prefix 无 bypass |
+| P4-02 | cleanup jobs + namespace audit | `POST /sessions/{id}/workspace/cleanup` + session.end + 24h cron；每次 cleanup 写 `nano_workspace_cleanup_jobs`，同时做 traversal / tenant prefix / bypass 单元测试；scope 责任固定为 `session_end` / `explicit` 归 HP6，`checkpoint_ttl` 归 HP7，不允许两 phase 各自重解释 | orchestrator-core cleanup owner + filesystem-core | HP6 的生命周期与安全审计一起收口 | cleanup tests + security tests | cleanup 不误删 promoted artifact，tenant prefix 无 bypass |
 
 ### 4.5 Phase 5 — E2E + Closure
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P5-01 | workspace/todo/cancel e2e matrix | 覆盖 LLM 写 todo、temp file 跨 turn 读回、single tool cancel、promote 后 artifact 可读、cleanup_jobs audit、traversal 防御至少 6 个 cross-e2e | `test/cross-e2e/**` | HP6 在真实链路里闭环 | `pnpm test:cross-e2e` | 6+ 场景全绿，且 D1 truth / R2 / client 可见状态一致 |
-| P5-02 | HP6 closure | 回填 todo verdict、workspace verdict、cancel verdict、promotion/cleanup verdict | `docs/issue/hero-to-pro/HP6-closure.md` | HP7 可直接消费 HP6 输出 | doc review | closure 能独立回答“工作区状态机是否已成型” |
+| P5-01 | workspace/todo/cancel e2e matrix | 覆盖 LLM 写 todo、temp file 跨 turn 读回、single tool cancel、promote 后 artifact 可读、cleanup_jobs audit、traversal 防御至少 6 个 cross-e2e；建议文件名使用 `workspace-todos-roundtrip` / `workspace-temp-readback` / `workspace-tool-cancel` / `workspace-promote-provenance` / `workspace-cleanup-audit` / `workspace-traversal-deny` 描述性前缀；若采用编号文件，必须为 HP5 预留 `15-18` | `test/cross-e2e/**` | HP6 在真实链路里闭环 | `pnpm test:cross-e2e` | 6+ 场景全绿，且 D1 truth / R2 / client 可见状态一致 |
+| P5-02 | HP6 closure | 回填 todo verdict、workspace verdict、cancel verdict、promotion/cleanup verdict，并显式登记 F1-F17 chronic status（`closed / partial / not-touched / handed-to-platform`） | `docs/issue/hero-to-pro/HP6-closure.md` | HP7 可直接消费 HP6 输出 | doc review | closure 能独立回答“工作区状态机是否已成型” |
 
 ---
 
@@ -467,8 +470,11 @@ hero-to-pro HP6 tool/workspace state machine
   - `pnpm test:cross-e2e`
 - **回归测试**：
   - LLM 写 todo、temp file 跨 turn 读回、single tool cancel、promote 后 artifact 可读、cleanup audit、traversal 防御至少 6 场景
+- **前序 phase 回归**：
+  - 至少回归 HP5 的 confirmation / usage push 主线，确认 workspace/todo/cancel 接线没有把既有人机等待与推帧链路打断。
 - **文档校验**：
   - `docs/issue/hero-to-pro/HP6-closure.md` 必须同时记录 todo / workspace / cancel / promotion / cleanup 五层 verdict
+  - `docs/issue/hero-to-pro/HP6-closure.md` 必须显式登记 F1-F17 chronic status，并写清 `nano_workspace_cleanup_jobs.scope` 的 HP6/HP7 分工
 
 ### 8.2 Action-Plan 整体收口标准
 
@@ -478,6 +484,7 @@ hero-to-pro HP6 tool/workspace state machine
 2. workspace temp file CRUD 已通过 filesystem-core 真 R2 接线，而非 in-memory 假实现。
 3. tool call inflight + single tool cancel + `tool.call.cancelled` 已 live，能区分 cancel 与 error。
 4. workspace → artifact promotion、24h cleanup、tenant prefix/traversal 防御都已被 e2e/单测证明。
+5. HP6 closure 已显式声明 F1-F17 的 phase 状态，并把 cleanup scope 分工写成后续 HP7 必须复用的单一基线。
 
 ### 8.3 完成定义（Definition of Done）
 

@@ -146,6 +146,9 @@ hero-to-pro HP5 confirmation control plane
    - `workers/agent-core/src/host/runtime-mainline.ts:125-130,408-421,552-557`
    - `workers/agent-core/src/host/do/session-do/runtime-assembly.ts:130-153`
    - `onUsageCommit` 已在 tool/llm quota commit 后触发并通过 `pushServerFrameToClient` 推 `session.usage.update`，HP5 需要把这条 seam 纳入 18 号 e2e 与 closure，而不是另造使用量通道。
+8. **外部 precedent 已核对并支持 HP5 的“统一 control plane + correlation”设计**
+   - `context/claude-code/server/directConnectManager.ts:81-99`, `context/gemini-cli/packages/core/src/confirmation-bus/types.ts:18-79,145-155,200-212`, `context/gemini-cli/packages/core/src/confirmation-bus/message-bus.ts:79-148,204-220`
+   - precedent 共同说明 confirmation / ask-user / policy 更新应共享统一消息族、稳定关联 ID 与独立控制轨；HP5 只吸收统一 control plane 与 correlation law，不照抄外部 UI / policy engine 细节。
 
 ---
 
@@ -203,7 +206,7 @@ hero-to-pro HP5 confirmation control plane
 |------|--------|----------|------------------|----------|----------|----------|
 | P1-01 | confirmation registry + decision handler | 统一 confirmation row 的 create/read/update 与 generic decision handler；legacy permission/elicitation decision 最终也落到同一 handler | orchestrator-core + HP1 `nano_session_confirmations` truth | pending/resolved confirmation 第一次有单一 durable owner | D1 assertions + orchestrator-core tests | list/detail/decision 都围绕同一 row truth 工作 |
 | P1-02 | generic `/confirmations` API | 新增 `GET /sessions/{id}/confirmations`、`GET /sessions/{id}/confirmations/{uuid}`、`POST /sessions/{id}/confirmations/{uuid}/decision` 三件套 | `workers/orchestrator-core/src/index.ts`, User DO surface | 客户端终于有统一 confirmation 面 | route tests + API tests | legacy path 与 generic path 最终命中同一 decision law |
-| P1-03 | confirmation frame family + protocol normalization | 在 `nacp-session` 增加 `session.confirmation.request/update`；规范 generic payload；兼容期内保留 legacy permission/elicitation dual-emit，但不再让 live emitter 与 schema 继续漂移 | `packages/nacp-session/src/messages.ts`, push path | control-plane frame 族正式成型 | package tests + integration tests | generic frame 已注册；当前 `tool_name/tool_input` vs `capability` 漂移被收敛 |
+| P1-03 | confirmation frame family + protocol normalization | 在 `nacp-session` 增加 `session.confirmation.request/update`；规范 generic payload；兼容期内保留 legacy permission/elicitation dual-emit，但不再让 live emitter 与 schema 继续漂移；关联 ID / 控制分轨对齐 Claude direct-connect 与 Gemini confirmation bus precedent | `packages/nacp-session/src/messages.ts`, push path | control-plane frame 族正式成型 | package tests + integration tests | generic frame 已注册；当前 `tool_name/tool_input` vs `capability` 漂移被收敛 |
 
 ### 4.2 Phase 2 — Protocol + Kernel Semantics
 
@@ -218,14 +221,14 @@ hero-to-pro HP5 confirmation control plane
 |------|--------|----------|------------------|----------|----------|----------|
 | P3-01 | permission live round-trip | `PreToolUse` 在 `policy.shouldAsk()` 时走 confirmation registry → `emitPermissionRequestAndAwait()` → decision → runtime 恢复；allow/deny/timeout 都有明确终态 | hooks + Session DO runtime | `emitPermissionRequestAndAwait()` 第一次有真调用方 | agent-core/orchestrator-core tests | tool call 会真实暂停并恢复，不再只停留在设计稿 |
 | P3-02 | elicitation live round-trip + compat alias | elicitation 走同一 registry / wait law；旧 `permission/decision` 与 `elicitation/answer` 继续保留为兼容 alias，并在 dual-emit 窗口内工作 | Session DO + façade + User DO surface | elicitation 进入统一 control plane，legacy client 不 break | integration tests + compat tests | new API 与 legacy API 都能恢复同一 pending confirmation |
-| P3-03 | row-first dual-write law | 冻结“先写 confirmation row → 后写 DO storage primitive”的双写顺序；若第二步失败，row 进入 `superseded`，并写 `decision_payload_json` + audit/error log | orchestrator-core + agent-core decision path | pending 列表与 runtime 恢复不再分裂 | failure path tests | 不新增 `failed` status，不留下 phantom pending |
+| P3-03 | row-first dual-write law | 冻结“先写 confirmation row → 后写 DO storage primitive”的双写顺序；confirmation 终态固定为 `pending | allowed | denied | modified | timeout | superseded`；若第二步失败，row 进入 `superseded`，并写 `decision_payload_json` + audit/error log | orchestrator-core + agent-core decision path | pending 列表与 runtime 恢复不再分裂 | failure path tests | 不新增 `failed` status，不留下 phantom pending |
 
 ### 4.4 Phase 4 — E2E + Closure
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P4-01 | cross-e2e 15-18 | 落地 `15-permission-roundtrip-allow`、`16-permission-roundtrip-deny`、`17-elicitation-roundtrip`、`18-usage-push-live` 四个 real-stack e2e | `test/cross-e2e/**` | F12/F13 终结有真实证据 | `pnpm test:cross-e2e` | 4 个用例全绿，覆盖 allow/deny/timeout、elicitation、usage push live |
-| P4-02 | HP5 closure | 回填 registry verdict、`confirmation_pending` verdict、compat verdict、usage push verdict | `docs/issue/hero-to-pro/HP5-closure.md` | HP6/HP7 能直接消费 HP5 输出 | doc review | closure 能独立回答“统一 confirmation 面是否已成型，以及 compat 还剩什么窗口” |
+| P4-01 | cross-e2e 15-18 | 落地 `15-permission-roundtrip-allow`、`16-permission-roundtrip-deny`、`17-elicitation-roundtrip`、`18-usage-push-live` 四个 real-stack e2e；`15-18` 为 HP5 保留编号范围，其他 phase 若采用编号文件必须显式避让 | `test/cross-e2e/**` | F12/F13 终结有真实证据 | `pnpm test:cross-e2e` | 4 个用例全绿，覆盖 allow/deny/timeout、elicitation、usage push live |
+| P4-02 | HP5 closure | 回填 registry verdict、`confirmation_pending` verdict、compat verdict、usage push verdict、7-kind readiness matrix，并显式登记 F1-F17 chronic status（`closed / partial / not-touched / handed-to-platform`） | `docs/issue/hero-to-pro/HP5-closure.md` | HP6/HP7 能直接消费 HP5 输出 | doc review | closure 能独立回答“统一 confirmation 面是否已成型，以及 compat 还剩什么窗口” |
 
 ---
 
@@ -387,6 +390,7 @@ hero-to-pro HP5 confirmation control plane
 | 风险 / 依赖 | 描述 | 当前判断 | 应对方式 |
 |-------------|------|----------|----------|
 | HP1 confirmation truth 依赖 | HP5 假定 `nano_session_confirmations` 与 charter enum 已由 HP1 冻结 | `high` | HP5 不私补 schema；缺口只能回到 HP1 correction law |
+| HP4 closure 前置依赖 | charter 已明确 HP5 应在 HP4 closure 后启动，避免 kernel interrupt / runtime-mainline 改动并发互踩 | `high` | HP4 未 closure 时，HP5 保持未启动；不得并行改同一条 interrupt 主线 |
 | 协议漂移已存在 | `messages.ts` 与 live permission emitter 当前字段已分叉 | `high` | 在 Phase 1 一次性收敛 generic frame contract，并保留 compat |
 | row → DO dual-write 分裂 | 先后任一步失败都会制造 pending 列表与 runtime 恢复不一致 | `high` | 冻结 row-first law；第二步失败写 `superseded` + audit/error |
 | kernel rename ripple | `approval_pending` → `confirmation_pending` 会波及 resume/observability/replay | `medium` | 统一用 metadata 承载 kind，必要时仅提供外部 alias，不分裂内部语义 |
@@ -396,6 +400,7 @@ hero-to-pro HP5 confirmation control plane
 
 - **技术前提**：HP1 已冻结 `nano_session_confirmations` 与 7-kind enum；继续复用 `awaitAsyncAnswer()` / `recordAsyncAnswer()`，不另造唤醒通道。
 - **运行时前提**：`HookDispatcher` 的 timeout/depth/fail-closed guard 必须原样保留；`onUsageCommit` 继续使用现有推帧通路。
+- **执行顺序前提**：HP5 只在 HP4 closure 后启动，避免 `runtime-mainline.ts` / interrupt path 与 HP4 的生命周期治理并发改同一主线。
 - **组织协作前提**：HP5 不重开 Q16-Q18；后续 HP3/HP4/HP6/HP7 消费 confirmation 时，只接入已有 control plane，不新造 waiting 路径。
 - **上线 / 合并前提**：registry、generic API、runtime wait、compat route、15-18 e2e、HP5 closure 六层证据齐全。
 
@@ -436,8 +441,11 @@ hero-to-pro HP5 confirmation control plane
   - `pnpm test:cross-e2e`
 - **回归测试**：
   - 15 allow、16 deny、17 elicitation、18 usage push live 四条场景
+- **前序 phase 回归**：
+  - 至少回归 HP3 的 context / compact 主线与 HP4 的 retry / restore 主线，确认 `confirmation_pending` 重构没有把既有 interrupt / resume 语义打断。
 - **文档校验**：
   - `docs/issue/hero-to-pro/HP5-closure.md` 必须同时写明 registry / wait reason / compat / usage push 四层 verdict
+  - `docs/issue/hero-to-pro/HP5-closure.md` 必须包含 7-kind readiness matrix 与 F1-F17 chronic status
 
 ### 8.2 Action-Plan 整体收口标准
 
@@ -447,6 +455,7 @@ hero-to-pro HP5 confirmation control plane
 2. kernel 内部已统一到 `confirmation_pending`，kind 通过 metadata 可见。
 3. permission / elicitation 已进入统一 registry，并保留旧 endpoint/frame 兼容窗口。
 4. 15-18 四个 cross-e2e 全绿，HP5 closure 已清楚写出 F12/F13 最终 verdict。
+5. HP5 closure 已显式声明 F1-F17 的 phase 状态，并以 readiness matrix 解释 7-kind 中哪些 live、哪些仅 freeze。
 
 ### 8.3 完成定义（Definition of Done）
 

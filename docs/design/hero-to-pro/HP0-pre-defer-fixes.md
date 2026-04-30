@@ -16,7 +16,7 @@
 > 关联 QNA / 决策登记:
 > - `docs/design/hero-to-pro/HPX-qna.md`（已冻结；本设计若与 QNA 冲突，以 QNA 为准）
 > 文档状态: `reviewed`
-> 外部 precedent 说明: 当前工作区未 vendored `context/` 源文件；文中出现的 `context/*` 仅作 drafting-time ancestry pointer，不作为当前冻结 / 执行证据。
+> 外部 precedent 说明: 当前工作区已 vendored `context/` 源文件；文中出现的 `context/*` 仅作为外部 precedent / ancestry pointer，不能替代当前仓库代码、frozen QNA 与 charter 作为执行证据。
 
 ---
 

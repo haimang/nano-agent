@@ -139,6 +139,9 @@ hero-to-pro HP4 chat lifecycle
 6. **agent-core 当前 checkpoint 仍是内部 latest key，不是 registry**
    - `workers/agent-core/src/host/do/session-do-persistence.ts:142-186,193-222`
    - `persistCheckpoint()` / `restoreFromStorage()` 只围绕单个 `CHECKPOINT_STORAGE_KEY` 工作，这个 seam 可被 restore 消费，但不能直接冒充产品级 checkpoint list/diff/restore job。
+7. **外部 precedent 已核对并支持 HP4 的 transcript / restore 分层**
+   - `context/gemini-cli/packages/core/src/services/chatRecordingService.ts:303-360`, `context/gemini-cli/packages/core/src/utils/checkpointUtils.ts:84-157`, `context/gemini-cli/packages/core/src/commands/restore.ts:11-58`, `context/gemini-cli/packages/cli/src/ui/commands/rewindCommand.tsx:40-90,143-198`
+   - precedent 共同说明 rewind / restore 不能只改单一内存游标，而要同时处理 durable transcript、恢复锚点与客户端可见状态；HP4 吸收“restore 必须有明确 job / verdict”的原则，不照抄外部 UI 流程。
 
 ---
 
@@ -222,8 +225,8 @@ hero-to-pro HP4 chat lifecycle
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P5-01 | lifecycle/retry/restore e2e matrix | 覆盖 close、delete、title、retry、checkpoint create/list/diff/restore、mid-restore restart 至少 6 个 cross-e2e | `test/cross-e2e/**` | chat lifecycle 在真实链路里闭环 | `pnpm test:cross-e2e` | 6+ 场景全绿，且 API + D1 + next prompt 一致 |
-| P5-02 | HP4 closure | 回填 lifecycle verdict、cursor/detail verdict、checkpoint/restore verdict、rollback verdict | `docs/issue/hero-to-pro/HP4-closure.md` | HP5/HP7 可直接消费 HP4 输出 | doc review | closure 能独立回答“对话是否已经真正可管理” |
+| P5-01 | lifecycle/retry/restore e2e matrix | 覆盖 close、delete、title、retry、checkpoint create/list/diff/restore、mid-restore restart 至少 6 个 cross-e2e；建议文件名使用 `chat-close-delete-title` / `chat-retry-turn-attempt` / `chat-checkpoint-list-diff` / `chat-restore-conversation` / `chat-restore-mid-restart` / `chat-conversation-cursor` 描述性前缀；若采用编号文件，必须为 HP5 预留 `15-18` | `test/cross-e2e/**` | chat lifecycle 在真实链路里闭环 | `pnpm test:cross-e2e` | 6+ 场景全绿，且 API + D1 + next prompt 一致 |
+| P5-02 | HP4 closure | 回填 lifecycle verdict、cursor/detail verdict、checkpoint/restore verdict、rollback verdict，并显式登记 F1-F17 chronic status（`closed / partial / not-touched / handed-to-platform`） | `docs/issue/hero-to-pro/HP4-closure.md` | HP5/HP7 可直接消费 HP4 输出 | doc review | closure 能独立回答“对话是否已经真正可管理” |
 
 ---
 
@@ -444,8 +447,11 @@ hero-to-pro HP4 chat lifecycle
   - `pnpm test:cross-e2e`
 - **回归测试**：
   - close、delete、title、retry、checkpoint create/list/diff/restore、mid-restore restart 至少 6 场景
+- **前序 phase 回归**：
+  - 至少回归 HP2 的模型切换 / fallback 场景与 HP3 的 compact / next-prompt 场景，确认 lifecycle / retry / restore 不把既有 transcript truth 打断。
 - **文档校验**：
   - `docs/issue/hero-to-pro/HP4-closure.md` 必须同时记录 API / D1 / restore-job / next-prompt verdict
+  - `docs/issue/hero-to-pro/HP4-closure.md` 必须显式登记 F1-F17 chronic status
 
 ### 8.2 Action-Plan 整体收口标准
 
@@ -455,6 +461,7 @@ hero-to-pro HP4 chat lifecycle
 2. `/me/sessions` / `/me/conversations` 已真 cursor 化，默认过滤 tombstoned conversation。
 3. checkpoint registry / diff / restore job 已建立，restore 后下一次 prompt 不再看到 superseded message。
 4. mid-restore restart 回滚路径已被 e2e 证明，closure 已清楚写出 HP4 最终 verdict。
+5. HP4 closure 已显式声明 F1-F17 的 phase 状态，不把 chronic 判定滞后到 HP10 首次整理。
 
 ### 8.3 完成定义（Definition of Done）
 

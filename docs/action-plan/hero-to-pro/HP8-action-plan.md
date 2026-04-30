@@ -244,7 +244,7 @@ hero-to-pro HP8 runtime hardening
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P5-01 | HP8 closure | 回填 chronic register、heartbeat verdict、gates verdict、tool/envelope/Lane E verdict | `docs/issue/hero-to-pro/HP8-closure.md` | HP8 可以独立回答“哪些已关、哪些保留、哪些移交” | doc review | closure 不包含 silent unresolved |
+| P5-01 | HP8 closure | 回填 chronic register、heartbeat verdict、gates verdict、tool/envelope/Lane E verdict，并显式登记 F1-F17 chronic status（`closed / partial / not-touched / handed-to-platform`） | `docs/issue/hero-to-pro/HP8-closure.md` | HP8 可以独立回答“哪些已关、哪些保留、哪些移交” | doc review | closure 不包含 silent unresolved |
 | P5-02 | HP9 freeze gate verdict | 明确 HP9 是否可启动，以及若不可启动时卡在哪个 gate | HP8 closure + charter traceability | HP9 文档工作不再抢跑代码冻结 | gate checklist | 只有 HP8 关键 gate 齐全时，HP9 才被标记为可执行 |
 
 ---
@@ -499,8 +499,11 @@ hero-to-pro HP8 runtime hardening
   - heartbeat 4-scenario
   - megafile/tool/envelope drift scripts
   - tool call roundtrip 不回归
+- **前序 phase 回归**：
+  - 至少回归 HP5 confirmation、HP6 workspace/tool-calls、HP7 checkpoint/restore/fork 主链路，确认 HP8 的 root gate / public envelope / heartbeat hardening 不会把已交付产品面打断。
 - **文档校验**：
   - `docs/issue/hero-to-pro/HP8-closure.md` 必须同时记录 chronic / heartbeat / gates / tool catalog / envelope / Lane E 六层 verdict
+  - `docs/issue/hero-to-pro/HP8-closure.md` 必须显式登记 F1-F17 chronic status
 
 ### 8.2 Action-Plan 整体收口标准
 
@@ -511,6 +514,7 @@ hero-to-pro HP8 runtime hardening
 3. megafile/tool/envelope 三类 root gate 已 live，并能阻断真实 drift。
 4. `nacp-core` tool catalog 已成为单源；agent-core / bash-core 已迁 consumer。
 5. Lane E 已显式落到 `closed` 或 `retained-with-reason`。
+6. HP8 closure 已显式声明 F1-F17 的 phase 状态，为 HP9/HP10 提供可直接消费的 chronic register。
 
 ### 8.3 完成定义（Definition of Done）
 

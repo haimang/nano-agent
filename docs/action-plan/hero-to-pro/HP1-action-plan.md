@@ -143,6 +143,9 @@ hero-to-pro HP1 schema extension
 5. **charter 已冻结的 HP1 交付物**
    - `docs/charter/plan-hero-to-pro.md:430-487`
    - 这里已经明确写出 `007-013` 的职责、`docs/architecture/hero-to-pro-schema.md`、HP1 closure，以及 local apply / schema doc review / seed 真值回填等收口标准，action-plan 必须一一对齐。
+6. **外部 precedent 已核对并用于约束 HP1 的 durable truth 形状**
+   - `context/codex/codex-rs/protocol/src/openai_models.rs:248-299`, `context/gemini-cli/packages/core/src/services/chatRecordingTypes.ts:92-140`, `context/gemini-cli/packages/core/src/services/chatRecordingService.ts:303-470,510-532,799-818`, `context/gemini-cli/packages/core/src/utils/checkpointUtils.ts:15-24,84-157`, `context/gemini-cli/packages/cli/src/ui/commands/restoreCommand.ts:43-123`
+   - precedent 共同说明 model metadata、chat durable record、checkpoint/restore 都必须是结构化 truth；HP1 借鉴“字段必须可查询、可恢复、可消费”的原则，不照抄外部 JSONL 或 UI 协议。
 
 ---
 
@@ -220,14 +223,14 @@ hero-to-pro HP1 schema extension
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P4-01 | `013-product-checkpoints.sql` | 一次建立 `nano_session_checkpoints`、`nano_checkpoint_file_snapshots`、`nano_checkpoint_restore_jobs`、`nano_workspace_cleanup_jobs`，并把 HP4/HP6/HP7 的字段消费关系逐项映射进 review；第一版 compact job 继续复用 `compact_boundary` checkpoint handle，不新增 `nano_compact_jobs` | `workers/orchestrator-core/migrations/013-product-checkpoints.sql`, consumer map | HP4/HP6/HP7 不再需要 collateral migration | local apply + consumer sanity review | 013 已覆盖 checkpoint 三表 + cleanup；consumer map 对应关系完整；未引入额外 compact job 表 |
+| P4-01 | `013-product-checkpoints.sql` | 一次建立 `nano_session_checkpoints`、`nano_checkpoint_file_snapshots`、`nano_checkpoint_restore_jobs`、`nano_workspace_cleanup_jobs`，并把 HP4/HP6/HP7 的字段消费关系逐项映射进 review；第一版 compact job 继续复用 `compact_boundary` checkpoint handle，不新增 `nano_compact_jobs`；consumer map 中同步锁定 `nano_workspace_cleanup_jobs.scope` 分工：`session_end` / `explicit` 归 HP6，`checkpoint_ttl` 归 HP7 | `workers/orchestrator-core/migrations/013-product-checkpoints.sql`, consumer map | HP4/HP6/HP7 不再需要 collateral migration | local apply + consumer sanity review | 013 已覆盖 checkpoint 三表 + cleanup；consumer map 对应关系完整；未引入额外 compact job 表 |
 
 ### 4.5 Phase 5 — Local Apply + Closure + Correction Law
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
 | P5-01 | local apply + schema assertions | 对 fresh baseline 运行 007-013 local apply，补 schema assert / index / enum / consumer sanity tests | `workers/orchestrator-core/test/**`, migration toolchain | DDL Freeze Gate 从“文件存在”升级为“apply + assert 通过” | test + local apply | 007-013 local apply 通过，关键列/索引/约束有断言 |
-| P5-02 | schema doc + HP1 closure + correction registry | 回填 `docs/architecture/hero-to-pro-schema.md` 与 HP1 closure，登记 ledger、字段说明、phase consumer map、schema correction law 与未触发的 014+ 状态 | `docs/architecture/hero-to-pro-schema.md`, `docs/issue/hero-to-pro/HP1-closure.md`, charter/design docs | HP2-HP10 可以无歧义消费 HP1 freeze | doc review | schema doc 与 closure 明确：freeze 生效、014+ 未触发、若未来触发 correction 应如何走流程 |
+| P5-02 | schema doc + HP1 closure + correction registry | 回填 `docs/architecture/hero-to-pro-schema.md` 与 HP1 closure，登记 ledger、字段说明、phase consumer map、schema correction law、`nano_workspace_cleanup_jobs.scope` 责任分配，以及未触发的 014+ 状态；closure 同时显式登记 F1-F17 chronic status | `docs/architecture/hero-to-pro-schema.md`, `docs/issue/hero-to-pro/HP1-closure.md`, charter/design docs | HP2-HP10 可以无歧义消费 HP1 freeze | doc review | schema doc 与 closure 明确：freeze 生效、014+ 未触发、若未来触发 correction 应如何走流程 |
 
 ---
 
@@ -447,6 +450,7 @@ hero-to-pro HP1 schema extension
   - 迁移相关测试、索引/约束断言、confirmation/checkpoint sanity checks
 - **文档校验**：
   - `docs/architecture/hero-to-pro-schema.md` 与 `docs/issue/hero-to-pro/HP1-closure.md` 必须同时写明 DDL Freeze Gate 生效与 correction law 未触发状态
+  - consumer map / HP1 closure 必须显式写出 `nano_workspace_cleanup_jobs.scope` 分工与 F1-F17 chronic status
 
 ### 8.2 Action-Plan 整体收口标准
 
@@ -456,6 +460,7 @@ hero-to-pro HP1 schema extension
 2. charter / design / closure 已显式对齐 Q4/Q5/Q6/Q13/Q16/Q18 的冻结规则。
 3. 关键表/列/索引/约束存在性可被 schema test 断言，包括 `base_instructions_suffix`、`ended_reason`、7-kind confirmations、checkpoint lineage。
 4. HP1 closure 已明确宣布 DDL Freeze Gate 生效，并写清 future correction 的唯一合法路径。
+5. HP1 closure 已显式声明 F1-F17 的 phase 状态，并把 cleanup scope 分工作为后续 HP6/HP7 的单一文档基线。
 
 ### 8.3 完成定义（Definition of Done）
 

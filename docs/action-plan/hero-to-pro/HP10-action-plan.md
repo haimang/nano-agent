@@ -191,14 +191,14 @@ hero-to-pro HP10 final closure
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P1-01 | phase input matrix | 汇总 HP0-HP10 phase closures、HP8/HP9 gate 结果、相关 zero-to-real / real-to-hero precedent，建立 final closure 输入矩阵 | all phase closures + precedent docs | HP10 有唯一输入清单，不再靠记忆拼接 | doc review | 每个 phase 都有 verdict / evidence / inherited impact |
+| P1-01 | phase input matrix | 汇总 HP0-HP10 phase closures、HP8/HP9 gate 结果、`docs/issue/zero-to-real/R29-postmortem.md`、相关 zero-to-real / real-to-hero precedent，建立 final closure 输入矩阵 | all phase closures + precedent docs | HP10 有唯一输入清单，不再靠记忆拼接 | doc review | 每个 phase 都有 verdict / evidence / inherited impact |
 | P1-02 | cleanup candidate inventory | 以当前 repo reality 与 `git rev-parse HEAD` 的 as-of-commit-hash 建 cleanup candidate 表，列出 delete / retain / handoff 候选项 | current code residues + grep results | cleanup 决议建立在真实当前仓库而非历史名词 | grep/assert | 每项候选都有当前路径 / symbol / owner / baseline hash |
 
 ### 4.2 Phase 2 — Cleanup Execution + Retained Registry
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P2-01 | delete-able residue cleanup | 对已被 R29/HP8 判为可删的 residue 做物理删除，并给出 grep / test / manual scan 验证方法 | cleanup target files | 可删项不再停留在“建议删除” | grep + regression tests | `deleted` 项都有 verification method；grep 结果为零 |
+| P2-01 | delete-able residue cleanup | 执行前先读取 `docs/issue/zero-to-real/R29-postmortem.md`；仅对已被 R29/HP8 判为可删的 residue 做物理删除，并给出 grep / test / manual scan 验证方法 | cleanup target files | 可删项不再停留在“建议删除” | grep + regression tests | `deleted` 项都有 verification method；grep 结果为零 |
 | P2-02 | retained / handoff registry | 为 retained / handed 项补齐 `item, scope, reason, remove_condition, current_owner, next_review_date` 等字段 | final closure register sections | 非删除项也有合规终态 | doc review | 缺任何字段即视为 unresolved，不可 closure |
 
 ### 4.3 Phase 3 — Final Closure Memo + Canonical Verdict Map
@@ -206,14 +206,14 @@ hero-to-pro HP10 final closure
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
 | P3-01 | final closure memo | 按“阶段总览 → deferred/inherited map → chronic map → handoff 清单 → final verdict”写 `hero-to-pro-final-closure.md` | `docs/issue/hero-to-pro/hero-to-pro-final-closure.md` | hero-to-pro 第一次有真正的阶段总 closure 入口 | section completeness check | 所有 primary gate 与 verdict 都能在一个文件中追踪 |
-| P3-02 | canonical deferred/chronic map | 把 105 deferred 与 F1-F17 合并成 canonical verdict map；允许 `closed / accepted-as-risk / retained-with-reason / handed-to-platform / cannot close` | same final closure doc | 历史 carryover 第一次集中可查 | map review | 同一问题只保留一条 canonical verdict，不再多处文档各说各话 |
+| P3-02 | canonical deferred/chronic map | 合并 105 deferred，并在 HP0-HP9 closure 已登记的 F1-F17 状态基础上形成 canonical verdict map；允许 `closed / accepted-as-risk / retained-with-reason / handed-to-platform / cannot close` | same final closure doc | 历史 carryover 第一次集中可查 | map review | 同一问题只保留一条 canonical verdict，不再多处文档各说各话 |
 
 ### 4.4 Phase 4 — Hero-to-Platform Stub + HP10 Closure
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
 | P4-01 | hero-to-platform stub | 只登记 inherited issues 与边界说明，明确本阶段不再覆盖的内容 | `docs/charter/plan-hero-to-platform.md` | 下一阶段拥有唯一入口但不越界 | doc review | stub 不包含 recommended approach / timeline / architecture |
-| P4-02 | HP10 closure + test-topology doc | 写 `HP10-closure.md`、补 `docs/architecture/test-topology.md` 的 retired guardians 索引，并回挂 cleanup / final closure 证据 | `docs/issue/hero-to-pro/HP10-closure.md`, `docs/architecture/test-topology.md` | HP10 自身也具备可审计 phase closure | doc review + existence check | HP10 closure 能独立说明 final closure / cleanup / stub 是否已合规 |
+| P4-02 | HP10 closure + test-topology doc | 写 `HP10-closure.md`、补 `docs/architecture/test-topology.md` 的 retired guardians 索引，并回挂 cleanup / final closure 证据；HP10 closure 同时显式记录 merged F1-F17 chronic verdict | `docs/issue/hero-to-pro/HP10-closure.md`, `docs/architecture/test-topology.md` | HP10 自身也具备可审计 phase closure | doc review + existence check | HP10 closure 能独立说明 final closure / cleanup / stub 是否已合规 |
 
 ---
 
@@ -296,7 +296,7 @@ hero-to-pro HP10 final closure
   - `docs/runbook/zx5-r28-investigation.md:124-141`
   - `docs/issue/real-to-hero/RHX2-closure.md:124-142`
 - **具体功能预期**：
-  1. final closure 能同时给出 11 phase 状态、4 套状态机最终状态、105 deferred canonical verdict、F1-F17 chronic canonical verdict、inherited issues 清单与 final verdict。
+  1. final closure 能同时给出 11 phase 状态、4 套状态机最终状态、105 deferred canonical verdict、由 HP0-HP9 closure 合并而来的 F1-F17 chronic canonical verdict、inherited issues 清单与 final verdict。
   2. 每个 phase 都通过 phase closure 链接回挂，而不是复制大段施工日志。
   3. 边界项有分类决策树，不再落入 silent resolution。
 - **具体测试安排**：
@@ -414,8 +414,11 @@ hero-to-pro HP10 final closure
 - **回归测试**：
   - cleanup grep 验证
   - section completeness / canonical verdict consistency 检查
+- **前序 phase 回归**：
+  - 若 Phase 2 真的删除 runtime residue，至少回归其所影响 phase 的既有 e2e / worker tests；若只做文档收口，则以 phase closure traceability + grep/assert 为主。
 - **文档校验**：
   - final closure 必须能追溯到 phase closure、HP8/HP9 gate、manual evidence、prod baseline、runbook/postmortem
+  - HP10 closure / final closure 必须明确说明 F1-F17 是基于 HP0-HP9 closure merge，而不是 HP10 首次“临场判定”
 
 ### 8.2 Action-Plan 整体收口标准
 

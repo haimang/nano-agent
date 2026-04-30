@@ -20,7 +20,7 @@
 > 关联 QNA / 决策登记:
 > - `docs/design/hero-to-pro/HPX-qna.md`（已冻结；本设计若与 QNA 冲突，以 QNA 为准）
 > 文档状态: `reviewed`
-> 外部 precedent 说明: 当前工作区未 vendored `context/` 源文件；文中出现的 `context/*` 仅作 drafting-time ancestry pointer，不作为当前冻结 / 执行证据。
+> 外部 precedent 说明: 当前工作区已 vendored `context/` 源文件；文中出现的 `context/*` 仅作为外部 precedent / ancestry pointer，不能替代当前仓库代码、frozen QNA 与 charter 作为执行证据。
 
 ---
 
@@ -249,7 +249,7 @@
 
 | 风险 | 触发条件 | 影响 | 缓解方案 |
 |------|----------|------|----------|
-| confirmation registry 与 DO storage 双写不一致 | 先写一侧后一侧失败 | pending 列表与 runtime 恢复分裂 | 以 confirmation row 为准，DO storage 写失败则 row 标 failed 并显式告警 |
+| confirmation registry 与 DO storage 双写不一致 | 先写一侧后一侧失败 | pending 列表与 runtime 恢复分裂 | 以 confirmation row 为准，DO storage 写失败则 row 标 superseded 并显式告警 |
 | 旧客户端 break | 直接移除 legacy route/frame | permission/elicitation 无法继续用 | 保留 compat endpoint/frame |
 | hook dispatcher 真接线后暴露超时/递归问题 | 真实多轮交互开始运行 | tool call 被卡死或栈深炸裂 | 继续复用 dispatcher 的 timeout / depth guard，并把 confirmation 超时纳入统一 error law |
 | kind enum 未来继续膨胀 | 每个新 feature 都发明新 confirmation type | registry 失控 | 第一版就冻结 7 kind，并要求后续扩张走 QNA |

@@ -144,6 +144,9 @@ hero-to-pro HP7 checkpoint revert
 6. **当前 stream event 里还没有 `session.fork.created` 等 HP7 事件**
    - `packages/nacp-session/src/stream-event.ts:81-107`
    - HP7 需要在现有 event registry 之上新增 fork/restore 相关产品事件，而不是继续隐形完成。
+7. **外部 precedent 已核对并支持 HP7 的 checkpoint / restore / fork 语义**
+   - `context/gemini-cli/packages/core/src/utils/checkpointUtils.ts:84-157`, `context/gemini-cli/packages/core/src/commands/restore.ts:11-58`, `context/gemini-cli/packages/cli/src/ui/commands/rewindCommand.tsx:40-90,143-198`, `context/claude-code/constants/xml.ts:61-66`, `context/claude-code/tools/AgentTool/forkSubagent.ts:96-198`
+   - precedent 共同说明 checkpoint 必须是成组状态锚点，restore 要同时处理 transcript / file state / client-visible history，fork child 必须带显式 lineage 语义；HP7 吸收这些边界，不照抄外部 UI/agent orchestration。
 
 ---
 
@@ -221,14 +224,14 @@ hero-to-pro HP7 checkpoint revert
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
 | P4-01 | session fork | `POST /sessions/{id}/fork` 从 checkpoint 派生 child session，复制 message truth 与 snapshot 文件到 child namespace，写 lineage system message 与 `target_session_uuid` | orchestrator-core + agent-core + filesystem-core | fork 第一次成为有 lineage 的新 session 语义 | integration tests | parent/child R2 key 完全隔离，且仍处于同一 conversation |
-| P4-02 | TTL cleanup + session.fork.created | turn-end rotate=10、user-named 30d、session.end + 90d cleanup；cleanup 写 `nano_workspace_cleanup_jobs(scope=checkpoint_ttl)`；fork 时向 parent attached client 推 `session.fork.created` | cleanup owner + `packages/nacp-session/src/stream-event.ts` | HP7 的生命周期治理与 fork 可观察性一起成型 | cleanup tests + event tests | cleanup 不会删正在 restore/fork 使用的 checkpoint；fork 事件可见 |
+| P4-02 | TTL cleanup + session.fork.created | turn-end rotate=10、user-named 30d、session.end + 90d cleanup；cleanup 写 `nano_workspace_cleanup_jobs(scope=checkpoint_ttl)`；fork 时向 parent attached client 推 `session.fork.created`；scope 责任固定为 `checkpoint_ttl` 归 HP7，而 `session_end` / `explicit` 保持由 HP6 owner | cleanup owner + `packages/nacp-session/src/stream-event.ts` | HP7 的生命周期治理与 fork 可观察性一起成型 | cleanup tests + event tests | cleanup 不会删正在 restore/fork 使用的 checkpoint；fork 事件可见 |
 
 ### 4.5 Phase 5 — E2E + Closure
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P5-01 | restore/fork/ttl e2e matrix | 覆盖三模式 restore、confirmation gate、rollback on failure、fork isolation、TTL cleanup 至少 6 个 cross-e2e | `test/cross-e2e/**` | HP7 在真实链路里闭环 | `pnpm test:cross-e2e` | 6+ 场景全绿，且 checkpoint row / snapshot row / result / cleanup audit 一致 |
-| P5-02 | HP7 closure | 回填 registry verdict、restore/diff verdict、rollback verdict、fork/cleanup verdict | `docs/issue/hero-to-pro/HP7-closure.md` | HP8 可直接消费 HP7 输出 | doc review | closure 能独立回答“checkpoint/revert/fork 是否已经成型” |
+| P5-01 | restore/fork/ttl e2e matrix | 覆盖三模式 restore、confirmation gate、rollback on failure、fork isolation、TTL cleanup 至少 6 个 cross-e2e；建议文件名使用 `checkpoint-restore-conversation-only` / `checkpoint-restore-files-only` / `checkpoint-restore-combined` / `checkpoint-rollback-failure` / `checkpoint-fork-lineage` / `checkpoint-ttl-cleanup` 描述性前缀；若采用编号文件，必须为 HP5 预留 `15-18` | `test/cross-e2e/**` | HP7 在真实链路里闭环 | `pnpm test:cross-e2e` | 6+ 场景全绿，且 checkpoint row / snapshot row / result / cleanup audit 一致 |
+| P5-02 | HP7 closure | 回填 registry verdict、restore/diff verdict、rollback verdict、fork/cleanup verdict，并显式登记 F1-F17 chronic status（`closed / partial / not-touched / handed-to-platform`） | `docs/issue/hero-to-pro/HP7-closure.md` | HP8 可直接消费 HP7 输出 | doc review | closure 能独立回答“checkpoint/revert/fork 是否已经成型” |
 
 ---
 
@@ -468,8 +471,11 @@ hero-to-pro HP7 checkpoint revert
   - `pnpm test:cross-e2e`
 - **回归测试**：
   - 三模式 restore、confirmation gate、rollback on failure、fork isolation、TTL cleanup 至少 6 场景
+- **前序 phase 回归**：
+  - 至少回归 HP4 的 lifecycle / checkpoint surface、HP5 的 confirmation gate，以及 HP6 的 workspace temp/promotion 路径，确认 restore/fork 不会把既有 truth 与 cleanup 边界打乱。
 - **文档校验**：
   - `docs/issue/hero-to-pro/HP7-closure.md` 必须同时记录 registry / restore-diff / rollback / fork / cleanup 五层 verdict
+  - `docs/issue/hero-to-pro/HP7-closure.md` 必须显式登记 F1-F17 chronic status，并复用 HP6/HP1 已锁定的 cleanup scope 分工
 
 ### 8.2 Action-Plan 整体收口标准
 
@@ -479,6 +485,7 @@ hero-to-pro HP7 checkpoint revert
 2. 三模式 restore 全部可用，restore 前必有 confirmation，失败时必能 rollback 或显式 failed。
 3. fork 已成为同 conversation 新 session，parent/child 完全隔离且 parent 收到 `session.fork.created`。
 4. rotate/TTL cleanup 已真实启用，closure 已清楚写出 HP7 的最终 verdict。
+5. HP7 closure 已显式声明 F1-F17 的 phase 状态，并把 `checkpoint_ttl` cleanup 边界与 HP6 的 workspace cleanup 边界明确分开。
 
 ### 8.3 完成定义（Definition of Done）
 
