@@ -20,6 +20,11 @@ import {
 } from "../session-read-model.js";
 import type { D1SessionTruthRepository } from "../session-truth.js";
 import type { DurableResolvedModel } from "../session-truth.js";
+import {
+  D1ConfirmationControlPlane,
+  type ConfirmationKind,
+  type ConfirmationStatus,
+} from "../confirmation-control-plane.js";
 
 type RpcMethod = (
   input: Record<string, unknown>,
@@ -49,6 +54,64 @@ export interface UserDoSurfaceRuntimeContext {
   requireReadableSession(sessionUuid: string): Promise<SessionEntry | null>;
   readAuditAuthSnapshot(): Promise<IngressAuthSnapshot | null>;
   persistAudit(record: AuditRecord): Promise<void>;
+}
+
+// HP5 P3-03 — row-first dual-write law (legacy compat alias).
+//
+// Legacy `permission/decision` and `elicitation/answer` historically
+// only wrote a KV row + forwarded over RPC; HP5's confirmation
+// registry needs a durable D1 row so `/sessions/{id}/confirmations`
+// can list the same decision under the unified plane. Charter +
+// HPX-qna Q16 fix the order as **row first**: the confirmation row
+// is the source of truth, and the KV / DO storage primitive write
+// is the second leg.
+//
+// HP5 first-wave compat lazily upserts the row on decision arrival
+// (rather than on request emission, which is HP3 P3-01's full-live
+// territory). When the row insertion fails, we surface the failure
+// to the caller and DO NOT fall through to the legacy KV write —
+// otherwise pending-list and runtime resume diverge.
+//
+// On second-leg (KV / RPC) failure, the row is escalated to
+// `superseded` per Q16 (no `failed` status).
+async function ensureConfirmationDecision(
+  db: D1Database | undefined,
+  args: {
+    readonly session_uuid: string;
+    readonly confirmation_uuid: string;
+    readonly kind: ConfirmationKind;
+    readonly request_payload: Record<string, unknown>;
+    readonly status: ConfirmationStatus;
+    readonly decision_payload: Record<string, unknown>;
+    readonly created_at: string;
+    readonly decided_at: string;
+  },
+): Promise<{ ok: true } | { ok: false; conflict: boolean }> {
+  if (!db) return { ok: true };
+  const plane = new D1ConfirmationControlPlane(db);
+  const existing = await plane.read({
+    session_uuid: args.session_uuid,
+    confirmation_uuid: args.confirmation_uuid,
+  });
+  if (!existing) {
+    await plane.create({
+      confirmation_uuid: args.confirmation_uuid,
+      session_uuid: args.session_uuid,
+      kind: args.kind,
+      payload: args.request_payload,
+      created_at: args.created_at,
+      expires_at: null,
+    });
+  }
+  const result = await plane.applyDecision({
+    session_uuid: args.session_uuid,
+    confirmation_uuid: args.confirmation_uuid,
+    status: args.status,
+    decision_payload: args.decision_payload,
+    decided_at: args.decided_at,
+  });
+  if (result.conflict) return { ok: false, conflict: true };
+  return { ok: true };
 }
 
 export function createUserDoSurfaceRuntime(ctx: UserDoSurfaceRuntimeContext) {
@@ -245,12 +308,47 @@ export function createUserDoSurfaceRuntime(ctx: UserDoSurfaceRuntimeContext) {
           message: "decision must be allow|deny|always_allow|always_deny",
         });
       }
+      const decidedAt = new Date().toISOString();
+
+      // HP5 P3-03 — write confirmation row FIRST. `request_uuid`
+      // doubles as the confirmation_uuid for legacy compat aliasing,
+      // so /confirmations and /permission/decision converge on the
+      // same durable truth.
+      const confirmationStatus: ConfirmationStatus =
+        decision === "allow" || decision === "always_allow"
+          ? "allowed"
+          : "denied";
+      const rowResult = await ensureConfirmationDecision(ctx.env.NANO_AGENT_DB, {
+        session_uuid: sessionUuid,
+        confirmation_uuid: requestUuid,
+        kind: "tool_permission",
+        request_payload: {
+          legacy_alias: "permission/decision",
+          request_uuid: requestUuid,
+        },
+        status: confirmationStatus,
+        decision_payload: { decision, scope },
+        created_at: decidedAt,
+        decided_at: decidedAt,
+      });
+      if (!rowResult.ok && rowResult.conflict) {
+        return jsonResponse(409, {
+          ok: false,
+          error: {
+            code: "confirmation-already-resolved",
+            status: 409,
+            message:
+              "permission decision already recorded with a different terminal status",
+          },
+        });
+      }
+
       await ctx.put(`permission_decision/${requestUuid}`, {
         session_uuid: sessionUuid,
         request_uuid: requestUuid,
         decision,
         scope,
-        decided_at: new Date().toISOString(),
+        decided_at: decidedAt,
       });
 
       const rpcDecision = ctx.env.AGENT_CORE?.permissionDecision;
@@ -308,6 +406,40 @@ export function createUserDoSurfaceRuntime(ctx: UserDoSurfaceRuntimeContext) {
           message: "elicitation/answer requires an answer field",
         });
       }
+      const decidedAt = new Date().toISOString();
+      const cancelled = body.cancelled === true;
+
+      // HP5 P3-03 — same row-first dual-write law as permission/decision.
+      // `modified` covers structured answer write-backs (Q16 frozen);
+      // cancellation maps to `superseded` (Q16 forbids `failed`).
+      const elicitationStatus: ConfirmationStatus = cancelled
+        ? "superseded"
+        : "modified";
+      const rowResult = await ensureConfirmationDecision(ctx.env.NANO_AGENT_DB, {
+        session_uuid: sessionUuid,
+        confirmation_uuid: requestUuid,
+        kind: "elicitation",
+        request_payload: {
+          legacy_alias: "elicitation/answer",
+          request_uuid: requestUuid,
+        },
+        status: elicitationStatus,
+        decision_payload: { answer, cancelled },
+        created_at: decidedAt,
+        decided_at: decidedAt,
+      });
+      if (!rowResult.ok && rowResult.conflict) {
+        return jsonResponse(409, {
+          ok: false,
+          error: {
+            code: "confirmation-already-resolved",
+            status: 409,
+            message:
+              "elicitation answer already recorded with a different terminal status",
+          },
+        });
+      }
+
       await ctx.put(`elicitation_answer/${requestUuid}`, {
         session_uuid: sessionUuid,
         request_uuid: requestUuid,
