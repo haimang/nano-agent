@@ -82,8 +82,8 @@ importers:
   packages/orchestrator-auth-contract:
     dependencies:
       '@haimang/nacp-core':
-        specifier: '*'
-        version: 1.4.0(zod@3.25.76)
+        specifier: workspace:*
+        version: link:../nacp-core
       zod:
         specifier: ^3.24.0
         version: 3.25.76
@@ -139,11 +139,11 @@ importers:
         specifier: workspace:*
         version: link:../context-core
       '@haimang/nacp-core':
-        specifier: 1.4.0
-        version: 1.4.0(zod@3.25.76)
+        specifier: workspace:*
+        version: link:../../packages/nacp-core
       '@haimang/nacp-session':
-        specifier: 1.4.0
-        version: 1.4.0(zod@3.25.76)
+        specifier: workspace:*
+        version: link:../../packages/nacp-session
       '@nano-agent/workspace-context-artifacts':
         specifier: workspace:*
         version: link:../../packages/workspace-context-artifacts
@@ -173,11 +173,11 @@ importers:
   workers/bash-core:
     dependencies:
       '@haimang/nacp-core':
-        specifier: 1.4.0
-        version: 1.4.0(zod@3.25.76)
+        specifier: workspace:*
+        version: link:../../packages/nacp-core
       '@haimang/nacp-session':
-        specifier: 1.4.0
-        version: 1.4.0(zod@3.25.76)
+        specifier: workspace:*
+        version: link:../../packages/nacp-session
     devDependencies:
       '@cloudflare/workers-types':
         specifier: ^4.20251101.0
@@ -198,11 +198,11 @@ importers:
   workers/context-core:
     dependencies:
       '@haimang/nacp-core':
-        specifier: 1.4.0
-        version: 1.4.0(zod@3.25.76)
+        specifier: workspace:*
+        version: link:../../packages/nacp-core
       '@haimang/nacp-session':
-        specifier: 1.4.0
-        version: 1.4.0(zod@3.25.76)
+        specifier: workspace:*
+        version: link:../../packages/nacp-session
       '@nano-agent/storage-topology':
         specifier: workspace:*
         version: link:../../packages/storage-topology
@@ -229,11 +229,11 @@ importers:
   workers/filesystem-core:
     dependencies:
       '@haimang/nacp-core':
-        specifier: 1.4.0
-        version: 1.4.0(zod@3.25.76)
+        specifier: workspace:*
+        version: link:../../packages/nacp-core
       '@haimang/nacp-session':
-        specifier: 1.4.0
-        version: 1.4.0(zod@3.25.76)
+        specifier: workspace:*
+        version: link:../../packages/nacp-session
       '@nano-agent/storage-topology':
         specifier: workspace:*
         version: link:../../packages/storage-topology
@@ -259,6 +259,9 @@ importers:
       '@haimang/jwt-shared':
         specifier: workspace:*
         version: link:../../packages/jwt-shared
+      '@haimang/nacp-core':
+        specifier: workspace:*
+        version: link:../../packages/nacp-core
       '@haimang/orchestrator-auth-contract':
         specifier: workspace:*
         version: link:../../packages/orchestrator-auth-contract
@@ -282,11 +285,11 @@ importers:
         specifier: workspace:*
         version: link:../../packages/jwt-shared
       '@haimang/nacp-core':
-        specifier: 1.4.0
-        version: 1.4.0(zod@3.25.76)
+        specifier: workspace:*
+        version: link:../../packages/nacp-core
       '@haimang/nacp-session':
-        specifier: 1.4.0
-        version: 1.4.0(zod@3.25.76)
+        specifier: workspace:*
+        version: link:../../packages/nacp-session
       '@haimang/orchestrator-auth-contract':
         specifier: workspace:*
         version: link:../../packages/orchestrator-auth-contract
@@ -882,16 +885,6 @@ packages:
     engines: {node: '>=18'}
     cpu: [x64]
     os: [win32]
-
-  '@haimang/nacp-core@1.4.0':
-    resolution: {integrity: sha512-by1iNN21V3f5xTn/30BBQJwyV/E3sNkukeD9mr4JbCqFlJW0LdTLMhUlNsiBQ83gr0fRC44E0XPytiSKla6OKw==, tarball: https://npm.pkg.github.com/download/@haimang/nacp-core/1.4.0/ed178eda57039efd4099ec1c34a118dc9cf17fdb}
-    peerDependencies:
-      zod: '>=3.22.0'
-
-  '@haimang/nacp-session@1.4.0':
-    resolution: {integrity: sha512-S3Sb+J0VQOXD/5bJ9e6y1pFjVcg09OR3gTzCszHgCtJE6LwPqBNVZJLsPMrjo7z/FyJ8ozldaCDrqv7rAVK9QQ==, tarball: https://npm.pkg.github.com/download/@haimang/nacp-session/1.4.0/6977d19c13869bf8732edda7c52df6820536b194}
-    peerDependencies:
-      zod: '>=3.22.0'
 
   '@img/colour@1.1.0':
     resolution: {integrity: sha512-Td76q7j57o/tLVdgS746cYARfSyxk8iEfRxewL9h4OMzYhbW4TAcppl0mT4eyqXddh6L/jwoM75mo7ixa/pCeQ==}
@@ -2315,15 +2308,6 @@ snapshots:
 
   '@esbuild/win32-x64@0.27.7':
     optional: true
-
-  '@haimang/nacp-core@1.4.0(zod@3.25.76)':
-    dependencies:
-      zod: 3.25.76
-
-  '@haimang/nacp-session@1.4.0(zod@3.25.76)':
-    dependencies:
-      '@haimang/nacp-core': link:packages/nacp-core
-      zod: 3.25.76
 
   '@img/colour@1.1.0': {}
 

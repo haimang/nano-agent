@@ -1,6 +1,6 @@
 {
   "name": "@haimang/jwt-shared",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "description": "Shared HMAC JWT helpers used by orchestrator-core and orchestrator-auth (single source of truth — ZX5 Lane C).",
   "main": "./dist/index.js",
