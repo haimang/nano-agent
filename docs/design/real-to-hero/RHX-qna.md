@@ -2,7 +2,7 @@
 
 > 范围：`real-to-hero / RH0-RH6`
 > 目的：把会影响后续 `docs/design/real-to-hero/*.md`、`docs/action-plan/real-to-hero/*.md` 与 RH0-RH6 gate 的业主 / 架构师决策收敛到一份单一清单，避免在多个文档中重复回答、重复漂移、重复改口。
-> 状态：`open question register (Q1-Q5 pending owner answers)`
+> 状态：`owner-answered register (Q1-Q5 + Q-Obs1-Q-Obs14 已回填)`
 > 使用方式：
 > 1. **业主只在本文件填写回答。**
 > 2. 其他 design / action-plan / memo 若引用某个 `Q` 编号，默认都以本文件为唯一答复来源。
@@ -102,21 +102,141 @@
 
 ---
 
-## 4. 使用约束
+## 4. RHX2 / Observability & Auditability
 
-### 4.1 哪些问题应该进入 QNA
+### Q-Obs1 — `nano_error_log / nano_audit_log 是否走 orchestrator-core 单写点`（来源：`docs/design/real-to-hero/RHX2-observability-and-auditability.md`）
+
+- **影响范围**：F4 / F11、跨 worker 持久化、team 边界、D1 写入路径
+- **当前建议 / 倾向**：**走 orchestrator-core 单写点，但 caller 侧必须保留 `rpc_log_failed` 标记的 console / memory fallback。**
+- **Reasoning**：当前 shared D1、authority 校验和 team 边界都集中在 orchestrator-core，first-wave 若改成多写点会把 observability 先做成 tenancy 新问题。单写点本身没有问题，真正的问题是“单写失败时是否静默黑洞”；因此答案必须同时冻结 durable single-writer 与 caller-side fallback 两件事。
+- **问题**：`是否确认 RHX2 的 error/audit durable write 都由 orchestrator-core 统一落库，同时要求其他 worker 在 RPC/D1 失败时保留 console/memory fallback 并打 rpc_log_failed 标记？`
+- **业主回答**：确认。走 orchestrator-core 单写点；但 durable 写失败不能静默吞掉，caller 必须保留 `console + memory-ring + rpc_log_failed:true` 的降级证据。
+
+### Q-Obs2 — `RHX1 DDL SSOT 收敛后，RHX2 migration 编号是否直接承接 next slot = 006`（来源：`docs/design/real-to-hero/RHX2-observability-and-auditability.md`）
+
+- **影响范围**：F4 / F11 migration 文件命名、action-plan、preview apply
+- **当前建议 / 倾向**：**是，直接使用 `006-error-and-audit-log.sql`。**
+- **Reasoning**：RHX1 已把当前 `workers/orchestrator-core/migrations/` 收敛为 `001`–`005` 的 SSOT。继续讨论旧碎片时代的 `011/012`，只会让 action-plan 和真实 DDL 状态脱节。
+- **问题**：`是否确认 RHX2 第一张新增 migration 直接承接 RHX1 SSOT 的 next slot = 006，而不再沿用旧碎片时代的 011/012 讨论？`
+- **业主回答**：确认。RHX2 migration 直接使用 `006-error-and-audit-log.sql`。
+
+### Q-Obs3 — `error 14d / audit 90d retention 是否冻结`（来源：`docs/design/real-to-hero/RHX2-observability-and-auditability.md`）
+
+- **影响范围**：F4 / F11 retention、清理策略、owner 预期
+- **当前建议 / 倾向**：**first-wave 固定为 error 14d、audit 90d，不做 severity 分层。**
+- **Reasoning**：14 天足够承接开发 / preview / 用户反馈回溯，90 天才有资格承接安全 / 审计链路；再往下做按 severity 分层，会把 first-wave 过早拉进平台治理。先把 retention 变成稳定契约，比一开始就追求“最优层级”更重要。
+- **问题**：`是否确认 RHX2 first-wave 的 retention 冻结为 nano_error_log 14 天、nano_audit_log 90 天，暂不做 severity 分层？`
+- **业主回答**：确认。first-wave 固定为 error 14d、audit 90d，severity 分层延后。
+
+### Q-Obs4 — `system.error 是否新增 stream-event kind`（来源：`docs/design/real-to-hero/RHX2-observability-and-auditability.md`）
+
+- **影响范围**：F7、web / 微信小程序 WS 消费、协议兼容
+- **当前建议 / 倾向**：**新增 kind，但必须把 client 消费路径一并纳入交付。**
+- **Reasoning**：只在协议层新增 `system.error` 而不补客户端消费，会把当前“未知错误只在日志里”的问题，变成“未知 kind 出现在界面里”的新问题。新增 kind 本身是对的，但必须连同消费侧一起冻结。
+- **问题**：`是否确认新增 system.error stream-event kind，并把 web / 微信小程序对 system.error 的消费路径纳入 RHX2 first-wave？`
+- **业主回答**：确认。新增 `system.error`；同时要求 web / 微信小程序同步补齐消费逻辑，不能只做 server-side emit。
+
+### Q-Obs5 — `/debug/logs` 与 `/debug/audit` 的可见范围（来源：`docs/design/real-to-hero/RHX2-observability-and-auditability.md`）
+
+- **影响范围**：F5 / F11、权限模型、产品边界
+- **当前建议 / 倾向**：**`/debug/logs` 仅 team；`/debug/audit` owner-only；不做 owner 全租户面板。**
+- **Reasoning**：当前 clients/web 与微信小程序都不是 control plane，没有“owner 跨租户浏览所有日志”的产品面。把产品调试口直接扩成全租户面板，会把 RHX2 变成 platform/admin phase。
+- **问题**：`是否确认 /debug/logs 只开放给 authenticated same-team 查询、/debug/audit 只开放给 owner 查询本 team 范围，不做 owner 全租户自助查询面板？`
+- **业主回答**：确认。`/debug/logs` 仅 team；`/debug/audit` owner-only 且只限本 team，不做全租户面板。
+
+### Q-Obs6 — `F11 first-wave audit event_kind 是否需要扩成 8 类`（来源：`docs/design/real-to-hero/RHX2-observability-and-auditability.md`）
+
+- **影响范围**：F11、客户端排障、审计写量
+- **当前建议 / 倾向**：**需要。除原 6 类外，再加 `session.attachment.superseded` 与 `session.replay_lost`。**
+- **Reasoning**：真实客户端最需要解释的不是高频 `session.start/end`，而是“为什么我被顶下线”“为什么这次必须全量补拉 timeline”。这两类都是低频、高价值、直接对应 web / 微信小程序当前链路的边界事件。
+- **问题**：`是否确认 F11 first-wave 审计集从 6 类扩成 8 类，在原集合上补 session.attachment.superseded 与 session.replay_lost，并继续排除高频 session.start/end？`
+- **业主回答**：确认。first-wave 审计集扩成 8 类，新增 `session.attachment.superseded` 与 `session.replay_lost`；仍不纳入高频 `session.start/end`。
+
+### Q-Obs7 — `F2 × F7 交叉时 HTTP 与 WS 是否必须 code 一致`（来源：`docs/design/real-to-hero/RHX2-observability-and-auditability.md`）
+
+- **影响范围**：F2 × F7 去重、前端 UX、错误映射
+- **当前建议 / 倾向**：**trace_uuid 必须一致；code 可不同；前端按 trace_uuid 去重。**
+- **Reasoning**：同一逻辑错误跨越 facade 包装层与 kernel/source 层时，完全可能出现不同 code，但它们仍然属于同一次用户操作。真正稳定的关联键是 `trace_uuid`，不是每一层都能 1:1 对齐的 `code`。
+- **问题**：`是否确认 F2 × F7 的强一致主键是 trace_uuid，而不是 code；当前端同时收到 HTTP error 与 WS system.error 时，按 trace_uuid 去重？`
+- **业主回答**：确认。`trace_uuid` 必须一致；`code` 可不同；UI 去重键统一使用 `trace_uuid`。
+
+### Q-Obs8 — `TTL 清理用 DO alarm 还是 Cloudflare cron trigger`（来源：`docs/design/real-to-hero/RHX2-observability-and-auditability.md`）
+
+- **影响范围**：F4 / F11 housekeeping、运维形态
+- **当前建议 / 倾向**：**Cloudflare cron trigger。**
+- **Reasoning**：`nano_error_log` / `nano_audit_log` 是 shared D1 truth，不归属于某个 DO 实例生命周期；TTL 清理是全局 housekeeping，而不是 session-local 任务。用 cron 比用 alarm 更符合职责边界。
+- **问题**：`是否确认 RHX2 的 TTL 清理统一使用 Cloudflare cron trigger，而不是 DO alarm？`
+- **业主回答**：确认。TTL 清理统一走 Cloudflare cron trigger。
+
+### Q-Obs9 — `bash-core 7 个 ad-hoc string codes 是否必须 first-wave 归化为 zod enum`（来源：`docs/design/real-to-hero/RHX2-observability-and-auditability.md`）
+
+- **影响范围**：F9 / F3、错误码收口、client 消费
+- **当前建议 / 倾向**：**不强制归化为 zod enum，但必须进入 registry/docs 的 client-safe 查询面。**
+- **Reasoning**：强行在 first-wave 改 bash-core contract 会把 RHX2 拉向协议重构；但如果这些 code 仍只存在于 bash-core 自己体内，web / 微信小程序就会继续各自手搓分类逻辑。真正要冻结的是“这些 code 必须能被消费方查到”，而不是“今天就一定变 enum”。
+- **问题**：`是否确认 bash-core 7 个 ad-hoc string codes first-wave 不强制改成 zod enum，但必须进入 runtime registry / docs 镜像的 client-safe 查询面？`
+- **业主回答**：确认。first-wave 不强制改成 zod enum；但必须进入 registry/docs 的 client-safe 查询面，不能继续只在 bash-core 内部可见。
+
+### Q-Obs10 — `client-safe error meta 出口形态`（来源：`docs/design/real-to-hero/RHX2-observability-and-auditability.md` v0.3 / GPT R1）
+
+- **影响范围**：F12、`clients/web/src/apis/transport.ts:50-57` 与 `clients/wechat-miniprogram/utils/nano-client.js:11-28 classifyError()` 的改造路径、跨端复用形态、CI 一致性测试入口。
+- **当前建议 / 倾向**：**候选 a' — 扩展 `@haimang/nacp-core` 新增 `nacp-core/error-codes-client` 子路径导出（v0.4 修订）**。原候选 a（新建独立 `packages/error-codes-client/` 共享包）与 owner 长期"只保留 3 个 published 包（nacp-core / nacp-session / jwt-shared）"策略冲突；改为在已发布的 `nacp-core` 内新增子路径导出，所有"零 runtime 依赖 / 浏览器+微信+Node 三端可用 / CI 一致性测试"功能边界与候选 a 等价。微信小程序 build 时反射 `node_modules/@haimang/nacp-core/dist/error-registry-client/data.js` 拷贝到 `miniprogram/utils/error-codes-client.json`。候选 b（`error-codes.json` 静态文件）+ 候选 c（`GET /catalog/error-codes` 端点）保留为 future fallback，不在 first-wave 实装。
+- **Reasoning**：候选 a' 在保持候选 a 全部技术优势的同时，避免增加 published 包数量；server `resolveErrorMeta()` 与 client `getErrorMeta()` 在同一包内不同 sub-path，CI 一致性测试更紧凑。候选 b 需要额外 build script 同步 + 两端各自加载逻辑；候选 c 多一次 RPC + 缓存 / ETag 复杂度。
+- **问题**：`是否确认 client-safe error meta 出口 first-wave 采用候选 a'（扩展 @haimang/nacp-core 新增 nacp-core/error-codes-client 子路径导出 + 微信小程序 build 时反射拷贝）？`
+- **业主回答**：确认。first-wave 采用候选 a'：在 `@haimang/nacp-core` 内新增 `error-registry-client` 子模块；package.json `exports` map 增 `./error-codes-client` sub-path；nacp-core minor bump 1.4.0 → 1.5.0 重发 GitHub Packages；web 直接 `import { getErrorMeta } from '@haimang/nacp-core/error-codes-client'`；微信小程序在 build script 中反射拷贝。**不新建独立 `packages/error-codes-client/` 包**。候选 b/c 留作 future fallback。
+
+### Q-Obs13 — `jwt-shared 是否必须 RHX2 内正式发布 / 撤销 v0.4 RHX3 carry-over`（来源：`docs/design/real-to-hero/RHX2-observability-and-auditability.md` v0.5 / owner critical 反馈）
+
+- **影响范围**：F14、RHX2 closure 门禁、3 published 包长期策略、deploy 链路 CI gate、所有 phase 的认知正确性
+- **当前建议 / 倾向**：**必须 RHX2 内正式发布 `@haimang/jwt-shared@0.1.0`**；撤销 v0.4 中"RHX3 carry-over"的判断；不接受"永久 workspace-only 删 publishConfig"或"合并入 nacp-core"两个替代方案。
+- **Reasoning**：v0.4 把 jwt-shared 未发布判为 carry-over 是 critical 门禁认知错误——它意味着我们曾在某些 phase closure 中宣告完成，但实际 deploy 进生产 worker 的代码究竟从线上还是本地来、是哪个版本，没有真相源可查。这破坏了所有过去 closure 的事实假设，比 latent runtime bug 更深一层。Owner 立场："我们仅能依靠一个唯一真相：要么是线上 package，要么是本库内 package；不能存在任何模糊空间。"jwt-shared 跨两个 worker 是真实多 consumer 共享代码，永久 workspace-only 与"3 published 包"长期策略冲突；合并入 nacp-core 会污染 NACP 协议层关注点。
+- **问题**：`是否确认 @haimang/jwt-shared@0.1.0 必须在 RHX2 first-wave Phase 1 内 publish 到 GitHub Packages，并且 RHX2 closure 必须包含 publish 已成功的机器可验证证据？同时撤销 v0.draft-r2 中 RHX3 carry-over 的处置。`
+- **业主回答**：确认。撤销 v0.draft-r2 / v0.4 的 RHX3 carry-over 处置；jwt-shared@0.1.0 必须在 RHX2 first-wave Phase 1 publish；RHX2 closure 必须含 `curl -sI -H "Authorization: Bearer $NODE_AUTH_TOKEN" https://npm.pkg.github.com/@haimang%2Fjwt-shared` 返回 HTTP 200 + versions 列表含 0.1.0 的证据截图。这不是可推迟项；不通过门禁不允许宣告 phase 完成。
+
+### Q-Obs14 — `/debug/packages 在 worker runtime 没有 GitHub Packages PAT 时如何拉 registry`（来源：`docs/design/real-to-hero/RHX2-observability-and-auditability.md` v0.5 / 部署时 secret 注入）
+
+- **影响范围**：F15、worker runtime 凭据治理、`/debug/packages` 响应可靠性、跨环境调试能力
+- **当前建议 / 倾向**：**registry 段 graceful 降级**——worker runtime 不持有 PAT（避免长期凭据驻留 worker 环境）；`/debug/packages` 拉 registry 时使用未授权 GET；当 GitHub Packages 对 restricted 包返回 401 时，response 把 `registry` 段标 `"auth-not-available-in-runtime"`；**`deployed` 段始终可用**（来自 inline manifest，无需任何外部 fetch）。
+- **Reasoning**：把 PAT 注入 worker 环境会带来长期凭据泄漏风险（Cloudflare secret + 子调用泄露面）；本接口最重要的事实——deploy 进 worker 的版本——本来就 inline 在 bundle，不需要 PAT；registry 段是辅助佐证，缺它不影响主用途。Owner 立场：宁愿前端见到 "auth-not-available-in-runtime" 也不要长期 PAT 挂在 worker。如果未来真要 strict 模式启用 PAT 注入，可以由独立 phase 决议，那时 `/debug/packages` 自然返完整双段。重要的是：当 deployed 段不可用（inline manifest 缺失）时，owner 与前端必须警觉，因为这意味着 build 时门禁没正确注入。
+- **问题**：`是否确认 /debug/packages 在 first-wave 不在 worker 环境注入 PAT；registry 段 graceful 降级到 "auth-not-available-in-runtime"；deployed 段始终来自 inline manifest 必须可用？`
+- **业主回答**：确认。worker runtime 不注入 PAT；registry 段允许 graceful 降级；但 deployed 段必须始终可用——deployed 段缺失视同 build 门禁失败，必须修而不是降级。`/debug/packages` 响应中明确区分 `deployed` 与 `registry` 两段的可用性状态。
+
+### Q-Obs11 — `system.error + system.notify(severity=error) 双发降级窗口长度`（来源：`docs/design/real-to-hero/RHX2-observability-and-auditability.md` v0.3 / GPT R2）
+
+- **影响范围**：F13、server F7 切单发的时点、web + 微信小程序 client rollout 节奏、双通道下 dedupe 风险窗口。
+- **当前建议 / 倾向**：**默认 4 周**（要求双发已运行 ≥14 天观察期 **且** web / 微信至少一端已发布 `case 'system.error'` 消费 PR）。
+- **Reasoning**：4 周给 client 发布、灰度、用户升级到新版本留出实际窗口；< 14 天观察期不足以捕捉低频故障；> 8 周会让"双发降级"变成事实上的永久双发，让前端在 dedupe 上长期承担额外复杂度。窗口结束前禁止切单发；窗口结束后 server 改为只发 `system.error`，老 client 不再收到 system.notify(severity=error)。
+- **问题**：`是否确认 system.error 双发降级窗口默认 4 周，且必须满足"≥14 天观察期 + 至少一端 client 发布消费 PR"两个准入条件？`
+- **业主回答**：确认。窗口默认 4 周，准入条件双满足后才切单发；不满足时窗口顺延（不静默切）；切单发的决定记入 RHX2 closure。
+
+### Q-Obs12 — `三套 durable 真相（activity_logs / error_log / audit_log）的索引引用规则是否在 first-wave 强制`（来源：`docs/design/real-to-hero/RHX2-observability-and-auditability.md` v0.3 / GPT R4）
+
+- **影响范围**：§3.6 三套 durable 真相边界、F4 / F11 写入路径、`/debug/logs` + `/debug/audit` + replay/inspector 的排障路径、跨表数据一致性。
+- **当前建议 / 倾向**：**强制 first-wave**：
+  1. audit 写时只引 `ref={kind, uuid}`，**不复制** `nano_session_activity_logs` 的 payload 全文；
+  2. `nano_error_log` **不允许写"正常事件"**（仅 severity ≥ warn）；
+  3. cross-tenant deny 等安全事件 **主真相 = `nano_audit_log`**，副真相 = `nano_error_log`（severity=warn）；
+  4. session-边界事件（`session.attachment.superseded` / `session.replay_lost`）必须 **同时** 写 `nano_audit_log`（主真相）+ `nano_session_activity_logs`（保持 session 时间线完整）。
+- **Reasoning**：三套 durable 真相若不在 first-wave 划清边界，排障面会从"信息太少"变成"信息太散"——同一事件在三处对照费时、payload 漂移、查询路径不可预测。强制规则是 RHX2 价值能否被前端 / owner 真正使用的前提。
+- **问题**：`是否确认 §3.6 的索引引用 4 条规则在 first-wave 强制执行（不复制 payload 全文 / error_log 不写正常事件 / 安全事件主真相在 audit_log / session 边界事件双写）？`
+- **业主回答**：确认。4 条规则 first-wave 强制执行；写入路径必须有单测覆盖每条规则；违反规则的 PR 由 ESLint / 单测拦截。
+
+---
+
+## 5. 使用约束
+
+### 5.1 哪些问题应该进入 QNA
 
 - **会直接改变 contract surface、实现边界、执行顺序、验收标准或支持面披露的问题**
 - **需要业主 / 架构师拍板，而不是实现阶段自己就能收敛的技术细节**
 - **如果不先拍板，就会导致多个后续文档一起漂移的问题**
 
-### 4.2 哪些问题不应进入 QNA
+### 5.2 哪些问题不应进入 QNA
 
 - **实现细节微调**：例如局部命名、内部脚本组织、单个测试文件布局
 - **已有 frozen answer 的重复提问**：除非本次要正式推翻旧答案
 - **只影响单个函数或单个包内部实现、不会改变外部治理边界的问题**
 
-### 4.3 `Reasoning` 的写法要求
+### 5.3 `Reasoning` 的写法要求
 
 - 要写给**非项目作者、但需要做决策的人**
 - 要解释：
@@ -125,13 +245,13 @@
   3. **如果不拍板，会导致什么工程或业务后果**
 - 避免只写“建议这样做”，而不解释其背后的 trade-off
 
-### 4.4 `问题` 的写法要求
+### 5.4 `问题` 的写法要求
 
 - 必须是**业主可以直接作答**的句子
 - 尽量避免把多个独立决策捆成一题
 - 若问题天然包含两个子决策，需在问题里明确写出“如果确认，请同时回答 X / Y”
 
-### 4.5 `业主回答` 的使用要求
+### 5.5 `业主回答` 的使用要求
 
 - 业主回答应尽量简洁、明确、可执行
 - 一旦填写，应同步成为后续 design / action-plan / review 的唯一口径

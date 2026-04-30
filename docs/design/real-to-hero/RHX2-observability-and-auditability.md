@@ -1,7 +1,7 @@
 # Nano-Agent 功能簇设计
 
 > 功能簇: `RHX2 Observability & Auditability — 日志、报错、审计、可观测性强化簇`
-> 讨论日期: `2026-04-29`（v0.1）→ `2026-04-29`（v0.2 吸收 DeepSeek + GLM 审查）
+> 讨论日期: `2026-04-29`（v0.1）→ `2026-04-29`（v0.2 吸收 DeepSeek + GLM 审查）→ `2026-04-29`（v0.3 吸收 GPT 审查 + migration baseline 事实校正）
 > 讨论者: `Owner + Opus 4.7 (1M)`
 > 关联调查报告:
 > - `docs/eval/real-to-hero/audit-and-reporting-study-by-opus.md`
@@ -9,9 +9,10 @@
 > 关联审查报告:
 > - `docs/design/real-to-hero/RHX2-observability-and-auditability-reviewed-by-deepseek.md`（changes-requested；R1/R2/R3 + S1–S5）
 > - `docs/design/real-to-hero/RHX2-observability-and-auditability-reviewed-by-GLM.md`（approve-with-follow-ups；R1–R12）
+> - `docs/design/real-to-hero/RHX2-observability-and-auditability-reviewed-by-GPT.md`（changes-requested；R1/R2 是 blocker，R3/R4 follow-up）
 > 关联 QNA / 决策登记:
-> - `docs/design/real-to-hero/RHX-qna.md`（v0.2 新增 Q-Obs1 ~ Q-Obs9）
-> 文档状态: `reviewed`（v0.2，吸收两份独立审查后的修订稿）
+> - `docs/design/real-to-hero/RHX-qna.md`（v0.3 累计新增 Q-Obs1 ~ Q-Obs12）
+> 文档状态: `reviewed-r4`（v0.5；owner 否决 v0.4 中"jwt-shared 未发布 = RHX3 carry-over"的判断——这是 critical 门禁认知错误而非 carry-over；v0.5 重新分类：jwt-shared 必须在本簇 first-wave **正式发布**；新增 F14 包来源单一真相门禁 + F15 `/debug/packages` 验证接口；任何在 jwt-shared 未发布前宣告 phase 完成的 closure 都属于事实认知错误）
 >
 > 命名说明：本文件取 `RHX2` 前缀（与 `RHX-qna.md` 同一附加章节坐标系），用于把"观测/审计"作为 RH 主线 RH0–RH6 之外的 **横切簇** 单独立项；它对所有 phase 都生效，但不绑定特定 phase 的 hard gate。
 
@@ -32,6 +33,9 @@
   - 已冻结：`session.stream.event` 9 种 kind 与 `system.notify` / `compact.notify` / `tool.call.result` 三种语义；`system.notify` 在 agent-core kernel 错误路径已 emit。
   - 已落地：23 + 22 + 13 + 6 + 8 + 8 共 **80 个 enum-backed error code**（NACP / Rpc / Auth / Kernel / Session / LLM）；外加 bash-core 5–8 个 ad-hoc 字符串 code（统计来源：DeepSeek audit + GLM 附录 A.2，实际 ~87–90 个待 F3 归化后定数）。
   - 已落地：`x-trace-uuid` 在 orchestrator-core / agent-core 是源头与校验点，跨 worker RPC 在 `RpcMeta.trace_uuid` 上传播。
+  - **新发现并接受（v0.3 / GPT R4）**：`nano_session_activity_logs` 表已存在于 `workers/orchestrator-core/migrations/002-session-truth-and-audit.sql`，`session-truth.ts:667 appendActivity()` 已实装，承接 **session-scoped、按 `event_seq` 排序的时间线真相**（含 `severity` info/warn/error、`payload ≤ 8KB`、`UNIQUE(trace_uuid, event_seq)`）。本簇 first-wave 不动它，但必须明确它与新增的 `nano_error_log` / `nano_audit_log` 的职责边界（详见 §3.6）。
+  - **新发现并接受（v0.3 / GPT R1）**：`clients/web/src/apis/transport.ts:50-57` 与 `clients/wechat-miniprogram/utils/nano-client.js:11-28` 各自手搓 `auth.expired / quota.exceeded / runtime.error / request.error` 4 类客户端错误分类（互不引用）。本簇 first-wave 必须把这两端的分类逻辑收口到一份 client-safe 元数据出口（详见 F12）。
+  - **新发现并接受（v0.3 / GPT R2）**：`clients/web/src/pages/ChatPage.tsx` 与 `clients/wechat-miniprogram/pages/session/index.js` 当前对 WS frame 都只显式处理 `llm.delta` / `tool.call.*` / `turn.*` / `system.notify` / `session.update`，**没有任何 `system.error` 处理路径**（grep 0 命中）。本簇 first-wave 若仅在 server 侧 emit `system.error` 而不补 client，等于把所有 system.error 落到"unknown kind"占位（详见 F13）。
   - **新发现并接受**：`NacpErrorSchema`（`packages/nacp-core/src/error-registry.ts`）已原生含 `{code, category, message, detail?, retryable}` 五字段，其中 `category` 为 7 类枚举（`validation / transient / dependency / permanent / security / quota / conflict`）—— **本设计无需另建 category 系统，只需把它接电**。
   - **新发现并接受**：`audit.record` NACP message type 已注册（`packages/nacp-core/src/messages/system.ts:20`），body schema = `{event_kind, ref?, detail?}`，agent-core hook 路径已用它（`workers/agent-core/test/hooks/audit.test.ts`）。**本设计将其作为 audit-log 通道的 first-class 协议载体**，与 error-log 通道平行。
   - **新发现并接受**：`SystemErrorBodySchema` 实际形态是 `{error: NacpErrorSchema, context?: Record<string,unknown>}`（不是 v0.1 设想的平面 schema）；本 v0.2 把 F7 改为复用 `NacpErrorSchema` + 在 `nacp-session/stream-event.ts` 新增 `SystemErrorEventBodySchema` wrapper（详见 §7.2 F7）。
@@ -45,6 +49,10 @@
   - **D6**：bash-core / orchestrator-auth 这两个 prod 路径 0 console 的 worker，是必须补、还是接受这种"throw-only"？
   - **D7**（v0.2 新增）：HTTP `FacadeErrorEnvelope` 与 WS `system.error` 是两条通道，**同一错误同时走两条时**前端如何去重？
   - **D8**（v0.2 新增）：错误日志单写点 orchestrator-core 自身不可用时如何 fallback？
+  - **D9**（v0.3 新增；GPT R1/R2）：`resolveErrorMeta()` 与 `system.error` 的 **client 真实消费面** 怎么落？只把 server 接电而不补 web / 微信小程序 client，是否等于"server 单边自嗨"？
+  - **D10**（v0.3 新增；GPT R4）：`nano_session_activity_logs`（migration 002 已存在）/ `nano_error_log`（本簇新增）/ `nano_audit_log`（本簇新增）三套 durable 记录，职责边界如何明确划分？
+  - **D11**（v0.5 新增；owner 否决 v0.4 carry-over 判断）：3 个 published 包（`@haimang/nacp-core` / `@haimang/nacp-session` / `@haimang/jwt-shared`）的"包来源单一真相"原则如何在本簇 first-wave 落地？deploy 进 worker bundle 的代码，到底是从 GitHub Packages 拉的还是从 workspace symlink 解析的？版本号是什么？发布时间是什么？这些事实必须可在 owner 与前端侧 **机器可验证**，否则未来任何故障复盘都没有真相源。
+  - **D12**（v0.5 新增）：v0.4 的 "jwt-shared 未发布 = RHX3 carry-over" 判断本身是错误的——它把 critical 门禁认知错误降级为可推迟项。owner 立场：本簇 first-wave 必须解决这个事实-意图差距（要么发布、要么显式声明 workspace-only 不模糊）。本设计 v0.5 重新把 jwt-shared 正式发布列为 RHX2 in-scope 必做项。
 - **显式排除的讨论范围**：
   - 用户面 telemetry / 产品分析（不是 GrowthBook、不是 Statsig；first-wave 不做 user-level metrics）。
   - PII 自动脱敏框架（first-wave 走"不写敏感字段"的人工纪律，自动脱敏延后）。
@@ -81,6 +89,11 @@
 | `Server-Timing` | HTTP 响应头，浏览器 Network 面板原生展示；本簇仅在 orchestrator-core HTTP facade 出口注入 `auth;dur=X, agent;dur=Y, total;dur=Z`。 | first-wave 不覆盖 agent-core 直连场景 |
 | `obs envelope` | `NacpObservabilityEnvelope`（`packages/nacp-core/src/observability/envelope.ts`）— `{ source_worker, source_role, alerts, metrics, traces }`；first-wave 仅 emit `alerts`（severity=critical）；序列化时 `metrics`/`traces` 为空对象时不写入 JSON。 | metrics/traces 留 seam |
 | `team gate` | 鉴权层："请求者 team_uuid = 查询条件 team_uuid"；与 RH3 device gate（设备 token）**不同层次**。本簇 `/debug/logs` / `/debug/audit` 用 team gate，**不**用 device gate。 | v0.1 的"复用 RH3 device gate"措辞错误，v0.2 已修正 |
+| `client error meta`（v0.3 新增；v0.4 修订形态）| 与 `resolveErrorMeta()` 同源的元数据，但以 client 安全的形态导出：仅含 `code / category / http_status / retryable` 4 列，**不含** server-only 的 `source` / 长 message。**v0.4 形态**：`@haimang/nacp-core/error-codes-client` 子路径导出（候选 a' 已 Q-Obs10 owner-answered）；候选 b（`error-codes.json`）+ 候选 c（`GET /catalog/error-codes`）保留为 future fallback。 | 解决 GPT R1 + 与 owner 长期"3 个 published 包"策略一致 |
+| `nano_session_activity_logs`（v0.3 已存在事实登记） | 已存在表（migration 002）。承接 **session-scoped 时间线**：`{activity_uuid PK, session_uuid, turn_uuid, trace_uuid, event_seq, event_kind, severity, payload, created_at}`；`UNIQUE(trace_uuid, event_seq)`；payload ≤ 8KB。本簇不修改它。 | 与本簇新增的 `nano_error_log`（cross-trace error 索引）+ `nano_audit_log`（protocol/security audit）形成"三套真相"，需要 §3.6 划清边界 |
+| `package source-of-truth gate`（v0.5 新增；D11/D12） | 部署链路上的硬门禁：deploy 一个 worker 前必须确认 (a) 3 个 published 包（`nacp-core` / `nacp-session` / `jwt-shared`）都在 GitHub Packages 上有对应 published 版本；(b) workspace 内的 `packages/<name>/package.json` version 与 GitHub Packages 上的 latest version 完全一致；(c) build 时 esbuild bundle 进 worker 的代码可被反向追溯到哪个 published 版本。任何 (a)/(b)/(c) 不成立的 deploy 必须 **fail**。 | 解决 D11 / D12；保证 owner 与前端在出现问题时可拿到唯一真相 |
+| `built-package-manifest`（v0.5 新增） | build 时由门禁脚本生成的 JSON 文件，inline 进每个 worker bundle；包含 3 个 published 包的 `{workspace_version, registry_version, registry_published_at, match: bool, resolved_from: "github-packages"\|"workspace-symlink"}` 与 build 时间戳。worker 的 `/debug/packages` 端点直接 serve 这份 manifest + 实时 GitHub Packages 查询。 | 让"deploy 时刻 worker 内打的是什么版本"成为机器可读事实，而不是猜测 |
+| `/debug/packages`（v0.5 新增） | orchestrator-core HTTP endpoint。返回该 worker bundle 的 `built-package-manifest` + 实时拉 GitHub Packages 查询的 latest version & publish time + drift 标记。team gate 与 `/debug/logs` 一致。 | 前端 / owner 在故障复盘时，一次 GET 拿到三件事实：当前线上版本、deploy 进这个 worker 的版本、二者是否一致 |
 
 ### 1.2 参考调查报告
 
@@ -90,6 +103,7 @@
 - `docs/design/real-to-hero/RHX2-observability-and-auditability-reviewed-by-GLM.md` — R1（F2×F7 交叉）/ R2（service binding 事实）/ R3（单写点 fallback）/ R4–R12。
 - 协议层源：`packages/nacp-core/src/{error-registry,error-body,observability/envelope,evidence/vocabulary,messages/system,state-machine,type-direction-matrix}.ts`、`packages/nacp-session/src/{stream-event,messages/system}.ts`、`packages/orchestrator-auth-contract/src/facade-http.ts:48-179`。
 - Sibling 项目（v0.2 新增）：`context/smind-contexter/core/{log,errors,db_d1}.ts`、`context/smind-admin/src/infra/{logger,errors}.ts` + `src/http/{response,middleware.auth,middleware.team}.ts`、`context/smcp/tests/error_registry.test.ts`、`context/wbca-mini/miniprogram/utils/api.js`。
+- **本仓库 client + RHX1 SSOT 事实（v0.3 新增）**：`workers/orchestrator-core/migrations/{001-005}.sql`（当前真实 baseline）、`workers/orchestrator-core/src/session-truth.ts:667 appendActivity()`、`workers/orchestrator-core/src/user-do/{ws-runtime.ts:75,226 (session.attachment.superseded), surface-runtime.ts:186 (replay_lost)}`、`clients/web/src/apis/transport.ts:50-57`、`clients/web/src/pages/ChatPage.tsx`、`clients/wechat-miniprogram/utils/nano-client.js:11-28`、`clients/wechat-miniprogram/pages/session/index.js:123-155`。
 
 ---
 
@@ -98,9 +112,9 @@
 ### 2.1 角色
 
 - 在整体架构里扮演 **横切（cross-cutting）功能簇**：不属于 RH0–RH6 任何单一 phase；服务对象是"所有 phase 的开发者 + 多类前端 + 后续运维 + 评测/replay"。
-- **服务于（v0.2 扩展受众）**：
-  - **Web 前端开发者**：HTTP `FacadeErrorEnvelope` + `Server-Timing` 头 + `/debug/logs` 调试 endpoint + WS `system.error` kind（4 项全部可用）。
-  - **微信小程序 / 受限 JS 环境前端**（参考 `wbca-mini`）：仅 `FacadeErrorEnvelope` + WS `system.error` kind（2 项可用；`Server-Timing` 因 `wx.request` 不暴露响应头无效；`/debug/logs` 因 production 环境不暴露）。**这意味着 F2 + F7 是跨前端共同依赖；F5 + F6 是 web-only 增益**。
+- **服务于（v0.2 扩展受众；v0.3 进一步把 client 真实代码事实纳入）**：
+  - **Web 前端开发者**（`clients/web/`，真实存在）：HTTP `FacadeErrorEnvelope` + `Server-Timing` 头 + `/debug/logs` 调试 endpoint + WS `system.error` kind（4 项全部可用）。**当前 `clients/web/src/apis/transport.ts:50-57` 在手搓 4 类错误分类**，本簇通过 F12 共享 client error meta 收口。
+  - **微信小程序 / 受限 JS 环境前端**（`clients/wechat-miniprogram/`，真实存在）：仅 `FacadeErrorEnvelope` + WS `system.error` kind（2 项可用；`Server-Timing` 因 `wx.request` 不暴露响应头无效；`/debug/logs` 因 production 环境不暴露）。**当前 `clients/wechat-miniprogram/utils/nano-client.js:11-28 classifyError()` 也在手搓同一套 4 类分类**，与 web 端各自一份。F2 + F7 + **F12** + **F13** 是跨前端共同依赖；F5 + F6 是 web-only 增益。
   - **Worker 开发者**：统一 logger，避免每个 worker 自创风格。
   - **评测 / replay**：让 evidence 四流真实写出，而不是仅在 eval test 路径触发。
   - **未来运维**：给 `NacpObservabilityEnvelope.alerts` 留出 critical 告警的真出口；`nano_audit_log` 给跨租户/安全事件留回溯。
@@ -149,14 +163,14 @@
 
 | 扩展点 | 表现形式 | 第一版行为 | 未来演进方向 |
 |---|---|---|---|
-| `createLogger(workerName, opts)` | `packages/worker-logger/src/index.ts` 导出 `createLogger`、`Logger` interface（`debug/info/warn/error/critical`）、`withTraceContext()` ALS helper、`LogPersistFn`/`AuditPersistFn` 类型 | 底层走 `console.{log,warn,error}`，每条 JSON 一行：`{ts,level,worker,trace_uuid?,session_uuid?,team_uuid?,msg,code?,category?,ctx?}` | 切换底层为 OTel `LogRecord` exporter；无需改 caller |
+| `createLogger(workerName, opts)` | **v0.4 修订**：`packages/nacp-core/src/observability/logger/index.ts` 导出，通过 `@haimang/nacp-core/logger` 子路径 import；导出 `createLogger`、`Logger` interface（`debug/info/warn/error/critical`）、`withTraceContext()` ALS helper、`LogPersistFn`/`AuditPersistFn` 类型 | 底层走 `console.{log,warn,error}`，每条 JSON 一行：`{ts,level,worker,trace_uuid?,session_uuid?,team_uuid?,msg,code?,category?,ctx?}` | 切换底层为 OTel `LogRecord` exporter；无需改 caller |
 | `LogPersistFn` 类型 | `type LogPersistFn = (record: LogRecord, ctx?: ExecutionContext) => Promise<void> \| void` | first-wave: orchestrator-core 注入"本地 D1 写"；其他 worker 注入"经 ORCHESTRATOR_CORE RPC 转发" | 切换为 OTLP exporter / R2 batch upload |
 | `AuditPersistFn` 类型 | 同上，但 record = NACP `AuditRecordBody`；写 `nano_audit_log` | first-wave 同 LogPersistFn 路径 | 同上 |
 | `resolveErrorMeta(code: string): ErrorMeta \| undefined` | `packages/nacp-core/src/error-registry.ts` 扩展 | 编译期生成的统一错误元数据查询；返回 `{source, code, category, http_status, retryable, message}`；80 codes 全覆盖 | 改为 npm script 从 7 个 zod enum 反射自动生成 |
 | `system.error` stream-event kind | `packages/nacp-session/src/stream-event.ts` 新增 `SystemErrorEventBodySchema = {kind:"system.error", error: NacpErrorSchema, source_worker?, trace_uuid?}` | agent-core / orchestrator-core 在 critical 错误时通过 `emitServerFrame` 推；与 `system.notify` 平行 | 加 `cause`、`retry_hint` 等字段 |
-| `audit.record` 落地通道 | 现有 NACP `audit.record` body schema + 本簇补 `recordAuditEvent(event_kind, ref?, detail?)` helper | 写 D1 `nano_audit_log`；first-wave 承接 6 类 event_kind（详见 F11） | 加更多 event_kind；接 hero-to-platform 的 admin audit |
+| `audit.record` 落地通道 | 现有 NACP `audit.record` body schema + 本簇补 `recordAuditEvent(event_kind, ref?, detail?)` helper | 写 D1 `nano_audit_log`；first-wave 承接 8 类 event_kind（详见 F11） | 加更多 event_kind；接 hero-to-platform 的 admin audit |
 | `Server-Timing` header | facade response 在 `policy/authority.ts` 加 `attachServerTimings(response, timings)` | 仅写 `total;dur=N` + `auth;dur=M` + `agent;dur=X` 三段；不传播跨 worker | 加 `bash;dur=Y`、`fs;dur=Z`、子调用 trace |
-| D1 `nano_error_log` + `nano_audit_log` 表 | migration `012-error-and-audit-log.sql`（编号方案见 §3.5） | error TTL 14 天；audit TTL 90 天；alarm/cron 清理 | 加索引 / 接管更多 event |
+| D1 `nano_error_log` + `nano_audit_log` 表 | migration `006-error-and-audit-log.sql`（承接 RHX1 DDL SSOT 后的 next slot；编号方案见 §3.5） | error TTL 14 天；audit TTL 90 天；alarm/cron 清理 | 加索引 / 接管更多 event |
 | `obs envelope` emitter | `emitObservabilityAlert(scope, severity, code, message, ctx?)` helper | 仅 severity=critical 落地：写一份到 `nano_error_log`（`severity='critical'`）+ console `[CRITICAL]` 前缀 | 加 metrics / traces 字段聚合 + 真实 OTLP collector |
 | `docs/api/error-codes.md` | 1 份 markdown + 1 个 npm script 校验与 registry 一致性 | first-wave 手工汇总 + CI 测试 | npm script 自动生成 |
 | `withTraceContext()` ALS helper | worker-logger 导出 | 在 fetch handler 顶层 `wrap(...)` 一次；DO `fetch` 顶层也 wrap | 加 span hierarchy（claude-code 风格） |
@@ -181,7 +195,11 @@
 
 - **解耦对象 4（v0.2 新增）**：`nano_error_log` 与 `nano_audit_log` 是 **两张表**，不合并。
   - **原因**：error log 是"出错了"（severity≥warn，TTL 14 天，可被前端 dev 自查）；audit log 是"重要事件发生了"（含正常事件如 device login / API key issue / cross-tenant deny attempt，TTL 90 天，仅 owner 与未来 admin 可查）。语义、retention、查询权限均不同。
-  - **依赖边界**：两张表结构相似但字段不重合；统一在 `migration 012-error-and-audit-log.sql` 中创建。
+  - **依赖边界**：两张表结构相似但字段不重合；统一在 `migration 006-error-and-audit-log.sql` 中创建。
+
+- **解耦对象 5（v0.3 新增；GPT R1）**：**client-safe error meta 出口** 必须独立于 server `worker-logger` 包。
+  - **原因**：`worker-logger` 内部依赖 `nacp-core` + Cloudflare runtime（`AsyncLocalStorage` / `ExecutionContext`），不能被浏览器 / 微信小程序 runtime 直接 import；同时不能让前端把 server-only 的 `source` / 长 message 暴露到 UI。
+  - **依赖边界**：F12 提供独立 `error-codes-client` 出口；**v0.4 修订形态**：`@haimang/nacp-core/error-codes-client` 子路径导出（candidate a'，Q-Obs10 已 answered）；候选 b（`error-codes.json` 静态文件）+ 候选 c（`GET /catalog/error-codes` 端点）保留为 future fallback；该子路径仅依赖纯 TypeScript 类型 + 静态 data table，**不依赖** worker / Cloudflare runtime / nacp-core 主入口的任何 zod schema；server `resolveErrorMeta()` 与 client meta 在 CI 中做一致性测试，避免漂移。
 
 ### 3.4 聚合点（哪里要刻意收敛）
 
@@ -196,10 +214,122 @@
 
 ### 3.5 D1 migration 占位说明
 
-charter §8.4 已分配 `010 → RH4`、`011 → RH5`。本簇 first-wave 需要新增 2 张表（`nano_error_log` + `nano_audit_log`，**单一 migration 文件**）：
-- **方案 A**（推荐，与 RH5 不冲突）：编号 `012-error-and-audit-log.sql`，承诺在 RH5 `011-*.sql` 之后落地。
-- **方案 B**：与 owner 协商把 `011` 借走，RH5 重编号为 `012`。
-- 选择走 §9 Q-Obs2。
+RHX1 已把 `workers/orchestrator-core/migrations/` 收敛为当前 SSOT `001`–`005`。因此本簇 first-wave 需要新增 2 张表（`nano_error_log` + `nano_audit_log`，**单一 migration 文件**）时，**唯一合理的 next slot 就是 `006-error-and-audit-log.sql`**，不再沿用 RHX1 之前碎片时代的 `011/012` 讨论。
+
+### 3.6 三套 durable 真相记录的职责边界（v0.3 新增；GPT R4）
+
+> 落地后将存在三套 D1 durable 真相，必须显式划清边界以避免"信息太散"。
+
+| 表 | 来源 | 范围 | retention | 主键 / 排序 | 主用途 | 谁可读 |
+|---|---|---|---|---|---|---|
+| `nano_session_activity_logs` | migration 002（**已存在**） | **session-scoped 时间线** | 由 RHX1 决定（本簇不动） | `activity_uuid PK + UNIQUE(trace_uuid, event_seq)` 严格按 `event_seq` 排序 | session 内"按顺序发生了什么"的可重放真相；`session-truth.ts:667 appendActivity()` 写；replay 与 inspector 读 | 同 session 的 client + owner |
+| `nano_error_log` | migration 006（**本簇新增**） | **cross-trace / cross-worker 错误索引** | 14 天 | `log_uuid PK`；按 `created_at` 与 `(trace_uuid, severity)` 索引 | 跨 session / 跨 worker 的"出错了什么"可查询；severity ≥ warn；F4 写；`/debug/logs` 读 | 同 team 的 client（dev 自查） + owner |
+| `nano_audit_log` | migration 006（**本簇新增**） | **protocol / security / owner-facing 审计真相** | 90 天 | `audit_uuid PK`；按 `(team_uuid, event_kind, created_at)` + `(user_uuid, created_at)` 索引 | "重要事件发生了"（含正常事件：登录、API key 发放、attachment_superseded、replay_lost、cross-tenant deny）；F11 写；`/debug/audit` 读 | owner-only（first-wave）；前端 production 不直读 |
+
+**写入分工的 rule of thumb**（落进 `docs/api/error-codes.md` 与 RHX-qna 双引用；Q-Obs12 决议）：
+- 一个事件 **只属于一张表的主真相**，但允许在另一张表留索引引用：
+  - 例：HTTP 5xx 错误 → 主真相 `nano_error_log`；如果它同时是"安全相关事件"（如 `tenant.cross_tenant_deny`），同步在 `nano_audit_log` 写一条。
+  - 例：`session.attachment.superseded` → 主真相 `nano_audit_log`（边界事件）+ 同 session 的 `nano_session_activity_logs` 同步追加 `event_kind="session.attachment.superseded"` 一条（保持 session 时间线完整）。
+  - 例：kernel `step_timeout` → 主真相 `nano_session_activity_logs`（session 时间线）+ `nano_error_log` 同步索引（severity=error）。
+- **不允许 audit 事件回写 `activity_logs` 的 payload 全文**——audit 只引 `ref={kind, uuid}` 指回 `nano_session_activity_logs` 行。
+- **不允许 `error_log` 写"正常事件"**——确认是错误时才写。
+
+**前端 / owner 排障路径**：
+1. 拿到 `trace_uuid` → 先查 `nano_error_log` 看跨 worker 是否有错。
+2. 若错发生在某个 session → 查 `nano_session_activity_logs` 看 session 内时间线全貌。
+3. 若涉及安全 / 合规 → owner 查 `nano_audit_log` 看是否有 audit 痕迹。
+4. **若怀疑是包版本错配（owner 看不清 deploy 进 worker 的版本）→ 查 `/debug/packages`（v0.5 新增；详见 §3.7）**。
+
+### 3.7 包来源单一真相门禁（v0.5 新增；D11/D12）
+
+> **owner v0.5 反馈核心**：v0.4 把 "jwt-shared 未发布到 GitHub Packages" 当成 RHX3 carry-over 是 **critical 门禁认知错误**——它意味着我们曾在某些 phase closure 中"宣告完成"，但实际上事实-意图不一致。我们仅能依靠一个唯一真相：**要么是线上 (GitHub Packages) 的包，要么是本库内（workspace-only）的包；不能存在任何模糊空间。**当前的 `workspace:*` + 未发布混合模式让 owner 无法回答两个本应秒答的问题：(1) deploy 进生产 worker 的代码究竟是从线上来的还是从本地来的？(2) 那是哪个版本？
+
+#### 3.7.1 单一真相二分原则
+
+| 包类别 | 唯一真相来源 | consumer 引用形态 | 退出条件 |
+|---|---|---|---|
+| **published 包**（first-wave 共 3 个：`@haimang/nacp-core` / `@haimang/nacp-session` / `@haimang/jwt-shared`）| **GitHub Packages registry** | dev：`workspace:*`（开发效率）；deploy：build-time gate 强制验证 workspace version === registry latest version；deploy bundle 包含 manifest 证明 | **必须**有对应 published 版本；workspace 与 registry 任何 drift = deploy fail |
+| **workspace-only 包**（4 个退役候选：`eval-observability` / `orchestrator-auth-contract` / `storage-topology` / `workspace-context-artifacts`）| **本库 `packages/<name>/`** | `workspace:*` 永久；不设 `publishConfig`；workspace 外不可被 import | 退役前保持 workspace-only；退役后从 `pnpm-workspace.yaml` 删除 |
+
+**没有第三类**。任何包不能既宣称"应当发布"又"实际未发布"——这是 v0.5 之前 jwt-shared 处于的灰色地带。
+
+#### 3.7.2 jwt-shared 必须本簇正式发布
+
+- v0.4 错误地把 jwt-shared 发布问题 carry over 给 RHX3。**v0.5 撤销该 carry-over**：jwt-shared 必须在 RHX2 first-wave 内 publish 到 GitHub Packages（首发 0.1.0；详见 F14）。
+- 不接受替代方案 "deletes publishConfig + 永久 workspace-only"——`jwt-shared` 的 helpers 跨 `orchestrator-core` 与 `orchestrator-auth` 两个 worker，是真实的多消费者共享代码；workspace-only 会让任何未来从 monorepo 拆分的 client 立即破裂。
+- 不接受 "合并入 nacp-core"——jwt-shared 的 HMAC 与 JWT 逻辑与 NACP 协议层是不同关注点，混入会污染 nacp-core 的边界。
+
+#### 3.7.3 包来源单一真相门禁的实现要点（F14）
+
+build-time CI gate 脚本必须做的 5 步：
+1. 对每个 published 包：拉 `packages/<name>/package.json` 的 `version` 字段（workspace truth）。
+2. HTTP `GET https://npm.pkg.github.com/@haimang%2F<name>` + Bearer auth → 读取 `versions` 列表中的最大值（registry truth）。
+3. **Verify**：workspace truth ≡ registry truth；任何不等都让 deploy fail。
+4. **Verify**：`packages/<name>/dist/` 与 registry tarball 的 SHA256 一致（确保本地 build 没有偷偷修改未 publish 的代码）。
+5. 生成 `packages/<consumer-worker>/dist/built-package-manifest.json`，包含 3 个包的 `{workspace_version, registry_version, registry_published_at, dist_sha256, match: true}` + build 时间戳；esbuild 把它 inline 进 worker bundle。
+
+deploy 路径上：`pnpm --filter <worker> run deploy:preview` 必须先跑 gate，gate fail 则 wrangler 不上传。
+
+#### 3.7.4 `/debug/packages` 验证接口（F15）
+
+为前端 / owner / 未来运维提供"故障时一次 GET 拿到真相"的能力：
+
+```http
+GET /debug/packages
+Authorization: <team-token>
+```
+
+返回：
+
+```json
+{
+  "ok": true,
+  "data": {
+    "worker": "nano-agent-orchestrator-core",
+    "build_at": "2026-04-29T10:00:00.000Z",
+    "packages": [
+      {
+        "name": "@haimang/nacp-core",
+        "deployed": {
+          "version": "1.5.0",
+          "resolved_from": "github-packages",
+          "dist_sha256": "..."
+        },
+        "registry": {
+          "latest_version": "1.5.0",
+          "published_at": "2026-04-29T08:30:00.000Z",
+          "fetched_at": "2026-04-29T10:01:23.456Z"
+        },
+        "drift": false
+      },
+      {
+        "name": "@haimang/nacp-session",
+        "deployed": { "version": "...", ... },
+        "registry": { "latest_version": "...", ... },
+        "drift": false
+      },
+      {
+        "name": "@haimang/jwt-shared",
+        "deployed": { "version": "0.1.0", "resolved_from": "github-packages", "dist_sha256": "..." },
+        "registry": { "latest_version": "0.1.0", "published_at": "..." },
+        "drift": false
+      }
+    ]
+  },
+  "trace_uuid": "..."
+}
+```
+
+- `deployed`: 来自 inline 进 bundle 的 `built-package-manifest.json`（不可篡改 / 不需要 fetch）。
+- `registry`: 实时 fetch GitHub Packages（10 秒缓存避免速率限制）。
+- `drift`: deployed.version !== registry.latest_version 时为 true；为 true 时 owner 应 alert。
+
+#### 3.7.5 与 v0.4 子路径导出策略的关系
+
+v0.4 已经把 F1 / F12 落到 `@haimang/nacp-core` 子路径（不新建独立包）。这与 §3.7 完全相容：
+- v0.4 让 nacp-core 1.5.0 重发，本来就在 published 集合里。
+- v0.5 在此基础上加上 jwt-shared 0.1.0 首发 + 门禁验证 + `/debug/packages` 接口。
+- 3 个 published 包的边界与 owner 长期策略完全一致。
 
 ---
 
@@ -259,9 +389,9 @@ charter §8.4 已分配 `010 → RH4`、`011 → RH5`。本簇 first-wave 需要
 
 ## 5. In-Scope / Out-of-Scope 判断
 
-### 5.1 In-Scope（first-wave 必做；v0.2 由 10 项扩为 11 项）
+### 5.1 In-Scope（first-wave 必做；v0.2 10→11；v0.3 11→13；v0.5 13→15）
 
-- **[S1]** **共享 `worker-logger` npm 包**（`packages/worker-logger/`）：4 级日志 + critical 单独类、JSON 一行格式、ALS 注入 trace_uuid/session_uuid/team_uuid、内存环形缓冲（每 worker 最近 200 条）、`LogPersistFn` 与 `AuditPersistFn` 类型签名导出、DO/Worker-Shell 双模适配、JSON schema 校验测试。
+- **[S1]** **扩展 `@haimang/nacp-core` 新增 `nacp-core/logger` 子路径导出**（v0.4 修订）：4 级日志 + critical 单独类、JSON 一行格式、ALS 注入 trace_uuid/session_uuid/team_uuid、内存环形缓冲（每 worker 最近 200 条）、`LogPersistFn` 与 `AuditPersistFn` 类型签名导出、DO/Worker-Shell 双模适配、JSON schema 校验测试；nacp-core minor bump 1.4.0 → 1.5.0 重发 GitHub Packages。**不新建独立包**（与 owner 长期"3 个 published 包"策略一致）。
 - **[S2]** **6 worker HTTP 错误响应统一到 `FacadeErrorEnvelope`**：worker-logger 导出 `respondWithFacadeError()` helper；6 worker 的 fetch handler catch 路径强制走它；orchestrator-auth 走 RPC envelope（不需 HTTP 入口收口）。
 - **[S3]** **运行时错误 registry + 单一 docs 查询入口**：(a) 扩展 `packages/nacp-core/src/error-registry.ts` 暴露 `resolveErrorMeta(code) → ErrorMeta`，覆盖 7 个分布枚举的全部 ~80 个 code；(b) `docs/api/error-codes.md` 7 段 + 第 8 段 `ad-hoc codes`（先收 bash-core 临时字符串）；(c) CI 断言两者一致。
 - **[S4]** **D1 `nano_error_log` 表 + 持久化（最小集）**：仅承接 severity ≥ warn；orchestrator-core 单点写；TTL 14 天 + alarm/cron 清理；fallback：单写点不可用时本地 console + 内存环形 + `rpc_log_failed:true` 标记（详见 §7.2 F4）。
@@ -271,7 +401,11 @@ charter §8.4 已分配 `010 → RH4`、`011 → RH5`。本簇 first-wave 需要
 - **[S8]** **`NacpObservabilityEnvelope.alerts` 最小 emitter（仅 severity=critical）**：worker-logger 导出 `emitObservabilityAlert(...)`；first-wave 触发条件 3 类——D1 写失败 / RPC parity 失败 / R2 写失败；落地与 S4 共表（多一字段 `severity='critical'`）；序列化时 `metrics`/`traces` 为空对象不写入 JSON。
 - **[S9]** **bash-core / orchestrator-auth 接入 worker-logger**：让 0 console 的两 worker 在错误路径至少有 `logger.error('...', {ctx})`；bash-core 顺手归化 5–8 个 ad-hoc 字符串 code 到 docs/api/error-codes.md 第 8 段。
 - **[S10]** **重复定义防漂移（ESLint）**：`StorageError` 家族 / `evidence-emitters`* / `metric-names` 加 ESLint `no-restricted-imports`；主份选择规则：`packages/` 优先于 `workers/`（详见 §7.2 F10）。**注**：evidence-emitters 不是字节级重复（GLM R11 已校正），而是 `context-core` 与 `workspace-context-artifacts` 两包并行实现 assembly/compact/snapshot 三流；filesystem-core 实现 artifact 流是独立的。
-- **[S11（v0.2 新增）]** **D1 `nano_audit_log` 表 + NACP `audit.record` 通道接电**：表 TTL 90 天；first-wave 承接 6 类 `event_kind`（详见 F11）；orchestrator-core 写；前端不直接可读（仅 owner / 未来 admin）。
+- **[S11（v0.2 新增 / v0.3 扩为 8 类）]** **D1 `nano_audit_log` 表 + NACP `audit.record` 通道接电**：表 TTL 90 天；first-wave 承接 **8 类** `event_kind`（详见 F11，含 `session.attachment.superseded` + `session.replay_lost`）；orchestrator-core 写；前端不直接可读（仅 owner / 未来 admin）。
+- **[S12（v0.3 新增；GPT R1；v0.4 形态修订）]** **client-safe error meta 出口**：与 `resolveErrorMeta()` 同源、CI 一致性校验；浏览器 + 微信小程序 runtime 都可消费；终止 `clients/web/src/apis/transport.ts:50-57` 与 `clients/wechat-miniprogram/utils/nano-client.js:11-28 classifyError()` 各自手搓的 4 类分类。**v0.4 形态**：`@haimang/nacp-core/error-codes-client` 子路径导出（候选 a'，Q-Obs10 owner-answered）；候选 b/c 保留为 future fallback。
+- **[S13（v0.3 新增；GPT R2）]** **web + 微信小程序对 `system.error` 的消费改造**：在两端 WS frame switch 中显式增加 `case 'system.error'` 分支，按 `error.category` 分发 UI（toast / banner / silent log）；server 在两端均未发布前**保持 `system.error` + `system.notify(severity=error)` 双发降级**，等 client 至少 1 端发布后切单发。
+- **[S14（v0.5 新增；critical 门禁）]** **包来源单一真相门禁**：(a) **正式发布 `@haimang/jwt-shared@0.1.0` 到 GitHub Packages**（首发；撤销 v0.4 RHX3 carry-over 错误判断）；(b) build-time CI gate 脚本对 3 个 published 包做"workspace version === registry latest version + dist SHA256 一致"双验证，任何 drift = deploy fail；(c) build 时生成 `built-package-manifest.json` inline 进 worker bundle。**RHX2 closure 必须满足该门禁；不满足不允许宣告完成**。
+- **[S15（v0.5 新增）]** **`/debug/packages` 验证接口**：orchestrator-core HTTP endpoint 返回当前 worker 的 `built-package-manifest`（deploy 时刻 truth）+ 实时 GitHub Packages registry 查询（线上 truth）+ drift 标记；team gate；让前端 / owner / 未来运维在故障时一次 GET 拿到三件事实：当前线上版本、deploy 进 worker 的版本、二者是否一致。这条 endpoint 是"可观测性闭环到包发布层"的最后一块。
 
 ### 5.2 Out-of-Scope（first-wave 不做；v0.2 沿用 11 项）
 
@@ -301,7 +435,7 @@ charter §8.4 已分配 `010 → RH4`、`011 → RH5`。本簇 first-wave 需要
 
 ## 6. Tradeoff 辩证分析与价值判断
 
-### 6.1 核心取舍（v0.2 由 6 个扩为 8 个）
+### 6.1 核心取舍（v0.2 6→8；v0.3 8→9；v0.5 9→10）
 
 1. **取舍 1**：**D1 表 + 共享 npm logger 包** vs **接入完整 OTel SDK**。沿用 v0.1，无变化。
 
@@ -318,7 +452,7 @@ charter §8.4 已分配 `010 → RH4`、`011 → RH5`。本簇 first-wave 需要
    - `nacp-core/messages/system.ts::SystemErrorBodySchema = {error: NacpErrorSchema, context?}` —— NACP envelope body 用，`system.error` message type 的 body。
    - `nacp-session/stream-event.ts::SystemErrorEventBodySchema = {kind:"system.error", error: NacpErrorSchema, source_worker?, trace_uuid?}` —— stream-event union 用，承接 WS push 形态，复用 `NacpErrorSchema` 字段。
 
-6. **取舍 6**：**D1 migration 编号 = 012**（推荐方案 A） vs **抢 011**。沿用 v0.1。
+6. **取舍 6**：**D1 migration 编号 = 006**（承接 RHX1 DDL SSOT 后的 next slot），不再讨论旧碎片时代的 `011/012` 方案。
 
 7. **取舍 7（v0.2 新增）**：**error log 与 audit log 分两张表** vs **合并为 `nano_event_log` 单表**。
    - **为什么**：retention 不同（14d vs 90d）；查询权限不同（前端 dev / owner-only）；语义不同（出错了 / 重要事件，含正常事件）。强行合并会让 TTL 治理与权限校验都依赖 `severity` 字段，增加滑边风险。
@@ -330,6 +464,18 @@ charter §8.4 已分配 `010 → RH4`、`011 → RH5`。本簇 first-wave 需要
    - **代价**：facade 路径在 catch 时多一个"是否有 attached WS"的判断；如果两通道 code 不同（如 facade 给 `internal-error` / WS 给 `kernel-illegal-phase`），需要保证它们同 trace_uuid 下能被前端识别为同一事件（用 trace_uuid + 时间窗 1s 去重）。
    - **重评条件**：从未——这是协议清洁度问题，不应回退。
 
+10. **取舍 10（v0.5 新增；owner 否决 v0.4 carry-over）**：**包来源单一真相（要么 GitHub Packages 线上、要么本库 workspace-only，二选一不允许模糊）+ jwt-shared 必须本簇发布 + CI gate + `/debug/packages` 验证接口** vs **接受 v0.4 的 RHX3 carry-over** vs **永久 workspace-only 删 publishConfig**。
+    - **为什么**：v0.4 把 jwt-shared 未发布判为 carry-over 是 critical 门禁认知错误——它意味着我们曾以错误事实宣告 phase 完成。owner 立场：宁愿 deploy 暂停，也不允许"deploy 进生产 worker 的代码究竟是从线上还是本地来的、是什么版本"这种问题在故障复盘时无答案。可观测性必须闭环到包发布层。
+    - **代价**：(a) jwt-shared 必须立即发布 + 后续每次改动都要 bump + publish 才能 deploy 新 worker；(b) CI gate 让 GitHub Packages 503 / PAT 失效等外部因素直接阻塞 deploy；(c) `/debug/packages` 多 1 个 endpoint。
+    - **重评条件**：从未——这是认知正确性的基础，不是可调参数。
+    - **不接受的替代方案**：永久 workspace-only 删 publishConfig（让 jwt-shared 退化为类似 4 个退役候选的状态）违反"3 个 published 包"长期策略；合并 jwt-shared 进 nacp-core 会污染 nacp-core 的关注点。
+
+9. **取舍 9（v0.3 新增；GPT R1+R2）**：**把 web + 微信小程序的 client 消费改造（client-safe error meta + system.error 处理）纳入 first-wave in-scope** vs **defer 到独立 client phase**。
+   - **为什么**：GPT 审查的核心论断是"server 单边接电不会变成真实可用能力"——`resolveErrorMeta()` 不接到 client，两端就会继续手搓 4 类分类；`system.error` 不接到 client，server 发再多也只会变成"未知 kind"占位。RHX2 的价值是端到端可观测性，不是 server-only schema-wired。
+   - **代价**：(a) 工作量上升（两端 client 都要 PR）；(b) 跨 repo / 跨 client team 协调成本；(c) `system.error` 在 client 全部发布前必须保持 `system.error + system.notify(severity=error)` 双发降级窗口。
+   - **缓解**：F12 client-safe meta 形态选 candidate a'（v0.4 修订）—— `@haimang/nacp-core/error-codes-client` 子路径导出，与 web 同 monorepo 直接 import；微信小程序通过 build 时反射 `node_modules/@haimang/nacp-core/dist/error-registry-client/data.js` 拷贝 JSON；F13 双发降级窗口由 Q-Obs11 决定（默认 4 周）。
+   - **重评条件**：当 client repo 不在同 monorepo / 同团队的情况下（目前 client repo 在同仓库 `clients/`，复杂度可控）。
+
 ### 6.2 风险与缓解（v0.2 新增 2 行风险，加强 2 行）
 
 | 风险 | 触发条件 | 影响 | 缓解 |
@@ -340,12 +486,18 @@ charter §8.4 已分配 `010 → RH4`、`011 → RH5`。本簇 first-wave 需要
 | `/debug/logs` 被滥用看他人 team 数据 | 鉴权漏洞 | 跨租户 | **v0.2 修正**：用 **team gate**（请求者 team_uuid = 查询条件 team_uuid），**不**用 RH3 device gate（device gate 是设备级，不是 team 级） |
 | `system.error` 推送把握不住量，前端被淹 | agent-core kernel 高频 error | 前端 UI 卡 | **v0.2 加强**：dedupe 按 `(trace_uuid, code, source_worker)` 三元组而非单 code；前端 client 仅 dev mode 可见 |
 | 重复定义不清理导致漂移 | 一份 PR 改了 A 没改 B | 行为不一致 | ESLint `no-restricted-imports` 引导到主份；主份选择规则：packages/ > workers/ |
-| migration 012 与 RH5 011 冲突 | RH5 / RHX2 同月落地 | schema 状态机错乱 | Q-Obs2 owner 显式排序 |
+| 沿用 RHX1 前旧碎片编号 | action-plan / migration 命名仍写 011/012 | 执行顺序与当前 SSOT 脱节 | Q-Obs2 明确 next slot = `006` |
 | TTL 治理误导 | 前端报"看不到上周的错误了" | UX 混乱 | docs/api/error-codes.md 顶部 + `/debug/logs` 响应都附 `retention_days: 14` |
 | OTLP-shape 留 seam 被滥用为"已经接 OTel" | 团队认知混乱 | 决策错位 | docs 顶部声明：first-wave 仅 schema-shape；真启用 OTel 是后续独立决策 |
 | **F2 × F7 双通道告警重复（v0.2 新增）** | 同一错误同时触发 HTTP 500 + WS system.error | 前端展示两个错误对话 | §6.1 取舍 8 + §7.2.5 交叉规则：统一 `trace_uuid` + `code`；前端按 trace_uuid + 1s 时间窗去重 |
 | **`nano_audit_log` 写入与 D1 错误日志互相干扰（v0.2 新增）** | audit-record 高频（如 hook outcome 每 step 写） | error log 写延迟上升 | (a) audit log 用独立 prepared statement；(b) `nano_audit_log` 仅承接 6 类 first-wave event_kind，hook outcome 默认仅在 `final_action !== 'continue'` 时写 |
 | **NacpObservabilityEnvelope 空 metrics/traces 字段噪音（v0.2 新增）** | F8 emit 仅写 alerts，序列化默认 `{}` | 消费者误以为"metrics 系统正常无数据" | F8 序列化时空 record 不写入 JSON（zod default fallback） |
+| **server 推送 `system.error` 但 client 不消费（v0.3 新增；GPT R2）** | F7 落地后 client 未跟进 | "未知 kind" 噪音淹没两端日志；前端 UX 反而变差 | F13 双发降级窗口（`system.error + system.notify(severity=error)` 并发；Q-Obs11 决定窗口长度，默认 4 周）；窗口结束前禁止切单发 |
+| **client 端各自手搓错误分类继续漂移（v0.3 新增；GPT R1）** | server 已发 `resolveErrorMeta()` 但 client 未消费 | web `transport.ts` 与微信 `nano-client.js` 继续各写一套；server 改 code 后 client 不知 | F12 client-safe meta 单一出口（候选 a/b/c 由 Q-Obs10 选定）+ CI 一致性测试 + 两端 import 同一份 |
+| **三套 durable 真相职责混淆（v0.3 新增；GPT R4）** | 同一事件被同时写到 `nano_session_activity_logs` + `nano_error_log` + `nano_audit_log` 且 payload 不一致 | 排障时三处对照费时 / 信息漂移 | §3.6 明确"主真相 + 索引引用"规则；audit 不写 activity payload 全文，只引 `ref={kind, uuid}` |
+| **包来源认知模糊（v0.5 新增；owner 否决 carry-over）** | jwt-shared 未发布但 consumer 用 `workspace:*`；deploy 进 worker bundle 后无法回答"是从线上来的还是本地来的""是哪个版本" | 故障复盘没有真相源；任何 closure 都基于错误事实假设 | F14 必须在 RHX2 发布 jwt-shared@0.1.0；F14 CI gate 阻拦 workspace ↔ registry drift；F15 `/debug/packages` 让事实机器可读；本簇 closure 以 F14 + F15 通过为前置 |
+| **registry 速率限制 / runtime 无 PAT（v0.5 新增）** | `/debug/packages` 高频拉 GitHub Packages | 速率限制；401 | F15 缓存 10 秒；Q-Obs14 graceful 降级（registry 段标 `auth-not-available-in-runtime`，deployed 段始终可用） |
+| **CI gate 误把短暂 registry 503 当 drift 阻断 deploy（v0.5 新增）** | GitHub Packages 短暂不可用 | deploy 长时间停滞 | F14-b 短重试 3 次 + exponential backoff；仍 fail 则按 owner 立场不允许 graceful degrade（这是门禁的全部价值，宁愿停 deploy 也不接受事实模糊） |
 
 ### 6.3 本次 tradeoff 能带来的价值
 
@@ -360,21 +512,25 @@ charter §8.4 已分配 `010 → RH4`、`011 → RH5`。本簇 first-wave 需要
 
 ## 7. In-Scope 功能详细列表
 
-### 7.1 功能清单（v0.2 由 10 项扩为 11 项）
+### 7.1 功能清单（v0.2 10→11；v0.3 11→13）
 
 | 编号 | 功能名 | 描述 | 一句话收口目标 |
 |---|---|---|---|
 | F1 | `worker-logger` 共享包 | 4 级 + critical / ALS / 内存环形 / `LogPersistFn` + `AuditPersistFn` 类型 / DO/Worker-Shell 双模 / JSON schema 校验 | ✅ 6 worker 全部 import；ESLint 阻拦裸 console |
 | F2 | `respondWithFacadeError()` helper | 6 worker HTTP catch 路径统一到 `FacadeErrorEnvelope` | ✅ 6 worker 错误响应同 envelope；响应头有 `x-trace-uuid` |
 | F3 | 运行时 `resolveErrorMeta()` registry + `docs/api/error-codes.md` | 7 枚举 ~80 codes + 第 8 段 ad-hoc；CI 断言 docs 与 registry 一致 | ✅ `resolveErrorMeta(code)` 全 80 codes 命中；docs 与 registry CI 一致 |
-| F4 | D1 `nano_error_log` 表 + 持久化 | 单写点 + dedupe + rate-limit + TTL 14d + 单写点失败 fallback | ✅ migration 012 已 apply；severity≥warn 100% 落 D1 或 fallback；写失败有 `rpc_log_failed:true` |
+| F4 | D1 `nano_error_log` 表 + 持久化 | 单写点 + dedupe + rate-limit + TTL 14d + 单写点失败 fallback | ✅ migration `006-error-and-audit-log.sql` 已 apply；severity≥warn 100% 落 D1 或 fallback；写失败有 `rpc_log_failed:true` |
 | F5 | `/debug/logs` + `/debug/recent-errors` 调试 endpoint | team gate；按 trace_uuid/session_uuid/code/since 查；返回 14d 命中 + 内存最近 200 条 | ✅ orchestrator-core route 实装；team_uuid 强校验；rate limit |
 | F6 | `Server-Timing` header 注入 | 仅 orchestrator-core HTTP facade 出口 | ✅ facade 出口必含 `Server-Timing: total;dur=N` 至少一段 |
 | F7 | `session.stream.event::system.error` kind | `SystemErrorEventBodySchema` 复用 `NacpErrorSchema`；与 `system.notify` 平行；dedupe 三元组 | ✅ schema 落地；agent-core kernel critical 错误必 emit；schema 单测通过 |
 | F8 | `emitObservabilityAlert()` critical alert | 仅 severity=critical；3 类触发；落 nano_error_log；envelope 空字段不序列化 | ✅ 3 类触发各有单测；critical 至少落 console + D1 + WS（如有 session） |
 | F9 | bash-core / orchestrator-auth 接 logger + ad-hoc code 归化 | 终结 0 console；bash-core 5–8 个 ad-hoc 字符串纳入 docs 第 8 段 | ✅ 2 worker prod 路径 logger.error ≥ 5；ad-hoc codes docs 已收 |
 | F10 | ESLint 重复定义防漂移 | `no-restricted-imports`；主份规则 `packages/` > `workers/` | ✅ ESLint rule 落地；CI 红即拦 |
-| **F11（v0.2 新增）** | **D1 `nano_audit_log` 表 + NACP `audit.record` 通道接电** | TTL 90d；first-wave 6 类 event_kind；orchestrator-core 写 | ✅ migration 012 含 audit 表；6 类 event_kind 各 ≥1 写路径 |
+| **F11（v0.2 新增 / v0.3 扩为 8 类）** | **D1 `nano_audit_log` 表 + NACP `audit.record` 通道接电** | TTL 90d；first-wave 8 类 event_kind（含 `session.attachment.superseded` + `session.replay_lost`）；orchestrator-core 写 | ✅ migration `006-error-and-audit-log.sql` 含 audit 表；8 类 event_kind 各 ≥1 写路径 |
+| **F12（v0.3 新增；GPT R1；v0.4 形态修订）** | **client-safe error meta 出口** | 与 `resolveErrorMeta()` 同源；CI 一致性测试；**v0.4 形态：`@haimang/nacp-core/error-codes-client` 子路径导出（candidate a'）**；候选 b `error-codes.json` / c `GET /catalog/error-codes` 留 future fallback | ✅ web `transport.ts` + 微信 `nano-client.js` 改用 client meta；不再各自手搓；CI 一致性测试通过；**不新建独立包** |
+| **F13（v0.3 新增；GPT R2）** | **web + 微信小程序 `system.error` 消费 + 双发降级窗口** | 两端 WS frame switch 加 `case 'system.error'`；按 `error.category` 分发 UI；server 在 client 发布前保持 `system.error + system.notify(severity=error)` 双发 | ✅ 两端 PR 合并；server 双发降级窗口期由 Q-Obs11 决定（默认 4 周）；窗口结束后切单发 |
+| **F14（v0.5 新增；critical 门禁）** | **包来源单一真相门禁 + jwt-shared 0.1.0 首发** | (a) jwt-shared 0.1.0 publish 到 GitHub Packages；(b) CI gate 验证 3 published 包 workspace==registry version + SHA256 一致；(c) build 时生成 `built-package-manifest.json` inline 进 worker bundle | ✅ jwt-shared@0.1.0 在 GitHub Packages HTTP 200；nacp-core@1.5.0 + nacp-session 双发；CI gate 阻拦任何 drift；6 worker bundle 都内嵌 manifest |
+| **F15（v0.5 新增）** | **`/debug/packages` 验证接口** | orchestrator-core HTTP endpoint；返回 inline manifest + 实时 registry 查询 + drift 标记；team gate；10s 缓存 registry 响应 | ✅ `/debug/packages` 在 preview / production 都可用；返回 3 包 deployed + registry + drift；team gate 强校验；故障复盘时 owner 与前端一次 GET 拿真相 |
 
 ### 7.2 详细阐述
 
@@ -552,10 +708,10 @@ export function listErrorMetas(): ErrorMeta[];   // 用于 docs 生成
 
 #### F4: D1 `nano_error_log` 表 + 持久化（v0.2 给出完整 DDL 与 fallback）
 
-- **完整 DDL**（与 F11 共一个 migration 文件，文件名 `migration 012-error-and-audit-log.sql`）：
+- **完整 DDL**（与 F11 共一个 migration 文件，文件名 `migration 006-error-and-audit-log.sql`）：
 
 ```sql
--- migration 012-error-and-audit-log.sql — RHX2 first-wave
+-- migration 006-error-and-audit-log.sql — RHX2 first-wave
 -- Part 1: nano_error_log (TTL 14d)
 
 CREATE TABLE IF NOT EXISTS nano_error_log (
@@ -603,7 +759,7 @@ CREATE INDEX IF NOT EXISTS nano_error_log_severity_idx
   - D1 binding 不可用 → fallback console；不抛错。
   - `context_json` 超 8 KB → 截断 + 标记 `_truncated: true`。
   - log_uuid 可用 v7 UUID（自带时间戳）便于范围扫描。
-- **一句话收口目标**：✅ **migration 012 已 apply preview；6 worker 错误路径 severity≥warn 100% 落 D1 或 fallback console；critical 不 dedupe；写失败 fallback 不抛错；TTL 14d 清理由 alarm/cron 跑通。**
+- **一句话收口目标**：✅ **migration `006-error-and-audit-log.sql` 已 apply preview；6 worker 错误路径 severity≥warn 100% 落 D1 或 fallback console；critical 不 dedupe；写失败 fallback 不抛错；TTL 14d 清理由 alarm/cron 跑通。**
 
 #### F5: `/debug/logs` + `/debug/recent-errors` 调试 endpoint
 
@@ -747,7 +903,7 @@ export type SystemErrorEventBody = z.infer<typeof SystemErrorEventBodySchema>;
 - **完整 DDL**（与 F4 同一 migration 文件）：
 
 ```sql
--- migration 012-error-and-audit-log.sql — RHX2 first-wave
+-- migration 006-error-and-audit-log.sql — RHX2 first-wave
 -- Part 2: nano_audit_log (TTL 90d)
 
 CREATE TABLE IF NOT EXISTS nano_audit_log (
@@ -776,7 +932,7 @@ CREATE INDEX IF NOT EXISTS nano_audit_log_trace_idx
   ON nano_audit_log(trace_uuid);
 ```
 
-- **first-wave 承接的 6 类 `event_kind`**：
+- **first-wave 承接的 8 类 `event_kind`**：
 
 | event_kind | 触发 worker | outcome | 触发条件 | 用途 |
 |---|---|---|---|---|
@@ -786,8 +942,10 @@ CREATE INDEX IF NOT EXISTS nano_audit_log_trace_idx
 | `auth.device.gate_decision` | orchestrator-core | ok / denied | 跨设备 reattach / device gate 通过或拒绝 | 安全审计：设备绑定历史 |
 | `tenant.cross_tenant_deny` | orchestrator-core | denied | 跨租户访问尝试被拒 | 安全审计：边界穿透事件 |
 | `hook.outcome` | agent-core | ok / denied | hook 决策 `block` / `denied` 时（非 `continue`）；与 `agent-core/src/hooks/audit.ts` 现有逻辑对齐 | 行为审计：哪个 hook 拒绝了什么动作 |
+| `session.attachment.superseded` | orchestrator-core | ok | attached WS 被 `reattach` / `revoked` 替换 | 客户端排障：解释“为什么当前连接被顶下线” |
+| `session.replay_lost` | orchestrator-core | failed | HTTP `/resume` 返回 `replay_lost=true` | 客户端排障：解释“为什么必须回退到 timeline 全量补拉” |
 
-> **first-wave 不承接** quota exceeded（已由 `nano_usage_events` 业务表覆盖）、tool call 全量（量太大）、session lifecycle（session-registry 已覆盖）。
+> **first-wave 不承接** quota exceeded（已由 `nano_usage_events` 业务表覆盖）、tool call 全量（量太大）、高频 `session.start` / `session.end` 生命周期（session-registry 已覆盖）。但 **`attachment_superseded` / `replay_lost` 必须进 first-wave**，因为它们是 web / 微信小程序真实排障时最关键、且写量可控的边界事件。
 
 - **写入路径**：
   1. caller worker（orchestrator-auth / orchestrator-core / agent-core）调用 `logger.audit(event_kind, {ref?, detail?})`。
@@ -805,7 +963,136 @@ CREATE INDEX IF NOT EXISTS nano_audit_log_trace_idx
   - audit 写失败必触发 critical（与 error log 不同）。
   - `detail_json` 超 16 KB → 截断 + `_truncated: true`。
   - `team_uuid` NOT NULL —— 无 team 维度的 audit 不写（保护跨租户边界）。
-- **一句话收口目标**：✅ **migration 012 含 nano_audit_log；6 类 event_kind 各有 ≥1 写路径单测；TTL 90d；audit 写失败触发 critical alert（不静默）；`/debug/audit` owner-only 查询通；前端 production 路径不直读。**
+- **一句话收口目标**：✅ **migration `006-error-and-audit-log.sql` 含 `nano_audit_log`；8 类 event_kind 各有 ≥1 写路径单测；TTL 90d；audit 写失败触发 critical alert（不静默）；`/debug/audit` owner-only 查询通；前端 production 路径不直读。**
+
+#### F12: client-safe error meta 出口（v0.3 新增；GPT R1）
+
+> 把"`resolveErrorMeta()` 只对服务端有意义"补到端到端可用：让 web `transport.ts` 与微信 `nano-client.js` 不再各自手搓 4 类分类。
+
+- **形态候选**（由 Q-Obs10 三选一）：
+  - **候选 a' — `@haimang/nacp-core/error-codes-client` 子路径导出**（v0.4 修订；Q-Obs10 已 owner-answered）：在已发布的 `@haimang/nacp-core` 内新增 `error-registry-client` 子模块，通过 `package.json` exports map 暴露 `./error-codes-client` sub-path；导出 `getErrorMeta(code) → ClientErrorMeta | undefined` + `ClientErrorCategory` 枚举（`auth.expired / quota.exceeded / runtime.error / request.error / validation.failed / security.denied / dependency.unavailable / conflict.state`，与现有 web/transport.ts 4 类向后兼容并扩展）；纯 TypeScript / 零 runtime 依赖；浏览器 + 微信小程序 build 时 import；nacp-core minor bump 1.4.0 → 1.5.0 重发 GitHub Packages。
+  - **候选 a（已被 candidate a' 替代；保留作为讨论 history）** — 新建独立 `packages/error-codes-client/` npm 包：与 candidate a' 功能等价，但与 owner 长期"3 个 published 包"策略冲突，v0.4 撤销。
+  - **候选 b — 静态文件 `docs/api/error-codes.json`**：CI 时由 server `listErrorMetas()` 反射生成；client 端通过 build 时 `fetch` 或 `require` 加载。
+  - **候选 c — `GET /catalog/error-codes` 端点**：runtime 拉取；client 端缓存 + ETag。
+- **`ClientErrorMeta` 形态**（与 server `ErrorMeta` 子集，去掉 server-only 字段）：
+
+```ts
+export type ClientErrorCategory =
+  | "auth.expired"        // → server NACP "security" + facade "invalid-auth/refresh-*"
+  | "quota.exceeded"      // → "quota" + "rate-limited"
+  | "runtime.error"       // → "transient" / "dependency" / "permanent"
+  | "request.error"       // → "validation" / "conflict"
+  | "security.denied"     // → "security" 但不属于 auth.expired
+  | "validation.failed"   // → "validation" 细分
+  | "dependency.unavailable"  // → "dependency"
+  | "conflict.state";     // → "conflict"
+
+export interface ClientErrorMeta {
+  code: string;
+  category: ClientErrorCategory;   // 8 类（NACP 7 类 → client 8 类映射；与 web 现有命名兼容）
+  http_status: number;
+  retryable: boolean;
+}
+
+export function getErrorMeta(code: string): ClientErrorMeta | undefined;
+export function classifyByStatus(status: number): ClientErrorCategory;  // fallback for unknown code
+```
+
+- **CI 一致性**：`packages/nacp-core/test/error-codes-client-coverage.test.ts` 断言 server `listErrorMetas()` 输出的每个 code 都在 client meta 中存在且 `category` 映射符合规则；CI 红即拦。
+- **client 改造点**（first-wave 必做）：
+  - `clients/web/src/apis/transport.ts:50-57` 现有 4 类 `auth.expired / quota.exceeded / runtime.error / request.error` 字符串保留向后兼容；内部实现切到 `getErrorMeta(envelope.error.code)?.category ?? classifyByStatus(status)`。
+  - `clients/wechat-miniprogram/utils/nano-client.js:11-28 classifyError()` 同样切到 `getErrorMeta(...)`；与 web 复用同一份 client meta（小程序 build 时拷贝）。
+- **边界**：
+  - 候选 a 在小程序构建期需要拷贝（小程序不能直接 import `node_modules`）—— 由 build script 处理。
+  - 未知 code（如 server 新增但 client 未升级）→ `getErrorMeta()` 返回 undefined，client fallback to `classifyByStatus(status)` 不报错。
+- **一句话收口目标**：✅ **`@haimang/nacp-core/error-codes-client` 子路径导出落地（v0.4 形态；Q-Obs10 owner-answered）；web `transport.ts` 与微信 `nano-client.js` 不再各自手搓；CI 一致性测试通过；不新建独立包。**
+
+#### F13: web + 微信小程序 `system.error` 消费改造 + 双发降级窗口（v0.3 新增；GPT R2）
+
+> 把 F7 server 侧的 `system.error` 接电延伸到端到端可用：两端 client 同步消费，server 在窗口期内保持双发降级。
+
+- **client 改造点**（first-wave 必做）：
+  - **web** `clients/web/src/pages/ChatPage.tsx`：当前对 WS frame 没有 `system.error` 处理；新增 `case 'system.error'` 分支，按 `error.category` 分发 UI：
+    - `security` → 跳转登录页 / 提示重新登录。
+    - `quota` → 弹出超额提示 + 引导升级。
+    - `transient` / `dependency` → toast 提示 + 自动 retry hint。
+    - `permanent` / `validation` → banner 永久提示 + 不 retry。
+  - **微信小程序** `clients/wechat-miniprogram/pages/session/index.js:123-155`：当前 switch 仅处理 `llm.delta` / `tool.call.*` / `turn.*` / `system.notify` / `session.update`；新增 `case 'system.error'` 分支，与 web 同步映射规则（小程序 UI 用 `wx.showToast` / `wx.showModal`）。
+- **双发降级窗口策略**：
+  - server F7 落地后立即开始 **`system.error` + `system.notify(severity=error)` 双发**：同一错误同时发两 frame，trace_uuid + code 一致；老 client（仅懂 `system.notify`）与新 client（懂 `system.error`）都能收到。
+  - 窗口长度由 Q-Obs11 决定，**默认 4 周**；窗口结束前禁止切单发；窗口结束后 server 改为只发 `system.error`，老 client 不再收到 system.notify(severity=error)。
+  - 窗口结束的判定条件：(a) web 与微信小程序至少一端发布 `system.error` 消费 PR；(b) 双发已运行至少 14 天观察期。
+- **不在 first-wave 的 client 改造**：error toast UI 风格、详细文案、retry button 行为—— 由前端组装阶段决定，本簇仅约束"必须有 case 分支 + category 分发"。
+- **边界**：
+  - 双发降级窗口期间前端可能两 frame 都收到→ 按 trace_uuid + code dedupe（与 §7.2.5 F2×F7 交叉规则一致）。
+  - 微信小程序 UI 受限（无浏览器 toast 库）→ 用 `wx.showToast` + `wx.showModal` 适配。
+- **一句话收口目标**：✅ **web ChatPage + 微信小程序 session/index.js 都有 `case 'system.error'` 分支；按 `error.category` 分发 UI；server 双发降级窗口运行 ≥14 天后切单发；切换不破坏老 client UX。**
+
+#### F14: 包来源单一真相门禁 + jwt-shared 0.1.0 首发（v0.5 新增；critical 门禁）
+
+> 撤销 v0.4 把 jwt-shared 当 RHX3 carry-over 的错误判断。本节是 RHX2 closure 的硬门禁——不通过不允许宣告完成。
+
+- **F14-a：jwt-shared 0.1.0 首发**：
+  - bump `packages/jwt-shared/package.json` version `0.0.0 → 0.1.0`。
+  - `pnpm --filter @haimang/jwt-shared run build` → `npm publish`（用 owner 已登录的 PAT）。
+  - 验证：`curl -sI -H "Authorization: Bearer $NODE_AUTH_TOKEN" https://npm.pkg.github.com/@haimang%2Fjwt-shared` 返回 `HTTP 200`；versions 列表含 `0.1.0`。
+  - 不删 `workspace:*` 引用——dev 时仍走 workspace symlink；deploy 时由 F14-c 门禁验证 workspace version === registry version。
+
+- **F14-b：CI gate 脚本**：
+  - 位置：`scripts/verify-published-packages.mjs`（新建）。
+  - 流程：
+    1. `for pkg in [@haimang/nacp-core, @haimang/nacp-session, @haimang/jwt-shared]:`
+    2. 读 `packages/<basename>/package.json` 的 `version`。
+    3. `curl -H "Authorization: Bearer $NODE_AUTH_TOKEN" https://npm.pkg.github.com/<encoded>` → JSON 中 `versions` 列表。
+    4. 验证 workspace version 在 registry versions 列表中存在；否则 `process.exit(1)` + 打印 actionable error。
+    5. （可选 strict 模式）下载 registry tarball → 比对 `packages/<basename>/dist/` SHA256；不一致 fail。
+    6. 全部通过后输出 manifest snippet 给 build 阶段消费。
+  - 调用点：`workers/<worker>/package.json` 的 `predeploy` script + CI workflow。
+
+- **F14-c：built-package-manifest.json inline**：
+  - 文件位置：build 时由 esbuild 注入到 worker bundle 的常量 `__NANO_PACKAGE_MANIFEST__`（不通过文件系统）。
+  - 形态：
+
+```ts
+// 由 build 脚本生成、esbuild --define 注入的常量
+declare const __NANO_PACKAGE_MANIFEST__: {
+  build_at: string;          // ISO 8601
+  worker: string;
+  packages: Array<{
+    name: "@haimang/nacp-core" | "@haimang/nacp-session" | "@haimang/jwt-shared";
+    workspace_version: string;
+    registry_version: string;
+    registry_published_at: string;
+    dist_sha256: string;
+    match: boolean;
+  }>;
+};
+```
+
+- **边界情况**：
+  - registry HTTP 503 → CI gate 短重试 3 次（exponential backoff）；仍 fail 则 deploy 中止，不允许 graceful degrade（这是门禁的全部价值）。
+  - workspace `pnpm install` 没拉到最新 registry 版本（缓存）→ gate 验证 workspace truth 与 registry latest 是否一致，强制提示 `pnpm install` 后重试。
+  - tarball SHA256 校验在 first-wave 标 optional（避免本地 build flag 不一致导致 false-positive）；后续 RHX3 转 mandatory。
+- **一句话收口目标**：✅ **`@haimang/jwt-shared@0.1.0` 已发布到 GitHub Packages（HTTP 200 验证）；CI gate 在 6 worker 的 `predeploy` 阶段阻拦任何 workspace ↔ registry drift；6 worker bundle 都 inline 了 `__NANO_PACKAGE_MANIFEST__`；RHX2 closure 必须显示门禁通过证据。**
+
+#### F15: `/debug/packages` 验证接口（v0.5 新增）
+
+- **endpoint**：`GET /debug/packages`
+- **auth**：team gate（与 `/debug/logs` 同；F5）；返回当前 caller team 视角的 manifest（manifest 内容跨 team 一致，但 endpoint 仍要求 auth 防止匿名扫描）。
+- **响应形态**：见 §3.7.4 示例。
+- **核心逻辑**：
+  - `deployed`: 直接 serialize `__NANO_PACKAGE_MANIFEST__` 常量（O(1)，无 IO）。
+  - `registry`: 对 3 个包并发拉 GitHub Packages metadata API；orchestrator-core 内 10 秒 LRU 缓存避免速率限制。
+  - `drift`: 逐包计算 `deployed.version !== registry.latest_version`。
+  - `fetched_at` 字段记录 registry 查询发生时刻。
+- **边界**：
+  - registry HTTP 失败 → `registry: null` + `error: "registry-unavailable"` 字段；不让整个 endpoint fail。
+  - GitHub Packages PAT 在 worker runtime 不可用（worker 没 PAT 环境）→ 改用未授权 GET（GitHub Packages 公共部分允许；本仓库已开 access: restricted 时降级为只返 `deployed` 段并标注 `registry: "auth-not-available-in-runtime"`）；详见 Q-Obs13 决策。
+  - rate limit：per-team 10 req/s。
+- **测试**：
+  - unit ≥4（drift=true / drift=false / registry-error / no-PAT 降级）。
+  - e2e：preview deploy 后 curl `/debug/packages`，验 3 包 + drift=false。
+- **一句话收口目标**：✅ **`/debug/packages` 在 6 worker preview + production 都返回 200；返回结构含 `deployed.{version,resolved_from,dist_sha256}` + `registry.{latest_version,published_at,fetched_at}` + `drift`；前端可以按这份响应做版本错配的故障复盘。**
 
 ### 7.3 非功能性要求与验证策略
 
@@ -818,7 +1105,7 @@ CREATE INDEX IF NOT EXISTS nano_audit_log_trace_idx
 - **可观测性要求**：
   - 任何 severity ≥ warn 的错误：(a) console 一行 JSON；(b) 内存环形缓冲；(c) D1 持久化（如可达）；(d) facade 响应 envelope 带 trace_uuid（HTTP 路径）；(e) WS `system.error` 推送（如 session attached 且 critical）。
   - 任何 severity = critical 的错误：(a)+(b)+(c) 必到 + console 前缀 `[CRITICAL]` + alerts envelope。
-  - 任何 6 类 audit event：必到 D1 `nano_audit_log`；写失败必触发 critical alert。
+  - 任何 8 类 audit event：必到 D1 `nano_audit_log`；写失败必触发 critical alert。
 - **稳定性要求**：
   - logger / D1 写失败不能让业务 path 失败（degrade silently）。
   - dedupe 命中不能误吞 critical（critical 不 dedupe）。
@@ -839,14 +1126,16 @@ CREATE INDEX IF NOT EXISTS nano_audit_log_trace_idx
   - F8: 3 类触发各 ≥ 1 case + 自写失败回退 + 空 metrics/traces 序列化省略 ≥ 1 case。
   - F9: bash-core ≥ 7 cases（每个 ad-hoc 路径 1）；orchestrator-auth ≥ 6 cases。
   - F10: ESLint rule fixtures（触发 / 不触发 / `packages/` > `workers/` 主份选择）。
-  - **F11**: ≥ 8 cases（6 类 event_kind 各 1 + 写失败触发 critical alert + TTL 清理 + `/debug/audit` owner-only 拒绝非 owner）。
+  - **F11**: ≥ 10 cases（8 类 event_kind 各 1 + 写失败触发 critical alert + TTL 清理 + `/debug/audit` owner-only 拒绝非 owner）。
   - **F2 × F7 交叉**: ≥ 2 cases（同 trace_uuid 的 HTTP error + WS frame；不同 code 但同 trace_uuid）。
-  - **总数估算**：≥ 75 unit cases + ≥ 8 live e2e（preview deploy 后）。
+  - **F12（v0.3 新增）**: ≥ 5 cases（`getErrorMeta` 命中 / `getErrorMeta` 未知 code fallback / `classifyByStatus` 退路 / web 与微信小程序两端 import 同形 / CI 一致性测试 server `listErrorMetas` ↔ client meta 完整覆盖）。
+  - **F13（v0.3 新增）**: ≥ 6 cases（web 收 `system.error` 按 category 分发 / 微信小程序同步分发 / 双发降级窗口期间老 client 仍收到 `system.notify(severity=error)` / 双发期间新 client 按 trace_uuid dedupe / 窗口结束后切单发 / 未知 category fallback）。
+  - **总数估算**：≥ 86 unit cases + ≥ 10 live e2e（preview deploy 后）。
 - **验证策略**：
   - unit：vitest cloudflare:workers，每个 F 独立 spec。
   - integration：preview deploy 后跑：
     - `test/package-e2e/orchestrator-core/15-error-log-smoke.test.mjs`（trace_uuid 链路 + `/debug/logs` 命中）。
-    - `test/package-e2e/orchestrator-core/16-audit-log-smoke.test.mjs`（6 类 event_kind 各 1 写入 + 查询）。
+    - `test/package-e2e/orchestrator-core/16-audit-log-smoke.test.mjs`（8 类 event_kind 各 1 写入 + 查询）。
     - `test/cross-e2e/15-system-error-frame.test.mjs`（agent-core kernel error → 前端收到 system.error WS frame；F2×F7 trace_uuid 一致）。
     - `test/cross-e2e/16-audit-cross-tenant-deny.test.mjs`（跨租户 deny 触发 audit event_kind=`tenant.cross_tenant_deny`）。
   - 具体命令由 action-plan 写。
@@ -928,59 +1217,86 @@ CREATE INDEX IF NOT EXISTS nano_audit_log_trace_idx
 
 | Q ID | 问题 | 影响范围 | 当前建议 | 状态 |
 |---|---|---|---|---|
-| Q-Obs1 | `nano_error_log` / `nano_audit_log` 是否走 orchestrator-core 单写点 | F4 / F11 / 跨租户边界 | **走单写点**（§6.1 取舍 3） | open |
-| Q-Obs2 | D1 migration 编号：方案 A（012）vs 方案 B（抢 011） | F4 / F11 落地时点 | **方案 A** | open |
-| Q-Obs3 | `nano_error_log` TTL = 14d；`nano_audit_log` TTL = 90d 是否合适？是否需按 severity 分层 | F4 / F11 / 合规 | **first-wave 一刀切：error 14d / audit 90d**；分层延后 | open |
-| Q-Obs4 | `system.error` 是否新增 stream-event kind | F7 / 协议清洁度 | **新增 kind**（§6.1 取舍 5）；`SystemErrorEventBodySchema` 与 `SystemErrorBodySchema` 平行 | open |
-| Q-Obs5 | `/debug/logs` 与 `/debug/audit` 是否对 owner 全租户可见 | F5 / F11 | **`/debug/logs` 仅 team；`/debug/audit` owner-only**；跨租户用 wrangler tail | open |
-| **Q-Obs6（v0.2 新增）** | F11 first-wave 6 类 audit event_kind 是否充分？是否需要再加（如 `session.start` / `session.end`） | F11 写量 / 合规 | **first-wave 仅 6 类**；session 生命周期已由 session-registry 覆盖 | open |
-| **Q-Obs7（v0.2 新增）** | F2 × F7 交叉时，HTTP envelope 与 WS frame 是否必须 code 一致 | §7.2.5 / 前端去重 | **trace_uuid 必一致；code 允许不同（来自不同枚举），前端按 trace_uuid 去重** | open |
-| **Q-Obs8（v0.2 新增）** | TTL 清理用 DO alarm 还是 Cloudflare cron trigger | F4 / F11 / 运维 | **倾向 cron trigger**（一个 worker 一份配置；alarm 需要 DO 实例可达） | open |
-| **Q-Obs9（v0.2 新增）** | bash-core 7 个 ad-hoc string codes first-wave 是否必须归化为 zod enum | F9 / F3 / RH3 contract | **不归化**；仅纳入 docs 第 8 段；zod enum 迁移延后 | open |
+| Q-Obs1 | `nano_error_log` / `nano_audit_log` 是否走 orchestrator-core 单写点 | F4 / F11 / 跨租户边界 | **走单写点**；caller 侧必须保留 `rpc_log_failed` console/memory fallback | answered |
+| Q-Obs2 | RHX1 DDL SSOT 收敛后，RHX2 migration 编号是否直接承接 next slot = `006` | F4 / F11 落地时点 | **是，直接用 `006-error-and-audit-log.sql`** | answered |
+| Q-Obs3 | `nano_error_log` TTL = 14d；`nano_audit_log` TTL = 90d 是否合适？是否需按 severity 分层 | F4 / F11 / 合规 | **first-wave 一刀切：error 14d / audit 90d**；分层延后 | answered |
+| Q-Obs4 | `system.error` 是否新增 stream-event kind | F7 / 协议清洁度 | **新增 kind**；但 server rollout 必须伴随 web / 微信 client 消费路径同步补齐 | answered |
+| Q-Obs5 | `/debug/logs` 与 `/debug/audit` 是否对 owner 全租户可见 | F5 / F11 | **`/debug/logs` 仅 team；`/debug/audit` owner-only**；不做全租户面板 | answered |
+| **Q-Obs6（v0.2 新增）** | F11 first-wave audit event_kind 是否充分 | F11 写量 / 合规 | **不充分**；在原 6 类基础上补 `session.attachment.superseded` 与 `session.replay_lost` | answered |
+| **Q-Obs7（v0.2 新增）** | F2 × F7 交叉时，HTTP envelope 与 WS frame 是否必须 code 一致 | §7.2.5 / 前端去重 | **trace_uuid 必一致；code 允许不同，但 UI 去重键必须是 `trace_uuid`** | answered |
+| **Q-Obs8（v0.2 新增）** | TTL 清理用 DO alarm 还是 Cloudflare cron trigger | F4 / F11 / 运维 | **cron trigger** | answered |
+| **Q-Obs9（v0.2 新增）** | bash-core 7 个 ad-hoc string codes first-wave 是否必须归化为 zod enum | F9 / F3 / RH3 contract | **不强制归化为 zod enum**；但必须进入 registry/docs 的 client-safe 映射面 | answered |
+| **Q-Obs10（v0.3 新增；GPT R1）** | client-safe error meta 出口的形态 | F12 / 跨端复用 | **候选 a' = 扩展 `@haimang/nacp-core` 新增 `nacp-core/error-codes-client` 子路径导出（v0.4 修订）**：与候选 a 等价但不新建独立包；与 owner "只保留 3 个 published 包"长期策略一致。微信小程序 build 时反射 `node_modules/@haimang/nacp-core/dist/error-registry-client/data.js` 拷贝 JSON。候选 b/c 保留为 future fallback。 | answered |
+| **Q-Obs11（v0.3 新增；GPT R2）** | `system.error` + `system.notify(severity=error)` 双发降级窗口长度 | F13 / client rollout / server 切单发时点 | **默认 4 周**（双发运行 ≥14 天观察期 + web/微信至少一端发布 `system.error` 消费 PR） | answered |
+| **Q-Obs12（v0.3 新增；GPT R4）** | 三套 durable 真相（activity_logs / error_log / audit_log）的索引引用规则是否在 first-wave 强制 | §3.6 / 排障路径 | **强制 first-wave**：(a) audit 写时只引 `ref={kind, uuid}` 不复制 activity payload 全文；(b) error_log 不写"正常事件"；(c) cross-tenant deny 等安全事件主真相 = `nano_audit_log`，副真相 = `nano_error_log`（severity=warn）；(d) session 边界事件双写（audit + activity_log） | answered |
+| **Q-Obs13（v0.5 新增；critical 门禁）** | jwt-shared 是否必须 RHX2 内正式发布（撤销 v0.4 RHX3 carry-over） | F14 / 包来源单一真相 / RHX2 closure 门禁 | **必须 RHX2 内发布**（首发 0.1.0）；RHX3 carry-over 是错误判断已撤销；不接受 "永久 workspace-only" 替代方案；不接受 "合并入 nacp-core" 替代方案 | answered |
+| **Q-Obs14（v0.5 新增）** | `/debug/packages` 在 worker runtime 没有 GitHub Packages PAT 时如何拉 registry | F15 / 部署时 secret 注入 | **registry 段 graceful 降级**：worker runtime 不持有 PAT（避免长期凭据驻留 worker 环境）；`/debug/packages` 拉 registry 时使用 `GET https://npm.pkg.github.com/<encoded>` 不带 Authorization 头；GitHub Packages 对 restricted 包返 401 时，response 把 `registry` 段标 `"auth-not-available-in-runtime"`，**deployed 段始终可用**（来自 inline manifest）；如果 owner 后续启用 PAT 注入则切完整双段。**owner 与前端在 deployed 段不可用时应警觉，因为这意味着 build 时 manifest 没注入** | answered |
+
+### 9.1.1 本轮代业主答复（GPT 代填）
+
+- **Q-Obs1**：确认 `nano_error_log` / `nano_audit_log` 仍走 orchestrator-core 单写点。原因不是“方便”，而是当前 shared D1 truth、team 边界和 cross-worker authority 都集中在 orchestrator-core；但 durable 落库失败时，caller 侧必须保留 `console + memory-ring + rpc_log_failed:true` 的降级出口，不能把“单写点”做成“单点黑洞”。
+- **Q-Obs2**：确认 RHX2 不再讨论 `011/012`。RHX1 已把当前 migration SSOT 收敛成 `001`–`005`，因此 RHX2 第一张新增 migration 的唯一合理编号就是 `006-error-and-audit-log.sql`。
+- **Q-Obs3**：确认 first-wave retention 采用 `error = 14d`、`audit = 90d`，不做 severity 分层。14 天足够覆盖开发 / preview / 用户反馈回溯窗口，90 天才有资格承接安全 / 审计链路；按 severity 再分层会把 first-wave 过早拉向平台治理。
+- **Q-Obs4**：确认新增 `system.error` stream-event kind；但这不是纯后端变更，必须把 web / 微信小程序对 `system.error` 的消费一并纳入交付，否则只会把当前“未知 kind”从日志噪音换成 UI 噪音。
+- **Q-Obs5**：确认 `/debug/logs` 只允许 authenticated same-team 查询，`/debug/audit` 只允许 owner 查询本 team 范围，不做“owner 全租户自助面板”。跨租户排障继续走 `wrangler tail` / deploy-side 运维工具，不把产品面直接做成 control plane。
+- **Q-Obs6**：否决“first-wave 仅 6 类 audit event_kind”。真实客户端最需要解释的不是 `session.start/end` 这种高频噪音，而是 **`attachment_superseded` 与 `replay_lost`** 这两类低频、高价值边界事件；因此 first-wave 审计集应扩成 8 类，仍然不引入高频 session 生命周期洪水。
+- **Q-Obs7**：确认 F2 × F7 的强一致主键是 `trace_uuid`，不是 `code`。同一逻辑错误如果跨越 facade 包装层与 kernel/source 层，允许出现不同 code，但 UI 必须按 `trace_uuid` 去重，HTTP error 作为用户面主呈现，WS `system.error` 作为 telemetry / session-side 补充。
+- **Q-Obs8**：确认 TTL 清理走 Cloudflare cron trigger，不走 DO alarm。原因很简单：错误 / 审计表是 shared D1 truth，不属于某个特定 DO 实例的生命周期；cron 比 alarm 更符合“全局 housekeeping”。
+- **Q-Obs9**：确认 bash-core 的 7 个 ad-hoc string codes first-wave 不强制改成 zod enum；但它们不能继续停留在“只有 bash-core 自己知道”的状态，必须进入 runtime registry / docs 镜像的 client-safe 查询面，避免 web 与微信小程序继续各自手搓分类逻辑。
 
 ### 9.2 设计完成标准
 
 设计进入 `frozen` 前必须满足：
 
-1. Q-Obs1 ~ Q-Obs9 全部 owner 答复并落 `RHX-qna.md`。
-2. F1–F11 每项的"一句话收口目标"已被 owner 确认无歧义。
-3. §6.1 的 8 个核心 tradeoff 已被 owner 接受。
-4. §3.5 D1 migration 编号方案确定（方案 A 或 B）。
+1. Q-Obs1 ~ Q-Obs14 全部 owner 答复并落 `RHX-qna.md`（v0.5 新增 Q-Obs13/14）。
+2. F1–F15 每项的"一句话收口目标"已被 owner 确认无歧义（v0.5 新增 F14 / F15）。
+3. §6.1 的 10 个核心 tradeoff 已被 owner 接受（v0.5 新增取舍 10）。
+4. §3.5 D1 migration next slot = `006` 已确定。
 5. 已确认 RHX2 与 RH5 / RH6 的并行/串行关系（§2.1 依赖关系无冲突）。
-6. **§3.3 解耦对象 2 关于 service binding 的事实陈述与 wrangler.jsonc 实际状态一致**（GLM R2 已修正于 v0.2）。
-7. 所有影响 action-plan 执行路径的问题都已在本设计或 QNA register 中回答。
+6. §3.3 解耦对象 2 关于 service binding 的事实陈述与 wrangler.jsonc 实际状态一致（GLM R2 已修正于 v0.2）。
+7. §3.6 三套 durable 真相职责边界 + 索引引用规则被 owner 接受（v0.3 新增；GPT R4 / Q-Obs12）。
+8. F12 client meta 形态选定（Q-Obs10）+ F13 双发降级窗口长度选定（Q-Obs11）。
+9. **§3.7 包来源单一真相门禁被 owner 接受（v0.5 critical 门禁；Q-Obs13/14）**。
+10. **F14 包发布门禁 + jwt-shared 0.1.0 已发布证据；F15 `/debug/packages` 已实现并 preview 验证（v0.5 critical 门禁）**。
+11. 所有影响 action-plan 执行路径的问题都已在本设计或 QNA register 中回答。
 
 ### 9.3 下一步行动
 
 - **可解锁的 action-plan**：拟新建 `docs/action-plan/real-to-hero/RHX2-observability-and-auditability.md`（在本设计 frozen 后）。
-- **需要同步更新的设计文档**：
-  - `docs/design/real-to-hero/RHX-qna.md`（追加 Q-Obs1..Q-Obs9）。
+- **已同步更新的设计文档**：
+  - `docs/design/real-to-hero/RHX-qna.md`（Q-Obs1..Q-Obs9 已追加并回填回答；Q-Obs10/11/12 待回填）。
 - **需要同步更新的 wrangler.jsonc**：
   - `workers/bash-core/wrangler.jsonc`（preview + production env 新增 `ORCHESTRATOR_CORE` services binding）。
   - `workers/context-core/wrangler.jsonc`（同上）。
   - `workers/filesystem-core/wrangler.jsonc`（同上）。
   - 这 3 个修改属于 action-plan 范围，但本设计点名以避免遗漏。
-- **需要进入 QNA register 的问题**：Q-Obs1 ~ Q-Obs9。
-- **不解锁的事**：RH5 / RH6 的 hard gate 不依赖 RHX2 完成（横切簇可与 RH5 并行；F4/F11 migration 012 落地时点取决于 Q-Obs2）。
+- **需要协调的 client repo PR**（v0.3 新增；GPT R1/R2）：
+  - `clients/web/src/apis/transport.ts:50-57` 切到 F12 `getErrorMeta(...)`。
+  - `clients/web/src/pages/ChatPage.tsx` 新增 `case 'system.error'` 分支。
+  - `clients/wechat-miniprogram/utils/nano-client.js:11-28` 切到 F12（小程序 build 拷贝形态）。
+  - `clients/wechat-miniprogram/pages/session/index.js:123-155` 新增 `case 'system.error'` 分支。
+- **进入 QNA register 的问题**：Q-Obs1 ~ Q-Obs12（v0.3 新增 Q-Obs10/11/12 待 owner 答复）。
+- **不解锁的事**：RH5 / RH6 的 hard gate 不依赖 RHX2 完成（横切簇可与 RH5 并行；F4/F11 migration `006-error-and-audit-log.sql` 的落地时点取决于 Q-Obs2 已答复后的执行排期）。
 
 ---
 
 ## 10. 综述总结与 Value Verdict
 
-### 10.1 功能簇画像
+### 10.1 功能簇画像（v0.5 重写）
 
-> RHX2 是 nano-agent 的 **observability-and-audit 横切簇**，与 RH0–RH6 并列。它的存在形态是 **6 件组合**：(a) 1 个共享 `worker-logger` 包；(b) 2 张 D1 表（`nano_error_log` 14d + `nano_audit_log` 90d）；(c) 1 套运行时 `resolveErrorMeta()` registry + 1 份 `docs/api/error-codes.md` 文档镜像；(d) 1 个 `system.error` stream-event kind 接电 + NACP `audit.record` 通道接电 + `NacpObservabilityEnvelope.alerts` 接电；(e) 2 个新增 endpoint（`/debug/logs` + `/debug/audit`）+ `Server-Timing` 头；(f) 3 个 worker 的 wrangler.jsonc 新增 `ORCHESTRATOR_CORE` service binding。它覆盖 6 个 worker 的所有错误路径与 6 类 protocol-level 审计事件，并对 1 个新增 stream-event kind（`system.error`）负责。复杂度集中在四点：(1) `nano_error_log` 写入治理（dedupe/rate-limit/fallback）避免风暴；(2) 6 worker HTTP 入口 codemod 工程量；(3) `nano_audit_log` 与 error log 的语义/retention/权限严格分离；(4) F2×F7 交叉一致性约束。
+> RHX2 是 nano-agent 的 **observability-and-audit 横切簇**，与 RH0–RH6 并列。它的存在形态是 **9 件组合**：(a) 1 个共享 logger（`@haimang/nacp-core/logger` 子路径导出）；(b) 2 张 D1 表（`nano_error_log` 14d + `nano_audit_log` 90d，与既有 `nano_session_activity_logs` 形成"三套真相 + 索引引用"分工）；(c) 1 套运行时 `resolveErrorMeta()` registry + 1 份 `docs/api/error-codes.md` 文档镜像 + **1 份 `nacp-core/error-codes-client` 子路径导出（F12）**；(d) 1 个 `system.error` stream-event kind 接电 + NACP `audit.record` 通道接电 + `NacpObservabilityEnvelope.alerts` 接电；(e) **3 个新增 endpoint**（`/debug/logs` + `/debug/audit` + `/debug/packages`）+ `Server-Timing` 头；(f) 3 个 worker 的 wrangler.jsonc 新增 `ORCHESTRATOR_CORE` service binding；(g) web `transport.ts` + 微信小程序 `nano-client.js` 切到 client meta；(h) web ChatPage + 微信小程序 session/index.js 新增 `case 'system.error'` 分支 + 服务端双发降级窗口（F13）；(i) **包来源单一真相门禁（F14）**：jwt-shared 0.1.0 首发 + CI gate 验证 workspace ≡ registry version + `built-package-manifest.json` inline 进 worker bundle。它覆盖 6 worker 错误路径 / 8 类 protocol audit / 端到端 client 闭环 / **包发布层闭环**。复杂度集中在六点：(1) `nano_error_log` 写入治理避免风暴；(2) 6 worker HTTP 入口 codemod；(3) 三套 durable 真相的语义/retention/权限严格分离；(4) F2×F7 交叉一致性；(5) client 端 PR 协调与双发降级窗口；(6) **包发布门禁与 deploy 链路集成**。
 
-### 10.2 Value Verdict（v0.2 复评）
+### 10.2 Value Verdict（v0.5 复评）
 
-| 评估维度 | v0.1 评级 | v0.2 评级 | 一句话说明 |
-|---|---|---|---|
-| 对 nano-agent 核心定位的贴合度 | 5 | 5 | NACP 协议的 4 个观测留位首次接电；audit.record 通道首次进入 prod |
-| 第一版实现的性价比 | 5 | 4 | 加入 F11 audit 表 + 3 worker binding 新增，工作量比 v0.1 大；但解决了"audit 与 error 混淆"的语义债 |
-| 对未来上下文管理 / Skill / 稳定性演进的杠杆 | 4 | 5 | F11 让 hook outcome 与 device gate 决策可回溯 90d，是 hero-to-platform admin audit 的第一层基础 |
-| 对开发者自己的日用友好度 | 5 | 5 | trace_uuid + /debug/logs + Server-Timing；前端在 Network 面板原生看耗时 |
-| 风险可控程度 | 4 | 4 | F4 fallback 已修；F2×F7 交叉规则已立；dedupe 三元组已立；service binding 事实已校正 |
-| **综合价值** | **4.6** | **4.6** | 高价值横切簇；建议优先级 P0；first-wave 必做 S1–S11；不必硬塞 OTel 全套 |
+| 评估维度 | v0.1 | v0.2 | v0.3 | v0.5 | 一句话说明 |
+|---|---|---|---|---|---|
+| 对 nano-agent 核心定位的贴合度 | 5 | 5 | 5 | 5 | NACP 4 个观测留位接电 + audit.record 入 prod + client 端到端 + **包发布层闭环（v0.5）** |
+| 第一版实现的性价比 | 5 | 4 | 4 | 4 | v0.5 加 F14/F15 = 1 publish + 1 CI gate + 1 endpoint，工作量再上一档；但封住"事实认知错误"无可妥协 |
+| 对未来上下文管理 / Skill / 稳定性演进的杠杆 | 4 | 5 | 5 | 5 | F11 + F12 + **F14/F15** 让 hook outcome / 错误分类 / 包发布事实都可被前端与 owner 直接消费 |
+| 对开发者自己的日用友好度 | 5 | 5 | 5 | 5 | trace_uuid + /debug/logs + Server-Timing + client meta + system.error UX + **/debug/packages** |
+| 风险可控程度 | 4 | 4 | 4 | 4 | v0.5 在双发窗口外多一项 wild card：CI gate 阻塞 deploy；缓解：registry 短重试 + owner 立场宁停勿模糊 |
+| **认知正确性**（v0.5 新增维度） | n/a | n/a | n/a | 5 | v0.4 把 jwt-shared 误判为 carry-over 已撤销；v0.5 不允许 phase 在事实-意图差距下宣告完成 |
+| **综合价值** | 4.6 | 4.6 | 4.6 | **4.7** | v0.5 提升因为补齐 v0.4 critical 门禁认知错误；first-wave 必做 S1–S15；OTel 全套继续不做 |
 
 ---
 
@@ -1002,3 +1318,6 @@ CREATE INDEX IF NOT EXISTS nano_audit_log_trace_idx
 |---|---|---|---|
 | v0.1 | 2026-04-29 | Owner + Opus 4.7 (1M) | 初稿；F1–F10 + 6 大 tradeoff + Q-Obs1–5 |
 | v0.2 | 2026-04-29 | Opus 4.7 (1M) | 吸收 DeepSeek (R1/R2/R3 + S1/S2/S3/S4/S5) + GLM (R1–R12) 审查：(a) 新增 F11 audit-log 表 + NACP audit.record 通道接电；(b) F3 升级为 runtime registry + docs 镜像 + CI 一致性；(c) F4 / F11 给出完整 DDL；(d) F4 加 fallback；(e) F5 鉴权改 team gate（device gate 误用修正）；(f) F6 范围明确仅 orchestrator-core HTTP 出口；(g) F7 schema 修正：`SystemErrorEventBodySchema` 复用 `NacpErrorSchema`，与 `SystemErrorBodySchema` 平行；dedupe 改三元组；(h) F8 envelope 序列化省略空字段；(i) F9 给出完整错误路径枚举 + ad-hoc code 归化方式；(j) F10 主份选择规则 + evidence-emitters 描述更正；(k) §3.3 解耦对象 2 service binding 事实校正；(l) §6.1 取舍 7 + 8 新增；(m) §2.1 受众扩展含微信小程序；(n) §7.2.5 F2 × F7 交叉规则新增；(o) Q-Obs6/7/8/9 新增。 |
+| v0.3 | 2026-04-29 | Opus 4.7 (1M) | 吸收 GPT (R1/R2 blocker + R3/R4 follow-up) 审查 + 关键事实校正：(a) **migration baseline 校正**：当前 SSOT 是 `001-005`（RHX1 后），所有 `011/012` 引用全部改为 `006-error-and-audit-log.sql`；(b) **新增 F12 client-safe error meta 出口**（`packages/error-codes-client` 推荐）：终止 `clients/web/src/apis/transport.ts:50-57` 与 `clients/wechat-miniprogram/utils/nano-client.js:11-28 classifyError()` 各自手搓；(c) **新增 F13 web + 微信小程序 `system.error` 消费改造 + 双发降级窗口**：避免 server 单边接电变 "未知 kind" 噪音；(d) **F11 first-wave 6→8 类 audit event_kind**：补 `session.attachment.superseded` + `session.replay_lost`；(e) **新增 §3.3 解耦对象 5**：client-safe error meta 必须独立于 worker-logger 包；(f) **新增 §3.6 三套 durable 真相职责边界**：`nano_session_activity_logs`（migration 002 已存在）/ `nano_error_log`（本簇新增）/ `nano_audit_log`（本簇新增）的"主真相 + 索引引用"分工规则；(g) §5.1 新增 S12 + S13；(h) §6.1 新增取舍 9（client rollout in-scope）；(i) §6.2 新增 3 行风险（client 不消费 / 手搓分类继续漂移 / 三套真相职责混淆）；(j) §7.1 新增 F12/F13 行；(k) §7.3 测试要求扩到 ≥86 unit + ≥10 e2e；(l) Q-Obs10/11/12 新增；(m) §10.1 画像扩为 8 件；(n) §10.2 v0.3 评级列。 |
+| v0.4 | 2026-04-29 | Opus 4.7 (1M) | 吸收 owner 包退役策略反馈 + 事实核查 `jwt-shared` 未发布到 GitHub Packages：(a) **撤销新建 `packages/worker-logger/` 与 `packages/error-codes-client/`**：F1 改为扩展 `@haimang/nacp-core` 新增 `nacp-core/logger` 子路径导出；F12 改为新增 `nacp-core/error-codes-client` 子路径导出（candidate a'）；nacp-core minor bump 1.4.0 → 1.5.0 重发 GitHub Packages；与 owner 长期"3 个 published 包（nacp-core / nacp-session / jwt-shared）"策略一致；(b) **Q-Obs10 重写**：candidate a → candidate a'（子路径导出），保持 owner-answered 状态；(c) **登记 `@haimang/jwt-shared` 未发布事实**作为 RHX3 carry-over：当前 GitHub Packages HTTP 404，`workspace:*` + `pnpm-workspace.yaml/packages/*` symlink + `prebuild`/`pretest` hook 三层兜底让本地 / preview / production 都"看不见"这个 404；不在 RHX2 范围内修复，由 RHX3 在 (i) 正式发布 / (ii) 永久 workspace-only / (iii) 合并入 nacp-core 三选一；(d) §1.1 关键术语 / §3.3 解耦对象 5 / §5.1 S1 / S12 / §6.1 取舍 9 / §6.2 / §7.1 F12 / §7.2 F12 详细 / §7.2 F12 收口目标 全部同步形态修订；(e) action-plan 同步落 v0.draft-r2（`docs/action-plan/real-to-hero/RHX2-observability-and-auditability.md` §0-prefix + §10）。**v0.5 已撤销 (c) 中"RHX3 carry-over"的判断**——见 v0.5 行。 |
+| v0.5 | 2026-04-29 | Opus 4.7 (1M) | 撤销 v0.4 中 "jwt-shared 未发布 = RHX3 carry-over" 的错误判断（owner 反馈：这是 critical 门禁认知错误，不是可推迟项）。**重大修订**：(a) **`jwt-shared@0.1.0` 必须 RHX2 内正式发布**（Q-Obs13 已 owner-answered）；(b) **新增 §3.7 包来源单一真相门禁**：published vs workspace-only 二分原则、jwt-shared 必须发布、CI gate 实现要点；(c) **新增 F14 包来源单一真相门禁**：jwt-shared publish + CI gate `verify-published-packages.mjs` + `built-package-manifest.json` inline 进 worker bundle；(d) **新增 F15 `/debug/packages` 验证接口**：让 owner / 前端故障复盘时一次 GET 拿到 deploy 时刻 truth + registry 实时 truth + drift 标记；(e) §5.1 新增 S14 + S15；§6.1 新增取舍 10（包来源唯一真相 vs 接受 carry-over vs 永久 workspace-only）；§6.2 新增 3 行风险（包来源认知模糊 / registry 速率 / CI gate 503 阻断）；§7.1 新增 F14/F15 行；Q-Obs13/14 新增；§9.2 设计完成标准新增 9/10 两条；§10.1 画像由 8 件扩为 9 件；§10.2 新增"认知正确性"维度（v0.5）；综合价值 4.6 → 4.7。 |
