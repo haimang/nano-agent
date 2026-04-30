@@ -496,3 +496,88 @@ hero-to-pro HP7 checkpoint revert
 | 文档 | HP7 closure 能独立解释 checkpoint/revert/fork 的五层结果 |
 | 风险收敛 | 无 partial restore、无 parent/child R2 串线、无 latest-key 冒充产品面 |
 | 可交付性 | HP8 可以在 HP7 已完成的恢复/分支骨架之上继续做 runtime hardening 与 chronic closure |
+
+---
+
+## 9. 工作日志(回填)
+
+> 记录 HP7 first wave 的实际落地路径 — 与 §3 业务工作总表逐项对齐。
+> 闭环日期: `2026-04-30`。详情参见 `docs/issue/hero-to-pro/HP7-closure.md`。
+
+### 9.1 P1-01 / P1-02 — checkpoint snapshot durable truth + lazy/eager-by-kind 物化策略
+
+- 新增 `workers/orchestrator-core/src/checkpoint-restore-plane.ts`
+  - 导出 `D1CheckpointSnapshotPlane`:`list` / `create` / `transitionStatus` / `setCheckpointFileSnapshotStatus`
+  - 导出 4 个 frozen enum:`CHECKPOINT_FILE_SNAPSHOT_STATUSES`(4) / `CHECKPOINT_SNAPSHOT_STATUSES`(4) / `RESTORE_MODES`(4) / `RESTORE_STATUSES`(6)
+  - 导出 `buildCheckpointSnapshotR2Key()`:`tenants/{team}/sessions/{session}/snapshots/{checkpoint_uuid}/{virtual_path}` 法律
+  - 导出 `buildForkWorkspaceR2Key()`:`tenants/{team}/sessions/{child_session}/workspace/{virtual_path}`(Q23 child 完全独立 namespace)
+  - 导出 `fileSnapshotPolicyForKind()`:user_named=`eager_with_fallback`,其余=`lazy`(Q22)
+  - 导出 `CheckpointSnapshotConstraintError`(`checkpoint-not-found` / `snapshot-already-materialized` / `invalid-status`)
+
+### 9.2 P3-01 / P3-02 — restore job + confirmation gate + rollback / failure_reason law
+
+- 在同一文件新增 `D1CheckpointRestoreJobs`
+  - `openJob`:对非 fork 模式强制 `confirmation_uuid`(Q24);fork 显式允许无 confirmation(Q23)
+  - `markRunning`:仅 pending → running;终态 job 拒绝重新进入 running
+  - `terminate`:仅接受 4 终态;非 success 终态强制 `failure_reason`(Q24);幂等
+  - `read` / `listForSession`:支持 audit / debug 列举
+  - `CheckpointRestoreJobConstraintError`(`missing-confirmation` / `invalid-mode` / `invalid-status` / `already-terminal` / `job-not-found`)
+- 新增 `workers/orchestrator-core/test/checkpoint-restore-plane.test.ts`(25 用例)
+  - 覆盖 4 enum 冻结、R2 key law、Q22 物化策略
+  - snapshot 状态机:create / transition materialized / transition copied_to_fork
+  - SQL CHECK 双层硬化(file_snapshot_status / restore_mode / restore_status)
+  - confirmation gate / fork 例外 / rolled_back failure_reason / terminate idempotency / markRunning 拒绝终态
+
+### 9.3 P2-01 — checkpoint diff projector
+
+- 新增 `workers/orchestrator-core/src/checkpoint-diff-projector.ts`
+  - 导出 `CheckpointDiffProjector.project()`:返回 added/removed/changed workspace 列表 + watermark-后 artifact added 列表
+  - 仅消费 `materialized` / `copied_to_fork` 状态的 snapshot 行(避免 pending 数据干扰)
+  - watermark message 已 prune 时 artifact delta 返回空(不猜测)
+- 新增 `workers/orchestrator-core/test/checkpoint-diff-projector.test.ts`(5 用例)
+  - 覆盖 missing checkpoint / 三种 workspace 变更 / pending snapshot 不入 diff / artifact watermark 过滤 / pruned watermark 边界
+
+### 9.4 P4-02 — `session.fork.created` 帧 + observability drift fix
+
+- 修改 `packages/nacp-session/src/stream-event.ts`
+  - 新增 `SessionForkCreatedKind`:5 项必填 uuid(parent_session / child_session / conversation / from_checkpoint / restore_job)+ 可选 label(≤200 字符)
+  - 加入 `SessionStreamEventBodySchema` discriminated union
+  - `STREAM_EVENT_KINDS` 长度 11 → 12
+- 修改 `packages/nacp-session/src/index.ts`:re-export `SessionForkCreatedKind`
+- 修改 `packages/nacp-session/test/stream-event.test.ts`:`has 11` → `has 12`
+- 新增 `packages/nacp-session/test/hp7-fork-created.test.ts`(5 用例)
+- 修改 `workers/agent-core/src/eval/inspector.ts`:`SESSION_STREAM_EVENT_KINDS` mirrored constant 加入 `session.fork.created`(防 drift)
+- 修改 `workers/agent-core/test/eval/inspector.test.ts`:`mirrors the 11` → `mirrors the 12`
+
+### 9.5 P1-P4 partial — 留给 HP7 后续批次
+
+- restore executor(`conversation_only` / `files_only` / `conversation_and_files`)真接 DO restore seam + filesystem-core RPC + R2 复制 + 反标 D1 supersede
+- fork executor:复制 conversation 与 snapshot 文件到 child namespace + child transcript lineage system message
+- TTL cleanup cron(scope=`checkpoint_ttl`):turn_end recent-10 / user_named 30d / session.end + 90d
+- public surface 路由:`POST /sessions/{id}/checkpoints/{id}/restore` / `POST /sessions/{id}/fork` / 扩展 `/diff` 输出 workspace+artifact
+- closure §2 P1-P7 已显式登记后续批次责任
+
+### 9.6 P5 — closure + work log
+
+- 新增 `docs/issue/hero-to-pro/HP7-closure.md`(7 节)
+  - §0 verdict matrix(17 维度)
+  - §1 Resolved 13 项
+  - §2 Partial 7 项
+  - §3 Retained 7 项(K1-K7 含 Q22/Q23/Q24 + cleanup scope HP6/HP7 分工 + 禁止 latest-key seam 充当 restore)
+  - §4 F1-F17 chronic status(F8 升级为 partial-by-HP7;F13/F14 升级为 partial-by-HP6-and-HP7)
+  - §5 下游 phase 交接
+  - §6 测试与证据矩阵
+  - §7 收口意见
+- cross-e2e 6+ 场景仍未运行(closure §2 P7 + §6 已显式记录)
+- 本节 §9 工作日志回填 `docs/action-plan/hero-to-pro/HP7-action-plan.md`(本文件)
+
+### 9.7 测试与回归矩阵
+
+| 包 | typecheck | build | test |
+|------|-----------|-------|------|
+| `@haimang/nacp-session` | ✅ | ✅ | ✅ 196/196 |
+| `@haimang/orchestrator-core-worker` | ✅ | n/a | ✅ 305/305 |
+| `@haimang/agent-core-worker` | ✅ | n/a | ✅ 1077/1077 |
+
+cross-e2e 6+ 场景显式留至 HP7 后续批次(见 closure §2 P7)。
+

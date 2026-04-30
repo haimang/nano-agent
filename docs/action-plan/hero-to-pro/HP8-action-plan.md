@@ -525,3 +525,98 @@ hero-to-pro HP8 runtime hardening
 | 文档 | HP8 closure 能独立解释 chronic/runtime/governance 六层结果 |
 | 风险收敛 | 不再以历史 megafile 名称治理、不再保留 tool 镜像真相源、不再存在 silent chronic carryover |
 | 可交付性 | HP9 可以在 HP8 freeze gate 之上开始 18 份 docs、manual evidence 与 prod baseline 的收口 |
+
+---
+
+## 9. 工作日志(回填)
+
+> 记录 HP8 first wave 的实际落地路径 — 与 §3 业务工作总表逐项对齐。
+> 闭环日期: `2026-04-30`。详情参见 `docs/issue/hero-to-pro/HP8-closure.md`。
+
+### 9.1 P3-01 — megafile budget gate(Q25)
+
+- 新增 `scripts/megafile-budget.json`
+  - 5 个当前 owner 文件 stop-the-bleed ceiling:
+    - `workers/orchestrator-core/src/index.ts` ≤ 3000(facade-router)
+    - `workers/orchestrator-core/src/session-truth.ts` ≤ 2000(d1-truth-aggregator)
+    - `workers/orchestrator-core/src/user-do-runtime.ts` ≤ 1300(user-do-runtime)
+    - `workers/agent-core/src/host/do/session-do-runtime.ts` ≤ 800(session-do-runtime)
+    - `workers/agent-core/src/host/runtime-mainline.ts` ≤ 700(kernel-runner)
+  - wrapper / generated 文件不计入 budget
+- 新增 `scripts/check-megafile-budget.mjs`
+  - 读取 `megafile-budget.json`,以 `wc -l` 语义计行
+  - breach 时 `exit 1` 并表格化打印 actual / max / status
+- `package.json` 新增 `check:megafile-budget` script
+
+### 9.2 P3-02a — tool drift guard(Q26)
+
+- 新增 `scripts/check-tool-drift.mjs`
+  - 直接读取 `packages/nacp-core/src/tools/tool-catalog.ts`,grep 所有 `tool_id: "..."` 为 SSoT 列表
+  - 扫描 `packages/` + `workers/`(跳过 `node_modules` / `dist` / `generated` / `test*`)
+  - 失败模式 1:任何文件除 SSoT 之外定义 `TOOL_CATALOG` / `TOOL_CATALOG_IDS`
+  - 失败模式 2:`tool_id: "..."` literal 不在 SSoT 内
+  - 不干扰 `tool_name: toolName` 这类动态 plumbing
+- `package.json` 新增 `check:tool-drift` script
+
+### 9.3 P3-02b — public envelope drift guard(Q27)
+
+- 新增 `scripts/check-envelope-drift.mjs`
+  - 公开 scope 仅枚举 `workers/orchestrator-core/src/index.ts`(public 唯一入口)
+  - 失败模式 1:public response 体直接以 `AuthEnvelope<T>` / `Envelope<T>` 类型出现
+  - 失败模式 2:`Response.json({ ok, data | error, ... })` 缺 `trace_uuid:` — balance-paren 扫描确保看到完整 body 而非仅匹配第一对 `{}`
+  - 健康 / 聚合诊断响应(无 `data:` / `error:` 区分键)豁免,与设计 §5.3 legacy-ack 例外一致
+- `package.json` 新增 `check:envelope-drift` script
+
+### 9.4 P4-01 — tool catalog SSoT(Q26)
+
+- 新增 `packages/nacp-core/src/tools/tool-catalog.ts`
+  - 导出 `ToolCapabilityOwner` 类型(`bash-core` / `filesystem-core` / `workspace-runtime`)
+  - 导出 `ToolCatalogEntry` interface:`tool_id` / `capability_owner` / `binding_key` / `description` / `stable_id`
+  - 导出 `TOOL_CATALOG`(`Object.freeze`)、`TOOL_CATALOG_IDS`、`findToolEntry`
+  - 第一版仅注册 `bash`(其余 capability 待 HP6 后续批次接 RPC 时同时落入 catalog)
+- 修改 `packages/nacp-core/src/index.ts`:re-export 全套 SSoT type / value
+- 新增 `packages/nacp-core/test/tool-catalog.test.ts`(7 用例)
+  - 覆盖 SSoT 唯一性 / capability owner 闭集 / 字段非空 / `findToolEntry` 不 fallback / `Object.isFrozen`
+
+### 9.5 P4-03 — Lane E final-state(Q28)
+
+- 新增 `docs/architecture/lane-e-final-state.md`
+  - §0 终态:`retained-with-reason`
+  - §1 retained scope:`workers/agent-core/src/host/workspace-runtime.ts:1-101` + `runtime-assembly.ts` 引用方
+  - §2 风险声明:host-local in-memory artifact store / evidence sink 与 trace anchor 分层
+  - §3 remove condition:filesystem-core leaf RPC 完整接线后,可降为 `closed`
+  - §4 owner / handoff(禁止 "shim" / "短期妥协" / "以后再说")
+  - §5 与 Q28 4 字段对齐表
+
+### 9.6 P5 — closure + work log + HP9 freeze gate verdict
+
+- 新增 `docs/issue/hero-to-pro/HP8-closure.md`(8 节)
+  - §0 verdict matrix(9 维度)
+  - §1 Resolved 8 项
+  - §2 Partial 7 项
+  - §3 Retained 5 项(K1-K5 含 Q25/Q26/Q27/Q28 + Lane E remove condition)
+  - §4 F1-F17 chronic status(F9 升级为 partial-by-HP8;F13 增加 root gate 三件套)
+  - §5 **HP9 freeze gate verdict: NOT GRANTED** + 解锁条件
+  - §6 下游 phase 交接
+  - §7 测试与证据矩阵
+  - §8 收口意见
+- cross-e2e 4-scenario heartbeat 仍未运行(closure §2 P3-P4 + §5 已显式记录)
+- 本节 §9 工作日志回填 `docs/action-plan/hero-to-pro/HP8-action-plan.md`(本文件)
+
+### 9.7 测试与回归矩阵
+
+| 包 | typecheck | build | test |
+|------|-----------|-------|------|
+| `@haimang/nacp-core` | ✅ | ✅ | ✅ 344/344 |
+| `@haimang/nacp-session` | ✅ | ✅(HP7 build) | ✅ 196/196 |
+| `@haimang/orchestrator-core-worker` | ✅ | n/a | ✅ 305/305 |
+| `@haimang/agent-core-worker` | ✅ | n/a | ✅ 1077/1077 |
+
+| Root gate | 命令 | 状态 |
+|-----------|------|------|
+| megafile budget | `pnpm run check:megafile-budget` | ✅ 5 files within budget |
+| tool drift | `pnpm run check:tool-drift` | ✅ catalog clean |
+| envelope drift | `pnpm run check:envelope-drift` | ✅ public clean |
+
+cross-e2e 4-scenario heartbeat 与 R28 / R29 explicit register 显式留至 HP8 后续批次(见 closure §2 + §5)。
+
