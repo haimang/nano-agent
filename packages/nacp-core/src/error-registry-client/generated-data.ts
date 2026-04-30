@@ -573,5 +573,41 @@ export const GENERATED_CLIENT_ERROR_META = [
     "category": "request.error",
     "http_status": 413,
     "retryable": false
+  },
+  {
+    "code": "wrong-device",
+    "category": "security.denied",
+    "http_status": 403,
+    "retryable": false
+  },
+  {
+    "code": "usage-d1-unavailable",
+    "category": "dependency.unavailable",
+    "http_status": 503,
+    "retryable": true
+  },
+  {
+    "code": "model-unavailable",
+    "category": "request.error",
+    "http_status": 400,
+    "retryable": false
+  },
+  {
+    "code": "model-disabled",
+    "category": "security.denied",
+    "http_status": 403,
+    "retryable": false
+  },
+  {
+    "code": "spike-disabled",
+    "category": "security.denied",
+    "http_status": 403,
+    "retryable": false
+  },
+  {
+    "code": "no-attached-client",
+    "category": "conflict.state",
+    "http_status": 409,
+    "retryable": false
   }
 ] as const satisfies readonly ClientErrorMeta[];

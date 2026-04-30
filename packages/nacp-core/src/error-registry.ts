@@ -264,8 +264,8 @@ const LLM_ERROR_METAS: readonly ErrorMeta[] = [
 // promoted to zod enum in first-wave, but MUST be registered in the
 // registry/docs so clients can look them up).
 //
-// RHX2 review-of-reviews fix (DeepSeek R2 / GLM R3): the 10 facade-level
-// ad-hoc codes that orchestrator-core actually emits at runtime are
+// RHX2 review-of-reviews fix: orchestrator-core current public/session-surface
+// ad-hoc codes that actually emit at runtime are
 // registered here so `resolveErrorMeta()` no longer returns undefined for
 // them. They are documented in `clients/api-docs/error-index.md`
 // "Current Ad-hoc Public Codes".
@@ -278,7 +278,7 @@ const AD_HOC_ERROR_METAS: readonly ErrorMeta[] = [
   m("execution-failed", "ad-hoc", "transient", 500, true, "bash-core execution failed"),
   m("bridge-not-found", "ad-hoc", "validation", 404, false, "bash-core bridge target missing"),
   m("handler-error", "ad-hoc", "transient", 500, true, "bash-core handler threw an unhandled error"),
-  // orchestrator-core facade 10 (RHX2 review-of-reviews fix).
+  // orchestrator-core facade/session surface 17 + 6 second-pass additions.
   m("missing-team-claim", "ad-hoc", "security", 403, false, "JWT must include team_uuid or tenant_uuid"),
   m("invalid-auth-body", "ad-hoc", "validation", 400, false, "auth route requires a JSON body"),
   m("invalid-start-body", "ad-hoc", "validation", 400, false, "/sessions/{id}/start requires a JSON body"),
@@ -296,6 +296,12 @@ const AD_HOC_ERROR_METAS: readonly ErrorMeta[] = [
   m("context-rpc-unavailable", "ad-hoc", "dependency", 503, true, "context-core RPC failed"),
   m("filesystem-rpc-unavailable", "ad-hoc", "dependency", 503, true, "filesystem-core RPC failed"),
   m("payload-too-large", "ad-hoc", "validation", 413, false, "file exceeds 25 MiB upload limit"),
+  m("wrong-device", "ad-hoc", "security", 403, false, "session is bound to another device"),
+  m("usage-d1-unavailable", "ad-hoc", "dependency", 503, true, "usage ledger temporarily unavailable"),
+  m("model-unavailable", "ad-hoc", "validation", 400, false, "requested model is not active"),
+  m("model-disabled", "ad-hoc", "security", 403, false, "requested model is disabled for this team"),
+  m("spike-disabled", "ad-hoc", "security", 403, false, "preview-only verify spike trigger disabled"),
+  m("no-attached-client", "ad-hoc", "conflict", 409, false, "operation requires an attached websocket client"),
 ];
 
 // Sources are concatenated in increasing specificity order. When the
