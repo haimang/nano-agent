@@ -131,6 +131,10 @@ export class AuthService {
     readonly detail?: Record<string, unknown>;
   }): void {
     if (!this.deps.auditPersist) return;
+    // RHX2 review-of-reviews fix (DeepSeek R3): persist failures emit an
+    // `audit-persist-failed` alert inside `buildAuditPersist`. Catch the
+    // rejection here so `void` fire-and-forget does not leak as an
+    // unhandled promise rejection.
     void recordAuditEvent(
       {
         worker: "orchestrator-auth",
@@ -144,7 +148,9 @@ export class AuthService {
         detail: input.detail,
       },
       this.deps.auditPersist,
-    );
+    ).catch(() => {
+      // Already routed to observability alert by the persist wrapper.
+    });
   }
 
   private readDeviceInput(rawInput: unknown, fallbackKind: string): DeviceInput {

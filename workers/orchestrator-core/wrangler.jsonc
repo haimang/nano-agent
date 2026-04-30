@@ -23,7 +23,12 @@
     "WORKER_VERSION": "orchestrator-core@preview",
     "TEAM_UUID": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
     "JWT_SIGNING_KID": "v1",
-    "NANO_ENABLE_RHX2_SPIKE": "true"
+    // RHX2 review-of-reviews fix (R1 GLM critical):
+    // top-level vars apply when `wrangler deploy` runs without --env, i.e.
+    // the production target. The synthetic `system.error` spike trigger
+    // (`/sessions/{id}/verify {check:"emit-system-error"}`) MUST stay off
+    // in production; only the `preview` env block below sets it to "true".
+    "NANO_ENABLE_RHX2_SPIKE": "false"
   },
   "d1_databases": [
     {

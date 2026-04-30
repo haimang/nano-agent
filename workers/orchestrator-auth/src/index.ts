@@ -1,5 +1,6 @@
 import {
   createLogger,
+  emitObservabilityAlert,
   recordAuditEvent,
   type AuditPersistFn,
   type LogPersistFn,
@@ -58,8 +59,33 @@ function buildErrorPersist(env: AuthWorkerEnv): LogPersistFn | undefined {
 function buildAuditPersist(env: AuthWorkerEnv): AuditPersistFn | undefined {
   const rpc = env.ORCHESTRATOR_CORE?.recordAuditEvent;
   if (typeof rpc !== "function") return undefined;
+  // RHX2 review-of-reviews fix (DeepSeek R3 / §5.5 blind-spot 1): wrap
+  // the RPC so persist failures emit an `audit-persist-failed`
+  // observability alert instead of vanishing through `void` at the call
+  // site. The wrapper still rethrows so `recordAuditEvent`'s
+  // `onPersistError` reporter (when one is supplied) can also see it.
+  const alertLogger = createAuthLogger(env);
   return async (record) => {
-    await rpc.call(env.ORCHESTRATOR_CORE, record);
+    try {
+      await rpc.call(env.ORCHESTRATOR_CORE, record);
+    } catch (error) {
+      try {
+        await emitObservabilityAlert({
+          logger: alertLogger,
+          source_worker: "orchestrator-auth",
+          alert_kind: "audit-persist-failed",
+          message: "orchestrator-auth audit RPC persist failed",
+          detail: {
+            event_kind: record.event_kind,
+            outcome: record.outcome,
+            error: error instanceof Error ? error.message : String(error),
+          },
+        });
+      } catch {
+        // Alert emission itself must not throw.
+      }
+      throw error;
+    }
   };
 }
 

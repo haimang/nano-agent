@@ -27,6 +27,20 @@ interface CacheEntry {
 
 let registryCache: CacheEntry | null = null;
 
+function compareSemver(a: string, b: string): number {
+  const parse = (v: string) => {
+    const stripped = v.split("-")[0]?.split("+")[0] ?? v;
+    return stripped.split(".").map((n) => Number.parseInt(n, 10) || 0);
+  };
+  const pa = parse(a);
+  const pb = parse(b);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const diff = (pa[i] ?? 0) - (pb[i] ?? 0);
+    if (diff !== 0) return diff > 0 ? 1 : -1;
+  }
+  return 0;
+}
+
 function packageUrl(name: string): string {
   const shortName = name.startsWith("@haimang/") ? name.slice("@haimang/".length) : name;
   return `${REGISTRY_URL}/@haimang%2F${shortName}`;
@@ -130,6 +144,36 @@ export async function buildDebugPackagesResponse(
   const drift = manifest.packages.map((pkg) => {
     const live = registryByName.get(pkg.name);
     const registryComparable = live?.status === "ok";
+    const driftFlag = registryComparable
+      ? live?.registry_version !== pkg.workspace_version ||
+        live?.registry_latest_version !== pkg.workspace_version
+      : false;
+    // RHX2 review-of-reviews fix (DeepSeek R7): annotate which side moved
+    // so an oncall reading `/debug/packages` doesn't have to compare three
+    // version columns by eye.
+    let driftDirection:
+      | "aligned"
+      | "workspace_ahead"
+      | "workspace_behind"
+      | "workspace_not_published"
+      | "registry_unreachable" = "aligned";
+    if (!registryComparable) {
+      driftDirection = "registry_unreachable";
+    } else if (!driftFlag) {
+      driftDirection = "aligned";
+    } else if (live?.registry_version === null) {
+      driftDirection = "workspace_not_published";
+    } else if (
+      live?.registry_latest_version &&
+      live.registry_latest_version !== pkg.workspace_version
+    ) {
+      driftDirection =
+        compareSemver(pkg.workspace_version, live.registry_latest_version) > 0
+          ? "workspace_ahead"
+          : "workspace_behind";
+    } else {
+      driftDirection = "workspace_ahead";
+    }
     return {
       name: pkg.name,
       workspace_version: pkg.workspace_version,
@@ -137,10 +181,8 @@ export async function buildDebugPackagesResponse(
       live_registry_version: live?.registry_version ?? null,
       live_latest_version: live?.registry_latest_version ?? null,
       registry_status: live?.status ?? "fetch-error",
-      drift: registryComparable
-        ? live?.registry_version !== pkg.workspace_version ||
-          live?.registry_latest_version !== pkg.workspace_version
-        : false,
+      drift: driftFlag,
+      drift_direction: driftDirection,
     };
   });
   return {
