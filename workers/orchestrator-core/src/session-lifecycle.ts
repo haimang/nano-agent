@@ -134,6 +134,26 @@ export interface CancelBody {
   readonly initial_context_seed?: InitialContextSeed;
 }
 
+export interface CloseBody {
+  readonly reason?: string;
+  readonly trace_uuid?: string;
+  readonly auth_snapshot?: IngressAuthSnapshot;
+  readonly initial_context_seed?: InitialContextSeed;
+}
+
+export interface DeleteSessionBody {
+  readonly trace_uuid?: string;
+  readonly auth_snapshot?: IngressAuthSnapshot;
+  readonly initial_context_seed?: InitialContextSeed;
+}
+
+export interface TitlePatchBody {
+  readonly title?: string;
+  readonly trace_uuid?: string;
+  readonly auth_snapshot?: IngressAuthSnapshot;
+  readonly initial_context_seed?: InitialContextSeed;
+}
+
 export interface VerifyBody {
   readonly trace_uuid?: string;
   readonly auth_snapshot?: IngressAuthSnapshot;

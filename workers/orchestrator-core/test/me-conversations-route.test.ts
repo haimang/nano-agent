@@ -10,11 +10,21 @@ const JWT_SECRET = "x".repeat(32);
 
 type Row = Record<string, unknown>;
 
-function createConversationDb(rowsFor: (teamUuid: string, userUuid: string, limit: number) => Row[]) {
+function createConversationDb(
+  rowsFor: (teamUuid: string, userUuid: string, limit: number) => Row[],
+) {
   return {
-    prepare: (_sql: string) => ({
-      bind: (teamUuid: string, userUuid: string, limit: number) => ({
-        all: async () => ({ results: rowsFor(teamUuid, userUuid, limit) }),
+    prepare: (sql: string) => ({
+      bind: (...args: unknown[]) => ({
+        all: async () => {
+          if (sql.includes("FROM nano_conversations c")) {
+            const [teamUuid, userUuid, , , , limit] = args;
+            return {
+              results: rowsFor(String(teamUuid), String(userUuid), Number(limit)),
+            };
+          }
+          return { results: [] };
+        },
         first: async () => ({ status: "active" }),
       }),
     }),
@@ -41,19 +51,14 @@ describe("GET /me/conversations route", () => {
         NANO_AGENT_DB: createConversationDb(() => [
           {
             conversation_uuid: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-            session_uuid: "11111111-1111-4111-8111-111111111111",
-            session_status: "active",
-            started_at: "2026-04-29T02:00:00Z",
-            ended_at: null,
-            last_phase: "running",
-          },
-          {
-            conversation_uuid: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-            session_uuid: "00000000-0000-4000-8000-000000000001",
-            session_status: "ended",
+            title: "Alpha",
             started_at: "2026-04-29T01:00:00Z",
-            ended_at: "2026-04-29T01:10:00Z",
-            last_phase: "ended",
+            latest_session_uuid: "11111111-1111-4111-8111-111111111111",
+            latest_status: "active",
+            latest_session_started_at: "2026-04-29T02:00:00Z",
+            last_phase: "running",
+            latest_ended_reason: null,
+            session_count: 2,
           },
         ]),
         ORCHESTRATOR_USER_DO: {} as any,
@@ -63,6 +68,7 @@ describe("GET /me/conversations route", () => {
     const body = await response.json() as { data: { conversations: any[]; next_cursor: string | null } };
     expect(body.data.conversations).toHaveLength(1);
     expect(body.data.conversations[0].session_count).toBe(2);
+    expect(body.data.conversations[0].title).toBe("Alpha");
     expect(body.data.next_cursor).toBeNull();
   });
 
@@ -85,19 +91,25 @@ describe("GET /me/conversations route", () => {
         NANO_AGENT_DB: createConversationDb(() => [
           {
             conversation_uuid: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-            session_uuid: "11111111-1111-4111-8111-111111111111",
-            session_status: "active",
+            title: "Alpha",
             started_at: "2026-04-29T02:00:00Z",
-            ended_at: null,
+            latest_session_uuid: "11111111-1111-4111-8111-111111111111",
+            latest_status: "active",
+            latest_session_started_at: "2026-04-29T02:00:00Z",
             last_phase: "running",
+            latest_ended_reason: null,
+            session_count: 1,
           },
           {
             conversation_uuid: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-            session_uuid: "22222222-2222-4222-8222-222222222222",
-            session_status: "active",
+            title: "Beta",
             started_at: "2026-04-29T01:00:00Z",
-            ended_at: null,
+            latest_session_uuid: "22222222-2222-4222-8222-222222222222",
+            latest_status: "active",
+            latest_session_started_at: "2026-04-29T01:00:00Z",
             last_phase: "running",
+            latest_ended_reason: null,
+            session_count: 1,
           },
         ]),
         ORCHESTRATOR_USER_DO: {} as any,
@@ -124,24 +136,24 @@ describe("GET /me/conversations route", () => {
       {
         JWT_SECRET,
         TEAM_UUID: "nano-agent",
-        NANO_AGENT_DB: createConversationDb(() => [
-          {
-            conversation_uuid: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-            session_uuid: "11111111-1111-4111-8111-111111111111",
-            session_status: "active",
-            started_at: "2026-04-29T02:00:00Z",
-            ended_at: null,
-            last_phase: "running",
-          },
-          {
-            conversation_uuid: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
-            session_uuid: "22222222-2222-4222-8222-222222222222",
-            session_status: "active",
-            started_at: "2026-04-29T01:00:00Z",
-            ended_at: null,
-            last_phase: "running",
-          },
-        ]),
+        NANO_AGENT_DB: createConversationDb((team, user, limit) => {
+          void team;
+          void user;
+          void limit;
+          return [
+            {
+              conversation_uuid: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+              title: "Beta",
+              started_at: "2026-04-29T01:00:00Z",
+              latest_session_uuid: "22222222-2222-4222-8222-222222222222",
+              latest_status: "active",
+              latest_session_started_at: "2026-04-29T01:00:00Z",
+              last_phase: "running",
+              latest_ended_reason: null,
+              session_count: 1,
+            },
+          ];
+        }),
         ORCHESTRATOR_USER_DO: {} as any,
       } as any,
     );
@@ -187,6 +199,6 @@ describe("GET /me/conversations route", () => {
         ORCHESTRATOR_USER_DO: {} as any,
       } as any,
     );
-    expect(seen).toEqual([{ team: TEAM_UUID, user: OTHER_USER_UUID, limit: 200 }]);
+    expect(seen).toEqual([{ team: TEAM_UUID, user: OTHER_USER_UUID, limit: 26 }]);
   });
 });

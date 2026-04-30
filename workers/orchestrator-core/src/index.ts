@@ -365,6 +365,9 @@ type SessionAction =
   | "start"
   | "input"
   | "cancel"
+  | "close"
+  | "delete"
+  | "title"
   | "status"
   | "timeline"
   | "history"
@@ -396,7 +399,13 @@ type SessionFilesRoute =
 
 function parseSessionRoute(request: Request): { sessionUuid: string; action: SessionAction } | null {
   const segments = new URL(request.url).pathname.split("/").filter(Boolean);
+  const method = request.method.toUpperCase();
   if (segments[0] !== "sessions") return null;
+  if (segments.length === 2 && method === "DELETE") {
+    const sessionUuid = segments[1]!;
+    if (!UUID_RE.test(sessionUuid)) return null;
+    return { sessionUuid, action: "delete" };
+  }
   // 3-segment routes: /sessions/{uuid}/{action}
   if (segments.length === 3) {
     const sessionUuid = segments[1]!;
@@ -407,6 +416,8 @@ function parseSessionRoute(request: Request): { sessionUuid: string; action: Ses
         "start",
         "input",
         "cancel",
+        "close",
+        "title",
         "status",
         "timeline",
         "history",
@@ -630,6 +641,10 @@ async function dispatchFetch(request: Request, env: OrchestratorCoreEnv): Promis
     if (method === "GET" && pathname === "/me/conversations") {
       return handleMeConversations(request, env);
     }
+    const conversationDetailRoute = parseConversationDetailRoute(request);
+    if (conversationDetailRoute) {
+      return handleConversationDetail(request, env, conversationDetailRoute);
+    }
 
     if ((method === "GET" || method === "PATCH") && pathname === "/me/team") {
       return handleMeTeam(request, env);
@@ -683,6 +698,10 @@ async function dispatchFetch(request: Request, env: OrchestratorCoreEnv): Promis
     if (filesRoute) {
       return handleSessionFiles(request, env, filesRoute);
     }
+    const checkpointRoute = parseSessionCheckpointRoute(request);
+    if (checkpointRoute) {
+      return handleSessionCheckpoint(request, env, checkpointRoute);
+    }
 
     const route = parseSessionRoute(request);
     if (!route) return jsonPolicyError(404, "not-found", "route not found");
@@ -716,11 +735,16 @@ async function dispatchFetch(request: Request, env: OrchestratorCoreEnv): Promis
       }));
     }
 
-    const optionalBody = route.action === "cancel" || route.action === "resume";
+    const optionalBody =
+      route.action === "cancel" ||
+      route.action === "resume" ||
+      route.action === "close" ||
+      route.action === "delete";
     const needsBody = route.action === "start" || route.action === "input" || route.action === "cancel"
       || route.action === "verify" || route.action === "messages"
       || route.action === "resume" || route.action === "permission/decision"
-      || route.action === "policy/permission_mode" || route.action === "elicitation/answer";
+      || route.action === "policy/permission_mode" || route.action === "elicitation/answer"
+      || route.action === "close" || route.action === "delete" || route.action === "title";
     const body = needsBody ? await parseBody(request, optionalBody) : null;
     if (needsBody && body === null) {
         return jsonPolicyError(400, `invalid-${route.action}-body`, `${route.action} requires a JSON body`);
@@ -878,20 +902,41 @@ async function handleMeSessions(
     );
   }
 
-  // GET /me/sessions — list user's sessions. v1: forward to User DO which
-  // owns the index. The User DO already exposes a hot index; we add a new
-  // route /me/sessions on the DO (P5-02 second part).
-  const stub = env.ORCHESTRATOR_USER_DO.get(env.ORCHESTRATOR_USER_DO.idFromName(auth.value.user_uuid));
-  const response = await stub.fetch(
-    new Request("https://orchestrator.internal/me/sessions", {
-      method: "GET",
-      headers: {
-        "x-trace-uuid": traceUuid,
-        "x-nano-internal-authority": JSON.stringify(auth.value.snapshot),
-      },
-    }),
+  if (!env.NANO_AGENT_DB) {
+    return Response.json(
+      { ok: true, data: { sessions: [], next_cursor: null }, trace_uuid: traceUuid },
+      { status: 200, headers: { "x-trace-uuid": traceUuid } },
+    );
+  }
+  const url = new URL(request.url);
+  const limit = parseListLimit(url.searchParams.get("limit"), 50, 200);
+  const cursor = parseSessionCursor(url.searchParams.get("cursor"));
+  const repo = new D1SessionTruthRepository(env.NANO_AGENT_DB);
+  const rows = await repo.listSessionsForUser({
+    team_uuid: auth.value.snapshot.team_uuid ?? auth.value.snapshot.tenant_uuid!,
+    actor_user_uuid: auth.value.user_uuid,
+    limit: limit + 1,
+    cursor,
+  });
+  const nextCursor =
+    rows.length > limit
+      ? encodeSessionCursor(rows[limit]!.started_at, rows[limit]!.session_uuid)
+      : null;
+  const sessions = rows.slice(0, limit).map((row) => ({
+    conversation_uuid: row.conversation_uuid,
+    session_uuid: row.session_uuid,
+    status: row.session_status,
+    last_phase: row.last_phase,
+    last_seen_at: row.ended_at ?? row.started_at,
+    created_at: row.started_at,
+    ended_at: row.ended_at,
+    ended_reason: row.ended_reason,
+    title: row.title,
+  }));
+  return Response.json(
+    { ok: true, data: { sessions, next_cursor: nextCursor }, trace_uuid: traceUuid },
+    { status: 200, headers: { "x-trace-uuid": traceUuid } },
   );
-  return wrapSessionResponse(response, traceUuid);
 }
 
 // ZX5 Lane D D5 — GET /me/conversations.
@@ -938,11 +983,58 @@ function encodeConversationCursor(startedAt: string, conversationUuid: string): 
   return `${startedAt}|${conversationUuid}`;
 }
 
+function encodeSessionCursor(startedAt: string, sessionUuid: string): string {
+  return `${startedAt}|${sessionUuid}`;
+}
+
+function parseSessionCursor(raw: string | null): { started_at: string; session_uuid: string } | null {
+  if (typeof raw !== "string" || raw.length === 0) return null;
+  const [startedAt, sessionUuid] = raw.split("|");
+  if (!startedAt || !sessionUuid || !UUID_RE.test(sessionUuid)) return null;
+  return { started_at: startedAt, session_uuid: sessionUuid };
+}
+
 function parseConversationCursor(raw: string | null): { started_at: string; conversation_uuid: string } | null {
   if (typeof raw !== "string" || raw.length === 0) return null;
   const [startedAt, conversationUuid] = raw.split("|");
   if (!startedAt || !conversationUuid || !UUID_RE.test(conversationUuid)) return null;
   return { started_at: startedAt, conversation_uuid: conversationUuid };
+}
+
+type ConversationDetailRoute = { conversationUuid: string };
+
+function parseConversationDetailRoute(request: Request): ConversationDetailRoute | null {
+  const pathname = new URL(request.url).pathname;
+  const method = request.method.toUpperCase();
+  const match = pathname.match(/^\/conversations\/([^/]+)$/);
+  if (!match || method !== "GET") return null;
+  const conversationUuid = match[1]!;
+  if (!UUID_RE.test(conversationUuid)) return null;
+  return { conversationUuid };
+}
+
+type SessionCheckpointRoute =
+  | { kind: "list"; sessionUuid: string }
+  | { kind: "create"; sessionUuid: string }
+  | { kind: "diff"; sessionUuid: string; checkpointUuid: string };
+
+function parseSessionCheckpointRoute(request: Request): SessionCheckpointRoute | null {
+  const pathname = new URL(request.url).pathname;
+  const method = request.method.toUpperCase();
+  const listOrCreate = pathname.match(/^\/sessions\/([^/]+)\/checkpoints$/);
+  if (listOrCreate) {
+    const sessionUuid = listOrCreate[1]!;
+    if (!UUID_RE.test(sessionUuid)) return null;
+    if (method === "GET") return { kind: "list", sessionUuid };
+    if (method === "POST") return { kind: "create", sessionUuid };
+    return null;
+  }
+  const diff = pathname.match(/^\/sessions\/([^/]+)\/checkpoints\/([^/]+)\/diff$/);
+  if (!diff || method !== "GET") return null;
+  const sessionUuid = diff[1]!;
+  const checkpointUuid = diff[2]!;
+  if (!UUID_RE.test(sessionUuid) || !UUID_RE.test(checkpointUuid)) return null;
+  return { kind: "diff", sessionUuid, checkpointUuid };
 }
 
 async function handleMeConversations(
@@ -964,57 +1056,18 @@ async function handleMeConversations(
   const limit = parseListLimit(url.searchParams.get("limit"), 50, 200);
   const cursor = parseConversationCursor(url.searchParams.get("cursor"));
   const repo = new D1SessionTruthRepository(db);
-  const rows = await repo.listSessionsForUser({
+  const rows = await repo.listConversationsForUser({
     team_uuid: auth.value.snapshot.team_uuid ?? auth.value.snapshot.tenant_uuid!,
     actor_user_uuid: auth.value.user_uuid,
-    limit: 200,
+    limit: limit + 1,
+    cursor: cursor
+      ? {
+          latest_session_started_at: cursor.started_at,
+          conversation_uuid: cursor.conversation_uuid,
+        }
+      : null,
   });
-
-  const byConversation = new Map<string, {
-    conversation_uuid: string;
-    latest_session_uuid: string;
-    latest_status: string;
-    started_at: string;
-    latest_session_started_at: string;
-    last_seen_at: string;
-    last_phase: string | null;
-    session_count: number;
-  }>();
-  for (const row of rows) {
-    const existing = byConversation.get(row.conversation_uuid);
-    if (!existing) {
-      byConversation.set(row.conversation_uuid, {
-        conversation_uuid: row.conversation_uuid,
-        latest_session_uuid: row.session_uuid,
-        latest_status: row.session_status,
-        started_at: row.started_at,
-        latest_session_started_at: row.started_at,
-        last_seen_at: row.started_at,
-        last_phase: row.last_phase ?? null,
-        session_count: 1,
-      });
-      continue;
-    }
-    existing.session_count += 1;
-    if (row.started_at < existing.started_at) {
-      existing.started_at = row.started_at;
-    }
-  }
-
-  const filtered = Array.from(byConversation.values())
-    .sort((a, b) =>
-      b.latest_session_started_at === a.latest_session_started_at
-        ? b.conversation_uuid.localeCompare(a.conversation_uuid)
-        : b.latest_session_started_at.localeCompare(a.latest_session_started_at),
-    )
-    .filter((item) => {
-      if (!cursor) return true;
-      if (item.latest_session_started_at < cursor.started_at) return true;
-      if (item.latest_session_started_at > cursor.started_at) return false;
-      return item.conversation_uuid < cursor.conversation_uuid;
-    });
-
-  const page = filtered.slice(0, limit + 1);
+  const page = rows.slice(0, limit + 1);
   const nextCursor = page.length > limit
     ? encodeConversationCursor(page[limit]!.latest_session_started_at, page[limit]!.conversation_uuid)
     : null;
@@ -1022,6 +1075,148 @@ async function handleMeConversations(
 
   return Response.json(
     { ok: true, data: { conversations, next_cursor: nextCursor }, trace_uuid: traceUuid },
+    { status: 200, headers: { "x-trace-uuid": traceUuid } },
+  );
+}
+
+async function handleConversationDetail(
+  request: Request,
+  env: OrchestratorCoreEnv,
+  route: ConversationDetailRoute,
+): Promise<Response> {
+  const auth = await authenticateRequest(request, env);
+  if (!auth.ok) return auth.response;
+  const traceUuid = auth.value.trace_uuid;
+  const db = env.NANO_AGENT_DB;
+  if (!db) {
+    return jsonPolicyError(
+      503,
+      "worker-misconfigured",
+      "NANO_AGENT_DB binding must be configured",
+      traceUuid,
+    );
+  }
+  const repo = new D1SessionTruthRepository(db);
+  const detail = await repo.readConversationDetail({
+    conversation_uuid: route.conversationUuid,
+    team_uuid: auth.value.snapshot.team_uuid ?? auth.value.snapshot.tenant_uuid!,
+    actor_user_uuid: auth.value.user_uuid,
+  });
+  if (!detail) {
+    return jsonPolicyError(404, "not-found", "conversation not found", traceUuid);
+  }
+  return Response.json(
+    { ok: true, data: detail, trace_uuid: traceUuid },
+    { status: 200, headers: { "x-trace-uuid": traceUuid } },
+  );
+}
+
+async function handleSessionCheckpoint(
+  request: Request,
+  env: OrchestratorCoreEnv,
+  route: SessionCheckpointRoute,
+): Promise<Response> {
+  const auth = await authenticateRequest(request, env);
+  if (!auth.ok) return auth.response;
+  const traceUuid = auth.value.trace_uuid;
+  const db = env.NANO_AGENT_DB;
+  if (!db) {
+    return jsonPolicyError(
+      503,
+      "worker-misconfigured",
+      "NANO_AGENT_DB binding must be configured",
+      traceUuid,
+    );
+  }
+  const repo = new D1SessionTruthRepository(db);
+  const session = await repo.readSessionLifecycle(route.sessionUuid);
+  if (
+    !session ||
+    session.team_uuid !== (auth.value.snapshot.team_uuid ?? auth.value.snapshot.tenant_uuid) ||
+    session.actor_user_uuid !== auth.value.user_uuid
+  ) {
+    return jsonPolicyError(404, "not-found", "session not found", traceUuid);
+  }
+  if (session.deleted_at) {
+    return jsonPolicyError(
+      409,
+      "conversation-deleted",
+      "conversation is deleted",
+      traceUuid,
+    );
+  }
+
+  if (route.kind === "list") {
+    const checkpoints = await repo.listCheckpoints({
+      session_uuid: route.sessionUuid,
+      team_uuid: session.team_uuid,
+    });
+    return Response.json(
+      {
+        ok: true,
+        data: {
+          session_uuid: route.sessionUuid,
+          conversation_uuid: session.conversation_uuid,
+          checkpoints,
+        },
+        trace_uuid: traceUuid,
+      },
+      { status: 200, headers: { "x-trace-uuid": traceUuid } },
+    );
+  }
+
+  if (route.kind === "create") {
+    const body = await parseBody(request, true);
+    const rawLabel = typeof body?.label === "string" ? body.label.trim() : "";
+    if (body?.label !== undefined && (rawLabel.length === 0 || rawLabel.length > 200)) {
+      return jsonPolicyError(
+        400,
+        "invalid-input",
+        "label must be a non-empty string up to 200 characters",
+        traceUuid,
+      );
+    }
+    const checkpoint = await repo.createUserCheckpoint({
+      session_uuid: route.sessionUuid,
+      team_uuid: session.team_uuid,
+      label: rawLabel.length > 0 ? rawLabel : null,
+      created_at: new Date().toISOString(),
+    });
+    if (!checkpoint) {
+      return jsonPolicyError(500, "internal-error", "failed to create checkpoint", traceUuid);
+    }
+    return Response.json(
+      {
+        ok: true,
+        data: {
+          session_uuid: route.sessionUuid,
+          conversation_uuid: session.conversation_uuid,
+          checkpoint,
+        },
+        trace_uuid: traceUuid,
+      },
+      { status: 201, headers: { "x-trace-uuid": traceUuid } },
+    );
+  }
+
+  const diff = await repo.readCheckpointDiff({
+    session_uuid: route.sessionUuid,
+    checkpoint_uuid: route.checkpointUuid,
+    team_uuid: session.team_uuid,
+  });
+  if (!diff) {
+    return jsonPolicyError(404, "not-found", "checkpoint not found", traceUuid);
+  }
+  return Response.json(
+    {
+      ok: true,
+      data: {
+        session_uuid: route.sessionUuid,
+        conversation_uuid: session.conversation_uuid,
+        diff,
+      },
+      trace_uuid: traceUuid,
+    },
     { status: 200, headers: { "x-trace-uuid": traceUuid } },
   );
 }

@@ -50,6 +50,101 @@ export interface DurableSessionSnapshot {
   readonly latest_turn_uuid: string | null;
 }
 
+export interface DurableSessionLifecycleRecord {
+  readonly conversation_uuid: string;
+  readonly session_uuid: string;
+  readonly team_uuid: string;
+  readonly actor_user_uuid: string;
+  readonly session_status: DurableSessionStatus;
+  readonly started_at: string;
+  readonly ended_at: string | null;
+  readonly ended_reason: string | null;
+  readonly last_phase: string | null;
+  readonly title: string | null;
+  readonly deleted_at: string | null;
+}
+
+export interface DurableConversationListItem {
+  readonly conversation_uuid: string;
+  readonly title: string | null;
+  readonly started_at: string;
+  readonly latest_session_uuid: string;
+  readonly latest_status: DurableSessionStatus;
+  readonly latest_session_started_at: string;
+  readonly last_seen_at: string;
+  readonly last_phase: string | null;
+  readonly latest_ended_reason: string | null;
+  readonly session_count: number;
+}
+
+export interface DurableConversationDetail {
+  readonly conversation_uuid: string;
+  readonly team_uuid: string;
+  readonly owner_user_uuid: string;
+  readonly title: string | null;
+  readonly conversation_status: string;
+  readonly deleted_at: string | null;
+  readonly created_at: string;
+  readonly updated_at: string;
+  readonly latest_session_uuid: string | null;
+  readonly latest_turn_uuid: string | null;
+  readonly session_count: number;
+  readonly latest_session: {
+    readonly session_uuid: string;
+    readonly session_status: DurableSessionStatus;
+    readonly started_at: string;
+    readonly ended_at: string | null;
+    readonly ended_reason: string | null;
+    readonly last_phase: string | null;
+  } | null;
+  readonly sessions: ReadonlyArray<{
+    readonly session_uuid: string;
+    readonly session_status: DurableSessionStatus;
+    readonly started_at: string;
+    readonly ended_at: string | null;
+    readonly ended_reason: string | null;
+    readonly last_phase: string | null;
+  }>;
+}
+
+export interface DurableCheckpointListItem {
+  readonly checkpoint_uuid: string;
+  readonly session_uuid: string;
+  readonly conversation_uuid: string;
+  readonly team_uuid: string;
+  readonly turn_uuid: string | null;
+  readonly turn_attempt: number | null;
+  readonly checkpoint_kind: string;
+  readonly label: string | null;
+  readonly message_high_watermark: string | null;
+  readonly latest_event_seq: number | null;
+  readonly context_snapshot_uuid: string | null;
+  readonly file_snapshot_status: string;
+  readonly created_by: string;
+  readonly created_at: string;
+  readonly expires_at: string | null;
+}
+
+export interface DurableCheckpointDiff {
+  readonly checkpoint: DurableCheckpointListItem;
+  readonly watermark_created_at: string | null;
+  readonly messages_since_checkpoint: ReadonlyArray<{
+    readonly message_uuid: string;
+    readonly turn_uuid: string | null;
+    readonly message_kind: string;
+    readonly created_at: string;
+    readonly superseded_at: string | null;
+  }>;
+  readonly superseded_messages: ReadonlyArray<{
+    readonly message_uuid: string;
+    readonly turn_uuid: string | null;
+    readonly message_kind: string;
+    readonly created_at: string;
+    readonly superseded_at: string;
+    readonly superseded_by_turn_attempt: number | null;
+  }>;
+}
+
 const MESSAGE_REDACTION_FIELDS = [
   "access_token",
   "refresh_token",
@@ -82,6 +177,10 @@ function toCount(value: unknown): number {
     : typeof value === "string" && Number.isFinite(Number(value))
       ? Number(value)
       : 0;
+}
+
+function toNullableString(value: unknown): string | null {
+  return typeof value === "string" ? value : null;
 }
 
 function inferMessageRole(kind: string): DurableMessageRole {
@@ -311,6 +410,42 @@ export class D1SessionTruthRepository {
     return String(row.session_status) as DurableSessionStatus;
   }
 
+  async readSessionLifecycle(session_uuid: string): Promise<DurableSessionLifecycleRecord | null> {
+    const row = await this.db.prepare(
+      `SELECT
+         s.conversation_uuid,
+         s.session_uuid,
+         s.team_uuid,
+         s.actor_user_uuid,
+         s.session_status,
+         s.started_at,
+         s.ended_at,
+         s.ended_reason,
+         s.last_phase,
+         c.title,
+         c.deleted_at
+       FROM nano_conversation_sessions s
+       JOIN nano_conversations c
+         ON c.conversation_uuid = s.conversation_uuid
+      WHERE s.session_uuid = ?1
+      LIMIT 1`,
+    ).bind(session_uuid).first<Record<string, unknown>>();
+    if (!row) return null;
+    return {
+      conversation_uuid: String(row.conversation_uuid),
+      session_uuid: String(row.session_uuid),
+      team_uuid: String(row.team_uuid),
+      actor_user_uuid: String(row.actor_user_uuid),
+      session_status: String(row.session_status) as DurableSessionStatus,
+      started_at: String(row.started_at),
+      ended_at: toNullableString(row.ended_at),
+      ended_reason: toNullableString(row.ended_reason),
+      last_phase: toNullableString(row.last_phase),
+      title: toNullableString(row.title),
+      deleted_at: toNullableString(row.deleted_at),
+    };
+  }
+
   // ZX4 P3-05 — read-model 5-state view: list this user's recent sessions
   // (across pending/active/detached/ended/expired) joined with conversation
   // metadata. Pending sessions don't have a hot-index entry, so this read
@@ -319,6 +454,11 @@ export class D1SessionTruthRepository {
     readonly team_uuid: string;
     readonly actor_user_uuid: string;
     readonly limit?: number;
+    readonly cursor?: {
+      readonly started_at: string;
+      readonly session_uuid: string;
+    } | null;
+    readonly include_deleted?: boolean;
   }): Promise<Array<{
     readonly conversation_uuid: string;
     readonly session_uuid: string;
@@ -326,25 +466,254 @@ export class D1SessionTruthRepository {
     readonly started_at: string;
     readonly ended_at: string | null;
     readonly last_phase: string | null;
+    readonly ended_reason: string | null;
+    readonly title: string | null;
+    readonly deleted_at: string | null;
   }>> {
     const limit = Math.max(1, Math.min(input.limit ?? 50, 200));
+    const cursor = input.cursor ?? null;
     const rows = await this.db.prepare(
-      `SELECT session_uuid, conversation_uuid, session_status,
-              started_at, ended_at, last_phase
-         FROM nano_conversation_sessions
-        WHERE team_uuid = ?1
-          AND actor_user_uuid = ?2
-        ORDER BY started_at DESC
-        LIMIT ?3`,
-    ).bind(input.team_uuid, input.actor_user_uuid, limit).all<Record<string, unknown>>();
+      `SELECT
+         s.session_uuid,
+         s.conversation_uuid,
+         s.session_status,
+         s.started_at,
+         s.ended_at,
+         s.ended_reason,
+         s.last_phase,
+         c.title,
+         c.deleted_at
+       FROM nano_conversation_sessions s
+       JOIN nano_conversations c
+         ON c.conversation_uuid = s.conversation_uuid
+      WHERE s.team_uuid = ?1
+        AND s.actor_user_uuid = ?2
+        AND (?3 = 1 OR c.deleted_at IS NULL)
+        AND (
+          ?4 IS NULL
+          OR s.started_at < ?4
+          OR (s.started_at = ?4 AND s.session_uuid < ?5)
+        )
+      ORDER BY s.started_at DESC, s.session_uuid DESC
+      LIMIT ?6`,
+    ).bind(
+      input.team_uuid,
+      input.actor_user_uuid,
+      input.include_deleted ? 1 : 0,
+      cursor?.started_at ?? null,
+      cursor?.session_uuid ?? null,
+      limit,
+    ).all<Record<string, unknown>>();
     return (rows.results ?? []).map((row) => ({
       conversation_uuid: String(row.conversation_uuid),
       session_uuid: String(row.session_uuid),
       session_status: String(row.session_status) as DurableSessionStatus,
       started_at: String(row.started_at),
-      ended_at: typeof row.ended_at === "string" ? row.ended_at : null,
-      last_phase: typeof row.last_phase === "string" ? row.last_phase : null,
+      ended_at: toNullableString(row.ended_at),
+      last_phase: toNullableString(row.last_phase),
+      ended_reason: toNullableString(row.ended_reason),
+      title: toNullableString(row.title),
+      deleted_at: toNullableString(row.deleted_at),
     }));
+  }
+
+  async listConversationsForUser(input: {
+    readonly team_uuid: string;
+    readonly actor_user_uuid: string;
+    readonly limit?: number;
+    readonly cursor?: {
+      readonly latest_session_started_at: string;
+      readonly conversation_uuid: string;
+    } | null;
+    readonly include_deleted?: boolean;
+  }): Promise<DurableConversationListItem[]> {
+    const limit = Math.max(1, Math.min(input.limit ?? 50, 200));
+    const cursor = input.cursor ?? null;
+    const rows = await this.db.prepare(
+      `SELECT
+         c.conversation_uuid,
+         c.title,
+         (
+           SELECT MIN(s3.started_at)
+             FROM nano_conversation_sessions s3
+            WHERE s3.conversation_uuid = c.conversation_uuid
+         ) AS started_at,
+         (
+           SELECT s2.session_uuid
+             FROM nano_conversation_sessions s2
+            WHERE s2.conversation_uuid = c.conversation_uuid
+            ORDER BY s2.started_at DESC, s2.session_uuid DESC
+            LIMIT 1
+         ) AS latest_session_uuid,
+         (
+           SELECT s2.session_status
+             FROM nano_conversation_sessions s2
+            WHERE s2.conversation_uuid = c.conversation_uuid
+            ORDER BY s2.started_at DESC, s2.session_uuid DESC
+            LIMIT 1
+         ) AS latest_status,
+         (
+           SELECT s2.started_at
+             FROM nano_conversation_sessions s2
+            WHERE s2.conversation_uuid = c.conversation_uuid
+            ORDER BY s2.started_at DESC, s2.session_uuid DESC
+            LIMIT 1
+         ) AS latest_session_started_at,
+         (
+           SELECT s2.last_phase
+             FROM nano_conversation_sessions s2
+            WHERE s2.conversation_uuid = c.conversation_uuid
+            ORDER BY s2.started_at DESC, s2.session_uuid DESC
+            LIMIT 1
+         ) AS last_phase,
+         (
+           SELECT s2.ended_reason
+             FROM nano_conversation_sessions s2
+            WHERE s2.conversation_uuid = c.conversation_uuid
+            ORDER BY s2.started_at DESC, s2.session_uuid DESC
+            LIMIT 1
+         ) AS latest_ended_reason,
+         (
+           SELECT COUNT(*)
+             FROM nano_conversation_sessions s4
+            WHERE s4.conversation_uuid = c.conversation_uuid
+         ) AS session_count
+       FROM nano_conversations c
+      WHERE c.team_uuid = ?1
+        AND c.owner_user_uuid = ?2
+        AND EXISTS (
+          SELECT 1
+            FROM nano_conversation_sessions s
+           WHERE s.conversation_uuid = c.conversation_uuid
+             AND s.actor_user_uuid = ?2
+           LIMIT 1
+        )
+        AND (?3 = 1 OR c.deleted_at IS NULL)
+        AND (
+          ?4 IS NULL
+          OR (
+            (
+              SELECT s2.started_at
+                FROM nano_conversation_sessions s2
+               WHERE s2.conversation_uuid = c.conversation_uuid
+               ORDER BY s2.started_at DESC, s2.session_uuid DESC
+               LIMIT 1
+            ) < ?4
+          )
+          OR (
+            (
+              SELECT s2.started_at
+                FROM nano_conversation_sessions s2
+               WHERE s2.conversation_uuid = c.conversation_uuid
+               ORDER BY s2.started_at DESC, s2.session_uuid DESC
+               LIMIT 1
+            ) = ?4
+            AND c.conversation_uuid < ?5
+          )
+        )
+      ORDER BY latest_session_started_at DESC, c.conversation_uuid DESC
+      LIMIT ?6`,
+    ).bind(
+      input.team_uuid,
+      input.actor_user_uuid,
+      input.include_deleted ? 1 : 0,
+      cursor?.latest_session_started_at ?? null,
+      cursor?.conversation_uuid ?? null,
+      limit,
+    ).all<Record<string, unknown>>();
+    return (rows.results ?? []).map((row) => ({
+      conversation_uuid: String(row.conversation_uuid),
+      title: toNullableString(row.title),
+      started_at: String(row.started_at),
+      latest_session_uuid: String(row.latest_session_uuid),
+      latest_status: String(row.latest_status) as DurableSessionStatus,
+      latest_session_started_at: String(row.latest_session_started_at),
+      last_seen_at: String(row.latest_session_started_at),
+      last_phase: toNullableString(row.last_phase),
+      latest_ended_reason: toNullableString(row.latest_ended_reason),
+      session_count: toCount(row.session_count),
+    }));
+  }
+
+  async readConversationDetail(input: {
+    readonly conversation_uuid: string;
+    readonly team_uuid: string;
+    readonly actor_user_uuid: string;
+    readonly include_deleted?: boolean;
+  }): Promise<DurableConversationDetail | null> {
+    const row = await this.db.prepare(
+      `SELECT
+         c.conversation_uuid,
+         c.team_uuid,
+         c.owner_user_uuid,
+         c.conversation_status,
+         c.title,
+         c.deleted_at,
+         c.created_at,
+         c.updated_at,
+         c.latest_session_uuid,
+         c.latest_turn_uuid,
+         (
+           SELECT COUNT(*)
+             FROM nano_conversation_sessions s
+            WHERE s.conversation_uuid = c.conversation_uuid
+         ) AS session_count
+       FROM nano_conversations c
+      WHERE c.conversation_uuid = ?1
+        AND c.team_uuid = ?2
+        AND EXISTS (
+          SELECT 1
+            FROM nano_conversation_sessions s
+           WHERE s.conversation_uuid = c.conversation_uuid
+             AND s.actor_user_uuid = ?3
+           LIMIT 1
+        )
+        AND (?4 = 1 OR c.deleted_at IS NULL)
+      LIMIT 1`,
+    ).bind(
+      input.conversation_uuid,
+      input.team_uuid,
+      input.actor_user_uuid,
+      input.include_deleted ? 1 : 0,
+    ).first<Record<string, unknown>>();
+    if (!row) return null;
+    const sessionRows = await this.db.prepare(
+      `SELECT
+         session_uuid,
+         session_status,
+         started_at,
+         ended_at,
+         ended_reason,
+         last_phase
+       FROM nano_conversation_sessions
+      WHERE conversation_uuid = ?1
+      ORDER BY started_at DESC, session_uuid DESC
+      LIMIT 20`,
+    ).bind(input.conversation_uuid).all<Record<string, unknown>>();
+    const sessions = (sessionRows.results ?? []).map((session) => ({
+      session_uuid: String(session.session_uuid),
+      session_status: String(session.session_status) as DurableSessionStatus,
+      started_at: String(session.started_at),
+      ended_at: toNullableString(session.ended_at),
+      ended_reason: toNullableString(session.ended_reason),
+      last_phase: toNullableString(session.last_phase),
+    }));
+    const latestSession = sessions[0] ?? null;
+    return {
+      conversation_uuid: String(row.conversation_uuid),
+      team_uuid: String(row.team_uuid),
+      owner_user_uuid: String(row.owner_user_uuid),
+      title: toNullableString(row.title),
+      conversation_status: String(row.conversation_status),
+      deleted_at: toNullableString(row.deleted_at),
+      created_at: String(row.created_at),
+      updated_at: String(row.updated_at),
+      latest_session_uuid: toNullableString(row.latest_session_uuid),
+      latest_turn_uuid: toNullableString(row.latest_turn_uuid),
+      session_count: toCount(row.session_count),
+      latest_session: latestSession,
+      sessions,
+    };
   }
 
   async beginSession(input: {
@@ -448,18 +817,21 @@ export class D1SessionTruthRepository {
     readonly last_phase: string | null;
     readonly touched_at: string;
     readonly ended_at?: string | null;
+    readonly ended_reason?: string | null;
   }): Promise<void> {
     await this.db.prepare(
       `UPDATE nano_conversation_sessions
-          SET session_status = ?2,
-              last_phase = ?3,
-              ended_at = ?4
-        WHERE session_uuid = ?1`,
+           SET session_status = ?2,
+               last_phase = ?3,
+               ended_at = ?4,
+               ended_reason = ?5
+         WHERE session_uuid = ?1`,
     ).bind(
       input.session_uuid,
       input.status,
       input.last_phase,
       input.ended_at ?? null,
+      input.ended_reason ?? null,
     ).run();
 
     await this.db.prepare(
@@ -473,6 +845,250 @@ export class D1SessionTruthRepository {
            LIMIT 1
         )`,
     ).bind(input.session_uuid, input.touched_at, input.status).run();
+  }
+
+  async updateConversationTitle(input: {
+    readonly session_uuid: string;
+    readonly title: string;
+    readonly touched_at: string;
+  }): Promise<DurableSessionLifecycleRecord | null> {
+    await this.db.prepare(
+      `UPDATE nano_conversations
+          SET title = ?2,
+              updated_at = ?3
+        WHERE conversation_uuid = (
+          SELECT conversation_uuid
+            FROM nano_conversation_sessions
+           WHERE session_uuid = ?1
+           LIMIT 1
+        )`,
+    ).bind(input.session_uuid, input.title, input.touched_at).run();
+    return this.readSessionLifecycle(input.session_uuid);
+  }
+
+  async tombstoneConversation(input: {
+    readonly session_uuid: string;
+    readonly deleted_at: string;
+    readonly touched_at: string;
+  }): Promise<DurableSessionLifecycleRecord | null> {
+    await this.db.prepare(
+      `UPDATE nano_conversations
+          SET deleted_at = ?2,
+              updated_at = ?3
+        WHERE conversation_uuid = (
+          SELECT conversation_uuid
+            FROM nano_conversation_sessions
+           WHERE session_uuid = ?1
+           LIMIT 1
+        )`,
+    ).bind(input.session_uuid, input.deleted_at, input.touched_at).run();
+    return this.readSessionLifecycle(input.session_uuid);
+  }
+
+  async listCheckpoints(input: {
+    readonly session_uuid: string;
+    readonly team_uuid: string;
+  }): Promise<DurableCheckpointListItem[]> {
+    const rows = await this.db.prepare(
+      `SELECT
+         checkpoint_uuid,
+         session_uuid,
+         conversation_uuid,
+         team_uuid,
+         turn_uuid,
+         turn_attempt,
+         checkpoint_kind,
+         label,
+         message_high_watermark,
+         latest_event_seq,
+         context_snapshot_uuid,
+         file_snapshot_status,
+         created_by,
+         created_at,
+         expires_at
+       FROM nano_session_checkpoints
+      WHERE session_uuid = ?1
+        AND team_uuid = ?2
+      ORDER BY created_at DESC, checkpoint_uuid DESC`,
+    ).bind(input.session_uuid, input.team_uuid).all<Record<string, unknown>>();
+    return (rows.results ?? []).map((row) => ({
+      checkpoint_uuid: String(row.checkpoint_uuid),
+      session_uuid: String(row.session_uuid),
+      conversation_uuid: String(row.conversation_uuid),
+      team_uuid: String(row.team_uuid),
+      turn_uuid: toNullableString(row.turn_uuid),
+      turn_attempt:
+        row.turn_attempt === null || row.turn_attempt === undefined ? null : toCount(row.turn_attempt),
+      checkpoint_kind: String(row.checkpoint_kind),
+      label: toNullableString(row.label),
+      message_high_watermark: toNullableString(row.message_high_watermark),
+      latest_event_seq:
+        row.latest_event_seq === null || row.latest_event_seq === undefined
+          ? null
+          : toCount(row.latest_event_seq),
+      context_snapshot_uuid: toNullableString(row.context_snapshot_uuid),
+      file_snapshot_status: String(row.file_snapshot_status),
+      created_by: String(row.created_by),
+      created_at: String(row.created_at),
+      expires_at: toNullableString(row.expires_at),
+    }));
+  }
+
+  async createUserCheckpoint(input: {
+    readonly session_uuid: string;
+    readonly team_uuid: string;
+    readonly label: string | null;
+    readonly created_at: string;
+  }): Promise<DurableCheckpointListItem | null> {
+    const session = await this.readSessionLifecycle(input.session_uuid);
+    if (!session || session.team_uuid !== input.team_uuid) return null;
+    const latest = await this.db.prepare(
+      `SELECT
+         (
+           SELECT turn_uuid
+             FROM nano_conversation_turns
+            WHERE session_uuid = ?1
+            ORDER BY turn_index DESC, turn_attempt DESC
+            LIMIT 1
+         ) AS turn_uuid,
+         (
+           SELECT turn_attempt
+             FROM nano_conversation_turns
+            WHERE session_uuid = ?1
+            ORDER BY turn_index DESC, turn_attempt DESC
+            LIMIT 1
+         ) AS turn_attempt,
+         (
+           SELECT message_uuid
+             FROM nano_conversation_messages
+            WHERE session_uuid = ?1
+            ORDER BY created_at DESC, message_uuid DESC
+            LIMIT 1
+         ) AS message_high_watermark,
+         (
+           SELECT MAX(event_seq)
+             FROM nano_conversation_messages
+            WHERE session_uuid = ?1
+         ) AS latest_event_seq,
+         (
+           SELECT snapshot_uuid
+             FROM nano_conversation_context_snapshots
+            WHERE session_uuid = ?1
+            ORDER BY created_at DESC, snapshot_uuid DESC
+            LIMIT 1
+         ) AS context_snapshot_uuid`,
+    ).bind(input.session_uuid).first<Record<string, unknown>>();
+    const checkpointUuid = crypto.randomUUID();
+    await this.db.prepare(
+      `INSERT INTO nano_session_checkpoints (
+         checkpoint_uuid,
+         session_uuid,
+         conversation_uuid,
+         team_uuid,
+         turn_uuid,
+         turn_attempt,
+         checkpoint_kind,
+         label,
+         message_high_watermark,
+         latest_event_seq,
+         context_snapshot_uuid,
+         file_snapshot_status,
+         created_by,
+         created_at
+       ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'user_named', ?7, ?8, ?9, ?10, 'none', 'user', ?11)`,
+    ).bind(
+      checkpointUuid,
+      input.session_uuid,
+      session.conversation_uuid,
+      input.team_uuid,
+      toNullableString(latest?.turn_uuid),
+      latest?.turn_attempt === null || latest?.turn_attempt === undefined
+        ? null
+        : toCount(latest.turn_attempt),
+      input.label,
+      toNullableString(latest?.message_high_watermark),
+      latest?.latest_event_seq === null || latest?.latest_event_seq === undefined
+        ? null
+        : toCount(latest.latest_event_seq),
+      toNullableString(latest?.context_snapshot_uuid),
+      input.created_at,
+    ).run();
+    return (await this.listCheckpoints({
+      session_uuid: input.session_uuid,
+      team_uuid: input.team_uuid,
+    })).find((row) => row.checkpoint_uuid === checkpointUuid) ?? null;
+  }
+
+  async readCheckpointDiff(input: {
+    readonly session_uuid: string;
+    readonly checkpoint_uuid: string;
+    readonly team_uuid: string;
+  }): Promise<DurableCheckpointDiff | null> {
+    const checkpoint = (await this.listCheckpoints({
+      session_uuid: input.session_uuid,
+      team_uuid: input.team_uuid,
+    })).find((row) => row.checkpoint_uuid === input.checkpoint_uuid);
+    if (!checkpoint) return null;
+    const watermarkCreatedAt =
+      checkpoint.message_high_watermark === null
+        ? null
+        : toNullableString(
+            (
+              await this.db.prepare(
+                `SELECT created_at
+                   FROM nano_conversation_messages
+                  WHERE message_uuid = ?1
+                  LIMIT 1`,
+              ).bind(checkpoint.message_high_watermark).first<Record<string, unknown>>()
+            )?.created_at,
+          );
+    const afterRows = await this.db.prepare(
+      `SELECT
+         message_uuid,
+         turn_uuid,
+         message_kind,
+         created_at,
+         superseded_at
+       FROM nano_conversation_messages
+      WHERE session_uuid = ?1
+        AND (?2 IS NULL OR created_at > ?2)
+      ORDER BY created_at ASC, message_uuid ASC`,
+    ).bind(input.session_uuid, watermarkCreatedAt).all<Record<string, unknown>>();
+    const supersededRows = await this.db.prepare(
+      `SELECT
+         message_uuid,
+         turn_uuid,
+         message_kind,
+         created_at,
+         superseded_at,
+         superseded_by_turn_attempt
+       FROM nano_conversation_messages
+      WHERE session_uuid = ?1
+        AND superseded_at IS NOT NULL
+      ORDER BY superseded_at DESC, message_uuid DESC`,
+    ).bind(input.session_uuid).all<Record<string, unknown>>();
+    return {
+      checkpoint,
+      watermark_created_at: watermarkCreatedAt,
+      messages_since_checkpoint: (afterRows.results ?? []).map((row) => ({
+        message_uuid: String(row.message_uuid),
+        turn_uuid: toNullableString(row.turn_uuid),
+        message_kind: String(row.message_kind),
+        created_at: String(row.created_at),
+        superseded_at: toNullableString(row.superseded_at),
+      })),
+      superseded_messages: (supersededRows.results ?? []).map((row) => ({
+        message_uuid: String(row.message_uuid),
+        turn_uuid: toNullableString(row.turn_uuid),
+        message_kind: String(row.message_kind),
+        created_at: String(row.created_at),
+        superseded_at: String(row.superseded_at),
+        superseded_by_turn_attempt:
+          row.superseded_by_turn_attempt === null || row.superseded_by_turn_attempt === undefined
+            ? null
+            : toCount(row.superseded_by_turn_attempt),
+      })),
+    };
   }
 
   async createTurn(input: {

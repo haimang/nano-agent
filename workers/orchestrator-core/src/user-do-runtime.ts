@@ -32,6 +32,8 @@ import {
   type WorkerSocketLike,
 } from "./ws-bridge.js";
 import {
+  type CloseBody,
+  type DeleteSessionBody,
   extractPhase,
   isAuthSnapshot,
   jsonResponse,
@@ -47,6 +49,7 @@ import {
   type SessionTerminalRecord,
   type StartSessionBody,
   type TerminalKind,
+  type TitlePatchBody,
   type VerifyBody,
 } from "./session-lifecycle.js";
 import { validateLightweightServerFrame } from "./frame-compat.js";
@@ -443,6 +446,27 @@ export class NanoOrchestratorUserDO {
       return this.handleCancel(sessionUuid, body ?? {});
     }
 
+    if (request.method === 'POST' && action === 'close') {
+      const body = (await request.json().catch(() => ({}))) as CloseBody;
+      return this.handleClose(sessionUuid, body ?? {});
+    }
+
+    if (request.method === 'DELETE' && action === 'delete') {
+      const body = (await request.json().catch(() => ({}))) as DeleteSessionBody;
+      return this.handleDelete(sessionUuid, body ?? {});
+    }
+
+    if (request.method === 'PATCH' && action === 'title') {
+      const body = (await request.json().catch(() => null)) as TitlePatchBody | null;
+      if (!body || typeof body !== 'object') {
+        return jsonResponse(400, {
+          error: 'invalid-input',
+          message: 'title requires a JSON body',
+        });
+      }
+      return this.handleTitle(sessionUuid, body);
+    }
+
     if (request.method === 'POST' && action === 'verify') {
       const body = (await request.json().catch(() => null)) as VerifyBody | null;
       if (!body || typeof body !== 'object') {
@@ -828,6 +852,18 @@ export class NanoOrchestratorUserDO {
 
   private async handleCancel(sessionUuid: string, body: CancelBody): Promise<Response> {
     return this.sessionFlow.handleCancel(sessionUuid, body);
+  }
+
+  private async handleClose(sessionUuid: string, body: CloseBody): Promise<Response> {
+    return this.sessionFlow.handleClose(sessionUuid, body);
+  }
+
+  private async handleDelete(sessionUuid: string, body: DeleteSessionBody): Promise<Response> {
+    return this.sessionFlow.handleDelete(sessionUuid, body);
+  }
+
+  private async handleTitle(sessionUuid: string, body: TitlePatchBody): Promise<Response> {
+    return this.sessionFlow.handleTitle(sessionUuid, body);
   }
 
   private async handleVerify(sessionUuid: string, body: VerifyBody): Promise<Response> {
