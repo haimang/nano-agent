@@ -15,7 +15,7 @@
 > - `workers/agent-core/src/llm/request-builder.ts:57-121`
 > - `workers/agent-core/src/llm/gateway.ts:165-231`
 > 关联 QNA / 决策登记:
-> - `docs/design/hero-to-pro/HPX-qna.md`（待统一回填 owner / ops 答案后再转 `frozen`；当前先登记建议结论）
+> - `docs/design/hero-to-pro/HPX-qna.md`（已冻结；本设计若与 QNA 冲突，以 QNA 为准）
 > 文档状态: `reviewed`
 > 外部 precedent 说明: 当前工作区未 vendored `context/` 源文件；文中出现的 `context/*` 仅作 drafting-time ancestry pointer，不作为当前冻结 / 执行证据。
 
@@ -383,9 +383,9 @@
 
 | Q ID / 决策 ID | 问题 | 影响范围 | 当前建议 | 状态 | 答复来源 |
 |----------------|------|----------|----------|------|----------|
-| `HP2-D1` | 模型控制面是否必须引入 session default，而不能只靠 turn payload？ | HP2 / HP3 / clients | 必须；否则不构成产品级 model state machine | `pending-HPX-qna` | `docs/charter/plan-hero-to-pro.md:427-428,517-522`, `workers/orchestrator-core/src/session-lifecycle.ts:41-57`, `workers/orchestrator-core/src/user-do/message-runtime.ts:134-161`, `packages/nacp-session/src/messages.ts:43-52,119-136` |
-| `HP2-D2` | fallback 是否做成单层还是链式？ | HP2 / HP3 / future routing | 先单层，必须写 audit + stream event | `pending-HPX-qna` | `docs/charter/plan-hero-to-pro.md:425-429,521-523,555-556`, `workers/agent-core/src/llm/gateway.ts:165-231` |
-| `HP2-D3` | `<model_switch>` developer message 是否在 HP2 就冻结？ | HP2 / HP3 | 是；HP3 按此语义做 compact strip/recover | `pending-HPX-qna` | `docs/charter/plan-hero-to-pro.md:520,555-556`, `workers/orchestrator-core/src/user-do/message-runtime.ts:134-161`, `workers/agent-core/src/llm/request-builder.ts:57-121` |
+| `HP2-D1` | 模型控制面是否必须引入 session default，而不能只靠 turn payload？ | HP2 / HP3 / clients | 必须；否则不构成产品级 model state machine | `frozen` | `docs/charter/plan-hero-to-pro.md:427-428,517-522`, `workers/orchestrator-core/src/session-lifecycle.ts:41-57`, `workers/orchestrator-core/src/user-do/message-runtime.ts:134-161`, `packages/nacp-session/src/messages.ts:43-52,119-136` |
+| `HP2-D2` | fallback 是否做成单层还是链式？ | HP2 / HP3 / future routing | 先单层，必须写 audit + stream event | `frozen` | `docs/charter/plan-hero-to-pro.md:425-429,521-523,555-556`, `workers/agent-core/src/llm/gateway.ts:165-231` |
+| `HP2-D3` | `<model_switch>` developer message 是否在 HP2 就冻结？ | HP2 / HP3 | 是；HP3 按此语义做 compact strip/recover | `frozen` | `docs/charter/plan-hero-to-pro.md:520,555-556`, `workers/orchestrator-core/src/user-do/message-runtime.ts:134-161`, `workers/agent-core/src/llm/request-builder.ts:57-121` |
 
 ### 9.2 设计完成标准
 

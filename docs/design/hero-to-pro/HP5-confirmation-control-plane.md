@@ -18,7 +18,7 @@
 > - `workers/orchestrator-core/src/index.ts:364-440,707-711`
 > - `workers/orchestrator-core/src/user-do/surface-runtime.ts:221-320`
 > 关联 QNA / 决策登记:
-> - `docs/design/hero-to-pro/HPX-qna.md`（待统一回填 owner / ops 答案后再转 `frozen`；当前先登记建议结论）
+> - `docs/design/hero-to-pro/HPX-qna.md`（已冻结；本设计若与 QNA 冲突，以 QNA 为准）
 > 文档状态: `reviewed`
 > 外部 precedent 说明: 当前工作区未 vendored `context/` 源文件；文中出现的 `context/*` 仅作 drafting-time ancestry pointer，不作为当前冻结 / 执行证据。
 
@@ -400,9 +400,9 @@
 
 | Q ID / 决策 ID | 问题 | 影响范围 | 当前建议 | 状态 | 答复来源 |
 |----------------|------|----------|----------|------|----------|
-| `HP5-D1` | confirmation 是否继续按业务各自一套路由，还是统一 control plane？ | HP5 / HP3 / HP4 / HP6 / HP7 | 统一 control plane | `pending-HPX-qna` | `docs/charter/plan-hero-to-pro.md:683-685`, `workers/agent-core/src/host/do/session-do-runtime.ts:350-414`, `workers/agent-core/src/host/do/session-do-persistence.ts:288-385`, `workers/orchestrator-core/src/user-do/surface-runtime.ts:221-320` |
-| `HP5-D2` | kernel wait reason 是否继续扩张为多个 pending enum？ | HP5 / scheduler / restore | 否；统一为 `confirmation_pending` 语义，kind 放在 pending confirmation 记录里 | `pending-HPX-qna` | `workers/agent-core/src/kernel/types.ts:41-67`, `workers/agent-core/src/kernel/interrupt.ts:20-39` |
-| `HP5-D3` | 第一版 confirmation kind 是否要先冻结？ | HP5+ | 是；冻结 charter 已定义的 7 kind | `pending-HPX-qna` | `docs/charter/plan-hero-to-pro.md:441,684-685` |
+| `HP5-D1` | confirmation 是否继续按业务各自一套路由，还是统一 control plane？ | HP5 / HP3 / HP4 / HP6 / HP7 | 统一 control plane | `frozen` | `docs/charter/plan-hero-to-pro.md:683-685`, `workers/agent-core/src/host/do/session-do-runtime.ts:350-414`, `workers/agent-core/src/host/do/session-do-persistence.ts:288-385`, `workers/orchestrator-core/src/user-do/surface-runtime.ts:221-320` |
+| `HP5-D2` | kernel wait reason 是否继续扩张为多个 pending enum？ | HP5 / scheduler / restore | 否；统一为 `confirmation_pending` 语义，kind 放在 pending confirmation 记录里 | `frozen` | `workers/agent-core/src/kernel/types.ts:41-67`, `workers/agent-core/src/kernel/interrupt.ts:20-39` |
+| `HP5-D3` | 第一版 confirmation kind 是否要先冻结？ | HP5+ | 是；冻结 charter 已定义的 7 kind | `frozen` | `docs/charter/plan-hero-to-pro.md:441,684-685` |
 
 ### 9.2 设计完成标准
 

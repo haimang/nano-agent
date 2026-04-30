@@ -18,7 +18,7 @@
 > - `workers/agent-core/src/host/remote-bindings.ts:305-331`
 > - `workers/bash-core/src/index.ts:317-329,342-413`
 > 关联 QNA / 决策登记:
-> - `docs/design/hero-to-pro/HPX-qna.md`（待统一回填 owner / ops 答案后再转 `frozen`；当前先登记建议结论）
+> - `docs/design/hero-to-pro/HPX-qna.md`（已冻结；本设计若与 QNA 冲突，以 QNA 为准）
 > 文档状态: `reviewed`
 > 外部 precedent 说明: 当前工作区未 vendored `context/` 源文件；文中出现的 `context/*` 仅作 drafting-time ancestry pointer，不作为当前冻结 / 执行证据。
 
@@ -492,9 +492,9 @@
 
 | Q ID / 决策 ID | 问题 | 影响范围 | 当前建议 | 状态 | 答复来源 |
 |----------------|------|----------|----------|------|----------|
-| `HP6-D1` | workspace temp file 对外是否使用 UUID，而不是路径？ | HP6 / clients / HP7 | 否；以 `virtual_path` 作为产品主键 | `pending-HPX-qna` | `docs/charter/plan-hero-to-pro.md:437,739-741`, `packages/nacp-core/src/tenancy/scoped-io.ts:1-19,35-79`, `workers/filesystem-core/src/artifacts.ts:113-170,185-272` |
-| `HP6-D2` | promotion 是 alias 现有 workspace object，还是复制成独立 artifact？ | HP6 / cleanup / restore | 复制成独立 artifact | `pending-HPX-qna` | `docs/charter/plan-hero-to-pro.md:438,741`, `workers/filesystem-core/src/artifacts.ts:117-170,268-272`, `workers/orchestrator-core/migrations/004-session-files.sql:6-27` |
-| `HP6-D3` | tool cancel 是否继续只作为下游内部动作，不进入统一可观察状态？ | HP6 / client / debug | 否；要有 terminal state + stream event | `pending-HPX-qna` | `docs/charter/plan-hero-to-pro.md:740,742-743`, `workers/agent-core/src/host/remote-bindings.ts:305-331`, `workers/bash-core/src/index.ts:317-329,342-413`, `packages/nacp-session/src/stream-event.ts:81-107` |
+| `HP6-D1` | workspace temp file 对外是否使用 UUID，而不是路径？ | HP6 / clients / HP7 | 否；以 `virtual_path` 作为产品主键 | `frozen` | `docs/charter/plan-hero-to-pro.md:437,739-741`, `packages/nacp-core/src/tenancy/scoped-io.ts:1-19,35-79`, `workers/filesystem-core/src/artifacts.ts:113-170,185-272` |
+| `HP6-D2` | promotion 是 alias 现有 workspace object，还是复制成独立 artifact？ | HP6 / cleanup / restore | 复制成独立 artifact | `frozen` | `docs/charter/plan-hero-to-pro.md:438,741`, `workers/filesystem-core/src/artifacts.ts:117-170,268-272`, `workers/orchestrator-core/migrations/004-session-files.sql:6-27` |
+| `HP6-D3` | tool cancel 是否继续只作为下游内部动作，不进入统一可观察状态？ | HP6 / client / debug | 否；要有 terminal state + stream event | `frozen` | `docs/charter/plan-hero-to-pro.md:740,742-743`, `workers/agent-core/src/host/remote-bindings.ts:305-331`, `workers/bash-core/src/index.ts:317-329,342-413`, `packages/nacp-session/src/stream-event.ts:81-107` |
 
 ### 9.2 设计完成标准
 

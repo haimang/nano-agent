@@ -15,7 +15,7 @@
 > - `workers/orchestrator-core/migrations/004-session-files.sql:6-27`
 > - `workers/filesystem-core/src/artifacts.ts:113-170,185-272`
 > 关联 QNA / 决策登记:
-> - `docs/design/hero-to-pro/HPX-qna.md`（待统一回填 owner / ops 答案后再转 `frozen`；当前先登记建议结论）
+> - `docs/design/hero-to-pro/HPX-qna.md`（已冻结；本设计若与 QNA 冲突，以 QNA 为准）
 > 文档状态: `reviewed`
 > 外部 precedent 说明: 当前工作区未 vendored `context/` 源文件；文中出现的 `context/*` 仅作 drafting-time ancestry pointer，不作为当前冻结 / 执行证据。
 
@@ -494,9 +494,9 @@
 
 | Q ID / 决策 ID | 问题 | 影响范围 | 当前建议 | 状态 | 答复来源 |
 |----------------|------|----------|----------|------|----------|
-| `HP7-D1` | file snapshot 是 eager 还是 lazy 物化？ | HP7 / cost / cron | lazy | `pending-HPX-qna` | `docs/charter/plan-hero-to-pro.md:792-794`, `workers/agent-core/src/host/do/session-do-persistence.ts:142-187`, `workers/filesystem-core/src/artifacts.ts:113-170,185-272` |
-| `HP7-D2` | fork 是不是新 conversation？ | HP7 / clients / lineage | 否；同 conversation 新 session | `pending-HPX-qna` | `docs/charter/plan-hero-to-pro.md:796`, `packages/nacp-core/src/tenancy/scoped-io.ts:1-19,35-79`, `workers/filesystem-core/src/artifacts.ts:113-170,185-272` |
-| `HP7-D3` | restore 失败后是否允许 best-effort 留在部分成功状态？ | HP7 / support / reliability | 否；必须有 rollback baseline | `pending-HPX-qna` | `docs/charter/plan-hero-to-pro.md:795-796`, `workers/agent-core/src/host/checkpoint.ts:145-206,218-282`, `workers/agent-core/src/host/do/session-do-persistence.ts:193-222` |
+| `HP7-D1` | file snapshot 是 eager 还是 lazy 物化？ | HP7 / cost / cron | lazy | `frozen` | `docs/charter/plan-hero-to-pro.md:792-794`, `workers/agent-core/src/host/do/session-do-persistence.ts:142-187`, `workers/filesystem-core/src/artifacts.ts:113-170,185-272` |
+| `HP7-D2` | fork 是不是新 conversation？ | HP7 / clients / lineage | 否；同 conversation 新 session | `frozen` | `docs/charter/plan-hero-to-pro.md:796`, `packages/nacp-core/src/tenancy/scoped-io.ts:1-19,35-79`, `workers/filesystem-core/src/artifacts.ts:113-170,185-272` |
+| `HP7-D3` | restore 失败后是否允许 best-effort 留在部分成功状态？ | HP7 / support / reliability | 否；必须有 rollback baseline | `frozen` | `docs/charter/plan-hero-to-pro.md:795-796`, `workers/agent-core/src/host/checkpoint.ts:145-206,218-282`, `workers/agent-core/src/host/do/session-do-persistence.ts:193-222` |
 
 ### 9.2 设计完成标准
 

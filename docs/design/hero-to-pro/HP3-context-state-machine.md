@@ -13,7 +13,7 @@
 > - `workers/agent-core/src/host/runtime-mainline.ts:117-136,167-177,239-304`
 > - `packages/nacp-session/src/stream-event.ts:52-57`
 > 关联 QNA / 决策登记:
-> - `docs/design/hero-to-pro/HPX-qna.md`（待统一回填 owner / ops 答案后再转 `frozen`；当前先登记建议结论）
+> - `docs/design/hero-to-pro/HPX-qna.md`（已冻结；本设计若与 QNA 冲突，以 QNA 为准）
 > 文档状态: `reviewed`
 > 外部 precedent 说明: 当前工作区未 vendored `context/` 源文件；文中出现的 `context/*` 仅作 drafting-time ancestry pointer，不作为当前冻结 / 执行证据。
 
@@ -380,9 +380,9 @@
 
 | Q ID / 决策 ID | 问题 | 影响范围 | 当前建议 | 状态 | 答复来源 |
 |----------------|------|----------|----------|------|----------|
-| `HP3-D1` | context prompt owner 放在 context-core 还是 agent-core runtime？ | HP3 / HP4 / runtime latency | 放在 agent-core runtime；context-core 负责 inspection/control plane | `pending-HPX-qna` | `docs/charter/plan-hero-to-pro.md:318-320,333-335`, `workers/agent-core/src/host/runtime-mainline.ts:117-136,239-304`, `workers/context-core/src/index.ts:123-202`, `workers/orchestrator-core/src/index.ts:1432-1508` |
-| `HP3-D2` | compact 是否必须保护 `<model_switch>` / `<state_snapshot>` 而不是直接摘要所有内容？ | HP2 / HP3 | 必须保护，采用 strip-then-recover | `pending-HPX-qna` | `docs/charter/plan-hero-to-pro.md:520,555-556`, `workers/agent-core/src/host/runtime-mainline.ts:239-304`, `workers/context-core/src/context-assembler.ts:1-168` |
-| `HP3-D3` | manual compact 是否需要 preview 与 durable job 分离？ | HP3 / clients | 需要；preview 只读，compact 才写 durable handle | `pending-HPX-qna` | `docs/charter/plan-hero-to-pro.md:318-320,441,444-446`, `workers/orchestrator-core/src/index.ts:1432-1508`, `packages/nacp-session/src/stream-event.ts:52-57` |
+| `HP3-D1` | context prompt owner 放在 context-core 还是 agent-core runtime？ | HP3 / HP4 / runtime latency | 放在 agent-core runtime；context-core 负责 inspection/control plane | `frozen` | `docs/charter/plan-hero-to-pro.md:318-320,333-335`, `workers/agent-core/src/host/runtime-mainline.ts:117-136,239-304`, `workers/context-core/src/index.ts:123-202`, `workers/orchestrator-core/src/index.ts:1432-1508` |
+| `HP3-D2` | compact 是否必须保护 `<model_switch>` / `<state_snapshot>` 而不是直接摘要所有内容？ | HP2 / HP3 | 必须保护，采用 strip-then-recover | `frozen` | `docs/charter/plan-hero-to-pro.md:520,555-556`, `workers/agent-core/src/host/runtime-mainline.ts:239-304`, `workers/context-core/src/context-assembler.ts:1-168` |
+| `HP3-D3` | manual compact 是否需要 preview 与 durable job 分离？ | HP3 / clients | 需要；preview 只读，compact 才写 durable handle | `frozen` | `docs/charter/plan-hero-to-pro.md:318-320,441,444-446`, `workers/orchestrator-core/src/index.ts:1432-1508`, `packages/nacp-session/src/stream-event.ts:52-57` |
 
 ### 9.2 设计完成标准
 

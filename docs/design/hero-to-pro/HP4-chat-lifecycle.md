@@ -13,7 +13,7 @@
 > - `workers/orchestrator-core/src/user-do/surface-runtime.ts:178-218`
 > - `workers/agent-core/src/host/do/session-do-persistence.ts:139-186`
 > 关联 QNA / 决策登记:
-> - `docs/design/hero-to-pro/HPX-qna.md`（待统一回填 owner / ops 答案后再转 `frozen`；当前先登记建议结论）
+> - `docs/design/hero-to-pro/HPX-qna.md`（已冻结；本设计若与 QNA 冲突，以 QNA 为准）
 > 文档状态: `reviewed`
 > 外部 precedent 说明: 当前工作区未 vendored `context/` 源文件；文中出现的 `context/*` 仅作 drafting-time ancestry pointer，不作为当前冻结 / 执行证据。
 
@@ -374,9 +374,9 @@
 
 | Q ID / 决策 ID | 问题 | 影响范围 | 当前建议 | 状态 | 答复来源 |
 |----------------|------|----------|----------|------|----------|
-| `HP4-D1` | close 是否引入新 session 状态？ | HP4 / read models / clients | 否；继续用 `ended + completed` | `pending-HPX-qna` | `workers/orchestrator-core/src/session-lifecycle.ts:15-39` |
-| `HP4-D2` | delete 应落 session 还是 conversation？ | HP4 / clients | conversation soft tombstone | `pending-HPX-qna` | `docs/charter/plan-hero-to-pro.md:430-433,628-629`, `workers/orchestrator-core/migrations/002-session-truth-and-audit.sql:7-17`, `workers/orchestrator-core/src/session-truth.ts:314-348` |
-| `HP4-D3` | checkpoint/restore 是否继续复用 DO latest checkpoint？ | HP4 / agent-core / clients | 否；必须新增 checkpoint registry + restore job | `pending-HPX-qna` | `docs/charter/plan-hero-to-pro.md:630-635`, `workers/agent-core/src/host/do/session-do-persistence.ts:139-186`, `workers/orchestrator-core/src/index.ts:885-980` |
+| `HP4-D1` | close 是否引入新 session 状态？ | HP4 / read models / clients | 否；继续用 `ended + completed` | `frozen` | `workers/orchestrator-core/src/session-lifecycle.ts:15-39` |
+| `HP4-D2` | delete 应落 session 还是 conversation？ | HP4 / clients | conversation soft tombstone | `frozen` | `docs/charter/plan-hero-to-pro.md:430-433,628-629`, `workers/orchestrator-core/migrations/002-session-truth-and-audit.sql:7-17`, `workers/orchestrator-core/src/session-truth.ts:314-348` |
+| `HP4-D3` | checkpoint/restore 是否继续复用 DO latest checkpoint？ | HP4 / agent-core / clients | 否；必须新增 checkpoint registry + restore job | `frozen` | `docs/charter/plan-hero-to-pro.md:630-635`, `workers/agent-core/src/host/do/session-do-persistence.ts:139-186`, `workers/orchestrator-core/src/index.ts:885-980` |
 
 ### 9.2 设计完成标准
 
