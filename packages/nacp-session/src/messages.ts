@@ -255,6 +255,143 @@ export type SessionElicitationAnswerBody = z.infer<
   typeof SessionElicitationAnswerBodySchema
 >;
 
+// ── Family 6: confirmation control plane (HP5) ───────────────────
+//
+// Frozen contract:
+//   * docs/charter/plan-hero-to-pro.md §7.6 HP5
+//   * docs/design/hero-to-pro/HP5-confirmation-control-plane.md §7 F4
+//   * docs/design/hero-to-pro/HPX-qna.md Q16-Q18
+//   * workers/orchestrator-core/migrations/012-session-confirmations.sql
+//
+// Frozen invariants (HP5 must NOT extend without §3 schema correction):
+//   * kind ∈ { tool_permission, elicitation, model_switch, context_compact,
+//             fallback_model, checkpoint_restore, context_loss }
+//     — exactly 7 kinds; Q18 forbids `tool_cancel` and forbids `custom`.
+//   * status ∈ { pending, allowed, denied, modified, timeout, superseded }
+//     — exactly 6 statuses; Q16 forbids `failed`.
+//
+// `session.confirmation.request` is server → client and announces a
+// new pending row. `session.confirmation.update` is server → client and
+// either updates a still-pending row (e.g. extended expiry) or signals
+// the terminal transition. The legacy `session.permission.request /
+// .decision` and `session.elicitation.request / .answer` frames remain
+// in the registry as compat aliases — HP5 does NOT delete them.
+export const SessionConfirmationKindSchema = z.enum([
+  "tool_permission",
+  "elicitation",
+  "model_switch",
+  "context_compact",
+  "fallback_model",
+  "checkpoint_restore",
+  "context_loss",
+]);
+export type SessionConfirmationKind = z.infer<
+  typeof SessionConfirmationKindSchema
+>;
+
+export const SessionConfirmationStatusSchema = z.enum([
+  "pending",
+  "allowed",
+  "denied",
+  "modified",
+  "timeout",
+  "superseded",
+]);
+export type SessionConfirmationStatus = z.infer<
+  typeof SessionConfirmationStatusSchema
+>;
+
+export const SessionConfirmationRequestBodySchema = z.object({
+  confirmation_uuid: z.string().uuid(),
+  kind: SessionConfirmationKindSchema,
+  // Generic kind-shaped payload. Kind-specific shapes (tool_permission's
+  // tool_name/tool_input, elicitation's prompt, etc.) live inside this
+  // record; HP5 deliberately keeps the wire body open so HP3 / HP4 / HP6
+  // / HP7 can attach their own kind payloads without re-versioning the
+  // frame family.
+  payload: z.record(z.string(), z.unknown()),
+  // Optional cross-reference to a per-emit request id when the caller
+  // already owns one (e.g. legacy permission / elicitation request_uuid
+  // — HP5 lets the caller forward that as `request_uuid` so the client
+  // can correlate against legacy frames during the compat window).
+  request_uuid: z.string().uuid().optional(),
+  expires_at: z.string().datetime({ offset: true }).optional(),
+});
+export type SessionConfirmationRequestBody = z.infer<
+  typeof SessionConfirmationRequestBodySchema
+>;
+
+export const SessionConfirmationUpdateBodySchema = z.object({
+  confirmation_uuid: z.string().uuid(),
+  status: SessionConfirmationStatusSchema,
+  decision_payload: z.record(z.string(), z.unknown()).optional(),
+  decided_at: z.string().datetime({ offset: true }).optional(),
+});
+export type SessionConfirmationUpdateBody = z.infer<
+  typeof SessionConfirmationUpdateBodySchema
+>;
+
+// ── Family 7: agentic-loop todos (HP6) ─────────────────────────────
+//
+// Frozen contract:
+//   * docs/charter/plan-hero-to-pro.md §7.7 HP6
+//   * docs/design/hero-to-pro/HP6-tool-workspace-state-machine.md §7 F1
+//   * workers/orchestrator-core/migrations/010-agentic-loop-todos.sql
+//
+// Frozen invariants (HP6 must NOT extend without §3 schema correction
+// in HP1):
+//   * status ∈ { pending, in_progress, completed, cancelled, blocked }
+//     — exactly 5 statuses; charter §436.
+//   * `at most 1 in_progress` per session is enforced at the
+//     application layer (D1TodoControlPlane).
+//
+// `session.todos.write` is bidirectional: model-side (`WriteTodos`
+// capability) and client-side both produce it as a generic upsert
+// command. `session.todos.update` is server → client and broadcasts
+// the new authoritative list whenever the registry changes.
+
+export const SessionTodoStatusSchema = z.enum([
+  "pending",
+  "in_progress",
+  "completed",
+  "cancelled",
+  "blocked",
+]);
+export type SessionTodoStatus = z.infer<typeof SessionTodoStatusSchema>;
+
+const SessionTodoItemSchema = z.object({
+  todo_uuid: z.string().uuid().optional(),
+  parent_todo_uuid: z.string().uuid().optional(),
+  content: z.string().min(1).max(2000),
+  status: SessionTodoStatusSchema.default("pending"),
+});
+
+export const SessionTodosWriteBodySchema = z.object({
+  todos: z.array(SessionTodoItemSchema).min(1).max(100),
+  // Optional client-side request_uuid — useful for client UIs that
+  // want to correlate the write with an outgoing patch.
+  request_uuid: z.string().uuid().optional(),
+});
+export type SessionTodosWriteBody = z.infer<typeof SessionTodosWriteBodySchema>;
+
+const SessionTodoStateSchema = z.object({
+  todo_uuid: z.string().uuid(),
+  session_uuid: z.string().uuid(),
+  conversation_uuid: z.string().uuid(),
+  parent_todo_uuid: z.string().uuid().nullable(),
+  content: z.string().min(1).max(2000),
+  status: SessionTodoStatusSchema,
+  created_at: z.string().datetime({ offset: true }),
+  updated_at: z.string().datetime({ offset: true }),
+  completed_at: z.string().datetime({ offset: true }).nullable(),
+});
+
+export const SessionTodosUpdateBodySchema = z.object({
+  session_uuid: z.string().uuid(),
+  todos: z.array(SessionTodoStateSchema),
+});
+export type SessionTodosUpdateBody = z.infer<typeof SessionTodosUpdateBodySchema>;
+
 // ── Aggregated maps ──
 
 export const SESSION_BODY_SCHEMAS = {
@@ -273,6 +410,12 @@ export const SESSION_BODY_SCHEMAS = {
   "session.command.invoke": SessionCommandInvokeBodySchema,
   "session.elicitation.request": SessionElicitationRequestBodySchema,
   "session.elicitation.answer": SessionElicitationAnswerBodySchema,
+  // HP5 P1-03 — generic confirmation control plane frame family.
+  "session.confirmation.request": SessionConfirmationRequestBodySchema,
+  "session.confirmation.update": SessionConfirmationUpdateBodySchema,
+  // HP6 P1-02 — agentic-loop todo family.
+  "session.todos.write": SessionTodosWriteBodySchema,
+  "session.todos.update": SessionTodosUpdateBodySchema,
   // RH2 P2-01c — server → client supersede notification.
   "session.attachment.superseded": SessionAttachmentSupersededBodySchema,
   // session.stream.event is handled separately via stream-event.ts
@@ -293,6 +436,12 @@ export const SESSION_BODY_REQUIRED = new Set([
   "session.command.invoke",
   "session.elicitation.request",
   "session.elicitation.answer",
+  // HP5 P1-03
+  "session.confirmation.request",
+  "session.confirmation.update",
+  // HP6 P1-02
+  "session.todos.write",
+  "session.todos.update",
   // RH2 P2-01c
   "session.attachment.superseded",
 ]);
@@ -314,6 +463,12 @@ export const SESSION_MESSAGE_TYPES = new Set([
   "session.command.invoke",
   "session.elicitation.request",
   "session.elicitation.answer",
+  // HP5 P1-03
+  "session.confirmation.request",
+  "session.confirmation.update",
+  // HP6 P1-02
+  "session.todos.write",
+  "session.todos.update",
   // RH2 P2-01c
   "session.attachment.superseded",
 ]);

@@ -99,15 +99,21 @@ describe("Session message schemas", () => {
 });
 
 describe("registries", () => {
-  // ZX2 Phase 2 P2-03: registry now contains the original 8 (7 initial +
-  // followup) plus 7 new ZX2 types — see test/zx2-messages.test.ts for
-  // detailed coverage of the new families.
-  it("has 16 session message types (initial 7 + followup + ZX2 7 + RH2 attachment.superseded)", () => {
-    expect(SESSION_MESSAGE_TYPES.size).toBe(16);
+  // HP6 P1-02: registry now contains the original 8 (7 initial + followup)
+  // plus 7 ZX2 types, RH2 attachment.superseded, HP5 confirmation
+  // request/update, and HP6 todos write/update — see
+  // test/hp5-confirmation-messages.test.ts and
+  // test/hp6-todo-messages.test.ts for detailed coverage.
+  it("has 20 session message types (initial 7 + followup + ZX2 7 + RH2 attachment.superseded + HP5 confirmation 2 + HP6 todos 2)", () => {
+    expect(SESSION_MESSAGE_TYPES.size).toBe(20);
     expect(SESSION_MESSAGE_TYPES.has("session.followup_input")).toBe(true);
     expect(SESSION_MESSAGE_TYPES.has("session.permission.request")).toBe(true);
     expect(SESSION_MESSAGE_TYPES.has("session.usage.update")).toBe(true);
     expect(SESSION_MESSAGE_TYPES.has("session.attachment.superseded")).toBe(true);
+    expect(SESSION_MESSAGE_TYPES.has("session.confirmation.request")).toBe(true);
+    expect(SESSION_MESSAGE_TYPES.has("session.confirmation.update")).toBe(true);
+    expect(SESSION_MESSAGE_TYPES.has("session.todos.write")).toBe(true);
+    expect(SESSION_MESSAGE_TYPES.has("session.todos.update")).toBe(true);
   });
   it("body required set excludes cancel but includes followup", () => {
     expect(SESSION_BODY_REQUIRED.has("session.cancel")).toBe(false);

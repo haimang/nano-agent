@@ -49,7 +49,8 @@ describe("SessionStreamEventBody", () => {
   it("rejects unknown kind", () => {
     expect(() => SessionStreamEventBodySchema.parse({ kind: "unknown.thing" })).toThrow();
   });
-  it("has 10 registered kinds", () => {
-    expect(STREAM_EVENT_KINDS).toHaveLength(10);
+  it("has 11 registered kinds (HP6 P3 added tool.call.cancelled)", () => {
+    expect(STREAM_EVENT_KINDS).toHaveLength(11);
+    expect(STREAM_EVENT_KINDS).toContain("tool.call.cancelled");
   });
 });

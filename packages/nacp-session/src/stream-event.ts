@@ -25,6 +25,31 @@ export const ToolCallResultKind = z.object({
   error_message: z.string().optional(),
 });
 
+// HP6 P3 — tool cancel terminal event.
+//
+// Frozen contract:
+//   * docs/charter/plan-hero-to-pro.md §7.7 HP6
+//   * docs/design/hero-to-pro/HP6-tool-workspace-state-machine.md §7 F3
+//   * docs/design/hero-to-pro/HPX-qna.md Q21
+//
+// Q21 explicitly forbids `tool_cancel` from joining the confirmation
+// kind enum (`docs/design/hero-to-pro/HPX-qna.md` Q21);  cancel is a
+// terminal lifecycle event, not a control-plane decision. Clients
+// distinguish between `tool.call.result {status: error}` and a true
+// user / system cancel by listening for this dedicated frame.
+//
+// `cancel_initiator` is a closed enum:
+//   * `user`          — explicit POST /tool-calls/{id}/cancel
+//   * `system`        — orchestrator policy / timeout / quota
+//   * `parent_cancel` — cascaded from session.cancel / turn cancel
+export const ToolCallCancelledKind = z.object({
+  kind: z.literal("tool.call.cancelled"),
+  tool_name: z.string().min(1),
+  request_uuid: z.string().uuid(),
+  cancel_initiator: z.enum(["user", "system", "parent_cancel"]),
+  reason: z.string().max(2048).optional(),
+});
+
 export const HookBroadcastKind = z.object({
   kind: z.literal("hook.broadcast"),
   event_name: z.string().min(1),
@@ -81,6 +106,7 @@ export const LlmDeltaKind = z.object({
 export const SessionStreamEventBodySchema = z.discriminatedUnion("kind", [
   ToolCallProgressKind,
   ToolCallResultKind,
+  ToolCallCancelledKind,
   HookBroadcastKind,
   SessionUpdateKind,
   TurnBeginKind,
@@ -96,6 +122,7 @@ export type SessionStreamEventBody = z.infer<typeof SessionStreamEventBodySchema
 export const STREAM_EVENT_KINDS = [
   "tool.call.progress",
   "tool.call.result",
+  "tool.call.cancelled",
   "hook.broadcast",
   "session.update",
   "turn.begin",

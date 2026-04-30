@@ -34,6 +34,8 @@ export const SESSION_ROLE_REQUIREMENTS: Record<string, SessionRoleRequirement> =
       "session.skill.invoke",
       "session.command.invoke",
       "session.elicitation.answer",
+      // HP6 P1-02 — client / model can write todos
+      "session.todos.write",
     ]),
     consumer: new Set([
       "session.end",
@@ -43,6 +45,11 @@ export const SESSION_ROLE_REQUIREMENTS: Record<string, SessionRoleRequirement> =
       "session.permission.request",
       "session.usage.update",
       "session.elicitation.request",
+      // HP5 P1-03 — confirmation control plane (server → client only)
+      "session.confirmation.request",
+      "session.confirmation.update",
+      // HP6 P1-02 — server broadcasts new todo state
+      "session.todos.update",
     ]),
   },
   session: {
@@ -54,6 +61,11 @@ export const SESSION_ROLE_REQUIREMENTS: Record<string, SessionRoleRequirement> =
       "session.permission.request",
       "session.usage.update",
       "session.elicitation.request",
+      // HP5 P1-03
+      "session.confirmation.request",
+      "session.confirmation.update",
+      // HP6 P1-02
+      "session.todos.update",
     ]),
     consumer: new Set([
       "session.start",
@@ -67,6 +79,8 @@ export const SESSION_ROLE_REQUIREMENTS: Record<string, SessionRoleRequirement> =
       "session.skill.invoke",
       "session.command.invoke",
       "session.elicitation.answer",
+      // HP6 P1-02
+      "session.todos.write",
     ]),
   },
   ingress: {
@@ -118,6 +132,12 @@ const SESSION_PHASE_ALLOWED: Record<SessionPhase, Set<string>> = {
     "session.command.invoke",
     "session.elicitation.request",
     "session.elicitation.answer",
+    // HP5 P1-03 — confirmation control plane
+    "session.confirmation.request",
+    "session.confirmation.update",
+    // HP6 P1-02 — agentic-loop todos
+    "session.todos.write",
+    "session.todos.update",
   ]),
   turn_running: new Set([
     "session.cancel",
@@ -134,6 +154,12 @@ const SESSION_PHASE_ALLOWED: Record<SessionPhase, Set<string>> = {
     "session.command.invoke",
     "session.elicitation.request",
     "session.elicitation.answer",
+    // HP5 P1-03 — confirmation control plane
+    "session.confirmation.request",
+    "session.confirmation.update",
+    // HP6 P1-02 — agentic-loop todos
+    "session.todos.write",
+    "session.todos.update",
   ]),
   ended: new Set([
     "session.heartbeat",  // final heartbeat before close

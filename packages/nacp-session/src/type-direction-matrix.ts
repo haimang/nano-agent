@@ -33,6 +33,14 @@ export const NACP_SESSION_TYPE_DIRECTION_MATRIX: Readonly<
   "session.command.invoke": new Set<NacpDeliveryKind>(["command"]),
   "session.elicitation.request": new Set<NacpDeliveryKind>(["command", "event"]),
   "session.elicitation.answer": new Set<NacpDeliveryKind>(["response", "command"]),
+  // HP5 P1-03 — confirmation control plane (server → client only)
+  "session.confirmation.request": new Set<NacpDeliveryKind>(["event"]),
+  "session.confirmation.update": new Set<NacpDeliveryKind>(["event"]),
+  // HP6 P1-02 — agentic-loop todos
+  // - todos.write: client → server / model → server (command)
+  // - todos.update: server → client only (event broadcast of new state)
+  "session.todos.write": new Set<NacpDeliveryKind>(["command"]),
+  "session.todos.update": new Set<NacpDeliveryKind>(["event"]),
   // RH2 P2-01c — server → client only (notify-and-disconnect)
   "session.attachment.superseded": new Set<NacpDeliveryKind>(["event"]),
 });

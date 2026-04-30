@@ -38,6 +38,15 @@ export {
   SessionCommandInvokeBodySchema,
   SessionElicitationRequestBodySchema,
   SessionElicitationAnswerBodySchema,
+  // HP5 P1-03 — confirmation control plane
+  SessionConfirmationKindSchema,
+  SessionConfirmationStatusSchema,
+  SessionConfirmationRequestBodySchema,
+  SessionConfirmationUpdateBodySchema,
+  // HP6 P1-02 — agentic-loop todos
+  SessionTodoStatusSchema,
+  SessionTodosWriteBodySchema,
+  SessionTodosUpdateBodySchema,
   SESSION_BODY_SCHEMAS, SESSION_BODY_REQUIRED, SESSION_MESSAGE_TYPES,
 } from "./messages.js";
 export type {
@@ -54,12 +63,22 @@ export type {
   SessionCommandInvokeBody,
   SessionElicitationRequestBody,
   SessionElicitationAnswerBody,
+  // HP5 P1-03
+  SessionConfirmationKind,
+  SessionConfirmationStatus,
+  SessionConfirmationRequestBody,
+  SessionConfirmationUpdateBody,
+  // HP6 P1-02
+  SessionTodoStatus,
+  SessionTodosWriteBody,
+  SessionTodosUpdateBody,
 } from "./messages.js";
 
 // ── Stream events ──
 export {
   SessionStreamEventBodySchema, STREAM_EVENT_KINDS,
-  ToolCallProgressKind, ToolCallResultKind, HookBroadcastKind,
+  ToolCallProgressKind, ToolCallResultKind, ToolCallCancelledKind,
+  HookBroadcastKind,
   SessionUpdateKind, TurnBeginKind, TurnEndKind,
   CompactNotifyKind, SystemNotifyKind, SystemErrorKind, LlmDeltaKind,
 } from "./stream-event.js";
