@@ -1,3 +1,7 @@
+import { createLogger } from "@haimang/nacp-core/logger";
+
+const logger = createLogger("context-core");
+
 /**
  * Context-Management — async-compact submodule.
  *
@@ -719,9 +723,10 @@ export class AsyncCompactOrchestrator {
     try {
       await this.doStorage.put(this.compactStateKey, record);
     } catch (err) {
-      console.warn(
-        `AsyncCompactOrchestrator.persistState: ${describeError(err)}`,
-      );
+      logger.warn("async-compact-persist-state-failed", {
+        code: "internal-error",
+        ctx: { error: describeError(err) },
+      });
     }
   }
 
@@ -729,9 +734,10 @@ export class AsyncCompactOrchestrator {
     try {
       await this.doStorage.delete(this.compactStateKey);
     } catch (err) {
-      console.warn(
-        `AsyncCompactOrchestrator.clearPersistedState: ${describeError(err)}`,
-      );
+      logger.warn("async-compact-clear-state-failed", {
+        code: "internal-error",
+        ctx: { error: describeError(err) },
+      });
     }
   }
 

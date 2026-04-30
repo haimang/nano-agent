@@ -1,3 +1,7 @@
+import { createLogger } from "@haimang/nacp-core/logger";
+
+const logger = createLogger("context-core");
+
 /**
  * Context-Management — async-compact CompactionCommitter.
  *
@@ -301,10 +305,13 @@ export class CompactionCommitter {
     try {
       await this.r2.delete(serialized.r2Key);
     } catch (cleanupErr) {
-      console.warn(
-        `committer: R2 cleanup of ${serialized.r2Key} failed after tx rollback:`,
-        cleanupErr,
-      );
+      logger.warn("async-compact-r2-cleanup-failed", {
+        code: "internal-error",
+        ctx: {
+          r2_key: serialized.r2Key,
+          error: cleanupErr instanceof Error ? cleanupErr.message : String(cleanupErr),
+        },
+      });
     }
   }
 

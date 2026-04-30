@@ -1,3 +1,4 @@
+import { createLogger } from "@haimang/nacp-core/logger";
 /**
  * Workspace Context Artifacts — Reference Backend
  *
@@ -190,10 +191,13 @@ export class ReferenceBackend implements WorkspaceBackend {
       try {
         await this.r2.delete(entry.r2Key);
       } catch (err) {
-        console.warn(
-          `ReferenceBackend.delete: R2 cleanup of ${entry.r2Key} failed:`,
-          err,
-        );
+        logger.warn("reference-backend-r2-cleanup-failed", {
+          code: "internal-error",
+          ctx: {
+            r2_key: entry.r2Key,
+            error: err instanceof Error ? err.message : String(err),
+          },
+        });
       }
     }
     return doStorage.delete(key);
@@ -215,3 +219,4 @@ export class ReferenceBackend implements WorkspaceBackend {
       .replace(/\/$/, "");
   }
 }
+const logger = createLogger("filesystem-core");

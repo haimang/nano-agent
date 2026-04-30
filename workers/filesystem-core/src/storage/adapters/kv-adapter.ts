@@ -18,7 +18,10 @@
  * Tenant prefixing is orthogonal — see `nacp-core` `tenantKv*` helpers.
  */
 
+import { createLogger } from "@haimang/nacp-core/logger";
 import { ValueTooLargeError } from "../errors.js";
+
+const logger = createLogger("filesystem-core");
 
 // ═══════════════════════════════════════════════════════════════════
 // §1 — Decoupled KV binding type
@@ -114,7 +117,7 @@ export class KvAdapter {
    *   - Size check is synchronous (throws `ValueTooLargeError` before
    *     dispatch — matches `put` failure mode).
    *   - The actual write is dispatched immediately; failures are logged
-   *     to `console.warn` but NOT thrown to the caller.
+   *     to `logger.warn` but NOT thrown to the caller.
    *   - When `ctx.waitUntil` is provided, the write is registered so
    *     the worker stays alive until KV commits. Without `ctx`, the
    *     write may be cancelled when the request completes — caller
@@ -131,7 +134,13 @@ export class KvAdapter {
       throw new ValueTooLargeError(bytes, this.maxValueBytes, "kv");
     }
     const writePromise = this.kv.put(key, value, options).catch((err) => {
-      console.warn(`KvAdapter.putAsync(${key}) failed:`, err);
+      logger.warn("kv-put-async-failed", {
+        code: "internal-error",
+        ctx: {
+          key,
+          error: err instanceof Error ? err.message : String(err),
+        },
+      });
     });
     ctx?.waitUntil(writePromise);
   }

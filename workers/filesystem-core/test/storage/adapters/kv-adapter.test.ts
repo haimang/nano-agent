@@ -130,10 +130,17 @@ describe("KvAdapter", () => {
       adapter.putAsync("k", "v", ctx);
       // Resolves (does not reject) because the catch handler swallows
       await expect(captured[0]).resolves.toBeUndefined();
-      expect(warnSpy).toHaveBeenCalledWith(
-        expect.stringContaining("KvAdapter.putAsync(k) failed"),
-        expect.any(Error),
-      );
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      const [line] = warnSpy.mock.calls[0] as [string];
+      const record = JSON.parse(line) as {
+        msg: string;
+        code?: string;
+        ctx?: { key?: string; error?: string };
+      };
+      expect(record.msg).toBe("kv-put-async-failed");
+      expect(record.code).toBe("internal-error");
+      expect(record.ctx?.key).toBe("k");
+      expect(record.ctx?.error).toBe("KV down");
       warnSpy.mockRestore();
     });
 
