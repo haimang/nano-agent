@@ -164,7 +164,18 @@ export const NANO_AGENT_SYSTEM_PROMPT =
   "Use the provided tools as a governed fake-bash capability layer; do not assume POSIX shell, local OS access, or unsupported commands. " +
   "Prefer structured tool calls for filesystem, search, network, TypeScript execution, and git tasks, and surface unsupported capability needs explicitly.";
 
-function withNanoAgentSystemPrompt(messages: readonly unknown[]): readonly unknown[] {
+// HP0 P3-01 — model-aware seam:HP1 落 `nano_models.base_instructions_suffix`
+// 后,本函数会在 NANO_AGENT_SYSTEM_PROMPT 之后接入 per-model suffix。HP0 阶段
+// 不读取 D1,`modelId` 仅用于占位/接缝,行为与无参版本等价(见 HP0-closure §2 P1
+// 与 `expires-at: HP1 closure` 法律)。后续 phase 不应再调整本函数的形参集。
+// Exported for HP0 system-prompt seam regression(see
+// `test/host/system-prompt-seam.test.ts`)。HP1 真值落表后,此函数会同样被
+// runtime-mainline 内部消费;不需要再调整 API 边界。
+export function withNanoAgentSystemPrompt(
+  messages: readonly unknown[],
+  modelId?: string,
+): readonly unknown[] {
+  void modelId;
   const hasSystemPrompt = messages.some(
     (message) =>
       isRecord(message) &&
@@ -301,7 +312,8 @@ export function createMainlineKernelRunner(
             ? await loadWorkersAiModelCapabilities(options.modelCatalogDb)
             : undefined;
           const exec = buildWorkersAiExecutionRequestFromMessages({
-            messages: withNanoAgentSystemPrompt(resolvedMessages),
+            // HP0 P3-01 — 把 `evidence.modelId` 显式传到 seam,HP1 落表后此处直接读 suffix。
+            messages: withNanoAgentSystemPrompt(resolvedMessages, evidence.modelId),
             tools: true,
             modelCapabilities,
           });

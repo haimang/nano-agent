@@ -1,9 +1,10 @@
 import type { InitialContextSeed, IngressAuthSnapshot } from "../auth.js";
 import type { StreamFrame } from "../parity-bridge.js";
-import { isAuthSnapshot } from "../session-lifecycle.js";
 import {
   extractPhase,
+  isAuthSnapshot,
   jsonResponse,
+  parseModelOptions,
   sessionKey,
   sessionTerminalResponse,
   type SessionEntry,
@@ -131,34 +132,11 @@ export function createUserDoMessageRuntime(ctx: UserDoMessageRuntimeContext) {
         );
       }
 
-      const modelId =
-        typeof body.model_id === "string" &&
-        /^[a-z0-9@/._-]{1,120}$/i.test(body.model_id)
-          ? body.model_id
-          : undefined;
-      if (body.model_id !== undefined && !modelId) {
-        return jsonResponse(400, {
-          error: "invalid-input",
-          message: "model_id has invalid format",
-        });
-      }
-      let reasoning: { effort: "low" | "medium" | "high" } | undefined;
-      if (body.reasoning !== undefined) {
-        if (!body.reasoning || typeof body.reasoning !== "object" || Array.isArray(body.reasoning)) {
-          return jsonResponse(400, {
-            error: "invalid-input",
-            message: "reasoning requires effort",
-          });
-        }
-        const effort = (body.reasoning as Record<string, unknown>).effort;
-        if (effort !== "low" && effort !== "medium" && effort !== "high") {
-          return jsonResponse(400, {
-            error: "invalid-input",
-            message: "reasoning effort must be low, medium, or high",
-          });
-        }
-        reasoning = { effort };
-      }
+      // HP0 P2-02 — 三入口共享 parseModelOptions(),不再在此内联第二套 validator。
+      const modelOptions = parseModelOptions(body);
+      if (!modelOptions.ok) return modelOptions.response;
+      const modelId = modelOptions.model_id;
+      const reasoning = modelOptions.reasoning;
       const partsRaw = body.parts;
       if (!Array.isArray(partsRaw) || partsRaw.length === 0) {
         return jsonResponse(400, {

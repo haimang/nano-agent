@@ -4,6 +4,7 @@ import {
   extractPhase,
   isAuthSnapshot,
   jsonResponse,
+  parseModelOptions,
   sessionKey,
   sessionTerminalResponse,
   terminalKey,
@@ -66,6 +67,12 @@ export interface UserDoSessionFlowContext {
     authSnapshot?: IngressAuthSnapshot,
     seed?: unknown,
   ): Promise<void>;
+  // HP0 P2-02 — `/start` 复用 `/messages` law 时需要相同 model gate;
+  // 该方法在 user-do-runtime 已经存在,但此前只暴露给 message-runtime。
+  requireAllowedModel(
+    authSnapshot: IngressAuthSnapshot,
+    modelId: string,
+  ): Promise<Response | null>;
   ensureDurableSession(
     sessionUuid: string,
     authSnapshot: IngressAuthSnapshot,
@@ -228,6 +235,20 @@ export function createUserDoSessionFlow(ctx: UserDoSessionFlowContext) {
           message: "auth_snapshot.sub is required",
         });
       }
+      // HP0 P2-02 — `/start` 复用 `/messages` 的模型字段 law:
+      // 同一 parseModelOptions() validator + 同一 requireAllowedModel() gate,
+      // 避免三入口语义分裂。非法字段在到达 agent-core 之前直接 400。
+      const modelOptions = parseModelOptions(
+        body as unknown as Record<string, unknown>,
+      );
+      if (!modelOptions.ok) return modelOptions.response;
+      if (modelOptions.model_id) {
+        const modelGate = await ctx.requireAllowedModel(
+          body.auth_snapshot,
+          modelOptions.model_id,
+        );
+        if (modelGate) return modelGate;
+      }
 
       const existingEntry = await ctx.get<SessionEntry>(sessionKey(sessionUuid));
       if (existingEntry) {
@@ -343,6 +364,10 @@ export function createUserDoSessionFlow(ctx: UserDoSessionFlowContext) {
         initial_input: initialInput,
         ...(body.initial_context !== undefined ? { initial_context: body.initial_context } : {}),
         ...(typeof body.trace_uuid === "string" ? { trace_uuid: body.trace_uuid } : {}),
+        // HP0 P2-02 — 不再 silent drop:已通过 parseModelOptions / requireAllowedModel
+        // 校验后透传到 agent-core,与 `/messages` payload 形状对齐。
+        ...(modelOptions.model_id ? { model_id: modelOptions.model_id } : {}),
+        ...(modelOptions.reasoning ? { reasoning: modelOptions.reasoning } : {}),
         authority: body.auth_snapshot,
       });
       if (!startAck.response.ok) {
@@ -442,6 +467,8 @@ export function createUserDoSessionFlow(ctx: UserDoSessionFlowContext) {
           message: "input requires non-empty text",
         });
       }
+      // HP0 P2-02 — `/input` 透传 model_id / reasoning,把校验权交给 `handleMessages`,
+      // 由 message-runtime 的 parseModelOptions / requireAllowedModel 单一 law 处理。
       const messagesBody: Record<string, unknown> = {
         parts: [{ kind: "text", text: body.text }],
         ...(body.auth_snapshot ? { auth_snapshot: body.auth_snapshot } : {}),
@@ -449,6 +476,8 @@ export function createUserDoSessionFlow(ctx: UserDoSessionFlowContext) {
         ...(typeof body.trace_uuid === "string" ? { trace_uuid: body.trace_uuid } : {}),
         ...(body.context_ref !== undefined ? { context_ref: body.context_ref } : {}),
         ...(body.stream_seq !== undefined ? { stream_seq: body.stream_seq } : {}),
+        ...(typeof body.model_id === "string" ? { model_id: body.model_id } : {}),
+        ...(body.reasoning !== undefined ? { reasoning: body.reasoning } : {}),
         _origin: "input",
       };
       return ctx.handleMessages(sessionUuid, messagesBody);

@@ -38,6 +38,16 @@ export interface SessionTerminalRecord {
   readonly ended_at: string;
 }
 
+// HP0 P2-01 — public ingress 与 NACP-Session schema 对齐:
+// `model_id` / `reasoning` 在 `packages/nacp-session/src/messages.ts` 已是
+// authoritative 字段;HP0 之前 public body 类型把它们丢成 `Record<string, unknown>`
+// 隐式吞,导致 `/start` / `/input` 与 `/messages` 在 hero-to-pro law 下不一致。
+// 此处显式落字段,为 Phase 2 P2-02 透传与 P3-01 system prompt seam 提供入口口径。
+export type ReasoningEffort = "low" | "medium" | "high";
+export interface ReasoningOptions {
+  readonly effort: ReasoningEffort;
+}
+
 export interface StartSessionBody {
   readonly initial_input?: string;
   readonly text?: string;
@@ -45,6 +55,8 @@ export interface StartSessionBody {
   readonly trace_uuid?: string;
   readonly auth_snapshot?: IngressAuthSnapshot;
   readonly initial_context_seed?: InitialContextSeed;
+  readonly model_id?: string;
+  readonly reasoning?: ReasoningOptions;
 }
 
 export interface FollowupBody {
@@ -54,6 +66,65 @@ export interface FollowupBody {
   readonly trace_uuid?: string;
   readonly auth_snapshot?: IngressAuthSnapshot;
   readonly initial_context_seed?: InitialContextSeed;
+  readonly model_id?: string;
+  readonly reasoning?: ReasoningOptions;
+}
+
+// HP0 P2-01 — 单一 model/reasoning ingress validator。
+// `/messages` 历史上把同样的逻辑内联在 `message-runtime.ts` 中;HP0 把它收敛到
+// session-lifecycle 模块,让 `/start` / `/input` / `/messages` 三入口共享同一
+// reject 策略(invalid format → 400 invalid-input),避免一边放行一边拒绝。
+const MODEL_ID_PATTERN = /^[a-z0-9@/._-]{1,120}$/i;
+
+export type ParseModelOptionsResult =
+  | { readonly ok: true; readonly model_id?: string; readonly reasoning?: ReasoningOptions }
+  | { readonly ok: false; readonly response: Response };
+
+export function parseModelOptions(
+  body: Record<string, unknown> | null | undefined,
+): ParseModelOptionsResult {
+  if (!body) return { ok: true };
+  let modelId: string | undefined;
+  if (body.model_id !== undefined) {
+    if (typeof body.model_id !== "string" || !MODEL_ID_PATTERN.test(body.model_id)) {
+      return {
+        ok: false,
+        response: jsonResponse(400, {
+          error: "invalid-input",
+          message: "model_id has invalid format",
+        }),
+      };
+    }
+    modelId = body.model_id;
+  }
+  let reasoning: ReasoningOptions | undefined;
+  if (body.reasoning !== undefined) {
+    if (!body.reasoning || typeof body.reasoning !== "object" || Array.isArray(body.reasoning)) {
+      return {
+        ok: false,
+        response: jsonResponse(400, {
+          error: "invalid-input",
+          message: "reasoning requires effort",
+        }),
+      };
+    }
+    const effort = (body.reasoning as Record<string, unknown>).effort;
+    if (effort !== "low" && effort !== "medium" && effort !== "high") {
+      return {
+        ok: false,
+        response: jsonResponse(400, {
+          error: "invalid-input",
+          message: "reasoning effort must be low, medium, or high",
+        }),
+      };
+    }
+    reasoning = { effort };
+  }
+  return {
+    ok: true,
+    ...(modelId !== undefined ? { model_id: modelId } : {}),
+    ...(reasoning !== undefined ? { reasoning } : {}),
+  };
 }
 
 export interface CancelBody {

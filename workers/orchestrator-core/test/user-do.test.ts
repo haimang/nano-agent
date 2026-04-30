@@ -226,6 +226,151 @@ describe('NanoOrchestratorUserDO', () => {
     });
   });
 
+  // HP0 P2-02 — `/start` 复用 `/messages` 的 model law 回归。
+  it('HP0 — /start forwards model_id/reasoning to agent-core via the same parseModelOptions law', async () => {
+    const { state, store } = createState();
+    store.set(USER_AUTH_SNAPSHOT_KEY, {
+      sub: USER_UUID,
+      team_uuid: 'team-1',
+      tenant_uuid: 'team-1',
+      tenant_source: 'deploy-fill',
+    });
+    let capturedStart: Record<string, unknown> | null = null;
+    const agentFetch = async (request: Request): Promise<Response> => {
+      const pathname = new URL(request.url).pathname;
+      if (pathname.endsWith('/stream')) {
+        return new Response(
+          makeNdjson([
+            JSON.stringify({ kind: 'meta', seq: 0, event: 'opened', session_uuid: SESSION_UUID }),
+          ]),
+          { headers: { 'Content-Type': 'application/x-ndjson' } },
+        );
+      }
+      return Response.json({ ok: true });
+    };
+    const userDo = new NanoOrchestratorUserDO(state, {
+      AGENT_CORE: {
+        fetch: agentFetch,
+        start: async (input: Record<string, unknown>) => {
+          capturedStart = input;
+          return { status: 200, body: { ok: true, action: 'start', phase: 'attached' } };
+        },
+      } as any,
+      NANO_INTERNAL_BINDING_SECRET: 'secret',
+    });
+    const response = await userDo.fetch(
+      new Request(`https://orchestrator.internal/sessions/${SESSION_UUID}/start`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          initial_input: 'hello',
+          model_id: '@cf/meta/llama-4-scout-17b-16e-instruct',
+          reasoning: { effort: 'medium' },
+          auth_snapshot: {
+            sub: USER_UUID,
+            team_uuid: 'team-1',
+            tenant_uuid: 'team-1',
+            tenant_source: 'deploy-fill',
+          },
+        }),
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(capturedStart).not.toBeNull();
+    expect(capturedStart).toMatchObject({
+      session_uuid: SESSION_UUID,
+      initial_input: 'hello',
+      model_id: '@cf/meta/llama-4-scout-17b-16e-instruct',
+      reasoning: { effort: 'medium' },
+    });
+  });
+
+  it('HP0 — /start rejects invalid reasoning.effort with 400 (single law with /messages)', async () => {
+    const { state } = createState();
+    const userDo = new NanoOrchestratorUserDO(state, {
+      AGENT_CORE: {
+        fetch: async () => Response.json({ ok: true }),
+        start: async () => ({ status: 200, body: { ok: true } }),
+      } as any,
+      NANO_INTERNAL_BINDING_SECRET: 'secret',
+    });
+    const response = await userDo.fetch(
+      new Request(`https://orchestrator.internal/sessions/${SESSION_UUID}/start`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          initial_input: 'hi',
+          reasoning: { effort: 'extreme' },
+          auth_snapshot: { sub: USER_UUID, tenant_source: 'deploy-fill' },
+        }),
+      }),
+    );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: 'invalid-input' });
+  });
+
+  it('HP0 — /input forwards model_id/reasoning into the messages payload', async () => {
+    const { state, store } = createState();
+    store.set(`sessions/${SESSION_UUID}`, {
+      created_at: 'a',
+      last_seen_at: 'a',
+      status: 'detached',
+      last_phase: 'attached',
+      relay_cursor: -1,
+      ended_at: null,
+    });
+    store.set(USER_AUTH_SNAPSHOT_KEY, {
+      sub: USER_UUID,
+      team_uuid: 'team-1',
+      tenant_uuid: 'team-1',
+      tenant_source: 'deploy-fill',
+    });
+    let forwardedInput: Record<string, unknown> | null = null;
+    const userDo = new NanoOrchestratorUserDO(state, {
+      AGENT_CORE: {
+        fetch: async (request: Request) => {
+          const pathname = new URL(request.url).pathname;
+          if (pathname.endsWith('/stream')) {
+            return new Response(
+              makeNdjson([
+                JSON.stringify({ kind: 'meta', seq: 0, event: 'opened', session_uuid: SESSION_UUID }),
+              ]),
+              { headers: { 'Content-Type': 'application/x-ndjson' } },
+            );
+          }
+          return Response.json({ ok: true });
+        },
+        input: async (input: Record<string, unknown>) => {
+          forwardedInput = input;
+          return { status: 200, body: { ok: true, action: 'input' } };
+        },
+      } as any,
+      NANO_INTERNAL_BINDING_SECRET: 'secret',
+    });
+    const response = await userDo.fetch(
+      new Request(`https://orchestrator.internal/sessions/${SESSION_UUID}/input`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          text: 'hello',
+          model_id: '@cf/meta/llama-4-scout-17b-16e-instruct',
+          reasoning: { effort: 'low' },
+          auth_snapshot: {
+            sub: USER_UUID,
+            team_uuid: 'team-1',
+            tenant_uuid: 'team-1',
+            tenant_source: 'deploy-fill',
+          },
+        }),
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(forwardedInput).toMatchObject({
+      model_id: '@cf/meta/llama-4-scout-17b-16e-instruct',
+      reasoning: { effort: 'low' },
+    });
+  });
+
   it('forwards status and verify via internal routes for existing sessions', async () => {
     const { state, store } = createState();
     store.set(`sessions/${SESSION_UUID}`, {

@@ -252,6 +252,7 @@ export class NanoOrchestratorUserDO {
       updateConversationIndex: (pointer, entry) => this.updateConversationIndex(pointer, entry),
       updateActivePointers: (pointer, turn) => this.updateActivePointers(pointer, turn),
       refreshUserState: (authSnapshot, seed) => this.refreshUserState(authSnapshot, seed as InitialContextSeed | undefined),
+      requireAllowedModel: (authSnapshot, modelId) => this.requireAllowedModel(authSnapshot, modelId),
       ensureDurableSession: (sessionUuid, authSnapshot, traceUuid, timestamp) =>
         this.ensureDurableSession(sessionUuid, authSnapshot, traceUuid, timestamp),
       createDurableTurn: (sessionUuid, pointer, authSnapshot, traceUuid, kind, inputText, timestamp) =>
