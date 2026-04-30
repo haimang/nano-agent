@@ -2,6 +2,14 @@ import { NACP_VERSION } from "@haimang/nacp-core";
 import { respondWithFacadeError } from "@haimang/nacp-core/logger";
 import { NACP_SESSION_VERSION } from "@haimang/nacp-session";
 import { WorkerEntrypoint } from "cloudflare:workers";
+import {
+  buildCompactCommitInput,
+  buildCompactPreviewResponse,
+  buildContextLayersResponse,
+  buildContextProbe,
+  buildContextSnapshotPayload,
+  type ContextDurableState,
+} from "./control-plane.js";
 import { NANO_PACKAGE_MANIFEST } from "./generated/package-manifest.js";
 import type { ContextCoreEnv, ContextCoreShellResponse } from "./types.js";
 
@@ -17,6 +25,54 @@ function createShellResponse(env: ContextCoreEnv): ContextCoreShellResponse {
     phase: "worker-matrix-P3-absorbed",
     absorbed_runtime: true,
   };
+}
+
+interface ContextBindingMeta {
+  readonly trace_uuid: string;
+  readonly team_uuid: string;
+}
+
+interface OrchestratorCoreContextRpcLike {
+  readContextDurableState?(
+    sessionUuid: string,
+    teamUuid: string,
+    meta: ContextBindingMeta,
+  ): Promise<ContextDurableState | null>;
+  createContextSnapshot?(
+    sessionUuid: string,
+    teamUuid: string,
+    input: {
+      readonly trace_uuid: string;
+      readonly snapshot_kind: string;
+      readonly prompt_token_estimate?: number | null;
+      readonly payload: Record<string, unknown>;
+      readonly created_at?: string;
+    },
+    meta: ContextBindingMeta,
+  ): Promise<Record<string, unknown> | null>;
+  commitContextCompact?(
+    sessionUuid: string,
+    teamUuid: string,
+    input: {
+      readonly trace_uuid: string;
+      readonly created_at?: string;
+      readonly tokens_before: number;
+      readonly tokens_after: number;
+      readonly prompt_token_estimate?: number | null;
+      readonly summary_text: string;
+      readonly message_high_watermark?: string | null;
+      readonly protected_fragment_kinds?: ReadonlyArray<string>;
+      readonly compacted_message_count?: number;
+      readonly kept_message_count?: number;
+    },
+    meta: ContextBindingMeta,
+  ): Promise<Record<string, unknown> | { status: "blocked"; reason: string } | null>;
+  readContextCompactJob?(
+    sessionUuid: string,
+    teamUuid: string,
+    jobId: string,
+    meta: ContextBindingMeta,
+  ): Promise<Record<string, unknown> | null>;
 }
 
 // ZX5 Lane E E1 — context-core 从 library-only(P1-03 binding-scope 401)
@@ -104,14 +160,21 @@ export class ContextCoreEntrypoint extends WorkerEntrypoint<ContextCoreEnv> {
    * env flag(deploy-time toggle 期短期 shim period)。
    */
   async contextOps(): Promise<{ ops: string[] }> {
-    return {
-      ops: [
-        "appendInitialContextLayer",
-        "drainPendingInitialContextLayers",
-        "peekPendingInitialContextLayers",
-      ],
-    };
-  }
+      return {
+        ops: [
+          "appendInitialContextLayer",
+          "drainPendingInitialContextLayers",
+          "peekPendingInitialContextLayers",
+          "getContextProbe",
+          "getContextLayers",
+          "previewCompact",
+          "getCompactJob",
+          "getContextSnapshot",
+          "triggerContextSnapshot",
+          "triggerCompact",
+        ],
+      };
+    }
 
   /** @deprecated Renamed to `contextOps()` per ZX5 review GLM R11. Kept as
    * an alias during the short-term shim period; remove when agent-core flips
@@ -120,84 +183,178 @@ export class ContextCoreEntrypoint extends WorkerEntrypoint<ContextCoreEnv> {
     return this.contextOps();
   }
 
-  // ──────────────────────────────────────────────────────────────────
-  // RH2 P2-05 / P2-06 / P2-07 — context inspection RPCs.
-  //
-  // 这 3 个 RPC 是 orchestrator-core 经 CONTEXT_CORE service binding 调用的
-  // 入口点。当前 RH2 阶段 context-core 内部还没有真实 per-session DO
-  // (那是 RH4 / RH6 工作),所以本 RPC 返回结构化 stub 形状(满足 endpoint 测试
-  // + façade 真投递),但显式标注 `phase: "stub"` 让 client 与监控可见。
-  //
-  // 真实 per-session inspector 在 RH4 file pipeline 落地后接入,届时把这 3
-  // 个 method 改为读取 `inspector-facade` 的真 snapshot/compact 接口。
-  // ──────────────────────────────────────────────────────────────────
+  private requireOrchestratorCore(): OrchestratorCoreContextRpcLike {
+    const binding = this.env.ORCHESTRATOR_CORE as OrchestratorCoreContextRpcLike | undefined;
+    if (!binding) {
+      throw new Error("ORCHESTRATOR_CORE binding missing");
+    }
+    return binding;
+  }
+
+  private async readDurableState(
+    sessionUuid: string,
+    teamUuid: string,
+    meta: ContextBindingMeta,
+  ): Promise<ContextDurableState> {
+    const orchestrator = this.requireOrchestratorCore();
+    if (typeof orchestrator.readContextDurableState !== "function") {
+      throw new Error("ORCHESTRATOR_CORE.readContextDurableState missing");
+    }
+    const state = await orchestrator.readContextDurableState(sessionUuid, teamUuid, meta);
+    if (!state) {
+      throw new Error("context durable state unavailable");
+    }
+    return state;
+  }
+
+  async getContextProbe(
+    sessionUuid: string,
+    teamUuid: string,
+    meta: ContextBindingMeta,
+  ): Promise<Record<string, unknown>> {
+    const state = await this.readDurableState(sessionUuid, teamUuid, meta);
+    return buildContextProbe(state);
+  }
+
+  async getContextLayers(
+    sessionUuid: string,
+    teamUuid: string,
+    meta: ContextBindingMeta,
+  ): Promise<Record<string, unknown>> {
+    const state = await this.readDurableState(sessionUuid, teamUuid, meta);
+    return buildContextLayersResponse(state);
+  }
+
+  async previewCompact(
+    sessionUuid: string,
+    teamUuid: string,
+    meta: ContextBindingMeta,
+  ): Promise<Record<string, unknown>> {
+    const state = await this.readDurableState(sessionUuid, teamUuid, meta);
+    return buildCompactPreviewResponse(state);
+  }
+
+  async getCompactJob(
+    sessionUuid: string,
+    teamUuid: string,
+    jobId: string,
+    meta: ContextBindingMeta,
+  ): Promise<Record<string, unknown>> {
+    const orchestrator = this.requireOrchestratorCore();
+    if (typeof orchestrator.readContextCompactJob !== "function") {
+      throw new Error("ORCHESTRATOR_CORE.readContextCompactJob missing");
+    }
+    const job = await orchestrator.readContextCompactJob(sessionUuid, teamUuid, jobId, meta);
+    if (!job) {
+      throw new Error("compact job not found");
+    }
+    return job;
+  }
 
   async getContextSnapshot(
     sessionUuid: string,
     teamUuid: string,
-    meta: { trace_uuid: string; team_uuid: string },
-  ): Promise<{
-    session_uuid: string;
-    team_uuid: string;
-    status: string;
-    summary: string;
-    artifacts_count: number;
-    need_compact: boolean;
-    phase: string;
-  }> {
-    void meta;
+    meta: ContextBindingMeta,
+  ): Promise<Record<string, unknown>> {
+    const probe = await this.getContextProbe(sessionUuid, teamUuid, meta);
     return {
-      session_uuid: sessionUuid,
-      team_uuid: teamUuid,
-      status: "ready",
-      summary: "context-core RH2 stub: per-session inspector in RH4",
-      artifacts_count: 0,
-      need_compact: false,
-      phase: "stub",
+      ...probe,
+      phase: "durable",
     };
   }
 
   async triggerContextSnapshot(
     sessionUuid: string,
     teamUuid: string,
-    meta: { trace_uuid: string; team_uuid: string },
-  ): Promise<{
-    session_uuid: string;
-    team_uuid: string;
-    snapshot_id: string;
-    created_at: string;
-    phase: string;
-  }> {
-    void meta;
+    meta: ContextBindingMeta,
+  ): Promise<Record<string, unknown>> {
+    const orchestrator = this.requireOrchestratorCore();
+    if (typeof orchestrator.createContextSnapshot !== "function") {
+      throw new Error("ORCHESTRATOR_CORE.createContextSnapshot missing");
+    }
+    const state = await this.readDurableState(sessionUuid, teamUuid, meta);
+    const created = await orchestrator.createContextSnapshot(
+      sessionUuid,
+      teamUuid,
+      {
+        trace_uuid: meta.trace_uuid,
+        snapshot_kind: "manual-snapshot",
+        prompt_token_estimate: state.usage
+          ? state.usage.llm_input_tokens + state.usage.llm_output_tokens
+          : null,
+        payload: buildContextSnapshotPayload(state),
+      },
+      meta,
+    );
+    if (!created) {
+      throw new Error("context snapshot write failed");
+    }
     return {
-      session_uuid: sessionUuid,
-      team_uuid: teamUuid,
-      snapshot_id: crypto.randomUUID(),
-      created_at: new Date().toISOString(),
-      phase: "stub",
+      ...created,
+      phase: "durable",
     };
   }
 
   async triggerCompact(
     sessionUuid: string,
     teamUuid: string,
-    meta: { trace_uuid: string; team_uuid: string },
-  ): Promise<{
-    session_uuid: string;
-    team_uuid: string;
-    compacted: boolean;
-    before_size: number;
-    after_size: number;
-    phase: string;
-  }> {
-    void meta;
+    meta: ContextBindingMeta,
+  ): Promise<Record<string, unknown>> {
+    const orchestrator = this.requireOrchestratorCore();
+    if (typeof orchestrator.commitContextCompact !== "function") {
+      throw new Error("ORCHESTRATOR_CORE.commitContextCompact missing");
+    }
+    const state = await this.readDurableState(sessionUuid, teamUuid, meta);
+    const input = buildCompactCommitInput(state);
+    if (!input.need_compact || input.summary_text.length === 0) {
+      return {
+        session_uuid: sessionUuid,
+        team_uuid: teamUuid,
+        compacted: false,
+        before_size: input.tokens_before,
+        after_size: input.tokens_before,
+        phase: "durable",
+        reason: "compact-not-needed",
+      };
+    }
+    const result = await orchestrator.commitContextCompact(
+      sessionUuid,
+      teamUuid,
+      {
+        trace_uuid: meta.trace_uuid,
+        tokens_before: input.tokens_before,
+        tokens_after: input.tokens_after,
+        prompt_token_estimate: input.prompt_token_estimate,
+        summary_text: input.summary_text,
+        message_high_watermark: input.message_high_watermark,
+        protected_fragment_kinds: input.protected_fragment_kinds,
+        compacted_message_count: input.compacted_message_count,
+        kept_message_count: input.kept_message_count,
+      },
+      meta,
+    );
+    if (!result) {
+      throw new Error("context compact write failed");
+    }
+    if ("status" in result && result.status === "blocked") {
+      return {
+        session_uuid: sessionUuid,
+        team_uuid: teamUuid,
+        compacted: false,
+        before_size: input.tokens_before,
+        after_size: input.tokens_before,
+        phase: "durable",
+        reason: result.reason,
+      };
+    }
     return {
       session_uuid: sessionUuid,
       team_uuid: teamUuid,
       compacted: true,
-      before_size: 0,
-      after_size: 0,
-      phase: "stub",
+      before_size: input.tokens_before,
+      after_size: input.tokens_after,
+      phase: "durable",
+      job: result,
     };
   }
 }

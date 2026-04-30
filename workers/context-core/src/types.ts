@@ -2,6 +2,7 @@ export interface ContextCoreEnv {
   readonly ENVIRONMENT?: string;
   readonly OWNER_TAG?: string;
   readonly WORKER_VERSION?: string;
+  readonly ORCHESTRATOR_CORE?: Fetcher & Record<string, unknown>;
 }
 
 export interface ContextCoreShellResponse {
