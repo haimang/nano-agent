@@ -1,14 +1,16 @@
+import { recordAuditEvent, type AuditPersistFn } from "@haimang/nacp-core/logger";
 import {
   AccessTokenInputSchema,
   CreateApiKeyInputSchema,
-  VerifyApiKeyInputSchema,
   LoginInputSchema,
-  RegisterInputSchema,
-  ResetPasswordInputSchema,
-  VerifyApiKeyEnvelopeSchema,
-  WeChatLoginInputSchema,
   RefreshInputSchema,
   okEnvelope,
+  RegisterInputSchema,
+  ResetPasswordInputSchema,
+  RevokeApiKeyInputSchema,
+  VerifyApiKeyEnvelopeSchema,
+  VerifyApiKeyInputSchema,
+  WeChatLoginInputSchema,
   type AuthFlowResult,
   type AuthSnapshot,
   type AuthView,
@@ -19,6 +21,8 @@ import {
   type MeEnvelope,
   type RefreshEnvelope,
   type RegisterEnvelope,
+  type RevokeApiKeyEnvelope,
+  type RevokeApiKeyResult,
   type ResetPasswordEnvelope,
   type VerifyApiKeyEnvelope,
   type VerifyApiKeyResult,
@@ -60,6 +64,7 @@ function isUniqueConstraintError(error: unknown): boolean {
 export interface AuthServiceDeps {
   readonly repo: AuthRepository;
   readonly keyEnv: JwtEnv;
+  readonly auditPersist?: AuditPersistFn;
   readonly passwordSalt?: string;
   readonly wechatClient?: WeChatClient;
   readonly now?: () => Date;
@@ -113,6 +118,33 @@ export class AuthService {
 
   private nowIso(): string {
     return this.now().toISOString();
+  }
+
+  private emitAudit(input: {
+    readonly trace_uuid?: string;
+    readonly team_uuid: string;
+    readonly user_uuid?: string;
+    readonly device_uuid?: string;
+    readonly event_kind: string;
+    readonly outcome: "ok" | "denied" | "failed";
+    readonly ref?: { kind: string; uuid: string };
+    readonly detail?: Record<string, unknown>;
+  }): void {
+    if (!this.deps.auditPersist) return;
+    void recordAuditEvent(
+      {
+        worker: "orchestrator-auth",
+        trace_uuid: input.trace_uuid,
+        team_uuid: input.team_uuid,
+        user_uuid: input.user_uuid,
+        device_uuid: input.device_uuid,
+        event_kind: input.event_kind,
+        outcome: input.outcome,
+        ref: input.ref,
+        detail: input.detail,
+      },
+      this.deps.auditPersist,
+    );
   }
 
   private readDeviceInput(rawInput: unknown, fallbackKind: string): DeviceInput {
@@ -428,7 +460,7 @@ export class AuthService {
 
   async login(rawInput: unknown, rawMeta: unknown): Promise<LoginEnvelope> {
     try {
-      assertAuthMeta(rawMeta);
+      const meta = assertAuthMeta(rawMeta);
       const input = LoginInputSchema.parse(rawInput);
       const normalizedEmail = this.normalizeEmail(input.email);
       const identity = await this.deps.repo.findIdentityBySubject("email_password", normalizedEmail);
@@ -442,7 +474,18 @@ export class AuthService {
       await this.deps.repo.touchIdentityLogin(identity.identity_uuid, this.nowIso());
       const context = await this.ensureContextFromIdentity(identity);
       const device = this.readDeviceInput(rawInput, "web");
-      return okEnvelope(await this.issueTokens(context, device));
+      const result = await this.issueTokens(context, device);
+      this.emitAudit({
+        trace_uuid: meta.trace_uuid,
+        team_uuid: context.team_uuid,
+        user_uuid: context.user_uuid,
+        device_uuid: device.device_uuid,
+        event_kind: "auth.login.success",
+        outcome: "ok",
+        ref: { kind: "user", uuid: context.user_uuid },
+        detail: { provider: "email_password", device_kind: device.device_kind },
+      });
+      return okEnvelope(result);
     } catch (error) {
       return normalizeKnownAuthError<AuthFlowResult>(error);
     }
@@ -592,7 +635,7 @@ export class AuthService {
 
   async wechatLogin(rawInput: unknown, rawMeta: unknown): Promise<WeChatLoginEnvelope> {
     try {
-      assertAuthMeta(rawMeta);
+      const meta = assertAuthMeta(rawMeta);
       const input = WeChatLoginInputSchema.parse(rawInput);
       const session = await this.requireWeChatClient().exchangeCode(input.code);
       const decryptedProfile =
@@ -628,7 +671,18 @@ export class AuthService {
       if (existing) {
         await this.deps.repo.touchIdentityLogin(existing.identity_uuid, this.nowIso());
         const context = await this.ensureContextFromIdentity(existing);
-        return okEnvelope(await this.issueTokens(context, device));
+        const result = await this.issueTokens(context, device);
+        this.emitAudit({
+          trace_uuid: meta.trace_uuid,
+          team_uuid: context.team_uuid,
+          user_uuid: context.user_uuid,
+          device_uuid: device.device_uuid,
+          event_kind: "auth.login.success",
+          outcome: "ok",
+          ref: { kind: "user", uuid: context.user_uuid },
+          detail: { provider: "wechat", device_kind: device.device_kind },
+        });
+        return okEnvelope(result);
       }
       const displayName =
         decryptedProfile?.display_name ??
@@ -642,7 +696,18 @@ export class AuthService {
         auth_secret_hash: null,
         created_at: this.nowIso(),
       });
-      return okEnvelope(await this.issueTokens(context, device));
+      const result = await this.issueTokens(context, device);
+      this.emitAudit({
+        trace_uuid: meta.trace_uuid,
+        team_uuid: context.team_uuid,
+        user_uuid: context.user_uuid,
+        device_uuid: device.device_uuid,
+        event_kind: "auth.login.success",
+        outcome: "ok",
+        ref: { kind: "user", uuid: context.user_uuid },
+        detail: { provider: "wechat", device_kind: device.device_kind, bootstrap: true },
+      });
+      return okEnvelope(result);
     } catch (error) {
       return normalizeKnownAuthError<AuthFlowResult>(error);
     }
@@ -661,7 +726,7 @@ export class AuthService {
 
   async createApiKey(rawInput: unknown, rawMeta: unknown): Promise<CreateApiKeyEnvelope> {
     try {
-      assertAuthMeta(rawMeta);
+      const meta = assertAuthMeta(rawMeta);
       const input = CreateApiKeyInputSchema.parse(rawInput);
       const keyId = `${API_KEY_PREFIX}${this.uuid()}`;
       const apiKey = `${keyId}.${randomOpaqueToken(24)}`;
@@ -681,9 +746,58 @@ export class AuthService {
         team_uuid: input.team_uuid,
         label: input.label,
       };
+      this.emitAudit({
+        trace_uuid: meta.trace_uuid,
+        team_uuid: input.team_uuid,
+        event_kind: "auth.api_key.issued",
+        outcome: "ok",
+        ref: { kind: "api_key", uuid: keyId },
+        detail: { label: input.label },
+      });
       return okEnvelope(result);
     } catch (error) {
       return normalizeKnownAuthError<CreateApiKeyResult>(error);
+    }
+  }
+
+  async revokeApiKey(rawInput: unknown, rawMeta: unknown): Promise<RevokeApiKeyEnvelope> {
+    try {
+      const meta = assertAuthMeta(rawMeta);
+      const input = RevokeApiKeyInputSchema.parse(rawInput);
+      const record = await this.deps.repo.findTeamApiKey(input.key_id);
+      if (!record || record.team_uuid !== input.team_uuid) {
+        return okEnvelope<RevokeApiKeyResult>({
+          key_id: input.key_id,
+          team_uuid: input.team_uuid,
+          revoked_at: this.nowIso(),
+        });
+      }
+      if (record.owner_user_uuid !== input.user_uuid) {
+        throw new AuthServiceError("invalid-auth", 403, "only the team owner can revoke api keys");
+      }
+      const revokedAt = record.revoked_at ?? this.nowIso();
+      if (!record.revoked_at) {
+        await this.deps.repo.revokeTeamApiKey(record.api_key_uuid, revokedAt);
+        this.emitAudit({
+          trace_uuid: meta.trace_uuid,
+          team_uuid: record.team_uuid,
+          user_uuid: input.user_uuid,
+          event_kind: "auth.api_key.revoked",
+          outcome: "ok",
+          ref: { kind: "api_key", uuid: record.api_key_uuid },
+          detail: {
+            label: record.label,
+            revoked_at: revokedAt,
+          },
+        });
+      }
+      return okEnvelope({
+        key_id: record.api_key_uuid,
+        team_uuid: record.team_uuid,
+        revoked_at: revokedAt,
+      });
+    } catch (error) {
+      return normalizeKnownAuthError<RevokeApiKeyResult>(error);
     }
   }
 }

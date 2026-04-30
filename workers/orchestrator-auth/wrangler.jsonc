@@ -32,6 +32,9 @@
       "database_id": "421bf213-f3af-4d79-9de0-9cdb5e61e747"
     }
   ],
+  "services": [
+    { "binding": "ORCHESTRATOR_CORE", "service": "nano-agent-orchestrator-core" }
+  ],
   // RH0 P0-C1 — KV/R2 binding first-declaration (placeholder ids).
   "kv_namespaces": [
     {
@@ -61,6 +64,9 @@
           // Shared `nano-agent-preview` D1 instance — see top-of-file comment.
           "database_id": "421bf213-f3af-4d79-9de0-9cdb5e61e747"
         }
+      ],
+      "services": [
+        { "binding": "ORCHESTRATOR_CORE", "service": "nano-agent-orchestrator-core-preview" }
       ],
       "kv_namespaces": [
         {

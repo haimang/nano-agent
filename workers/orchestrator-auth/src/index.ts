@@ -1,10 +1,19 @@
 import {
+  createLogger,
+  recordAuditEvent,
+  type AuditPersistFn,
+  type LogPersistFn,
+  type LogRecord,
+  type AuditRecord,
+} from "@haimang/nacp-core/logger";
+import {
   type CreateApiKeyEnvelope,
   type LoginEnvelope,
   type MeEnvelope,
   type OrchestratorAuthRpcService,
   type RefreshEnvelope,
   type RegisterEnvelope,
+  type RevokeApiKeyEnvelope,
   type ResetPasswordEnvelope,
   type VerifyApiKeyEnvelope,
   type VerifyTokenEnvelope,
@@ -22,6 +31,10 @@ void NANO_PACKAGE_MANIFEST;
 
 export interface AuthWorkerEnv {
   readonly NANO_AGENT_DB?: D1Database;
+  readonly ORCHESTRATOR_CORE?: Fetcher & {
+    recordErrorLog?(record: LogRecord): Promise<{ ok: boolean }>;
+    recordAuditEvent?(record: AuditRecord): Promise<{ ok: boolean }>;
+  };
   readonly PASSWORD_SALT?: string;
   readonly WECHAT_APPID?: string;
   readonly WECHAT_SECRET?: string;
@@ -34,6 +47,28 @@ export interface AuthWorkerEnv {
   readonly [key: string]: unknown;
 }
 
+function buildErrorPersist(env: AuthWorkerEnv): LogPersistFn | undefined {
+  const rpc = env.ORCHESTRATOR_CORE?.recordErrorLog;
+  if (typeof rpc !== "function") return undefined;
+  return async (record) => {
+    await rpc.call(env.ORCHESTRATOR_CORE, record);
+  };
+}
+
+function buildAuditPersist(env: AuthWorkerEnv): AuditPersistFn | undefined {
+  const rpc = env.ORCHESTRATOR_CORE?.recordAuditEvent;
+  if (typeof rpc !== "function") return undefined;
+  return async (record) => {
+    await rpc.call(env.ORCHESTRATOR_CORE, record);
+  };
+}
+
+function createAuthLogger(env: AuthWorkerEnv) {
+  return createLogger("orchestrator-auth", {
+    persistError: buildErrorPersist(env),
+  });
+}
+
 function createService(env: AuthWorkerEnv): AuthService {
   if (!env.NANO_AGENT_DB) {
     throw new AuthServiceError("worker-misconfigured", 503, "NANO_AGENT_DB must be configured");
@@ -44,6 +79,7 @@ function createService(env: AuthWorkerEnv): AuthService {
     passwordSalt: env.PASSWORD_SALT,
     wechatClient:
       env.WECHAT_APPID && env.WECHAT_SECRET ? createWeChatClient(env) : undefined,
+    auditPersist: buildAuditPersist(env),
     sourceName: "orchestrator.auth",
   });
 }
@@ -52,12 +88,21 @@ async function invokeKnown<T>(
   env: AuthWorkerEnv,
   call: (service: AuthService) => Promise<T>,
 ): Promise<T> {
+  const logger = createAuthLogger(env);
   try {
     return await call(createService(env));
   } catch (error) {
     if (error instanceof AuthServiceError) {
+      logger.warn("auth-service-known-error", {
+        code: error.code,
+        ctx: { status: error.status, message: error.message },
+      });
       return error.toEnvelope<never>() as T;
     }
+    logger.error("auth-service-unexpected-error", {
+      code: "worker-misconfigured",
+      ctx: { error: error instanceof Error ? `${error.name}: ${error.message}` : String(error) },
+    });
     // Wrap unexpected errors (D1, crypto, Zod parse) into an internal-error
     // envelope so the RPC caller always receives a typed AuthEnvelope, not a
     // raw thrown exception that bypasses the auth envelope contract.
@@ -112,5 +157,9 @@ export default class OrchestratorAuthEntrypoint
 
   async createApiKey(rawInput: unknown, rawMeta: unknown): Promise<CreateApiKeyEnvelope> {
     return invokeKnown(this.env, (service) => service.createApiKey(rawInput, rawMeta));
+  }
+
+  async revokeApiKey(rawInput: unknown, rawMeta: unknown): Promise<RevokeApiKeyEnvelope> {
+    return invokeKnown(this.env, (service) => service.revokeApiKey(rawInput, rawMeta));
   }
 }

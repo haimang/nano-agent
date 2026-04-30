@@ -1,3 +1,4 @@
+import type { AuditRecord } from "@haimang/nacp-core/logger";
 import { describe, expect, it } from "vitest";
 import { AuthService } from "../src/service.js";
 import { hashSecret } from "../src/hash.js";
@@ -154,6 +155,16 @@ class InMemoryAuthRepository implements AuthRepository {
     this.apiKeysByUuid.set(apiKeyUuid, { ...existing, last_used_at: lastUsedAt });
   }
 
+  async revokeTeamApiKey(apiKeyUuid: string, revokedAt: string): Promise<void> {
+    const existing = this.apiKeysByUuid.get(apiKeyUuid);
+    if (!existing) return;
+    this.apiKeysByUuid.set(apiKeyUuid, {
+      ...existing,
+      key_status: "revoked",
+      revoked_at: revokedAt,
+    });
+  }
+
   async updatePasswordSecret(identityUuid: string, passwordHash: string): Promise<void> {
     for (const [key, identity] of this.identities.entries()) {
       if (identity.identity_uuid !== identityUuid || identity.identity_provider !== "email_password") continue;
@@ -184,6 +195,7 @@ function createService(
       return {};
     },
   },
+  auditSink?: (record: AuditRecord) => void,
 ): AuthService {
   let seq = 0;
   return new AuthService({
@@ -191,6 +203,7 @@ function createService(
     keyEnv: KEY_ENV,
     passwordSalt: "salt",
     wechatClient,
+    auditPersist: auditSink,
     now: () => new Date("2026-04-25T00:00:00.000Z"),
     uuid: () => {
       seq += 1;
@@ -509,6 +522,88 @@ describe("AuthService", () => {
     expect(me.ok).toBe(true);
     if (!me.ok) return;
     expect(me.data.snapshot.device_uuid).toBe("");
+  });
+
+  it("emits audit records for login and api key issue", async () => {
+    const repo = new InMemoryAuthRepository();
+    const audits: AuditRecord[] = [];
+    const service = createService(repo, undefined, (record) => audits.push(record));
+
+    const register = await service.register(
+      {
+        email: "audit@example.com",
+        password: "password-123",
+        device_uuid: "44444444-4444-4444-8444-444444444444",
+        device_kind: "web",
+      },
+      META,
+    );
+    expect(register.ok).toBe(true);
+    if (!register.ok) return;
+
+    const login = await service.login(
+      {
+        email: "audit@example.com",
+        password: "password-123",
+        device_uuid: "44444444-4444-4444-8444-444444444444",
+        device_kind: "web",
+      },
+      META,
+    );
+    expect(login.ok).toBe(true);
+
+    const created = await service.createApiKey(
+      { team_uuid: register.data.team.team_uuid, label: "audit-key" },
+      META,
+    );
+    expect(created.ok).toBe(true);
+
+    expect(audits.map((record) => record.event_kind)).toContain("auth.login.success");
+    expect(audits.map((record) => record.event_kind)).toContain("auth.api_key.issued");
+    expect(audits.every((record) => record.trace_uuid === META.trace_uuid)).toBe(true);
+    expect(audits.every((record) => record.team_uuid === register.data.team.team_uuid)).toBe(true);
+  });
+
+  it("emits audit record for api key revoke", async () => {
+    const repo = new InMemoryAuthRepository();
+    const audits: AuditRecord[] = [];
+    const service = createService(repo, undefined, (record) => audits.push(record));
+
+    const register = await service.register(
+      {
+        email: "audit-revoke@example.com",
+        password: "password-123",
+        device_uuid: "45444444-4444-4444-8444-444444444444",
+        device_kind: "web",
+      },
+      META,
+    );
+    expect(register.ok).toBe(true);
+    if (!register.ok) return;
+
+    const created = await service.createApiKey(
+      { team_uuid: register.data.team.team_uuid, label: "audit-revoke-key" },
+      META,
+    );
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+
+    audits.length = 0;
+    const revoked = await service.revokeApiKey(
+      {
+        team_uuid: register.data.team.team_uuid,
+        user_uuid: register.data.user.user_uuid,
+        key_id: created.data.key_id,
+      },
+      META,
+    );
+    expect(revoked.ok).toBe(true);
+    if (!revoked.ok) return;
+
+    expect(repo.apiKey(created.data.key_id)?.key_status).toBe("revoked");
+    expect(audits).toHaveLength(1);
+    expect(audits[0]?.event_kind).toBe("auth.api_key.revoked");
+    expect(audits[0]?.ref).toEqual({ kind: "api_key", uuid: created.data.key_id });
   });
 
   it("keeps verifying legacy single-segment API keys", async () => {

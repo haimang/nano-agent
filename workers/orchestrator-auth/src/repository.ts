@@ -139,6 +139,7 @@ export interface AuthRepository {
   findTeamApiKey(apiKeyUuid: string): Promise<TeamApiKeyRecord | null>;
   createTeamApiKey(input: CreateTeamApiKeyInput): Promise<void>;
   touchTeamApiKey(apiKeyUuid: string, lastUsedAt: string): Promise<void>;
+  revokeTeamApiKey(apiKeyUuid: string, revokedAt: string): Promise<void>;
   updatePasswordSecret(identityUuid: string, passwordHash: string, updatedAt: string): Promise<void>;
 }
 
@@ -580,9 +581,18 @@ export class D1AuthRepository implements AuthRepository {
   async touchTeamApiKey(apiKeyUuid: string, lastUsedAt: string): Promise<void> {
     await this.db.prepare(
       `UPDATE nano_team_api_keys
-          SET last_used_at = ?2
-        WHERE api_key_uuid = ?1`,
+           SET last_used_at = ?2
+         WHERE api_key_uuid = ?1`,
     ).bind(apiKeyUuid, lastUsedAt).run();
+  }
+
+  async revokeTeamApiKey(apiKeyUuid: string, revokedAt: string): Promise<void> {
+    await this.db.prepare(
+      `UPDATE nano_team_api_keys
+          SET key_status = 'revoked',
+              revoked_at = ?2
+        WHERE api_key_uuid = ?1`,
+    ).bind(apiKeyUuid, revokedAt).run();
   }
 
   async updatePasswordSecret(identityUuid: string, passwordHash: string, updatedAt: string): Promise<void> {
