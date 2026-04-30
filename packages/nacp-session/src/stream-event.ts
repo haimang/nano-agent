@@ -60,6 +60,8 @@ export const SystemNotifyKind = z.object({
   kind: z.literal("system.notify"),
   severity: z.enum(["info", "warning", "error"]),
   message: z.string().min(1),
+  code: z.string().min(1).optional(),
+  trace_uuid: z.string().uuid().optional(),
 });
 
 export const SystemErrorKind = z.object({

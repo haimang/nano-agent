@@ -23,8 +23,15 @@ describe("SessionStreamEventBody", () => {
     expect(r.kind).toBe("compact.notify");
   });
   it("parses system.notify", () => {
-    const r = SessionStreamEventBodySchema.parse({ kind: "system.notify", severity: "error", message: "something broke" });
+    const r = SessionStreamEventBodySchema.parse({
+      kind: "system.notify",
+      severity: "error",
+      message: "something broke",
+      code: "spike-system-error",
+      trace_uuid: "11111111-1111-4111-8111-111111111111",
+    });
     expect(r.kind).toBe("system.notify");
+    expect(r.code).toBe("spike-system-error");
   });
   it("parses system.error", () => {
     const r = SessionStreamEventBodySchema.parse({
