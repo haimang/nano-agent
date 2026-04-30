@@ -22,7 +22,7 @@
 > - `docs/design/real-to-hero/RHX2-observability-and-auditability-reviewed-by-{deepseek,GLM,GPT}.md`
 > 冻结决策来源:
 > - `docs/design/real-to-hero/RHX-qna.md` Q-Obs1 ~ Q-Obs12（全部 owner-answered；只读引用，本 action-plan 不开新 Q/A）
-> 文档状态: `draft-r3`（v0.5 design 同步：owner 否决 v0.4 中"jwt-shared 未发布 = RHX3 carry-over"的判断——这是 critical 门禁认知错误；本 action-plan v0.draft-r3 把 jwt-shared@0.1.0 首发 + 包来源单一真相门禁 + `/debug/packages` 验证接口提升为本簇 first-wave 必做项）
+> 文档状态: `executed-spike-closed`（v0.5 design 同步：owner 否决 v0.4 中"jwt-shared 未发布 = RHX3 carry-over"的判断——这是 critical 门禁认知错误；本 action-plan v0.draft-r3 把 jwt-shared@0.1.0 首发 + 包来源单一真相门禁 + `/debug/packages` 验证接口提升为本簇 first-wave 必做项；2026-04-30 追加 web-first spike 收口，Phase 9 保持双发窗口，不提前切单发）
 
 ---
 
@@ -751,7 +751,38 @@ RHX2 Observability & Auditability
 
 ## 9. 执行日志回填（仅 `executed` 状态使用）
 
-> 文档当前状态 `draft-r2`，本节留空。Phase 9 closure 完成后由 closure 文档承接，本节不再回填，以避免 single-source-of-truth 漂移。
+### 9.1 Phase 1-6 收口回填
+
+RHX2 Phase 1-6 已完成共享 logger、error registry client、D1 error/audit 表、6-worker logger wiring、first-wave audit 写路径、`system.error` 发帧路径、debug endpoints、cron retention cleanup、D1/RPC/R2 critical alert 触发点，以及 `clients/api-docs/` 面向前端的接口文档刷新。
+
+关键落点：
+
+1. `@haimang/nacp-core/logger` 与 `@haimang/nacp-core/error-codes-client` 成为本阶段共享出口。
+2. orchestrator-core 成为 `nano_error_log` / `nano_audit_log` 单写点与 debug 读取门面。
+3. `/debug/logs`、`/debug/recent-errors`、`/debug/audit`、`/debug/packages` 已进入 Phase 6。
+4. `clients/api-docs/` 已按最新 auth/session/files/context/debug/error 代码事实更新。
+
+### 9.2 Phase 7-9 web-first spike 回填
+
+Owner 将原计划中 web + 微信小程序并行产品化的 Phase 7-9 降级为 `clients/web` 承载的 spike 验证路径。本轮执行结果：
+
+1. Phase 7 打开 `system.error` / `system.notify(severity="error")` 双发窗口，兼容 notify 携带 `code` 与 `trace_uuid`，见 `docs/issue/real-to-hero/RHX2-dual-emit-window.md`。
+2. Phase 8 完成 `clients/web` spike：
+   - `transport.ts` 使用 `@haimang/nacp-core/error-codes-client` 的 `getErrorMeta()` / `classifyByStatus()`，外部 `ApiError.kind` 保持四类兼容，新增 `category` / `retryable`。
+   - `ChatPage.tsx` 消费 `system.error`、去重双发 `system.notify(error)`、识别 `session.attachment.superseded` / `session.end`，并改用现代 `kind` frame 发送 heartbeat/resume/ack。
+   - Inspector 增加 files / logs / recent / audit / packages tab，Health / Settings 同步 RHX2 当前事实。
+   - 预览专用 synthetic trigger：`POST /sessions/{id}/verify` + `{check:"emit-system-error"}`，受 `NANO_ENABLE_RHX2_SPIKE=true` 保护。
+3. Phase 9 gate 已评估：不提前关闭双发。原因是原 Q-Obs11 要求的观察窗口与双端完整产品化未满足；当前 closure 以 spike 关闭，保留双发窗口，等待后续 web + wechat-miniprogram 专项适配后再切单发。
+
+验证命令：
+
+1. `pnpm --filter @haimang/nacp-core typecheck && pnpm --filter @haimang/nacp-core test && pnpm --filter @haimang/nacp-core build`
+2. `pnpm --filter @haimang/nacp-session typecheck && pnpm --filter @haimang/nacp-session test && pnpm --filter @haimang/nacp-session build`
+3. `pnpm --filter @haimang/orchestrator-core-worker typecheck && pnpm --filter @haimang/orchestrator-core-worker test && pnpm --filter @haimang/orchestrator-core-worker build`
+4. `cd clients/web && npm install --ignore-scripts && npm run build`
+5. `node .tmp/rhx2-p7-p9-spike/smoke.mjs`
+
+最终 closure：`docs/issue/real-to-hero/RHX2-closure.md`。
 
 ---
 
