@@ -5,19 +5,23 @@
   "type": "module",
   "description": "agent-core worker — absorbed runtime (P1.A: host / kernel / llm / hooks / eval)",
   "scripts": {
-    "prebuild": "pnpm --filter @haimang/context-core-worker build",
-    "pretest": "pnpm --filter @haimang/context-core-worker build",
-    "pretypecheck": "pnpm --filter @haimang/context-core-worker build",
+    "prepare:package-manifest": "node ../../scripts/generate-package-manifest.mjs --worker agent-core --ts-module src/generated/package-manifest.ts",
+    "prebuild": "pnpm run prepare:package-manifest && pnpm --filter @haimang/context-core-worker build",
+    "pretest": "pnpm run prepare:package-manifest && pnpm --filter @haimang/context-core-worker build",
+    "pretypecheck": "pnpm run prepare:package-manifest && pnpm --filter @haimang/context-core-worker build",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "deploy:preview": "pnpm build && wrangler deploy --env preview",
+    "predeploy": "node ../../scripts/verify-published-packages.mjs",
+    "predeploy:preview": "pnpm run predeploy",
+    "deploy:preview": "pnpm run predeploy && pnpm build && wrangler deploy --env preview",
+    "deploy:production": "pnpm run predeploy && pnpm build && wrangler deploy",
     "deploy:dry-run": "wrangler deploy --dry-run --env=\"\""
   },
   "dependencies": {
     "@haimang/context-core-worker": "workspace:*",
-    "@haimang/nacp-core": "1.4.0",
-    "@haimang/nacp-session": "1.4.0",
+    "@haimang/nacp-core": "workspace:*",
+    "@haimang/nacp-session": "workspace:*",
     "@nano-agent/workspace-context-artifacts": "workspace:*"
   },
   "devDependencies": {

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { worker, NanoSessionDO } from "../src/index.js";
+import { NANO_PACKAGE_MANIFEST } from "../src/generated/package-manifest.js";
 import { NACP_VERSION } from "@haimang/nacp-core";
 import { NACP_SESSION_VERSION } from "@haimang/nacp-session";
 
@@ -50,6 +51,11 @@ describe("agent-core shell smoke", () => {
     expect(body.phase).toBe("orchestration-facade-closed");
     expect(body.live_loop).toBe(true);
     expect(body.capability_binding).toBe(false); // no BASH_CORE in test env
+  });
+
+  it("embeds the built package manifest for agent-core", () => {
+    expect(NANO_PACKAGE_MANIFEST.worker).toBe("agent-core");
+    expect(NANO_PACKAGE_MANIFEST.packages).toHaveLength(3);
   });
 
   it("GET /health returns the same probe shape with live_loop flag", async () => {
@@ -135,8 +141,18 @@ describe("agent-core shell smoke", () => {
     expect(response.status).toBe(404);
     expect(idFromName).not.toHaveBeenCalled();
     expect(get).not.toHaveBeenCalled();
-    const body = (await response.json()) as { error: string };
-    expect(body.error).toBe("Not found");
+    // RHX2 P3-03: agent-core 404 now uses FacadeErrorEnvelope.
+    const body = (await response.json()) as {
+      ok: false;
+      error: { code: string; status: number; message: string };
+      trace_uuid: string;
+    };
+    expect(body.ok).toBe(false);
+    expect(body.error.code).toBe("not-found");
+    expect(body.error.status).toBe(404);
+    expect(body.error.message).toBe("Not found");
+    expect(body.trace_uuid).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(response.headers.get("x-trace-uuid")).toBe(body.trace_uuid);
   });
   // ZX4 P9-01: re-targeted to GET /internal/.../stream which is the
   // remaining /internal/ surface after the P3-05 flip. Original test

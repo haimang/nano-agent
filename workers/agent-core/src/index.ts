@@ -1,10 +1,14 @@
 import { NACP_VERSION } from "@haimang/nacp-core";
+import { respondWithFacadeError } from "@haimang/nacp-core/logger";
 import { NACP_SESSION_VERSION } from "@haimang/nacp-session";
 import { WorkerEntrypoint } from "cloudflare:workers";
+import { NANO_PACKAGE_MANIFEST } from "./generated/package-manifest.js";
 import { NanoSessionDO } from "./host/do/nano-session-do.js";
 import { routeInternal } from "./host/internal.js";
 import { routeRequest } from "./host/routes.js";
 import { validateInternalRpcMeta } from "./host/internal-policy.js";
+
+void NANO_PACKAGE_MANIFEST;
 
 export interface AgentCoreEnv {
   readonly SESSION_DO: DurableObjectNamespace;
@@ -132,10 +136,10 @@ async function fetchWorker(request: Request, env: AgentCoreEnv): Promise<Respons
 
   const route = routeRequest(request);
   if (route.type === "not-found") {
-    return new Response(JSON.stringify({ error: "Not found" }), {
-      status: 404,
-      headers: { "Content-Type": "application/json" },
-    });
+    // RHX2 P3-03: unified to FacadeErrorEnvelope shape so client error
+    // parsers don't need a fallback path for agent-core's 404s.
+    const traceUuid = request.headers.get("x-trace-uuid") ?? crypto.randomUUID();
+    return respondWithFacadeError("not-found", 404, "Not found", traceUuid);
   }
 
   if (

@@ -16,6 +16,10 @@
     "WORKER_VERSION": "context-core@preview",
     "TEAM_UUID": "nano-agent"
   },
+  // RHX2 P1-05 (design v0.5 §3.3 解耦对象 2): error/audit log 单写点路径。
+  "services": [
+    { "binding": "ORCHESTRATOR_CORE", "service": "nano-agent-orchestrator-core" }
+  ],
   // RH0 P0-C1 — KV/R2 binding first-declaration (placeholder ids).
   "kv_namespaces": [
     {
@@ -37,6 +41,9 @@
         "WORKER_VERSION": "context-core@preview",
         "TEAM_UUID": "nano-agent"
       },
+      "services": [
+        { "binding": "ORCHESTRATOR_CORE", "service": "nano-agent-orchestrator-core-preview" }
+      ],
       "kv_namespaces": [
         {
           "binding": "NANO_KV",

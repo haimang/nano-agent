@@ -5,18 +5,22 @@
   "type": "module",
   "description": "Pre-worker-matrix shell for filesystem-core",
   "scripts": {
-    "prebuild": "pnpm --filter @nano-agent/storage-topology build",
-    "pretypecheck": "pnpm --filter @nano-agent/storage-topology build",
-    "pretest": "pnpm --filter @nano-agent/storage-topology build",
+    "prepare:package-manifest": "node ../../scripts/generate-package-manifest.mjs --worker filesystem-core --ts-module src/generated/package-manifest.ts",
+    "prebuild": "pnpm run prepare:package-manifest && pnpm --filter @nano-agent/storage-topology build",
+    "pretypecheck": "pnpm run prepare:package-manifest && pnpm --filter @nano-agent/storage-topology build",
+    "pretest": "pnpm run prepare:package-manifest && pnpm --filter @nano-agent/storage-topology build",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "deploy:preview": "pnpm build && wrangler deploy --env preview",
+    "predeploy": "node ../../scripts/verify-published-packages.mjs",
+    "predeploy:preview": "pnpm run predeploy",
+    "deploy:preview": "pnpm run predeploy && pnpm build && wrangler deploy --env preview",
+    "deploy:production": "pnpm run predeploy && pnpm build && wrangler deploy",
     "deploy:dry-run": "wrangler deploy --dry-run --env=\"\""
   },
   "dependencies": {
-    "@haimang/nacp-core": "1.4.0",
-    "@haimang/nacp-session": "1.4.0",
+    "@haimang/nacp-core": "workspace:*",
+    "@haimang/nacp-session": "workspace:*",
     "@nano-agent/storage-topology": "workspace:*",
     "zod": "^3.25.76"
   },

@@ -11,11 +11,14 @@ import {
   type WeChatLoginEnvelope,
 } from "@haimang/orchestrator-auth-contract";
 import { WorkerEntrypoint } from "cloudflare:workers";
+import { NANO_PACKAGE_MANIFEST } from "./generated/package-manifest.js";
 import { AuthServiceError } from "./errors.js";
 import { handlePublicRequest, type AuthWorkerProbeResponse } from "./public-surface.js";
 import { D1AuthRepository } from "./repository.js";
 import { AuthService } from "./service.js";
 import { createWeChatClient } from "./wechat.js";
+
+void NANO_PACKAGE_MANIFEST;
 
 export interface AuthWorkerEnv {
   readonly NANO_AGENT_DB?: D1Database;

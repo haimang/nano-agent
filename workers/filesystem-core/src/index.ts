@@ -1,6 +1,8 @@
 import { NACP_VERSION } from "@haimang/nacp-core";
+import { respondWithFacadeError } from "@haimang/nacp-core/logger";
 import { NACP_SESSION_VERSION } from "@haimang/nacp-session";
 import { WorkerEntrypoint } from "cloudflare:workers";
+import { NANO_PACKAGE_MANIFEST } from "./generated/package-manifest.js";
 import { SessionFileStore } from "./artifacts.js";
 import type {
   FilesystemCoreEnv,
@@ -12,6 +14,8 @@ import type {
   WriteArtifactInput,
   WriteArtifactResult,
 } from "./types.js";
+
+void NANO_PACKAGE_MANIFEST;
 
 function createShellResponse(env: FilesystemCoreEnv): FilesystemCoreShellResponse {
   return {
@@ -30,15 +34,13 @@ function createShellResponse(env: FilesystemCoreEnv): FilesystemCoreShellRespons
 // 短期 shim 期间 agent-core 同时保留 in-process library import(per Q6 +
 // R9 时间盒化)。**保持 worker 总数 = 6**(per ZX5 Q4 + R8 owner direction)。
 
-function bindingScopeForbidden(): Response {
-  return Response.json(
-    {
-      error: "binding-scope-forbidden",
-      message:
-        "filesystem-core is a leaf worker; business access must use service-binding RPC",
-      worker: "filesystem-core",
-    },
-    { status: 401 },
+function bindingScopeForbidden(traceUuid: string): Response {
+  return respondWithFacadeError(
+    "binding-scope-forbidden",
+    401,
+    "filesystem-core is a leaf worker; business access must use service-binding RPC",
+    traceUuid,
+    { worker: "filesystem-core" },
   );
 }
 
@@ -47,12 +49,13 @@ const worker = {
     const url = new URL(request.url);
     const { pathname } = url;
     const method = request.method.toUpperCase();
+    const traceUuid = request.headers.get("x-trace-uuid") ?? crypto.randomUUID();
 
     if (method === "GET" && (pathname === "/" || pathname === "/health")) {
       return Response.json(createShellResponse(env));
     }
 
-    return bindingScopeForbidden();
+    return bindingScopeForbidden(traceUuid);
   },
 };
 

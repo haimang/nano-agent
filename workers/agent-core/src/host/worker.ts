@@ -12,6 +12,7 @@
  * referenced by `wrangler.jsonc:main`.
  */
 
+import { respondWithFacadeError } from "@haimang/nacp-core/logger";
 import { routeRequest } from "./routes.js";
 
 export { NanoSessionDO } from "./do/nano-session-do.js";
@@ -78,10 +79,9 @@ export default {
     // DO round-trip.
     const route = routeRequest(request);
     if (route.type === "not-found") {
-      return new Response(JSON.stringify({ error: "Not found" }), {
-        status: 404,
-        headers: { "Content-Type": "application/json" },
-      });
+      // RHX2 P3-03: unified to FacadeErrorEnvelope.
+      const traceUuid = request.headers.get("x-trace-uuid") ?? crypto.randomUUID();
+      return respondWithFacadeError("not-found", 404, "Not found", traceUuid);
     }
 
     const sessionId = extractSessionId(request);

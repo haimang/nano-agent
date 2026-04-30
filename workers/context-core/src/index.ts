@@ -1,7 +1,11 @@
 import { NACP_VERSION } from "@haimang/nacp-core";
+import { respondWithFacadeError } from "@haimang/nacp-core/logger";
 import { NACP_SESSION_VERSION } from "@haimang/nacp-session";
 import { WorkerEntrypoint } from "cloudflare:workers";
+import { NANO_PACKAGE_MANIFEST } from "./generated/package-manifest.js";
 import type { ContextCoreEnv, ContextCoreShellResponse } from "./types.js";
+
+void NANO_PACKAGE_MANIFEST;
 
 function createShellResponse(env: ContextCoreEnv): ContextCoreShellResponse {
   return {
@@ -27,15 +31,13 @@ function createShellResponse(env: ContextCoreEnv): ContextCoreShellResponse {
 // **保持 worker 总数 = 6**(per ZX5 Q4 + R8 owner direction;不新增 worker)。
 
 // ZX2 P1-03 binding-scope guard 保留:non-/health public path 仍 401。
-function bindingScopeForbidden(): Response {
-  return Response.json(
-    {
-      error: "binding-scope-forbidden",
-      message:
-        "context-core is a leaf worker; business access must use service-binding RPC",
-      worker: "context-core",
-    },
-    { status: 401 },
+function bindingScopeForbidden(traceUuid: string): Response {
+  return respondWithFacadeError(
+    "binding-scope-forbidden",
+    401,
+    "context-core is a leaf worker; business access must use service-binding RPC",
+    traceUuid,
+    { worker: "context-core" },
   );
 }
 
@@ -44,12 +46,13 @@ const worker = {
     const url = new URL(request.url);
     const { pathname } = url;
     const method = request.method.toUpperCase();
+    const traceUuid = request.headers.get("x-trace-uuid") ?? crypto.randomUUID();
 
     if (method === "GET" && (pathname === "/" || pathname === "/health")) {
       return Response.json(createShellResponse(env));
     }
 
-    return bindingScopeForbidden();
+    return bindingScopeForbidden(traceUuid);
   },
 };
 

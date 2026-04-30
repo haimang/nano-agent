@@ -17,15 +17,22 @@
     }
   },
   "scripts": {
+    "prepare:package-manifest": "node ../../scripts/generate-package-manifest.mjs --worker context-core --ts-module src/generated/package-manifest.ts",
+    "prebuild": "pnpm run prepare:package-manifest",
     "build": "tsc",
+    "pretypecheck": "pnpm run prepare:package-manifest",
     "typecheck": "tsc --noEmit",
+    "pretest": "pnpm run prepare:package-manifest",
     "test": "vitest run",
-    "deploy:preview": "pnpm build && wrangler deploy --env preview",
+    "predeploy": "node ../../scripts/verify-published-packages.mjs",
+    "predeploy:preview": "pnpm run predeploy",
+    "deploy:preview": "pnpm run predeploy && pnpm build && wrangler deploy --env preview",
+    "deploy:production": "pnpm run predeploy && pnpm build && wrangler deploy",
     "deploy:dry-run": "wrangler deploy --dry-run --env=\"\""
   },
   "dependencies": {
-    "@haimang/nacp-core": "1.4.0",
-    "@haimang/nacp-session": "1.4.0",
+    "@haimang/nacp-core": "workspace:*",
+    "@haimang/nacp-session": "workspace:*",
     "@nano-agent/storage-topology": "workspace:*",
     "@nano-agent/workspace-context-artifacts": "workspace:*",
     "zod": "^3.24.0"

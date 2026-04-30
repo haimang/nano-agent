@@ -1,3 +1,5 @@
+import { respondWithFacadeError } from "@haimang/nacp-core/logger";
+
 export interface AuthWorkerProbeResponse {
   readonly worker: "orchestrator-auth";
   readonly status: "ok";
@@ -29,17 +31,16 @@ export function handlePublicRequest(request: Request, env: AuthProbeEnv): Respon
   if (request.method.toUpperCase() === "GET" && (pathname === "/" || pathname === "/health")) {
     return Response.json(createProbeResponse(env));
   }
+  const traceUuid = request.headers.get("x-trace-uuid") ?? crypto.randomUUID();
   // ZX2 Phase 1 P1-03 (transport-profiles.md / binding-scope guard):
   // orchestrator-auth exposes RPC only via WorkerEntrypoint. fetch() must
   // never serve business routes. Aligned 401 envelope code with other
   // non-facade workers so monitors can grep the same string.
-  return Response.json(
-    {
-      error: "binding-scope-forbidden",
-      message:
-        "orchestrator.auth does not expose public business routes; reach via WorkerEntrypoint RPC",
-      worker: "orchestrator-auth",
-    },
-    { status: 401 },
+  return respondWithFacadeError(
+    "binding-scope-forbidden",
+    401,
+    "orchestrator.auth does not expose public business routes; reach via WorkerEntrypoint RPC",
+    traceUuid,
+    { worker: "orchestrator-auth" },
   );
 }

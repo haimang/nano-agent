@@ -16,6 +16,10 @@
     "WORKER_VERSION": "filesystem-core@preview",
     "TEAM_UUID": "nano-agent"
   },
+  // RHX2 P1-06 (design v0.5 §3.3 解耦对象 2): error/audit log 单写点路径。
+  "services": [
+    { "binding": "ORCHESTRATOR_CORE", "service": "nano-agent-orchestrator-core" }
+  ],
   "d1_databases": [
     {
       "binding": "NANO_AGENT_DB",
@@ -44,6 +48,9 @@
         "WORKER_VERSION": "filesystem-core@preview",
         "TEAM_UUID": "nano-agent"
       },
+      "services": [
+        { "binding": "ORCHESTRATOR_CORE", "service": "nano-agent-orchestrator-core-preview" }
+      ],
       "d1_databases": [
         {
           "binding": "NANO_AGENT_DB",

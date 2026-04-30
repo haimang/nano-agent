@@ -20,6 +20,7 @@
  * plain `Request`; the worker entry forwards `request` straight in.
  */
 
+import { respondWithFacadeError } from "@haimang/nacp-core/logger";
 import { checkAuth } from "./inspector-auth.js";
 import { redactPayload } from "./inspector-redact.js";
 import { buildUsageReport } from "./usage-report.js";
@@ -352,10 +353,9 @@ export async function mountInspectorFacade(
   const relativePath = url.pathname.slice(prefix.length);
   const segs = relativePath.split("/").filter(Boolean);
   if (segs.length < 2 || segs[0] !== "sessions") {
-    return new Response(JSON.stringify({ error: "not-found" }), {
-      status: 404,
-      headers: { "content-type": "application/json" },
-    });
+    // RHX2 P3-03: unified to FacadeErrorEnvelope.
+    const traceUuid = options.request.headers.get("x-trace-uuid") ?? crypto.randomUUID();
+    return respondWithFacadeError("not-found", 404, "not-found", traceUuid);
   }
   const sessionUuid = segs[1]!;
 

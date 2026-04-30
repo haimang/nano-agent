@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { fetchWorker as worker } from "../src/index.js";
+import { NANO_PACKAGE_MANIFEST } from "../src/generated/package-manifest.js";
 import { NACP_VERSION } from "@haimang/nacp-core";
 import { NACP_SESSION_VERSION } from "@haimang/nacp-session";
 
@@ -32,6 +33,11 @@ describe("filesystem-core shell smoke", () => {
     expect(body.worker_version).toBe("filesystem-core@test");
   });
 
+  it("embeds the built package manifest for filesystem-core", () => {
+    expect(NANO_PACKAGE_MANIFEST.worker).toBe("filesystem-core");
+    expect(NANO_PACKAGE_MANIFEST.packages).toHaveLength(3);
+  });
+
   // ZX2 Phase 1 P1-03: binding-scope guard. Non-/health paths now return
   // 401 binding-scope-forbidden so accidental workers.dev exposure is
   // defended at code level even before wrangler workers_dev:false takes
@@ -44,7 +50,10 @@ describe("filesystem-core shell smoke", () => {
 
     expect(response.status).toBe(401);
     const body = await response.json();
-    expect(body.error).toBe("binding-scope-forbidden");
-    expect(body.worker).toBe("filesystem-core");
+    expect(body.ok).toBe(false);
+    expect(body.error.code).toBe("binding-scope-forbidden");
+    expect(body.error.status).toBe(401);
+    expect(body.error.details.worker).toBe("filesystem-core");
+    expect(response.headers.get("x-trace-uuid")).toBe(body.trace_uuid);
   });
 });

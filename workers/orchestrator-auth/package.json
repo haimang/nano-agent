@@ -13,17 +13,22 @@
     }
   },
   "scripts": {
-    "prebuild": "pnpm --filter @haimang/jwt-shared build && pnpm --filter @haimang/orchestrator-auth-contract build",
+    "prepare:package-manifest": "node ../../scripts/generate-package-manifest.mjs --worker orchestrator-auth --ts-module src/generated/package-manifest.ts",
+    "prebuild": "pnpm run prepare:package-manifest && pnpm --filter @haimang/jwt-shared build && pnpm --filter @haimang/orchestrator-auth-contract build",
     "build": "tsc",
-    "pretypecheck": "pnpm --filter @haimang/jwt-shared build && pnpm --filter @haimang/orchestrator-auth-contract build",
+    "pretypecheck": "pnpm run prepare:package-manifest && pnpm --filter @haimang/jwt-shared build && pnpm --filter @haimang/orchestrator-auth-contract build",
     "typecheck": "tsc --noEmit",
-    "pretest": "pnpm --filter @haimang/jwt-shared build && pnpm --filter @haimang/orchestrator-auth-contract build",
+    "pretest": "pnpm run prepare:package-manifest && pnpm --filter @haimang/jwt-shared build && pnpm --filter @haimang/orchestrator-auth-contract build",
     "test": "vitest run",
-    "deploy:preview": "pnpm build && wrangler deploy --env preview",
+    "predeploy": "node ../../scripts/verify-published-packages.mjs",
+    "predeploy:preview": "pnpm run predeploy",
+    "deploy:preview": "pnpm run predeploy && pnpm build && wrangler deploy --env preview",
+    "deploy:production": "pnpm run predeploy && pnpm build && wrangler deploy",
     "deploy:dry-run": "pnpm build && wrangler deploy --dry-run"
   },
   "dependencies": {
     "@haimang/jwt-shared": "workspace:*",
+    "@haimang/nacp-core": "workspace:*",
     "@haimang/orchestrator-auth-contract": "workspace:*"
   },
   "devDependencies": {

@@ -182,14 +182,18 @@ export type {
 // No public `/tool.call.request` HTTP ingress is exposed.
 
 import { NACP_VERSION, errorEnvelope, okEnvelope, type Envelope, type RpcMeta, RpcMetaSchema } from "@haimang/nacp-core";
+import { respondWithFacadeError } from "@haimang/nacp-core/logger";
 import { NACP_SESSION_VERSION } from "@haimang/nacp-session";
 import { WorkerEntrypoint } from "cloudflare:workers";
+import { NANO_PACKAGE_MANIFEST } from "./generated/package-manifest.js";
 import {
   cancelCapabilityCall,
   executeCapabilityCall,
   parseCapabilityCallRequest,
   parseCapabilityCancelRequest,
 } from "./worker-runtime.js";
+
+void NANO_PACKAGE_MANIFEST;
 
 export interface BashCoreEnv {
   readonly ENVIRONMENT?: string;
@@ -223,36 +227,40 @@ function createProbeResponse(env: BashCoreEnv): BashCoreProbeResponse {
   };
 }
 
-function invalidJsonResponse(pathname: string): Response {
-  return Response.json(
+function invalidJsonResponse(pathname: string, traceUuid: string): Response {
+  return respondWithFacadeError(
+    "invalid-json",
+    400,
+    `bash-core ${pathname} expects a JSON request body`,
+    traceUuid,
     {
-      error: "invalid-json",
-      message: `bash-core ${pathname} expects a JSON request body`,
       worker: "bash-core",
       phase: "worker-matrix-P1.B-absorbed",
     },
-    { status: 400 },
   );
 }
 
-function invalidShapeResponse(pathname: string, message: string): Response {
-  return Response.json(
+function invalidShapeResponse(pathname: string, message: string, traceUuid: string): Response {
+  return respondWithFacadeError(
+    "invalid-request-shape",
+    400,
+    message,
+    traceUuid,
     {
-      error: "invalid-request-shape",
-      message,
       worker: "bash-core",
       phase: "worker-matrix-P1.B-absorbed",
+      pathname,
     },
-    { status: 400 },
   );
 }
 
-async function handleCapabilityCall(raw: unknown, env: BashCoreEnv): Promise<Response> {
+async function handleCapabilityCall(raw: unknown, env: BashCoreEnv, traceUuid: string): Promise<Response> {
   const parsed = parseCapabilityCallRequest(raw);
   if (!parsed) {
     return invalidShapeResponse(
       "/capability/call",
       "bash-core /capability/call expects { requestId, capabilityName?, body: { tool_name, tool_input } }",
+      traceUuid,
     );
   }
 
@@ -262,12 +270,13 @@ async function handleCapabilityCall(raw: unknown, env: BashCoreEnv): Promise<Res
   return Response.json(body);
 }
 
-function handleCapabilityCancel(raw: unknown): Response {
+function handleCapabilityCancel(raw: unknown, traceUuid: string): Response {
   const parsed = parseCapabilityCancelRequest(raw);
   if (!parsed) {
     return invalidShapeResponse(
       "/capability/cancel",
       "bash-core /capability/cancel expects { requestId, body?: { reason } }",
+      traceUuid,
     );
   }
 
@@ -277,10 +286,11 @@ function handleCapabilityCancel(raw: unknown): Response {
 async function parseJsonBody(request: Request, pathname: string): Promise<
   { ok: true; body: unknown } | { ok: false; response: Response }
 > {
+  const traceUuid = request.headers.get("x-trace-uuid") ?? crypto.randomUUID();
   try {
     return { ok: true, body: await request.json() };
   } catch {
-    return { ok: false, response: invalidJsonResponse(pathname) };
+    return { ok: false, response: invalidJsonResponse(pathname, traceUuid) };
   }
 }
 
@@ -302,10 +312,12 @@ async function maybeForwardToCapabilityDo(
       ? invalidShapeResponse(
           pathname,
           "bash-core /capability/call expects { requestId, capabilityName?, body: { tool_name, tool_input } }",
+          request.headers.get("x-trace-uuid") ?? crypto.randomUUID(),
         )
       : invalidShapeResponse(
           pathname,
           "bash-core /capability/cancel expects { requestId, body?: { reason } }",
+          request.headers.get("x-trace-uuid") ?? crypto.randomUUID(),
         );
   }
 
@@ -330,25 +342,27 @@ export class CapabilityCallDO {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
     const { pathname } = url;
+    const traceUuid = request.headers.get("x-trace-uuid") ?? crypto.randomUUID();
 
     if (request.method.toUpperCase() !== "POST") {
-      return new Response("Method Not Allowed", { status: 405 });
+      // RHX2 P3-03: unified to FacadeErrorEnvelope.
+      return respondWithFacadeError("not-supported", 405, "Method Not Allowed", traceUuid);
     }
 
     const parsed = await parseJsonBody(request, pathname);
     if (!parsed.ok) return parsed.response;
 
-    if (pathname === "/capability/call") {
-      return handleCapabilityCall(parsed.body, {
-        ENVIRONMENT: request.headers.get("x-bash-environment") ?? this.env.ENVIRONMENT,
-      });
-    }
+      if (pathname === "/capability/call") {
+        return handleCapabilityCall(parsed.body, {
+          ENVIRONMENT: request.headers.get("x-bash-environment") ?? this.env.ENVIRONMENT,
+        }, traceUuid);
+      }
 
-    if (pathname === "/capability/cancel") {
-      return handleCapabilityCancel(parsed.body);
-    }
+      if (pathname === "/capability/cancel") {
+        return handleCapabilityCancel(parsed.body, traceUuid);
+      }
 
-    return new Response("Not Found", { status: 404 });
+    return respondWithFacadeError("not-found", 404, "Not Found", traceUuid);
   }
 }
 
@@ -364,15 +378,13 @@ function isInternalBindingCall(request: Request, env: BashCoreEnv): boolean {
   return Boolean(expected && provided && provided === expected);
 }
 
-function bindingScopeForbidden(): Response {
-  return Response.json(
-    {
-      error: "binding-scope-forbidden",
-      message:
-        "bash-core does not expose public business routes; reach via agent-core service-binding",
-      worker: "bash-core",
-    },
-    { status: 401 },
+function bindingScopeForbidden(traceUuid: string): Response {
+  return respondWithFacadeError(
+    "binding-scope-forbidden",
+    401,
+    "bash-core does not expose public business routes; reach via agent-core service-binding",
+    traceUuid,
+    { worker: "bash-core" },
   );
 }
 
@@ -380,6 +392,7 @@ async function bashCoreFetch(request: Request, env: BashCoreEnv): Promise<Respon
   const url = new URL(request.url);
   const { pathname } = url;
   const method = request.method.toUpperCase();
+  const traceUuid = request.headers.get("x-trace-uuid") ?? crypto.randomUUID();
 
   // health-probe profile: always public.
   if (method === "GET" && (pathname === "/" || pathname === "/health")) {
@@ -389,7 +402,7 @@ async function bashCoreFetch(request: Request, env: BashCoreEnv): Promise<Respon
   // Everything else demands a valid internal binding-secret. This catches
   // public hits even before NACP authority validation (ZX2 Phase 3 P3-03).
   if (!isInternalBindingCall(request, env)) {
-    return bindingScopeForbidden();
+    return bindingScopeForbidden(traceUuid);
   }
 
   if (method === "POST" && pathname === "/capability/call") {
@@ -397,7 +410,7 @@ async function bashCoreFetch(request: Request, env: BashCoreEnv): Promise<Respon
     if (!parsed.ok) return parsed.response;
 
     const forwarded = await maybeForwardToCapabilityDo(request, env, "/capability/call", parsed.body);
-    return forwarded ?? handleCapabilityCall(parsed.body, env);
+    return forwarded ?? handleCapabilityCall(parsed.body, env, traceUuid);
   }
 
   if (method === "POST" && pathname === "/capability/cancel") {
@@ -405,10 +418,11 @@ async function bashCoreFetch(request: Request, env: BashCoreEnv): Promise<Respon
     if (!parsed.ok) return parsed.response;
 
     const forwarded = await maybeForwardToCapabilityDo(request, env, "/capability/cancel", parsed.body);
-    return forwarded ?? handleCapabilityCancel(parsed.body);
+    return forwarded ?? handleCapabilityCancel(parsed.body, traceUuid);
   }
 
-  return new Response("Not Found", { status: 404 });
+  // RHX2 P3-03: unified to FacadeErrorEnvelope.
+  return respondWithFacadeError("not-found", 404, "Not Found", traceUuid);
 }
 
 // ZX2 Phase 3 P3-03 — bash-core promoted to a `WorkerEntrypoint`. fetch

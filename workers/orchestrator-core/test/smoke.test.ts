@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import worker, { NanoOrchestratorUserDO } from "../src/index.js";
+import { NANO_PACKAGE_MANIFEST } from "../src/generated/package-manifest.js";
 import { NACP_VERSION } from "@haimang/nacp-core";
 import { NACP_SESSION_VERSION } from "@haimang/nacp-session";
 import { signTestJwt } from "./jwt-helper.js";
@@ -46,6 +47,12 @@ describe("orchestrator-core shell smoke", () => {
     expect(body.phase).toBe("orchestration-facade-closed");
     expect(body.public_facade).toBe(true);
     expect(body.agent_binding).toBe(false);
+    expect(response.headers.get("server-timing")).toContain("total;dur=");
+  });
+
+  it("embeds the built package manifest for orchestrator-core", () => {
+    expect(NANO_PACKAGE_MANIFEST.worker).toBe("orchestrator-core");
+    expect(NANO_PACKAGE_MANIFEST.packages).toHaveLength(3);
   });
 
   it("aggregates worker health for all bound workers", async () => {
@@ -94,6 +101,7 @@ describe("orchestrator-core shell smoke", () => {
     );
 
     expect(response.status).toBe(401);
+    expect(response.headers.get("server-timing")).toContain("total;dur=");
     expect(idFromName).not.toHaveBeenCalled();
     expect(get).not.toHaveBeenCalled();
   });

@@ -1,14 +1,18 @@
 import { NACP_VERSION } from "@haimang/nacp-core";
+import { attachServerTimings, buildFacadeServerTimings } from "@haimang/nacp-core/logger";
 import { NACP_SESSION_VERSION } from "@haimang/nacp-session";
 import {
   facadeFromAuthEnvelope,
   type FacadeErrorCode,
   type OrchestratorAuthRpcService,
 } from "@haimang/orchestrator-auth-contract";
+import { NANO_PACKAGE_MANIFEST } from "./generated/package-manifest.js";
 import { authenticateRequest, clearDeviceGateCache, type AuthEnv } from "./auth.js";
 import { ensureConfiguredTeam, jsonPolicyError, readTraceUuid } from "./policy/authority.js";
 import { D1SessionTruthRepository } from "./session-truth.js";
 import { NanoOrchestratorUserDO } from "./user-do.js";
+
+void NANO_PACKAGE_MANIFEST;
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MAX_SESSION_FILE_BYTES = 25 * 1024 * 1024;
@@ -390,8 +394,7 @@ async function proxyAuthRoute(
   });
 }
 
-const worker = {
-  async fetch(request: Request, env: OrchestratorCoreEnv): Promise<Response> {
+async function dispatchFetch(request: Request, env: OrchestratorCoreEnv): Promise<Response> {
     const pathname = new URL(request.url).pathname;
     const method = request.method.toUpperCase();
 
@@ -530,6 +533,18 @@ const worker = {
     // a downstream layer constructs `{ok,data,trace_uuid}` directly) are
     // passed through unchanged so the wrapper is idempotent.
     return wrapSessionResponse(response, auth.value.trace_uuid);
+  }
+
+// RHX2 P3-04/P3-05 — outer wrapper that injects `Server-Timing: total;dur=N`
+// onto every facade response. First-wave §7.2 F6 covers `total` only;
+// `auth` and `agent` segments require timing capture inside the
+// downstream proxy paths and land in a follow-up commit.
+const worker = {
+  async fetch(request: Request, env: OrchestratorCoreEnv): Promise<Response> {
+    const startedAt = Date.now();
+    const response = await dispatchFetch(request, env);
+    const totalMs = Date.now() - startedAt;
+    return attachServerTimings(response, buildFacadeServerTimings({ totalMs }));
   },
 };
 

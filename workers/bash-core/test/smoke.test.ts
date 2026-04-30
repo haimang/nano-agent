@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 // (a `WorkerEntrypoint` class). The legacy fetch-shaped object literal is
 // kept as the named `worker` export for the smoke tests below.
 import { worker } from "../src/index.js";
+import { NANO_PACKAGE_MANIFEST } from "../src/generated/package-manifest.js";
 import { NACP_VERSION } from "@haimang/nacp-core";
 import { NACP_SESSION_VERSION } from "@haimang/nacp-session";
 
@@ -28,6 +29,16 @@ describe("bash-core shell smoke", () => {
 
     expect(body.nacp_core_version).toBe(NACP_VERSION);
     expect(body.nacp_session_version).toBe(NACP_SESSION_VERSION);
+  });
+
+  it("embeds the built package manifest for bash-core", () => {
+    expect(NANO_PACKAGE_MANIFEST.worker).toBe("bash-core");
+    expect(NANO_PACKAGE_MANIFEST.packages).toHaveLength(3);
+    expect(NANO_PACKAGE_MANIFEST.packages.map((pkg) => pkg.name)).toEqual([
+      "@haimang/nacp-core",
+      "@haimang/nacp-session",
+      "@haimang/jwt-shared",
+    ]);
   });
 
   // ZX2 Phase 1 P1-03 (binding-scope guard): /capability/* requires the
@@ -59,7 +70,11 @@ describe("bash-core shell smoke", () => {
     );
     expect(response.status).toBe(401);
     const body = await response.json();
-    expect(body.error).toBe("binding-scope-forbidden");
+    expect(body.ok).toBe(false);
+    expect(body.error.code).toBe("binding-scope-forbidden");
+    expect(body.error.status).toBe(401);
+    expect(body.error.details.worker).toBe("bash-core");
+    expect(response.headers.get("x-trace-uuid")).toBe(body.trace_uuid);
   });
 
   it("executes a live capability call for pwd", async () => {

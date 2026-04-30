@@ -25,6 +25,12 @@
       "new_classes": ["CapabilityCallDO"]
     }
   ],
+  // RHX2 P1-04 (design v0.5 §3.3 解耦对象 2): error/audit log 单写点路径。
+  // bash-core 经 ORCHESTRATOR_CORE.recordErrorLog / recordAuditEvent RPC
+  // 把 logger.error/critical 与 audit.record 写入 D1。
+  "services": [
+    { "binding": "ORCHESTRATOR_CORE", "service": "nano-agent-orchestrator-core" }
+  ],
   "vars": {
     "ENVIRONMENT": "preview",
     "OWNER_TAG": "nano-agent",
@@ -60,6 +66,9 @@
         "WORKER_VERSION": "bash-core@preview",
         "TEAM_UUID": "nano-agent"
       },
+      "services": [
+        { "binding": "ORCHESTRATOR_CORE", "service": "nano-agent-orchestrator-core-preview" }
+      ],
       "kv_namespaces": [
         {
           "binding": "NANO_KV",
