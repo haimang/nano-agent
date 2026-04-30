@@ -123,7 +123,7 @@ describe("HP1 P5-01 — migrations 007-013 schema freeze (DDL Freeze Gate)", () 
     db?.close();
   });
 
-  it("Q4 — migration ledger contains exactly 007-013 (no 014+ corrections in HP1)", () => {
+  it("Q4 — migration ledger contains 007-013 plus the approved 014 schema correction", () => {
     const files = listMigrationFiles();
     expect(files).toContain("007-model-metadata-and-aliases.sql");
     expect(files).toContain("008-session-model-audit.sql");
@@ -132,8 +132,9 @@ describe("HP1 P5-01 — migrations 007-013 schema freeze (DDL Freeze Gate)", () 
     expect(files).toContain("011-session-temp-files-and-provenance.sql");
     expect(files).toContain("012-session-confirmations.sql");
     expect(files).toContain("013-product-checkpoints.sql");
-    const corrections = files.filter((f) => /^01[4-9]-/.test(f));
-    expect(corrections, `unexpected 014+ migrations: ${corrections.join(", ")}`).toEqual([]);
+    expect(files).toContain("014-session-model-fallback-reason.sql");
+    const corrections = files.filter((f) => /^01[5-9]-/.test(f));
+    expect(corrections, `unexpected 015+ migrations: ${corrections.join(", ")}`).toEqual([]);
   });
 
   // ── 007 ── model metadata + alias
@@ -187,6 +188,7 @@ describe("HP1 P5-01 — migrations 007-013 schema freeze (DDL Freeze Gate)", () 
       "effective_model_id",
       "effective_reasoning_effort",
       "fallback_used",
+      "fallback_reason",
     ]) {
       expect(cols, `missing turn audit column: ${col}`).toContain(col);
     }

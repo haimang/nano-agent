@@ -1,7 +1,7 @@
 // RH2 P2-04 — endpoint-level direct test for GET /models.
 // charter §7.1 ≥5 case: 401 / 200-with-rows / 304 ETag match / team filter / 503 D1-fail
 
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import worker from "../src/index.js";
 import { signTestJwt } from "./jwt-helper.js";
 
@@ -16,11 +16,12 @@ type Row = Record<string, unknown>;
 function createD1Mock(opts: {
   modelsRows: Row[];
   policyRows?: Row[];
+  aliasRows?: Row[];
   shouldThrow?: boolean;
 }) {
   return {
     prepare: (sql: string) => ({
-      bind: (..._args: unknown[]) => ({
+      bind: (...args: unknown[]) => ({
         all: async () => {
           if (opts.shouldThrow) throw new Error("D1_ERROR: simulated");
           if (sql.includes("FROM nano_models")) {
@@ -29,19 +30,43 @@ function createD1Mock(opts: {
           if (sql.includes("FROM nano_team_model_policy")) {
             return { results: opts.policyRows ?? [] };
           }
+          if (sql.includes("FROM nano_model_aliases")) {
+            return { results: opts.aliasRows ?? [] };
+          }
           return { results: [] };
         },
-        first: async () => (
-          sql.includes("FROM nano_user_devices")
-            ? { status: "active" }
-            : null
-        ),
+        first: async () => {
+          if (sql.includes("FROM nano_user_devices")) {
+            return { status: "active" };
+          }
+          if (sql.includes("FROM nano_model_aliases")) {
+            const aliasId = String(args[0] ?? "");
+            return (opts.aliasRows ?? []).find((row) => row.alias_id === aliasId) ?? null;
+          }
+          if (sql.includes("FROM nano_team_model_policy")) {
+            const teamUuid = String(args[0] ?? "");
+            const modelId = String(args[1] ?? "");
+            return (
+              (opts.policyRows ?? []).find(
+                (row) => row.team_uuid === teamUuid && row.model_id === modelId,
+              ) ?? null
+            );
+          }
+          if (sql.includes("FROM nano_models")) {
+            const modelId = String(args[0] ?? "");
+            return opts.modelsRows.find((row) => row.model_id === modelId) ?? null;
+          }
+          return null;
+        },
         run: async () => ({ success: true, meta: { changes: 1 } }),
       }),
       all: async () => {
         if (opts.shouldThrow) throw new Error("D1_ERROR: simulated");
         if (sql.includes("FROM nano_models")) {
           return { results: opts.modelsRows };
+        }
+        if (sql.includes("FROM nano_model_aliases")) {
+          return { results: opts.aliasRows ?? [] };
         }
         return { results: [] };
       },
@@ -60,6 +85,16 @@ describe("RH2 P2-04: GET /models", () => {
       is_vision: 0,
       is_function_calling: 1,
       status: "active",
+      sort_priority: 50,
+      max_output_tokens: 4096,
+      effective_context_pct: 0.75,
+      auto_compact_token_limit: 6000,
+      supported_reasoning_levels: "[]",
+      input_modalities: '["text"]',
+      provider_key: "workers-ai",
+      fallback_model_id: null,
+      base_instructions_suffix: null,
+      description: "Fast",
     },
     {
       model_id: "@cf/meta/llama-3.2-11b-vision-instruct",
@@ -70,6 +105,16 @@ describe("RH2 P2-04: GET /models", () => {
       is_vision: 1,
       is_function_calling: 1,
       status: "active",
+      sort_priority: 40,
+      max_output_tokens: 4096,
+      effective_context_pct: 0.75,
+      auto_compact_token_limit: 6000,
+      supported_reasoning_levels: "[]",
+      input_modalities: '["text","image"]',
+      provider_key: "workers-ai",
+      fallback_model_id: null,
+      base_instructions_suffix: null,
+      description: "Vision",
     },
   ];
 
@@ -79,7 +124,10 @@ describe("RH2 P2-04: GET /models", () => {
       {
         JWT_SECRET,
         TEAM_UUID: "nano-agent",
-        NANO_AGENT_DB: createD1Mock({ modelsRows: baseModels }),
+        NANO_AGENT_DB: createD1Mock({
+          modelsRows: baseModels,
+          aliasRows: [{ alias_id: "@alias/vision", target_model_id: "@cf/meta/llama-3.2-11b-vision-instruct" }],
+        }),
         ORCHESTRATOR_USER_DO: {} as any,
       } as any,
     );
@@ -101,7 +149,10 @@ describe("RH2 P2-04: GET /models", () => {
       {
         JWT_SECRET,
         TEAM_UUID: "nano-agent",
-        NANO_AGENT_DB: createD1Mock({ modelsRows: baseModels }),
+        NANO_AGENT_DB: createD1Mock({
+          modelsRows: baseModels,
+          aliasRows: [{ alias_id: "@alias/vision", target_model_id: "@cf/meta/llama-3.2-11b-vision-instruct" }],
+        }),
         ORCHESTRATOR_USER_DO: {} as any,
       } as any,
     );
@@ -115,6 +166,7 @@ describe("RH2 P2-04: GET /models", () => {
       function_calling: true,
     });
     expect(body.data.models[1].capabilities.vision).toBe(true);
+    expect(body.data.models[1].aliases).toEqual(["@alias/vision"]);
   });
 
   it("304 ETag match — If-None-Match returns 304 with no body", async () => {
@@ -172,7 +224,7 @@ describe("RH2 P2-04: GET /models", () => {
         NANO_AGENT_DB: createD1Mock({
           modelsRows: baseModels,
           policyRows: [
-            { model_id: "@cf/meta/llama-3.2-11b-vision-instruct", allowed: 0 },
+            { team_uuid: TEAM_UUID_RESTRICTED, model_id: "@cf/meta/llama-3.2-11b-vision-instruct", allowed: 0 },
           ],
         }),
         ORCHESTRATOR_USER_DO: {} as any,
@@ -209,5 +261,40 @@ describe("RH2 P2-04: GET /models", () => {
     const body = (await response.json()) as { ok: boolean; error: { code: string } };
     expect(body.ok).toBe(false);
     expect(body.error.code).toBe("models-d1-unavailable");
+  });
+
+  it("GET /models/{id} resolves alias to full detail", async () => {
+    const token = await signTestJwt({ sub: USER_UUID, team_uuid: TEAM_UUID }, JWT_SECRET);
+    const response = await worker.fetch(
+      new Request("https://example.com/models/%40alias%2Fvision", {
+        headers: {
+          authorization: `Bearer ${token}`,
+          "x-trace-uuid": TRACE_UUID,
+        },
+      }),
+      {
+        JWT_SECRET,
+        TEAM_UUID: "nano-agent",
+        NANO_AGENT_DB: createD1Mock({
+          modelsRows: baseModels,
+          aliasRows: [{ alias_id: "@alias/vision", target_model_id: "@cf/meta/llama-3.2-11b-vision-instruct" }],
+        }),
+        ORCHESTRATOR_USER_DO: {} as any,
+      } as any,
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      data: {
+        requested_model_id: string;
+        resolved_model_id: string;
+        resolved_from_alias: boolean;
+        model: { aliases: string[]; input_modalities: string[] };
+      };
+    };
+    expect(body.data.requested_model_id).toBe("@alias/vision");
+    expect(body.data.resolved_model_id).toBe("@cf/meta/llama-3.2-11b-vision-instruct");
+    expect(body.data.resolved_from_alias).toBe(true);
+    expect(body.data.model.aliases).toEqual(["@alias/vision"]);
+    expect(body.data.model.input_modalities).toEqual(["text", "image"]);
   });
 });
