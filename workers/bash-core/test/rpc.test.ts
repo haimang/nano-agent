@@ -53,6 +53,40 @@ describe("bash-core rpc — call", () => {
     }
   });
 
+  it("persists structured error logs when capability execution fails", async () => {
+    const records: Array<{ code?: string; msg: string }> = [];
+    const ep = new BashCoreEntrypoint({
+      ENVIRONMENT: "production",
+      ORCHESTRATOR_CORE: {
+        async recordErrorLog(record) {
+          records.push({ code: record.code, msg: record.msg });
+          return { ok: true };
+        },
+      },
+    } as never);
+    const res = await ep.call(
+      {
+        requestId: "rpc-call-preview-only",
+        capabilityName: "__px_sleep",
+        body: { tool_name: "__px_sleep", tool_input: {} },
+      },
+      {
+        trace_uuid: TRACE,
+        caller: "agent-core",
+        authority: NACP_AUTHORITY,
+        session_uuid: SESSION,
+        request_uuid: REQ,
+        source: "session.runtime",
+      },
+    );
+    expect(res.ok).toBe(true);
+    await Promise.resolve();
+    expect(records).toContainEqual({
+      code: "preview-only-tool",
+      msg: "capability-rpc-failed",
+    });
+  });
+
   it("rejects when meta.authority is missing", async () => {
     const ep = makeEntrypoint();
     const res = await ep.call(

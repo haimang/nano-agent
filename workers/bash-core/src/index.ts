@@ -182,7 +182,13 @@ export type {
 // No public `/tool.call.request` HTTP ingress is exposed.
 
 import { NACP_VERSION, errorEnvelope, okEnvelope, type Envelope, type RpcMeta, RpcMetaSchema } from "@haimang/nacp-core";
-import { respondWithFacadeError } from "@haimang/nacp-core/logger";
+import {
+  createLogger,
+  respondWithFacadeError,
+  withTraceContext,
+  type LogPersistFn,
+  type LogRecord,
+} from "@haimang/nacp-core/logger";
 import { NACP_SESSION_VERSION } from "@haimang/nacp-session";
 import { WorkerEntrypoint } from "cloudflare:workers";
 import { NANO_PACKAGE_MANIFEST } from "./generated/package-manifest.js";
@@ -200,6 +206,9 @@ export interface BashCoreEnv {
   readonly OWNER_TAG?: string;
   readonly WORKER_VERSION?: string;
   readonly CAPABILITY_CALL_DO?: DurableObjectNamespace;
+  readonly ORCHESTRATOR_CORE?: Fetcher & {
+    recordErrorLog?(record: LogRecord): Promise<{ ok: boolean }>;
+  };
   // ZX2 Phase 1 P1-03 — binding-scope guard. ZX2 Phase 3 P3-03 turns this
   // into a hard requirement together with NACP authority validation.
   readonly NANO_INTERNAL_BINDING_SECRET?: string;
@@ -227,30 +236,52 @@ function createProbeResponse(env: BashCoreEnv): BashCoreProbeResponse {
   };
 }
 
-function invalidJsonResponse(pathname: string, traceUuid: string): Response {
-  return respondWithFacadeError(
-    "invalid-json",
-    400,
-    `bash-core ${pathname} expects a JSON request body`,
-    traceUuid,
-    {
-      worker: "bash-core",
-      phase: "worker-matrix-P1.B-absorbed",
-    },
+function buildErrorPersist(env: BashCoreEnv): LogPersistFn | undefined {
+  const rpc = env.ORCHESTRATOR_CORE?.recordErrorLog;
+  if (typeof rpc !== "function") return undefined;
+  return async (record) => {
+    await rpc.call(env.ORCHESTRATOR_CORE, record);
+  };
+}
+
+function createBashLogger(env: BashCoreEnv) {
+  return createLogger("bash-core", {
+    persistError: buildErrorPersist(env),
+  });
+}
+
+function invalidJsonResponse(pathname: string, traceUuid: string, env: BashCoreEnv): Response {
+  const logger = createBashLogger(env);
+  return withTraceContext({ trace_uuid: traceUuid }, () =>
+    respondWithFacadeError(
+      "invalid-json",
+      400,
+      `bash-core ${pathname} expects a JSON request body`,
+      traceUuid,
+      {
+        worker: "bash-core",
+        phase: "worker-matrix-P1.B-absorbed",
+      },
+      { logger },
+    )
   );
 }
 
-function invalidShapeResponse(pathname: string, message: string, traceUuid: string): Response {
-  return respondWithFacadeError(
-    "invalid-request-shape",
-    400,
-    message,
-    traceUuid,
-    {
-      worker: "bash-core",
-      phase: "worker-matrix-P1.B-absorbed",
-      pathname,
-    },
+function invalidShapeResponse(pathname: string, message: string, traceUuid: string, env: BashCoreEnv): Response {
+  const logger = createBashLogger(env);
+  return withTraceContext({ trace_uuid: traceUuid }, () =>
+    respondWithFacadeError(
+      "invalid-request-shape",
+      400,
+      message,
+      traceUuid,
+      {
+        worker: "bash-core",
+        phase: "worker-matrix-P1.B-absorbed",
+        pathname,
+      },
+      { logger },
+    )
   );
 }
 
@@ -261,36 +292,50 @@ async function handleCapabilityCall(raw: unknown, env: BashCoreEnv, traceUuid: s
       "/capability/call",
       "bash-core /capability/call expects { requestId, capabilityName?, body: { tool_name, tool_input } }",
       traceUuid,
+      env,
     );
   }
 
   const body = await executeCapabilityCall(parsed, {
     previewMode: env.ENVIRONMENT === "preview",
   });
+  if (body.status === "error") {
+    withTraceContext({ trace_uuid: traceUuid }, () => {
+      createBashLogger(env).warn("capability-call-failed", {
+        code: body.error.code,
+        ctx: {
+          request_id: parsed.requestId,
+          capability_name: parsed.capabilityName ?? parsed.body.tool_name,
+          message: body.error.message,
+        },
+      });
+    });
+  }
   return Response.json(body);
 }
 
-function handleCapabilityCancel(raw: unknown, traceUuid: string): Response {
+function handleCapabilityCancel(raw: unknown, traceUuid: string, env: BashCoreEnv): Response {
   const parsed = parseCapabilityCancelRequest(raw);
   if (!parsed) {
     return invalidShapeResponse(
       "/capability/cancel",
       "bash-core /capability/cancel expects { requestId, body?: { reason } }",
       traceUuid,
+      env,
     );
   }
 
   return Response.json(cancelCapabilityCall(parsed.requestId));
 }
 
-async function parseJsonBody(request: Request, pathname: string): Promise<
+async function parseJsonBody(request: Request, pathname: string, env: BashCoreEnv): Promise<
   { ok: true; body: unknown } | { ok: false; response: Response }
 > {
   const traceUuid = request.headers.get("x-trace-uuid") ?? crypto.randomUUID();
   try {
     return { ok: true, body: await request.json() };
   } catch {
-    return { ok: false, response: invalidJsonResponse(pathname, traceUuid) };
+    return { ok: false, response: invalidJsonResponse(pathname, traceUuid, env) };
   }
 }
 
@@ -313,11 +358,13 @@ async function maybeForwardToCapabilityDo(
           pathname,
           "bash-core /capability/call expects { requestId, capabilityName?, body: { tool_name, tool_input } }",
           request.headers.get("x-trace-uuid") ?? crypto.randomUUID(),
+          env,
         )
       : invalidShapeResponse(
           pathname,
           "bash-core /capability/cancel expects { requestId, body?: { reason } }",
           request.headers.get("x-trace-uuid") ?? crypto.randomUUID(),
+          env,
         );
   }
 
@@ -349,17 +396,18 @@ export class CapabilityCallDO {
       return respondWithFacadeError("not-supported", 405, "Method Not Allowed", traceUuid);
     }
 
-    const parsed = await parseJsonBody(request, pathname);
-    if (!parsed.ok) return parsed.response;
+      const parsed = await parseJsonBody(request, pathname, this.env);
+      if (!parsed.ok) return parsed.response;
 
       if (pathname === "/capability/call") {
         return handleCapabilityCall(parsed.body, {
+          ...this.env,
           ENVIRONMENT: request.headers.get("x-bash-environment") ?? this.env.ENVIRONMENT,
         }, traceUuid);
       }
 
       if (pathname === "/capability/cancel") {
-        return handleCapabilityCancel(parsed.body, traceUuid);
+        return handleCapabilityCancel(parsed.body, traceUuid, this.env);
       }
 
     return respondWithFacadeError("not-found", 404, "Not Found", traceUuid);
@@ -378,13 +426,17 @@ function isInternalBindingCall(request: Request, env: BashCoreEnv): boolean {
   return Boolean(expected && provided && provided === expected);
 }
 
-function bindingScopeForbidden(traceUuid: string): Response {
-  return respondWithFacadeError(
-    "binding-scope-forbidden",
-    401,
-    "bash-core does not expose public business routes; reach via agent-core service-binding",
-    traceUuid,
-    { worker: "bash-core" },
+function bindingScopeForbidden(traceUuid: string, env: BashCoreEnv): Response {
+  const logger = createBashLogger(env);
+  return withTraceContext({ trace_uuid: traceUuid }, () =>
+    respondWithFacadeError(
+      "binding-scope-forbidden",
+      401,
+      "bash-core does not expose public business routes; reach via agent-core service-binding",
+      traceUuid,
+      { worker: "bash-core" },
+      { logger },
+    )
   );
 }
 
@@ -402,11 +454,11 @@ async function bashCoreFetch(request: Request, env: BashCoreEnv): Promise<Respon
   // Everything else demands a valid internal binding-secret. This catches
   // public hits even before NACP authority validation (ZX2 Phase 3 P3-03).
   if (!isInternalBindingCall(request, env)) {
-    return bindingScopeForbidden(traceUuid);
+    return bindingScopeForbidden(traceUuid, env);
   }
 
   if (method === "POST" && pathname === "/capability/call") {
-    const parsed = await parseJsonBody(request, pathname);
+    const parsed = await parseJsonBody(request, pathname, env);
     if (!parsed.ok) return parsed.response;
 
     const forwarded = await maybeForwardToCapabilityDo(request, env, "/capability/call", parsed.body);
@@ -414,11 +466,11 @@ async function bashCoreFetch(request: Request, env: BashCoreEnv): Promise<Respon
   }
 
   if (method === "POST" && pathname === "/capability/cancel") {
-    const parsed = await parseJsonBody(request, pathname);
+    const parsed = await parseJsonBody(request, pathname, env);
     if (!parsed.ok) return parsed.response;
 
     const forwarded = await maybeForwardToCapabilityDo(request, env, "/capability/cancel", parsed.body);
-    return forwarded ?? handleCapabilityCancel(parsed.body, traceUuid);
+    return forwarded ?? handleCapabilityCancel(parsed.body, traceUuid, env);
   }
 
   // RHX2 P3-03: unified to FacadeErrorEnvelope.
@@ -514,9 +566,32 @@ export default class BashCoreEntrypoint extends WorkerEntrypoint<BashCoreEnv> {
         "bash-core /capability/call rpc expects { requestId, capabilityName?, body: { tool_name, tool_input } }",
       );
     }
-    const result = await executeCapabilityCall(parsedRequest, {
-      previewMode: this.env.ENVIRONMENT === "preview",
-    });
+    const result = await withTraceContext(
+      {
+        trace_uuid: validated.meta.trace_uuid,
+        session_uuid: validated.meta.session_uuid,
+        team_uuid:
+          validated.meta.authority &&
+          typeof validated.meta.authority === "object" &&
+          typeof (validated.meta.authority as Record<string, unknown>).team_uuid === "string"
+            ? ((validated.meta.authority as Record<string, unknown>).team_uuid as string)
+            : undefined,
+      },
+      () =>
+        executeCapabilityCall(parsedRequest, {
+          previewMode: this.env.ENVIRONMENT === "preview",
+        }),
+    );
+    if (result.status === "error") {
+      createBashLogger(this.env).warn("capability-rpc-failed", {
+        code: result.error?.code ?? "internal-error",
+        ctx: {
+          request_id: parsedRequest.requestId,
+          capability_name: parsedRequest.capabilityName ?? parsedRequest.body.tool_name,
+          caller: validated.meta.caller,
+        },
+      });
+    }
     return okEnvelope(result as BashCoreToolCallResult);
   }
 
