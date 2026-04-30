@@ -19,6 +19,7 @@ import {
   type ConversationIndexItem,
 } from "../session-read-model.js";
 import type { D1SessionTruthRepository } from "../session-truth.js";
+import type { DurableResolvedModel } from "../session-truth.js";
 
 type RpcMethod = (
   input: Record<string, unknown>,
@@ -370,6 +371,14 @@ export function createUserDoSurfaceRuntime(ctx: UserDoSurfaceRuntimeContext) {
       authSnapshot: IngressAuthSnapshot,
       modelId: string,
     ): Promise<Response | null> {
+      const resolved = await this.resolveAllowedModel(authSnapshot, modelId);
+      return resolved instanceof Response ? resolved : null;
+    },
+
+    async resolveAllowedModel(
+      authSnapshot: IngressAuthSnapshot,
+      modelId: string,
+    ): Promise<DurableResolvedModel | Response> {
       const teamUuid = authSnapshot.team_uuid ?? authSnapshot.tenant_uuid;
       if (typeof teamUuid !== "string" || teamUuid.length === 0) {
         return jsonResponse(403, {
@@ -378,30 +387,73 @@ export function createUserDoSurfaceRuntime(ctx: UserDoSurfaceRuntimeContext) {
         });
       }
       const db = ctx.env.NANO_AGENT_DB;
-      if (!db) return null;
-      const model = await db
-        .prepare(`SELECT model_id, status FROM nano_models WHERE model_id = ?1 LIMIT 1`)
-        .bind(modelId)
-        .first<{ model_id: string; status: string }>();
-      if (!model || model.status !== "active") {
+      if (!db) {
+        return {
+          requested_model_id: modelId,
+          resolved_from_alias: false,
+          model: {
+            model_id: modelId,
+            family: "workers-ai/unknown",
+            display_name: modelId,
+            context_window: 0,
+            capabilities: {
+              reasoning: true,
+              vision: false,
+              function_calling: false,
+            },
+            status: "active",
+            aliases: [],
+            max_output_tokens: null,
+            effective_context_pct: null,
+            auto_compact_token_limit: null,
+            supported_reasoning_levels: ["low", "medium", "high"],
+            input_modalities: [],
+            provider_key: null,
+            fallback_model_id: null,
+            base_instructions_suffix: null,
+            description: null,
+            sort_priority: 0,
+          },
+        };
+      }
+      const repo = ctx.sessionTruth();
+      const resolved = await repo?.resolveModelForTeam({
+        team_uuid: teamUuid,
+        model_ref: modelId,
+      });
+      if (!resolved) {
+        const aliasRow = await db
+          .prepare(
+            `SELECT target_model_id
+               FROM nano_model_aliases
+              WHERE alias_id = ?1
+              LIMIT 1`,
+          )
+          .bind(modelId)
+          .first<{ target_model_id: string }>();
+        const canonicalModelId = aliasRow?.target_model_id ?? modelId;
+        const policy = await db
+          .prepare(
+            `SELECT allowed
+               FROM nano_team_model_policy
+              WHERE team_uuid = ?1
+                AND model_id = ?2
+              LIMIT 1`,
+          )
+          .bind(teamUuid, canonicalModelId)
+          .first<{ allowed: number }>();
+        if (policy && Number(policy.allowed) === 0) {
+          return jsonResponse(403, {
+            error: "model-disabled",
+            message: "requested model is disabled for this team",
+          });
+        }
         return jsonResponse(400, {
           error: "model-unavailable",
           message: "requested model is not active",
         });
       }
-      const policy = await db
-        .prepare(
-          `SELECT allowed FROM nano_team_model_policy WHERE team_uuid = ?1 AND model_id = ?2 LIMIT 1`,
-        )
-        .bind(teamUuid, modelId)
-        .first<{ allowed: number }>();
-      if (policy && Number(policy.allowed) === 0) {
-        return jsonResponse(403, {
-          error: "model-disabled",
-          message: "requested model is disabled for this team",
-        });
-      }
-      return null;
+      return resolved;
     },
 
     async handleFiles(sessionUuid: string): Promise<Response> {

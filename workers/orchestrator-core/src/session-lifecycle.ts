@@ -70,6 +70,11 @@ export interface FollowupBody {
   readonly reasoning?: ReasoningOptions;
 }
 
+export interface SessionModelPatchBody {
+  readonly model_id?: string | null;
+  readonly reasoning?: ReasoningOptions | null;
+}
+
 // HP0 P2-01 — 单一 model/reasoning ingress validator。
 // `/messages` 历史上把同样的逻辑内联在 `message-runtime.ts` 中;HP0 把它收敛到
 // session-lifecycle 模块,让 `/start` / `/input` / `/messages` 三入口共享同一
@@ -78,6 +83,16 @@ const MODEL_ID_PATTERN = /^[a-z0-9@/._-]{1,120}$/i;
 
 export type ParseModelOptionsResult =
   | { readonly ok: true; readonly model_id?: string; readonly reasoning?: ReasoningOptions }
+  | { readonly ok: false; readonly response: Response };
+
+export type ParseSessionModelPatchResult =
+  | {
+      readonly ok: true;
+      readonly model_id_present: boolean;
+      readonly model_id?: string | null;
+      readonly reasoning_present: boolean;
+      readonly reasoning?: ReasoningOptions | null;
+    }
   | { readonly ok: false; readonly response: Response };
 
 export function parseModelOptions(
@@ -125,6 +140,83 @@ export function parseModelOptions(
     ...(modelId !== undefined ? { model_id: modelId } : {}),
     ...(reasoning !== undefined ? { reasoning } : {}),
   };
+}
+
+export function parseSessionModelPatchBody(
+  body: Record<string, unknown> | null | undefined,
+): ParseSessionModelPatchResult {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    return {
+      ok: false,
+      response: jsonResponse(400, {
+        error: "invalid-input",
+        message: "model patch requires JSON object body",
+      }),
+    };
+  }
+  const modelIdPresent = Object.prototype.hasOwnProperty.call(body, "model_id");
+  const reasoningPresent = Object.prototype.hasOwnProperty.call(body, "reasoning");
+  if (!modelIdPresent && !reasoningPresent) {
+    return {
+      ok: false,
+      response: jsonResponse(400, {
+        error: "invalid-input",
+        message: "model patch requires model_id or reasoning",
+      }),
+    };
+  }
+
+  let modelId: string | null | undefined;
+  if (modelIdPresent) {
+    if (body.model_id === null) {
+      modelId = null;
+    } else if (typeof body.model_id === "string" && MODEL_ID_PATTERN.test(body.model_id)) {
+      modelId = body.model_id;
+    } else {
+      return {
+        ok: false,
+        response: jsonResponse(400, {
+          error: "invalid-input",
+          message: "model_id has invalid format",
+        }),
+      };
+    }
+  }
+
+  let reasoning: ReasoningOptions | null | undefined;
+  if (reasoningPresent) {
+    if (body.reasoning === null) {
+      reasoning = null;
+    } else {
+      const parsed = parseModelOptions({ reasoning: body.reasoning });
+      if (!parsed.ok) return parsed;
+      reasoning = parsed.reasoning ?? null;
+    }
+  }
+  return {
+    ok: true,
+    model_id_present: modelIdPresent,
+    ...(modelIdPresent ? { model_id: modelId } : {}),
+    reasoning_present: reasoningPresent,
+    ...(reasoningPresent ? { reasoning } : {}),
+  };
+}
+
+export function normalizeReasoningOptions(
+  requested: ReasoningOptions | null | undefined,
+  supportedLevels: readonly ReasoningEffort[] | null | undefined,
+): ReasoningOptions | undefined {
+  if (!requested) return undefined;
+  const levels = Array.from(
+    new Set(
+      (supportedLevels ?? []).filter(
+        (level): level is ReasoningEffort => level === "low" || level === "medium" || level === "high",
+      ),
+    ),
+  );
+  if (levels.length === 0) return undefined;
+  if (levels.includes(requested.effort)) return requested;
+  return { effort: levels[0]! };
 }
 
 export interface CancelBody {

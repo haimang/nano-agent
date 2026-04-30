@@ -256,10 +256,11 @@ export class NanoOrchestratorUserDO {
       updateActivePointers: (pointer, turn) => this.updateActivePointers(pointer, turn),
       refreshUserState: (authSnapshot, seed) => this.refreshUserState(authSnapshot, seed as InitialContextSeed | undefined),
       requireAllowedModel: (authSnapshot, modelId) => this.requireAllowedModel(authSnapshot, modelId),
+      resolveAllowedModel: (authSnapshot, modelId) => this.resolveAllowedModel(authSnapshot, modelId),
       ensureDurableSession: (sessionUuid, authSnapshot, traceUuid, timestamp) =>
         this.ensureDurableSession(sessionUuid, authSnapshot, traceUuid, timestamp),
-      createDurableTurn: (sessionUuid, pointer, authSnapshot, traceUuid, kind, inputText, timestamp) =>
-        this.createDurableTurn(sessionUuid, pointer, authSnapshot, traceUuid, kind, inputText, timestamp),
+      createDurableTurn: (sessionUuid, pointer, authSnapshot, traceUuid, kind, inputText, timestamp, requestedModel) =>
+        this.createDurableTurn(sessionUuid, pointer, authSnapshot, traceUuid, kind, inputText, timestamp, requestedModel),
       recordUserMessage: (sessionUuid, pointer, authSnapshot, traceUuid, turn, kind, payload, timestamp) =>
         this.recordUserMessage(sessionUuid, pointer, authSnapshot, traceUuid, turn, kind, payload, timestamp),
       recordContextSnapshot: (sessionUuid, pointer, turn, authSnapshot, traceUuid, payload, timestamp) =>
@@ -305,12 +306,13 @@ export class NanoOrchestratorUserDO {
         this.isAllowedSessionImageUrl(sessionUuid, rawUrl),
       refreshUserState: (authSnapshot, seed) => this.refreshUserState(authSnapshot, seed),
       requireAllowedModel: (authSnapshot, modelId) => this.requireAllowedModel(authSnapshot, modelId),
+      resolveAllowedModel: (authSnapshot, modelId) => this.resolveAllowedModel(authSnapshot, modelId),
       enforceSessionDevice: (sessionUuid, entry, authSnapshot) =>
         this.enforceSessionDevice(sessionUuid, entry, authSnapshot),
       ensureDurableSession: (sessionUuid, authSnapshot, traceUuid, timestamp) =>
         this.ensureDurableSession(sessionUuid, authSnapshot, traceUuid, timestamp),
-      createDurableTurn: (sessionUuid, pointer, authSnapshot, traceUuid, kind, inputText, timestamp) =>
-        this.createDurableTurn(sessionUuid, pointer, authSnapshot, traceUuid, kind, inputText, timestamp),
+      createDurableTurn: (sessionUuid, pointer, authSnapshot, traceUuid, kind, inputText, timestamp, requestedModel) =>
+        this.createDurableTurn(sessionUuid, pointer, authSnapshot, traceUuid, kind, inputText, timestamp, requestedModel),
       recordUserMessage: (sessionUuid, pointer, authSnapshot, traceUuid, turn, kind, payload, timestamp) =>
         this.recordUserMessage(sessionUuid, pointer, authSnapshot, traceUuid, turn, kind, payload, timestamp),
       appendDurableActivity: (input) => this.appendDurableActivity(input),
@@ -565,6 +567,10 @@ export class NanoOrchestratorUserDO {
     kind: 'start' | 'followup' | 'cancel',
     inputText: string | null,
     timestamp: string,
+    requestedModel?: {
+      readonly model_id: string;
+      readonly reasoning_effort: "low" | "medium" | "high" | null;
+    } | null,
   ): Promise<DurableTurnPointer | null> {
     return this.durableTruth.createDurableTurn(
       sessionUuid,
@@ -574,6 +580,7 @@ export class NanoOrchestratorUserDO {
       kind,
       inputText,
       timestamp,
+      requestedModel,
     );
   }
 
@@ -1038,6 +1045,13 @@ export class NanoOrchestratorUserDO {
     modelId: string,
   ): Promise<Response | null> {
     return this.surfaceRuntime.requireAllowedModel(authSnapshot, modelId);
+  }
+
+  private async resolveAllowedModel(
+    authSnapshot: IngressAuthSnapshot,
+    modelId: string,
+  ) {
+    return this.surfaceRuntime.resolveAllowedModel(authSnapshot, modelId);
   }
 
   // ZX5 Lane D D4 — GET /sessions/{id}/files.

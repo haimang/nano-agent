@@ -4,12 +4,18 @@ import {
   extractPhase,
   isAuthSnapshot,
   jsonResponse,
+  normalizeReasoningOptions,
   parseModelOptions,
   sessionKey,
   sessionTerminalResponse,
   type SessionEntry,
 } from "../session-lifecycle.js";
-import type { DurableSessionPointer, DurableTurnPointer } from "../session-truth.js";
+import type {
+  D1SessionTruthRepository,
+  DurableResolvedModel,
+  DurableSessionPointer,
+  DurableTurnPointer,
+} from "../session-truth.js";
 
 type RpcAck = { response: Response; body: Record<string, unknown> | null };
 
@@ -30,6 +36,10 @@ export interface UserDoMessageRuntimeContext {
     authSnapshot: IngressAuthSnapshot,
     modelId: string,
   ): Promise<Response | null>;
+  resolveAllowedModel(
+    authSnapshot: IngressAuthSnapshot,
+    modelId: string,
+  ): Promise<DurableResolvedModel | Response>;
   enforceSessionDevice(
     sessionUuid: string,
     entry: SessionEntry,
@@ -49,6 +59,10 @@ export interface UserDoMessageRuntimeContext {
     kind: "followup",
     inputText: string | null,
     timestamp: string,
+    requestedModel?: {
+      readonly model_id: string;
+      readonly reasoning_effort: "low" | "medium" | "high" | null;
+    } | null,
   ): Promise<DurableTurnPointer | null>;
   recordUserMessage(
     sessionUuid: string,
@@ -79,20 +93,7 @@ export interface UserDoMessageRuntimeContext {
   readInternalStream(
     sessionUuid: string,
   ): Promise<{ ok: true; frames: StreamFrame[] } | { ok: false; response: Response }>;
-  sessionTruth(): {
-    updateSessionState(input: {
-      session_uuid: string;
-      status: SessionEntry["status"];
-      last_phase: string | null;
-      touched_at: string;
-      ended_at?: string | null;
-    }): Promise<void>;
-    closeTurn(input: {
-      turn_uuid: string;
-      status: "cancelled" | "failed" | "completed";
-      ended_at: string;
-    }): Promise<void>;
-  } | null;
+  sessionTruth(): D1SessionTruthRepository | null;
   forwardFramesToAttachment(
     sessionUuid: string,
     entry: SessionEntry,
@@ -218,10 +219,46 @@ export function createUserDoMessageRuntime(ctx: UserDoMessageRuntimeContext) {
           message: "messages requires persisted auth snapshot",
         });
       }
-      if (modelId) {
-        const modelGate = await ctx.requireAllowedModel(authSnapshot, modelId);
-        if (modelGate) return modelGate;
-      }
+      const repo = ctx.sessionTruth();
+      const teamUuid = authSnapshot.team_uuid ?? authSnapshot.tenant_uuid;
+      const sessionLifecycle =
+        repo && typeof repo.readSessionLifecycle === "function"
+          ? await repo.readSessionLifecycle(sessionUuid)
+          : null;
+      const requestedModel =
+        modelId ? await ctx.resolveAllowedModel(authSnapshot, modelId) : null;
+      if (requestedModel instanceof Response) return requestedModel;
+      const sessionDefaultModel =
+        !requestedModel && sessionLifecycle?.default_model_id
+          ? await ctx.resolveAllowedModel(authSnapshot, sessionLifecycle.default_model_id)
+          : null;
+      if (sessionDefaultModel instanceof Response) return sessionDefaultModel;
+      const globalDefaultModel =
+        !requestedModel &&
+        !sessionDefaultModel &&
+        repo &&
+        typeof repo.readGlobalDefaultModelForTeam === "function" &&
+        typeof teamUuid === "string" &&
+        teamUuid.length > 0
+          ? await repo.readGlobalDefaultModelForTeam(teamUuid)
+          : null;
+      const selectedModelId =
+        requestedModel?.model.model_id ??
+        sessionDefaultModel?.model.model_id ??
+        globalDefaultModel?.model_id ??
+        null;
+      const baselineReasoning =
+        reasoning ??
+        (requestedModel || !sessionLifecycle?.default_model_id || !sessionLifecycle.default_reasoning_effort
+          ? null
+          : { effort: sessionLifecycle.default_reasoning_effort });
+      const selectedReasoning = normalizeReasoningOptions(
+        baselineReasoning,
+        requestedModel?.model.supported_reasoning_levels ??
+          sessionDefaultModel?.model.supported_reasoning_levels ??
+          globalDefaultModel?.supported_reasoning_levels ??
+          [],
+      );
       const gatedEntry = await ctx.enforceSessionDevice(sessionUuid, entry, authSnapshot);
       if (gatedEntry instanceof Response) return gatedEntry;
       const traceUuid = typeof body.trace_uuid === "string" ? body.trace_uuid : crypto.randomUUID();
@@ -239,6 +276,12 @@ export function createUserDoMessageRuntime(ctx: UserDoMessageRuntimeContext) {
         "followup",
         isMultipart ? null : (parts[0] as { text: string }).text,
         now,
+        selectedModelId
+          ? {
+              model_id: selectedModelId,
+              reasoning_effort: selectedReasoning?.effort ?? null,
+            }
+          : null,
       );
       await ctx.recordUserMessage(
         sessionUuid,
@@ -278,8 +321,8 @@ export function createUserDoMessageRuntime(ctx: UserDoMessageRuntimeContext) {
           text: combinedText,
           parts,
           message_kind: messageKind,
-          ...(modelId ? { model_id: modelId } : {}),
-          ...(reasoning ? { reasoning } : {}),
+          ...(selectedModelId ? { model_id: selectedModelId } : {}),
+          ...(selectedReasoning ? { reasoning: selectedReasoning } : {}),
           ...(body.context_ref !== undefined ? { context_ref: body.context_ref } : {}),
           ...(typeof body.stream_seq === "number" ? { stream_seq: body.stream_seq } : {}),
           ...(typeof body.trace_uuid === "string" ? { trace_uuid: body.trace_uuid } : {}),
@@ -293,6 +336,10 @@ export function createUserDoMessageRuntime(ctx: UserDoMessageRuntimeContext) {
             turn_uuid: durableTurn.turn_uuid,
             status: "failed",
             ended_at: new Date().toISOString(),
+            effective_model_id: selectedModelId,
+            effective_reasoning_effort: selectedReasoning?.effort ?? null,
+            fallback_used: false,
+            fallback_reason: null,
           });
         }
         return new Response(inputAck.body ? JSON.stringify(inputAck.body) : null, {
@@ -343,6 +390,10 @@ export function createUserDoMessageRuntime(ctx: UserDoMessageRuntimeContext) {
                 ? "failed"
                 : "completed",
           ended_at: new Date().toISOString(),
+          effective_model_id: selectedModelId,
+          effective_reasoning_effort: selectedReasoning?.effort ?? null,
+          fallback_used: false,
+          fallback_reason: null,
         });
       }
 

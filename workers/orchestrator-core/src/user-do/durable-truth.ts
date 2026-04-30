@@ -71,6 +71,10 @@ export function createUserDoDurableTruth(ctx: UserDoDurableTruthContext) {
       kind: "start" | "followup" | "cancel",
       inputText: string | null,
       timestamp: string,
+      requestedModel?: {
+        readonly model_id: string;
+        readonly reasoning_effort: "low" | "medium" | "high" | null;
+      } | null,
     ): Promise<DurableTurnPointer | null> {
       const repo = ctx.sessionTruth();
       const teamUuid = authSnapshot.team_uuid ?? authSnapshot.tenant_uuid;
@@ -85,6 +89,8 @@ export function createUserDoDurableTruth(ctx: UserDoDurableTruthContext) {
         kind,
         input_text: inputText,
         created_at: timestamp,
+        requested_model_id: requestedModel?.model_id ?? null,
+        requested_reasoning_effort: requestedModel?.reasoning_effort ?? null,
       });
     },
 

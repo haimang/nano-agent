@@ -1,4 +1,5 @@
 import { redactPayload } from "@haimang/nacp-session";
+import type { ReasoningEffort } from "./session-lifecycle.js";
 
 // ZX4 P3-02 — extended per R1 status enum 冻结表; mirrors migration 006
 // CHECK + session-lifecycle SessionStatus + read-model 5-state view.
@@ -60,8 +61,67 @@ export interface DurableSessionLifecycleRecord {
   readonly ended_at: string | null;
   readonly ended_reason: string | null;
   readonly last_phase: string | null;
+  readonly default_model_id: string | null;
+  readonly default_reasoning_effort: ReasoningEffort | null;
   readonly title: string | null;
   readonly deleted_at: string | null;
+}
+
+export interface DurableModelCatalogItem {
+  readonly model_id: string;
+  readonly family: string;
+  readonly display_name: string;
+  readonly context_window: number;
+  readonly capabilities: {
+    readonly reasoning: boolean;
+    readonly vision: boolean;
+    readonly function_calling: boolean;
+  };
+  readonly status: string;
+  readonly aliases: ReadonlyArray<string>;
+}
+
+export interface DurableModelDetail extends DurableModelCatalogItem {
+  readonly max_output_tokens: number | null;
+  readonly effective_context_pct: number | null;
+  readonly auto_compact_token_limit: number | null;
+  readonly supported_reasoning_levels: ReadonlyArray<ReasoningEffort>;
+  readonly input_modalities: ReadonlyArray<string>;
+  readonly provider_key: string | null;
+  readonly fallback_model_id: string | null;
+  readonly base_instructions_suffix: string | null;
+  readonly description: string | null;
+  readonly sort_priority: number;
+}
+
+export interface DurableResolvedModel {
+  readonly requested_model_id: string;
+  readonly resolved_from_alias: boolean;
+  readonly model: DurableModelDetail;
+}
+
+export interface DurableLatestTurnModelAudit {
+  readonly turn_uuid: string;
+  readonly created_at: string;
+  readonly requested_model_id: string | null;
+  readonly requested_reasoning_effort: ReasoningEffort | null;
+  readonly effective_model_id: string | null;
+  readonly effective_reasoning_effort: ReasoningEffort | null;
+  readonly fallback_used: boolean;
+  readonly fallback_reason: string | null;
+}
+
+export interface DurableSessionModelState {
+  readonly conversation_uuid: string;
+  readonly session_uuid: string;
+  readonly session_status: DurableSessionStatus;
+  readonly deleted_at: string | null;
+  readonly default_model_id: string | null;
+  readonly default_reasoning_effort: ReasoningEffort | null;
+  readonly effective_default_model_id: string | null;
+  readonly effective_default_reasoning_effort: ReasoningEffort | null;
+  readonly source: "session" | "global";
+  readonly last_turn: DurableLatestTurnModelAudit | null;
 }
 
 export interface DurableConversationListItem {
@@ -183,6 +243,45 @@ function toNullableString(value: unknown): string | null {
   return typeof value === "string" ? value : null;
 }
 
+function toNullableInt(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : typeof value === "string" && Number.isFinite(Number(value))
+      ? Number(value)
+      : null;
+}
+
+function parseReasoningLevels(value: unknown): ReasoningEffort[] {
+  if (typeof value !== "string" || value.length === 0) return [];
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (level): level is ReasoningEffort => level === "low" || level === "medium" || level === "high",
+    );
+  } catch {
+    return [];
+  }
+}
+
+function parseStringArray(value: unknown): string[] {
+  if (typeof value !== "string" || value.length === 0) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function toNullableReasoningEffort(value: unknown): ReasoningEffort | null {
+  return value === "low" || value === "medium" || value === "high" ? value : null;
+}
+
+function toBooleanFlag(value: unknown): boolean {
+  return value === true || value === 1 || value === "1";
+}
+
 function inferMessageRole(kind: string): DurableMessageRole {
   if (
     kind.startsWith("llm.") ||
@@ -219,6 +318,252 @@ function serializeActivityPayload(payload: Record<string, unknown>): string {
 
 export class D1SessionTruthRepository {
   constructor(private readonly db: D1Database) {}
+
+  private async readAliasesByTarget(
+    targetModelIds: readonly string[],
+  ): Promise<Map<string, string[]>> {
+    const aliasRows = await this.db.prepare(
+      `SELECT alias_id, target_model_id
+         FROM nano_model_aliases`,
+    ).all<Record<string, unknown>>();
+    const targetSet = new Set(targetModelIds);
+    const aliases = new Map<string, string[]>();
+    for (const row of aliasRows.results ?? []) {
+      const targetModelId = toNullableString(row.target_model_id);
+      const aliasId = toNullableString(row.alias_id);
+      if (!targetModelId || !aliasId || !targetSet.has(targetModelId)) continue;
+      const next = aliases.get(targetModelId) ?? [];
+      next.push(aliasId);
+      aliases.set(targetModelId, next);
+    }
+    for (const value of aliases.values()) value.sort((a, b) => a.localeCompare(b));
+    return aliases;
+  }
+
+  private toModelCatalogItem(
+    row: Record<string, unknown>,
+    aliases: readonly string[],
+  ): DurableModelCatalogItem {
+    return {
+      model_id: String(row.model_id),
+      family: String(row.family),
+      display_name: String(row.display_name),
+      context_window: toCount(row.context_window),
+      capabilities: {
+        reasoning: toBooleanFlag(row.is_reasoning),
+        vision: toBooleanFlag(row.is_vision),
+        function_calling: toBooleanFlag(row.is_function_calling),
+      },
+      status: String(row.status),
+      aliases,
+    };
+  }
+
+  private toModelDetail(
+    row: Record<string, unknown>,
+    aliases: readonly string[],
+  ): DurableModelDetail {
+    return {
+      ...this.toModelCatalogItem(row, aliases),
+      max_output_tokens: toNullableInt(row.max_output_tokens),
+      effective_context_pct:
+        typeof row.effective_context_pct === "number" && Number.isFinite(row.effective_context_pct)
+          ? row.effective_context_pct
+          : typeof row.effective_context_pct === "string" &&
+              row.effective_context_pct.length > 0 &&
+              Number.isFinite(Number(row.effective_context_pct))
+            ? Number(row.effective_context_pct)
+            : null,
+      auto_compact_token_limit: toNullableInt(row.auto_compact_token_limit),
+      supported_reasoning_levels: parseReasoningLevels(row.supported_reasoning_levels),
+      input_modalities: parseStringArray(row.input_modalities),
+      provider_key: toNullableString(row.provider_key),
+      fallback_model_id: toNullableString(row.fallback_model_id),
+      base_instructions_suffix: toNullableString(row.base_instructions_suffix),
+      description: toNullableString(row.description),
+      sort_priority: toCount(row.sort_priority),
+    };
+  }
+
+  async listActiveModelsForTeam(team_uuid: string): Promise<ReadonlyArray<DurableModelCatalogItem>> {
+    const [modelsRes, policyRes] = await Promise.all([
+      this.db.prepare(
+        `SELECT
+           model_id,
+           family,
+           display_name,
+           context_window,
+           is_reasoning,
+           is_vision,
+           is_function_calling,
+           status,
+           sort_priority
+          FROM nano_models
+         WHERE status = 'active'
+         ORDER BY COALESCE(sort_priority, 0) DESC, model_id ASC`,
+      ).all<Record<string, unknown>>(),
+      this.db.prepare(
+        `SELECT model_id, allowed
+           FROM nano_team_model_policy
+          WHERE team_uuid = ?1`,
+      ).bind(team_uuid).all<Record<string, unknown>>(),
+    ]);
+    const denied = new Set(
+      (policyRes.results ?? [])
+        .filter((row) => Number(row.allowed) === 0)
+        .map((row) => String(row.model_id)),
+    );
+    const rows = (modelsRes.results ?? []).filter((row) => !denied.has(String(row.model_id)));
+    const aliases = await this.readAliasesByTarget(rows.map((row) => String(row.model_id)));
+    return rows.map((row) => this.toModelCatalogItem(row, aliases.get(String(row.model_id)) ?? []));
+  }
+
+  async resolveModelForTeam(input: {
+    readonly team_uuid: string;
+    readonly model_ref: string;
+  }): Promise<DurableResolvedModel | null> {
+    const aliasRow = await this.db.prepare(
+      `SELECT target_model_id
+         FROM nano_model_aliases
+        WHERE alias_id = ?1
+        LIMIT 1`,
+    ).bind(input.model_ref).first<Record<string, unknown>>();
+    const resolvedModelId = toNullableString(aliasRow?.target_model_id) ?? input.model_ref;
+    const row = await this.db.prepare(
+      `SELECT
+         model_id,
+         family,
+         display_name,
+         context_window,
+         is_reasoning,
+         is_vision,
+         is_function_calling,
+         status,
+         max_output_tokens,
+         effective_context_pct,
+         auto_compact_token_limit,
+         supported_reasoning_levels,
+         input_modalities,
+         provider_key,
+         fallback_model_id,
+         base_instructions_suffix,
+         description,
+         sort_priority
+        FROM nano_models
+       WHERE model_id = ?1
+       LIMIT 1`,
+    ).bind(resolvedModelId).first<Record<string, unknown>>();
+    if (!row || row.status !== "active") return null;
+    const policy = await this.db.prepare(
+      `SELECT allowed
+         FROM nano_team_model_policy
+        WHERE team_uuid = ?1
+          AND model_id = ?2
+        LIMIT 1`,
+    ).bind(input.team_uuid, resolvedModelId).first<Record<string, unknown>>();
+    if (policy && Number(policy.allowed) === 0) return null;
+    const aliases = await this.readAliasesByTarget([resolvedModelId]);
+    return {
+      requested_model_id: input.model_ref,
+      resolved_from_alias: resolvedModelId !== input.model_ref,
+      model: this.toModelDetail(row, aliases.get(resolvedModelId) ?? []),
+    };
+  }
+
+  async readGlobalDefaultModelForTeam(team_uuid: string): Promise<DurableModelDetail | null> {
+    const models = await this.listActiveModelsForTeam(team_uuid);
+    const first = models[0];
+    if (!first) return null;
+    const resolved = await this.resolveModelForTeam({
+      team_uuid,
+      model_ref: first.model_id,
+    });
+    return resolved?.model ?? null;
+  }
+
+  async updateSessionModelDefaults(input: {
+    readonly session_uuid: string;
+    readonly default_model_id: string | null;
+    readonly default_reasoning_effort: ReasoningEffort | null;
+  }): Promise<void> {
+    await this.db.prepare(
+      `UPDATE nano_conversation_sessions
+          SET default_model_id = ?2,
+              default_reasoning_effort = ?3
+        WHERE session_uuid = ?1`,
+    ).bind(
+      input.session_uuid,
+      input.default_model_id,
+      input.default_reasoning_effort,
+    ).run();
+  }
+
+  async readLatestTurnModelAudit(session_uuid: string): Promise<DurableLatestTurnModelAudit | null> {
+    const row = await this.db.prepare(
+      `SELECT
+         turn_uuid,
+         created_at,
+         requested_model_id,
+         requested_reasoning_effort,
+         effective_model_id,
+         effective_reasoning_effort,
+         fallback_used,
+         fallback_reason
+        FROM nano_conversation_turns
+       WHERE session_uuid = ?1
+         AND (
+           requested_model_id IS NOT NULL
+           OR effective_model_id IS NOT NULL
+           OR fallback_used = 1
+           OR fallback_reason IS NOT NULL
+         )
+       ORDER BY created_at DESC, turn_index DESC, turn_attempt DESC
+       LIMIT 1`,
+    ).bind(session_uuid).first<Record<string, unknown>>();
+    if (!row) return null;
+    return {
+      turn_uuid: String(row.turn_uuid),
+      created_at: String(row.created_at),
+      requested_model_id: toNullableString(row.requested_model_id),
+      requested_reasoning_effort: toNullableReasoningEffort(row.requested_reasoning_effort),
+      effective_model_id: toNullableString(row.effective_model_id),
+      effective_reasoning_effort: toNullableReasoningEffort(row.effective_reasoning_effort),
+      fallback_used: toBooleanFlag(row.fallback_used),
+      fallback_reason: toNullableString(row.fallback_reason),
+    };
+  }
+
+  async readSessionModelState(input: {
+    readonly session_uuid: string;
+    readonly team_uuid: string;
+    readonly actor_user_uuid: string;
+  }): Promise<DurableSessionModelState | null> {
+    const session = await this.readSessionLifecycle(input.session_uuid);
+    if (
+      !session ||
+      session.team_uuid !== input.team_uuid ||
+      session.actor_user_uuid !== input.actor_user_uuid
+    ) {
+      return null;
+    }
+    const [lastTurn, globalDefault] = await Promise.all([
+      this.readLatestTurnModelAudit(input.session_uuid),
+      this.readGlobalDefaultModelForTeam(input.team_uuid),
+    ]);
+    return {
+      conversation_uuid: session.conversation_uuid,
+      session_uuid: session.session_uuid,
+      session_status: session.session_status,
+      deleted_at: session.deleted_at,
+      default_model_id: session.default_model_id,
+      default_reasoning_effort: session.default_reasoning_effort,
+      effective_default_model_id: session.default_model_id ?? globalDefault?.model_id ?? null,
+      effective_default_reasoning_effort:
+        session.default_model_id ? session.default_reasoning_effort : null,
+      source: session.default_model_id ? "session" : "global",
+      last_turn: lastTurn,
+    };
+  }
 
   private buildAppendMessageStatement(input: {
     readonly session_uuid: string;
@@ -422,9 +767,11 @@ export class D1SessionTruthRepository {
          s.ended_at,
          s.ended_reason,
          s.last_phase,
+         s.default_model_id,
+         s.default_reasoning_effort,
          c.title,
          c.deleted_at
-       FROM nano_conversation_sessions s
+        FROM nano_conversation_sessions s
        JOIN nano_conversations c
          ON c.conversation_uuid = s.conversation_uuid
       WHERE s.session_uuid = ?1
@@ -441,6 +788,8 @@ export class D1SessionTruthRepository {
       ended_at: toNullableString(row.ended_at),
       ended_reason: toNullableString(row.ended_reason),
       last_phase: toNullableString(row.last_phase),
+      default_model_id: toNullableString(row.default_model_id),
+      default_reasoning_effort: toNullableReasoningEffort(row.default_reasoning_effort),
       title: toNullableString(row.title),
       deleted_at: toNullableString(row.deleted_at),
     };
@@ -1100,6 +1449,8 @@ export class D1SessionTruthRepository {
     readonly kind: DurableTurnKind;
     readonly input_text: string | null;
     readonly created_at: string;
+    readonly requested_model_id?: string | null;
+    readonly requested_reasoning_effort?: ReasoningEffort | null;
   }): Promise<DurableTurnPointer> {
     for (let attempt = 0; attempt < UNIQUE_RETRY_LIMIT; attempt += 1) {
       const turn_uuid = crypto.randomUUID();
@@ -1117,6 +1468,8 @@ export class D1SessionTruthRepository {
                turn_kind,
                turn_status,
                input_text,
+               requested_model_id,
+               requested_reasoning_effort,
                created_at,
                ended_at
              )
@@ -1128,24 +1481,28 @@ export class D1SessionTruthRepository {
                ?5,
                ?6,
                COALESCE(MAX(turn_index), 0) + 1,
-               ?7,
-               'accepted',
-               ?8,
-               ?9,
-               NULL
-             FROM nano_conversation_turns
-             WHERE session_uuid = ?3`,
-          ).bind(
+                ?7,
+                'accepted',
+                ?8,
+                ?9,
+                ?10,
+                ?11,
+                NULL
+              FROM nano_conversation_turns
+              WHERE session_uuid = ?3`,
+           ).bind(
             turn_uuid,
             input.conversation_uuid,
             input.session_uuid,
             input.team_uuid,
             input.actor_user_uuid,
-            input.trace_uuid,
-            input.kind,
-            input.input_text,
-            input.created_at,
-          ),
+             input.trace_uuid,
+             input.kind,
+             input.input_text,
+              input.requested_model_id ?? null,
+              input.requested_reasoning_effort ?? null,
+              input.created_at,
+            ),
           this.db.prepare(
             `UPDATE nano_conversations
                 SET latest_turn_uuid = ?2,
@@ -1177,13 +1534,29 @@ export class D1SessionTruthRepository {
     readonly turn_uuid: string;
     readonly status: DurableTurnStatus;
     readonly ended_at: string;
+    readonly effective_model_id?: string | null;
+    readonly effective_reasoning_effort?: ReasoningEffort | null;
+    readonly fallback_used?: boolean;
+    readonly fallback_reason?: string | null;
   }): Promise<void> {
     await this.db.prepare(
       `UPDATE nano_conversation_turns
           SET turn_status = ?2,
-              ended_at = ?3
+              ended_at = ?3,
+              effective_model_id = ?4,
+              effective_reasoning_effort = ?5,
+              fallback_used = ?6,
+              fallback_reason = ?7
         WHERE turn_uuid = ?1`,
-    ).bind(input.turn_uuid, input.status, input.ended_at).run();
+    ).bind(
+      input.turn_uuid,
+      input.status,
+      input.ended_at,
+      input.effective_model_id ?? null,
+      input.effective_reasoning_effort ?? null,
+      input.fallback_used === true ? 1 : 0,
+      input.fallback_reason ?? null,
+    ).run();
   }
 
   async appendMessage(input: {

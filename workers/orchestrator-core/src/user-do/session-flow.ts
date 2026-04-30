@@ -5,6 +5,7 @@ import {
   extractPhase,
   isAuthSnapshot,
   jsonResponse,
+  normalizeReasoningOptions,
   parseModelOptions,
   sessionKey,
   sessionTerminalResponse,
@@ -26,6 +27,7 @@ import {
 import type {
   D1SessionTruthRepository,
   DurableSessionPointer,
+  DurableResolvedModel,
   DurableTurnPointer,
 } from "../session-truth.js";
 
@@ -76,6 +78,10 @@ export interface UserDoSessionFlowContext {
     authSnapshot: IngressAuthSnapshot,
     modelId: string,
   ): Promise<Response | null>;
+  resolveAllowedModel(
+    authSnapshot: IngressAuthSnapshot,
+    modelId: string,
+  ): Promise<DurableResolvedModel | Response>;
   ensureDurableSession(
     sessionUuid: string,
     authSnapshot: IngressAuthSnapshot,
@@ -90,6 +96,10 @@ export interface UserDoSessionFlowContext {
     kind: "start" | "followup" | "cancel",
     inputText: string | null,
     timestamp: string,
+    requestedModel?: {
+      readonly model_id: string;
+      readonly reasoning_effort: "low" | "medium" | "high" | null;
+    } | null,
   ): Promise<DurableTurnPointer | null>;
   recordUserMessage(
     sessionUuid: string,
@@ -238,6 +248,8 @@ export function createUserDoSessionFlow(ctx: UserDoSessionFlowContext) {
           message: "auth_snapshot.sub is required",
         });
       }
+      const teamUuid = body.auth_snapshot.team_uuid ?? body.auth_snapshot.tenant_uuid;
+      const repo = ctx.sessionTruth();
       // HP0 P2-02 — `/start` 复用 `/messages` 的模型字段 law:
       // 同一 parseModelOptions() validator + 同一 requireAllowedModel() gate,
       // 避免三入口语义分裂。非法字段在到达 agent-core 之前直接 400。
@@ -245,13 +257,24 @@ export function createUserDoSessionFlow(ctx: UserDoSessionFlowContext) {
         body as unknown as Record<string, unknown>,
       );
       if (!modelOptions.ok) return modelOptions.response;
-      if (modelOptions.model_id) {
-        const modelGate = await ctx.requireAllowedModel(
-          body.auth_snapshot,
-          modelOptions.model_id,
-        );
-        if (modelGate) return modelGate;
-      }
+      const requestedModel =
+        modelOptions.model_id
+          ? await ctx.resolveAllowedModel(body.auth_snapshot, modelOptions.model_id)
+          : null;
+      if (requestedModel instanceof Response) return requestedModel;
+      const globalDefaultModel =
+        !requestedModel &&
+        repo &&
+        typeof repo.readGlobalDefaultModelForTeam === "function" &&
+        typeof teamUuid === "string" &&
+        teamUuid.length > 0
+          ? await repo.readGlobalDefaultModelForTeam(teamUuid)
+          : null;
+      const selectedModelId = requestedModel?.model.model_id ?? globalDefaultModel?.model_id ?? null;
+      const selectedReasoning = normalizeReasoningOptions(
+        modelOptions.reasoning ?? null,
+        requestedModel?.model.supported_reasoning_levels ?? globalDefaultModel?.supported_reasoning_levels ?? [],
+      );
 
       const existingEntry = await ctx.get<SessionEntry>(sessionKey(sessionUuid));
       if (existingEntry) {
@@ -314,6 +337,13 @@ export function createUserDoSessionFlow(ctx: UserDoSessionFlowContext) {
         traceUuid,
         now,
       );
+      if (repo && typeof repo.updateSessionModelDefaults === "function" && requestedModel) {
+        await repo.updateSessionModelDefaults({
+          session_uuid: sessionUuid,
+          default_model_id: requestedModel.model.model_id,
+          default_reasoning_effort: selectedReasoning?.effort ?? null,
+        });
+      }
       if (durableStatus === "pending") {
         await ctx.sessionTruth()?.updateSessionState({
           session_uuid: sessionUuid,
@@ -330,6 +360,12 @@ export function createUserDoSessionFlow(ctx: UserDoSessionFlowContext) {
         "start",
         initialInput,
         now,
+        selectedModelId
+          ? {
+              model_id: selectedModelId,
+              reasoning_effort: selectedReasoning?.effort ?? null,
+            }
+          : null,
       );
       await ctx.recordUserMessage(
         sessionUuid,
@@ -369,8 +405,8 @@ export function createUserDoSessionFlow(ctx: UserDoSessionFlowContext) {
         ...(typeof body.trace_uuid === "string" ? { trace_uuid: body.trace_uuid } : {}),
         // HP0 P2-02 — 不再 silent drop:已通过 parseModelOptions / requireAllowedModel
         // 校验后透传到 agent-core,与 `/messages` payload 形状对齐。
-        ...(modelOptions.model_id ? { model_id: modelOptions.model_id } : {}),
-        ...(modelOptions.reasoning ? { reasoning: modelOptions.reasoning } : {}),
+        ...(selectedModelId ? { model_id: selectedModelId } : {}),
+        ...(selectedReasoning ? { reasoning: selectedReasoning } : {}),
         authority: body.auth_snapshot,
       });
       if (!startAck.response.ok) {
@@ -446,6 +482,10 @@ export function createUserDoSessionFlow(ctx: UserDoSessionFlowContext) {
                 ? "failed"
                 : "completed",
           ended_at: new Date().toISOString(),
+          effective_model_id: selectedModelId,
+          effective_reasoning_effort: selectedReasoning?.effort ?? null,
+          fallback_used: false,
+          fallback_reason: null,
         });
       }
 
