@@ -1,9 +1,9 @@
-# Permissions API — ZX5 Snapshot
+# Permissions API — RHX2 Phase 6 Snapshot
 
 > Public facade owner: `orchestrator-core`
 > Profile: `facade-http-v1`
 > Auth: `Authorization: Bearer <access_token>`
-> Tenant guard: 需要 `TEAM_UUID` env + JWT 含 `team_uuid` / `tenant_uuid`
+> Tenant guard: JWT 必须含 `team_uuid` / `tenant_uuid`；route 目前不校验 session 是否存在。
 
 ---
 
@@ -183,4 +183,4 @@ Content-Type: application/json
 | Server→Client | `session.elicitation.request` | **未 live** |
 | Client→Server | `session.elicitation.answer` | **未支持**（HTTP 替代） |
 
-当前 ZX5 阶段，HTTP 路径是唯一可用的 permission / elicitation API。
+当前 RHX2 Phase 6 阶段，HTTP 路径是唯一可用的 permission / elicitation API。

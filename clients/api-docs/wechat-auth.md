@@ -1,8 +1,9 @@
-# WeChat Auth API — ZX5 Snapshot
+# WeChat Auth API — RHX2 Phase 6 Snapshot
 
 > Public facade owner: `orchestrator-core`
 > Profile: `facade-http-v1`
 > 后端: proxy to `orchestrator-auth` → WeChat `jscode2session` API
+> Optional device headers: `x-device-uuid`, `x-device-label`, `x-device-kind`
 
 ---
 
@@ -91,6 +92,7 @@ Content-Type: application/json
 4. 查找 / 创建 identity（provider=`wechat`）
 5. Bootstrap 或复用 user + team
 6. 签发 access token + refresh token
+7. 若提供 device headers，会写入/更新 device truth，后续 device revoke 会影响 auth gate 和 WS attach。
 
 ### Stable Runtime Errors
 

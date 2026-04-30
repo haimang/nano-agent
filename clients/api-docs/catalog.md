@@ -1,8 +1,9 @@
-# Catalog API — ZX5 Snapshot
+# Catalog API — RHX2 Phase 6 Snapshot
 
 > Public facade owner: `orchestrator-core`
 > Profile: `facade-http-v1`
 > Registry: `catalog-content.ts` 静态加载的 11 entries（4 skills / 5 commands / 2 agents）
+> Auth: optional；当前 route 不读取 bearer，未传也会成功。
 
 ---
 

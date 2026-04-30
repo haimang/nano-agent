@@ -1,44 +1,35 @@
-# session-ws-v1 — ZX5 Snapshot
+# session-ws-v1 — RHX2 Phase 6 Snapshot
 
 > Public facade owner: `orchestrator-core`
-> 当前 wire: **lightweight JSON `{kind, ...}` frames**
-> public WS frame 与 `event.payload.kind` 是两层枚举，不要混用
-
----
+> Wire format: lightweight JSON `{kind, ...}` frames
+> 注意：outer WS frame `kind` 与 `event.payload.kind` 是两层枚举。
 
 ## Connect URL
 
-```
-wss://<base>/sessions/{sessionUuid}/ws
-  ?access_token=<jwt>
-  &trace_uuid=<uuid>
-  &last_seen_seq=<integer>
+```text
+wss://<base>/sessions/{sessionUuid}/ws?access_token=<jwt>&trace_uuid=<uuid>&last_seen_seq=<integer>
 ```
 
 | Query Param | 必填 | 说明 |
 |-------------|------|------|
-| `access_token` | ✅ | HMAC JWT access token |
-| `trace_uuid` | ✅ | 与 HTTP `x-trace-uuid` 同义 |
-| `last_seen_seq` | optional | reconnect 时客户端最后见到的 event seq |
-
----
+| `access_token` | yes | HMAC access token |
+| `trace_uuid` | yes | 与 HTTP `x-trace-uuid` 同义 |
+| `last_seen_seq` | no | reconnect 时客户端最后处理的 event seq |
 
 ## Handshake Errors
 
 | HTTP | error.code | 说明 |
-|------|-----------|------|
-| 400 | `invalid-trace` | 缺 / 非法 `trace_uuid` |
-| 401 | `invalid-auth` | 缺 / 非法 `access_token` |
-| 403 | `missing-team-claim` | JWT 无 team claim |
+|------|------------|------|
+| 400 | `invalid-trace` | 缺少或非法 trace UUID |
+| 401 | `invalid-auth` | token 无效、过期、device revoked |
+| 403 | `missing-team-claim` | JWT 无 team/tenant claim |
 | 404 | `session_missing` | session 不存在 |
-| 409 | `session-pending-only-start-allowed` | session 仍是 pending，只允许 `/start` |
+| 409 | `session-pending-only-start-allowed` | session 仍是 pending |
 | 409 | `session_terminal` | session 已终态 |
 
----
+## Server → Client Frames
 
-## Current Live Server Frames
-
-### 1. `event`
+### `event`
 
 ```json
 {
@@ -54,102 +45,96 @@ wss://<base>/sessions/{sessionUuid}/ws
 }
 ```
 
-`event.payload.kind` 当前真实可见集合来自 `@haimang/nacp-session`：
+Current `event.payload.kind` values from `@haimang/nacp-session`:
 
-| payload.kind | 说明 |
-|--------------|------|
-| `llm.delta` | LLM token / delta 输出 |
-| `tool.call.progress` | tool 进度块：`{tool_name, request_uuid?, chunk, is_final}` |
-| `tool.call.result` | tool 结果：`{tool_name, request_uuid?, status, output?, error_message?}` |
-| `hook.broadcast` | hook 广播 |
-| `session.update` | session phase / partial_output 更新 |
-| `turn.begin` | turn 开始 |
-| `turn.end` | turn 结束 |
-| `compact.notify` | compact posture 通知 |
-| `system.notify` | 系统提示（info / warning / error） |
+| payload.kind | Shape / 说明 |
+|--------------|--------------|
+| `llm.delta` | `{content_type:"text"|"thinking"|"tool_use_start"|"tool_use_delta", content, is_final}` |
+| `tool.call.progress` | `{tool_name, request_uuid?, chunk, is_final}` |
+| `tool.call.result` | `{tool_name, request_uuid?, status:"ok"|"error", output?, error_message?}` |
+| `hook.broadcast` | `{event_name, payload_redacted, aggregated_outcome?}` |
+| `session.update` | `{phase, partial_output?}` |
+| `turn.begin` | `{turn_uuid}` |
+| `turn.end` | `{turn_uuid, usage?}` |
+| `compact.notify` | `{status:"started"|"completed"|"failed", tokens_before?, tokens_after?}` |
+| `system.notify` | `{severity:"info"|"warning"|"error", message}` |
+| `system.error` | `{error:{code,category,message,detail?,retryable}, source_worker?, trace_uuid?}` |
 
-### 2. `session.heartbeat`
+`system.error` is the structured runtime error frame. Client should treat it as a high-signal error event and use [`error-index.md`](./error-index.md) to decide retry/report UX.
+
+### `session.heartbeat`
+
+```json
+{ "kind": "session.heartbeat", "ts": 1760000000000 }
+```
+
+Sent every 15 seconds by the server.
+
+### `session.attachment.superseded`
 
 ```json
 {
-  "kind": "session.heartbeat",
-  "ts": 1760000000000
+  "kind": "session.attachment.superseded",
+  "session_uuid": "3333...",
+  "superseded_at": "2026-04-30T00:00:00.000Z",
+  "reason": "reattach"
 }
 ```
 
-- 由服务端固定周期发送
-- 当前实现的心跳间隔是 **15 秒**
+Reasons currently include `reattach` and `revoked`. The old socket is closed with close code `4001`.
 
-### 3. `attachment_superseded`
-
-```json
-{
-  "kind": "attachment_superseded",
-  "reason": "replaced_by_new_attachment",
-  "new_attachment_at": "2026-04-29T00:05:00.000Z"
-}
-```
-
-- 表示同一 session 建立了新连接
-- 旧连接随后会被服务端关闭，close code = `4001`
-
-### 4. `terminal`
+### `session.end`
 
 ```json
 {
-  "kind": "terminal",
-  "terminal": "completed",
+  "kind": "session.end",
+  "reason": "completed",
   "session_uuid": "3333...",
   "last_phase": "ended"
 }
 ```
 
-- `terminal` 取值：`completed` / `cancelled` / `error`
-- 服务端随后关闭连接，close code = `1000`
+Terminal reason maps from durable terminal state:
 
----
+| durable terminal | frame reason | close |
+|------------------|--------------|-------|
+| `completed` | `completed` | `1000 session_completed` |
+| `cancelled` | `user` | `1000 session_cancelled` |
+| `error` | `error` | `1000 session_error` |
 
 ## Client → Server Messages
 
-当前 public WS **不会解析业务语义**；任何 client→server message 的实际效果都只是 touch session 活跃时间。
+Public `orchestrator-core` WS currently treats client messages as activity touch only. The following frames are safe compatibility shapes:
 
-推荐仍发送以下兼容帧，便于未来收紧语义时平滑迁移：
-
-| Frame | Body | 当前效果 |
-|-------|------|----------|
+| Frame | Body | Current effect |
+|-------|------|----------------|
 | `session.resume` | `{last_seen_seq}` | touch session |
 | `session.heartbeat` | `{ts}` | touch session |
 | `session.stream.ack` | `{stream_uuid, acked_seq}` | touch session |
 
-> 与 agent-core 内部 DO 路径不同，public `orchestrator-core` WS 当前不会校验这些 body，也不会基于它们直接驱动 replay / ack 语义。
-
----
+Do not rely on public WS for permission/elicitation decisions; use HTTP routes.
 
 ## Reconnect Flow
 
-1. 客户端记录自己见过的最大 `event.seq`
-2. 重连时带 `?last_seen_seq=<maxSeq>`
-3. 服务端会尽力从 gap 处重放仍保留的 `event` frames
-4. 若怀疑服务端 replay 不完整，可调用 `POST /sessions/{uuid}/resume`
-5. `resume.data.replay_lost === true` 时，应再以 `GET /sessions/{uuid}/timeline` 作为最终对账
-
----
+1. Track max seen `event.seq`.
+2. Reconnect with `last_seen_seq=<maxSeq>`.
+3. Server best-effort replays buffered events.
+4. If uncertain, call `POST /sessions/{id}/resume`.
+5. If `resume.data.replay_lost === true`, use `GET /sessions/{id}/timeline` for reconciliation.
 
 ## Close Codes
 
-| Code | 含义 |
-|------|------|
-| `1000` | normal close（session terminal 后） |
-| `4001` | attachment_superseded（新连接替换旧连接） |
+| Code | Meaning |
+|------|---------|
+| `1000` | normal close after session end |
+| `4001` | attachment superseded by reattach or device revoke |
 
----
+## Current Limitations
 
-## Important Current Limitations
-
-| 能力 | 状态 | 替代路径 |
-|------|------|---------|
-| `session.permission.request` public WS round-trip | **未 live** | HTTP `POST /sessions/{id}/permission/decision` |
-| `session.elicitation.request` public WS round-trip | **未 live** | HTTP `POST /sessions/{id}/elicitation/answer` |
-| `session.usage.update` live push | **未 live** | HTTP `GET /sessions/{id}/usage` |
-| 客户端 permission / elicitation 决定的 WS 回传 | **不支持** | HTTP 路径 |
-| `meta(opened)` 初始握手 frame | **不发送** | public WS 直接从 `event` / heartbeat / terminal 等 frame 开始 |
+| 能力 | 状态 | 替代 |
+|------|------|------|
+| `session.permission.request` public WS round-trip | not live | `POST /sessions/{id}/permission/decision` |
+| `session.elicitation.request` public WS round-trip | not live | `POST /sessions/{id}/elicitation/answer` |
+| `session.usage.update` live push | not live | `GET /sessions/{id}/usage` |
+| Client permission/elicitation WS reply | not supported | HTTP routes |
+| Initial `meta(opened)` frame | not sent | first frames are event/heartbeat/session.end/etc. |

@@ -1,9 +1,10 @@
-# Usage API — ZX5 Snapshot
+# Usage API — RHX2 Phase 6 Snapshot
 
 > Public facade owner: `orchestrator-core`
 > Profile: `facade-http-v1`
 > Auth: `Authorization: Bearer <access_token>`
 > Header: `x-trace-uuid: <uuid>`
+> Current source: User DO session entry + optional D1 usage tables.
 
 ---
 
