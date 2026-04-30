@@ -22,7 +22,8 @@
     "OWNER_TAG": "nano-agent",
     "WORKER_VERSION": "orchestrator-core@preview",
     "TEAM_UUID": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-    "JWT_SIGNING_KID": "v1"
+    "JWT_SIGNING_KID": "v1",
+    "NANO_ENABLE_RHX2_SPIKE": "true"
   },
   "d1_databases": [
     {
@@ -78,7 +79,8 @@
         "OWNER_TAG": "nano-agent",
         "WORKER_VERSION": "orchestrator-core@preview",
         "TEAM_UUID": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-        "JWT_SIGNING_KID": "v1"
+        "JWT_SIGNING_KID": "v1",
+        "NANO_ENABLE_RHX2_SPIKE": "true"
       },
       "d1_databases": [
         {

@@ -113,6 +113,7 @@ export interface OrchestratorUserEnv {
   readonly AGENT_CORE?: Fetcher & Partial<Record<AgentRpcMethodKey, AgentRpcMethodFn>>;
   readonly NANO_AGENT_DB?: D1Database;
   readonly NANO_INTERNAL_BINDING_SECRET?: string;
+  readonly NANO_ENABLE_RHX2_SPIKE?: string;
 }
 
 export interface DurableObjectStateLike {
@@ -829,6 +830,46 @@ export class NanoOrchestratorUserDO {
   }
 
   private async handleVerify(sessionUuid: string, body: VerifyBody): Promise<Response> {
+    if (body.check === "emit-system-error") {
+      if (this.env.NANO_ENABLE_RHX2_SPIKE !== "true") {
+        return jsonResponse(403, {
+          error: "spike-disabled",
+          message: "RHX2 system.error spike trigger is disabled",
+        });
+      }
+      const attachment = this.attachments.get(sessionUuid);
+      const traceUuid =
+        typeof body.trace_uuid === "string" && body.trace_uuid.length > 0
+          ? body.trace_uuid
+          : crypto.randomUUID();
+      if (!attachment) {
+        return jsonResponse(409, {
+          error: "no-attached-client",
+          message: "system.error spike requires an attached websocket client",
+          trace_uuid: traceUuid,
+        });
+      }
+      const emitted = await tryEmitSystemError({
+        code: typeof body.code === "string" ? body.code : "spike-system-error",
+        source_worker: "orchestrator-core",
+        trace_uuid: traceUuid,
+        message: "RHX2 synthetic system.error spike",
+        detail: { check: "emit-system-error", session_uuid: sessionUuid },
+        emit: async (systemFrame) => {
+          attachment.socket.send(JSON.stringify(systemFrame));
+          return { delivered: true };
+        },
+        fallbackNotify: async (payload) => {
+          attachment.socket.send(JSON.stringify(payload));
+        },
+      });
+      return jsonResponse(200, {
+        ok: true,
+        check: "emit-system-error",
+        trace_uuid: traceUuid,
+        emitted,
+      });
+    }
     return this.sessionFlow.handleVerify(sessionUuid, body);
   }
 
