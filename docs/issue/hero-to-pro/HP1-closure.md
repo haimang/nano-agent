@@ -44,8 +44,8 @@
 
 | ID | 描述 | 当前完成度 | `expires-at` | 后续 phase | 说明 |
 |----|------|-----------|--------------|-----------|------|
-| `P1` | `nano_models.base_instructions_suffix` 真值未填(seed 留 `NULL`) | `column-exists-only` | `HP2 closure`(模型状态机 + suffix 真值接线) | HP2 | HP1 仅冻结 column;真 prompt suffix 由 HP2 状态机决定每模型/每 reasoning 级文本 |
-| `P2` | HP0 `withNanoAgentSystemPrompt(modelId?)` seam 由 HP1 列接线 | `column-ready-not-wired` | `HP2 closure` | HP2 | HP1 已为该 seam 提供 D1 列;runtime 真读由 HP2 落 |
+| `P1` | `nano_models` runtime metadata 真值尚未在 003 既有 model seed 上回填（除 `sort_priority=0` 默认值外，`max_output_tokens` / `effective_context_pct` / `auto_compact_token_limit` / `supported_reasoning_levels` / `input_modalities` / `provider_key` / `fallback_model_id` / `base_instructions_suffix` / `description` 仍待模型状态机给出真值） | `column-freeze-only` | `HP2 closure`(模型状态机 + metadata 真值回填) | HP2 | HP1 仅冻结 column shape 与 alias truth；这些列的真实运行时值由 HP2 model state machine 在消费时回填/接线 |
+| `P2` | HP0 `withNanoAgentSystemPrompt(modelId?)` seam 由 HP1 列接线 | `column-ready-not-wired` | `HP2 closure` | HP2 | HP1 已为该 seam 提供 D1 列；`clear-partial: HP0/P1` 未在 HP1 完成，追踪链重设到 HP2 closure；HP2 完成时需同时清空 HP0/P1 与 HP1/P2 |
 | `P3` | prod baseline | `local-only` | `HP9 closure` | HP9 | HP1 仅 local apply;prod migration 由 HP9 owner-action 完成 |
 
 ---
@@ -217,6 +217,7 @@
 | schema-assertion(关键证据)| `workers/orchestrator-core/test/migrations-schema-freeze.test.ts` | ✅ 用 `node:sqlite` 顺序 apply 001-013,逐项断言 column / index / unique / enum / seed |
 | local apply on fresh baseline | 同上(测试在 `:memory:` D1 上 apply 完整链) | ✅ |
 | prod apply | not run(留 HP9 owner-action) | n/a |
+| HP0 baseline reference | `docs/issue/hero-to-pro/HP0-closure.md` §7 | as-of-HP0: `20 files / 179 tests`；post-HP1 当前基线：`21 files / 196 tests` |
 
 ---
 

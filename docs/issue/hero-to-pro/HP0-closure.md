@@ -18,7 +18,7 @@
 | system prompt seam | `partial-by-design`（Phase 3 P3-01；HP0 不读 D1，HP1 接 `base_instructions_suffix`） |
 | Verify-only 项 | `done`（Phase 4 P4-01：`CONTEXT_CORE` / `LANE_E_RPC_FIRST` 当前事实写入 binding-presence test） |
 | Cleanup 项 | `done`（Phase 4 P4-02：`docs/runbook/zx2-rollback.md` 已物理删除） |
-| Conditional cleanup | `not-needed`（Phase 4 P4-03：`pnpm-lock.yaml` 无 stale importer，13 个 key 全部对应工作树真实目录） |
+| Conditional cleanup | `not-needed`（Phase 4 P4-03：`pnpm-lock.yaml` 无 stale importer，14 个 key 全部对应工作树真实目录） |
 | Residue 法律 | `frozen`（Q3：`forwardInternalJsonShadow` / `parity-bridge` 留 HP8-B / HP10） |
 
 ---
@@ -115,7 +115,7 @@
 | binding-presence verify | `workers/orchestrator-core/test/binding-presence.test.ts` | ✅ 新增 6 cases |
 | `/start` model law regression | `workers/orchestrator-core/test/user-do.test.ts`（HP0 P2-02 共 3 cases:happy / 400 reasoning / `/input` forward） | ✅ |
 | system prompt seam regression | `workers/agent-core/test/host/system-prompt-seam.test.ts` | ✅ 新增 3 cases |
-| frozen install (lockfile) | not run（pnpm-lock.yaml 13 个 importer key 全部对应工作树真实目录,无 stale drift） | n/a |
+| frozen install (lockfile) | not run（pnpm-lock.yaml 14 个 importer key 全部对应工作树真实目录,无 stale drift） | n/a |
 | grep baseline — alias / binding / residue | inline 证据见各项条目 | ✅ |
 
 ---
