@@ -30,11 +30,12 @@ describe("SessionInspector", () => {
   });
 
   describe("catalog alignment", () => {
-    it("mirrors the 11 canonical kinds exported by @haimang/nacp-session (HP6 P3 added tool.call.cancelled)", () => {
+    it("mirrors the 12 canonical kinds exported by @haimang/nacp-session (HP7 P4-02 added session.fork.created)", () => {
       const mine = [...SESSION_STREAM_EVENT_KINDS].sort();
       const theirs = [...STREAM_EVENT_KINDS].sort();
       expect(mine).toEqual(theirs);
       expect(mine).toContain("tool.call.cancelled");
+      expect(mine).toContain("session.fork.created");
     });
 
     it("isSessionStreamEventKind recognises every canonical kind", () => {

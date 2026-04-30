@@ -12,9 +12,10 @@
  */
 
 /**
- * The 11 canonical `session.stream.event` kinds.
+ * The 12 canonical `session.stream.event` kinds.
  *
  * HP6 P3 added `tool.call.cancelled` (Q21).
+ * HP7 P4-02 added `session.fork.created` (Q23).
  *
  * Mirrored locally rather than depending on `@haimang/nacp-session`
  * to avoid pulling Session profile code into the observability surface.
@@ -34,6 +35,7 @@ export const SESSION_STREAM_EVENT_KINDS = [
   "system.notify",
   "system.error",
   "llm.delta",
+  "session.fork.created",
 ] as const;
 
 export type SessionStreamEventKind = (typeof SESSION_STREAM_EVENT_KINDS)[number];
