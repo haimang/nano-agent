@@ -28,6 +28,7 @@ import {
   persistAuditRecord,
   persistErrorLogRecord,
 } from "./observability.js";
+import { cleanupObservabilityLogs } from "./cron/cleanup.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -42,6 +43,20 @@ export { NanoOrchestratorUserDO };
 export default class OrchestratorCoreEntrypoint extends WorkerEntrypoint<OrchestratorCoreEnv> {
   async fetch(request: Request): Promise<Response> {
     return worker.fetch(request, this.env);
+  }
+
+  async scheduled(): Promise<void> {
+    const logger = createOrchestratorLogger(this.env);
+    try {
+      const result = await cleanupObservabilityLogs(this.env);
+      logger.info("observability-cleanup-complete", { ...result });
+    } catch (error) {
+      logger.error("observability-cleanup-failed", {
+        code: "internal-error",
+        ctx: { error: String(error) },
+      });
+      throw error;
+    }
   }
 
   async recordErrorLog(record: LogRecord): Promise<{ ok: boolean }> {

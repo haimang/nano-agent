@@ -12,6 +12,7 @@ import { buildAuditPersist, createOrchestratorLogger } from "./observability.js"
 import { ensureConfiguredTeam, jsonPolicyError, readTraceUuid } from "./policy/authority.js";
 import { D1SessionTruthRepository } from "./session-truth.js";
 import { NanoOrchestratorUserDO } from "./user-do.js";
+import { buildDebugPackagesResponse } from "./debug/packages.js";
 
 void NANO_PACKAGE_MANIFEST;
 
@@ -62,6 +63,8 @@ export interface OrchestratorCoreEnv extends AuthEnv {
   readonly ENVIRONMENT?: string;
   readonly OWNER_TAG?: string;
   readonly WORKER_VERSION?: string;
+  readonly NODE_AUTH_TOKEN?: string;
+  readonly GITHUB_TOKEN?: string;
 }
 
 export interface OrchestratorCoreShellResponse {
@@ -182,6 +185,161 @@ async function buildWorkerHealthSnapshot(env: OrchestratorCoreEnv): Promise<Resp
     },
     workers,
   });
+}
+
+function clampLimit(raw: string | null, fallback: number, max: number): number {
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.min(Math.trunc(parsed), max);
+}
+
+function readAuthTeam(auth: Awaited<ReturnType<typeof authenticateRequest>> & { ok: true }): string | null {
+  return auth.value.snapshot.team_uuid ?? auth.value.snapshot.tenant_uuid ?? null;
+}
+
+function isTeamOwner(auth: Awaited<ReturnType<typeof authenticateRequest>> & { ok: true }): boolean {
+  return Number(auth.value.snapshot.membership_level ?? 0) >= 100;
+}
+
+async function authenticateDebugRequest(request: Request, env: OrchestratorCoreEnv) {
+  const auth = await authenticateRequest(request, env);
+  if (!auth.ok) return auth;
+  const teamUuid = readAuthTeam(auth);
+  if (!teamUuid) {
+    return {
+      ok: false as const,
+      response: jsonPolicyError(
+        403,
+        "missing-team-claim",
+        "team_uuid missing from auth snapshot",
+        auth.value.trace_uuid,
+      ),
+    };
+  }
+  return auth;
+}
+
+async function handleDebugLogs(request: Request, env: OrchestratorCoreEnv): Promise<Response> {
+  const auth = await authenticateDebugRequest(request, env);
+  if (!auth.ok) return auth.response;
+  const traceUuid = auth.value.trace_uuid;
+  const teamUuid = readAuthTeam(auth)!;
+  const db = env.NANO_AGENT_DB;
+  if (!db) return jsonPolicyError(503, "worker-misconfigured", "debug log store unavailable", traceUuid);
+
+  const url = new URL(request.url);
+  const requestedTeam = url.searchParams.get("team_uuid");
+  if (requestedTeam && requestedTeam !== teamUuid) {
+    return jsonPolicyError(403, "permission-denied", "debug logs are team-scoped", traceUuid);
+  }
+  const clauses = ["team_uuid = ?1"];
+  const binds: unknown[] = [teamUuid];
+  const addClause = (column: string, value: string | null, op = "=") => {
+    if (!value) return;
+    binds.push(value);
+    clauses.push(`${column} ${op} ?${binds.length}`);
+  };
+  addClause("trace_uuid", url.searchParams.get("trace_uuid"));
+  addClause("session_uuid", url.searchParams.get("session_uuid"));
+  addClause("code", url.searchParams.get("code"));
+  addClause("created_at", url.searchParams.get("since"), ">=");
+  const limit = clampLimit(url.searchParams.get("limit"), 100, 200);
+  binds.push(limit);
+  const rows = await db.prepare(
+    `SELECT log_uuid, trace_uuid, session_uuid, team_uuid, worker, code, category,
+            severity, http_status, message, context_json, rpc_log_failed, created_at
+       FROM nano_error_log
+      WHERE ${clauses.join(" AND ")}
+      ORDER BY created_at DESC
+      LIMIT ?${binds.length}`,
+  ).bind(...binds).all<Record<string, unknown>>();
+  return Response.json({
+    ok: true,
+    data: {
+      logs: rows.results ?? [],
+      limit,
+    },
+    trace_uuid: traceUuid,
+  }, { headers: { "x-trace-uuid": traceUuid } });
+}
+
+async function handleDebugRecentErrors(request: Request, env: OrchestratorCoreEnv): Promise<Response> {
+  const auth = await authenticateDebugRequest(request, env);
+  if (!auth.ok) return auth.response;
+  const traceUuid = auth.value.trace_uuid;
+  const teamUuid = readAuthTeam(auth)!;
+  const limit = clampLimit(new URL(request.url).searchParams.get("limit"), 100, 200);
+  const recent = getLogger(env)
+    .recentErrors(limit)
+    .filter((record) => !record.team_uuid || record.team_uuid === teamUuid);
+  return Response.json({
+    ok: true,
+    data: {
+      recent_errors: recent,
+      limit,
+    },
+    trace_uuid: traceUuid,
+  }, { headers: { "x-trace-uuid": traceUuid } });
+}
+
+async function handleDebugAudit(request: Request, env: OrchestratorCoreEnv): Promise<Response> {
+  const auth = await authenticateDebugRequest(request, env);
+  if (!auth.ok) return auth.response;
+  const traceUuid = auth.value.trace_uuid;
+  if (!isTeamOwner(auth)) {
+    return jsonPolicyError(403, "permission-denied", "debug audit requires team owner", traceUuid);
+  }
+  const teamUuid = readAuthTeam(auth)!;
+  const db = env.NANO_AGENT_DB;
+  if (!db) return jsonPolicyError(503, "worker-misconfigured", "debug audit store unavailable", traceUuid);
+
+  const url = new URL(request.url);
+  const requestedTeam = url.searchParams.get("team_uuid");
+  if (requestedTeam && requestedTeam !== teamUuid) {
+    return jsonPolicyError(403, "permission-denied", "debug audit is team-scoped", traceUuid);
+  }
+  const clauses = ["team_uuid = ?1"];
+  const binds: unknown[] = [teamUuid];
+  const addClause = (column: string, value: string | null, op = "=") => {
+    if (!value) return;
+    binds.push(value);
+    clauses.push(`${column} ${op} ?${binds.length}`);
+  };
+  addClause("event_kind", url.searchParams.get("event_kind"));
+  addClause("trace_uuid", url.searchParams.get("trace_uuid"));
+  addClause("session_uuid", url.searchParams.get("session_uuid"));
+  addClause("created_at", url.searchParams.get("since"), ">=");
+  const limit = clampLimit(url.searchParams.get("limit"), 100, 200);
+  binds.push(limit);
+  const rows = await db.prepare(
+    `SELECT audit_uuid, trace_uuid, session_uuid, team_uuid, user_uuid, device_uuid,
+            worker, event_kind, ref_kind, ref_uuid, detail_json, outcome, created_at
+       FROM nano_audit_log
+      WHERE ${clauses.join(" AND ")}
+      ORDER BY created_at DESC
+      LIMIT ?${binds.length}`,
+  ).bind(...binds).all<Record<string, unknown>>();
+  return Response.json({
+    ok: true,
+    data: {
+      audit: rows.results ?? [],
+      limit,
+    },
+    trace_uuid: traceUuid,
+  }, { headers: { "x-trace-uuid": traceUuid } });
+}
+
+async function handleDebugPackages(request: Request, env: OrchestratorCoreEnv): Promise<Response> {
+  const auth = await authenticateDebugRequest(request, env);
+  if (!auth.ok) return auth.response;
+  const traceUuid = auth.value.trace_uuid;
+  const data = await buildDebugPackagesResponse(NANO_PACKAGE_MANIFEST, env);
+  return Response.json({
+    ok: true,
+    data,
+    trace_uuid: traceUuid,
+  }, { headers: { "x-trace-uuid": traceUuid } });
 }
 
 function ensureTenantConfigured(env: OrchestratorCoreEnv): Response | null {
@@ -435,6 +593,18 @@ async function dispatchFetch(request: Request, env: OrchestratorCoreEnv): Promis
 
     if (method === "GET" && pathname === "/debug/workers/health") {
       return buildWorkerHealthSnapshot(env);
+    }
+    if (method === "GET" && pathname === "/debug/logs") {
+      return handleDebugLogs(request, env);
+    }
+    if (method === "GET" && pathname === "/debug/recent-errors") {
+      return handleDebugRecentErrors(request, env);
+    }
+    if (method === "GET" && pathname === "/debug/audit") {
+      return handleDebugAudit(request, env);
+    }
+    if (method === "GET" && pathname === "/debug/packages") {
+      return handleDebugPackages(request, env);
     }
 
     const authRoute = parseAuthRoute(request);

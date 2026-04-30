@@ -1,14 +1,18 @@
 import { resolveErrorMeta } from "@haimang/nacp-core";
 import {
+  emitObservabilityAlert,
   createLogger,
   type AuditPersistFn,
   type AuditRecord,
+  type Logger,
   type LogPersistFn,
   type LogRecord,
 } from "@haimang/nacp-core/logger";
 
 const ERROR_CONTEXT_LIMIT = 8 * 1024;
 const AUDIT_DETAIL_LIMIT = 16 * 1024;
+const loggerByEnv = new WeakMap<object, Logger>();
+const alertLogger = createLogger("orchestrator-core");
 
 export interface ObservabilityDbEnv {
   readonly NANO_AGENT_DB?: D1Database;
@@ -120,18 +124,55 @@ export async function persistAuditRecord(
 
 export function buildErrorLogPersist(env: ObservabilityDbEnv): LogPersistFn {
   return async (record) => {
-    await persistErrorLogRecord(env, record);
+    try {
+      await persistErrorLogRecord(env, record);
+    } catch (error) {
+      await emitObservabilityAlert({
+        logger: alertLogger,
+        source_worker: "orchestrator-core",
+        alert_kind: "d1-write-failed",
+        message: "error log persistence failed",
+        detail: {
+          target_table: "nano_error_log",
+          original_code: record.code ?? "internal-error",
+          trace_uuid: record.trace_uuid,
+          error: String(error),
+        },
+      });
+      throw error;
+    }
   };
 }
 
 export function buildAuditPersist(env: ObservabilityDbEnv): AuditPersistFn {
   return async (record) => {
-    await persistAuditRecord(env, record);
+    try {
+      await persistAuditRecord(env, record);
+    } catch (error) {
+      await emitObservabilityAlert({
+        logger: alertLogger,
+        source_worker: "orchestrator-core",
+        alert_kind: "audit-persist-failed",
+        message: "audit persistence failed",
+        detail: {
+          target_table: "nano_audit_log",
+          event_kind: record.event_kind,
+          trace_uuid: record.trace_uuid,
+          team_uuid: record.team_uuid,
+          error: String(error),
+        },
+      });
+      throw error;
+    }
   };
 }
 
 export function createOrchestratorLogger(env: ObservabilityDbEnv) {
-  return createLogger("orchestrator-core", {
+  const cached = loggerByEnv.get(env);
+  if (cached) return cached;
+  const logger = createLogger("orchestrator-core", {
     persistError: buildErrorLogPersist(env),
   });
+  loggerByEnv.set(env, logger);
+  return logger;
 }

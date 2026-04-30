@@ -14,6 +14,9 @@
   "observability": {
     "enabled": true
   },
+  "triggers": {
+    "crons": ["0 3 * * *"]
+  },
   "vars": {
     "ENVIRONMENT": "preview",
     "OWNER_TAG": "nano-agent",
@@ -112,7 +115,10 @@
           "binding": "NANO_R2",
           "bucket_name": "nano-agent-spike-do-storage-probe"
         }
-      ]
+      ],
+      "triggers": {
+        "crons": ["0 3 * * *"]
+      }
     }
   }
 }

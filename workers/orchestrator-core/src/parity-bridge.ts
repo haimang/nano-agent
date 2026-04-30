@@ -1,4 +1,4 @@
-import { createLogger } from "@haimang/nacp-core/logger";
+import { createLogger, emitObservabilityAlert } from "@haimang/nacp-core/logger";
 
 const logger = createLogger("orchestrator-core");
 
@@ -205,6 +205,23 @@ export function logParityFailure(
   logger.warn("agent-rpc-parity-failed", {
     code: "rpc-parity-failed",
     ctx: {
+      action,
+      session_uuid: sessionUuid,
+      rpc_status: rpcResult.status,
+      fetch_status: fetchStatus,
+      status_match: statusMatch,
+      body_diff: bodyDiff,
+      body_diff_truncated: truncated,
+      first_pointer: firstPointer,
+      tag: "agent-rpc-parity-failed",
+    },
+  });
+  void emitObservabilityAlert({
+    logger,
+    source_worker: "orchestrator-core",
+    alert_kind: "rpc-parity-failed",
+    message: "agent RPC parity check failed",
+    detail: {
       action,
       session_uuid: sessionUuid,
       rpc_status: rpcResult.status,
