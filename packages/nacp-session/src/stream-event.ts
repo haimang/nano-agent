@@ -5,6 +5,7 @@
  * discriminated `kind` field. This is the structural anchor of Session profile.
  */
 
+import { NacpErrorSchema } from "@haimang/nacp-core";
 import { z } from "zod";
 
 export const ToolCallProgressKind = z.object({
@@ -61,6 +62,13 @@ export const SystemNotifyKind = z.object({
   message: z.string().min(1),
 });
 
+export const SystemErrorKind = z.object({
+  kind: z.literal("system.error"),
+  error: NacpErrorSchema,
+  source_worker: z.string().min(1).optional(),
+  trace_uuid: z.string().uuid().optional(),
+});
+
 export const LlmDeltaKind = z.object({
   kind: z.literal("llm.delta"),
   content_type: z.enum(["text", "thinking", "tool_use_start", "tool_use_delta"]),
@@ -77,6 +85,7 @@ export const SessionStreamEventBodySchema = z.discriminatedUnion("kind", [
   TurnEndKind,
   CompactNotifyKind,
   SystemNotifyKind,
+  SystemErrorKind,
   LlmDeltaKind,
 ]);
 
@@ -91,6 +100,7 @@ export const STREAM_EVENT_KINDS = [
   "turn.end",
   "compact.notify",
   "system.notify",
+  "system.error",
   "llm.delta",
 ] as const;
 export type StreamEventKind = (typeof STREAM_EVENT_KINDS)[number];

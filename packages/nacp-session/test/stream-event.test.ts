@@ -26,10 +26,23 @@ describe("SessionStreamEventBody", () => {
     const r = SessionStreamEventBodySchema.parse({ kind: "system.notify", severity: "error", message: "something broke" });
     expect(r.kind).toBe("system.notify");
   });
+  it("parses system.error", () => {
+    const r = SessionStreamEventBodySchema.parse({
+      kind: "system.error",
+      error: {
+        code: "internal-error",
+        category: "transient",
+        message: "something broke",
+        retryable: true,
+      },
+      source_worker: "agent-core",
+    });
+    expect(r.kind).toBe("system.error");
+  });
   it("rejects unknown kind", () => {
     expect(() => SessionStreamEventBodySchema.parse({ kind: "unknown.thing" })).toThrow();
   });
-  it("has 9 registered kinds", () => {
-    expect(STREAM_EVENT_KINDS).toHaveLength(9);
+  it("has 10 registered kinds", () => {
+    expect(STREAM_EVENT_KINDS).toHaveLength(10);
   });
 });

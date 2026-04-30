@@ -61,7 +61,7 @@ export {
   SessionStreamEventBodySchema, STREAM_EVENT_KINDS,
   ToolCallProgressKind, ToolCallResultKind, HookBroadcastKind,
   SessionUpdateKind, TurnBeginKind, TurnEndKind,
-  CompactNotifyKind, SystemNotifyKind, LlmDeltaKind,
+  CompactNotifyKind, SystemNotifyKind, SystemErrorKind, LlmDeltaKind,
 } from "./stream-event.js";
 export type { SessionStreamEventBody, StreamEventKind } from "./stream-event.js";
 

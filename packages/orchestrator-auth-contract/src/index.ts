@@ -178,6 +178,13 @@ export const CreateApiKeyInputSchema = z.object({
 });
 export type CreateApiKeyInput = z.infer<typeof CreateApiKeyInputSchema>;
 
+export const RevokeApiKeyInputSchema = z.object({
+  team_uuid: z.string().uuid(),
+  user_uuid: z.string().uuid(),
+  key_id: z.string().min(1),
+});
+export type RevokeApiKeyInput = z.infer<typeof RevokeApiKeyInputSchema>;
+
 export const AuthFlowResultSchema = AuthViewSchema.extend({
   tokens: AuthTokensSchema,
 });
@@ -210,6 +217,13 @@ export const CreateApiKeyResultSchema = z.object({
   label: z.string().trim().min(1).max(80),
 });
 export type CreateApiKeyResult = z.infer<typeof CreateApiKeyResultSchema>;
+
+export const RevokeApiKeyResultSchema = z.object({
+  key_id: z.string().min(1),
+  team_uuid: z.string().uuid(),
+  revoked_at: z.string().min(1),
+});
+export type RevokeApiKeyResult = z.infer<typeof RevokeApiKeyResultSchema>;
 
 export const AuthErrorSchema = z.object({
   code: AuthErrorCodeSchema,
@@ -267,6 +281,9 @@ export type VerifyApiKeyEnvelope = AuthEnvelope<VerifyApiKeyResult>;
 export const CreateApiKeyEnvelopeSchema = makeAuthEnvelopeSchema(CreateApiKeyResultSchema);
 export type CreateApiKeyEnvelope = AuthEnvelope<CreateApiKeyResult>;
 
+export const RevokeApiKeyEnvelopeSchema = makeAuthEnvelopeSchema(RevokeApiKeyResultSchema);
+export type RevokeApiKeyEnvelope = AuthEnvelope<RevokeApiKeyResult>;
+
 export function okEnvelope<T>(data: T): AuthSuccessEnvelope<T> {
   return { ok: true, data };
 }
@@ -296,4 +313,5 @@ export interface OrchestratorAuthRpcService {
   wechatLogin(input: unknown, meta: unknown): Promise<WeChatLoginEnvelope>;
   verifyApiKey(input: unknown, meta: unknown): Promise<VerifyApiKeyEnvelope>;
   createApiKey(input: unknown, meta: unknown): Promise<CreateApiKeyEnvelope>;
+  revokeApiKey(input: unknown, meta: unknown): Promise<RevokeApiKeyEnvelope>;
 }

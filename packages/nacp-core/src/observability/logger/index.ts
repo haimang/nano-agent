@@ -16,6 +16,9 @@ export { createLogger, __setLoggerConsoleForTests } from "./logger.js";
 export { withTraceContext, getTraceContext, traceContextStorage } from "./als.js";
 export { RingBuffer } from "./ring-buffer.js";
 export { DedupeCache, buildDedupeKey } from "./dedupe.js";
+export { buildAuditRecord, recordAuditEvent } from "./audit.js";
+export { buildSystemErrorEvent, tryEmitSystemError } from "./system-error.js";
+export { emitObservabilityAlert } from "./alerts.js";
 export {
   respondWithFacadeError,
   attachServerTimings,
@@ -36,5 +39,6 @@ export type {
   Logger,
   CreateLoggerOptions,
   TraceContext,
+  LoggerExecutionContext,
 } from "./types.js";
 export { LOG_LEVEL_PRIORITY } from "./types.js";

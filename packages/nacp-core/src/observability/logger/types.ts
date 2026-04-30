@@ -125,6 +125,8 @@ export interface TraceContext {
   trace_uuid?: string;
   session_uuid?: string;
   team_uuid?: string;
+  user_uuid?: string;
+  device_uuid?: string;
 }
 
 /**
