@@ -1,0 +1,30 @@
+{
+  "_doc": "HP8 P3-01 stop-the-bleed megafile ceilings (Q25). Targets the *current* owner files — orchestrator-core/src/index.ts, user-do-runtime.ts, session-do-runtime.ts, runtime-mainline.ts, session-truth.ts. Wrapper / re-export files (nano-session-do.ts, user-do.ts) are intentionally excluded; their HP-era split made them facade shells that grow only by accident. Each entry is a stop-the-bleed ceiling — when an owner re-splits, the new ceiling MUST go down, never up. The gate accepts equal-or-below; any line count above triggers exit-1.",
+  "limits": [
+    {
+      "path": "workers/orchestrator-core/src/index.ts",
+      "max_lines": 3000,
+      "owner_class": "facade-router"
+    },
+    {
+      "path": "workers/orchestrator-core/src/session-truth.ts",
+      "max_lines": 2000,
+      "owner_class": "d1-truth-aggregator"
+    },
+    {
+      "path": "workers/orchestrator-core/src/user-do-runtime.ts",
+      "max_lines": 1300,
+      "owner_class": "user-do-runtime"
+    },
+    {
+      "path": "workers/agent-core/src/host/do/session-do-runtime.ts",
+      "max_lines": 800,
+      "owner_class": "session-do-runtime"
+    },
+    {
+      "path": "workers/agent-core/src/host/runtime-mainline.ts",
+      "max_lines": 700,
+      "owner_class": "kernel-runner"
+    }
+  ]
+}
