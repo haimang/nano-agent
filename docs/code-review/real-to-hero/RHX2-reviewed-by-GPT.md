@@ -439,3 +439,65 @@ agent-core: 1069 / bash-core: 376 / context-core: 172 / filesystem-core: 300
   1. 二次 reviewer 确认本轮 8 个完全修复项落地正确（建议同 reviewer 复核而非新 reviewer）。
   2. owner 接受将剩余 13 个 deferred 项落到 hero-to-platform / 客户端专项 / closure follow-up 这三个承接位置。
   3. 不在本轮 reopen `closed-as-web-first-spike` 收口口径。
+
+---
+
+## 8. 审查质量评价（review-of-review）
+
+> 评价对象: `GPT 对 RHX2 全阶段的代码审查`
+> 评价人: `Claude Opus 4.7 (1M context)`，作为本轮 review-of-reviews 的执行者，在动手核验/修复 30 条 finding 后回头评估
+> 评价时间: `2026-04-30`
+
+### 8.0 评价结论
+
+- **一句话评价**：扎实、克制、verdict 校准最稳的一份 review；唯一独家命中"双发 fallback 污染主路径"这条真 bug，但漏掉了 GLM 抓到的 production spike flag critical。
+- **综合评分**：`8.5 / 10`
+- **推荐使用场景**：阶段闭合前需要"客观判断 spike 收口能不能接受"的关键 review 节点；主线代码 + closure 文档双层校核；需要 verdict-grading 准确（approve / changes-requested / blocked）的轮次。
+- **不建议单独依赖的场景**：(1) 安全姿态 / 部署配置审查（漏 R1 critical）；(2) 需要枚举完整失漏 code 列表的场景（GPT 只标 F3 partial，没列出 10/17 个具体 ad-hoc 漂移码）。
+
+### 8.1 审查风格画像
+
+| 维度 | 观察 | 例证 |
+|------|------|------|
+| 主要切入点 | `closure-claim ↔ code-fact 对账` | §3 In-Scope 表格逐项 done/partial 判定，每一行都对应 closure 中的具体 claim |
+| 证据类型 | `commands + file:line + smoke run` | §1.1 列出 build/test/smoke 全部跑过；R1/R3/R5 都给出 file:line |
+| Verdict 倾向 | `BALANCED`（中性偏宽容） | "approve-with-followups, closed-as-web-first-spike yes / full-DoD no" 这种二维 verdict 是 4 位中最严谨的 |
+| Finding 粒度 | `BALANCED` | 6 条 finding，每条都聚焦一个清晰边界，不堆 nice-to-have |
+| 修法建议风格 | `ACTIONABLE` | R1 给"读 dist.tarball / dist.integrity"具体路径；R5 给"包 try/catch + 返回结构"具体形态 |
+
+### 8.2 优点与短板
+
+#### 优点
+
+1. **R5（fallback notify 污染 primary）独家命中**：4 位 reviewer 中只有 GPT 看到 `system-error.ts:91-99` 的 `await fallbackNotify(...)` 没有独立 try/catch 这条真实代码 bug。我修复时直接落到 GPT 建议的形态：返回 `{emitted:true, reason:"dual-notify-failed:..."}` 与 `{emitted:false, reason:"emit-and-fallback-failed:<a>; <b>"}`。
+2. **二维 verdict 最稳**：明确把"原始 RHX2 full DoD" 与 "closed-as-web-first-spike" 区分开，给 owner 留下 superseded 解释空间，避免 closure 被误读。这种 verdict 校准能力是另外 3 位都没做到的。
+3. **scope 自律最好**：明确不引入其他 reviewer 报告（`复用 / 对照: none`），只靠 charter / design / action-plan / closure / 代码事实独立复核——这让 GPT 的判断不被既有 review 偏置。
+
+#### 短板 / 盲区
+
+1. **漏了 R1 critical（production spike flag）**：GPT 看了 `wrangler.jsonc` 但没注意顶层 vars 与 `env.preview.vars` 都设了 `NANO_ENABLE_RHX2_SPIKE=true`，加上 `deploy:production` 不带 `--env`，意味着生产可触发。这是 4 位中唯一漏掉的一条 critical。
+2. **F3 only-partial，没枚举具体漏码**：GPT 标 F3 partial 但没列出"哪 10 个 / 17 个 ad-hoc 码不在 registry"。如果只看 GPT 这份 review，实现者无法直接动手；最终 fix 是按 DeepSeek/GLM 的具体清单做的。
+3. **F14 R1 的修法偏理想化**：建议的 registry tarball 字节级校验，需要可信 tarball 命名 + 镜像策略才能落地，目前 GitHub Packages tarball URL 不稳；GPT 没给次优修法（manifest 字段重命名让事实命名不误导），最后在我这一轮选择 deferred-with-rationale。
+
+### 8.3 Findings 质量清点
+
+| 问题编号 | 原始严重程度 | 事后判定 | Finding 质量 | 分析与说明 |
+|----------|--------------|----------|--------------|------------|
+| R1（F14 字节级未校验） | high | true-positive | good | 真实 gap，但落地需 tarball stable 镜像策略，本轮 deferred |
+| R2（旧 DoD 与 spike closure 并存） | medium | true-positive | mixed | 真实文档漂移，但 closure 已是权威，未必需要回写 action-plan |
+| R3（api-docs 缺 Phase 7-9 同步） | medium | true-positive | excellent | 与 GLM R7 / kimi R7 三方一致；fix 落 error-index/session-ws/worker-health |
+| R4（F10 防漂移缺 lint） | medium | true-positive | good | 与 GLM R4 / kimi R2 一致；fix 用脚本等价物 |
+| R5（fallback notify 污染主路径） | medium | true-positive | excellent | **独家命中真 bug**，修法直接落地 |
+| R6（web/wechat helper legacy） | low | true-positive | good | closure 已 deferred，正确判断不 reopen |
+
+### 8.4 多维度评分
+
+| 维度 | 评分（1–10） | 说明 |
+|------|-------------|------|
+| 证据链完整度 | 9 | build / test / smoke 全跑过，关键 finding 都给 file:line |
+| 判断严谨性 | 9 | verdict 二维校准最准；不夸大也不掩盖 |
+| 修法建议可执行性 | 8 | 多数 actionable；R1 修法过于理想（tarball 字节比对）落地难 |
+| 对 action-plan / design / QNA 的忠实度 | 9 | 引 Q-Obs11 / F10 / F14 / F12 / F13 都精准 |
+| 协作友好度 | 9 | 6 条 finding 简洁，表格清晰，super-set / subset 关系点明 |
+| 找到问题的覆盖面 | 7 | 漏 R1 critical、未枚举 ad-hoc 漂移清单、未抓 audit 静默失败 |
+| 严重级别 / verdict 校准 | 9 | "approve-with-followups, spike-closure yes / full-DoD no" 是 4 位中最稳的 |

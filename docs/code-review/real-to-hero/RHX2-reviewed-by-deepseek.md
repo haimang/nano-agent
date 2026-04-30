@@ -421,3 +421,66 @@
 ---
 
 > 审查人独立声明：本轮审查未参考任何 other reviewer（GPT、GLM、Kimi、Opus）的分析报告。所有判断基于原始 charter/design/action-plan 文档与当前代码事实的独立对照。
+
+---
+
+## 8. 审查质量评价（review-of-review）
+
+> 评价对象: `DeepSeek 对 RHX2 全阶段的代码审查`
+> 评价人: `Claude Opus 4.7 (1M context)`，作为本轮 review-of-reviews 的执行者，在动手核验/修复 30 条 finding 后回头评估
+> 评价时间: `2026-04-30`
+
+### 8.0 评价结论
+
+- **一句话评价**：协议层 / 数据契约层最锐利的一份 review；3 条独家结构性发现（audit 静默失败、registry 重复检测缺失、drift_direction 无方向）全部修了，但 R1 把"FACADE/AUTH 空数组"判为 high gap 是误读 owner 设计意图，且漏掉了 production spike flag critical。
+- **综合评分**：`8.0 / 10`
+- **推荐使用场景**：协议契约 / D1 schema / 跨 source 数据完整性的深度审查；对接口形态边界条件最敏感（"请求成功了但下游 RPC 抛错被吞掉"这类盲点）；需要"未来防漂移"机制设计建议时。
+- **不建议单独依赖的场景**：(1) 部署/运维姿态审查（漏 R1 critical）；(2) verdict 校准要求严格的轮次（R1 高估、R2 标 blocker 是对的，但整体 verdict "changes-requested" 比 GPT/GLM 的"approve-with-followups"偏紧）。
+
+### 8.1 审查风格画像
+
+| 维度 | 观察 | 例证 |
+|------|------|------|
+| 主要切入点 | `protocol-contract + data-flow` | §5.5 "盲点与断点识别" 找出 `void recordAuditEvent()` 的静默吞掉、`persistErrorLogRecord()` 在 D1 binding 缺失时连 console fallback 都没有 |
+| 证据类型 | `LINE_REFERENCES + SCHEMA_PARSE` | §5.4 "执行逻辑错误检查" 一行行核对 SQLite INTEGER 转换、LRU set 时机、null 边界 |
+| Verdict 倾向 | `STRICT`（changes-requested 而非 approve-with-followups） | R2 标 blocker，是 4 位中唯一直接拒收的 |
+| Finding 粒度 | `FINE` | R5（last-write-wins 静默覆盖）/ R7（drift_direction 字段）这种"未来才会出问题"的预防性 finding |
+| 修法建议风格 | `ACTIONABLE` | 每条 finding 都给 1-3 条具体修法（"补全数组 / 改注释 / 加 docs 段落"三选一） |
+
+### 8.2 优点与短板
+
+#### 优点
+
+1. **三条独家结构性发现全部命中**：R3（audit 静默失败）、R5（registry 跨 source 重复检测）、R7（drift_direction 字段）这三条 4 位中只有 DeepSeek 看到，全部修了。R3 修复后 `buildAuditPersist` 包了 wrapper，DeepSeek 给的修法（"统一走 Logger.audit + AuditPersistFn 或显式文档化双路径"）就是落地路径之一。
+2. **R5 防御性思维最强**：last-write-wins 静默覆盖现在没问题（NACP_REPLAY_OUT_OF_RANGE 是 intentional），但 DeepSeek 看到这是个隐患并要求加 CI 检测。实际修复直接落 `_crossSourceDuplicates` map + `listCrossSourceDuplicateCodes()` API + 测试 allow-list，是 4 位中最 future-proof 的一条建议。
+3. **§5.4 / §5.5 是 4 份 review 中独有的"代码逐行核对"段**：核对 SQLite INTEGER 映射、LRU set 时机、null 边界、persist 失败传播路径——这是其他 3 位都没做到的微观正确性审查。
+
+#### 短板 / 盲区
+
+1. **R1 false-positive（FACADE/AUTH 空数组）**：DeepSeek 把 `FACADE_ERROR_METAS = []` / `AUTH_ERROR_METAS = []` 标 high gap，但 `error-registry.ts:200-218` 注释已显式说明这是 owner 的"6 enum 各管其责，registry 仅按 code dedup"设计取舍，不是疏漏。我最终 reject 了这条。
+2. **漏了 R1 critical（production spike flag）**：DeepSeek 没读 `wrangler.jsonc` 顶层 vars。这是 4 位中和 GPT/kimi 共同的盲点。
+3. **R4 closure 措辞 finding 过软**：DeepSeek 标 medium 的 R4（"web 端已满足'至少一端'但 closure 没说清楚"）属于 closure-wording 范畴，技术影响小，把它列为 medium 略高估。
+
+### 8.3 Findings 质量清点
+
+| 问题编号 | 原始严重程度 | 事后判定 | Finding 质量 | 分析与说明 |
+|----------|--------------|----------|--------------|------------|
+| R1（FACADE/AUTH 空数组） | high | false-positive | weak | 注释已说明这是设计决策，不是疏漏 |
+| R2（10 ad-hoc wire codes 不在 registry） | high blocker | true-positive | excellent | 与 GLM R3 一致；blocker 标对了，fix 已落 17 个 facade ad-hoc |
+| R3（audit 双路径分裂 / void 静默失败） | medium | true-positive | excellent | **独家命中真 bug**，修法直接落地 |
+| R4（closure 关于"至少一端"措辞） | medium | true-positive (soft) | good | 真实漂移但属 closure-wording，本轮 deferred |
+| R5（last-write-wins 静默覆盖） | low | true-positive (preventive) | excellent | **独家防御性发现**，修法落 `listCrossSourceDuplicateCodes()` |
+| R6（dual-emit-window.md 缺时间戳） | low | true-positive | good | docs-only，本轮 deferred |
+| R7（drift_direction 字段） | low | true-positive | excellent | **独家 UX gap**，修法落 5 取值字段 + 文档表 |
+
+### 8.4 多维度评分
+
+| 维度 | 评分（1–10） | 说明 |
+|------|-------------|------|
+| 证据链完整度 | 9 | 每条 finding 都有 file:line + 注释引用 |
+| 判断严谨性 | 8 | R1 误读注释；R4 medium 偏高；其余精准 |
+| 修法建议可执行性 | 9 | "补全数组 OR 修改注释 OR 增 doc 段落"三选一全部可执行 |
+| 对 action-plan / design / QNA 的忠实度 | 8 | 引 Q-Obs6 / Q-Obs11 / F3 / F13 准确，但 R1 没看到 §6.1 取舍 2 |
+| 协作友好度 | 8 | §5 跨阶段深度分析篇幅较长；7 条 finding 信息密度适中 |
+| 找到问题的覆盖面 | 7 | 漏 R1 critical、漏 web/helper legacy；其他盲点（agent-core kernel、跨阶段 carryover）也没抓 |
+| 严重级别 / verdict 校准 | 7 | R1 高估、R2 标 blocker 对、整体 changes-requested 比 GPT/GLM 偏紧；与最终 owner 接受的 closed-as-web-first-spike 有 1 档差距 |

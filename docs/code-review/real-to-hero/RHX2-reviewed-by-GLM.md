@@ -456,3 +456,69 @@
 ---
 
 *本审查基于 GLM-5.1 独立推理完成，未参考其他 reviewer（Kimi、DeepSeek、GPT）的分析报告。*
+
+---
+
+## 7. 审查质量评价（review-of-review）
+
+> 评价对象: `GLM-5.1 对 RHX2 全阶段的代码审查`
+> 评价人: `Claude Opus 4.7 (1M context)`，作为本轮 review-of-reviews 的执行者，在动手核验/修复 30 条 finding 后回头评估
+> 评价时间: `2026-04-30`
+
+### 7.0 评价结论
+
+- **一句话评价**：唯一抓到 production spike flag critical 的 review，覆盖面最宽（13 条 finding）；ad-hoc 漏码清单最完整（17 个，比 DeepSeek 的 10 个更准）；但 cross-stage 段落把 RHX2 拉成全阶段总评，部分 finding（R8、R9、R11、R12）跨出 RHX2 范围。
+- **综合评分**：`8.7 / 10`
+- **推荐使用场景**：阶段闭合前需要"宁可多抓一条也不能漏掉 deploy-critical 风险"的轮次；需要枚举型 finding 清单（"具体哪几个码漂移、具体哪几个文件未同步"）的轮次；跨阶段连续性回顾。
+- **不建议单独依赖的场景**：(1) 需要严格 RHX2-only 边界控制时（GLM 的 cross-stage finding 会模糊聚焦）；(2) 需要协议层细粒度盲点诊断时（不如 DeepSeek 的 §5.5 微观）。
+
+### 7.1 审查风格画像
+
+| 维度 | 观察 | 例证 |
+|------|------|------|
+| 主要切入点 | `deploy-posture + cross-stage continuity` | R1 直接看 wrangler.jsonc 顶层 vars；R10/R11/R12 把 RH1→RH6→RHX1→RHX2 carryover 拉出来 |
+| 证据类型 | `LINE_REFERENCES + COMMANDS + LIVE_CODE_GREP` | §1 列出 build/test/web build / `rg console\.` 全部跑过 |
+| Verdict 倾向 | `BALANCED`（approve-with-followups, 附条件） | 把 R1 列为 yes-blocker（必须 deploy 前修），其余 follow-up，是 4 位中边界最清晰的 |
+| Finding 粒度 | `FINE`（13 条，多数 actionable） | R3 完整列出 17 个码；R7 列出缺失的 22 个码 |
+| 修法建议风格 | `ACTIONABLE` | 每条都给 1-3 条 OR 选择（注册 / 改注释 / 增 grep 拦截），落地路径清晰 |
+
+### 7.2 优点与短板
+
+#### 优点
+
+1. **R1 critical 独家命中**：4 位 reviewer 中只有 GLM 注意到 `wrangler.jsonc:26` 顶层 vars + `deploy:production` 不带 `--env` 的组合等于"production 默认开启 spike"。这是本轮唯一的 critical 安全 finding，修复后 production deploy 不再可被任意触发 system.error。
+2. **R3 ad-hoc 漏码清单最完整**：GLM 列出 17 个 facade ad-hoc 码、DeepSeek 列出 10 个、GPT 只标 F3 partial 不枚举。我最终 fix 直接采纳 GLM 的 17 码清单加入 `AD_HOC_ERROR_METAS`，docs §8 拆 8.1+8.2 双表。
+3. **R7 文档同步清单最具体**：明确指出 `clients/api-docs/error-index.md` 缺 KernelErrorCode (6) / SessionErrorCode (8) / LLMErrorCategory (8) 共 22 个码，这是 GPT R3 / kimi R7 都没枚举到的精度。
+
+#### 短板 / 盲区
+
+1. **R10/R11/R12 跨阶段 carryover 跨出 RHX2 边界**：permission round-trip e2e、Lane E sunset、`/me/sessions` cursor 都是 RH1-RH4 阶段的 carry-over，不属于 RHX2 范围。GLM 把它们标 medium 列入 follow-up 没错，但堆在 Section 6 cross-stage 让 reviewer 焦点稀释。
+2. **R8（audit_log 无 CHECK 约束）verdict 校准偏紧**：DDL 开放扩展是有意设计（实际已扩到 9 类含 `session.start.failed`），GLM 列为"建议加 CHECK"是合理但不必要；最终我 reject。
+3. **R9（NACP_VERSION vs package.json version）属噪音**：两者命名空间清晰、消费者不会混淆；列出来虽然不算错但稀释 13 条 finding 的信号密度。
+
+### 7.3 Findings 质量清点
+
+| 问题编号 | 原始严重程度 | 事后判定 | Finding 质量 | 分析与说明 |
+|----------|--------------|----------|--------------|------------|
+| R1（production spike flag） | critical | true-positive | excellent | **独家命中 critical**，4 位中唯一抓到部署姿态风险 |
+| R2 / R13（agent-core kernel 不 emit system.error） | high / medium | true-positive | good | 真实架构 gap；本轮 deferred 到客户端专项（GPT/DeepSeek/kimi 均判 no blocker） |
+| R3（17 ad-hoc codes 不在 registry） | high | true-positive | excellent | **清单最完整**（17 vs DeepSeek 10）；fix 直接采纳 |
+| R4（P4-05 ESLint 未落地） | medium | true-positive | good | 与 GPT R4 / kimi R2 三方一致；fix 用脚本等价物 |
+| R5（wechat-miniprogram 未适配） | medium | true-positive | good | closure 已 deferred；正确判断不 reopen |
+| R6（78 vs 77 unique 数字漂移） | low | true-positive | good | 真实 docs gap；fix 已更新到"94 unique" |
+| R7（api-docs 缺 Kernel/Session/LLM） | medium | true-positive | excellent | 22 个码缺失清单，fix 直接落 |
+| R8（audit_log CHECK 约束） | low | partial | mixed | 真实开放性，但开放是有意设计；rejected |
+| R9（NACP_VERSION 命名混淆） | low | partial | weak | 不影响代码正确性；deferred 到 README |
+| R10/R11/R12（跨阶段 carryover） | medium / medium / low | true-positive (out-of-scope) | mixed | 真实 carryover 但跨 RHX2 边界 |
+
+### 7.4 多维度评分
+
+| 维度 | 评分（1–10） | 说明 |
+|------|-------------|------|
+| 证据链完整度 | 9 | 命令 + grep + 文件行号三件齐 |
+| 判断严谨性 | 8 | R8/R9/R11 略噪音；R1 critical 校准准确 |
+| 修法建议可执行性 | 9 | 13 条都给具体 OR 选项 |
+| 对 action-plan / design / QNA 的忠实度 | 9 | charter §4.4 硬纪律 #6 / Q-Obs1-14 引用准确 |
+| 协作友好度 | 7 | Section 6 跨阶段段落太长，把 RHX2-only 信号稀释 |
+| 找到问题的覆盖面 | 10 | 4 位中最广（13 条），且独家命中 critical + 完整 ad-hoc 漏码清单 |
+| 严重级别 / verdict 校准 | 9 | R1 critical 校准对了；approve-with-follow-ups 附 R1 必须修 deploy 前的边界最清晰 |
