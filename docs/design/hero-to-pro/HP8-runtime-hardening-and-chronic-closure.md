@@ -25,7 +25,7 @@
 > - `workers/orchestrator-auth/src/errors.ts:1-21`
 > - `docs/runbook/zx5-r28-investigation.md:1-7,32-41,100-141`
 > 关联 QNA / 决策登记:
-> - `docs/design/hero-to-pro/HPX-qna.md`（待所有 hero-to-pro 设计文件落地后统一汇总；本设计先冻结 HP8 收口结论）
+> - `docs/design/hero-to-pro/HPX-qna.md`（待统一回填 owner / ops 答案后再转 `frozen`；当前先登记建议结论）
 > 文档状态: `reviewed`
 
 ---
@@ -163,7 +163,7 @@
 
 ## 4. 参考实现 / 历史 precedent 对比
 
-> 本节 precedent **只接受 `context/` 与当前仓库源码锚点**。
+> 本节 precedent 以当前仓库源码锚点为 authoritative evidence；若出现 `context/*`，仅作 external ancestry pointer。
 
 ### 4.1 当前仓库的 precedent / 反例
 
@@ -433,10 +433,10 @@
 
 | Q ID / 决策 ID | 问题 | 影响范围 | 当前建议 | 状态 | 答复来源 |
 |----------------|------|----------|----------|------|----------|
-| `HP8-D1` | megafile gate 是否继续盯历史文件名？ | HP8 / CI / future split | 否；改盯当前 owner 文件 | `frozen` | 当前 `nano-session-do.ts` 与 `user-do.ts` 已基本变成 wrapper，而真正高行号 owner 已是 `index.ts` / `user-do-runtime.ts` / `session-do-runtime.ts`：`workers/agent-core/src/host/do/nano-session-do.ts:1-8`, `workers/orchestrator-core/src/user-do.ts:1-9`, `workers/orchestrator-core/src/index.ts:1880-1904`, `workers/orchestrator-core/src/user-do-runtime.ts:1141-1171`, `workers/agent-core/src/host/do/session-do-runtime.ts:720-737` |
-| `HP8-D2` | tool catalog 应落在哪一层？ | HP8 / agent-core / bash-core | `nacp-core` | `frozen` | canonical tool message schema 已在 `nacp-core`，caller/callee 重复只应向它收敛：`packages/nacp-core/src/messages/tool.ts:4-36`, `workers/bash-core/src/tool-call.ts:8-37`, `workers/agent-core/src/host/runtime-mainline.ts:399-405` |
-| `HP8-D3` | envelope 收敛是否包括 internal RPC？ | HP8 / public API / worker RPC | 否；只要求 public 唯一 `FacadeEnvelope` | `frozen` | `Envelope<T>` 与 `AuthEnvelope<T>` 仍是 internal contract，而 `FacadeEnvelope` 才是 public facade shape：`packages/nacp-core/src/rpc.ts:19-24,89-124`, `packages/orchestrator-auth-contract/src/index.ts:232-255`, `packages/orchestrator-auth-contract/src/facade-http.ts:120-140` |
-| `HP8-D4` | R28/R29/Lane E 是否允许 retained/handoff？ | HP8 / HP10 | 允许，但必须 explicit | `frozen` | runbook 与 current residue 都表明这类问题存在 owner-only / deploy-only 特征；禁止 silent，允许 explicit：`docs/runbook/zx5-r28-investigation.md:100-141`, `workers/agent-core/src/host/workspace-runtime.ts:1-18,20-31` |
+| `HP8-D1` | megafile gate 是否继续盯历史文件名？ | HP8 / CI / future split | 否；改盯当前 owner 文件 | `pending-HPX-qna` | 当前 `nano-session-do.ts` 与 `user-do.ts` 已基本变成 wrapper，而真正高行号 owner 已是 `index.ts` / `user-do-runtime.ts` / `session-do-runtime.ts`：`workers/agent-core/src/host/do/nano-session-do.ts:1-8`, `workers/orchestrator-core/src/user-do.ts:1-9`, `workers/orchestrator-core/src/index.ts:1880-1904`, `workers/orchestrator-core/src/user-do-runtime.ts:1141-1171`, `workers/agent-core/src/host/do/session-do-runtime.ts:720-737` |
+| `HP8-D2` | tool catalog 应落在哪一层？ | HP8 / agent-core / bash-core | `nacp-core` | `pending-HPX-qna` | canonical tool message schema 已在 `nacp-core`，caller/callee 重复只应向它收敛：`packages/nacp-core/src/messages/tool.ts:4-36`, `workers/bash-core/src/tool-call.ts:8-37`, `workers/agent-core/src/host/runtime-mainline.ts:399-405` |
+| `HP8-D3` | envelope 收敛是否包括 internal RPC？ | HP8 / public API / worker RPC | 否；只要求 public 唯一 `FacadeEnvelope` | `pending-HPX-qna` | `Envelope<T>` 与 `AuthEnvelope<T>` 仍是 internal contract，而 `FacadeEnvelope` 才是 public facade shape：`packages/nacp-core/src/rpc.ts:19-24,89-124`, `packages/orchestrator-auth-contract/src/index.ts:232-255`, `packages/orchestrator-auth-contract/src/facade-http.ts:120-140` |
+| `HP8-D4` | R28/R29/Lane E 是否允许 retained/handoff？ | HP8 / HP10 | 允许，但必须 explicit | `pending-HPX-qna` | runbook 与 current residue 都表明这类问题存在 owner-only / deploy-only 特征；禁止 silent，允许 explicit：`docs/runbook/zx5-r28-investigation.md:100-141`, `workers/agent-core/src/host/workspace-runtime.ts:1-18,20-31` |
 
 ### 9.2 设计完成标准
 

@@ -12,13 +12,10 @@
 > - `workers/orchestrator-core/src/index.ts:364-440,707-711,885-980`
 > - `workers/orchestrator-core/src/user-do/surface-runtime.ts:178-218`
 > - `workers/agent-core/src/host/do/session-do-persistence.ts:139-186`
-> - `context/gemini-cli/packages/core/src/services/chatRecordingService.ts:303-360`
-> - `context/gemini-cli/packages/core/src/utils/checkpointUtils.ts:84-157`
-> - `context/gemini-cli/packages/core/src/commands/restore.ts:11-58`
-> - `context/gemini-cli/packages/cli/src/ui/commands/rewindCommand.tsx:40-90,143-198`
 > 关联 QNA / 决策登记:
-> - `docs/design/hero-to-pro/HPX-qna.md`（待所有 hero-to-pro 设计文件落地后统一汇总；本设计先冻结 chat lifecycle 结论）
+> - `docs/design/hero-to-pro/HPX-qna.md`（待统一回填 owner / ops 答案后再转 `frozen`；当前先登记建议结论）
 > 文档状态: `reviewed`
+> 外部 precedent 说明: 当前工作区未 vendored `context/` 源文件；文中出现的 `context/*` 仅作 drafting-time ancestry pointer，不作为当前冻结 / 执行证据。
 
 ---
 
@@ -149,7 +146,7 @@
 
 ## 4. 参考实现 / 历史 precedent 对比
 
-> 本节 precedent **只接受 `context/` 与当前仓库源码锚点**。
+> 本节 precedent 以当前仓库源码锚点为 authoritative evidence；若出现 `context/*`，仅作 external ancestry pointer。
 
 ### 4.1 Gemini CLI 的做法
 
@@ -377,9 +374,9 @@
 
 | Q ID / 决策 ID | 问题 | 影响范围 | 当前建议 | 状态 | 答复来源 |
 |----------------|------|----------|----------|------|----------|
-| `HP4-D1` | close 是否引入新 session 状态？ | HP4 / read models / clients | 否；继续用 `ended + completed` | `frozen` | 当前状态集已冻结：`workers/orchestrator-core/src/session-lifecycle.ts:15-39` |
-| `HP4-D2` | delete 应落 session 还是 conversation？ | HP4 / clients | conversation soft tombstone | `frozen` | 现有 D1 真相以 `nano_conversations` 为 conversation owner，且 title 已在该表：`workers/orchestrator-core/migrations/002-session-truth-and-audit.sql:7-17` |
-| `HP4-D3` | checkpoint/restore 是否继续复用 DO latest checkpoint？ | HP4 / agent-core / clients | 否；必须新增 checkpoint registry + restore job | `frozen` | 当前 DO latest checkpoint 只适合内部恢复，不适合产品面：`workers/agent-core/src/host/do/session-do-persistence.ts:139-186`; Gemini precedent 也区分了 checkpoint data 与 restore flow：`context/gemini-cli/packages/core/src/utils/checkpointUtils.ts:84-157`, `context/gemini-cli/packages/core/src/commands/restore.ts:11-58` |
+| `HP4-D1` | close 是否引入新 session 状态？ | HP4 / read models / clients | 否；继续用 `ended + completed` | `pending-HPX-qna` | `workers/orchestrator-core/src/session-lifecycle.ts:15-39` |
+| `HP4-D2` | delete 应落 session 还是 conversation？ | HP4 / clients | conversation soft tombstone | `pending-HPX-qna` | `docs/charter/plan-hero-to-pro.md:430-433,628-629`, `workers/orchestrator-core/migrations/002-session-truth-and-audit.sql:7-17`, `workers/orchestrator-core/src/session-truth.ts:314-348` |
+| `HP4-D3` | checkpoint/restore 是否继续复用 DO latest checkpoint？ | HP4 / agent-core / clients | 否；必须新增 checkpoint registry + restore job | `pending-HPX-qna` | `docs/charter/plan-hero-to-pro.md:630-635`, `workers/agent-core/src/host/do/session-do-persistence.ts:139-186`, `workers/orchestrator-core/src/index.ts:885-980` |
 
 ### 9.2 设计完成标准
 
@@ -398,7 +395,7 @@
   - `docs/design/hero-to-pro/HP3-context-state-machine.md`
   - `docs/design/hero-to-pro/HP5-confirmation-control-plane.md`
 - **需要进入 QNA register 的问题**：
-  - `若 HP1 schema extension 尚未落地，delete tombstone / retry attempt / checkpoint registry / restore job 的最小 D1 字段集是否作为 HP4 collateral migration 一并处理`
+  - `若 HP1 schema extension 尚未落地，delete tombstone / retry attempt / checkpoint registry / restore job 的最小 D1 字段集是否作为 HP1 schema correction 一并处理（若 HP1 已 closure，则本题自动视为 not-triggered）`
 
 ---
 

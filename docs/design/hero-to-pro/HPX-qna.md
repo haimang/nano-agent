@@ -550,24 +550,24 @@
 
 ## 8. 条件触发题（仅在触发条件出现时回答）
 
-### Q37 — 若 HP1 在 HP3 启动前仍未落地，compact job 的最小 D1 表是否允许作为 HP3 collateral migration 一并处理？（来源：`docs/design/hero-to-pro/HP3-context-state-machine.md` `9.3 条件题`）
+### Q37 — 若 HP1 在 HP3 启动前仍未落地，manual compact 所依赖的 confirmation/checkpoint 字段是否允许作为 HP1 schema correction 一并处理？（来源：`docs/design/hero-to-pro/HP3-context-state-machine.md` `9.3 条件题`）
 
 - **影响范围**：HP3 start gate、HP1 DDL freeze、context compact job truth
-- **为什么必须确认**：这是一道条件触发题；只有当 HP1 未按顺序完成时，它才会影响执行路径。
+- **为什么必须确认**：这是一道条件触发题；只有当 HP1 未按顺序完成时，它才会影响执行路径。若 HP1 已正常 closure，则本题自动视为 `not-triggered`。
 - **当前建议 / 倾向**：**默认不允许**；优先维持 charter 执行顺序，除非 owner 明确批准走 `HP1 schema correction / collateral migration`。
-- **Reasoning**：如果 HP1 未落地就让 HP3 自己顺手补最小 D1 表，会直接破坏 DDL Freeze Gate。推荐路线更稳，因为它把这个问题保留成一个显式的 owner 决策分支，而不是执行时临时妥协。如果不先在 QNA 里挂出来，真正触发时很容易在聊天里仓促拍板。
+- **Reasoning**：HP3 现已明确第一版不新增独立 `compact_jobs` 表，而是复用 HP1 冻结的 confirmation/checkpoint truth。若 HP1 未落地就让 HP3 自己顺手补这些字段，仍会直接破坏 DDL Freeze Gate。推荐路线更稳，因为它把这个问题保留成一个显式的 owner 决策分支，而不是执行时临时妥协。如果不先在 QNA 里挂出来，真正触发时很容易在聊天里仓促拍板。
 
 - **Opus的对问题的分解**：
 - **Opus的对GPT推荐线路的分析**：
 - **Opus的最终回答**：
 
-- **问题**：`若 HP1 在 HP3 启动前仍未落地，你是否允许 HP3 为 compact job truth 走一次受控的 collateral migration / schema correction？`
+- **问题**：`若 HP1 在 HP3 启动前仍未落地，你是否允许 HP3 为 manual compact 所依赖的 confirmation/checkpoint 字段走一次受控的 HP1 schema correction？`
 - **业主回答**：
 
 ### Q38 — 若 HP1 尚未落地，HP4 所需的最小 delete/retry/checkpoint/restore D1 字段集是否允许作为 collateral migration 一并处理？（来源：`docs/design/hero-to-pro/HP4-chat-lifecycle.md` `9.3 条件题`）
 
 - **影响范围**：HP4 start gate、HP1 DDL freeze、chat lifecycle / checkpoint registry
-- **为什么必须确认**：这也是条件触发题；只有当执行顺序被打破时，它才会影响 HP4 能否合法启动。
+- **为什么必须确认**：这也是条件触发题；只有当执行顺序被打破时，它才会影响 HP4 能否合法启动。若 HP1 已正常 closure，则本题自动视为 `not-triggered`。
 - **当前建议 / 倾向**：**默认不允许**；除非 owner 明确批准受控 correction。
 - **Reasoning**：HP4 依赖的 tombstone、retry、checkpoint registry、restore job 都是强 durable truth，如果放到 HP4 临时补，很容易把 phase 边界弄乱。推荐路线更稳，因为它把“例外路径”保留为明确批准制，而不是执行者自行决定。如果不挂到 HPX-qna，触发时很容易因为赶进度而失去治理纪律。
 

@@ -14,8 +14,9 @@
 > - `workers/agent-core/wrangler.jsonc:20-23,44-51,78-87,97-101`
 > - `workers/orchestrator-core/wrangler.jsonc:57-63,99-104`
 > 关联 QNA / 决策登记:
-> - `docs/design/hero-to-pro/HPX-qna.md`（待所有 hero-to-pro 设计文件落地后统一汇总；本设计先冻结自身结论）
+> - `docs/design/hero-to-pro/HPX-qna.md`（待统一回填 owner / ops 答案后再转 `frozen`；当前先登记建议结论）
 > 文档状态: `reviewed`
+> 外部 precedent 说明: 当前工作区未 vendored `context/` 源文件；文中出现的 `context/*` 仅作 drafting-time ancestry pointer，不作为当前冻结 / 执行证据。
 
 ---
 
@@ -354,9 +355,9 @@ HP0 不是“功能 phase”，而是 hero-to-pro 真正开工前的 baseline hy
 
 | Q ID / 决策 ID | 问题 | 影响范围 | 当前建议 | 状态 | 答复来源 |
 |----------------|------|----------|----------|------|----------|
-| `HP0-D1` | `withNanoAgentSystemPrompt(modelId?)` 是否允许在 HP0 先开签名、HP1 后回填真值？ | HP0 / HP1 | 允许；但 HP0 若字段未落表只能标 `partial` | `frozen` | `workers/agent-core/src/host/runtime-mainline.ts:162-177`, `packages/nacp-session/src/messages.ts:43-52,119-136`, `workers/orchestrator-core/src/user-do/session-flow.ts:342-347,445-454` |
-| `HP0-D2` | `forwardInternalJsonShadow` / `parity-bridge` 是否可在 HP0 直接删？ | HP0 / HP8-B / HP10 | 不可；留待 R29 postmortem 后决议 | `frozen` | `workers/orchestrator-core/src/user-do/message-runtime.ts:72-77`, `workers/orchestrator-core/src/parity-bridge.ts:5-9,57-63` |
-| `HP0-D3` | `CONTEXT_CORE` / `LANE_E_RPC_FIRST` 是否还要改 wrangler？ | HP0 | 不改配置，只做 verify + test | `frozen` | `workers/agent-core/wrangler.jsonc:20-23,44-51,78-87,97-101`, `workers/orchestrator-core/wrangler.jsonc:57-63,99-104` |
+| `HP0-D1` | `withNanoAgentSystemPrompt(modelId?)` 是否允许在 HP0 先开签名、HP1 后回填真值？ | HP0 / HP1 | 允许；但 HP0 若字段未落表只能标 `partial` | `pending-HPX-qna` | `workers/agent-core/src/host/runtime-mainline.ts:162-177`, `packages/nacp-session/src/messages.ts:43-52,119-136`, `workers/orchestrator-core/src/user-do/session-flow.ts:342-347,445-454` |
+| `HP0-D2` | `forwardInternalJsonShadow` / `parity-bridge` 是否可在 HP0 直接删？ | HP0 / HP8-B / HP10 | 不可；留待 R29 postmortem 后决议 | `pending-HPX-qna` | `workers/orchestrator-core/src/user-do/message-runtime.ts:72-77`, `workers/orchestrator-core/src/parity-bridge.ts:5-9,57-63` |
+| `HP0-D3` | `CONTEXT_CORE` / `LANE_E_RPC_FIRST` 是否还要改 wrangler？ | HP0 | 不改配置，只做 verify + test | `pending-HPX-qna` | `workers/agent-core/wrangler.jsonc:20-23,44-51,78-87,97-101`, `workers/orchestrator-core/wrangler.jsonc:57-63,99-104` |
 
 ### 9.2 设计完成标准
 

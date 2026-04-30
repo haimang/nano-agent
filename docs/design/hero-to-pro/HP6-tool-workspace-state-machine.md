@@ -17,10 +17,10 @@
 > - `workers/agent-core/src/kernel/types.ts:41-67`
 > - `workers/agent-core/src/host/remote-bindings.ts:305-331`
 > - `workers/bash-core/src/index.ts:317-329,342-413`
-> - `context/gemini-cli/packages/core/src/config/storage.ts:185-189,317-365`
 > 关联 QNA / 决策登记:
-> - `docs/design/hero-to-pro/HPX-qna.md`（待所有 hero-to-pro 设计文件落地后统一汇总；本设计先冻结 tool/workspace 结论）
+> - `docs/design/hero-to-pro/HPX-qna.md`（待统一回填 owner / ops 答案后再转 `frozen`；当前先登记建议结论）
 > 文档状态: `reviewed`
+> 外部 precedent 说明: 当前工作区未 vendored `context/` 源文件；文中出现的 `context/*` 仅作 drafting-time ancestry pointer，不作为当前冻结 / 执行证据。
 
 ---
 
@@ -157,7 +157,7 @@
 
 ## 4. 参考实现 / 历史 precedent 对比
 
-> 本节 precedent **只接受 `context/` 与当前仓库源码锚点**。
+> 本节 precedent 以当前仓库源码锚点为 authoritative evidence；若出现 `context/*`，仅作 external ancestry pointer。
 
 ### 4.1 Gemini CLI 的做法
 
@@ -289,15 +289,14 @@
   - 最小字段冻结为：
     - `todo_uuid`
     - `session_uuid`
+    - `conversation_uuid`
     - `team_uuid`
-    - `title`
-    - `details_json`
-    - `status` (`pending | in_progress | completed`)
-    - `sort_index`
-    - `source_request_uuid`
+    - `parent_todo_uuid`
+    - `content`
+    - `status` (`pending | in_progress | completed | cancelled | blocked`)
     - `created_at`
     - `updated_at`
-    - `deleted_at`
+    - `completed_at`
   - façade 暴露：
     - `GET /sessions/{id}/todos`
     - `POST /sessions/{id}/todos`
@@ -308,8 +307,8 @@
     - `session.todos.update`
 - **边界情况**：
   - 同一 session 同时最多 1 条 `in_progress`
-  - delete 做 soft delete，不重排历史 `todo_uuid`
-  - model bulk-write 时要按 `sort_index` 幂等替换，而不是每次新增重复 todo
+  - `DELETE` 第一版直接删除 row；历史 lineage 依赖消息 / 审计面，而不是 `deleted_at`
+  - 若未来需要 `title` / `details_json` / 显式排序，只能作为 API projection 或 `content` 约定，不得回改 HP1 DDL freeze
 - **一句话收口目标**：✅ **todo 第一次成为 durable 工作面，而不是 prompt 里的文本习惯**。
 
 #### F2: workspace temp file truth
@@ -331,14 +330,16 @@
     - `session_uuid`
     - `team_uuid`
     - `virtual_path`
-    - `r2_key`
-    - `content_hash`
-    - `size_bytes`
+    - `r2_object_key`
     - `mime`
+    - `size_bytes`
+    - `content_hash`
+    - `last_modified_at`
+    - `written_by` (`user | agent | tool`)
     - `created_at`
-    - `updated_at`
     - `expires_at`
-    - `cleanup_status` (`pending | retained_with_reason | deleted | failed`)
+    - `cleanup_status` (`pending | scheduled | done`)
+    - `UNIQUE(session_uuid, virtual_path)`
   - filesystem-core 新 RPC：
     - `readTempFile`
     - `writeTempFile`
@@ -350,12 +351,13 @@
     - `DELETE /sessions/{id}/workspace/files/{*path}`
     - `GET /sessions/{id}/workspace/files?prefix=...`
     - `POST /sessions/{id}/workspace/cleanup`
-  - 写入时若内容 hash 未变，则仅更新 `updated_at`，不重复覆盖对象
+  - 写入时若内容 hash 未变，则仅更新 `last_modified_at`，不重复覆盖对象
   - 默认 TTL 为 `session.end + 24h`
 - **边界情况**：
   - active session 可手动 cleanup，但不得删除被 promotion 锁定的 path
   - session 未结束时不执行默认 TTL 清理
   - list 必须按 prefix 工作，而不是把整个 namespace 一次性扫回客户端
+  - `cleanup_status` 只表达生命周期调度状态；失败明细进入 `nano_workspace_cleanup_jobs` / audit，不在 temp-file 行内自创 terminal enum
 - **一句话收口目标**：✅ **session 第一次拥有独立、可查询、可清理的临时工作区**。
 
 #### F3: tool inflight / cancel
@@ -386,19 +388,25 @@
 - **核心逻辑**：
   - `POST /sessions/{id}/artifacts/promote`
   - `GET /sessions/{id}/artifacts/{file_uuid}/provenance`
+  - `nano_session_files.provenance_kind` 全枚举冻结为：
+    - `user_upload`
+    - `agent_generated`
+    - `workspace_promoted`
+    - `compact_summary`
+    - `checkpoint_restored`
   - promote 流程冻结为：
     1. 读取 temp file 当前元数据与 R2 对象
     2. 生成新的 artifact `file_uuid`
     3. 复制字节到 artifact key：`tenants/{team}/sessions/{session}/files/{file_uuid}`
     4. 写 `nano_session_files` 目标 provenance 列：
-       - `provenance_kind = workspace_promoted`
-       - `source_workspace_path`
-       - `source_content_hash`
-       - `promoted_at`
+        - `provenance_kind = workspace_promoted`
+        - `source_workspace_path`
+        - `source_session_uuid = NULL`
   - artifact 一经 promote，不再受 workspace cleanup TTL 影响
 - **边界情况**：
   - 不允许直接 promote 不存在或已过期的 temp file
   - 同一路径重复 promote 合法，但必须生成新 artifact row，而不是覆盖旧 artifact
+  - 其余 provenance kinds 由 upload / compact / restore / fork 写入，HP6 只负责 `workspace_promoted`
 - **一句话收口目标**：✅ **正式产物与临时工作区第一次有可追溯的血缘关系**。
 
 #### F5: namespace security + cleanup jobs
@@ -410,19 +418,19 @@
   - 所有 workspace R2 key 必须通过统一 `normalizeVirtualPath()` + tenant prefix builder 生成
   - cleanup job 以 orchestrator-core 为 owner：它持有 D1 truth，filesystem-core 只负责对象操作
   - 每次 cleanup 必写一行 `nano_workspace_cleanup_jobs`，至少包含：
-    - `cleanup_job_uuid`
+    - `job_uuid`
     - `session_uuid`
     - `team_uuid`
-    - `scope` (`workspace_temp`)
-    - `trigger_kind` (`manual | session_end_ttl | maintenance`)
-    - `status`
+    - `scope` (`session_end | explicit | checkpoint_ttl`)
+    - `target_count`
     - `deleted_count`
-    - `failed_count`
-    - `created_at`
-    - `finished_at`
+    - `status` (`pending | running | done | failed`)
+    - `scheduled_at`
+    - `started_at`
+    - `completed_at`
 - **边界情况**：
   - traversal / absolute path / mixed slash 命中时直接 400，不做自动修复
-  - cleanup 遇到单文件失败时 job 仍完成，但必须显式记录 `failed_count` 与 reason
+  - cleanup 遇到单文件失败时 job 标 `failed`，失败明细进 audit / error log，不额外给 cleanup_jobs 自造 `failed_count`
 - **一句话收口目标**：✅ **HP6 从第一版就把安全边界和生命周期审计一起收口**。
 
 ### 7.3 非功能性要求与验证策略
@@ -484,9 +492,9 @@
 
 | Q ID / 决策 ID | 问题 | 影响范围 | 当前建议 | 状态 | 答复来源 |
 |----------------|------|----------|----------|------|----------|
-| `HP6-D1` | workspace temp file 对外是否使用 UUID，而不是路径？ | HP6 / clients / HP7 | 否；以 `virtual_path` 作为产品主键 | `frozen` | 当前 artifact 已用 UUID，因为它是下载对象；但 Gemini 的 temp storage 与本仓库 tenant key 都说明“工作态文件”更适合以路径组织：`workers/filesystem-core/src/artifacts.ts:113-170,185-272`, `context/gemini-cli/packages/core/src/config/storage.ts:317-365`, `packages/nacp-core/src/tenancy/scoped-io.ts:1-19` |
-| `HP6-D2` | promotion 是 alias 现有 workspace object，还是复制成独立 artifact？ | HP6 / cleanup / restore | 复制成独立 artifact | `frozen` | 当前 artifact 已有独立 key 与 D1 row，而 workspace 要有 TTL/cleanup；若 alias，同一路径 cleanup 会破坏正式产物：`workers/filesystem-core/src/artifacts.ts:117-170,268-272`, `workers/orchestrator-core/migrations/004-session-files.sql:6-27` |
-| `HP6-D3` | tool cancel 是否继续只作为下游内部动作，不进入统一可观察状态？ | HP6 / client / debug | 否；要有 terminal state + stream event | `frozen` | 当前 transport 已具备 cancel，但协议面没有 cancel kind；HP6 需要把它升格为产品可见状态：`workers/agent-core/src/host/remote-bindings.ts:305-331`, `workers/bash-core/src/index.ts:317-329,342-413`, `packages/nacp-session/src/stream-event.ts:81-107` |
+| `HP6-D1` | workspace temp file 对外是否使用 UUID，而不是路径？ | HP6 / clients / HP7 | 否；以 `virtual_path` 作为产品主键 | `pending-HPX-qna` | `docs/charter/plan-hero-to-pro.md:437,739-741`, `packages/nacp-core/src/tenancy/scoped-io.ts:1-19,35-79`, `workers/filesystem-core/src/artifacts.ts:113-170,185-272` |
+| `HP6-D2` | promotion 是 alias 现有 workspace object，还是复制成独立 artifact？ | HP6 / cleanup / restore | 复制成独立 artifact | `pending-HPX-qna` | `docs/charter/plan-hero-to-pro.md:438,741`, `workers/filesystem-core/src/artifacts.ts:117-170,268-272`, `workers/orchestrator-core/migrations/004-session-files.sql:6-27` |
+| `HP6-D3` | tool cancel 是否继续只作为下游内部动作，不进入统一可观察状态？ | HP6 / client / debug | 否；要有 terminal state + stream event | `pending-HPX-qna` | `docs/charter/plan-hero-to-pro.md:740,742-743`, `workers/agent-core/src/host/remote-bindings.ts:305-331`, `workers/bash-core/src/index.ts:317-329,342-413`, `packages/nacp-session/src/stream-event.ts:81-107` |
 
 ### 9.2 设计完成标准
 

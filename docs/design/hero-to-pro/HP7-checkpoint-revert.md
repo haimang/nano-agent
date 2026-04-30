@@ -14,14 +14,10 @@
 > - `workers/agent-core/src/host/do/session-do/ws-runtime.ts:197-213`
 > - `workers/orchestrator-core/migrations/004-session-files.sql:6-27`
 > - `workers/filesystem-core/src/artifacts.ts:113-170,185-272`
-> - `context/gemini-cli/packages/core/src/utils/checkpointUtils.ts:84-157`
-> - `context/gemini-cli/packages/core/src/commands/restore.ts:11-58`
-> - `context/gemini-cli/packages/cli/src/ui/commands/rewindCommand.tsx:40-90,143-198`
-> - `context/claude-code/constants/xml.ts:61-66`
-> - `context/claude-code/tools/AgentTool/forkSubagent.ts:96-198`
 > 关联 QNA / 决策登记:
-> - `docs/design/hero-to-pro/HPX-qna.md`（待所有 hero-to-pro 设计文件落地后统一汇总；本设计先冻结 checkpoint / revert / fork 结论）
+> - `docs/design/hero-to-pro/HPX-qna.md`（待统一回填 owner / ops 答案后再转 `frozen`；当前先登记建议结论）
 > 文档状态: `reviewed`
+> 外部 precedent 说明: 当前工作区未 vendored `context/` 源文件；文中出现的 `context/*` 仅作 drafting-time ancestry pointer，不作为当前冻结 / 执行证据。
 
 ---
 
@@ -156,7 +152,7 @@
 
 ## 4. 参考实现 / 历史 precedent 对比
 
-> 本节 precedent **只接受 `context/` 与当前仓库源码锚点**。
+> 本节 precedent 以当前仓库源码锚点为 authoritative evidence；若出现 `context/*`，仅作 external ancestry pointer。
 
 ### 4.1 Gemini CLI 的做法
 
@@ -300,20 +296,29 @@
     - `session_uuid`
     - `conversation_uuid`
     - `team_uuid`
-    - `checkpoint_kind` (`turn_end | user_named | compact_boundary | rollback_baseline`)
+    - `turn_uuid`
+    - `turn_attempt`
+    - `checkpoint_kind` (`turn_end | user_named | compact_boundary | system`)
     - `label`
-    - `message_anchor_uuid`
-    - `turn_anchor_index`
+    - `message_high_watermark`
+    - `latest_event_seq`
+    - `context_snapshot_uuid`
     - `file_snapshot_status` (`none | pending | materialized | failed`)
+    - `created_by` (`user | system | compact | turn_end`)
     - `expires_at`
     - `created_at`
   - 新增目标 truth：`nano_checkpoint_file_snapshots`
   - 最小字段冻结为：
+    - `snapshot_uuid`
     - `checkpoint_uuid`
     - `session_uuid`
     - `team_uuid`
+    - `source_temp_file_uuid`
+    - `source_artifact_file_uuid`
+    - `source_r2_key`
+    - `snapshot_r2_key`
     - `virtual_path`
-    - `r2_key`
+    - `size_bytes`
     - `content_hash`
     - `snapshot_status` (`pending | materialized | copied_to_fork | failed`)
     - `created_at`
@@ -323,6 +328,7 @@
 - **边界情况**：
   - 若 session 当前无 workspace 文件，则允许 materialization 成功但 0 rows
   - materialization 失败必须把 checkpoint row 标成 `failed` 或至少把 `file_snapshot_status = failed`
+  - rollback baseline 不单独占用 checkpoint enum；它应表示为 `checkpoint_kind = system` + 明确 label / lineage
 - **一句话收口目标**：✅ **checkpoint 第一次拥有独立于 DO latest blob 的 durable registry**。
 
 #### F2: restore 三模式
@@ -360,26 +366,25 @@
 - **核心逻辑**：
   - 新增目标 truth：`nano_checkpoint_restore_jobs`
   - 最小字段冻结为：
-    - `restore_job_uuid`
-    - `session_uuid`
-    - `team_uuid`
+    - `job_uuid`
     - `checkpoint_uuid`
-    - `mode`
+    - `session_uuid`
+    - `mode` (`conversation_only | files_only | conversation_and_files | fork`)
+    - `target_session_uuid`
+    - `status` (`pending | running | succeeded | partial | failed | rolled_back`)
     - `confirmation_uuid`
-    - `rollback_checkpoint_uuid`
-    - `status` (`pending_confirmation | running | completed | rolled_back | failed`)
     - `failure_reason`
-    - `created_at`
-    - `finished_at`
+    - `started_at`
+    - `completed_at`
   - restore 前必须先经过 HP5 `checkpoint_restore` confirmation
-  - confirmation 通过后，系统先创建一条 `rollback_baseline` checkpoint，再执行真正 restore
+  - confirmation 通过后，系统先创建一条 `checkpoint_kind = system` 的 rollback baseline checkpoint，再执行真正 restore
   - restore 任一步失败时：
-    1. 立即尝试从 `rollback_checkpoint_uuid` 回放
+    1. 立即尝试从 rollback baseline 回放
     2. job 标记为 `rolled_back`
     3. 记录 `failure_reason`
     4. 若本次 restore 已写入 supersede/tombstone 等 D1 标记，则反标恢复
 - **边界情况**：
-  - confirmation deny/cancel/timeout 都不创建 `running` job
+  - confirmation deny/cancel/timeout 都不进入 `running`；第一版 restore job 在 confirmation 放行后创建
   - rollback 再失败时，job 进入 `failed`，并触发最高级别告警
 - **一句话收口目标**：✅ **restore 第一次拥有“失败也能往回退”的产品级保护栏**。
 
@@ -391,10 +396,11 @@
 - **核心逻辑**：
   - `POST /sessions/{id}/fork`
   - fork 冻结为“**同 conversation 的新 session**”，不创建新 conversation
-  - child session 需要记录：
-    - `parent_session_uuid`
-    - `forked_from_checkpoint_uuid`
-    - `fork_created_at`
+  - 第一版 lineage 不新增 session 专属 lineage 列；它通过：
+    1. `nano_checkpoint_restore_jobs.mode = fork`
+    2. `nano_checkpoint_restore_jobs.target_session_uuid = child_session_uuid`
+    3. child transcript 头部的显式 lineage system message
+    共同表达 fork 来源
   - fork 流程：
     1. 校验 checkpoint 存在，必要时 materialize file snapshot
     2. 复制 checkpoint 之前的 conversation/session/message truth 到 child session
@@ -419,14 +425,14 @@
     - user-named checkpoint：30 天
     - compact-boundary checkpoint：与 compact summary 同 TTL
     - session end 后整体 snapshot cleanup：90 天
-  - 每次 cleanup 都写 `nano_workspace_cleanup_jobs`，`scope = checkpoint_snapshot`
+  - 每次 cleanup 都写 `nano_workspace_cleanup_jobs`，`scope = checkpoint_ttl`
   - 清理顺序：
     1. 先删 snapshot rows / R2 objects
     2. 再删 checkpoint row
     3. 保留 restore job 与 lineage/audit truth
 - **边界情况**：
   - 正被 restore/fork 使用的 checkpoint 不可并发清理
-  - cleanup 失败时 job 必须记录失败数与原因
+  - cleanup 失败时 job 标 `failed`；失败明细写 audit / error log
 - **一句话收口目标**：✅ **checkpoint 第一次拥有明确的生命周期治理，而不是无限堆积**。
 
 ### 7.3 非功能性要求与验证策略
@@ -452,7 +458,7 @@
 
 | 文件:行 | 内容 | 借鉴点 | 备注 |
 |---------|------|--------|------|
-| `N/A` | 本批次未直接采用 mini-agent 源码 | HP7 主要参考当前仓库 + Gemini/Claude 的 checkpoint/fork 原始实现 | 不再通过二手 markdown 转述 |
+| `N/A` | 本批次未直接采用 mini-agent 源码 | HP7 主要参考当前仓库；若出现 `context/*`，仅作 external ancestry pointer | 不再通过二手 markdown 转述 |
 
 ### 8.2 来自 claude-code
 
@@ -488,9 +494,9 @@
 
 | Q ID / 决策 ID | 问题 | 影响范围 | 当前建议 | 状态 | 答复来源 |
 |----------------|------|----------|----------|------|----------|
-| `HP7-D1` | file snapshot 是 eager 还是 lazy 物化？ | HP7 / cost / cron | lazy | `frozen` | 当前仓库连 checkpoint registry 都还未产品化，若 turn-end 全量复制文件会直接放大成本；Gemini 的 checkpoint 也说明恢复锚点可以按需组织，而不是每次重做全部文件副本：`workers/agent-core/src/host/do/session-do-persistence.ts:142-187`, `context/gemini-cli/packages/core/src/utils/checkpointUtils.ts:84-157` |
-| `HP7-D2` | fork 是不是新 conversation？ | HP7 / clients / lineage | 否；同 conversation 新 session | `frozen` | charter 已明确只做 session fork；Claude precedent 也表明 fork 的关键是 child 来源显式，不是一定换 conversation：`context/claude-code/constants/xml.ts:61-66`, `context/claude-code/tools/AgentTool/forkSubagent.ts:96-198` |
-| `HP7-D3` | restore 失败后是否允许 best-effort 留在部分成功状态？ | HP7 / support / reliability | 否；必须有 rollback baseline | `frozen` | 当前 latest-key seam 已经证明 invalid checkpoint 要 fail closed；Gemini restore 也把“无法恢复”作为明确错误而非半成功：`workers/agent-core/src/host/checkpoint.ts:145-206,218-282`, `context/gemini-cli/packages/core/src/commands/restore.ts:26-58` |
+| `HP7-D1` | file snapshot 是 eager 还是 lazy 物化？ | HP7 / cost / cron | lazy | `pending-HPX-qna` | `docs/charter/plan-hero-to-pro.md:792-794`, `workers/agent-core/src/host/do/session-do-persistence.ts:142-187`, `workers/filesystem-core/src/artifacts.ts:113-170,185-272` |
+| `HP7-D2` | fork 是不是新 conversation？ | HP7 / clients / lineage | 否；同 conversation 新 session | `pending-HPX-qna` | `docs/charter/plan-hero-to-pro.md:796`, `packages/nacp-core/src/tenancy/scoped-io.ts:1-19,35-79`, `workers/filesystem-core/src/artifacts.ts:113-170,185-272` |
+| `HP7-D3` | restore 失败后是否允许 best-effort 留在部分成功状态？ | HP7 / support / reliability | 否；必须有 rollback baseline | `pending-HPX-qna` | `docs/charter/plan-hero-to-pro.md:795-796`, `workers/agent-core/src/host/checkpoint.ts:145-206,218-282`, `workers/agent-core/src/host/do/session-do-persistence.ts:193-222` |
 
 ### 9.2 设计完成标准
 

@@ -17,13 +17,10 @@
 > - `workers/agent-core/src/host/do/session-do/fetch-runtime.ts:101-106`
 > - `workers/orchestrator-core/src/index.ts:364-440,707-711`
 > - `workers/orchestrator-core/src/user-do/surface-runtime.ts:221-320`
-> - `context/claude-code/server/directConnectManager.ts:81-99`
-> - `context/gemini-cli/packages/core/src/confirmation-bus/types.ts:18-79,145-155,200-212`
-> - `context/gemini-cli/packages/core/src/confirmation-bus/message-bus.ts:79-148,204-220`
-> - `context/gemini-cli/packages/core/src/config/config.ts:1764-1778`
 > 关联 QNA / 决策登记:
-> - `docs/design/hero-to-pro/HPX-qna.md`（待所有 hero-to-pro 设计文件落地后统一汇总；本设计先冻结 confirmation control plane 结论）
+> - `docs/design/hero-to-pro/HPX-qna.md`（待统一回填 owner / ops 答案后再转 `frozen`；当前先登记建议结论）
 > 文档状态: `reviewed`
+> 外部 precedent 说明: 当前工作区未 vendored `context/` 源文件；文中出现的 `context/*` 仅作 drafting-time ancestry pointer，不作为当前冻结 / 执行证据。
 
 ---
 
@@ -155,7 +152,7 @@
 
 ## 4. 参考实现 / 历史 precedent 对比
 
-> 本节 precedent **只接受 `context/` 与当前仓库源码锚点**。
+> 本节 precedent 以当前仓库源码锚点为 authoritative evidence；若出现 `context/*`，仅作 external ancestry pointer。
 
 ### 4.1 Claude Code 的做法
 
@@ -329,15 +326,16 @@
 - **输出**：第一版 kind enum
 - **主要调用者**：HP3/HP4/HP6/HP7 action-plan
 - **核心逻辑**：第一版统一冻结 7 个 kind：
-  1. `permission`
+  1. `tool_permission`
   2. `elicitation`
-  3. `compact_execute`
-  4. `checkpoint_restore`
-  5. `conversation_delete`
-  6. `workspace_cleanup`
-  7. `tool_cancel`
+  3. `model_switch`
+  4. `context_compact`
+  5. `fallback_model`
+  6. `checkpoint_restore`
+  7. `context_loss`
 - **边界情况**：
-  - HP5 真正打通的 live kind 仅 `permission` 与 `elicitation`
+  - HP5 真正打通的 live kind 仅 `tool_permission` 与 `elicitation`
+  - `conversation_delete`、`workspace_cleanup`、`tool_cancel` 若未来确需独立 kind，必须先回到 charter / HPX-qna 做 schema correction，而不是在实现时临时扩 enum
   - 新 kind 扩张必须进 HPX-qna，而不是实现时临时添加
 - **一句话收口目标**：✅ **未来各 phase 需要确认时先接统一 kind，而不是各起炉灶**。
 
@@ -402,9 +400,9 @@
 
 | Q ID / 决策 ID | 问题 | 影响范围 | 当前建议 | 状态 | 答复来源 |
 |----------------|------|----------|----------|------|----------|
-| `HP5-D1` | confirmation 是否继续按业务各自一套路由，还是统一 control plane？ | HP5 / HP3 / HP4 / HP6 / HP7 | 统一 control plane | `frozen` | Gemini precedent 已证明 request/response/policy 可统一，而当前仓库也已有可复用 await primitive：`context/gemini-cli/packages/core/src/confirmation-bus/types.ts:18-79,145-155,200-212`, `context/gemini-cli/packages/core/src/confirmation-bus/message-bus.ts:79-148,204-220`, `workers/agent-core/src/host/do/session-do-runtime.ts:376-414` |
-| `HP5-D2` | kernel wait reason 是否继续扩张为多个 pending enum？ | HP5 / scheduler / restore | 否；统一为 `confirmation_pending` 语义，kind 放在 pending confirmation 记录里 | `frozen` | 当前 `approval_pending` 已显露 enum 扩张风险：`workers/agent-core/src/kernel/types.ts:41-67`, `workers/agent-core/src/kernel/interrupt.ts:20-39` |
-| `HP5-D3` | 第一版 confirmation kind 是否要先冻结？ | HP5+ | 是；冻结 7 kind | `frozen` | 若不先冻结，后续 phase 会继续各自发明 kind，当前仓库又尚无统一 registry，需要在 HP5 先把骨架立住 |
+| `HP5-D1` | confirmation 是否继续按业务各自一套路由，还是统一 control plane？ | HP5 / HP3 / HP4 / HP6 / HP7 | 统一 control plane | `pending-HPX-qna` | `docs/charter/plan-hero-to-pro.md:683-685`, `workers/agent-core/src/host/do/session-do-runtime.ts:350-414`, `workers/agent-core/src/host/do/session-do-persistence.ts:288-385`, `workers/orchestrator-core/src/user-do/surface-runtime.ts:221-320` |
+| `HP5-D2` | kernel wait reason 是否继续扩张为多个 pending enum？ | HP5 / scheduler / restore | 否；统一为 `confirmation_pending` 语义，kind 放在 pending confirmation 记录里 | `pending-HPX-qna` | `workers/agent-core/src/kernel/types.ts:41-67`, `workers/agent-core/src/kernel/interrupt.ts:20-39` |
+| `HP5-D3` | 第一版 confirmation kind 是否要先冻结？ | HP5+ | 是；冻结 charter 已定义的 7 kind | `pending-HPX-qna` | `docs/charter/plan-hero-to-pro.md:441,684-685` |
 
 ### 9.2 设计完成标准
 

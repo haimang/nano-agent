@@ -14,18 +14,10 @@
 > - `workers/agent-core/src/llm/canonical.ts:67-78`
 > - `workers/agent-core/src/llm/request-builder.ts:57-121`
 > - `workers/agent-core/src/llm/gateway.ts:165-231`
-> - `context/codex/codex-rs/app-server/src/codex_message_processor.rs:7018-7028`
-> - `context/codex/codex-rs/protocol/src/models.rs:471-474`
-> - `context/codex/codex-rs/core/src/codex.rs:3954-3961`
-> - `context/claude-code/utils/model/model.ts:49-98`
-> - `context/claude-code/commands/model/model.tsx:250-258`
-> - `context/claude-code/query.ts:572-578,659-670,894-897`
-> - `context/gemini-cli/packages/cli/src/ui/commands/modelCommand.ts:18-45`
-> - `context/gemini-cli/packages/core/src/config/config.ts:1872-1898`
-> - `context/gemini-cli/packages/core/src/services/modelConfigService.ts:16-40,56-80,116-125,149-215,268-328,341-389`
 > 关联 QNA / 决策登记:
-> - `docs/design/hero-to-pro/HPX-qna.md`（待所有 hero-to-pro 设计文件落地后统一汇总；本设计先冻结 model state machine 结论）
+> - `docs/design/hero-to-pro/HPX-qna.md`（待统一回填 owner / ops 答案后再转 `frozen`；当前先登记建议结论）
 > 文档状态: `reviewed`
+> 外部 precedent 说明: 当前工作区未 vendored `context/` 源文件；文中出现的 `context/*` 仅作 drafting-time ancestry pointer，不作为当前冻结 / 执行证据。
 
 ---
 
@@ -153,7 +145,7 @@
 
 ## 4. 参考实现 / 历史 precedent 对比
 
-> 本节 precedent **只接受 `context/` 与当前仓库源码锚点**，不再把调查 markdown 当作二手证据引用。
+> 本节 precedent 以当前仓库源码锚点为 authoritative evidence；若出现 `context/*`，仅作 external ancestry pointer，不把调查 markdown 当作二手证据引用。
 
 ### 4.1 Codex 的做法
 
@@ -391,9 +383,9 @@
 
 | Q ID / 决策 ID | 问题 | 影响范围 | 当前建议 | 状态 | 答复来源 |
 |----------------|------|----------|----------|------|----------|
-| `HP2-D1` | 模型控制面是否必须引入 session default，而不能只靠 turn payload？ | HP2 / HP3 / clients | 必须；否则不构成产品级 model state machine | `frozen` | 当前仓库仍主要停留在 turn payload：`workers/orchestrator-core/src/session-lifecycle.ts:41-57`, `workers/orchestrator-core/src/user-do/message-runtime.ts:134-161`, `packages/nacp-session/src/messages.ts:43-52,119-136`；而 Claude / Gemini 都已有独立模型控制面：`context/claude-code/utils/model/model.ts:49-98`, `context/claude-code/commands/model/model.tsx:250-258`, `context/gemini-cli/packages/cli/src/ui/commands/modelCommand.ts:18-45`, `context/gemini-cli/packages/core/src/config/config.ts:1872-1898` |
-| `HP2-D2` | fallback 是否做成单层还是链式？ | HP2 / HP3 / future routing | 先单层，必须写 audit + stream event | `frozen` | Claude / Gemini 的现有产品面都先落“切到一个当前模型再重试/继续”，而不是链式路由：`context/claude-code/query.ts:894-897`, `context/gemini-cli/packages/core/src/config/config.ts:1888-1893`; 当前 nano-agent 也尚无多 provider / chain policy durable truth，因此 HP2 先冻结 single-step |
-| `HP2-D3` | `<model_switch>` developer message 是否在 HP2 就冻结？ | HP2 / HP3 | 是；HP3 按此语义做 compact strip/recover | `frozen` | `context/codex/codex-rs/protocol/src/models.rs:471-474`, `context/codex/codex-rs/core/src/codex.rs:3954-3961`, `context/codex/codex-rs/core/tests/suite/model_switching.rs:183-190`, `context/codex/codex-rs/core/src/event_mapping.rs:27-33` |
+| `HP2-D1` | 模型控制面是否必须引入 session default，而不能只靠 turn payload？ | HP2 / HP3 / clients | 必须；否则不构成产品级 model state machine | `pending-HPX-qna` | `docs/charter/plan-hero-to-pro.md:427-428,517-522`, `workers/orchestrator-core/src/session-lifecycle.ts:41-57`, `workers/orchestrator-core/src/user-do/message-runtime.ts:134-161`, `packages/nacp-session/src/messages.ts:43-52,119-136` |
+| `HP2-D2` | fallback 是否做成单层还是链式？ | HP2 / HP3 / future routing | 先单层，必须写 audit + stream event | `pending-HPX-qna` | `docs/charter/plan-hero-to-pro.md:425-429,521-523,555-556`, `workers/agent-core/src/llm/gateway.ts:165-231` |
+| `HP2-D3` | `<model_switch>` developer message 是否在 HP2 就冻结？ | HP2 / HP3 | 是；HP3 按此语义做 compact strip/recover | `pending-HPX-qna` | `docs/charter/plan-hero-to-pro.md:520,555-556`, `workers/orchestrator-core/src/user-do/message-runtime.ts:134-161`, `workers/agent-core/src/llm/request-builder.ts:57-121` |
 
 ### 9.2 设计完成标准
 

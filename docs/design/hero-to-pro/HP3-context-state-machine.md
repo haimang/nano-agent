@@ -12,15 +12,10 @@
 > - `workers/agent-core/src/host/do/session-do/runtime-assembly.ts:134-138`
 > - `workers/agent-core/src/host/runtime-mainline.ts:117-136,167-177,239-304`
 > - `packages/nacp-session/src/stream-event.ts:52-57`
-> - `context/codex/codex-rs/core/src/codex.rs:3948-3985`
-> - `context/codex/codex-rs/core/tests/suite/compact.rs:132-142`
-> - `context/claude-code/services/compact/sessionMemoryCompact.ts:45-61,188-230,232-259`
-> - `context/claude-code/services/compact/microCompact.ts:40-50,164-205`
-> - `context/gemini-cli/packages/core/src/context/contextCompressionService.ts:50-59,108-160,223-255`
-> - `context/gemini-cli/packages/core/src/context/contextManager.ts:74-117,152-169`
 > 关联 QNA / 决策登记:
-> - `docs/design/hero-to-pro/HPX-qna.md`（待所有 hero-to-pro 设计文件落地后统一汇总；本设计先冻结 context state machine 结论）
+> - `docs/design/hero-to-pro/HPX-qna.md`（待统一回填 owner / ops 答案后再转 `frozen`；当前先登记建议结论）
 > 文档状态: `reviewed`
+> 外部 precedent 说明: 当前工作区未 vendored `context/` 源文件；文中出现的 `context/*` 仅作 drafting-time ancestry pointer，不作为当前冻结 / 执行证据。
 
 ---
 
@@ -133,13 +128,13 @@
 | context probe | `GET /sessions/{id}/context/probe` | 返回 budget、need_compact、recent window、latest boundary | future 可扩 token heatmap |
 | context layers | `GET /sessions/{id}/context/layers` | 暴露当前 layer 组成与 token estimate | future 可扩 debug evidence |
 | compact preview | `POST /sessions/{id}/context/compact/preview` | 只读预演，不写 snapshot | future 可接 HP5 confirmation |
-| compact job | `POST /sessions/{id}/context/compact` + `GET /.../jobs/{job_id}` | durable job 记录最小执行结果 | future 可扩 cancel/retry |
+| compact job | `POST /sessions/{id}/context/compact` + `GET /.../jobs/{job_id}` | durable 结果句柄；第一版 `job_id` 直接复用 `compact_boundary` checkpoint UUID | future 可扩真正异步 queue / retry |
 
 ### 3.3 完全解耦点（哪里必须独立）
 
 - **解耦对象**：context compaction 与 session checkpoint restore
 - **解耦原因**：compact 是“缩减 prompt 面积”，restore 是“回退 conversation truth”；两者都动历史，但目标完全不同。
-- **依赖边界**：HP3 只写 boundary snapshot 与 compact job；不在本 phase 修改 superseded message truth。
+- **依赖边界**：HP3 只写 boundary snapshot；`/compact/jobs/{id}` 第一版以 HP1 已冻结的 checkpoint / confirmation truth 组装读模型，不在本 phase 新增独立 compact job 表，也不修改 superseded message truth。
 
 ### 3.4 聚合点（哪里要刻意收敛）
 
@@ -151,7 +146,7 @@
 
 ## 4. 参考实现 / 历史 precedent 对比
 
-> 本节 precedent **只接受 `context/` 与当前仓库源码锚点**，不再使用二手调查文档。
+> 本节 precedent 以当前仓库源码锚点为 authoritative evidence；若出现 `context/*`，仅作 external ancestry pointer，不再使用二手调查文档。
 
 ### 4.1 Codex 的做法
 
@@ -221,7 +216,7 @@
 |------|------|------|----------|
 | 继续保留 `GET /sessions/{id}/context` 作为最终 API 形态 | out-of-scope | 当前名字无法区分 probe 与 layer/detail | HP3 统一改成细分 surface |
 | compact preview 是否必须写 job | out-of-scope | preview 是只读预演，不应污染 durable truth | HP3 明确禁止 |
-| compact job 是否需要 durable D1 | in-scope | 要支持 `GET /jobs/{id}` 与跨 worker 重读 | HP3 action-plan 若 HP1 schema 未落则补最小表 |
+| compact 结果是否需要 durable D1 handle | in-scope | 要支持 `GET /jobs/{id}` 与跨 worker 重读 | 第一版复用 HP1 的 checkpoint / confirmation schema，不另建 compact 专表 |
 | recent transcript 长度是否固定 turn 数 | defer | 应由 token budget 与 protected window 联合决定 | HP3 action-plan 调参 |
 
 ---
@@ -240,9 +235,9 @@
    - **我们接受的代价**：context-core 更偏 control plane / inspection，而不是 prompt owner。
    - **未来重评条件**：若后续需要独立 context worker 持有真正 per-session state，再通过新 phase 重评。
 
-3. **取舍 3**：我们选择 **manual preview + durable compact job 双轨** 而不是 **所有 compact 都同步完成**
+3. **取舍 3**：我们选择 **manual preview + durable compact handle 双轨** 而不是 **所有 compact 都同步完成**
    - **为什么**：manual compact 是用户操作面，需要 preview；真实 compact 涉及 LLM summary 与 durable write，更适合 job 语义。
-   - **我们接受的代价**：需要一个最小 job 读模型。
+   - **我们接受的代价**：需要一个由 `compact_boundary` checkpoint 驱动的最小结果读模型。
    - **未来重评条件**：若 compact 始终足够快，可把 job 内收，但第一版不假设。
 
 ### 6.2 风险与缓解
@@ -251,7 +246,7 @@
 |------|----------|------|----------|
 | token estimation 不准 | 中文/工具结果体积与估算偏差过大 | compact 触发过早或过晚 | 使用 `effective_context_pct * context_window` 的保守预算，并记录 probe 中的 estimated vs actual |
 | `<model_switch>` 被错误摘要 | compact 直接拿全 prompt 去总结 | 后续模型切换语义丢失 | 冻结 strip-then-recover contract |
-| compact job 无 durable truth | worker 重启或 client 重连 | `/jobs/{id}` 不可读 | HP3 必须声明最小 durable job 面 |
+| compact 结果无 durable truth | worker 重启或 client 重连 | `/jobs/{id}` 不可读 | 以 `compact_boundary` checkpoint UUID 作为 `job_id`，`/jobs` 读取 checkpoint / confirmation / compact.notify 投影 |
 | cross-turn history 与 D1 truth 不一致 | runtime 只看内存、不看 durable history | probe 与真实对话分裂 | `CrossTurnContextManager` 以 D1 recent history 为主，内存仅作热点缓存 |
 
 ### 6.3 本次 tradeoff 能带来的价值
@@ -312,12 +307,12 @@
 #### F4: manual compact preview + job
 
 - **输入**：`POST /sessions/{id}/context/compact/preview` 或 `POST /sessions/{id}/context/compact`
-- **输出**：preview 报告或 durable job 记录
+- **输出**：preview 报告或以 `compact_boundary` checkpoint UUID 表达的 durable result handle
 - **主要调用者**：client、运维、manual evidence
-- **核心逻辑**：preview 只读计算“会折叠哪些历史、保留哪些 recent window”；真实 compact 创建 job、写 boundary snapshot、发 `compact.notify`
+- **核心逻辑**：preview 只读计算“会折叠哪些历史、保留哪些 recent window”；真实 compact 在必要时先走 `kind = context_compact` confirmation，随后写 `checkpoint_kind = compact_boundary` 的 checkpoint，并把该 `checkpoint_uuid` 作为 `job_id` 返回；`GET /compact/jobs/{id}` 读取的是 checkpoint / confirmation / compact.notify 的投影，而不是单独的 `nano_compact_jobs` 表
 - **边界情况**：
   - preview 绝不写 summary
-  - job 失败也必须可查询到失败原因
+  - 若 compact 在写 checkpoint 前失败，则直接返回 terminal error；第一版不为“未接受执行”的请求额外造 job row
 - **一句话收口目标**：✅ **manual compact 成为可解释、可追踪的操作，而不是一次看不见的后台副作用**。
 
 #### F5: strip-then-recover contract
@@ -385,9 +380,9 @@
 
 | Q ID / 决策 ID | 问题 | 影响范围 | 当前建议 | 状态 | 答复来源 |
 |----------------|------|----------|----------|------|----------|
-| `HP3-D1` | context prompt owner 放在 context-core 还是 agent-core runtime？ | HP3 / HP4 / runtime latency | 放在 agent-core runtime；context-core 负责 inspection/control plane | `frozen` | 当前 `runtime-mainline` 已有 request assembly seam，而 `context-core` 现仍是 RPC stub：`workers/agent-core/src/host/runtime-mainline.ts:117-136,239-304`, `workers/context-core/src/index.ts:123-202` |
-| `HP3-D2` | compact 是否必须保护 `<model_switch>` / `<state_snapshot>` 而不是直接摘要所有内容？ | HP2 / HP3 | 必须保护，采用 strip-then-recover | `frozen` | Codex compact contract 已证明此点：`context/codex/codex-rs/core/tests/suite/compact.rs:132-142`, `context/codex/codex-rs/core/src/codex.rs:3948-3985` |
-| `HP3-D3` | manual compact 是否需要 preview 与 durable job 分离？ | HP3 / clients | 需要；preview 只读，compact 才创建 job | `frozen` | 当前 repo 没有 compact job truth，若不区分 preview 与执行就无法提供可解释 surface；Gemini 的 compression state 与 render 也表明“预判”和“应用”应分层：`context/gemini-cli/packages/core/src/context/contextCompressionService.ts:108-160,223-255`, `context/gemini-cli/packages/core/src/context/contextManager.ts:152-169` |
+| `HP3-D1` | context prompt owner 放在 context-core 还是 agent-core runtime？ | HP3 / HP4 / runtime latency | 放在 agent-core runtime；context-core 负责 inspection/control plane | `pending-HPX-qna` | `docs/charter/plan-hero-to-pro.md:318-320,333-335`, `workers/agent-core/src/host/runtime-mainline.ts:117-136,239-304`, `workers/context-core/src/index.ts:123-202`, `workers/orchestrator-core/src/index.ts:1432-1508` |
+| `HP3-D2` | compact 是否必须保护 `<model_switch>` / `<state_snapshot>` 而不是直接摘要所有内容？ | HP2 / HP3 | 必须保护，采用 strip-then-recover | `pending-HPX-qna` | `docs/charter/plan-hero-to-pro.md:520,555-556`, `workers/agent-core/src/host/runtime-mainline.ts:239-304`, `workers/context-core/src/context-assembler.ts:1-168` |
+| `HP3-D3` | manual compact 是否需要 preview 与 durable job 分离？ | HP3 / clients | 需要；preview 只读，compact 才写 durable handle | `pending-HPX-qna` | `docs/charter/plan-hero-to-pro.md:318-320,441,444-446`, `workers/orchestrator-core/src/index.ts:1432-1508`, `packages/nacp-session/src/stream-event.ts:52-57` |
 
 ### 9.2 设计完成标准
 
@@ -406,7 +401,7 @@
   - `docs/design/hero-to-pro/HP2-model-state-machine.md`
   - `docs/design/hero-to-pro/HP4-chat-lifecycle.md`
 - **需要进入 QNA register 的问题**：
-  - `若 HP1 schema extension 在 HP3 启动前仍未落地，compact job 的最小 D1 表是否作为 HP3 collateral migration 一并落地`
+  - `若 HP1 schema extension 在 HP3 启动前仍未落地，manual compact 所依赖的 confirmation/checkpoint 字段是否允许作为 HP1 schema correction 一并处理（若 HP1 已 closure，则本题自动视为 not-triggered）`
 
 ---
 
