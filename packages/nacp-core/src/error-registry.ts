@@ -278,7 +278,7 @@ const AD_HOC_ERROR_METAS: readonly ErrorMeta[] = [
   m("execution-failed", "ad-hoc", "transient", 500, true, "bash-core execution failed"),
   m("bridge-not-found", "ad-hoc", "validation", 404, false, "bash-core bridge target missing"),
   m("handler-error", "ad-hoc", "transient", 500, true, "bash-core handler threw an unhandled error"),
-  // orchestrator-core facade/session surface 17 + 6 second-pass additions.
+  // orchestrator-core facade/session surface 18 + 6 second-pass additions.
   m("missing-team-claim", "ad-hoc", "security", 403, false, "JWT must include team_uuid or tenant_uuid"),
   m("invalid-auth-body", "ad-hoc", "validation", 400, false, "auth route requires a JSON body"),
   m("invalid-start-body", "ad-hoc", "validation", 400, false, "/sessions/{id}/start requires a JSON body"),
@@ -289,6 +289,7 @@ const AD_HOC_ERROR_METAS: readonly ErrorMeta[] = [
   m("session-expired", "ad-hoc", "conflict", 409, false, "pending session expired"),
   m("session-already-started", "ad-hoc", "conflict", 409, false, "session already started"),
   m("session_terminal", "ad-hoc", "conflict", 409, false, "session is in a terminal state"),
+  m("conversation-deleted", "ad-hoc", "conflict", 409, false, "parent conversation has been soft-deleted"),
   m("agent-start-failed", "ad-hoc", "dependency", 502, true, "agent-core /start failed"),
   m("agent-rpc-unavailable", "ad-hoc", "dependency", 503, true, "agent-core RPC binding unavailable"),
   m("agent-rpc-throw", "ad-hoc", "dependency", 502, true, "agent-core RPC throw"),

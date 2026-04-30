@@ -533,6 +533,12 @@ export const GENERATED_CLIENT_ERROR_META = [
     "retryable": false
   },
   {
+    "code": "conversation-deleted",
+    "category": "conflict.state",
+    "http_status": 409,
+    "retryable": false
+  },
+  {
     "code": "agent-start-failed",
     "category": "dependency.unavailable",
     "http_status": 502,
