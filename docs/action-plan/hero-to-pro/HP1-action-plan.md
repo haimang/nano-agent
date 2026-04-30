@@ -471,3 +471,135 @@ hero-to-pro HP1 schema extension
 | 文档 | charter / HP1 design / HP1 closure 三处已同步 freeze law 与 correction registry |
 | 风险收敛 | 后续 phase 不再能以“临时加 migration”绕过 HP1 freeze |
 | 可交付性 | HP2-action-plan 可以直接基于 HP1 ledger 继续推进，无需再猜 schema 真相 |
+
+---
+
+## 9. 执行报告 / 工作日志（2026-04-30 实施回填）
+
+> 本节是 HP1 action-plan 的 in-place 工作日志,与 `docs/issue/hero-to-pro/HP1-closure.md` 联动。
+> 所有 SQL 改动均已通过 `node:sqlite` 顺序 apply 001→013 + 17 项 schema-shape 断言验证。
+
+### 9.1 Phase 1 — Freeze Alignment + Consumer Map(P1-01 / P1-02)
+
+- 创建 `docs/issue/hero-to-pro/HP1-closure.md`(初稿即为 frozen verdict),内容覆盖:
+  - §0 verdict — DDL Freeze Gate `effective`,`014+` `unused`
+  - §1 Resolved 9 项(R1-R9 对应 007-013 + schema doc + schema-freeze test)
+  - §2 Partial 3 项(`P1` `base_instructions_suffix` 真值缺、`P2` HP0 seam 等 HP2 接线、`P3` prod baseline 等 HP9)
+  - §3 Schema Correction Registry — `correction-of:` 模板 + `014-correction-of-NNN-<topic>.sql` 命名规则 + 六行 SQL 文件头模板 + closure/charter 登记要求
+  - §4 Retained 项(K1 `001-006` 不重写、K2 `nano_conversation_context_snapshots` 与 product checkpoint 分层、K3 HP3 不引入 `nano_compact_jobs`)
+  - §5 F1-F17 chronic ledger
+  - §6 下游 phase handoff
+  - §7 完整 schema consumer map(007-013 → HP2-HP9)+ §7.4 cleanup scope 责任分工
+  - §8 测试矩阵
+  - §9 与 frozen QNA 一一对照
+- consumer map 同步落到 `docs/architecture/hero-to-pro-schema.md` §1-§8(分表展开,reviewer 不读 SQL 即可逐字段定位消费者)
+
+### 9.2 Phase 2 — `007-009 Core Schema Freeze`(P2-01 / P2-02 / P2-03)
+
+- **P2-01 `007-model-metadata-and-aliases.sql`**:
+  - `nano_models` 通过 `ALTER TABLE ADD COLUMN` 扩 10 列:`max_output_tokens` / `effective_context_pct` / `auto_compact_token_limit` / `supported_reasoning_levels` / `input_modalities` / `provider_key` / `fallback_model_id` / `base_instructions_suffix` / `description` / `sort_priority`
+  - 新表 `nano_model_aliases(alias_id PK, target_model_id FK, created_at)` + `idx_nano_model_aliases_target`
+  - 新索引 `idx_nano_models_status_sort_priority(status, sort_priority DESC, model_id)`
+  - 4 alias seed(`@alias/fast` → `llama-3.2-3b`、`@alias/balanced` → `llama-3.3-70b-fp8-fast`、`@alias/reasoning` → `llama-4-scout-17b`、`@alias/vision` → `llama-3.2-90b-vision`)
+- **P2-02 `008-session-model-audit.sql`**:
+  - `nano_conversation_sessions` 加 `default_model_id` / `default_reasoning_effort` / `ended_reason`(Q13 — 用列表达终止原因,**不**新增 session_status enum 值)
+  - `nano_conversation_turns` 加 `requested_model_id` / `requested_reasoning_effort` / `effective_model_id` / `effective_reasoning_effort` / `fallback_used INT NOT NULL DEFAULT 0 CHECK IN (0,1)`
+  - 索引 `idx_nano_conversation_sessions_ended_reason(ended_reason, ended_at)` + `idx_nano_conversation_turns_session_effective_model`
+- **P2-03 `009-turn-attempt-and-message-supersede.sql`**:
+  - `nano_conversation_turns` 表 rebuild:`CREATE turns_new` → `INSERT OR IGNORE FROM turns` → `DROP turns` → `RENAME turns_new TO turns`,新表上 `UNIQUE(session_uuid, turn_index, turn_attempt)`
+  - rebuild 完成后重建 002 / 008 风格的索引 + 新增 `idx_nano_conversation_turns_session_index_attempt`
+  - `nano_conversation_messages` 加 `superseded_at` / `superseded_by_turn_attempt` + `idx_nano_conversation_messages_session_superseded`
+  - `nano_conversations` 加 `deleted_at`(soft-delete tombstone)+ `idx_nano_conversations_team_deleted_at(team_uuid, deleted_at)`
+
+### 9.3 Phase 3 — `010-012 Workspace + Confirmation Truth`(P3-01 / P3-02 / P3-03)
+
+- **P3-01 `010-agentic-loop-todos.sql`**:
+  - 新表 `nano_session_todos`,字段 `todo_uuid PK / session_uuid FK / conversation_uuid FK / team_uuid FK / parent_todo_uuid FK→self ON DELETE SET NULL / content / status (5 值) / created_at / updated_at / completed_at`
+  - status 枚举:`pending / in_progress / completed / cancelled / blocked`
+  - 索引:`idx_todos_session(session_uuid, status)` / `idx_todos_team_updated(team_uuid, updated_at DESC)`
+- **P3-02 `011-session-temp-files-and-provenance.sql`**:
+  - 新表 `nano_session_temp_files`(temp file truth,与 004 artifact 表分层),含 `expires_at` / `cleanup_status (3 值)` / `written_by (3 值)` / `UNIQUE(session_uuid, virtual_path)` + `uq_nano_session_temp_files_r2_key` + `idx_temp_files_cleanup(cleanup_status, expires_at)`
+  - `nano_session_files` 增 3 列:`provenance_kind (5 值 CHECK)` / `source_workspace_path` / `source_session_uuid`(legacy 行 NULL,HP6 起 INSERT 必须显式赋值)+ `idx_nano_session_files_provenance_kind` / `idx_nano_session_files_source_session`
+- **P3-03 `012-session-confirmations.sql`**:
+  - 新表 `nano_session_confirmations`,**严格冻结** Q16/Q18:
+    - `kind` CHECK 7 值:`tool_permission / elicitation / model_switch / context_compact / fallback_model / checkpoint_restore / context_loss`(**禁止** `tool_cancel`)
+    - `status` CHECK 6 值:`pending / allowed / denied / modified / timeout / superseded`(**禁止** `failed`;rollback 终态 = `superseded`)
+  - 索引:`idx_confirmations_session_status` + `idx_confirmations_kind_status(kind, status, created_at)` + 部分索引 `idx_confirmations_expires_at WHERE status='pending'`
+
+### 9.4 Phase 4 — `013 Checkpoint / Restore / Cleanup Lineage`(P4-01)
+
+- 单 migration 一次落 4 张表(Q5 frozen):
+  1. `nano_session_checkpoints`(产品 checkpoint timeline):`checkpoint_kind` 4 值 / `file_snapshot_status` 4 值 / `created_by` 4 值 + 索引(`session/created_at` / `team/created` / `kind/created` / `expires_at`)。FK 指向 sessions / conversations / teams / turns(SET NULL) / context_snapshots(SET NULL)
+  2. `nano_checkpoint_file_snapshots`(lazy R2 snapshot lineage):`snapshot_status` 4 值(含 `copied_to_fork`)+ `source_temp_file_uuid` / `source_artifact_file_uuid` 双 FK(SET NULL)+ 3 索引
+  3. `nano_checkpoint_restore_jobs`(restore + fork audit):`mode` 4 值 / `status` 6 值 / `confirmation_uuid` FK→`nano_session_confirmations` ON DELETE SET NULL + 3 索引
+  4. `nano_workspace_cleanup_jobs`(HP6 / HP7 共表):`scope` 3 值 / `status` 4 值 + 3 索引
+- HP3 第一版 compact job 不新建 `nano_compact_jobs`,继续复用 `checkpoint_kind = 'compact_boundary'` handle(HP1 closure §4 K3 已登记)
+- consumer map §7.4 锁定 cleanup scope 责任分配:`session_end` / `explicit` 归 HP6,`checkpoint_ttl` 归 HP7
+
+### 9.5 Phase 5 — Local Apply + Closure + Correction Law(P5-01 / P5-02)
+
+- **P5-01 schema-assertion test**(`workers/orchestrator-core/test/migrations-schema-freeze.test.ts`):
+  - 用 `node:sqlite`(Node 22 内置,通过 `createRequire` 绕过 Vitest/Vite 的内置解析限制)在 `:memory:` 上顺序 apply 001 → 013 全部 13 个 migration
+  - introspect 用 `PRAGMA table_info` / `PRAGMA index_list` / `PRAGMA index_info` + `sqlite_master.sql`(用于 enum CHECK 解析)
+  - 17 个 case 覆盖:
+    1. Q4 ledger 校验:`007-013` 全部存在且无 `014+` 文件
+    2. 007 — `nano_models` 10 列存在 + 4 alias seed 行存在
+    3. 008 — sessions 三列(含 `ended_reason`)+ turns 五列存在
+    4. 009 — `turn_attempt` 列存在 + `UNIQUE(session_uuid, turn_index, turn_attempt)` 生效 + 旧 `UNIQUE(session_uuid, turn_index)` 已消失 + messages supersede 列 + conversations `deleted_at`
+    5. 010 — `nano_session_todos` 完整字段集 + status enum 5 值
+    6. 011 — temp_files 字段 + cleanup/written_by enum + `UNIQUE(session_uuid, virtual_path)` + files provenance 三列与 5 值 enum
+    7. 012 — confirmation 7-kind / 6-status enum 严格断言;**显式拒绝** `failed`(Q16)与 `tool_cancel`(Q18)在 SQL 中出现
+    8. 013 — checkpoint / file_snapshot / restore_jobs / cleanup_jobs 全部 enum 值;`nano_compact_jobs` 不存在(Q5 复用 `compact_boundary`)
+    9. freeze sanity:8 张 hero-to-pro 新表全部 present
+- **P5-02 schema doc + correction registry + closure**:
+  - 新建 `docs/architecture/hero-to-pro-schema.md`(10 段) — migration ledger / 每张表逐列说明 / phase consumer map / correction law / 测试证据
+  - HP1 closure §3 写明 schema correction registry(双签 + 编号 + 文件头模板 + closure/charter 登记)
+  - 截至 2026-04-30,`014+` 文件**不存在**;hero-to-pro 全程 correction 数 = 0
+
+### 9.6 触碰的文件清单(本次 HP1 实施)
+
+| 文件 | 类型 | 主要改动 |
+|------|------|----------|
+| `workers/orchestrator-core/migrations/007-model-metadata-and-aliases.sql` | add(file) | nano_models 扩 10 列 + nano_model_aliases + 4 alias seed |
+| `workers/orchestrator-core/migrations/008-session-model-audit.sql` | add(file) | sessions/turns audit 列 + ended_reason |
+| `workers/orchestrator-core/migrations/009-turn-attempt-and-message-supersede.sql` | add(file) | turns rebuild + UNIQUE(session,index,attempt) + messages supersede + conversations deleted_at |
+| `workers/orchestrator-core/migrations/010-agentic-loop-todos.sql` | add(file) | nano_session_todos |
+| `workers/orchestrator-core/migrations/011-session-temp-files-and-provenance.sql` | add(file) | temp_files + nano_session_files provenance 三列 |
+| `workers/orchestrator-core/migrations/012-session-confirmations.sql` | add(file) | confirmation 7 kinds / 6 statuses |
+| `workers/orchestrator-core/migrations/013-product-checkpoints.sql` | add(file) | checkpoint 三表 + cleanup_jobs |
+| `workers/orchestrator-core/test/migrations-schema-freeze.test.ts` | add(file) | 17 个 schema-assertion case;node:sqlite 全链 apply |
+| `docs/architecture/hero-to-pro-schema.md` | add(file) | 全表逐列字段说明 + consumer map + correction law 提要 |
+| `docs/issue/hero-to-pro/HP1-closure.md` | add(file) | HP1 closure 主报告(§0-§10) |
+| `docs/action-plan/hero-to-pro/HP1-action-plan.md` | modify | 本节(§9)实施回填 |
+
+### 9.7 命令 / 验证证据
+
+```text
+pnpm --filter @haimang/orchestrator-core-worker typecheck                   # ✅
+pnpm --filter @haimang/orchestrator-core-worker test                        # ✅ 21 files / 196 tests pass
+pnpm --filter @haimang/orchestrator-core-worker test -- migrations-schema-freeze   # ✅ 17 cases pass
+```
+
+测试统计变化:HP0 后基线 179 tests(20 files);HP1 新增 17 tests / 1 file → 21 files / 196 tests。
+
+### 9.8 与冻结决策的对照
+
+- **Q4 — `007-013` 编号 + `014+` 仅 correction**:7 个文件全部命名为 `007-...sql` ~ `013-...sql`;schema-freeze test 第 1 个 case 显式断言无 `014-019` 文件;HP1 closure §3 写明 `014-correction-of-NNN-<topic>.sql` 模板。
+- **Q5 — checkpoint lineage 一次落表**:013 单 migration 含 4 张表;test 显式断言 `nano_compact_jobs` 不存在(HP3 复用 `compact_boundary`)。
+- **Q6 — schema correction law**:HP1 closure §3 + hero-to-pro-schema.md §9 双处写明双签 + 编号 + 六行 SQL 文件头 + closure/charter 登记。
+- **Q13 — `ended_reason` 列进入 008**:008 ALTER 加该列;test 第 3 case 断言;HP1 closure §1 R2 + §7.2 登记。
+- **Q16 — confirmation `status` 不含 `failed`**:012 CHECK 6 值;test 显式断言 SQL 中无 `'failed'`;rollback 终态用 `superseded`。
+- **Q18 — confirmation `kind` 不含 `tool_cancel`**:012 CHECK 7 值;test 显式断言 SQL 中无 `'tool_cancel'`。
+
+### 9.9 Definition of Done — 自检结果
+
+| 维度 | 自检结论 |
+|------|----------|
+| 功能 | 007-013 七个 migration 全落地,覆盖 HP2-HP7 全部 durable truth ✅ |
+| 测试 | 17 项 schema-assertion + 196 tests 全绿;node:sqlite 顺序 apply 001→013 成功 ✅ |
+| 文档 | HP1 closure(10 段)+ hero-to-pro-schema.md(10 段)同步 freeze law / consumer map / correction registry ✅ |
+| 风险收敛 | `nano_compact_jobs` 显式不引入;rollback 终态用 `superseded` 而非 `failed`;`tool_cancel` 显式被 test 拒绝 ✅ |
+| 可交付性 | HP2-action-plan 可直接基于 HP1 closure §6 / hero-to-pro-schema.md §8 推进;不需重新设计 schema ✅ |
+
+HP1 闭合。DDL Freeze Gate 生效;后续 HP2-HP10 默认禁止新增 migration,例外路径见 HP1 closure §3。
+

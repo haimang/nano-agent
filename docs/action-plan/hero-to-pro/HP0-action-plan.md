@@ -466,3 +466,123 @@ hero-to-pro HP0 pre-defer fixes
 | 文档 | HP0 closure 能独立解释已完成项、partial 项、retained 项 |
 | 风险收敛 | verify-only 和 cleanup 项不再依赖口头记忆 |
 | 可交付性 | HP1 可以直接基于 HP0 closure 继续执行，不再重做前置审计 |
+
+---
+
+## 9. 执行报告 / 工作日志（2026-04-30 实施回填）
+
+> 本节是 action-plan 的 in-place 工作日志,与 `docs/issue/hero-to-pro/HP0-closure.md` 联动:
+> closure 是对外的法律级总结,本节是按 phase 顺序的施工记录。所有改动均已通过 `typecheck + build + test` 三项验证。
+
+### 9.1 Phase 1 — Residue Baseline + Freeze Alignment（P1-01）
+
+- 创建 `docs/issue/hero-to-pro/`(新建目录),落 `HP0-closure.md` skeleton:已含 §0 verdict / §1 Resolved / §2 Partial(`P1` modelId seam,`expires-at: HP1 closure`)/ §3 Retained(`K1` `forwardInternalJsonShadow` / `K2` parity-bridge / `K3` `LANE_E_RPC_FIRST`)/ §4 Not-Touched / §5 F1-F17 chronic ledger / §6 handoff / §7 测试矩阵 / §8 与 frozen QNA 对照 / §9 follow-up / §10 收尾签字。
+- residue grep baseline:
+  - `forwardInternalJsonShadow` 仅出现在 `workers/orchestrator-core/src/parity-bridge.ts:8`(注释)与 `workers/orchestrator-core/src/user-do/message-runtime.ts:72,296`(message-runtime 仍在使用,Q3 frozen retain)。
+  - `parity-bridge` 残留以 `StreamFrame`/`readJson` 形式被 session-flow.ts 与 message-runtime.ts 持续消费,无法在 HP0 直接清理。
+- F1-F17 chronic 全部已在 closure §5 显式登记:F1 `closed`、F2 `partial`、F10 `handed-to-platform`,其余 `not-touched` 并指向后续 phase。
+
+### 9.2 Phase 2 — Ingress Model Law Repair（P2-01 / P2-02）
+
+- **P2-01 — `StartSessionBody` / `FollowupBody` 字段补齐**(`workers/orchestrator-core/src/session-lifecycle.ts`):
+  - 新增 `ReasoningEffort` 类型与 `ReasoningOptions` 接口。
+  - `StartSessionBody` / `FollowupBody` 均加上可选 `model_id` / `reasoning`,与 `packages/nacp-session/src/messages.ts:17-20,43-52,119-136` 协议层完全对齐。
+  - 新增共享 validator `parseModelOptions(body)`,把 `/messages` 历史上的内联校验（`MODEL_ID_PATTERN`、`reasoning.effort` 三值枚举）收敛到此模块,避免三入口 fork 出第二套 validator;非法字段 → `400 invalid-input`。
+- **P2-02 — `/messages` 改为消费共享 validator**(`workers/orchestrator-core/src/user-do/message-runtime.ts`):
+  - `import` 增 `parseModelOptions`(从 `../session-lifecycle.js`)。
+  - 删除原来 `134-161` 行的 27 行内联校验,替换成 `const modelOptions = parseModelOptions(body); if (!modelOptions.ok) return modelOptions.response;`,行为等价。
+- **P2-02 — `/start` 透传 model_id / reasoning**(`workers/orchestrator-core/src/user-do/session-flow.ts`):
+  - `import` 增 `parseModelOptions`。
+  - `UserDoSessionFlowContext` 增 `requireAllowedModel(authSnapshot, modelId)` 方法,与 `UserDoMessageRuntimeContext` 同形态。
+  - `handleStart` 在通过 `auth_snapshot` 校验后立即:`parseModelOptions(body)` → 若失败直接 400;若有 `model_id` 走 `requireAllowedModel()` gate(与 `/messages` 同 law)。`forwardStart` payload 新增 `model_id` / `reasoning` 透传字段。
+  - `handleInput` 的 `messagesBody` 新增 `model_id` / `reasoning` 透传,把校验权交给 `handleMessages` 的同一 law,不在 `/input` 内自己再写一套。
+- **P2-02 — `requireAllowedModel` 暴露给 sessionFlow**(`workers/orchestrator-core/src/user-do-runtime.ts`):
+  - `createUserDoSessionFlow({...})` 注入新 `requireAllowedModel: (authSnapshot, modelId) => this.requireAllowedModel(authSnapshot, modelId)`(原来只在 messageRuntime 注入)。
+- **P2-02 — 回归测试**(`workers/orchestrator-core/test/user-do.test.ts`):
+  - 新增 3 个 case:
+    1. `HP0 — /start forwards model_id/reasoning to agent-core via the same parseModelOptions law`(`capturedStart` 必须含 `session_uuid + initial_input + model_id + reasoning`)。
+    2. `HP0 — /start rejects invalid reasoning.effort with 400 (single law with /messages)`。
+    3. `HP0 — /input forwards model_id/reasoning into the messages payload`(在 `forwardedInput` 中验证 `model_id + reasoning`)。
+
+### 9.3 Phase 3 — System Prompt Seam（P3-01）
+
+- **P3-01 — `withNanoAgentSystemPrompt(messages, modelId?)` seam**(`workers/agent-core/src/host/runtime-mainline.ts:162-184`):
+  - 函数签名增 `modelId?: string`;HP0 阶段使用 `void modelId` 占位,行为与无参版本完全等价(closure §2 P1 已登记 `expires-at: HP1 closure`)。
+  - 函数从 `function` 改为 `export function`,以便 HP0 测试(以及 HP1 后续直接消费 `nano_models.base_instructions_suffix`)能定位到边界。
+  - 调用点(line 304)同步改为 `withNanoAgentSystemPrompt(resolvedMessages, evidence.modelId)`,接缝端到端连通。
+- **P3-01 — 单测**(`workers/agent-core/test/host/system-prompt-seam.test.ts` 新文件):
+  - 3 个 case:`无参 baseline`、`有 modelId 与无参等价`、`已有 system prompt 时 seam 不重复 prepend`。
+
+### 9.4 Phase 4 — Verify-Only Gate + Cleanup（P4-01 / P4-02 / P4-03）
+
+- **P4-01 — binding-presence verify**(`workers/orchestrator-core/test/binding-presence.test.ts` 新文件):
+  - 用零依赖的 jsonc-friendly 解析(去 `//` 与块注释 + 删尾逗号 → JSON.parse)直接读 `workers/{orchestrator-core,agent-core}/wrangler.jsonc`。
+  - 6 个 case 覆盖:
+    1. orchestrator-core prod `services` 含 `CONTEXT_CORE`。
+    2. orchestrator-core preview `services` 含 `CONTEXT_CORE`。
+    3. agent-core prod `services` 含 `CONTEXT_CORE`。
+    4. agent-core preview `services` 含 `CONTEXT_CORE`。
+    5. agent-core prod `vars.LANE_E_RPC_FIRST === "false"`。
+    6. agent-core preview `vars.LANE_E_RPC_FIRST === "false"`。
+  - 不修改任何 wrangler 配置(Q3 frozen);任何后续 phase 想翻转 lane-E 必须先撤本测试并在 design / QNA 给新决议。
+- **P4-02 — 删除过期 runbook**:`docs/runbook/zx2-rollback.md` 已物理删除(`git status` 中 `D docs/runbook/zx2-rollback.md`)。剩余 `docs/runbook/zx5-r28-investigation.md` 与 R29 postmortem 强相关,Q3 frozen 留 HP8-B/HP10。
+- **P4-03 — conditional lockfile cleanup → no-op**(`pnpm-lock.yaml` 未触碰):
+  - grep 证据:`pnpm-lock.yaml` 中 13 个 importer key(`./`、`packages/{eval-observability,jwt-shared,nacp-core,nacp-session,orchestrator-auth-contract,storage-topology,workspace-context-artifacts}`、`workers/{agent-core,bash-core,context-core,filesystem-core,orchestrator-auth,orchestrator-core}`)全部对应工作树真实目录,且与 `pnpm-workspace.yaml` 的 `packages/* + workers/*` glob 匹配。无 stale importer drift,因此**不触碰** lockfile,与 action-plan §2.3 的 conditional 边界一致。
+
+### 9.5 Phase 5 — Closure + Residue Handoff（P5-01）
+
+- `docs/issue/hero-to-pro/HP0-closure.md` 由 Phase 1 的 skeleton 升级为 frozen verdict:
+  - §0 verdict = `complete-with-partial`(仅 P1 modelId seam 是 by-design partial)。
+  - §1 Resolved 6 项(`R1-R6`)。
+  - §2 Partial 1 项(`P1` 带 `expires-at: HP1 closure`)。
+  - §3 Retained 3 项(`K1` `forwardInternalJsonShadow` / `K2` parity-bridge helpers / `K3` `LANE_E_RPC_FIRST=false` final-state)。
+  - §5 F1-F17 全量登记: F1 closed、F2 partial、F10 handed-to-platform、其余 not-touched。
+  - §7 测试矩阵已回填具体数字: orchestrator-core 20 files / 179 tests pass、agent-core 102 files / 1072 tests pass、9+3 = 12 个新增 case 全部绿。
+- HP1 / HP8-B / HP10 的 handoff 在 §6 显式列出;HP1 closure 之后必须回填 `clear-partial: HP0/P1`。
+
+### 9.6 触碰的文件清单(本次 HP0 实施)
+
+| 文件 | 类型 | 主要改动 |
+|------|------|----------|
+| `workers/orchestrator-core/src/session-lifecycle.ts` | modify | 新增 `ReasoningEffort` / `ReasoningOptions` / `parseModelOptions()`,`StartSessionBody` / `FollowupBody` 加 `model_id` / `reasoning` |
+| `workers/orchestrator-core/src/user-do/session-flow.ts` | modify | `import parseModelOptions`;`UserDoSessionFlowContext.requireAllowedModel`;`handleStart` 校验+gate+透传;`handleInput` 透传 model fields |
+| `workers/orchestrator-core/src/user-do/message-runtime.ts` | modify | 改为消费共享 `parseModelOptions`,删除内联校验 |
+| `workers/orchestrator-core/src/user-do-runtime.ts` | modify | `createUserDoSessionFlow({...})` 注入 `requireAllowedModel` |
+| `workers/orchestrator-core/test/user-do.test.ts` | add(test) | 3 个 HP0 P2-02 回归 case |
+| `workers/orchestrator-core/test/binding-presence.test.ts` | add(file) | 6 个 P4-01 verify-only case |
+| `workers/agent-core/src/host/runtime-mainline.ts` | modify | `withNanoAgentSystemPrompt` 加 `modelId?` 形参并 `export`,调用点带 `evidence.modelId` |
+| `workers/agent-core/test/host/system-prompt-seam.test.ts` | add(file) | 3 个 P3-01 seam 回归 case |
+| `docs/runbook/zx2-rollback.md` | remove | P4-02 物理删除 |
+| `docs/issue/hero-to-pro/HP0-closure.md` | add(file) | 本 HP0 的 closure 主报告 |
+| `docs/action-plan/hero-to-pro/HP0-action-plan.md` | modify | 本节(§9)实施回填 |
+
+### 9.7 命令 / 验证证据
+
+```text
+pnpm --filter @haimang/orchestrator-core-worker typecheck   # ✅
+pnpm --filter @haimang/orchestrator-core-worker build       # ✅
+pnpm --filter @haimang/orchestrator-core-worker test        # ✅ 20 files / 179 tests pass
+pnpm --filter @haimang/agent-core-worker typecheck          # ✅
+pnpm --filter @haimang/agent-core-worker build              # ✅
+pnpm --filter @haimang/agent-core-worker test               # ✅ 102 files / 1072 tests pass
+pnpm --filter @haimang/orchestrator-core-worker test -- binding-presence  # ✅ 6 cases
+```
+
+### 9.8 与冻结决策的对照
+
+- **Q1 (`/start` `/input` `/messages` law 统一)** — 由 `parseModelOptions()` + `requireAllowedModel()` gate 在三入口共享,P2-01 / P2-02 全部落地,见 §9.2。
+- **Q2 (`withNanoAgentSystemPrompt(modelId?)` 允许 partial)** — 已开 seam,HP0 不读 D1;`expires-at: HP1 closure` 写入 closure §2 P1,见 §9.3。
+- **Q3 (`CONTEXT_CORE` / `LANE_E_RPC_FIRST` verify-only;parity / shadow 不强删)** — `binding-presence.test.ts` 钉住事实,wrangler 未改;`forwardInternalJsonShadow` 与 `parity-bridge.ts` 完整保留,登记到 closure §3 K1 / K2,见 §9.4 与 §9.1。
+
+### 9.9 Definition of Done — 自检结果
+
+| 维度 | 自检结论 |
+|------|----------|
+| 功能 | 三入口字段/body law 已统一,`/start` 与 `/input` 不再 silent drop;system prompt seam 已预留 ✅ |
+| 测试 | 受影响包测试矩阵全绿,新增 12 个 case 直接覆盖 P2-02 / P3-01 / P4-01 ✅ |
+| 文档 | `HP0-closure.md` 独立解释 done / partial / retained / not-touched ✅ |
+| 风险收敛 | verify-only(`CONTEXT_CORE` / `LANE_E_RPC_FIRST`)与 cleanup(zx2-rollback / lockfile no-op)均有事实证据 ✅ |
+| 可交付性 | HP1 可直接消费 closure §6 handoff;K1 / K2 / K3 显式留 HP8-B / HP10 ✅ |
+
+HP0 闭合。HP1 可以基于 closure §6 直接启动 schema-extension 工作。
+
