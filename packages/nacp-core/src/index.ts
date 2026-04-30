@@ -306,3 +306,14 @@ export type {
   NacpPlanLevel,
   NacpAudience,
 } from "./types.js";
+
+// ── HP8 P4-01 — tool catalog SSoT ──
+export {
+  TOOL_CATALOG,
+  TOOL_CATALOG_IDS,
+  findToolEntry,
+} from "./tools/tool-catalog.js";
+export type {
+  ToolCatalogEntry,
+  ToolCapabilityOwner,
+} from "./tools/tool-catalog.js";

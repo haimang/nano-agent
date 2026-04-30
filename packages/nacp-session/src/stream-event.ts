@@ -25,6 +25,28 @@ export const ToolCallResultKind = z.object({
   error_message: z.string().optional(),
 });
 
+// HP7 P4-02 — session fork lineage event.
+//
+// Frozen contract:
+//   * docs/charter/plan-hero-to-pro.md §7.8 HP7
+//   * docs/design/hero-to-pro/HP7-checkpoint-revert.md §7 F4
+//   * docs/design/hero-to-pro/HPX-qna.md Q23
+//
+// Q23: fork is "same conversation, new session". The parent's attached
+// client receives a `session.fork.created` event so the fork is
+// observable without polling restore jobs. parent_session_uuid /
+// child_session_uuid carry the lineage; conversation_uuid is included
+// to make the "same conversation" invariant visible on the wire.
+export const SessionForkCreatedKind = z.object({
+  kind: z.literal("session.fork.created"),
+  parent_session_uuid: z.string().uuid(),
+  child_session_uuid: z.string().uuid(),
+  conversation_uuid: z.string().uuid(),
+  from_checkpoint_uuid: z.string().uuid(),
+  restore_job_uuid: z.string().uuid(),
+  label: z.string().max(200).optional(),
+});
+
 // HP6 P3 — tool cancel terminal event.
 //
 // Frozen contract:
@@ -115,6 +137,7 @@ export const SessionStreamEventBodySchema = z.discriminatedUnion("kind", [
   SystemNotifyKind,
   SystemErrorKind,
   LlmDeltaKind,
+  SessionForkCreatedKind,
 ]);
 
 export type SessionStreamEventBody = z.infer<typeof SessionStreamEventBodySchema>;
@@ -131,5 +154,6 @@ export const STREAM_EVENT_KINDS = [
   "system.notify",
   "system.error",
   "llm.delta",
+  "session.fork.created",
 ] as const;
 export type StreamEventKind = (typeof STREAM_EVENT_KINDS)[number];

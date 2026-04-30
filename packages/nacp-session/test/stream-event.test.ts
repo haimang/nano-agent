@@ -49,8 +49,9 @@ describe("SessionStreamEventBody", () => {
   it("rejects unknown kind", () => {
     expect(() => SessionStreamEventBodySchema.parse({ kind: "unknown.thing" })).toThrow();
   });
-  it("has 11 registered kinds (HP6 P3 added tool.call.cancelled)", () => {
-    expect(STREAM_EVENT_KINDS).toHaveLength(11);
+  it("has 12 registered kinds (HP7 P4-02 added session.fork.created on top of HP6 tool.call.cancelled)", () => {
+    expect(STREAM_EVENT_KINDS).toHaveLength(12);
     expect(STREAM_EVENT_KINDS).toContain("tool.call.cancelled");
+    expect(STREAM_EVENT_KINDS).toContain("session.fork.created");
   });
 });

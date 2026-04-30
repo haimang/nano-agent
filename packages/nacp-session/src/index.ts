@@ -81,6 +81,8 @@ export {
   HookBroadcastKind,
   SessionUpdateKind, TurnBeginKind, TurnEndKind,
   CompactNotifyKind, SystemNotifyKind, SystemErrorKind, LlmDeltaKind,
+  // HP7 P4-02 — fork lineage event
+  SessionForkCreatedKind,
 } from "./stream-event.js";
 export type { SessionStreamEventBody, StreamEventKind } from "./stream-event.js";
 
