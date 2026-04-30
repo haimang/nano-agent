@@ -1,9 +1,14 @@
-# Error Index and Client Classification — RHX2 Phase 6 Snapshot
+# Error Index and Client Classification — RHX2 Phase 7-9 Snapshot
 
 > Source of truth:
 > - public facade codes: `packages/orchestrator-auth-contract/src/facade-http.ts`
 > - unified meta lookup: `packages/nacp-core/src/error-registry.ts`
 > - WS structured error frame: `packages/nacp-session/src/stream-event.ts`
+> - **long-form catalog (94 unique codes)**: `docs/api/error-codes.md`
+>
+> RHX2 review-of-reviews fix (2026-04-30): all 17 facade-level ad-hoc
+> codes below are now registered in `resolveErrorMeta()`; clients can
+> rely on `getErrorMeta(code)` returning a non-`undefined` result.
 
 ## HTTP Error Envelope
 
@@ -69,7 +74,7 @@ These strings are the stable public code family shared by facade and RPC contrac
 
 ## Current Ad-hoc Public Codes
 
-The following are emitted by current routes but are not all part of `FacadeErrorCodeSchema`. Clients should still handle them because they are real wire facts.
+The following are emitted by current routes. They are not part of `FacadeErrorCodeSchema`, but as of the RHX2 review-of-reviews fix they ARE registered in `resolveErrorMeta()` / `getErrorMeta()` so clients can resolve a `category` / `http_status` / `retryable` triple by code.
 
 | code | HTTP | Seen in | Client handling |
 |------|------|---------|-----------------|
@@ -151,6 +156,49 @@ The following are emitted by current routes but are not all part of `FacadeError
 | `NACP_REPLY_TO_CLOSED` | permanent | false | reply to closed request |
 | `NACP_PRODUCER_ROLE_MISMATCH` | security | false | producer role illegal |
 | `NACP_REPLAY_OUT_OF_RANGE` | permanent | false | replay seq out of range |
+
+## KernelErrorCode (6 codes — agent-core kernel)
+
+| code | category | retryable |
+|------|----------|-----------|
+| `ILLEGAL_PHASE_TRANSITION` | permanent | no |
+| `TURN_ALREADY_ACTIVE` | conflict | no |
+| `TURN_NOT_FOUND` | validation | no |
+| `STEP_TIMEOUT` | transient | yes |
+| `KERNEL_INTERRUPTED` | transient | yes |
+| `CHECKPOINT_VERSION_MISMATCH` | permanent | no |
+
+## SessionErrorCode (8 codes — `packages/nacp-session/src/errors.ts`)
+
+| code | category | retryable |
+|------|----------|-----------|
+| `NACP_SESSION_INVALID_PHASE` | permanent | no |
+| `NACP_SESSION_AUTHORITY_REQUIRED` | security | no |
+| `NACP_SESSION_FORGED_AUTHORITY` | security | no |
+| `NACP_REPLAY_OUT_OF_RANGE` | permanent | no |
+| `NACP_SESSION_ACK_MISMATCH` | permanent | no |
+| `NACP_SESSION_HEARTBEAT_TIMEOUT` | transient | yes |
+| `NACP_SESSION_ALREADY_ATTACHED` | conflict | no |
+| `NACP_SESSION_TYPE_DIRECTION_MISMATCH` | permanent | no |
+
+## LLMErrorCategory (8 codes — `workers/agent-core/src/llm/errors.ts`)
+
+| code | category | retryable |
+|------|----------|-----------|
+| `llm-auth` | security | no |
+| `llm-rate-limit` | quota | yes |
+| `llm-context-window` | validation | no |
+| `llm-content-policy` | validation | no |
+| `llm-bad-request` | validation | no |
+| `llm-service-unavailable` | dependency | yes |
+| `llm-timeout` | dependency | yes |
+| `llm-other` | transient | yes |
+
+## RHX2 Phase 7-9 wire facts
+
+1. `system.notify` frames may carry `code` and `trace_uuid` since Phase 7 (RHX2 v0.5 dual-emit window). Clients SHOULD use `(trace_uuid, code)` as the dedupe key when a `system.notify(severity="error")` follows a `system.error` frame within ~1s.
+2. `POST /sessions/{id}/verify` accepts `{ "check": "emit-system-error", "code": "spike-system-error" }` in preview-only environments; the route returns `403` with `code = "spike-disabled"` when `NANO_ENABLE_RHX2_SPIKE !== "true"` and `409 no-attached-client` when the WebSocket is detached. Production deploys keep the flag `false`.
+3. `/debug/packages` returns a `drift_direction` field per published package (`aligned` / `workspace_ahead` / `workspace_behind` / `workspace_not_published` / `registry_unreachable`).
 
 ## Recommended Client Classifier
 

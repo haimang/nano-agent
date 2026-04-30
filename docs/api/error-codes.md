@@ -7,7 +7,10 @@
 > vice versa. Do not edit by hand without updating the registry; do not
 > edit the registry without updating this document.
 >
-> **78 codes** registered across 6 sources after dedupe (see §0 below).
+> **94 unique codes** (95 raw registrations across 6 sources, 1 deduped:
+> `NACP_REPLAY_OUT_OF_RANGE` registered both at the NACP envelope layer
+> and at the session layer; the session-layer entry wins because it is
+> more specific). See §0 below for source breakdown.
 > Three published packages export this catalog:
 > `@haimang/nacp-core` (server, full registry),
 > `@haimang/nacp-core/error-codes-client` (client-safe subset, runtime-free),
@@ -154,11 +157,17 @@ are listed in §1.
 | `llm-timeout` | dependency | 504 | yes | LLM provider request timed out |
 | `llm-other` | transient | 500 | yes | LLM provider error |
 
-## 8. ad-hoc string codes (7 codes — bash-core)
+## 8. ad-hoc string codes (24 codes — 7 bash-core + 17 facade)
 
-> Q-Obs9 owner-answered: bash-core's 7 ad-hoc string codes are NOT
-> promoted to a zod enum in first-wave (preserves bash-core RPC contract
-> stability). They MUST appear in this catalog so clients can look them up.
+> Q-Obs9 owner-answered: ad-hoc string codes are NOT promoted to a zod
+> enum in first-wave (preserves the relevant worker contract stability).
+> They MUST appear in this catalog so clients can look them up.
+>
+> RHX2 review-of-reviews fix (DeepSeek R2 / GLM R3): the 17 facade-level
+> ad-hoc codes that orchestrator-core actually emits at runtime are now
+> registered here so `resolveErrorMeta()` no longer returns undefined.
+
+### 8.1 bash-core ad-hoc (7 codes)
 
 | code | category | http_status | retryable | message |
 |---|---|---|---|---|
@@ -169,6 +178,28 @@ are listed in §1.
 | `execution-failed` | transient | 500 | yes | bash-core execution failed |
 | `bridge-not-found` | validation | 404 | no | bash-core bridge target missing |
 | `handler-error` | transient | 500 | yes | bash-core handler threw an unhandled error |
+
+### 8.2 orchestrator-core facade ad-hoc (17 codes)
+
+| code | category | http_status | retryable | message |
+|---|---|---|---|---|
+| `missing-team-claim` | security | 403 | no | JWT must include team_uuid or tenant_uuid |
+| `invalid-auth-body` | validation | 400 | no | auth route requires a JSON body |
+| `invalid-start-body` | validation | 400 | no | /sessions/{id}/start requires a JSON body |
+| `invalid-input-body` | validation | 400 | no | /sessions/{id}/input requires non-empty text |
+| `invalid-auth-snapshot` | validation | 400 | no | /start internal auth snapshot invalid |
+| `session_missing` | validation | 404 | no | session not found |
+| `session-pending-only-start-allowed` | conflict | 409 | no | pending session only accepts /start |
+| `session-expired` | conflict | 409 | no | pending session expired |
+| `session-already-started` | conflict | 409 | no | session already started |
+| `session_terminal` | conflict | 409 | no | session is in a terminal state |
+| `agent-start-failed` | dependency | 502 | yes | agent-core /start failed |
+| `agent-rpc-unavailable` | dependency | 503 | yes | agent-core RPC binding unavailable |
+| `agent-rpc-throw` | dependency | 502 | yes | agent-core RPC throw |
+| `models-d1-unavailable` | dependency | 503 | yes | models D1 lookup failed |
+| `context-rpc-unavailable` | dependency | 503 | yes | context-core RPC failed |
+| `filesystem-rpc-unavailable` | dependency | 503 | yes | filesystem-core RPC failed |
+| `payload-too-large` | validation | 413 | no | file exceeds 25 MiB upload limit |
 
 ---
 

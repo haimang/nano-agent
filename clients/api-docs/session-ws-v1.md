@@ -1,4 +1,4 @@
-# session-ws-v1 — RHX2 Phase 6 Snapshot
+# session-ws-v1 — RHX2 Phase 7-9 Snapshot
 
 > Public facade owner: `orchestrator-core`
 > Wire format: lightweight JSON `{kind, ...}` frames
@@ -57,10 +57,30 @@ Current `event.payload.kind` values from `@haimang/nacp-session`:
 | `turn.begin` | `{turn_uuid}` |
 | `turn.end` | `{turn_uuid, usage?}` |
 | `compact.notify` | `{status:"started"|"completed"|"failed", tokens_before?, tokens_after?}` |
-| `system.notify` | `{severity:"info"|"warning"|"error", message}` |
+| `system.notify` | `{severity:"info"|"warning"|"error", message, code?, trace_uuid?}` |
 | `system.error` | `{error:{code,category,message,detail?,retryable}, source_worker?, trace_uuid?}` |
 
 `system.error` is the structured runtime error frame. Client should treat it as a high-signal error event and use [`error-index.md`](./error-index.md) to decide retry/report UX.
+
+### Dual-emit window (Phase 7-9)
+
+Per RHX2 Phase 7-9 closure, `system.error` is paired with a backwards-compatible `system.notify(severity="error")` that carries the same `code` and `trace_uuid`. Modern clients should:
+
+1. Render the structured `system.error` frame.
+2. Track `(trace_uuid, code)` for ~1 second.
+3. Suppress any subsequent `system.notify(severity="error")` whose `(trace_uuid, code)` matches.
+
+The window remains active until the gate registered in `docs/issue/real-to-hero/RHX2-dual-emit-window.md` flips to single-emit. Production today still double-emits.
+
+### Synthetic spike trigger
+
+`POST /sessions/{id}/verify` accepts `{ "check": "emit-system-error", "code": "spike-system-error" }` for preview / spike testing. Behaviour:
+
+- `403 spike-disabled` when `NANO_ENABLE_RHX2_SPIKE !== "true"` (production posture).
+- `409 no-attached-client` when no WebSocket is currently attached.
+- `200 ok:true` and a `system.error` (+ paired `system.notify`) frame on the attached socket on success.
+
+Production deploys keep the flag `false` — clients must not depend on this trigger surfacing in production.
 
 ### `session.heartbeat`
 

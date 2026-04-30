@@ -218,7 +218,8 @@ Success:
         "live_registry_version": null,
         "live_latest_version": null,
         "registry_status": "auth-not-available-in-runtime",
-        "drift": false
+        "drift": false,
+        "drift_direction": "registry_unreachable"
       }
     ],
     "drift_detected": false,
@@ -237,6 +238,16 @@ Registry status values:
 | `http-error` | registry HTTP non-2xx |
 | `fetch-error` | network/fetch failed |
 | `invalid-json` | registry returned invalid JSON |
+
+`drift_direction` values (RHX2 review-of-reviews fix, DeepSeek R7):
+
+| direction | 说明 |
+|-----------|------|
+| `aligned` | workspace version matches registry latest |
+| `workspace_ahead` | workspace ahead of registry latest (publish pending) |
+| `workspace_behind` | workspace behind registry latest (deploy stale) |
+| `workspace_not_published` | registry reachable but workspace version absent |
+| `registry_unreachable` | registry status not `ok`; cannot compare |
 
 ## Common Debug Errors
 
