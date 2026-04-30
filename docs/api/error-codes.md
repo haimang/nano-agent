@@ -7,7 +7,7 @@
 > vice versa. Do not edit by hand without updating the registry; do not
 > edit the registry without updating this document.
 >
-> **100 unique codes** (101 raw registrations across 8 sources, 1 deduped:
+> **101 unique codes** (102 raw registrations across 8 sources, 1 deduped:
 > `NACP_REPLAY_OUT_OF_RANGE` registered both at the NACP envelope layer
 > and at the session layer; the session-layer entry wins because it is
 > more specific). See §0 below for source breakdown.
@@ -157,13 +157,13 @@ are listed in §1.
 | `llm-timeout` | dependency | 504 | yes | LLM provider request timed out |
 | `llm-other` | transient | 500 | yes | LLM provider error |
 
-## 8. ad-hoc string codes (30 codes — 7 bash-core + 23 facade/session surface)
+## 8. ad-hoc string codes (31 codes — 7 bash-core + 24 facade/session surface)
 
 > Q-Obs9 owner-answered: ad-hoc string codes are NOT promoted to a zod
 > enum in first-wave (preserves the relevant worker contract stability).
 > They MUST appear in this catalog so clients can look them up.
 >
-> RHX2 review-of-reviews fix (DeepSeek R2 / GLM R3): the 23 facade/session-surface
+> RHX2 review-of-reviews fix (DeepSeek R2 / GLM R3): the 24 facade/session-surface
 > ad-hoc codes that orchestrator-core actually emits at runtime are now
 > registered here so `resolveErrorMeta()` no longer returns undefined.
 
@@ -179,7 +179,7 @@ are listed in §1.
 | `bridge-not-found` | validation | 404 | no | bash-core bridge target missing |
 | `handler-error` | transient | 500 | yes | bash-core handler threw an unhandled error |
 
-### 8.2 orchestrator-core facade/session-surface ad-hoc (23 codes)
+### 8.2 orchestrator-core facade/session-surface ad-hoc (24 codes)
 
 | code | category | http_status | retryable | message |
 |---|---|---|---|---|
@@ -193,6 +193,7 @@ are listed in §1.
 | `session-expired` | conflict | 409 | no | pending session expired |
 | `session-already-started` | conflict | 409 | no | session already started |
 | `session_terminal` | conflict | 409 | no | session is in a terminal state |
+| `conversation-deleted` | conflict | 409 | no | parent conversation has been soft-deleted |
 | `agent-start-failed` | dependency | 502 | yes | agent-core /start failed |
 | `agent-rpc-unavailable` | dependency | 503 | yes | agent-core RPC binding unavailable |
 | `agent-rpc-throw` | dependency | 502 | yes | agent-core RPC throw |

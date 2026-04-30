@@ -13,11 +13,18 @@
 | `/sessions/{id}/input` | `POST` | legacy | text-only input |
 | `/sessions/{id}/messages` | `POST` | legacy | multipart message input |
 | `/sessions/{id}/cancel` | `POST` | legacy | cancel current turn |
+| `/sessions/{id}/close` | `POST` | legacy | normal close; writes `ended_reason=closed_by_user` |
+| `/sessions/{id}` | `DELETE` | legacy | soft-delete parent conversation |
+| `/sessions/{id}/title` | `PATCH` | legacy | rename parent conversation |
 | `/sessions/{id}/status` | `GET` | legacy | runtime + durable status |
 | `/sessions/{id}/timeline` | `GET` | legacy | stream event timeline |
 | `/sessions/{id}/history` | `GET` | legacy | durable message history |
 | `/sessions/{id}/verify` | `POST` | legacy | preview/debug verification harness |
 | `/sessions/{id}/resume` | `POST` | facade | HTTP replay ack |
+| `/conversations/{conversation_uuid}` | `GET` | facade | conversation detail read model |
+| `/sessions/{id}/checkpoints` | `GET` | facade | list product-facing checkpoint registry |
+| `/sessions/{id}/checkpoints` | `POST` | facade `201` | create `user_named` checkpoint |
+| `/sessions/{id}/checkpoints/{checkpoint_uuid}/diff` | `GET` | facade | checkpoint vs current session ledger diff |
 | `/sessions/{id}/usage` | `GET` | facade | usage snapshot，详见 [`usage.md`](./usage.md) |
 | `/sessions/{id}/context` | `GET` | facade | legacy alias of context probe |
 | `/sessions/{id}/context/probe` | `GET` | facade | context probe / compact budget |
@@ -90,6 +97,7 @@ Errors: `invalid-auth`(401), `missing-team-claim`(403), `worker-misconfigured`(5
 2. 再 `POST /sessions/{id}/start` 启动。
 3. 当前 `/start` 仍接受未 mint 的新 UUID。
 4. pending UUID 在 `/start` 以外多数 session route 会返回 `409 session-pending-only-start-allowed`。
+5. HP4 当前只完成 lifecycle / checkpoint first wave：`close` / `delete` / `title` / conversation detail / checkpoint list-create-diff 已 public；`/retry` 与 `/restore` 仍未开放。
 
 ## `POST /sessions/{id}/start`
 
@@ -218,6 +226,84 @@ Success legacy:
 }
 ```
 
+## `POST /sessions/{id}/close`
+
+Request body 可为空；可选字段：
+
+```json
+{ "reason": "done for now" }
+```
+
+Success legacy:
+
+```json
+{
+  "ok": true,
+  "action": "close",
+  "session_uuid": "3333...",
+  "conversation_uuid": "4444...",
+  "session_status": "ended",
+  "terminal": "completed",
+  "ended_reason": "closed_by_user",
+  "ended_at": "2026-04-30T00:06:00.000Z"
+}
+```
+
+Behavior:
+
+1. close 不引入新 session state；仍写 `session_status="ended"`。
+2. 区别于 cancel 的 durable 语义是 `ended_reason="closed_by_user"`。
+3. 重复 close 返回 `200`，并带 `already_closed: true`。
+
+## `DELETE /sessions/{id}`
+
+No body required.
+
+Success legacy:
+
+```json
+{
+  "ok": true,
+  "action": "delete",
+  "session_uuid": "3333...",
+  "conversation_uuid": "4444...",
+  "session_status": "ended",
+  "deleted_at": "2026-04-30T00:06:00.000Z"
+}
+```
+
+Behavior:
+
+1. delete 的 durable owner 是 parent conversation，不是单条 session row。
+2. 当前实现只做 soft tombstone：写 `nano_conversations.deleted_at`，不做硬删除。
+3. 若 session 仍未 ended，delete 会先把当前 session 收为 `ended + closed_by_user`，再写 tombstone。
+4. 重复 delete 返回 `200`，并带 `already_deleted: true`。
+
+## `PATCH /sessions/{id}/title`
+
+Request:
+
+```json
+{ "title": "Onboarding thread" }
+```
+
+Rules:
+
+1. `title` 需要是 trim 后长度 `1..200` 的字符串。
+2. 路由路径仍是 session-based，但真正修改的是 parent conversation 的 `title`。
+
+Success legacy:
+
+```json
+{
+  "ok": true,
+  "action": "title",
+  "session_uuid": "3333...",
+  "conversation_uuid": "4444...",
+  "title": "Onboarding thread"
+}
+```
+
 ## `GET /sessions/{id}/status`
 
 Success legacy includes runtime `phase` and optional D1 `durable_truth`.
@@ -329,6 +415,176 @@ Success facade:
 ```
 
 If `replay_lost:true`, client should call `/timeline` to reconcile.
+
+## `GET /conversations/{conversation_uuid}`
+
+Reads the current durable conversation detail for the authenticated user.
+
+Success facade:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "conversation_uuid": "4444...",
+    "team_uuid": "2222...",
+    "owner_user_uuid": "1111...",
+    "title": "Onboarding thread",
+    "conversation_status": "active",
+    "deleted_at": null,
+    "created_at": "2026-04-30T00:00:00.000Z",
+    "updated_at": "2026-04-30T00:06:00.000Z",
+    "latest_session_uuid": "3333...",
+    "latest_turn_uuid": "9999...",
+    "session_count": 2,
+    "latest_session": {
+      "session_uuid": "3333...",
+      "session_status": "ended",
+      "started_at": "2026-04-30T00:00:00.000Z",
+      "ended_at": "2026-04-30T00:06:00.000Z",
+      "ended_reason": "closed_by_user",
+      "last_phase": "turn_running"
+    },
+    "sessions": [
+      {
+        "session_uuid": "3333...",
+        "session_status": "ended",
+        "started_at": "2026-04-30T00:00:00.000Z",
+        "ended_at": "2026-04-30T00:06:00.000Z",
+        "ended_reason": "closed_by_user",
+        "last_phase": "turn_running"
+      }
+    ]
+  },
+  "trace_uuid": "..."
+}
+```
+
+Notes:
+
+1. 当前只返回最近 `20` 条 session summary。
+2. tombstoned conversation 默认按 `404 not-found` 处理；当前没有 public `include_deleted` 开关。
+
+## `GET /sessions/{id}/checkpoints`
+
+Success facade:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "session_uuid": "3333...",
+    "conversation_uuid": "4444...",
+    "checkpoints": [
+      {
+        "checkpoint_uuid": "aaaa...",
+        "session_uuid": "3333...",
+        "conversation_uuid": "4444...",
+        "team_uuid": "2222...",
+        "turn_uuid": "9999...",
+        "turn_attempt": 1,
+        "checkpoint_kind": "user_named",
+        "label": "before rewrite",
+        "message_high_watermark": "bbbb...",
+        "latest_event_seq": 12,
+        "context_snapshot_uuid": "cccc...",
+        "file_snapshot_status": "none",
+        "created_by": "user",
+        "created_at": "2026-04-30T00:07:00.000Z",
+        "expires_at": null
+      }
+    ]
+  },
+  "trace_uuid": "..."
+}
+```
+
+Notes:
+
+1. 当前 public create path 只会生成 `checkpoint_kind="user_named"`。
+2. 历史上其他 phase 写入的 `compact_boundary` checkpoint 也可能出现在列表里。
+
+## `POST /sessions/{id}/checkpoints`
+
+Request body 可为空；可选字段：
+
+```json
+{ "label": "before rewrite" }
+```
+
+Rules:
+
+1. `label` 如提供，必须是 trim 后长度 `1..200` 的字符串。
+2. 当前 create path 固定写 `file_snapshot_status="none"`，不做 file snapshot。
+
+Success `201`:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "session_uuid": "3333...",
+    "conversation_uuid": "4444...",
+    "checkpoint": {
+      "checkpoint_uuid": "aaaa...",
+      "checkpoint_kind": "user_named",
+      "label": "before rewrite",
+      "file_snapshot_status": "none",
+      "created_by": "user"
+    }
+  },
+  "trace_uuid": "..."
+}
+```
+
+## `GET /sessions/{id}/checkpoints/{checkpoint_uuid}/diff`
+
+Current behavior is **checkpoint vs current session ledger**, not checkpoint-to-checkpoint diff and not restore preview.
+
+Success facade:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "session_uuid": "3333...",
+    "conversation_uuid": "4444...",
+    "diff": {
+      "checkpoint": {
+        "checkpoint_uuid": "aaaa...",
+        "checkpoint_kind": "user_named",
+        "label": "before rewrite"
+      },
+      "watermark_created_at": "2026-04-30T00:05:00.000Z",
+      "messages_since_checkpoint": [
+        {
+          "message_uuid": "bbbb...",
+          "turn_uuid": "9999...",
+          "message_kind": "assistant.output.text",
+          "created_at": "2026-04-30T00:06:00.000Z",
+          "superseded_at": null
+        }
+      ],
+      "superseded_messages": [
+        {
+          "message_uuid": "cccc...",
+          "turn_uuid": "9999...",
+          "message_kind": "assistant.output.text",
+          "created_at": "2026-04-30T00:04:00.000Z",
+          "superseded_at": "2026-04-30T00:06:00.000Z",
+          "superseded_by_turn_attempt": 2
+        }
+      ]
+    }
+  },
+  "trace_uuid": "..."
+}
+```
+
+Notes:
+
+1. 当前 diff 不包含 file diff。
+2. 当前 snapshot 也还没有 public restore route；restore 会在后续 HP4 批次补齐。
 
 ## Context Routes
 
@@ -527,6 +783,7 @@ Headers:
 | 403 | `spike-disabled` | `/verify` spike check | preview-only system.error spike disabled |
 | 403 | `wrong-device` | follow-up session routes | session already bound to another device |
 | 404 | `session_missing` / `not-found` | session/files | missing session/file |
+| 409 | `conversation-deleted` | checkpoint routes | parent conversation already tombstoned |
 | 409 | `session-pending-only-start-allowed` | non-start session routes | pending UUID |
 | 409 | `session-expired` | `/start` | pending UUID expired |
 | 409 | `no-attached-client` | `/verify` spike check | verify spike requires attached websocket client |

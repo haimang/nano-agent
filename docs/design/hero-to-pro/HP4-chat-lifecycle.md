@@ -32,7 +32,7 @@
 - **本次讨论的前置共识**：
   - 当前 session status 冻结为 `pending|starting|active|detached|ended|expired`；HP4 不再发明新的 session 状态，而是在现有状态上补齐产品语义。
   - `nano_conversations.title` 已存在，所以 title 应优先落在 conversation 层，而不是新建 session title 平行真相。
-  - 当前 schema 中还没有 checkpoint/restore/supersede/delete tombstone 专表或字段；HP4 不能假装这些前置已经在代码中存在。
+  - HP1 已经把 `ended_reason`、`deleted_at`、turn-attempt/supersede、checkpoint/restore 相关 durable truth 冻结进 schema；HP4 不能假装这些前置仍然缺席，也不能绕开它们再造平行真相。
   - HP3 将引入 boundary snapshot；HP4 的 conversation-only restore 必须消费 HP3/HP1 提供的 durable baseline，而不是另造历史语义。
 - **本设计必须回答的问题**：
   - close 与 cancel 的区别是什么，close 是否需要新状态？
@@ -67,7 +67,7 @@
 
 ### 1.2 参考源码与现状锚点
 
-- `workers/orchestrator-core/migrations/002-session-truth-and-audit.sql:7-17,31-38,49-59,76-99` — 当前 D1 真相只有会话/对话/turn/message 基础表；`title` 已存在，但 delete/checkpoint/restore 相关真相尚未出现。
+- `workers/orchestrator-core/migrations/002-session-truth-and-audit.sql:7-17,31-38,49-59,76-99`; `workers/orchestrator-core/migrations/008-session-model-audit.sql:1-15`; `workers/orchestrator-core/migrations/009-turn-attempt-and-message-supersede.sql:1-48`; `workers/orchestrator-core/migrations/013-product-checkpoints.sql:1-62` — 当前 D1 真相已经具备 `title`、`ended_reason`、`deleted_at`、turn-attempt/supersede 与 checkpoint/restore registry schema；HP4 关注的是把这些 truth 接成产品面与运行时语义。
 - `workers/orchestrator-core/src/session-lifecycle.ts:15-39` — 当前 session 生命周期只定义了六个状态与 terminal 基本形态。
 - `workers/orchestrator-core/src/session-truth.ts:314-348` — `listSessionsForUser()` 仍是 limit-only，不是真 cursor。
 - `workers/orchestrator-core/src/index.ts:364-440,707-711,885-980` — façade 当前没有 close/delete/title/retry/checkpoints；`/me/conversations` 的 cursor 仍建立在内存聚合之上。
@@ -268,7 +268,7 @@
 - **主要调用者**：clients/web、support/debug、future mobile
 - **核心逻辑**：
   - close：把当前 session 进入 `ended`，terminal 记为 `completed`
-  - delete：把 conversation 标 tombstone（最小字段为 `deleted_at` 与 `deleted_by_user_uuid`）
+  - delete：把 conversation 标 tombstone（第一版最小字段只冻结 `deleted_at`）
   - title：直接写 `nano_conversations.title`
 - **边界情况**：
   - deleted conversation 默认不再出现在 `/me/conversations`

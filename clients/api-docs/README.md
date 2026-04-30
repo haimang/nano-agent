@@ -73,8 +73,8 @@
 | Method | Path | Auth | 说明 |
 |--------|------|------|------|
 | `POST` | `/me/sessions` | bearer | server-mint pending session UUID |
-| `GET` | `/me/sessions` | bearer | 当前用户 session 列表 |
-| `GET` | `/me/conversations` | bearer | conversation 聚合列表，支持 `limit`/`cursor` |
+| `GET` | `/me/sessions` | bearer | 当前用户 session 列表，支持 `limit`/`cursor` |
+| `GET` | `/me/conversations` | bearer | conversation 聚合列表，支持 `limit`/`cursor`，默认隐藏 tombstoned conversation |
 | `GET` | `/me/team` | bearer | 当前 team 详情 |
 | `PATCH` | `/me/team` | bearer owner | 修改 `team_name` |
 | `GET` | `/me/teams` | bearer | 用户加入的 teams |
@@ -90,12 +90,19 @@
 | `POST` | `/sessions/{id}/input` | bearer | legacy | text-only 输入 |
 | `POST` | `/sessions/{id}/messages` | bearer | legacy | multipart message 输入 |
 | `POST` | `/sessions/{id}/cancel` | bearer | legacy | 取消 session |
+| `POST` | `/sessions/{id}/close` | bearer | legacy | 正常结束 session，写 `ended_reason=closed_by_user` |
+| `DELETE` | `/sessions/{id}` | bearer | legacy | 软删除 parent conversation（tombstone） |
+| `PATCH` | `/sessions/{id}/title` | bearer | legacy | 修改 parent conversation title |
 | `GET` | `/sessions/{id}/status` | bearer | legacy | runtime + durable status |
 | `GET` | `/sessions/{id}/timeline` | bearer | legacy | stream event timeline |
 | `GET` | `/sessions/{id}/history` | bearer | legacy | durable message history |
 | `POST` | `/sessions/{id}/verify` | bearer | legacy | preview verification harness |
 | `GET` | `/sessions/{id}/usage` | bearer | facade | usage snapshot |
 | `POST` | `/sessions/{id}/resume` | bearer | facade | HTTP replay ack |
+| `GET` | `/conversations/{conversation_uuid}` | bearer | facade | 读取 conversation detail |
+| `GET` | `/sessions/{id}/checkpoints` | bearer | facade | 列出当前 session 的产品级 checkpoint registry |
+| `POST` | `/sessions/{id}/checkpoints` | bearer | facade `201` | 创建 `user_named` checkpoint |
+| `GET` | `/sessions/{id}/checkpoints/{checkpoint_uuid}/diff` | bearer | facade | 读取 checkpoint 对当前 session ledger 的 diff |
 | `GET` | `/sessions/{id}/ws` | query token | WS | session-ws-v1 |
 | `GET` | `/sessions/{id}/context` | bearer | facade | legacy alias of context probe |
 | `GET` | `/sessions/{id}/context/probe` | bearer | facade | context probe / compact budget |

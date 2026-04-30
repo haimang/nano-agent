@@ -4,9 +4,9 @@
 > - public facade codes: `packages/orchestrator-auth-contract/src/facade-http.ts`
 > - unified meta lookup: `packages/nacp-core/src/error-registry.ts`
 > - WS structured error frame: `packages/nacp-session/src/stream-event.ts`
-> - **long-form catalog (94 unique codes)**: `docs/api/error-codes.md`
+> - **long-form catalog (101 unique codes)**: `docs/api/error-codes.md`
 >
-> RHX2 review-of-reviews fix (2026-04-30): all 23 public ad-hoc
+> RHX2 review-of-reviews fix (2026-04-30): all 24 public ad-hoc
 > codes below are now registered in `resolveErrorMeta()`; clients can
 > rely on `getErrorMeta(code)` returning a non-`undefined` result.
 
@@ -101,6 +101,11 @@ The following are emitted by current routes. They are not part of `FacadeErrorCo
 | `payload-too-large` | 413 | file upload | reduce file size; max 25 MiB |
 | `spike-disabled` | 403 | preview-only `/sessions/{id}/verify` spike check | verify spike disabled in this environment |
 | `no-attached-client` | 409 | preview-only `/sessions/{id}/verify` spike check | attach a websocket client before retrying |
+| `conversation-deleted` | 409 | checkpoint routes | parent conversation already soft-deleted; refresh conversation list |
+
+Legacy note:
+
+1. `POST /sessions/{id}/close` / `DELETE /sessions/{id}` / `PATCH /sessions/{id}/title` 仍沿用 legacy action payload；删除态冲突当前会返回 body-level `error: "conversation_deleted"`，客户端应把它映射到与 facade code `conversation-deleted` 相同的 UX。
 
 ## WS `system.error`
 

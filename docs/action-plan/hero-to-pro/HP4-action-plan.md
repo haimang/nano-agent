@@ -25,7 +25,7 @@
 > - `docs/design/hero-to-pro/HPX-qna.md`
 > 冻结决策来源:
 > - `docs/design/hero-to-pro/HPX-qna.md` Q13-Q15、Q38（只读引用；本 action-plan 不填写 Q/A）
-> 文档状态: `draft`
+> 文档状态: `executing`
 
 ---
 
@@ -472,3 +472,17 @@ hero-to-pro HP4 chat lifecycle
 | 文档 | HP4 closure 能独立解释 API、D1、restore、next prompt 四层结果 |
 | 风险收敛 | 不新增 `closed` 状态，不把 DO latest checkpoint 暴露成产品面，不遗留半恢复状态 |
 | 可交付性 | HP5/HP7 可以直接在 HP4 的 lifecycle / registry / restore truth 之上继续推进 |
+
+---
+
+## 11. 工作日志回填
+
+1. 核对 charter / HP4 action-plan / HP4 design / HPX-qna 与真实代码后，确认用户点名的 `docs/design/hero-to-pro/HP4-pre-defer-fixes.md` 并不存在，本轮以 action-plan 实际引用的 `docs/design/hero-to-pro/HP4-chat-lifecycle.md` 为 authoritative design。
+2. 回溯 `workers/orchestrator-core/migrations/008-session-model-audit.sql`、`009-turn-attempt-and-message-supersede.sql`、`013-product-checkpoints.sql` 后，确认 HP1 已经提供 `ended_reason`、`deleted_at`、turn-attempt/supersede、checkpoint registry / restore job schema；本轮 HP4 的真实缺口是 façade / user-do / read-model / checkpoint consumer，而不是再补 DDL。
+3. 更新 `workers/orchestrator-core/src/session-lifecycle.ts`，新增 `CloseBody`、`DeleteSessionBody`、`TitlePatchBody`，把 HP4 lifecycle first-wave 的 public body 口径固定下来。
+4. 扩展 `workers/orchestrator-core/src/session-truth.ts`，新增 `readSessionLifecycle`、true-cursor `listSessionsForUser` / `listConversationsForUser`、`readConversationDetail`、`updateConversationTitle`、`tombstoneConversation`、`listCheckpoints`、`createUserCheckpoint`、`readCheckpointDiff`，把 HP4 first-wave durable read/write helper 收束到 D1 truth owner。
+5. 更新 `workers/orchestrator-core/src/user-do/session-flow.ts` 与 `src/user-do-runtime.ts`，新增 close / delete / title 的 runtime owner 与 dispatch；close 复用 `ended + completed + ended_reason=closed_by_user`，delete 以 conversation tombstone 为准，title 继续只写 `nano_conversations.title`。
+6. 更新 `workers/orchestrator-core/src/index.ts`，让 public façade 新增 `POST /sessions/{id}/close`、`DELETE /sessions/{id}`、`PATCH /sessions/{id}/title`、`GET /conversations/{conversation_uuid}`、`GET/POST /sessions/{id}/checkpoints`、`GET /sessions/{id}/checkpoints/{checkpoint_uuid}/diff`，并把 `/me/sessions` / `/me/conversations` 改为 direct D1 true-cursor read model。
+7. 重写 `workers/orchestrator-core/test/me-conversations-route.test.ts`，并新增 `test/me-sessions-route.test.ts`、`test/chat-lifecycle-route.test.ts`、`test/user-do-chat-lifecycle.test.ts`，覆盖 HP4 first-wave 的 route wiring、cursor read model 与 user-do lifecycle 语义。
+8. 同步修正 `docs/design/hero-to-pro/HP4-chat-lifecycle.md` 中与 Q14 冲突的 `deleted_by_user_uuid` 漂移，并把 `clients/api-docs/README.md`、`clients/api-docs/me-sessions.md`、`clients/api-docs/session.md`、`clients/api-docs/error-index.md` 回填到当前 HP4 first-wave 代码事实。
+9. 本轮刻意不把 HP4 伪装成“已全量完成”：latest-turn retry、restore job orchestration、D1↔DO rollback / restart-safe 恢复链、cross-e2e matrix 仍未落地，因此本次 closure 结论只会收口为 **HP4 first wave / partial-live**，不会误报 full HP4 done。

@@ -10,7 +10,7 @@
 |-------|--------|------|------|
 | `/me/sessions` | `POST` | bearer | server-mint pending session UUID |
 | `/me/sessions` | `GET` | bearer | 当前用户 session 列表 |
-| `/me/conversations` | `GET` | bearer | conversation 聚合列表 |
+| `/me/conversations` | `GET` | bearer | conversation 聚合列表，默认隐藏 tombstoned conversation |
 | `/me/team` | `GET` | bearer | 当前 team 详情 |
 | `/me/team` | `PATCH` | bearer owner | 修改 team name |
 | `/me/teams` | `GET` | bearer | 当前用户加入的 teams |
@@ -45,6 +45,13 @@ Behavior:
 
 ## `GET /me/sessions`
 
+Query:
+
+| Param | 默认 | 最大 | 说明 |
+|-------|------|------|------|
+| `limit` | 50 | 200 | 非法值回退默认 |
+| `cursor` | none | n/a | opaque string: `started_at|session_uuid` |
+
 Success:
 
 ```json
@@ -59,10 +66,12 @@ Success:
         "last_phase": "turn_running",
         "last_seen_at": "2026-04-30T00:05:00.000Z",
         "created_at": "2026-04-30T00:00:00.000Z",
-        "ended_at": null
+        "ended_at": null,
+        "ended_reason": null,
+        "title": "Onboarding thread"
       }
-    ],
-    "next_cursor": null
+     ],
+     "next_cursor": null
   },
   "trace_uuid": "..."
 }
@@ -70,9 +79,10 @@ Success:
 
 Current reality:
 
-- User DO hot index 与 D1 list 合并，D1 status 优先。
-- pending / starting / active / detached / ended / expired 都可能出现。
-- `next_cursor` 当前恒为 `null`。
+1. 当前实现直接走 D1 cursor read model，不再从 User DO hot index regroup。
+2. pending / starting / active / detached / ended / expired 都可能出现。
+3. response 额外返回 `ended_reason` 与 conversation `title`。
+4. tombstoned conversation 默认被过滤；如 parent conversation 已 `deleted_at`，对应 session 默认不会出现在列表里。
 
 ## `GET /me/conversations`
 
@@ -92,12 +102,14 @@ Success:
     "conversations": [
       {
         "conversation_uuid": "4444...",
+        "title": "Onboarding thread",
         "latest_session_uuid": "3333...",
         "latest_status": "active",
         "started_at": "2026-04-30T00:00:00.000Z",
         "latest_session_started_at": "2026-04-30T00:05:00.000Z",
         "last_seen_at": "2026-04-30T00:05:00.000Z",
         "last_phase": "turn_running",
+        "latest_ended_reason": null,
         "session_count": 3
       }
     ],
@@ -106,6 +118,12 @@ Success:
   "trace_uuid": "..."
 }
 ```
+
+Current reality:
+
+1. 当前实现直接走 conversation-level D1 cursor query，不再先拉 session rows 再 façade regroup。
+2. `title` 与 `latest_ended_reason` 已直接出现在列表项里。
+3. tombstoned conversation 默认被过滤；该路由当前没有 public `include_deleted` 开关。
 
 ## `GET /me/team`
 
