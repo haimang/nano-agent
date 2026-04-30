@@ -7,7 +7,7 @@
 > 时间: `2026-04-29`
 > 文件位置:
 > - 新建：`workers/orchestrator-core/migrations/006-error-and-audit-log.sql`、`docs/api/error-codes.md`、`packages/nacp-core/src/observability/logger/`（新子模块）、`packages/nacp-core/src/error-registry-client/`（新子模块）
-> - 修改：6 worker `src/` + 3 worker `wrangler.jsonc`、`packages/nacp-core/{package.json, src/error-registry.ts, src/index.ts}`（minor bump 1.4.0 → 1.5.0；exports map 增 `./logger` + `./error-codes-client`）、`packages/nacp-session/src/stream-event.ts`、`workers/orchestrator-core/src/{index,user-do/*,policy/authority}.ts`、`clients/web/src/{apis/transport.ts, pages/ChatPage.tsx}`、`clients/wechat-miniprogram/{utils/nano-client.js, pages/session/index.js, build-script}`
+> - 修改：6 worker `src/` + 3 worker `wrangler.jsonc`、`packages/nacp-core/{package.json, src/error-registry.ts, src/index.ts}`（minor bump 1.4.0 → 1.6.0；exports map 增 `./logger` + `./error-codes-client`）、`packages/nacp-session/src/stream-event.ts`、`workers/orchestrator-core/src/{index,user-do/*,policy/authority}.ts`、`clients/web/src/{apis/transport.ts, pages/ChatPage.tsx}`、`clients/wechat-miniprogram/{utils/nano-client.js, pages/session/index.js, build-script}`
 > - **不新建独立包**：v0.draft-r2 修订后所有 helper 落在 `packages/nacp-core/src/observability/logger/` 与 `packages/nacp-core/src/error-registry-client/` 子目录
 > 上游前序 / closure:
 > - `docs/issue/real-to-hero/RH4-closure.md`（filesystem R2 闭合）
@@ -79,7 +79,7 @@
 
 ### 影响范围
 
-- `nacp-core` 版本号需要 minor bump（`1.4.0 → 1.5.0`）：因为新增 sub-path exports 是 additive；publish 到 GitHub Packages 是本 phase 的额外发布步骤（merged into P1-end）。
+- `nacp-core` 版本号需要 minor bump（`1.4.0 → 1.6.0`）：因为新增 sub-path exports 是 additive；publish 到 GitHub Packages 是本 phase 的额外发布步骤（merged into P1-end）。
 - `@haimang/error-codes-client` 名字 **不再使用**；client 端 import 路径变为 `import { getErrorMeta, classifyByStatus } from '@haimang/nacp-core/error-codes-client'`。
 - `@haimang/worker-logger` 名字 **不再使用**；worker 端 import 路径变为 `import { createLogger, withTraceContext, ... } from '@haimang/nacp-core/logger'`。
 - `pnpm-workspace.yaml` / `packages/` 目录 **不新增任何包**。
@@ -108,7 +108,7 @@
   - 三套 durable 真相（`nano_session_activity_logs` / `nano_error_log` / `nano_audit_log`）的职责边界 + 索引引用规则需要在 first-wave 落地，否则未来排障"信息太散"
   - web `transport.ts` + 微信小程序 `nano-client.js` 各自手搓 4 类错误分类；`ChatPage.tsx` + `session/index.js` 都不消费 `system.error` —— server 单边接电不会变成端到端可用能力
 - **本次计划的直接产出**：
-  - 扩展 `@haimang/nacp-core` 新增两个子路径导出：`@haimang/nacp-core/logger`（含 ALS / ring buffer / `LogPersistFn` / `AuditPersistFn`）+ `@haimang/nacp-core/error-codes-client`（含 `getErrorMeta` / `classifyByStatus` / 8 类 ClientErrorCategory）；nacp-core minor bump 1.4.0 → 1.5.0 + 重发到 GitHub Packages
+  - 扩展 `@haimang/nacp-core` 新增两个子路径导出：`@haimang/nacp-core/logger`（含 ALS / ring buffer / `LogPersistFn` / `AuditPersistFn`）+ `@haimang/nacp-core/error-codes-client`（含 `getErrorMeta` / `classifyByStatus` / 8 类 ClientErrorCategory）；nacp-core minor bump 1.4.0 → 1.6.0 + 重发到 GitHub Packages
   - migration `006-error-and-audit-log.sql`（含 `nano_error_log` 14d + `nano_audit_log` 90d 双表 + 索引 + cron trigger 清理）
   - 6 worker HTTP 错误响应统一到 `FacadeErrorEnvelope`（F2 / `respondWithFacadeError()`）
   - WS `system.error` stream-event kind 接电 + 服务端 4 周双发降级窗口（F7 / F13）
@@ -143,7 +143,7 @@
 
 | Phase | 名称 | 规模 | 目标摘要 | 依赖前序 |
 |---|---|---|---|---|
-| Phase 1 | nacp-core 子路径扩展 + DDL + service binding + **包门禁建立**（v0.draft-r3） | L | 在 `@haimang/nacp-core` 内新增 `logger` + `error-codes-client` 两个子路径模块 + migration 006 + 3 worker wrangler binding；**jwt-shared@0.1.0 首发 + nacp-core@1.5.0 重发 + CI gate 脚本 `verify-published-packages.mjs` 落地** | - |
+| Phase 1 | nacp-core 子路径扩展 + DDL + service binding + **包门禁建立**（v0.draft-r3） | L | 在 `@haimang/nacp-core` 内新增 `logger` + `error-codes-client` 两个子路径模块 + migration 006 + 3 worker wrangler binding；**jwt-shared@0.1.0 首发 + nacp-core@1.6.0 重发 + CI gate 脚本 `verify-published-packages.mjs` 落地** | - |
 | Phase 2 | 错误 registry + docs | S | 扩展 `nacp-core/error-registry.ts` 暴露 `resolveErrorMeta()`；写 `docs/api/error-codes.md`；CI 一致性测试 | Phase 1 |
 | Phase 3 | facade envelope 收口 + Server-Timing | M | 6 worker HTTP 错误统一；orchestrator-core 出口注入 `Server-Timing` | Phase 1, 2 |
 | Phase 4 | bash-core / orchestrator-auth 接 logger + 6 worker 切结构化日志 | M | 终结 0 console；bash-core 7 ad-hoc codes 进 docs 第 8 段 | Phase 1, 2 |
@@ -199,7 +199,7 @@ RHX2 Observability & Auditability
 ├── Phase 1: nacp-core 子路径扩展 + DDL + service binding
 │   ├── packages/nacp-core/src/observability/logger/  [new sub-module; exposed via `nacp-core/logger`]
 │   ├── packages/nacp-core/src/error-registry-client/  [new sub-module; exposed via `nacp-core/error-codes-client`]
-│   ├── packages/nacp-core/package.json  [version 1.4.0 → 1.5.0 + new exports map entries]
+│   ├── packages/nacp-core/package.json  [version 1.4.0 → 1.6.0 + new exports map entries]
 │   ├── workers/orchestrator-core/migrations/006-error-and-audit-log.sql  [new]
 │   └── workers/{bash-core,context-core,filesystem-core}/wrangler.jsonc  [+ ORCHESTRATOR_CORE binding ×2 env]
 ├── Phase 2: 错误 registry + docs
@@ -243,7 +243,7 @@ RHX2 Observability & Auditability
 
 ### 2.1 In-Scope（本次 action-plan 明确要做）
 
-- **[S1]** F1：扩展 `@haimang/nacp-core` 新增 `nacp-core/logger` 子路径导出（4 级 + critical / ALS / 内存环形 / `LogPersistFn` + `AuditPersistFn` 类型 / DO/Worker-Shell 双模 / JSON schema 校验）；nacp-core minor bump 1.4.0 → 1.5.0 + 重发 GitHub Packages
+- **[S1]** F1：扩展 `@haimang/nacp-core` 新增 `nacp-core/logger` 子路径导出（4 级 + critical / ALS / 内存环形 / `LogPersistFn` + `AuditPersistFn` 类型 / DO/Worker-Shell 双模 / JSON schema 校验）；nacp-core minor bump 1.4.0 → 1.6.0 + 重发 GitHub Packages
 - **[S2]** F2：6 worker HTTP 错误响应统一到 `FacadeErrorEnvelope`
 - **[S3]** F3：runtime `resolveErrorMeta()` registry + `docs/api/error-codes.md` + CI 一致性
 - **[S4]** F4：D1 `nano_error_log` 表 + 持久化 + fallback + cron 清理
@@ -296,7 +296,7 @@ RHX2 Observability & Auditability
 |---|---|---|---|---|---|---|
 | P1-01 | Phase 1 | 在 `@haimang/nacp-core` 新增 `observability/logger` 子模块 | add+update | `packages/nacp-core/src/observability/logger/{index.ts,logger.ts,als.ts,ring-buffer.ts,types.ts,respond.ts,dedupe.ts}` + `packages/nacp-core/package.json`（exports map 增加 `./logger`）+ 单测 | 4 级 logger + ALS + ring buffer + LogPersistFn 类型；通过 `@haimang/nacp-core/logger` 子路径导出 | medium |
 | P1-02 | Phase 1 | 在 `@haimang/nacp-core` 新增 `error-registry-client` 子模块 | add+update | `packages/nacp-core/src/error-registry-client/{index.ts,types.ts,data.ts}` + `packages/nacp-core/package.json`（exports map 增加 `./error-codes-client`）+ 单测 | `getErrorMeta` + `classifyByStatus` + 8 类 ClientErrorCategory；零 runtime 依赖；浏览器 / 微信 / Node 三端可 import；通过 `@haimang/nacp-core/error-codes-client` 子路径导出 | low |
-| P1-01b | Phase 1 | nacp-core minor bump + 重发 GitHub Packages | update | `packages/nacp-core/package.json`（1.4.0 → 1.5.0）+ `npm publish` | npm registry 上 nacp-core@1.5.0 可拉取；含两个新 sub-path | low |
+| P1-01b | Phase 1 | nacp-core minor bump + 重发 GitHub Packages | update | `packages/nacp-core/package.json`（1.4.0 → 1.6.0）+ `npm publish` | npm registry 上 nacp-core@1.6.0 可拉取；含两个新 sub-path | low |
 | P1-07 | Phase 1 | **jwt-shared@0.1.0 首发到 GitHub Packages**（critical 门禁；v0.draft-r3） | update+publish | `packages/jwt-shared/package.json`（0.0.0 → 0.1.0）+ `pnpm --filter @haimang/jwt-shared run build` + `npm publish` | GitHub Packages HTTP 200；versions 列表含 `0.1.0` | medium |
 | P1-08 | Phase 1 | **CI gate 脚本 `verify-published-packages.mjs`**（critical 门禁；v0.draft-r3） | add | `scripts/verify-published-packages.mjs` + 6 worker `package.json` 增 `predeploy` hook 调它 | 对 3 个 published 包验证 workspace==registry version + (optional) dist SHA256；失败 exit(1) 阻拦 deploy | medium |
 | P1-09 | Phase 1 | **build-time `__NANO_PACKAGE_MANIFEST__` 注入**（v0.draft-r3） | add | 6 worker `wrangler.jsonc` 增 esbuild `--define` 或等价 `defines.json`；build 脚本生成 manifest JSON inline 进 bundle | 6 worker bundle 内 `__NANO_PACKAGE_MANIFEST__` 常量可被 runtime 读取（不通过文件系统） | low |
@@ -348,7 +348,7 @@ RHX2 Observability & Auditability
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |---|---|---|---|---|---|---|
 | P1-01 | nacp-core `observability/logger` 子模块 | 4 级 + critical / `Logger` interface / `createLogger(workerName, opts)` / `withTraceContext` / ALS / 200 条 ring buffer / `LogPersistFn` + `AuditPersistFn` 类型 / dedupe 5s LRU 256 | `packages/nacp-core/src/observability/logger/{index.ts, logger.ts, als.ts, ring-buffer.ts, types.ts, respond.ts, dedupe.ts}` + `packages/nacp-core/package.json` exports map 增 `./logger` + 单测 | nacp-core 通过 `@haimang/nacp-core/logger` 子路径导出；6 worker 可 import | ≥10 unit cases（4 级 × 有/无 ALS + critical + dedupe + 序列化失败 + DO/Worker-Shell 双模 + JSON schema 校验 ≥2） | unit 全绿；nacp-core 既有功能 0 回归 |
-| P1-01b | nacp-core minor bump 1.5.0 + 重发 GitHub Packages | `packages/nacp-core/package.json` version 1.4.0 → 1.5.0；`pnpm --filter @haimang/nacp-core run build` 后 `npm publish` | `packages/nacp-core/package.json` | GitHub Packages 上 nacp-core@1.5.0 可拉取；含 `./logger` + `./error-codes-client` 子路径 | `curl -sI -H "Authorization: Bearer $NODE_AUTH_TOKEN" https://npm.pkg.github.com/@haimang%2Fnacp-core` 返回 200 + 在 `versions` 列表里看到 1.5.0 | 1.5.0 published |
+| P1-01b | nacp-core minor bump 1.6.0 + 重发 GitHub Packages | `packages/nacp-core/package.json` version 1.4.0 → 1.6.0；`pnpm --filter @haimang/nacp-core run build` 后 `npm publish` | `packages/nacp-core/package.json` | GitHub Packages 上 nacp-core@1.6.0 可拉取；含 `./logger` + `./error-codes-client` 子路径 | `curl -sI -H "Authorization: Bearer $NODE_AUTH_TOKEN" https://npm.pkg.github.com/@haimang%2Fnacp-core` 返回 200 + 在 `versions` 列表里看到 1.6.0 | 1.6.0 published |
 | P1-02 | nacp-core `error-registry-client` 子模块 | 8 类 `ClientErrorCategory` 枚举 / `ClientErrorMeta` 接口 / `getErrorMeta(code) → ClientErrorMeta \| undefined` / `classifyByStatus(status) → ClientErrorCategory`；`data.ts` 由 P2-03 反射生成 | `packages/nacp-core/src/error-registry-client/{index.ts, types.ts, data.ts}` + `packages/nacp-core/package.json` exports map 增 `./error-codes-client` + 单测 | nacp-core 通过 `@haimang/nacp-core/error-codes-client` 子路径导出；浏览器 + 微信 + Node 三 runtime 可 import；零 runtime 依赖（不引 zod / 不引 nacp-core 其他 sub-path） | ≥3 unit cases（已知 code 命中 / 未知 code 返回 undefined / classifyByStatus 退路） | unit 全绿 + bundle size < 5 KB |
 | P1-03 | migration 006 DDL | 双表（`nano_error_log` 14d + `nano_audit_log` 90d）+ 8 索引 + CHECK 约束（severity / outcome）+ FK 引用 nano_teams / nano_users | `workers/orchestrator-core/migrations/006-error-and-audit-log.sql` | preview D1 apply 成功 | `wrangler d1 execute nano-agent-preview --file=006-...sql --remote`；`SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'nano_%log'` 验证两表存在 | preview apply 成功；表结构 + 索引存在；schema 与 design §7.2 F4/F11 完全一致 |
 | P1-04~06 | 3 worker wrangler binding | 各 worker `wrangler.jsonc` 在 root + `env.preview.services` 块新增 `{ binding: "ORCHESTRATOR_CORE", service: "nano-agent-orchestrator-core[-preview]" }` | `workers/{bash-core,context-core,filesystem-core}/wrangler.jsonc` | 6 binding 块新增 | `wrangler deploy --dry-run` 各 worker；preview deploy 后 `/debug/workers/health` 仍 6/6 | preview 6/6 健康；service binding 在 wrangler --print-vars 可见 |
@@ -440,7 +440,7 @@ RHX2 Observability & Auditability
   - `packages/nacp-core/test/observability-logger/*.test.ts` + `packages/nacp-core/test/error-registry-client/*.test.ts`
   - `workers/orchestrator-core/migrations/006-error-and-audit-log.sql`
 - **本 Phase 修改文件**：
-  - `packages/nacp-core/package.json`：version `1.4.0 → 1.5.0`；`exports` map 新增 `./logger` 与 `./error-codes-client` 两条入口
+  - `packages/nacp-core/package.json`：version `1.4.0 → 1.6.0`；`exports` map 新增 `./logger` 与 `./error-codes-client` 两条入口
   - `packages/nacp-core/src/index.ts`：不动主入口（保持向后兼容）；两个子模块仅通过 sub-path 导出
   - `packages/jwt-shared/package.json`：version `0.0.0 → 0.1.0`（v0.draft-r3 critical 门禁）
   - `workers/bash-core/wrangler.jsonc`、`workers/context-core/wrangler.jsonc`、`workers/filesystem-core/wrangler.jsonc`
@@ -452,16 +452,16 @@ RHX2 Observability & Auditability
 - **具体功能预期**：
   1. `import { createLogger, withTraceContext, ... } from '@haimang/nacp-core/logger'` 在 6 worker runtime 可调用；ALS 注入 trace_uuid/session_uuid/team_uuid
   2. `import { getErrorMeta, classifyByStatus, ClientErrorCategory } from '@haimang/nacp-core/error-codes-client'` 在浏览器 / 微信小程序 / Node 三 runtime 可调用
-  3. `nacp-core@1.5.0` 已发布到 GitHub Packages（`curl https://npm.pkg.github.com/@haimang%2Fnacp-core` 在 versions 列表中可见 1.5.0；含两条 sub-path）
+  3. `nacp-core@1.6.0` 已发布到 GitHub Packages（`curl https://npm.pkg.github.com/@haimang%2Fnacp-core` 在 versions 列表中可见 1.6.0；含两条 sub-path）
   4. preview D1 含 `nano_error_log` + `nano_audit_log` 双表 + 8 索引
   5. `bash-core` / `context-core` / `filesystem-core` preview deploy 后 `env.ORCHESTRATOR_CORE` binding 可用
 - **具体测试安排**：
   - **单测**：observability/logger ≥10 cases + error-registry-client ≥3 cases；nacp-core 现有测试 0 回归
   - **集成测试**：preview D1 apply migration 006 + 验证表存在；3 worker preview deploy + `/debug/workers/health` 返回 6/6；新建一个微型 vite/esbuild fixture 验证 `@haimang/nacp-core/error-codes-client` 在浏览器 bundle 中树摇后体积 < 5 KB
   - **回归测试**：4-worker package test 全绿；nacp-core 既有 sub-path（如 `./tenancy` / `./transport` / `./evidence`）行为不变
-  - **手动验证**：本地 `pnpm install` 全绿；wrangler dashboard 看到 service binding 配置生效；GitHub Packages registry 看到 1.5.0
+  - **手动验证**：本地 `pnpm install` 全绿；wrangler dashboard 看到 service binding 配置生效；GitHub Packages registry 看到 1.6.0
 - **收口标准**：
-  - nacp-core 1.5.0 published；两条新 sub-path 都可被 6 worker + web + 微信小程序解析
+  - nacp-core 1.6.0 published；两条新 sub-path 都可被 6 worker + web + 微信小程序解析
   - migration 006 在 preview D1 应用成功
   - 6/6 worker preview 健康
 - **本 Phase 风险提醒**：
@@ -725,7 +725,7 @@ RHX2 Observability & Auditability
 7. §3.6 4 条索引引用规则单测覆盖；ESLint rules 阻拦有效
 8. **F14 包来源单一真相门禁通过**（v0.draft-r3 critical 门禁）：
    - `@haimang/jwt-shared@0.1.0` 已发布到 GitHub Packages（HTTP 200 + versions 列表含 0.1.0 截图入 closure）
-   - `@haimang/nacp-core@1.5.0` 已重发（含 `./logger` + `./error-codes-client` 两条 sub-path）
+   - `@haimang/nacp-core@1.6.0` 已重发（含 `./logger` + `./error-codes-client` 两条 sub-path）
    - `@haimang/nacp-session` 已是 published 状态（保持不变）
    - `scripts/verify-published-packages.mjs` 在 6 worker `predeploy` 上挂载且通过；CI workflow 跑通；workspace ↔ registry drift 0
    - 6 worker bundle 都已 inline `__NANO_PACKAGE_MANIFEST__`
@@ -773,7 +773,7 @@ RHX2 Observability & Auditability
 
 | 包 | GitHub Packages 状态 | `package.json` 中的 publishConfig | 当前 consumer 引用形态 |
 |---|---|---|---|
-| `@haimang/nacp-core` | ✅ 已发布 1.4.0（HTTP 200）；本 action-plan P1-01b 将 bump 到 1.5.0 重发 | 已设置 | `workspace:*`（workspace 内）+ 远端可拉 |
+| `@haimang/nacp-core` | ✅ 已发布 1.4.0（HTTP 200）；本 action-plan P1-01b 将 bump 到 1.6.0 重发 | 已设置 | `workspace:*`（workspace 内）+ 远端可拉 |
 | `@haimang/nacp-session` | ✅ 已发布（HTTP 200） | 已设置 | `workspace:*` + 远端可拉 |
 | `@haimang/jwt-shared` | ❌ **从未发布（HTTP 404）**；版本号 `0.0.0` | 已设置（registry: `https://npm.pkg.github.com`, access: `restricted`）—— **意图发布但未执行** | `workspace:*`（仅 `workers/orchestrator-core/package.json` + `workers/orchestrator-auth/package.json`） |
 | `eval-observability` / `orchestrator-auth-contract` / `storage-topology` / `workspace-context-artifacts` | ❌ 从未发布 | 未设置 / 形同虚设 | `workspace:*` 仅 | 属于退役名单，本来就不应发 |
