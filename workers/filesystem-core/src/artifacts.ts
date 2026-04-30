@@ -7,6 +7,7 @@
  */
 
 import { D1Adapter, type D1DatabaseBinding, R2Adapter, type R2BucketBinding } from "@nano-agent/storage-topology";
+import { createLogger, emitObservabilityAlert } from "@haimang/nacp-core/logger";
 import type { ArtifactRef, ArtifactKind } from "./refs.js";
 import type {
   ListArtifactsInput,
@@ -72,6 +73,7 @@ export class InMemoryArtifactStore implements ArtifactStore {
 const MAX_SESSION_FILE_BYTES = 25 * 1024 * 1024;
 const FILE_CURSOR_SEPARATOR = "|";
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const logger = createLogger("filesystem-core");
 
 export class SessionFileStore {
   private readonly d1: D1Adapter;
@@ -119,7 +121,24 @@ export class SessionFileStore {
       created_at: createdAt,
     };
 
-    await this.r2.put(record.r2_key, bytes);
+    try {
+      await this.r2.put(record.r2_key, bytes);
+    } catch (error) {
+      await emitObservabilityAlert({
+        logger,
+        source_worker: "filesystem-core",
+        alert_kind: "r2-write-failed",
+        message: "session artifact R2 write failed",
+        detail: {
+          team_uuid: record.team_uuid,
+          session_uuid: record.session_uuid,
+          file_uuid: record.file_uuid,
+          r2_key: record.r2_key,
+          error: String(error),
+        },
+      });
+      throw error;
+    }
     try {
       await this.d1.prepare(
         `INSERT INTO nano_session_files (
