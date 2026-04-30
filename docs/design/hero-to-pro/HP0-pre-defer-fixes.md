@@ -15,7 +15,7 @@
 > - `workers/orchestrator-core/wrangler.jsonc:57-63,99-104`
 > 关联 QNA / 决策登记:
 > - `docs/design/hero-to-pro/HPX-qna.md`（待所有 hero-to-pro 设计文件落地后统一汇总；本设计先冻结自身结论）
-> 文档状态: `draft`
+> 文档状态: `reviewed`
 
 ---
 

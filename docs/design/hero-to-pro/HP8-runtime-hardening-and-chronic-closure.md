@@ -26,7 +26,7 @@
 > - `docs/runbook/zx5-r28-investigation.md:1-7,32-41,100-141`
 > 关联 QNA / 决策登记:
 > - `docs/design/hero-to-pro/HPX-qna.md`（待所有 hero-to-pro 设计文件落地后统一汇总；本设计先冻结 HP8 收口结论）
-> 文档状态: `draft`
+> 文档状态: `reviewed`
 
 ---
 
@@ -292,6 +292,11 @@
     1. `closed`
     2. `retained-with-reason`
     3. `handed-to-platform`
+  - chronic register 的最小 artifact 对齐冻结为：
+    - R28：`docs/runbook/zx5-r28-investigation.md`
+    - R29 verify：`scripts/verify-initial-context-divergence.mjs`
+    - R29 判定：`docs/issue/zero-to-real/R29-postmortem.md`
+    - Lane E 终态：`docs/architecture/lane-e-final-state.md`
   - R28 至少要补齐：stack source、root cause class、chosen branch
   - R29 至少要补齐：`zero diff / diff found / unverifiable`
   - Lane E 至少要补齐：`sunset host-local residue` 或 `retain host-local residue with reason`

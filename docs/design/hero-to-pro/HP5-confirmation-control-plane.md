@@ -23,7 +23,7 @@
 > - `context/gemini-cli/packages/core/src/config/config.ts:1764-1778`
 > 关联 QNA / 决策登记:
 > - `docs/design/hero-to-pro/HPX-qna.md`（待所有 hero-to-pro 设计文件落地后统一汇总；本设计先冻结 confirmation control plane 结论）
-> 文档状态: `draft`
+> 文档状态: `reviewed`
 
 ---
 
@@ -348,6 +348,11 @@
 - **稳定性要求**：pending confirmation 在 reconnect / worker restart 后仍可恢复到同一条 truth。
 - **安全 / 权限要求**：decision 提交必须继续走 team-scoped auth；不同用户不能替他人 session 作答。
 - **测试覆盖要求**：permission allow/deny/timeout、elicitation answer/cancel、legacy compat path、新 `/confirmations` path 至少各 1 条 cross-e2e。
+- **charter 冻结的 cross-e2e 文件名**：
+  - `test/cross-e2e/15-permission-roundtrip-allow.test.mjs`
+  - `test/cross-e2e/16-permission-roundtrip-deny.test.mjs`
+  - `test/cross-e2e/17-elicitation-roundtrip.test.mjs`
+  - `test/cross-e2e/18-usage-push-live.test.mjs`
 - **验证策略**：以“pending list、stream update、runtime 恢复行为”三者一致为准。
 
 ---
