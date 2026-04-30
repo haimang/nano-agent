@@ -486,3 +486,13 @@ hero-to-pro HP4 chat lifecycle
 7. 重写 `workers/orchestrator-core/test/me-conversations-route.test.ts`，并新增 `test/me-sessions-route.test.ts`、`test/chat-lifecycle-route.test.ts`、`test/user-do-chat-lifecycle.test.ts`，覆盖 HP4 first-wave 的 route wiring、cursor read model 与 user-do lifecycle 语义。
 8. 同步修正 `docs/design/hero-to-pro/HP4-chat-lifecycle.md` 中与 Q14 冲突的 `deleted_by_user_uuid` 漂移，并把 `clients/api-docs/README.md`、`clients/api-docs/me-sessions.md`、`clients/api-docs/session.md`、`clients/api-docs/error-index.md` 回填到当前 HP4 first-wave 代码事实。
 9. 本轮刻意不把 HP4 伪装成“已全量完成”：latest-turn retry、restore job orchestration、D1↔DO rollback / restart-safe 恢复链、cross-e2e matrix 仍未落地，因此本次 closure 结论只会收口为 **HP4 first wave / partial-live**，不会误报 full HP4 done。
+
+---
+
+## 12. HP0-HP4 复审修复日志（追加）
+
+1. 在重新比照 HP2/HP3/HP4 closure、agent-core runtime 与真实测试面后，确认真正成立的跨阶段缺口不是 HP4 route/read-model，而是 `workers/agent-core/src/host/runtime-mainline.ts` 仍把 model/runtime seam 停留在“半显式接线”状态。
+2. 修复 `workers/agent-core/src/host/runtime-mainline.ts`：runtime 现在会先依据消息中的 canonical `modelId` 读取 `nano_models.base_instructions_suffix`，再通过 `primeModelPromptSuffix()` 把 suffix 真接到 `withNanoAgentSystemPrompt(messages, modelId?)` seam。
+3. 同一处修复里，`buildWorkersAiExecutionRequestFromMessages()` 现已显式接收 `modelId` 与 `reasoning`，不再只依赖 message payload 推断，从而让 HP2 已落地的 `turn override > session default > global default` durable truth 真正进入 agent-core execution request。
+4. 回归测试同步补齐：`workers/agent-core/test/host/system-prompt-seam.test.ts` 新增 per-model suffix seam 覆盖，`workers/agent-core/test/host/runtime-mainline.test.ts` 新增 runtime 读取 `base_instructions_suffix` + 显式 model 传递覆盖，`workers/agent-core/test/llm/gateway.test.ts` 新增 explicit `modelId/reasoning` 优先于 message inference 的覆盖。
+5. 本轮复审后，F2（system prompt model-aware suffix 缺失）已不再是 HP2/HP3/HP4 的开放断点；当前仍然未闭环的 HP4 真问题继续收敛在 retry、restore job、rollback / restart-safe 与 cross-e2e，而不是 model prompt seam。

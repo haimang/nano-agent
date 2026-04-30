@@ -43,7 +43,7 @@
 
 | ID | 描述 | 当前完成度 | 后续 phase / 批次 | 说明 |
 |----|------|-----------|-------------------|------|
-| `P1` | agent-core explicit request assembly 深接线 | `partly-carried` | HP2 后续批次 | orchestrator-core 已显式把 canonical model/reasoning 送往 agent-core，但 gateway / runtime-mainline / request-builder 仍未完成 full product-state-driven cleanup |
+| `P1` | agent-core explicit request assembly 深接线 | `closed-by-review-fix` | 已在 HP0-HP4 复审中补齐 | `runtime-mainline` 现已显式把 `modelId` / `reasoning` 送入 request builder，并在调用前读取 `base_instructions_suffix` 接到 system prompt seam |
 | `P2` | `<model_switch>` developer message | `not-started` | HP2/HP3 联合 | 本轮未把跨模型切换注入 developer message |
 | `P3` | `model.fallback` stream event + single-step fallback execution | `not-started` | HP2 后续批次 | 本轮只补了 durable 列与 future seam，未真正触发 fallback 链 |
 | `P4` | cross-e2e matrix | `not-run` | HP2 后续批次 | `reasoning↔non-reasoning` / `vision↔non-vision` / alias / fallback 的 cross-e2e 尚未进入 |
@@ -66,7 +66,7 @@
 | chronic | 说明 | HP2 verdict | 备注 |
 |---------|------|-------------|------|
 | F1 | 公共入口模型字段透传断裂 | `closed-by-HP0` | 本轮未回退 |
-| F2 | system prompt model-aware suffix 缺失 | `not-touched` | 仍归 HP2/HP3 runtime 后续批次 |
+| F2 | system prompt model-aware suffix 缺失 | `closed-by-review-fix` | HP0-HP4 复审期间已在 agent-core `runtime-mainline` 真接线：D1 `base_instructions_suffix` 会随显式 `modelId` 注入 system prompt seam |
 | F3 | session-level current model 与 alias resolution | `closed-by-HP2-first-wave` | 本轮已 live session current-model API + alias/detail + turn audit |
 | F4 | context state machine（compact / branch / fork） | `enabled-by-HP2` | HP3 现在可直接消费 `effective_model_id` / session default truth |
 | F5 | chat lifecycle | `enabled-by-HP2` | HP4 retry 后续已具备 requested/effective model audit 前提 |
@@ -105,7 +105,9 @@
 | new route tests | `workers/orchestrator-core/test/models-route.test.ts`; `workers/orchestrator-core/test/session-model-route.test.ts` | ✅ |
 | schema correction test | `workers/orchestrator-core/test/migrations-schema-freeze.test.ts` | ✅ |
 | `git --no-pager diff --check` | workspace diff hygiene | ✅ |
-| agent-core deeper model wiring | not run | n/a |
+| typecheck (agent-core) | `pnpm --filter @haimang/agent-core-worker typecheck` | ✅ |
+| build (agent-core) | `pnpm --filter @haimang/agent-core-worker build` | ✅ |
+| test (agent-core) | `pnpm --filter @haimang/agent-core-worker test` | ✅ |
 | `pnpm test:cross-e2e` | not run | n/a |
 
 ---

@@ -466,3 +466,102 @@ hero-to-pro HP5 confirmation control plane
 | 文档 | HP5 closure 能独立解释 registry、compat、kernel、usage push 四层结果 |
 | 风险收敛 | 不再 endpoint-per-kind、不再 pending enum 爆炸、不再存在 phantom pending |
 | 可交付性 | HP6/HP7 可以直接基于 7-kind freeze 与统一 confirmation plane 继续实施 |
+
+---
+
+## 9. 工作日志(回填)
+
+> 记录 HP5 first wave 的实际落地路径 — 与 §3 业务工作总表逐项对齐。
+> 闭环日期: `2026-04-30`。详情参见 `docs/issue/hero-to-pro/HP5-closure.md`。
+
+### 9.1 P1-01 — confirmation registry + decision handler
+
+- 新增 `workers/orchestrator-core/src/confirmation-control-plane.ts`
+  - 导出 `D1ConfirmationControlPlane` class:`create` / `read` / `list` / `applyDecision` / `markSupersededOnDualWriteFailure`
+  - 导出 `CONFIRMATION_KINDS`(7 项,Q18)、`CONFIRMATION_STATUSES`(6 项,Q16)、`CONFIRMATION_TERMINAL_STATUSES`
+  - `applyDecision` 拒绝 `pending` 终态、并对已终态 row 返回 `conflict` 而非静默覆盖
+  - `markSupersededOnDualWriteFailure` 写入 `attempted_status` / `failure_reason` 至 `decision_payload_json`,Q16 不允许 `failed`
+- 新增 `workers/orchestrator-core/test/confirmation-control-plane.test.ts`(10 用例)
+  - 通过 `node:sqlite` + `createRequire` 直接装载 migration 012,验证 SQL CHECK 与 helper 行为一致
+
+### 9.2 P1-02 — generic /confirmations API
+
+- 修改 `workers/orchestrator-core/src/index.ts`
+  - 导入 `D1ConfirmationControlPlane`、`ConfirmationStatus`、`CONFIRMATION_KINDS`
+  - 新增 `parseSessionConfirmationRoute` + `handleSessionConfirmation` 三件套(`list` / `detail` / `decision`)
+  - dispatchFetch 新增 confirmation route 分发
+  - `?status=` 支持 `pending|allowed|denied|modified|timeout|superseded|any`,失败状态(如 `failed`)直接 400
+  - decision 冲突返回 409 + 现有 row 数据
+- 新增 `workers/orchestrator-core/test/confirmation-route.test.ts`(7 用例)
+  - 覆盖 list / detail / decision / status filter / 409 conflict / `failed` 拒绝
+
+### 9.3 P1-03 — confirmation frame family + protocol normalization
+
+- 修改 `packages/nacp-session/src/messages.ts`
+  - 新增 `SessionConfirmationKindSchema`(7 kind enum)
+  - 新增 `SessionConfirmationStatusSchema`(6 status enum)
+  - 新增 `SessionConfirmationRequestBodySchema` / `SessionConfirmationUpdateBodySchema`
+  - 注册 `SESSION_BODY_SCHEMAS` / `SESSION_BODY_REQUIRED` / `SESSION_MESSAGE_TYPES`
+- 修改 `packages/nacp-session/src/index.ts`:re-export 新 schema 与 type
+- 修改 `packages/nacp-session/src/type-direction-matrix.ts`:confirmation 帧仅 `event` 方向
+- 修改 `packages/nacp-session/src/session-registry.ts`:role / phase 矩阵补充 confirmation 帧(server produce / client consume,attached + turn_running 阶段允许)
+- 修改 `packages/nacp-session/test/messages.test.ts`:registry size 16 → 18
+- 新增 `packages/nacp-session/test/hp5-confirmation-messages.test.ts`(18 用例):覆盖 enum / schema / phase / direction / role 四层
+
+### 9.4 P2-01 — kernel wait unification(confirmation_pending)
+
+- 修改 `workers/agent-core/src/kernel/types.ts`:`approval_pending` → `confirmation_pending`(附 Q17/Q39 注释,声明不并行 alias)
+- 修改 `workers/agent-core/src/kernel/interrupt.ts`:`classifyInterrupt` switch 重映射(recoverable + requiresCheckpoint)
+- 修改 `workers/agent-core/test/kernel/interrupt.test.ts`:用例与描述同步重命名
+- 修改 `workers/agent-core/test/kernel/reducer.test.ts`:`approval_pending` 全替换为 `confirmation_pending`
+- 修改 `workers/agent-core/test/kernel/scenarios/idle-input-arrival.test.ts`:scenario header 与所有断言重命名
+
+### 9.5 P2-02 — HookDispatcher runtime injection
+
+- 修改 `workers/agent-core/src/host/do/session-do/runtime-assembly.ts`
+  - 新增 import:`HookDispatcher` / `HookRegistry` / `LocalTsRuntime` / `HookEmitContext`
+  - 新增 `createSessionHookDispatcher()` 工厂(配 `LocalTsRuntime`,timeout/depth/fail-closed guard 沿用)
+  - `createLiveKernelRunner` 接收 dispatcher 参数,向 `createMainlineKernelRunner` 注入 `hookDispatcher` + `hookContextProvider`
+  - `buildOrchestrationDeps` 转发 dispatcher
+  - `SessionDoRuntimeAssembly` interface 新增 `hookDispatcher`,assembly 始终暴露 dispatcher 供 HP5 P3 / HP6 / HP7 注册 handler
+- 新增 `workers/agent-core/test/host/do/runtime-assembly.dispatcher.test.ts`(2 用例)
+  - assembly 始终返回 `HookDispatcher` 实例
+  - 零 handler 时 `emit` 返回空 outcomes(保持 fail-closed 语义不变)
+
+### 9.6 P3-01/P3-02/P3-03 — live callers + row-first dual-write law
+
+- 修改 `workers/orchestrator-core/src/user-do/surface-runtime.ts`
+  - 新增 `ensureConfirmationDecision` helper:row 优先写入 + applyDecision + 冲突回报
+  - `handlePermissionDecision`:row 先于 KV / RPC 写入;allow / always_allow → `allowed`;deny / always_deny → `denied`;冲突走 409
+  - `handleElicitationAnswer`:row 先于 KV / RPC 写入;`cancelled === true` → `superseded`(Q16),否则 → `modified`;冲突走 409
+- 新增 `workers/orchestrator-core/test/confirmation-dual-write.test.ts`(5 用例)
+  - permission allow / deny 都正确写 row + KV
+  - permission 冲突 → 409
+  - elicitation 正常 / 取消的 status 映射
+- live caller emitter 侧(P1/P2)留给 HP5 后续批次,见 closure §2 P1/P2
+
+### 9.7 P4-01/P4-02 — closure + work log
+
+- 新增 `docs/issue/hero-to-pro/HP5-closure.md`(10 节)
+  - §0 verdict matrix(8 维度)
+  - §1 Resolved 9 项
+  - §2 Partial 5 项
+  - §3 Retained 4 项(K1-K4 含 Q16/Q18/Q39)
+  - §4 F1-F17 chronic status(F6 升级为 partial-by-HP5;F16 closed-by-HP5)
+  - §5 7-kind readiness matrix
+  - §6 下游 phase 交接
+  - §7 测试与证据矩阵
+  - §8 收口意见
+- cross-e2e 15-18 仍未运行(closure §2 P4 + §7 已显式记录)
+- 本节 §9 工作日志回填 `docs/action-plan/hero-to-pro/HP5-action-plan.md`(本文件)
+
+### 9.8 测试与回归矩阵
+
+| 包 | typecheck | build | test |
+|------|-----------|-------|------|
+| `@haimang/nacp-session` | ✅ | ✅ | ✅ 171/171 |
+| `@haimang/orchestrator-core-worker` | ✅ | n/a | ✅ 239/239 |
+| `@haimang/agent-core-worker` | ✅ | n/a | ✅ 1077/1077 |
+
+cross-e2e 15-18 显式留至 HP5 后续批次(见 closure §2 P4)。
+

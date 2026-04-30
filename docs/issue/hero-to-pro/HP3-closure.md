@@ -67,7 +67,7 @@
 | chronic | 说明 | HP3 verdict | 备注 |
 |---------|------|-------------|------|
 | F1 | 公共入口模型字段透传断裂 | `closed-by-HP0` | 本轮未触碰 |
-| F2 | system prompt model-aware suffix 缺失 | `partial-preexisting` | probe/preview 已消费 model metadata；runtime system prompt 真接线仍归 HP2/HP3 runtime 批次 |
+| F2 | system prompt model-aware suffix 缺失 | `closed-by-review-fix` | HP0-HP4 复审期间已在 agent-core `runtime-mainline` 真接线；HP3 剩余的是唯一 prompt owner / auto-compact / strip-recover，不再是 suffix seam 缺失 |
 | F3 | session-level current model 与 alias resolution | `closed-by-HP2-first-wave` | HP2 已补 `/models/{id}`、`GET/PATCH /sessions/{id}/model` 与 requested/effective model audit，HP3 现在可直接消费稳定 model truth |
 | F4 | context state machine（compact / branch / fork） | `partial-by-HP3` | control-plane first wave 已落地；runtime owner / auto-compact / breaker 未完 |
 | F5 | chat lifecycle | `not-touched` | HP4 |
@@ -108,7 +108,7 @@
 | test (orchestrator-core) | `pnpm --filter @haimang/orchestrator-core-worker test` | ✅ |
 | 新增 context-core RPC 测试 | `workers/context-core/test/rpc-context-control-plane.test.ts` | ✅ |
 | 新增 façade route wiring 测试 | `workers/orchestrator-core/test/context-route.test.ts` | ✅ |
-| agent-core runtime wiring | not run | n/a |
+| typecheck/build/test (agent-core) | `pnpm --filter @haimang/agent-core-worker typecheck && pnpm --filter @haimang/agent-core-worker build && pnpm --filter @haimang/agent-core-worker test` | ✅ |
 | `pnpm test:cross-e2e` | not run | n/a |
 
 ---

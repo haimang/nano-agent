@@ -495,3 +495,99 @@ hero-to-pro HP6 tool/workspace state machine
 | 文档 | HP6 closure 能独立解释工作区状态机的五层结果 |
 | 风险收敛 | 无 tenant prefix bypass、无 temp/artifact 串线、无 cancel 假终态 |
 | 可交付性 | HP7 可直接在 HP6 提供的 workspace/temp-file/provenance truth 之上实现 snapshot/revert/fork |
+
+---
+
+## 9. 工作日志(回填)
+
+> 记录 HP6 first wave 的实际落地路径 — 与 §3 业务工作总表逐项对齐。
+> 闭环日期: `2026-04-30`。详情参见 `docs/issue/hero-to-pro/HP6-closure.md`。
+
+### 9.1 P1-01 — todo durable truth + repository
+
+- 新增 `workers/orchestrator-core/src/todo-control-plane.ts`
+  - 导出 `D1TodoControlPlane` class:`list` / `read` / `create` / `patch` / `delete` + 私有 `readActiveInProgress`
+  - 导出 `TODO_STATUSES`(charter §436 5-status)、`TodoConstraintError`(`in-progress-conflict` / `todo-not-found` / `invalid-status`)
+  - `at most 1 in_progress` 约束在 application layer 实施(create + patch 两路径)
+  - terminal status(`completed` / `cancelled`)自动写 `completed_at`
+  - `delete` 第一版 hard delete(HP6 design §7.2 F1 边界情况:no `deleted_at`)
+- 新增 `workers/orchestrator-core/test/todo-control-plane.test.ts`(11 用例)
+  - 通过 `node:sqlite` + migration 010 验证 helper 与 SQL CHECK 双层一致
+
+### 9.2 P1-02 — NACP todo family + /todos CRUD route
+
+- 修改 `packages/nacp-session/src/messages.ts`
+  - 新增 `SessionTodoStatusSchema`(5 status)
+  - 新增 `SessionTodosWriteBodySchema`(client/model produce,1-100 todos)
+  - 新增 `SessionTodosUpdateBodySchema`(server broadcast 全量新状态)
+  - 注册 `SESSION_BODY_SCHEMAS` / `SESSION_BODY_REQUIRED` / `SESSION_MESSAGE_TYPES`
+- 修改 `packages/nacp-session/src/index.ts`:re-export 新 schema 与 type
+- 修改 `packages/nacp-session/src/type-direction-matrix.ts`:`todos.write` = command,`todos.update` = event
+- 修改 `packages/nacp-session/src/session-registry.ts`:role / phase 矩阵补充 todos 帧(client produce write / server produce update)
+- 修改 `packages/nacp-session/test/messages.test.ts`:registry size 18 → 20
+- 新增 `packages/nacp-session/test/hp6-todo-messages.test.ts`(14 用例)
+- 修改 `workers/orchestrator-core/src/index.ts`
+  - 导入 `D1TodoControlPlane` / `TODO_STATUSES` / `TodoConstraintError`
+  - 新增 `parseSessionTodoRoute` + `handleSessionTodos`(list / create / patch / delete)
+  - dispatchFetch 新增 todo route 分发
+  - `?status=` 支持 `pending|in_progress|completed|cancelled|blocked|any`
+  - `at-most-1 in_progress` 冲突映射 409;`todo-not-found` 映射 404;其他 invalid 走 400
+- 新增 `workers/orchestrator-core/test/todo-route.test.ts`(7 用例)
+
+### 9.3 P2 — workspace temp file CRUD + path normalization
+
+- 新增 `workers/orchestrator-core/src/workspace-control-plane.ts`
+  - 导出 `normalizeVirtualPath()`:7 条 frozen 规则(no leading `/`、no `..` / `.`、no empty seg、no `\`、no control char、≤ 1024 bytes、必须 `/` 分隔)
+  - 导出 `VirtualPathError`(`leading-slash` / `empty-path` / `traversal` / `empty-segment` / `backslash` / `control-char` / `too-long`)
+  - 导出 `buildWorkspaceR2Key()`:固定 `tenants/{team}/sessions/{session}/workspace/{normalized}` 结构
+  - 导出 `D1WorkspaceControlPlane` class:`list` / `readByPath` / `upsert` / `deleteByPath`
+  - 导出 `WORKSPACE_WRITTEN_BY` / `WORKSPACE_CLEANUP_STATUSES` 常量(与 011 migration CHECK 对齐)
+  - upsert idempotent:同 `content_hash` 仅 bump `last_modified_at`,不重复覆盖对象
+  - list 支持目录式 prefix(strip 1 trailing `/`,normalize,再加回);traversal-y prefix 直接 throw
+- 新增 `workers/orchestrator-core/test/workspace-control-plane.test.ts`(18 用例)
+  - 涵盖 normalize 7 规则、tenant prefix law、UNIQUE 一致性、prefix 过滤、idempotent upsert、删除幂等
+- **partial(closure §2 P1/P2):** filesystem-core leaf RPC(read/write/list/delete temp-file)与 `/sessions/{id}/workspace/files/{*path}` 公共路由仍未接线;留给 HP6 后续批次
+
+### 9.4 P3 — tool inflight + cancel surface + cancelled event
+
+- 修改 `packages/nacp-session/src/stream-event.ts`
+  - 新增 `ToolCallCancelledKind` schema(`tool_name` + `request_uuid` + `cancel_initiator` ∈ `user|system|parent_cancel` + 可选 `reason`)
+  - 加入 `SessionStreamEventBodySchema` discriminated union
+  - `STREAM_EVENT_KINDS` 长度 10 → 11
+- 修改 `packages/nacp-session/src/index.ts`:re-export `ToolCallCancelledKind`
+- 修改 `packages/nacp-session/test/stream-event.test.ts`:`has 10 registered kinds` → `has 11`
+- 新增 `packages/nacp-session/test/hp6-tool-cancelled.test.ts`(7 用例:三种 initiator + 拒绝未知 + request_uuid 必填 + 联合分发)
+- 修改 `workers/agent-core/src/eval/inspector.ts`:`SESSION_STREAM_EVENT_KINDS` mirrored constant 加入 `tool.call.cancelled`(防 drift)
+- 修改 `workers/agent-core/test/eval/inspector.test.ts`:`mirrors the 10` → `mirrors the 11`(并显式断言含 `tool.call.cancelled`)
+- **partial(closure §2 P3):** `/sessions/{id}/tool-calls` 列表 + cancel HTTP 路由仍未接线;kernel `pendingToolCalls` projection 留给 HP6 后续批次
+
+### 9.5 P4 — artifact promotion + cleanup jobs
+
+- 本轮 **未实现**:`POST /sessions/{id}/artifacts/promote`、`GET /sessions/{id}/artifacts/{id}/provenance`、`POST /sessions/{id}/workspace/cleanup`、`session.end + 24h` cron、`nano_workspace_cleanup_jobs` audit row
+- 011 schema 与 013 schema 已就位(`workspace_promoted` provenance kind + `nano_workspace_cleanup_jobs` 表)
+- closure §2 P4-P5 / §3 K2 / §3 K6 已显式登记后续批次责任
+
+### 9.6 P5 — closure + work log
+
+- 新增 `docs/issue/hero-to-pro/HP6-closure.md`(7 节)
+  - §0 verdict matrix(13 维度)
+  - §1 Resolved 11 项
+  - §2 Partial 7 项
+  - §3 Retained 6 项(K1-K6 含 Q19/Q20/Q21 + cleanup scope HP6/HP7 分工)
+  - §4 F1-F17 chronic status(F7 升级为 partial-by-HP6;F13 加入 inspector drift fix;F14 升级为 partial-by-HP6)
+  - §5 下游 phase 交接
+  - §6 测试与证据矩阵
+  - §7 收口意见
+- cross-e2e 6+ 场景仍未运行(closure §2 P6 + §6 已显式记录)
+- 本节 §9 工作日志回填 `docs/action-plan/hero-to-pro/HP6-action-plan.md`(本文件)
+
+### 9.7 测试与回归矩阵
+
+| 包 | typecheck | build | test |
+|------|-----------|-------|------|
+| `@haimang/nacp-session` | ✅ | ✅ | ✅ 191/191 |
+| `@haimang/orchestrator-core-worker` | ✅ | n/a | ✅ 275/275 |
+| `@haimang/agent-core-worker` | ✅ | n/a | ✅ 1077/1077 |
+
+cross-e2e 6+ 场景显式留至 HP6 后续批次(见 closure §2 P6)。
+

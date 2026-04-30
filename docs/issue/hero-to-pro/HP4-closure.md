@@ -69,7 +69,7 @@
 | chronic | 说明 | HP4 verdict | 备注 |
 |---------|------|-------------|------|
 | F1 | 公共入口模型字段透传断裂 | `closed-by-HP0` | 本轮未触碰 |
-| F2 | system prompt model-aware suffix 缺失 | `not-touched` | 仍归 HP2 / HP3 runtime 批次 |
+| F2 | system prompt model-aware suffix 缺失 | `closed-by-review-fix` | HP0-HP4 复审期间已在 agent-core `runtime-mainline` 真接线；HP4 后续未完成项不再包含该 seam |
 | F3 | session-level current model 与 alias resolution | `closed-by-HP2-first-wave` | HP2 已补 session current-model API、alias/detail resolve 与 turn requested/effective audit；HP4 retry 后续可直接消费这条真相链 |
 | F4 | context state machine（compact / branch / fork） | `carried-from-HP3-partial` | HP3 first wave 已落；本轮不扩写 |
 | F5 | chat lifecycle | `partial-by-HP4` | close/delete/title/read model/checkpoint diff 已 live；retry/restore 未完 |
@@ -113,7 +113,8 @@
 | new read-model tests | `workers/orchestrator-core/test/me-sessions-route.test.ts`; `workers/orchestrator-core/test/me-conversations-route.test.ts` | ✅ |
 | new user-do tests | `workers/orchestrator-core/test/user-do-chat-lifecycle.test.ts` | ✅ |
 | `git --no-pager diff --check` | workspace diff hygiene | ✅ |
-| agent-core restore wiring | not run | n/a |
+| typecheck/build/test (agent-core) | `pnpm --filter @haimang/agent-core-worker typecheck && pnpm --filter @haimang/agent-core-worker build && pnpm --filter @haimang/agent-core-worker test` | ✅ |
+| agent-core restore wiring | review-fix only | n/a |
 | `pnpm test:cross-e2e` | not run | n/a |
 
 ---
