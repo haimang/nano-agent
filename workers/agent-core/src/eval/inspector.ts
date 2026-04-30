@@ -12,7 +12,9 @@
  */
 
 /**
- * The 10 canonical `session.stream.event` kinds.
+ * The 11 canonical `session.stream.event` kinds.
+ *
+ * HP6 P3 added `tool.call.cancelled` (Q21).
  *
  * Mirrored locally rather than depending on `@haimang/nacp-session`
  * to avoid pulling Session profile code into the observability surface.
@@ -23,6 +25,7 @@
 export const SESSION_STREAM_EVENT_KINDS = [
   "tool.call.progress",
   "tool.call.result",
+  "tool.call.cancelled",
   "hook.broadcast",
   "session.update",
   "turn.begin",

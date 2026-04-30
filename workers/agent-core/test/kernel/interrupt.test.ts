@@ -32,8 +32,8 @@ describe("classifyInterrupt", () => {
     expect(r.requiresCheckpoint).toBe(false);
   });
 
-  it("approval_pending → recoverable, requires checkpoint", () => {
-    const r = classifyInterrupt("approval_pending");
+  it("confirmation_pending → recoverable, requires checkpoint", () => {
+    const r = classifyInterrupt("confirmation_pending");
     expect(r.recoverable).toBe(true);
     expect(r.requiresCheckpoint).toBe(true);
   });
@@ -61,9 +61,9 @@ describe("canResumeFrom", () => {
     expect(canResumeFrom(snap)).toBe(true);
   });
 
-  it("returns true for waiting snapshot with approval_pending", () => {
+  it("returns true for waiting snapshot with confirmation_pending (HP5 P2-01 / Q17)", () => {
     let snap = runningSnapshot();
-    snap = applyAction(snap, { type: "interrupt", reason: "approval_pending" });
+    snap = applyAction(snap, { type: "interrupt", reason: "confirmation_pending" });
     expect(canResumeFrom(snap)).toBe(true);
   });
 

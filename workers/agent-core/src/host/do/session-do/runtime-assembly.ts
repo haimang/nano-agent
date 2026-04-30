@@ -32,6 +32,10 @@ import type { SessionWebSocketHelper } from "@haimang/nacp-session";
 import { buildHookAuditRecord } from "../../../hooks/audit.js";
 import type { HookEventName } from "../../../hooks/catalog.js";
 import { parseHookOutcomeBody } from "../../../hooks/core-mapping.js";
+import { HookDispatcher } from "../../../hooks/dispatcher.js";
+import { HookRegistry } from "../../../hooks/registry.js";
+import { LocalTsRuntime } from "../../../hooks/runtimes/local-ts.js";
+import type { HookEmitContext } from "../../../hooks/dispatcher.js";
 
 const logger = createLogger("agent-core");
 
@@ -88,6 +92,11 @@ export interface SessionDoRuntimeAssembly {
   readonly quotaAuthorizer: QuotaAuthorizer | null;
   readonly orchestrator: SessionOrchestrator;
   readonly state: OrchestrationState;
+  // HP5 P2-02 — exposed so HP5 P3 (live caller wiring) and tests can
+  // register handlers (e.g. PreToolUse permission) without rebuilding
+  // the assembly. Always present in production assembly; the dispatcher
+  // itself enforces timeout / depth / fail-closed via existing guards.
+  readonly hookDispatcher: HookDispatcher;
 }
 
 function buildQuotaAuthorizer(
@@ -120,10 +129,40 @@ function buildQuotaAuthorizer(
   );
 }
 
+// HP5 P2-02 — HookDispatcher runtime injection.
+//
+// Frozen contract:
+//   * docs/charter/plan-hero-to-pro.md §7.6 HP5
+//   * docs/design/hero-to-pro/HP5-confirmation-control-plane.md §7 F2
+//   * workers/agent-core/src/hooks/dispatcher.ts
+//
+// Pre-HP5 the dispatcher was an optional seam: when live runtime
+// assembly forgot to pass one, hook.emit became a no-op. That made
+// `emitPermissionRequestAndAwait()` (and any future PreToolUse / live
+// caller) impossible to ship without first re-wiring the host. HP5
+// promotes the dispatcher to a *real* runtime dependency that is
+// constructed unconditionally during session DO assembly. Existing
+// `subsystems.hooks` aggregation (composition / remote-bindings) is
+// not removed — we simply guarantee the kernel side has a working
+// dispatcher with the local-ts runtime ready to receive handlers from
+// future HP5 P3 wiring (PreToolUse permission, elicitation alias).
+//
+// The dispatcher's existing timeout / depth / fail-closed guards (see
+// dispatcher.ts §1-3) are preserved verbatim; we only own the
+// instantiation seam.
+function createSessionHookDispatcher(): HookDispatcher {
+  const registry = new HookRegistry();
+  const runtimes = new Map([
+    ["local-ts" as const, new LocalTsRuntime()],
+  ]);
+  return new HookDispatcher(registry, runtimes);
+}
+
 function createLiveKernelRunner(
   ctx: Omit<SessionDoRuntimeAssemblyContext, "getCapabilityTransport">,
   capabilityTransport: CapabilityTransportLike | undefined,
   quotaAuthorizer: QuotaAuthorizer | null,
+  hookDispatcher: HookDispatcher,
 ) {
   const runtimeEnv = ctx.env as Partial<SessionRuntimeEnv> | undefined;
   if (!runtimeEnv?.AI) return null;
@@ -135,6 +174,15 @@ function createLiveKernelRunner(
     capabilityTransport,
     contextProvider: () => ctx.buildQuotaContext(),
     anchorProvider: () => ctx.buildCrossSeamAnchor(),
+    // HP5 P2-02 — real dispatcher injection. Even with no handlers
+    // registered yet, the per-emit timeout / depth / fail-closed
+    // guards remain in force so PreToolUse permission and other live
+    // callers added in HP5 P3 / HP6 / HP7 land on a fully-functional
+    // seam without further runtime-assembly surgery.
+    hookDispatcher,
+    hookContextProvider: (): HookEmitContext => ({
+      sessionUuid: ctx.getSessionUuid() ?? undefined,
+    }),
     onUsageCommit: (event) => {
       logger.info("usage-commit", {
         tag: "usage-commit",
@@ -181,11 +229,13 @@ function buildOrchestrationDeps(
   ctx: SessionDoRuntimeAssemblyContext,
   subsystems: SubsystemHandles,
   quotaAuthorizer: QuotaAuthorizer | null,
+  hookDispatcher: HookDispatcher,
 ): OrchestrationDeps {
   const liveKernel = createLiveKernelRunner(
     ctx,
     readCapabilityTransport(subsystems),
     quotaAuthorizer,
+    hookDispatcher,
   );
 
   return {
@@ -412,8 +462,9 @@ export function createSessionDoRuntimeAssembly(
     workspace: workspaceHandle,
   } satisfies SubsystemHandles;
   const quotaAuthorizer = buildQuotaAuthorizer(ctx.env, effectiveEvalSink);
+  const hookDispatcher = createSessionHookDispatcher();
   const orchestrator = new SessionOrchestrator(
-    buildOrchestrationDeps(ctx, subsystems, quotaAuthorizer),
+    buildOrchestrationDeps(ctx, subsystems, quotaAuthorizer, hookDispatcher),
     ctx.config,
   );
 
@@ -424,5 +475,6 @@ export function createSessionDoRuntimeAssembly(
     quotaAuthorizer,
     orchestrator,
     state: orchestrator.createInitialState(),
+    hookDispatcher,
   };
 }

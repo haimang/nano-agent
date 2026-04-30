@@ -164,6 +164,21 @@ export const NANO_AGENT_SYSTEM_PROMPT =
   "Use the provided tools as a governed fake-bash capability layer; do not assume POSIX shell, local OS access, or unsupported commands. " +
   "Prefer structured tool calls for filesystem, search, network, TypeScript execution, and git tasks, and surface unsupported capability needs explicitly.";
 
+const MODEL_PROMPT_SUFFIX_CACHE = new Map<string, string>();
+
+export function primeModelPromptSuffix(modelId: string, suffix: string | null | undefined): void {
+  if (!modelId) return;
+  if (typeof suffix === "string" && suffix.length > 0) {
+    MODEL_PROMPT_SUFFIX_CACHE.set(modelId, suffix);
+    return;
+  }
+  MODEL_PROMPT_SUFFIX_CACHE.delete(modelId);
+}
+
+export function resetModelPromptSuffixCache(): void {
+  MODEL_PROMPT_SUFFIX_CACHE.clear();
+}
+
 // HP0 P3-01 — model-aware seam:HP1 落 `nano_models.base_instructions_suffix`
 // 后,本函数会在 NANO_AGENT_SYSTEM_PROMPT 之后接入 per-model suffix。HP0 阶段
 // 不读取 D1,`modelId` 仅用于占位/接缝,行为与无参版本等价(见 HP0-closure §2 P1
@@ -175,7 +190,6 @@ export function withNanoAgentSystemPrompt(
   messages: readonly unknown[],
   modelId?: string,
 ): readonly unknown[] {
-  void modelId;
   const hasSystemPrompt = messages.some(
     (message) =>
       isRecord(message) &&
@@ -184,11 +198,17 @@ export function withNanoAgentSystemPrompt(
       message.content.length > 0,
   );
   if (hasSystemPrompt) return messages;
-  return [{ role: "system", content: NANO_AGENT_SYSTEM_PROMPT }, ...messages];
+  const suffix = modelId ? MODEL_PROMPT_SUFFIX_CACHE.get(modelId) : undefined;
+  const content =
+    typeof suffix === "string" && suffix.length > 0
+      ? `${NANO_AGENT_SYSTEM_PROMPT}\n\n${suffix}`
+      : NANO_AGENT_SYSTEM_PROMPT;
+  return [{ role: "system", content }, ...messages];
 }
 
 function readLlmRequestEvidence(messages: readonly unknown[]): {
   readonly modelId: string;
+  readonly reasoning: { readonly effort: "low" | "medium" | "high" } | undefined;
   readonly isReasoning: boolean;
   readonly isVision: boolean;
 } {
@@ -201,14 +221,37 @@ function readLlmRequestEvidence(messages: readonly unknown[]): {
         : typeof message.modelId === "string" && message.modelId.length > 0
           ? message.modelId
           : defaultModel;
-    const isReasoning = isRecord(message.reasoning);
+    const effort: "low" | "medium" | "high" | undefined =
+      isRecord(message.reasoning) &&
+      (message.reasoning.effort === "low" ||
+        message.reasoning.effort === "medium" ||
+        message.reasoning.effort === "high")
+        ? message.reasoning.effort
+        : undefined;
+    const reasoning = effort ? { effort } : undefined;
+    const isReasoning = Boolean(reasoning);
     const content = message.content;
     const isVision =
       Array.isArray(content) &&
       content.some((part) => isRecord(part) && part.kind === "image_url");
-    return { modelId, isReasoning, isVision };
+    return { modelId, reasoning, isReasoning, isVision };
   }
-  return { modelId: defaultModel, isReasoning: false, isVision: false };
+  return { modelId: defaultModel, reasoning: undefined, isReasoning: false, isVision: false };
+}
+
+async function readModelPromptSuffix(
+  db: D1Database,
+  modelId: string,
+): Promise<string | null> {
+  const row = await db.prepare(
+    `SELECT base_instructions_suffix
+       FROM nano_models
+      WHERE model_id = ?1
+      LIMIT 1`,
+  ).bind(modelId).first<{ base_instructions_suffix: string | null }>();
+  return typeof row?.base_instructions_suffix === "string" && row.base_instructions_suffix.length > 0
+    ? row.base_instructions_suffix
+    : null;
 }
 
 function parseSessionFileImageUrl(
@@ -308,6 +351,11 @@ export function createMainlineKernelRunner(
           const messages = Array.isArray(request) ? request : [];
           const evidence = readLlmRequestEvidence(messages);
           const resolvedMessages = await resolveSessionFileImages(messages, options);
+          const promptSuffix =
+            options.modelCatalogDb && evidence.modelId
+              ? await readModelPromptSuffix(options.modelCatalogDb, evidence.modelId)
+              : null;
+          primeModelPromptSuffix(evidence.modelId, promptSuffix);
           const modelCapabilities = options.modelCatalogDb
             ? await loadWorkersAiModelCapabilities(options.modelCatalogDb)
             : undefined;
@@ -316,6 +364,8 @@ export function createMainlineKernelRunner(
             messages: withNanoAgentSystemPrompt(resolvedMessages, evidence.modelId),
             tools: true,
             modelCapabilities,
+            modelId: evidence.modelId,
+            reasoning: evidence.reasoning,
           });
           for (const [turnId] of llmRequestIds) {
             llmEvidenceByTurn.set(turnId, evidence);

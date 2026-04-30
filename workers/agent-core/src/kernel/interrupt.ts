@@ -27,7 +27,7 @@ export function classifyInterrupt(
       return { recoverable: true, requiresCheckpoint: true };
     case "compact_required":
       return { recoverable: true, requiresCheckpoint: false };
-    case "approval_pending":
+    case "confirmation_pending":
       return { recoverable: true, requiresCheckpoint: true };
     case "fatal_error":
       return { recoverable: false, requiresCheckpoint: true };

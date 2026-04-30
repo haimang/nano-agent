@@ -178,4 +178,36 @@ describe("WorkersAiGateway", () => {
     expect(exec.model.modelId).toBe("@cf/custom/reasoning-vision");
     expect(exec.request.reasoning?.effort).toBe("low");
   });
+
+  it("prefers explicit modelId/reasoning inputs over message inference", () => {
+    const exec = buildWorkersAiExecutionRequestFromMessages({
+      messages: [
+        {
+          role: "user",
+          model_id: "@cf/meta/llama-3.2-3b-instruct",
+          reasoning: { effort: "low" },
+          content: "hello",
+        },
+      ],
+      modelId: "@cf/meta/llama-4-scout-17b-16e-instruct",
+      reasoning: { effort: "high" },
+      modelCapabilities: [
+        {
+          modelId: "@cf/meta/llama-4-scout-17b-16e-instruct",
+          provider: "workers-ai",
+          supportsStream: true,
+          supportsTools: true,
+          supportsVision: false,
+          supportsReasoning: true,
+          reasoningEfforts: ["high"],
+          supportsJsonSchema: false,
+          contextWindow: 131072,
+          maxOutputTokens: 4096,
+        },
+      ],
+    });
+
+    expect(exec.model.modelId).toBe("@cf/meta/llama-4-scout-17b-16e-instruct");
+    expect(exec.request.reasoning?.effort).toBe("high");
+  });
 });

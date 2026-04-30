@@ -3,9 +3,9 @@
  *
  * Two cases:
  *   1. A fresh session moves idle → start_turn → llm_call → complete_turn.
- *   2. A turn suspended on approval_pending buffers an incoming input via
- *      `input_arrived`, then consumes it on `resume` before running the
- *      remainder of the turn to completion.
+ *   2. A turn suspended on confirmation_pending (HP5 P2-01 / Q17) buffers
+ *      an incoming input via `input_arrived`, then consumes it on `resume`
+ *      before running the remainder of the turn to completion.
  */
 
 import { describe, it, expect } from "vitest";
@@ -111,22 +111,22 @@ describe("Scenario: idle → start_turn → llm_call → complete_turn", () => {
 });
 
 // ═══════════════════════════════════════════════════════════════════
-// Scenario 2: approval_pending → input_arrived → resume → finish
+// Scenario 2: confirmation_pending → input_arrived → resume → finish
 // ═══════════════════════════════════════════════════════════════════
 
-describe("Scenario: turn_running → approval_pending → input_arrived → resume → finish", () => {
+describe("Scenario: turn_running → confirmation_pending → input_arrived → resume → finish", () => {
   it("buffers incoming input while waiting and consumes it on resume", async () => {
     const runner = new KernelRunner(fakeDelegates());
     let snap = idleSnapshot();
     snap = applyAction(snap, { type: "start_turn", turnId: "t-approval" });
 
-    // Simulate that an approval-pending interrupt was triggered.
+    // Simulate that a confirmation-pending interrupt was triggered.
     snap = applyAction(snap, {
       type: "interrupt",
-      reason: "approval_pending",
+      reason: "confirmation_pending",
     });
     expect(snap.session.phase).toBe("waiting");
-    expect(snap.activeTurn!.interruptReason).toBe("approval_pending");
+    expect(snap.activeTurn!.interruptReason).toBe("confirmation_pending");
 
     // External input arrives while we're suspended. The reducer
     // buffers it on pendingInput without touching phase / messages.

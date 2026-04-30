@@ -36,13 +36,25 @@ export type StepKind = z.infer<typeof StepKindSchema>;
 
 // ═══════════════════════════════════════════════════════════════════
 // §3 — Interrupt Reason
+//
+// HP5 P2-01 (Q17) — `approval_pending` was renamed to
+// `confirmation_pending` so the kernel sees a single confirmation
+// wait reason regardless of confirmation kind. The kind itself is
+// runtime metadata (carried on the host's confirmation registry row),
+// not a kernel enum entry. This avoids enum explosion as HP3 / HP4 /
+// HP6 / HP7 plug their kinds in.
+//
+// Q39: any external alias for legacy callers must be a wrapper at the
+// boundary, not a parallel kernel enum. We therefore do NOT add a
+// kernel-level `approval_pending` alias; downstream code that still
+// thinks in those terms must adapt at its layer.
 // ═══════════════════════════════════════════════════════════════════
 
 export const InterruptReasonSchema = z.enum([
   "cancel",
   "timeout",
   "compact_required",
-  "approval_pending",
+  "confirmation_pending",
   "fatal_error",
 ]);
 export type InterruptReason = z.infer<typeof InterruptReasonSchema>;

@@ -168,7 +168,7 @@ describe("applyAction", () => {
   describe("input_arrived", () => {
     it("buffers input on the active turn's pendingInput", () => {
       let snap = runningSnapshot();
-      snap = applyAction(snap, { type: "interrupt", reason: "approval_pending" });
+      snap = applyAction(snap, { type: "interrupt", reason: "confirmation_pending" });
       const next = applyAction(snap, {
         type: "input_arrived",
         input: { userMessage: "approved" },
@@ -199,7 +199,7 @@ describe("applyAction", () => {
 
     it("consumes pendingInput into messages and clears the buffer", () => {
       let snap = runningSnapshot();
-      snap = applyAction(snap, { type: "interrupt", reason: "approval_pending" });
+      snap = applyAction(snap, { type: "interrupt", reason: "confirmation_pending" });
       snap = applyAction(snap, {
         type: "input_arrived",
         input: { userMessage: "go ahead" },

@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import { applyAction } from "../../src/kernel/reducer.js";
 import { createInitialSessionState, createKernelSnapshot } from "../../src/kernel/state.js";
 import type { SchedulerSignals } from "../../src/kernel/scheduler.js";
-import { createMainlineKernelRunner } from "../../src/host/runtime-mainline.js";
+import {
+  createMainlineKernelRunner,
+  resetModelPromptSuffixCache,
+} from "../../src/host/runtime-mainline.js";
 import type { QuotaAuthorizer } from "../../src/host/quota/authorizer.js";
 
 function baseSignals(overrides: Partial<SchedulerSignals> = {}): SchedulerSignals {
@@ -215,5 +218,59 @@ describe("createMainlineKernelRunner", () => {
       role: "system",
     });
     expect(payload.messages?.[0]?.content).toContain("Cloudflare Workers");
+  });
+
+  it("injects per-model base_instructions_suffix and forwards explicit model selection", async () => {
+    resetModelPromptSuffixCache();
+    const run = vi.fn(async () => ({
+      response: "ok",
+      usage: { prompt_tokens: 1, completion_tokens: 1 },
+    }));
+    const modelCatalogDb = {
+      prepare: vi.fn((sql: string) => ({
+        bind: vi.fn(() => ({
+          first: vi.fn(async () =>
+            sql.includes("base_instructions_suffix")
+              ? { base_instructions_suffix: "Use the reasoning profile." }
+              : null,
+          ),
+          all: vi.fn(async () => ({
+            results: sql.includes("WHERE status = 'active'")
+              ? [{
+                  model_id: "@cf/ibm-granite/granite-4.0-h-micro",
+                  context_window: 131072,
+                  is_reasoning: 0,
+                  is_vision: 0,
+                  is_function_calling: 1,
+                }]
+              : [],
+          })),
+        })),
+        all: vi.fn(async () => ({
+          results: [{
+            model_id: "@cf/ibm-granite/granite-4.0-h-micro",
+            context_window: 131072,
+            is_reasoning: 0,
+            is_vision: 0,
+            is_function_calling: 1,
+          }],
+        })),
+      })),
+    } as unknown as D1Database;
+    const runner = createMainlineKernelRunner({
+      ai: { run },
+      quotaAuthorizer: null,
+      capabilityTransport: undefined,
+      contextProvider: () => null,
+      anchorProvider: () => undefined,
+      modelCatalogDb,
+    });
+
+    await runner.advanceStep(runningSnapshot("turn-system"), baseSignals());
+
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(run.mock.calls[0]?.[0]).toBe("@cf/ibm-granite/granite-4.0-h-micro");
+    const payload = run.mock.calls[0]?.[1] as { messages?: Array<{ role?: string; content?: string }> };
+    expect(payload.messages?.[0]?.content).toContain("Use the reasoning profile.");
   });
 });
