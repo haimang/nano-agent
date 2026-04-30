@@ -1,6 +1,6 @@
 {
   "name": "@haimang/nacp-core",
-  "version": "1.4.0",
+  "version": "1.6.0",
   "type": "module",
   "description": "NACP-Core — Nano-Agent Communication Protocol internal envelope layer",
   "main": "./dist/index.js",
@@ -37,6 +37,14 @@
     "./observability": {
       "types": "./dist/observability/envelope.d.ts",
       "import": "./dist/observability/envelope.js"
+    },
+    "./logger": {
+      "types": "./dist/observability/logger/index.d.ts",
+      "import": "./dist/observability/logger/index.js"
+    },
+    "./error-codes-client": {
+      "types": "./dist/error-registry-client/index.d.ts",
+      "import": "./dist/error-registry-client/index.js"
     }
   },
   "files": [
@@ -47,8 +55,11 @@
     "access": "restricted"
   },
   "scripts": {
+    "prebuild": "tsx scripts/generate-error-registry-client-data.ts",
     "build": "tsc",
+    "pretypecheck": "tsx scripts/generate-error-registry-client-data.ts",
     "typecheck": "tsc --noEmit",
+    "pretest": "tsx scripts/generate-error-registry-client-data.ts",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:integration": "vitest run test/integration/",

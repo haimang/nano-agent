@@ -65,11 +65,16 @@ export {
   registerErrorDefinition,
   isRetryableCategory,
   mapErrorCategoryToStatus,
+  resolveErrorMeta,
+  listErrorMetas,
+  listErrorMetaSources,
 } from "./error-registry.js";
 export type {
   NacpErrorCategory,
   NacpError,
   NacpErrorDefinition,
+  ErrorMeta,
+  ErrorMetaSource,
 } from "./error-registry.js";
 
 // ── Retry ──
