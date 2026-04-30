@@ -54,8 +54,20 @@ export function SettingsPage() {
             but runtime unblock via WebSocket is not yet implemented.
           </li>
           <li style={styles.limitsItem}>
-            <strong>Files:</strong> File inspection is limited to metadata.
-            Upload/download/preview are not yet available.
+            <strong>Files:</strong> Session file routes now read from the
+            filesystem-backed artifact surface; this spike exposes file metadata
+            in the inspector while full upload/preview UX remains deferred.
+          </li>
+          <li style={styles.limitsItem}>
+            <strong>Observability:</strong> RHX2 debug endpoints are available
+            in the inspector for logs, recent errors, audit rows, and package
+            drift. Audit rows remain owner-gated by the orchestrator.
+          </li>
+          <li style={styles.limitsItem}>
+            <strong>Error stream:</strong> During the RHX2 spike window,
+            <code style={styles.code}>system.error</code> is dual-emitted with
+            <code style={styles.code}>system.notify</code> for old-client
+            compatibility.
           </li>
           <li style={styles.limitsItem}>
             <strong>Model selector:</strong> Model/provider switching is not yet

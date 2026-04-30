@@ -59,6 +59,8 @@ export async function login(email: string, password: string): Promise<AuthState>
   ) {
     throw new ApiRequestError({
       kind: "request.error",
+      category: "request.error",
+      retryable: false,
       status: 400,
       message: "login response missing token/team/user",
     });

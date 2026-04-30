@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { getAuthState } from "../../state/auth";
 import * as sessionsApi from "../../apis/sessions";
+import * as debugApi from "../../apis/debug";
 import { ApiRequestError } from "../../apis/transport";
 
 interface InspectorTabsProps {
@@ -10,7 +11,7 @@ interface InspectorTabsProps {
   sessionStatus: Record<string, unknown> | null;
 }
 
-const TABS = ["status", "timeline", "history", "usage"] as const;
+const TABS = ["status", "timeline", "history", "usage", "files", "logs", "recent", "audit", "packages"] as const;
 
 interface TimelineEvent {
   kind?: string;
@@ -25,6 +26,8 @@ export function InspectorTabs({ activeTab, onTabChange, sessionUuid, sessionStat
   const [timelineData, setTimelineData] = useState<TimelineEvent[] | null>(null);
   const [historyData, setHistoryData] = useState<Record<string, unknown> | null>(null);
   const [usageData, setUsageData] = useState<Record<string, unknown> | null>(null);
+  const [filesData, setFilesData] = useState<Record<string, unknown> | null>(null);
+  const [debugData, setDebugData] = useState<Record<string, Record<string, unknown> | null>>({});
   const [loading, setLoading] = useState<string | null>(null);
   const [errors, setErrors] = useState<Record<string, string | null>>({});
 
@@ -33,6 +36,8 @@ export function InspectorTabs({ activeTab, onTabChange, sessionUuid, sessionStat
     setTimelineData(null);
     setHistoryData(null);
     setUsageData(null);
+    setFilesData(null);
+    setDebugData({});
     setErrors({});
     setLoading(null);
   }, [sessionUuid]);
@@ -73,7 +78,62 @@ export function InspectorTabs({ activeTab, onTabChange, sessionUuid, sessionStat
         })))
         .finally(() => setLoading(null));
     }
-  }, [activeTab, sessionUuid, timelineData, historyData, usageData]);
+
+    if (activeTab === "files" && filesData === null) {
+      setLoading("files");
+      sessionsApi.files(auth, sessionUuid)
+        .then((data) => setFilesData(data))
+        .catch((err) => setErrors((prev) => ({
+          ...prev,
+          files: err instanceof ApiRequestError ? err.details.message : "Failed",
+        })))
+        .finally(() => setLoading(null));
+    }
+
+    if (activeTab === "logs" && !debugData.logs) {
+      setLoading("logs");
+      debugApi.logs(auth, { session_uuid: sessionUuid, limit: 20 })
+        .then((data) => setDebugData((prev) => ({ ...prev, logs: data })))
+        .catch((err) => setErrors((prev) => ({
+          ...prev,
+          logs: err instanceof ApiRequestError ? err.details.message : "Failed",
+        })))
+        .finally(() => setLoading(null));
+    }
+
+    if (activeTab === "recent" && !debugData.recent) {
+      setLoading("recent");
+      debugApi.recentErrors(auth, { limit: 20 })
+        .then((data) => setDebugData((prev) => ({ ...prev, recent: data })))
+        .catch((err) => setErrors((prev) => ({
+          ...prev,
+          recent: err instanceof ApiRequestError ? err.details.message : "Failed",
+        })))
+        .finally(() => setLoading(null));
+    }
+
+    if (activeTab === "audit" && !debugData.audit) {
+      setLoading("audit");
+      debugApi.audit(auth, { session_uuid: sessionUuid, limit: 20 })
+        .then((data) => setDebugData((prev) => ({ ...prev, audit: data })))
+        .catch((err) => setErrors((prev) => ({
+          ...prev,
+          audit: err instanceof ApiRequestError ? err.details.message : "Failed",
+        })))
+        .finally(() => setLoading(null));
+    }
+
+    if (activeTab === "packages" && !debugData.packages) {
+      setLoading("packages");
+      debugApi.packages(auth)
+        .then((data) => setDebugData((prev) => ({ ...prev, packages: data })))
+        .catch((err) => setErrors((prev) => ({
+          ...prev,
+          packages: err instanceof ApiRequestError ? err.details.message : "Failed",
+        })))
+        .finally(() => setLoading(null));
+    }
+  }, [activeTab, sessionUuid, timelineData, historyData, usageData, filesData, debugData]);
 
   const renderStatus = () => {
     const status = sessionStatus;
@@ -174,12 +234,29 @@ export function InspectorTabs({ activeTab, onTabChange, sessionUuid, sessionStat
     );
   };
 
+  const renderJsonPanel = (tab: string, data: Record<string, unknown> | null) => {
+    if (loading === tab) return <div style={styles.empty}>Loading...</div>;
+    if (errors[tab]) return <div style={styles.error}>{errors[tab]}</div>;
+    if (!data) return <div style={styles.empty}>No {tab} data</div>;
+    return (
+      <div style={styles.panel}>
+        <div style={styles.sectionTitle}>{tab} Snapshot</div>
+        <pre style={styles.pre}>{JSON.stringify(data, null, 2)}</pre>
+      </div>
+    );
+  };
+
   const renderContent = () => {
     switch (activeTab) {
       case "status": return renderStatus();
       case "timeline": return renderTimeline();
       case "history": return renderHistory();
       case "usage": return renderUsage();
+      case "files": return renderJsonPanel("files", filesData);
+      case "logs": return renderJsonPanel("logs", debugData.logs ?? null);
+      case "recent": return renderJsonPanel("recent", debugData.recent ?? null);
+      case "audit": return renderJsonPanel("audit", debugData.audit ?? null);
+      case "packages": return renderJsonPanel("packages", debugData.packages ?? null);
       default: return null;
     }
   };

@@ -1,3 +1,9 @@
+import {
+  classifyByStatus,
+  getErrorMeta,
+  type ClientErrorCategory,
+} from "@haimang/nacp-core/error-codes-client";
+
 const DEFAULT_UPSTREAM =
   "https://nano-agent-orchestrator-core-preview.haimang.workers.dev";
 
@@ -47,8 +53,12 @@ export interface LegacyActionPayload {
 
 export type ApiResponse = FacadeSuccessEnvelope | LegacyActionPayload | Record<string, unknown>;
 
+export type ApiErrorKind = "auth.expired" | "quota.exceeded" | "runtime.error" | "request.error";
+
 export interface ApiError {
-  kind: "auth.expired" | "quota.exceeded" | "runtime.error" | "request.error";
+  kind: ApiErrorKind;
+  category: ClientErrorCategory;
+  retryable: boolean;
   status: number;
   message: string;
   code?: string;
@@ -60,6 +70,19 @@ export class ApiRequestError extends Error {
   constructor(readonly details: ApiError) {
     super(details.message);
   }
+}
+
+function legacyKind(category: ClientErrorCategory): ApiErrorKind {
+  if (
+    category === "auth.expired" ||
+    category === "quota.exceeded" ||
+    category === "runtime.error" ||
+    category === "request.error"
+  ) {
+    return category;
+  }
+  if (category === "dependency.unavailable") return "runtime.error";
+  return "request.error";
 }
 
 export class Transport {
@@ -105,18 +128,17 @@ export class Transport {
             ? body.message
             : `HTTP ${response.status}`;
 
+      const code = typeof error.code === "string" ? error.code : undefined;
+      const meta = getErrorMeta(code);
+      const category = meta?.category ?? classifyByStatus(response.status);
+
       throw new ApiRequestError({
-        kind:
-          response.status === 401
-            ? "auth.expired"
-            : response.status === 429
-              ? "quota.exceeded"
-              : response.status >= 500
-                ? "runtime.error"
-                : "request.error",
+        kind: legacyKind(category),
+        category,
+        retryable: meta?.retryable ?? (response.status === 429 || response.status >= 500),
         status: response.status,
         message,
-        code: typeof error.code === "string" ? error.code : undefined,
+        code,
         trace_uuid:
           typeof body.trace_uuid === "string"
             ? body.trace_uuid

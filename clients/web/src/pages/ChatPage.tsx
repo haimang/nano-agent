@@ -17,6 +17,19 @@ interface StreamEvent {
   new_attachment_at?: string;
 }
 
+interface SystemErrorPayload {
+  kind: "system.error";
+  error?: {
+    code?: string;
+    category?: string;
+    message?: string;
+    retryable?: boolean;
+    detail?: unknown;
+  };
+  source_worker?: string;
+  trace_uuid?: string;
+}
+
 interface MessageItem {
   role: "user" | "assistant" | "system";
   content: string;
@@ -63,6 +76,7 @@ export function ChatPage({ activeSessionUuid, onCreateSession, onStatusChange }:
   const activeUuidRef = useRef<string | null>(null);
   const ignoredCloseSocketsRef = useRef(new Set<WebSocket>());
   const terminalCloseSocketsRef = useRef(new Set<WebSocket>());
+  const recentSystemErrorsRef = useRef(new Map<string, number>());
 
   const cleanupWs = useCallback(() => {
     if (reconnectTimerRef.current) {
@@ -84,6 +98,28 @@ export function ChatPage({ activeSessionUuid, onCreateSession, onStatusChange }:
   const addMessage = useCallback((msg: MessageItem) => {
     messagesRef.current = [...messagesRef.current, msg];
     setMessages([...messagesRef.current]);
+  }, []);
+
+  const addSystemError = useCallback((payload: SystemErrorPayload) => {
+    const code = payload.error?.code ?? "unknown-error";
+    const message = payload.error?.message ?? "System error";
+    const trace = payload.trace_uuid;
+    const key = trace ? `${trace}:${code}` : `${code}:${message}`;
+    recentSystemErrorsRef.current.set(key, Date.now());
+    addMessage({
+      role: "system",
+      content: `[Error:${code}] ${message}${payload.error?.retryable ? " (retryable)" : ""}`,
+      kind: "system.error",
+    });
+  }, [addMessage]);
+
+  const shouldSuppressDualNotify = useCallback((payload: { code?: unknown; trace_uuid?: unknown; message?: unknown }) => {
+    const trace = typeof payload.trace_uuid === "string" ? payload.trace_uuid : undefined;
+    const code = typeof payload.code === "string" ? payload.code : "unknown-error";
+    const message = typeof payload.message === "string" ? payload.message : "System error";
+    const key = trace ? `${trace}:${code}` : `${code}:${message}`;
+    const seenAt = recentSystemErrorsRef.current.get(key);
+    return typeof seenAt === "number" && Date.now() - seenAt < 1_000;
   }, []);
 
   const rebuildMessagesFromTimeline = useCallback((
@@ -184,8 +220,8 @@ export function ChatPage({ activeSessionUuid, onCreateSession, onStatusChange }:
       if (!heartbeat.shouldSendHeartbeat(lastHeartbeatSentAt)) return;
       lastHeartbeatSentAt = Date.now();
       socket.send(JSON.stringify({
-        message_type: "session.heartbeat",
-        body: { ts: lastHeartbeatSentAt },
+        kind: "session.heartbeat",
+        ts: lastHeartbeatSentAt,
       }));
     };
 
@@ -198,8 +234,8 @@ export function ChatPage({ activeSessionUuid, onCreateSession, onStatusChange }:
       setWsError(null);
       sendHeartbeat();
       socket.send(JSON.stringify({
-        message_type: "session.resume",
-        body: { last_seen_seq: lastSeenSeqRef.current },
+        kind: "session.resume",
+        last_seen_seq: lastSeenSeqRef.current,
       }));
 
       sessionsApi.sessionStatus(auth, sessionUuid).then((status) => {
@@ -215,13 +251,23 @@ export function ChatPage({ activeSessionUuid, onCreateSession, onStatusChange }:
         if (typeof parsed.seq === "number" && Number.isFinite(parsed.seq) && parsed.seq > 0) {
           lastSeenSeqRef.current = Math.max(lastSeenSeqRef.current, parsed.seq);
           socket.send(JSON.stringify({
-            message_type: "session.stream.ack",
-            body: { stream_uuid: "main", acked_seq: parsed.seq },
+            kind: "session.stream.ack",
+            stream_uuid: "main",
+            acked_seq: parsed.seq,
           }));
         }
 
         if (parsed.kind === "event" && parsed.payload) {
-          const payload = parsed.payload as { kind?: string; content?: string; content_type?: string; is_final?: boolean };
+          const payload = parsed.payload as {
+            kind?: string;
+            content?: string;
+            content_type?: string;
+            is_final?: boolean;
+            severity?: string;
+            message?: string;
+            code?: string;
+            trace_uuid?: string;
+          };
           if (payload.kind === "llm.delta" && typeof payload.content === "string") {
             const last = messagesRef.current[messagesRef.current.length - 1];
             if (last && last.role === "assistant" && last.kind === "llm.delta" && !last.seq) {
@@ -241,15 +287,28 @@ export function ChatPage({ activeSessionUuid, onCreateSession, onStatusChange }:
           } else if (payload.kind === "terminal" || payload.kind === "session.complete") {
             terminalCloseSocketsRef.current.add(socket);
             addMessage({ role: "system", content: `[Session ended]`, kind: "terminal" });
+          } else if (payload.kind === "system.error") {
+            addSystemError(payload as SystemErrorPayload);
+          } else if (payload.kind === "system.notify" && payload.severity === "error") {
+            if (!shouldSuppressDualNotify(payload)) {
+              addMessage({
+                role: "system",
+                content: `[Notify:error] ${payload.message ?? "System error"}`,
+                kind: "system.notify",
+                seq: parsed.seq,
+              });
+            }
           } else if (payload.kind) {
             addMessage({ role: "system", content: `[${payload.kind}]`, kind: payload.kind, seq: parsed.seq });
           }
-        } else if (parsed.kind === "terminal") {
+        } else if (parsed.kind === "system.error") {
+          addSystemError(parsed as unknown as SystemErrorPayload);
+        } else if (parsed.kind === "terminal" || parsed.kind === "session.end") {
           terminalCloseSocketsRef.current.add(socket);
           addMessage({ role: "system", content: `[Session ${parsed.terminal ?? "ended"}]`, kind: "terminal" });
         } else if (parsed.kind === "session.heartbeat") {
           // silent
-        } else if (parsed.kind === "attachment_superseded") {
+        } else if (parsed.kind === "attachment_superseded" || parsed.kind === "session.attachment.superseded") {
           setWsError("Connection replaced by a new attachment");
           setWsStatus("disconnected");
         }
@@ -299,7 +358,7 @@ export function ChatPage({ activeSessionUuid, onCreateSession, onStatusChange }:
       setWsStatus("disconnected");
       // close event will follow and handle reconnect
     });
-  }, [cleanupWs, addMessage, onStatusChange, reconcileSessionReplay]);
+  }, [cleanupWs, addMessage, addSystemError, shouldSuppressDualNotify, onStatusChange, reconcileSessionReplay]);
 
   const handleSend = useCallback(async (isFirst: boolean) => {
     if (!input.trim() || !activeSessionUuid) return;
@@ -343,6 +402,20 @@ export function ChatPage({ activeSessionUuid, onCreateSession, onStatusChange }:
     }
   };
 
+  const handleSpikeSystemError = useCallback(async () => {
+    if (!activeSessionUuid) return;
+    const auth = getAuthState();
+    if (!auth) {
+      setError("Not authenticated");
+      return;
+    }
+    try {
+      await sessionsApi.triggerSystemErrorSpike(auth, activeSessionUuid);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to trigger system.error spike");
+    }
+  }, [activeSessionUuid]);
+
   useEffect(() => {
     return () => cleanupWs();
   }, [cleanupWs]);
@@ -357,6 +430,7 @@ export function ChatPage({ activeSessionUuid, onCreateSession, onStatusChange }:
     setMessages([]);
     setStarted(false);
     lastSeenSeqRef.current = 0;
+    recentSystemErrorsRef.current.clear();
     setError(null);
     setWsError(null);
 
@@ -429,6 +503,15 @@ export function ChatPage({ activeSessionUuid, onCreateSession, onStatusChange }:
           />
           <span style={styles.wsText}>{wsStatus}</span>
           {wsError && <span style={styles.wsError}>{wsError}</span>}
+          <button
+            type="button"
+            onClick={handleSpikeSystemError}
+            style={styles.spikeBtn}
+            disabled={wsStatus !== "connected"}
+            title="RHX2 spike: emit a synthetic system.error frame"
+          >
+            spike error
+          </button>
         </div>
       </div>
 
@@ -526,6 +609,16 @@ const styles: Record<string, React.CSSProperties> = {
   wsError: {
     fontSize: "0.7rem",
     color: "var(--color-accent-error)",
+    marginLeft: 8,
+  },
+  spikeBtn: {
+    border: "1px solid var(--color-border-default)",
+    background: "var(--color-bg-overlay)",
+    color: "var(--color-text-muted)",
+    borderRadius: "var(--radius-sm)",
+    padding: "2px 6px",
+    fontSize: "0.65rem",
+    cursor: "pointer",
     marginLeft: 8,
   },
   messages: {

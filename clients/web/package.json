@@ -9,6 +9,7 @@
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {
+    "@haimang/nacp-core": "file:../../packages/nacp-core",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

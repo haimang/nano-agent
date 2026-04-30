@@ -130,3 +130,32 @@ export async function usage(
     ? (body as { data: Record<string, unknown> }).data
     : body;
 }
+
+export async function files(
+  auth: AuthState,
+  sessionUuid: string,
+): Promise<Record<string, unknown>> {
+  const body = await transport.request(`/sessions/${sessionUuid}/files`, {
+    headers: authHeaders(auth),
+  });
+  return "data" in body
+    ? (body as { data: Record<string, unknown> }).data
+    : body;
+}
+
+export async function triggerSystemErrorSpike(
+  auth: AuthState,
+  sessionUuid: string,
+): Promise<Record<string, unknown>> {
+  const body = await transport.request(`/sessions/${sessionUuid}/verify`, {
+    method: "POST",
+    headers: authHeaders(auth, true),
+    body: JSON.stringify({
+      check: "emit-system-error",
+      code: "spike-system-error",
+    }),
+  });
+  return "data" in body
+    ? (body as { data: Record<string, unknown> }).data
+    : body;
+}

@@ -2,9 +2,11 @@ import { useState, useEffect } from "react";
 import * as debugApi from "../apis/debug";
 import type { WorkerHealthSnapshot } from "../apis/debug";
 import { ApiRequestError } from "../apis/transport";
+import { getAuthState } from "../state/auth";
 
 export function HealthPage() {
   const [data, setData] = useState<WorkerHealthSnapshot | null>(null);
+  const [packagesData, setPackagesData] = useState<Record<string, unknown> | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -17,6 +19,12 @@ export function HealthPage() {
         setError(err instanceof ApiRequestError ? err.details.message : String(err));
       })
       .finally(() => setLoading(false));
+    const auth = getAuthState();
+    if (auth) {
+      debugApi.packages(auth)
+        .then((result) => setPackagesData(result))
+        .catch(() => setPackagesData(null));
+    }
   }, []);
 
   return (
@@ -84,8 +92,17 @@ export function HealthPage() {
           </div>
 
           <div style={styles.note}>
-            This is a debug/operations endpoint. Data format is not a standard facade envelope.
+            This is a debug/operations endpoint. RHX2 dual-emit window is active
+            in preview: system.error is mirrored to system.notify(error) for
+            old-client compatibility.
           </div>
+
+          {packagesData && (
+            <div style={styles.packagePanel}>
+              <div style={styles.packageTitle}>Package Drift Snapshot</div>
+              <pre style={styles.pre}>{JSON.stringify(packagesData, null, 2)}</pre>
+            </div>
+          )}
         </>
       )}
     </div>
@@ -150,5 +167,23 @@ const styles: Record<string, React.CSSProperties> = {
     borderRadius: "var(--radius-sm)",
     fontSize: "0.7rem",
     color: "var(--color-accent-primary)",
+  },
+  packagePanel: {
+    marginTop: 16,
+    padding: 12,
+    background: "var(--color-bg-elevated)",
+    border: "1px solid var(--color-border-default)",
+    borderRadius: "var(--radius-md)",
+  },
+  packageTitle: { fontSize: "0.8rem", fontWeight: 700, marginBottom: 8 },
+  pre: {
+    fontSize: "0.65rem",
+    fontFamily: "monospace",
+    color: "var(--color-text-muted)",
+    background: "var(--color-bg-sunken)",
+    padding: 8,
+    borderRadius: "var(--radius-sm)",
+    overflow: "auto",
+    maxHeight: 320,
   },
 };
