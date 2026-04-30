@@ -1,3 +1,4 @@
+import { createLogger, recordAuditEvent } from "@haimang/nacp-core/logger";
 import { assertTraceLaw, type TraceContext } from "../../traces.js";
 import { createDefaultCompositionFactory } from "../../composition.js";
 import type { CompositionFactory, SubsystemHandles } from "../../composition.js";
@@ -28,6 +29,11 @@ import {
   type CapabilityTransportLike,
 } from "../../runtime-mainline.js";
 import type { SessionWebSocketHelper } from "@haimang/nacp-session";
+import { buildHookAuditRecord } from "../../../hooks/audit.js";
+import type { HookEventName } from "../../../hooks/catalog.js";
+import { parseHookOutcomeBody } from "../../../hooks/core-mapping.js";
+
+const logger = createLogger("agent-core");
 
 const DEFAULT_LLM_CALL_LIMIT = 200;
 const DEFAULT_TOOL_CALL_LIMIT = 400;
@@ -130,7 +136,7 @@ function createLiveKernelRunner(
     contextProvider: () => ctx.buildQuotaContext(),
     anchorProvider: () => ctx.buildCrossSeamAnchor(),
     onUsageCommit: (event) => {
-      console.log("usage-commit", {
+      logger.info("usage-commit", {
         tag: "usage-commit",
         kind: event.kind,
         remaining: event.remaining,
@@ -231,7 +237,73 @@ function buildOrchestrationDeps(
       const hooks = subsystems.hooks as
         | { emit?: (e: string, p: unknown, c?: unknown) => Promise<unknown> }
         | undefined;
-      if (hooks?.emit) return hooks.emit(event, payload, merged);
+      if (hooks?.emit) {
+        const startedAt = Date.now();
+        const result = await hooks.emit(event, payload, merged);
+        const orch = ((ctx.env ?? {}) as Partial<SessionRuntimeEnv>).ORCHESTRATOR_CORE;
+        const persistAudit = orch?.recordAuditEvent;
+        if (typeof persistAudit === "function") {
+          try {
+            const outcome = parseHookOutcomeBody(result, {
+              handlerId: `session.${event}`,
+              durationMs: Date.now() - startedAt,
+            });
+            if (outcome.action !== "continue") {
+              const body = buildHookAuditRecord(
+                event as HookEventName,
+                {
+                  finalAction: outcome.action,
+                  outcomes: [outcome],
+                  blocked: outcome.action === "block" || outcome.action === "stop",
+                  blockReason: outcome.additionalContext,
+                  updatedInput: outcome.updatedInput,
+                  mergedContext: outcome.additionalContext,
+                  mergedDiagnostics: outcome.diagnostics,
+                },
+                Date.now() - startedAt,
+                {
+                  ref: ctx.getSessionUuid() ? { kind: "session", uuid: ctx.getSessionUuid()! } : undefined,
+                  traceContext: anchor
+                    ? {
+                        traceUuid: anchor.traceUuid,
+                        sourceRole: "hook",
+                        sourceKey: `session.${event}`,
+                      }
+                    : undefined,
+                },
+              );
+              await recordAuditEvent(
+                {
+                  worker: "agent-core",
+                  event_kind: body.event_kind,
+                  outcome: "denied",
+                  ref:
+                    body.ref && typeof body.ref.uuid === "string"
+                      ? { kind: body.ref.kind, uuid: body.ref.uuid }
+                      : undefined,
+                  detail: body.detail,
+                  trace_uuid: anchor?.traceUuid,
+                  session_uuid: ctx.getSessionUuid() ?? undefined,
+                  team_uuid: anchor?.teamUuid ?? ctx.currentTeamUuid() ?? undefined,
+                },
+                async (record) => {
+                  await persistAudit.call(orch, record);
+                },
+              );
+            }
+          } catch (error) {
+            logger.warn("hook-audit-persist-skipped", {
+              code: "internal-error",
+              ctx: {
+                tag: "hook-audit-persist-skipped",
+                event,
+                error: String(error),
+              },
+            });
+          }
+        }
+        return result;
+      }
       return undefined;
     },
     emitTrace: async (event) => {

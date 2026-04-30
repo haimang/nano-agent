@@ -87,6 +87,19 @@ export interface SessionRuntimeEnv {
       frame: { readonly kind: string; readonly [k: string]: unknown },
       meta: { readonly userUuid: string; readonly teamUuid?: string; readonly traceUuid?: string },
     ): Promise<{ ok: boolean; delivered: boolean; reason?: string }>;
+    recordAuditEvent?(record: {
+      readonly ts: string;
+      readonly worker: string;
+      readonly trace_uuid?: string;
+      readonly session_uuid?: string;
+      readonly team_uuid?: string;
+      readonly user_uuid?: string;
+      readonly device_uuid?: string;
+      readonly event_kind: string;
+      readonly ref?: { readonly kind: string; readonly uuid: string };
+      readonly detail?: Record<string, unknown>;
+      readonly outcome: "ok" | "denied" | "failed";
+    }): Promise<{ ok: boolean }>;
   };
   readonly FILESYSTEM_CORE?: ServiceBindingLike & {
     readArtifact?(

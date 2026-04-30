@@ -2,16 +2,16 @@
  * Tests for SessionInspector.
  *
  * Covers:
- *  - Canonical 9-kind catalog enforcement (unknown kinds are rejected).
+ *  - Canonical 10-kind catalog enforcement (unknown kinds are rejected).
  *  - Optional body validator plug-in (e.g. `SessionStreamEventBodySchema.safeParse`).
  *  - `filterByKind` / `getLatest` preserve `seq` and `timestamp`.
- *  - Catalog drift guard: the local 9-kind catalog stays aligned with
+ *  - Catalog drift guard: the local 10-kind catalog stays aligned with
  *    `@haimang/nacp-session`'s `STREAM_EVENT_KINDS`.
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 // Import directly from the sibling workspace package sources to guard against
-// drift between the inspector's local 9-kind catalog and nacp-session truth.
+// drift between the inspector's local 10-kind catalog and nacp-session truth.
 import { STREAM_EVENT_KINDS } from "@haimang/nacp-session";
 import {
   SessionInspector,
@@ -30,7 +30,7 @@ describe("SessionInspector", () => {
   });
 
   describe("catalog alignment", () => {
-    it("mirrors the 9 canonical kinds exported by @haimang/nacp-session", () => {
+    it("mirrors the 10 canonical kinds exported by @haimang/nacp-session", () => {
       const mine = [...SESSION_STREAM_EVENT_KINDS].sort();
       const theirs = [...STREAM_EVENT_KINDS].sort();
       expect(mine).toEqual(theirs);

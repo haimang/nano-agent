@@ -9,7 +9,7 @@
  *    `SessionTimeline.fromSink(fallbackReader)`.
  *
  * These tests verify that:
- *  - The inspector accepts only the 9 canonical kinds and rejects
+ *  - The inspector accepts only the 10 canonical kinds and rejects
  *    unknown kinds (without crashing).
  *  - Inspector `filterByKind` / `getLatest` preserve `seq` and
  *    `timestamp` so ordering and duplicate-delivery bugs can be
@@ -60,7 +60,7 @@ describe("integration: WS-first inspector + HTTP-fallback durable read", () => {
     vi.useRealTimers();
   });
 
-  it("inspector accepts the 9 canonical kinds and rejects unknown kinds without crashing", () => {
+  it("inspector accepts the 10 canonical kinds and rejects unknown kinds without crashing", () => {
     const inspector = new SessionInspector();
 
     inspector.onStreamEvent("turn.begin", 1, { turn_uuid: "11111111-1111-4111-8111-111111111111" });

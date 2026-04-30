@@ -19,6 +19,7 @@
  * Reference: docs/action-plan/session-do-runtime.md Phase 4
  */
 
+import { createLogger } from "@haimang/nacp-core/logger";
 import { WsController } from "../ws-controller.js";
 import { HttpController } from "../http-controller.js";
 import { HealthGate } from "../health.js";
@@ -26,6 +27,8 @@ import type { HeartbeatTracker, AckWindow } from "../health.js";
 import { DEFAULT_RUNTIME_CONFIG } from "../env.js";
 import type { RuntimeConfig } from "../env.js";
 import type { OrchestrationState } from "../orchestration.js";
+
+const logger = createLogger("agent-core");
 import { assertTraceLaw, type TraceContext } from "../traces.js";
 import type { CompositionFactory, SubsystemHandles } from "../composition.js";
 import type { CrossSeamAnchor } from "../cross-seam.js";
@@ -435,11 +438,14 @@ export class NanoSessionDO {
         traceUuid: this.traceUuid ?? undefined,
       });
     } catch (error) {
-      console.warn("push-server-frame-failed", {
-        tag: "push-server-frame-failed",
-        session_uuid: sessionUuid,
-        kind: frame.kind,
-        error: String(error),
+      logger.warn("push-server-frame-failed", {
+        code: "internal-error",
+        ctx: {
+          tag: "push-server-frame-failed",
+          session_uuid: sessionUuid,
+          kind: frame.kind,
+          error: String(error),
+        },
       });
       return { ok: false, delivered: false, reason: "rpc-error" };
     }
