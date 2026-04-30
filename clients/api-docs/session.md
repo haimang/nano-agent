@@ -19,9 +19,13 @@
 | `/sessions/{id}/verify` | `POST` | legacy | preview/debug verification harness |
 | `/sessions/{id}/resume` | `POST` | facade | HTTP replay ack |
 | `/sessions/{id}/usage` | `GET` | facade | usage snapshot，详见 [`usage.md`](./usage.md) |
-| `/sessions/{id}/context` | `GET` | facade | context-core snapshot |
-| `/sessions/{id}/context/snapshot` | `POST` | facade | trigger context snapshot |
-| `/sessions/{id}/context/compact` | `POST` | facade | trigger compact |
+| `/sessions/{id}/context` | `GET` | facade | legacy alias of context probe |
+| `/sessions/{id}/context/probe` | `GET` | facade | context probe / compact budget |
+| `/sessions/{id}/context/layers` | `GET` | facade | assembled context layer previews |
+| `/sessions/{id}/context/snapshot` | `POST` | facade | persist manual context snapshot |
+| `/sessions/{id}/context/compact/preview` | `POST` | facade | manual compact preview |
+| `/sessions/{id}/context/compact` | `POST` | facade | create compact boundary job |
+| `/sessions/{id}/context/compact/jobs/{jobId}` | `GET` | facade | read compact job handle |
 | `/sessions/{id}/files` | `GET` | facade | list artifact metadata |
 | `/sessions/{id}/files` | `POST` | facade `201` | multipart upload artifact |
 | `/sessions/{id}/files/{fileUuid}/content` | `GET` | binary | read artifact bytes |
@@ -328,18 +332,108 @@ If `replay_lost:true`, client should call `/timeline` to reconcile.
 
 ## Context Routes
 
-All three routes require valid session UUID and `CONTEXT_CORE` binding.
+All context routes require valid session UUID and `CONTEXT_CORE` binding.
 
 | Route | Body | Behavior |
 |-------|------|----------|
-| `GET /sessions/{id}/context` | none | calls `context-core.getContextSnapshot(sessionUuid, teamUuid, meta)` |
-| `POST /sessions/{id}/context/snapshot` | optional JSON | calls `context-core.triggerContextSnapshot(...)` |
-| `POST /sessions/{id}/context/compact` | optional JSON | calls `context-core.triggerCompact(...)` |
+| `GET /sessions/{id}/context` | none | legacy compatibility alias; returns the same durable probe payload as `context/probe`, plus `phase:"durable"` |
+| `GET /sessions/{id}/context/probe` | none | calls `context-core.getContextProbe(sessionUuid, teamUuid, meta)` |
+| `GET /sessions/{id}/context/layers` | none | calls `context-core.getContextLayers(sessionUuid, teamUuid, meta)` |
+| `POST /sessions/{id}/context/snapshot` | none | persists a `manual-snapshot` row in `nano_conversation_context_snapshots` |
+| `POST /sessions/{id}/context/compact/preview` | none | returns manual compact preview, summary preview, and `would_create_job_template` hint |
+| `POST /sessions/{id}/context/compact` | none | creates a durable `compact_boundary` checkpoint-backed job handle |
+| `GET /sessions/{id}/context/compact/jobs/{jobId}` | none | rereads the checkpoint-backed compact job |
 
-Success shape:
+Probe example:
 
 ```json
-{ "ok": true, "data": { "...context-core result...": true }, "trace_uuid": "..." }
+{
+  "ok": true,
+  "data": {
+    "session_uuid": "3333...",
+    "team_uuid": "2222...",
+    "status": "active",
+    "need_compact": true,
+    "model": {
+      "model_id": "@cf/ibm-granite/granite-4.0-h-micro",
+      "context_window": 131072,
+      "effective_context_pct": 0.75,
+      "auto_compact_token_limit": null,
+      "max_output_tokens": 1024,
+      "threshold_source": "effective_context_pct"
+    },
+    "usage": {
+      "total_tokens": 98432,
+      "compact_trigger_tokens": 98304,
+      "usage_pct": 1.0013,
+      "headroom_tokens": 0,
+      "estimate_basis": "durable-usage-aggregate"
+    },
+    "compact": {
+      "latest_notify": null,
+      "preview": {
+        "compacted_message_count": 14,
+        "kept_message_count": 6,
+        "protected_recent_turns": 3,
+        "would_create_job_template": {
+          "checkpoint_kind": "compact_boundary",
+          "created_by": "compact",
+          "message_high_watermark": "..."
+        }
+      }
+    }
+  },
+  "trace_uuid": "..."
+}
+```
+
+Compact preview example:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "session_uuid": "3333...",
+    "team_uuid": "2222...",
+    "need_compact": true,
+    "tokens_before": 98432,
+    "estimated_tokens_after": 24120,
+    "compacted_message_count": 14,
+    "kept_message_count": 6,
+    "protected_recent_turns": 3,
+    "high_watermark": "...",
+    "protected_fragment_kinds": ["model_switch"],
+    "summary_preview": "compact-boundary summary\n[user/user.input.text] ...",
+    "would_create_job_template": {
+      "checkpoint_kind": "compact_boundary",
+      "created_by": "compact",
+      "message_high_watermark": "..."
+    }
+  },
+  "trace_uuid": "..."
+}
+```
+
+Compact job example:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "session_uuid": "3333...",
+    "team_uuid": "2222...",
+    "job_id": "aaaa...",
+    "checkpoint_uuid": "aaaa...",
+    "context_snapshot_uuid": "bbbb...",
+    "status": "completed",
+    "tokens_before": 98432,
+    "tokens_after": 24120,
+    "message_high_watermark": "...",
+    "summary_text": "compact-boundary summary\n...",
+    "protected_fragment_kinds": ["model_switch"]
+  },
+  "trace_uuid": "..."
+}
 ```
 
 Errors: `invalid-input`(400), `invalid-auth`(401), `missing-team-claim`(403), `worker-misconfigured`(503), `context-rpc-unavailable`(503, current ad-hoc code).

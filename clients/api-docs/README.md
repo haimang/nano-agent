@@ -97,9 +97,13 @@
 | `GET` | `/sessions/{id}/usage` | bearer | facade | usage snapshot |
 | `POST` | `/sessions/{id}/resume` | bearer | facade | HTTP replay ack |
 | `GET` | `/sessions/{id}/ws` | query token | WS | session-ws-v1 |
-| `GET` | `/sessions/{id}/context` | bearer | facade | context-core snapshot |
-| `POST` | `/sessions/{id}/context/snapshot` | bearer | facade | 触发 context snapshot |
-| `POST` | `/sessions/{id}/context/compact` | bearer | facade | 触发 compact |
+| `GET` | `/sessions/{id}/context` | bearer | facade | legacy alias of context probe |
+| `GET` | `/sessions/{id}/context/probe` | bearer | facade | context probe / compact budget |
+| `GET` | `/sessions/{id}/context/layers` | bearer | facade | assembled context layers |
+| `POST` | `/sessions/{id}/context/snapshot` | bearer | facade | persist manual context snapshot |
+| `POST` | `/sessions/{id}/context/compact/preview` | bearer | facade | manual compact preview |
+| `POST` | `/sessions/{id}/context/compact` | bearer | facade | create compact boundary job |
+| `GET` | `/sessions/{id}/context/compact/jobs/{jobId}` | bearer | facade | read compact job handle |
 | `GET` | `/sessions/{id}/files` | bearer | facade | list artifacts |
 | `POST` | `/sessions/{id}/files` | bearer | facade `201` | multipart upload artifact |
 | `GET` | `/sessions/{id}/files/{fileUuid}/content` | bearer | binary | read artifact bytes |

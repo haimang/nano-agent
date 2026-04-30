@@ -463,3 +463,20 @@ hero-to-pro HP3 context state machine
 | 文档 | HP3 closure 能独立解释 probe、job、stream、prompt 四层结果 |
 | 风险收敛 | compact 不再是黑盒，不再无限重试，不再吞掉控制片段 |
 | 可交付性 | HP4 能直接消费 HP3 的 boundary snapshot 与 compact contract 继续推进 |
+
+---
+
+## 11. 工作日志回填
+
+1. 核对 charter / HP3 action-plan / HP3 design / HPX-qna 与真实代码后，确认用户点名的 `docs/design/hero-to-pro/HP3-pre-defer-fixes.md` 并不存在，本轮以 action-plan 实际引用的 `docs/design/hero-to-pro/HP3-context-state-machine.md` 为 authoritative design。
+2. 回溯 `workers/context-core` / `workers/orchestrator-core` / `workers/agent-core` / `packages/nacp-session` 与 vendored `context/*` precedent，确认 HP3 的第一轮真实切入点是 **context control-plane first wave**，不是一次性重写 agent runtime。
+3. 新增 `workers/orchestrator-core/src/context-control-plane.ts`，把 002 的 `nano_conversation_context_snapshots`、013 的 `nano_session_checkpoints(checkpoint_kind='compact_boundary')`、durable history / usage / model metadata 聚合成 HP3 control-plane 可消费的统一 read/write helper。
+4. 在 `workers/orchestrator-core/src/entrypoint.ts` 暴露 `readContextDurableState` / `createContextSnapshot` / `commitContextCompact` / `readContextCompactJob` 四个内部 RPC，让 context-core 无需直连 D1 也能拿到 durable truth 并写回 compact boundary handle。
+5. 新增 `workers/context-core/src/control-plane.ts`，基于 durable history / snapshots / model metadata 派生 probe、canonical layers、manual compact preview 与 deterministic compact summary；probe/layers 不再依赖 RH2 stub。
+6. 更新 `workers/context-core/src/index.ts` 与 `workers/context-core/src/types.ts`，让 `getContextSnapshot` / `triggerContextSnapshot` / `triggerCompact` 不再返回 `phase:"stub"`，并补出 `getContextProbe` / `getContextLayers` / `previewCompact` / `getCompactJob` 四个 HP3 surface RPC。
+7. 更新 `workers/orchestrator-core/src/index.ts`，把 façade 从原来的 coarse `/context` 三件套扩展到 `GET /context/probe`、`GET /context/layers`、`POST /context/compact/preview`、`GET /context/compact/jobs/{id}`，同时保留 `GET /context` 作为 probe 兼容 alias。
+8. manual compact 第一轮按 HP1 freeze 复用 `nano_session_checkpoints.checkpoint_kind='compact_boundary'` 作为 durable job handle，并将 compact 结果写入关联的 `nano_conversation_context_snapshots`，没有新增 `nano_compact_jobs`。
+9. compact job 第一轮以 deterministic summary + checkpoint-backed handle 为准：写入 `compact.notify` stream-event、保存 `summary_text` / `protected_fragment_kinds` / `message_high_watermark` / token 估算，允许 client 跨 worker 重读 job 结果。
+10. 新增 `workers/context-core/test/rpc-context-control-plane.test.ts`，覆盖 durable probe、layers、compact preview、manual snapshot、honest-degrade compact 与 compact job reread；更新 `workers/orchestrator-core/test/context-route.test.ts` 覆盖四条新的 public context surface wiring。
+11. 同步更新 `clients/api-docs/session.md` 与 `clients/api-docs/README.md`，把新的 context route matrix、probe / preview / job payload 事实回写给 client 文档。
+12. 本轮刻意未宣称完成 HP3 全量 action-plan：`CrossTurnContextManager` 真正接管 prompt owner、auto-compact runtime 触发、strip-then-recover full contract、5 场景 cross-e2e 与 breaker 仍留在 HP3 后续批次继续推进；对应 verdict 与 handoff 见 `docs/issue/hero-to-pro/HP3-closure.md`。
