@@ -7,7 +7,7 @@
 > vice versa. Do not edit by hand without updating the registry; do not
 > edit the registry without updating this document.
 >
-> **94 unique codes** (95 raw registrations across 6 sources, 1 deduped:
+> **100 unique codes** (101 raw registrations across 8 sources, 1 deduped:
 > `NACP_REPLAY_OUT_OF_RANGE` registered both at the NACP envelope layer
 > and at the session layer; the session-layer entry wins because it is
 > more specific). See §0 below for source breakdown.
@@ -157,13 +157,13 @@ are listed in §1.
 | `llm-timeout` | dependency | 504 | yes | LLM provider request timed out |
 | `llm-other` | transient | 500 | yes | LLM provider error |
 
-## 8. ad-hoc string codes (24 codes — 7 bash-core + 17 facade)
+## 8. ad-hoc string codes (30 codes — 7 bash-core + 23 facade/session surface)
 
 > Q-Obs9 owner-answered: ad-hoc string codes are NOT promoted to a zod
 > enum in first-wave (preserves the relevant worker contract stability).
 > They MUST appear in this catalog so clients can look them up.
 >
-> RHX2 review-of-reviews fix (DeepSeek R2 / GLM R3): the 17 facade-level
+> RHX2 review-of-reviews fix (DeepSeek R2 / GLM R3): the 23 facade/session-surface
 > ad-hoc codes that orchestrator-core actually emits at runtime are now
 > registered here so `resolveErrorMeta()` no longer returns undefined.
 
@@ -179,7 +179,7 @@ are listed in §1.
 | `bridge-not-found` | validation | 404 | no | bash-core bridge target missing |
 | `handler-error` | transient | 500 | yes | bash-core handler threw an unhandled error |
 
-### 8.2 orchestrator-core facade ad-hoc (17 codes)
+### 8.2 orchestrator-core facade/session-surface ad-hoc (23 codes)
 
 | code | category | http_status | retryable | message |
 |---|---|---|---|---|
@@ -197,9 +197,15 @@ are listed in §1.
 | `agent-rpc-unavailable` | dependency | 503 | yes | agent-core RPC binding unavailable |
 | `agent-rpc-throw` | dependency | 502 | yes | agent-core RPC throw |
 | `models-d1-unavailable` | dependency | 503 | yes | models D1 lookup failed |
+| `wrong-device` | security | 403 | no | session is bound to another device |
+| `usage-d1-unavailable` | dependency | 503 | yes | usage ledger temporarily unavailable |
+| `model-unavailable` | validation | 400 | no | requested model is not active |
+| `model-disabled` | security | 403 | no | requested model is disabled for this team |
 | `context-rpc-unavailable` | dependency | 503 | yes | context-core RPC failed |
 | `filesystem-rpc-unavailable` | dependency | 503 | yes | filesystem-core RPC failed |
 | `payload-too-large` | validation | 413 | no | file exceeds 25 MiB upload limit |
+| `spike-disabled` | security | 403 | no | preview-only verify spike trigger disabled |
+| `no-attached-client` | conflict | 409 | no | operation requires an attached websocket client |
 
 ---
 

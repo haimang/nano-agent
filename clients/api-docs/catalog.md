@@ -1,4 +1,4 @@
-# Catalog API — RHX2 Phase 6 Snapshot
+# Catalog API — Current Snapshot
 
 > Public facade owner: `orchestrator-core`
 > Profile: `facade-http-v1`
@@ -93,7 +93,7 @@ All return `{ok: true, data: {skills|commands|agents: [...]}, trace_uuid}`.
       },
       {
         "name": "/files",
-        "description": "GET /sessions/{id}/files — artifact 元数据列表（当前不提供 bytes download）",
+        "description": "GET /sessions/{id}/files — artifact 拉取(ZX5 Lane D D4)",
         "version": "1.0.0-preview",
         "status": "preview"
       }
@@ -118,7 +118,7 @@ All return `{ok: true, data: {skills|commands|agents: [...]}, trace_uuid}`.
       },
       {
         "name": "nano-preview-verify",
-        "description": "verify 用 agent profile; capability-call / capability-cancel / initial-context / compact / filesystem posture harness",
+        "description": "verify 用 agent profile;capability-call / capability-cancel / initial-context 等 verification harness",
         "version": "1.0.0",
         "status": "preview"
       }

@@ -6,7 +6,7 @@
 > - WS structured error frame: `packages/nacp-session/src/stream-event.ts`
 > - **long-form catalog (94 unique codes)**: `docs/api/error-codes.md`
 >
-> RHX2 review-of-reviews fix (2026-04-30): all 17 facade-level ad-hoc
+> RHX2 review-of-reviews fix (2026-04-30): all 23 public ad-hoc
 > codes below are now registered in `resolveErrorMeta()`; clients can
 > rely on `getErrorMeta(code)` returning a non-`undefined` result.
 
@@ -92,9 +92,15 @@ The following are emitted by current routes. They are not part of `FacadeErrorCo
 | `agent-rpc-unavailable` | 503 | agent-backed routes | retry/backoff |
 | `agent-rpc-throw` | 502 | status/timeline/verify | retry/backoff |
 | `models-d1-unavailable` | 503 | `/models` | retry/backoff |
+| `usage-d1-unavailable` | 503 | `/sessions/{id}/usage` | retry/backoff |
+| `model-unavailable` | 400 | `/sessions/{id}/start`, `/sessions/{id}/input`, `/sessions/{id}/messages` | model inactive/unavailable; prompt user to choose another model |
+| `model-disabled` | 403 | `/sessions/{id}/start`, `/sessions/{id}/input`, `/sessions/{id}/messages` | team policy forbids this model |
+| `wrong-device` | 403 | follow-up session routes | session is bound to another device; refresh session list or switch device |
 | `context-rpc-unavailable` | 503 | context routes | retry/backoff |
 | `filesystem-rpc-unavailable` | 503 | files routes | retry/backoff |
 | `payload-too-large` | 413 | file upload | reduce file size; max 25 MiB |
+| `spike-disabled` | 403 | preview-only `/sessions/{id}/verify` spike check | verify spike disabled in this environment |
+| `no-attached-client` | 409 | preview-only `/sessions/{id}/verify` spike check | attach a websocket client before retrying |
 
 ## WS `system.error`
 

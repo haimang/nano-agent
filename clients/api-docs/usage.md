@@ -1,4 +1,4 @@
-# Usage API — RHX2 Phase 6 Snapshot
+# Usage API — Current Snapshot
 
 > Public facade owner: `orchestrator-core`
 > Profile: `facade-http-v1`
@@ -55,16 +55,16 @@ x-trace-uuid: <uuid>
 
 ### Placeholder Shape
 
-当该 session 还没有任何 `nano_usage_events` 行时，`usage` 会退回到 null placeholder：
+当该 session 还没有任何 `nano_usage_events` 行时，`usage` 会退回到 zero placeholder：
 
 ```json
 {
-  "llm_input_tokens": null,
-  "llm_output_tokens": null,
-  "tool_calls": null,
-  "subrequest_used": null,
-  "subrequest_budget": null,
-  "estimated_cost_usd": null
+  "llm_input_tokens": 0,
+  "llm_output_tokens": 0,
+  "tool_calls": 0,
+  "subrequest_used": 0,
+  "subrequest_budget": 0,
+  "estimated_cost_usd": 0
 }
 ```
 
@@ -74,29 +74,39 @@ x-trace-uuid: <uuid>
 |------|------|------|
 | `session_uuid` | string | 会话 UUID |
 | `status` | string | 当前 `SessionEntry.status`（starting / active / detached / ended） |
-| `usage.llm_input_tokens` | number\|null | `nano_usage_events` 中 `resource_kind='llm'` + `unit='input_token'` 的聚合 |
-| `usage.llm_output_tokens` | number\|null | `resource_kind='llm'` + `unit='output_token'` 的聚合 |
-| `usage.tool_calls` | number\|null | allow verdict 的 tool rows 数量 |
-| `usage.subrequest_used` | number\|null | allow verdict 的 `quantity` 总和 |
+| `usage.llm_input_tokens` | number | `nano_usage_events` 中 `resource_kind='llm'` + `unit='input_token'` 的聚合；无行时回退为 `0` |
+| `usage.llm_output_tokens` | number | `resource_kind='llm'` + `unit='output_token'` 的聚合；无行时回退为 `0` |
+| `usage.tool_calls` | number | allow verdict 的 tool rows 数量；无行时回退为 `0` |
+| `usage.subrequest_used` | number | allow verdict 的 `quantity` 总和；无行时回退为 `0` |
 | `usage.subrequest_budget` | number\|null | `nano_quota_balances(quota_kind='llm').remaining` |
-| `usage.estimated_cost_usd` | null | 当前固定为 `null` |
+| `usage.estimated_cost_usd` | number\|null | placeholder 为 `0`；live D1 聚合当前多为 `null` 或具体数值 |
 | `last_seen_at` | string (ISO) | User DO session entry 的最后触碰时间 |
 | `durable_truth` | object\|null | D1 durable snapshot |
 
 ### Behavior
 
-- endpoint 先构造 null placeholder usage
+- endpoint 先构造 zero placeholder usage
 - 若有 D1 binding 且能读到 durable `team_uuid`，则直接查询 D1：
   - `nano_usage_events`
   - `nano_quota_balances`
 - **当前没有独立的 KV hot usage snapshot merge 路径**
-- D1 读取失败只会 `warn`，不会让请求失败；此时仍返回 placeholder usage + durable snapshot
+- 若 D1 读取失败，路由直接返回 `503 usage-d1-unavailable`，而不是回退到 `200 + placeholder`
+
+### Error
+
+| HTTP | error.code | 说明 |
+|------|------------|------|
+| `401` | `invalid-auth` | bearer token 无效 / 过期 / 被撤销 |
+| `403` | `missing-team-claim` | auth snapshot 缺 team/tenant truth |
+| `404` | `session_missing` | session 不存在 |
+| `409` | `session-pending-only-start-allowed` / `session-expired` | pending session 只能先 `/start`，或 pending UUID 已过期 |
+| `503` | `usage-d1-unavailable` | usage ledger / quota 读取失败 |
 
 ### Current Reality
 
 - **稳定部分**：`session_uuid`、`status`、`last_seen_at`、`durable_truth`
 - **usage 是否有数值**：取决于该 session 是否已有 D1 usage rows
-- **`estimated_cost_usd`**：当前恒为 `null`
+- **`estimated_cost_usd`**：placeholder 为 `0`；live 路径当前通常为 `null` 或具体数值
 
 ---
 

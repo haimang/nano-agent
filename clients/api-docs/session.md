@@ -1,4 +1,4 @@
-# Session, Models, Context, Files API — RHX2 Phase 6 Snapshot
+# Session, Models, Context, Files API — Current Snapshot
 
 > Public facade owner: `orchestrator-core`
 > Auth: `Authorization: Bearer <access_token>`
@@ -63,11 +63,11 @@ Success `200`:
   "data": {
     "models": [
       {
-        "model_id": "gpt-5.4",
-        "family": "openai",
-        "display_name": "GPT-5.4",
-        "context_window": 200000,
-        "capabilities": { "reasoning": true, "vision": true, "function_calling": true },
+        "model_id": "@cf/ibm-granite/granite-4.0-h-micro",
+        "family": "workers-ai/granite",
+        "display_name": "Granite 4.0 H Micro",
+        "context_window": 131072,
+        "capabilities": { "reasoning": false, "vision": false, "function_calling": true },
         "status": "active"
       }
     ]
@@ -92,14 +92,28 @@ Errors: `invalid-auth`(401), `missing-team-claim`(403), `worker-misconfigured`(5
 Request body:
 
 ```json
-{ "text": "Hello" }
+{
+  "text": "Hello",
+  "model_id": "@cf/ibm-granite/granite-4.0-h-micro",
+  "reasoning": { "effort": "low" }
+}
 ```
 
 或：
 
 ```json
-{ "initial_input": "Hello", "initial_context": { "layers": [] } }
+{
+  "initial_input": "Hello",
+  "initial_context": { "layers": [] },
+  "model_id": "@cf/meta/llama-4-scout-17b-16e-instruct",
+  "reasoning": { "effort": "high" }
+}
 ```
+
+可选字段：
+
+- `model_id`: 满足 `^[a-z0-9@/._-]{1,120}$` 的模型 ID
+- `reasoning.effort`: `low | medium | high`
 
 Success legacy:
 
@@ -119,7 +133,7 @@ Success legacy:
 }
 ```
 
-Errors: `invalid-start-body`(400), `invalid-auth-snapshot`(400), `invalid-auth`(401), `missing-team-claim`(403), `session-expired`(409), `session-already-started`(409), `agent-start-failed`(502), `agent-rpc-unavailable`(503).
+Errors: `invalid-start-body`(400), `invalid-auth-snapshot`(400), `model-unavailable`(400), `invalid-auth`(401), `missing-team-claim`(403), `model-disabled`(403), `session-expired`(409), `session-already-started`(409), `agent-start-failed`(502), `agent-rpc-unavailable`(503).
 
 ## `POST /sessions/{id}/input`
 
@@ -128,8 +142,14 @@ Text-only alias for `/messages`.
 Request:
 
 ```json
-{ "text": "Tell me more" }
+{
+  "text": "Tell me more",
+  "model_id": "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+  "reasoning": { "effort": "medium" }
+}
 ```
+
+可选字段与 `/start` 一致：`model_id`、`reasoning.effort`。
 
 Success legacy:
 
@@ -157,6 +177,8 @@ Request:
     { "kind": "text", "text": "Analyze this screenshot:" },
     { "kind": "artifact_ref", "artifact_uuid": "aaaa...", "mime": "image/png", "summary": "screenshot.png" }
   ],
+  "model_id": "@cf/meta/llama-4-scout-17b-16e-instruct",
+  "reasoning": { "effort": "high" },
   "context_ref": "optional-ref",
   "stream_seq": 1
 }
@@ -167,6 +189,7 @@ Rules:
 - `parts` must be non-empty.
 - text part requires non-empty `text`.
 - `artifact_ref.artifact_uuid` is a non-empty string, not necessarily UUID-regex.
+- `model_id` / `reasoning.effort` are optional and use the same validation/gate as `/start`.
 - Single text part yields `message_kind="user.input.text"`; multipart/artifact yields `user.input.multipart`.
 
 ## `POST /sessions/{id}/cancel`
@@ -270,6 +293,12 @@ Request:
 Supported checks: `capability-call`, `capability-cancel`, `initial-context`, `compact-posture`, `filesystem-posture`.
 
 Unknown `check` currently can still return `200 ok:true action:"verify"` with `error:"unknown-verify-check"` in payload.
+
+Special preview-only check:
+
+- `{ "check": "emit-system-error", "code": "spike-system-error" }`
+- `NANO_ENABLE_RHX2_SPIKE !== "true"` 时返回 `403 spike-disabled`
+- 未附着 websocket client 时返回 `409 no-attached-client`
 
 ## `POST /sessions/{id}/resume`
 
@@ -395,13 +424,18 @@ Headers:
 |------|------------|----------|------|
 | 400 | `invalid-start-body` | `/start` | missing `text`/`initial_input` |
 | 400 | `invalid-input-body` | `/input` | missing text |
+| 400 | `model-unavailable` | `/start` `/input` `/messages` | requested model inactive / not found |
 | 400 | `invalid-input` | messages/context/files | invalid body/path |
 | 401 | `invalid-auth` | all bearer routes | token invalid/revoked/expired or revoked device |
 | 403 | `missing-team-claim` | all bearer routes | JWT lacks team/tenant truth |
+| 403 | `model-disabled` | `/start` `/input` `/messages` | team policy forbids this model |
 | 403 | `permission-denied` | files/session ownership | cross-team or cross-user access denied |
+| 403 | `spike-disabled` | `/verify` spike check | preview-only system.error spike disabled |
+| 403 | `wrong-device` | follow-up session routes | session already bound to another device |
 | 404 | `session_missing` / `not-found` | session/files | missing session/file |
 | 409 | `session-pending-only-start-allowed` | non-start session routes | pending UUID |
 | 409 | `session-expired` | `/start` | pending UUID expired |
+| 409 | `no-attached-client` | `/verify` spike check | verify spike requires attached websocket client |
 | 409 | `session_terminal` | follow-up/WS | session ended |
 | 409 | `session-already-started` | `/start` | duplicate start |
 | 502 | `agent-start-failed` | `/start` | agent-core start returned failure |
