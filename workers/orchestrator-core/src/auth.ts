@@ -1,3 +1,4 @@
+import { createLogger } from "@haimang/nacp-core/logger";
 import {
   collectVerificationKeys as sharedCollectVerificationKeys,
   verifyJwt as sharedVerifyJwt,
@@ -9,9 +10,11 @@ import {
   jsonPolicyError,
   readTraceUuid,
 } from "./policy/authority.js";
+import { persistAuditRecord } from "./observability.js";
 
 const DEVICE_GATE_TTL_MS = 30_000;
 const deviceGateCache = new Map<string, { status: string; expires_at: number }>();
+const logger = createLogger("orchestrator-core");
 
 export interface JwtPayload extends VerifiedJwtPayload {
   readonly sub: string;
@@ -117,6 +120,46 @@ async function readDeviceStatus(
     deviceGateCache.set(deviceUuid, { status, expires_at: Date.now() + DEVICE_GATE_TTL_MS });
   }
   return status;
+}
+
+async function emitDeviceGateAudit(
+  env: AuthEnv,
+  input: {
+    traceUuid: string;
+    teamUuid: string;
+    userUuid: string;
+    deviceUuid: string;
+    status: string | null;
+  },
+): Promise<void> {
+  try {
+    await persistAuditRecord(env, {
+      ts: new Date().toISOString(),
+      worker: "orchestrator-core",
+      trace_uuid: input.traceUuid,
+      team_uuid: input.teamUuid,
+      user_uuid: input.userUuid,
+      device_uuid: input.deviceUuid,
+      event_kind: "auth.device.gate_decision",
+      outcome: input.status === "active" ? "ok" : "denied",
+      detail: {
+        status: input.status ?? "missing",
+      },
+    });
+  } catch (error) {
+    logger.warn("device-gate-audit-failed", {
+      code: "internal-error",
+      ctx: {
+        tag: "device-gate-audit-failed",
+        trace_uuid: input.traceUuid,
+        team_uuid: input.teamUuid,
+        user_uuid: input.userUuid,
+        device_uuid: input.deviceUuid,
+        status: input.status ?? "missing",
+        error: String(error),
+      },
+    });
+  }
 }
 
 async function authenticateApiKey(
@@ -232,6 +275,13 @@ export async function authenticateRequest(
     };
   }
   const deviceStatus = await readDeviceStatus(env, deviceUuid, userUuid, effectiveTenant);
+  await emitDeviceGateAudit(env, {
+    traceUuid,
+    teamUuid: effectiveTenant,
+    userUuid,
+    deviceUuid,
+    status: deviceStatus,
+  });
   if (deviceStatus !== "active") {
     clearDeviceGateCache(deviceUuid);
     return {

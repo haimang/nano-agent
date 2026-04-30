@@ -1,3 +1,4 @@
+import { createLogger } from "@haimang/nacp-core/logger";
 import type { IngressAuthSnapshot, InitialContextSeed } from './auth.js';
 import {
   D1SessionTruthRepository,
@@ -79,6 +80,10 @@ import { createUserDoMessageRuntime } from "./user-do/message-runtime.js";
 import { createUserDoSessionFlow } from "./user-do/session-flow.js";
 import { createUserDoSurfaceRuntime } from "./user-do/surface-runtime.js";
 import { createUserDoWsRuntime } from "./user-do/ws-runtime.js";
+import { buildAuditPersist } from "./observability.js";
+import { tryEmitSystemError } from "@haimang/nacp-core/logger";
+
+const logger = createLogger("orchestrator-core");
 
 // ZX2 Phase 3 P3-01 — extended agent-core RPC binding (input/cancel/verify/
 // timeline/streamSnapshot in addition to start/status). Each method has the
@@ -186,6 +191,24 @@ export class NanoOrchestratorUserDO {
         entry: SessionEntry,
         authSnapshot: IngressAuthSnapshot | null | undefined,
       ) => this.enforceSessionDevice(sessionUuid, entry, authSnapshot),
+      readAuditAuthSnapshot: async () => (await this.get<IngressAuthSnapshot>(USER_AUTH_SNAPSHOT_KEY)) ?? null,
+      persistAudit: async (record) => {
+        const snapshot = (await this.get<IngressAuthSnapshot>(USER_AUTH_SNAPSHOT_KEY)) ?? null;
+        const teamUuid = record.team_uuid ?? snapshot?.team_uuid ?? snapshot?.tenant_uuid;
+        if (!teamUuid) {
+          logger.warn("audit-team-missing", {
+            code: "internal-error",
+            ctx: { tag: "audit-team-missing", event_kind: record.event_kind, session_uuid: record.session_uuid },
+          });
+          return;
+        }
+        await buildAuditPersist(this.env)({
+          ...record,
+          team_uuid: teamUuid,
+          user_uuid: record.user_uuid ?? snapshot?.user_uuid ?? snapshot?.sub,
+          device_uuid: record.device_uuid ?? snapshot?.device_uuid,
+        });
+      },
     });
     this.surfaceRuntime = createUserDoSurfaceRuntime({
       env: this.env,
@@ -195,6 +218,24 @@ export class NanoOrchestratorUserDO {
       readDurableSnapshot: (sessionUuid: string) => this.readDurableSnapshot(sessionUuid),
       readDurableHistory: (sessionUuid: string) => this.readDurableHistory(sessionUuid),
       requireReadableSession: (sessionUuid: string) => this.requireReadableSession(sessionUuid),
+      readAuditAuthSnapshot: async () => (await this.get<IngressAuthSnapshot>(USER_AUTH_SNAPSHOT_KEY)) ?? null,
+      persistAudit: async (record) => {
+        const snapshot = (await this.get<IngressAuthSnapshot>(USER_AUTH_SNAPSHOT_KEY)) ?? null;
+        const teamUuid = record.team_uuid ?? snapshot?.team_uuid ?? snapshot?.tenant_uuid;
+        if (!teamUuid) {
+          logger.warn("audit-team-missing", {
+            code: "internal-error",
+            ctx: { tag: "audit-team-missing", event_kind: record.event_kind, session_uuid: record.session_uuid },
+          });
+          return;
+        }
+        await buildAuditPersist(this.env)({
+          ...record,
+          team_uuid: teamUuid,
+          user_uuid: record.user_uuid ?? snapshot?.user_uuid ?? snapshot?.sub,
+          device_uuid: record.device_uuid ?? snapshot?.device_uuid,
+        });
+      },
     });
     this.sessionFlow = createUserDoSessionFlow({
       sessionTruth: () => this.sessionTruth(),
@@ -285,17 +326,26 @@ export class NanoOrchestratorUserDO {
     try {
       await this.trimHotState();
     } catch (err) {
-      console.warn("alarm-trim-hot-state-failed", { tag: "alarm-trim-hot-state-failed", error: String(err) });
+      logger.warn("alarm-trim-hot-state-failed", {
+        code: "internal-error",
+        ctx: { tag: "alarm-trim-hot-state-failed", error: String(err) },
+      });
     }
     try {
       await this.cleanupEndedSessions();
     } catch (err) {
-      console.warn("alarm-cleanup-ended-sessions-failed", { tag: "alarm-cleanup-ended-sessions-failed", error: String(err) });
+      logger.warn("alarm-cleanup-ended-sessions-failed", {
+        code: "internal-error",
+        ctx: { tag: "alarm-cleanup-ended-sessions-failed", error: String(err) },
+      });
     }
     try {
       await this.expireStalePendingSessions();
     } catch (err) {
-      console.warn("alarm-expire-stale-pending-failed", { tag: "alarm-expire-stale-pending-failed", error: String(err) });
+      logger.warn("alarm-expire-stale-pending-failed", {
+        code: "internal-error",
+        ctx: { tag: "alarm-expire-stale-pending-failed", error: String(err) },
+      });
     }
     await this.ensureHotStateAlarm();
   }
@@ -646,11 +696,15 @@ export class NanoOrchestratorUserDO {
         body: rpcResult.body,
       };
     } catch (error) {
-      console.warn(
-        `agent-rpc-throw action=start session=${sessionUuid}`,
-        { tag: 'agent-rpc-throw', action: 'start', session_uuid: sessionUuid,
-          error: error instanceof Error ? `${error.name}: ${error.message}` : String(error) },
-      );
+      logger.warn("agent-rpc-throw", {
+        code: "internal-error",
+        ctx: {
+          tag: "agent-rpc-throw",
+          action: "start",
+          session_uuid: sessionUuid,
+          error: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+        },
+      });
       return {
         response: jsonResponse(502, {
           error: 'agent-rpc-throw',
@@ -677,11 +731,15 @@ export class NanoOrchestratorUserDO {
       );
       return this.cloneJsonResponse(rpcResult.status, rpcResult.body);
     } catch (error) {
-      console.warn(
-        `agent-rpc-throw action=status session=${sessionUuid}`,
-        { tag: 'agent-rpc-throw', action: 'status', session_uuid: sessionUuid,
-          error: error instanceof Error ? `${error.name}: ${error.message}` : String(error) },
-      );
+      logger.warn("agent-rpc-throw", {
+        code: "internal-error",
+        ctx: {
+          tag: "agent-rpc-throw",
+          action: "status",
+          session_uuid: sessionUuid,
+          error: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+        },
+      });
       return jsonResponse(502, {
         error: 'agent-rpc-throw',
         message: error instanceof Error ? error.message : String(error),
@@ -725,15 +783,15 @@ export class NanoOrchestratorUserDO {
         body: rpcResult.body,
       };
     } catch (error) {
-      console.warn(
-        `agent-rpc-throw action=${action} session=${sessionUuid}`,
-        {
-          tag: 'agent-rpc-throw',
+      logger.warn("agent-rpc-throw", {
+        code: "internal-error",
+        ctx: {
+          tag: "agent-rpc-throw",
           action,
           session_uuid: sessionUuid,
           error: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
         },
-      );
+      });
       return {
         response: jsonResponse(502, {
           error: 'agent-rpc-throw',
@@ -789,10 +847,33 @@ export class NanoOrchestratorUserDO {
   emitServerFrame(sessionUuid: string, frame: { kind: string; [k: string]: unknown }): boolean {
     const validation = validateLightweightServerFrame(frame);
     if (!validation.ok) {
-      console.warn(`server-frame-schema-rejected session=${sessionUuid}`, {
-        tag: "server-frame-schema-rejected",
-        kind: frame.kind,
-        reason: validation.reason,
+      const attachment = this.attachments.get(sessionUuid);
+      if (attachment) {
+        void tryEmitSystemError({
+          code: "internal-error",
+          source_worker: "orchestrator-core",
+          message: "server frame rejected before delivery",
+          detail: {
+            kind: frame.kind,
+            reason: validation.reason,
+          },
+          emit: async (systemFrame) => {
+            attachment.socket.send(JSON.stringify(systemFrame));
+            return { delivered: true };
+          },
+          fallbackNotify: async (payload) => {
+            attachment.socket.send(JSON.stringify(payload));
+          },
+        });
+      }
+      logger.warn("server-frame-schema-rejected", {
+        code: "internal-error",
+        ctx: {
+          tag: "server-frame-schema-rejected",
+          session_uuid: sessionUuid,
+          kind: frame.kind,
+          reason: validation.reason,
+        },
       });
       return false;
     }

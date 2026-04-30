@@ -8,6 +8,7 @@ import {
 } from "@haimang/orchestrator-auth-contract";
 import { NANO_PACKAGE_MANIFEST } from "./generated/package-manifest.js";
 import { authenticateRequest, clearDeviceGateCache, type AuthEnv } from "./auth.js";
+import { buildAuditPersist, createOrchestratorLogger } from "./observability.js";
 import { ensureConfiguredTeam, jsonPolicyError, readTraceUuid } from "./policy/authority.js";
 import { D1SessionTruthRepository } from "./session-truth.js";
 import { NanoOrchestratorUserDO } from "./user-do.js";
@@ -17,6 +18,10 @@ void NANO_PACKAGE_MANIFEST;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MAX_SESSION_FILE_BYTES = 25 * 1024 * 1024;
 const MIME_RE = /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/i;
+
+function getLogger(env: OrchestratorCoreEnv) {
+  return createOrchestratorLogger(env);
+}
 
 // ZX2 Phase 3 P3-01/02 — agent-core RPC method signature.
 //
@@ -224,7 +229,8 @@ type AuthAction =
   | "verify"
   | "me"
   | "resetPassword"
-  | "wechatLogin";
+  | "wechatLogin"
+  | "revokeApiKey";
 type SessionFilesRoute =
   | { kind: "list"; sessionUuid: string }
   | { kind: "upload"; sessionUuid: string }
@@ -316,6 +322,7 @@ function parseAuthRoute(request: Request): AuthAction | null {
   if (method === "POST" && pathname === "/auth/verify") return "verify";
   if (method === "POST" && pathname === "/auth/password/reset") return "resetPassword";
   if (method === "POST" && pathname === "/auth/wechat/login") return "wechatLogin";
+  if (method === "POST" && pathname === "/auth/api-keys/revoke") return "revokeApiKey";
   if ((method === "GET" || method === "POST") && (pathname === "/auth/me" || pathname === "/me")) {
     return "me";
   }
@@ -362,12 +369,26 @@ async function proxyAuthRoute(
 
   const accessToken = readAccessToken(request);
   const deviceMetadata = readDeviceMetadata(request);
-  const input =
+  let input =
     action === "me" || action === "verify"
       ? { access_token: accessToken }
       : action === "resetPassword"
         ? { ...(body ?? {}), access_token: accessToken }
         : { ...(body ?? {}), ...deviceMetadata };
+
+  if (action === "revokeApiKey") {
+    const auth = await authenticateRequest(request, env);
+    if (!auth.ok) return auth.response;
+    const teamUuid = auth.value.snapshot.team_uuid ?? auth.value.snapshot.tenant_uuid;
+    if (!teamUuid) {
+      return jsonPolicyError(403, "missing-team-claim", "team_uuid missing from auth snapshot", traceUuid);
+    }
+    input = {
+      ...(body ?? {}),
+      team_uuid: teamUuid,
+      user_uuid: auth.value.user_uuid,
+    };
+  }
 
   const envelope =
     action === "register"
@@ -382,12 +403,22 @@ async function proxyAuthRoute(
               ? await env.ORCHESTRATOR_AUTH.me(input, meta)
               : action === "resetPassword"
                 ? await env.ORCHESTRATOR_AUTH.resetPassword(input, meta)
-                : await env.ORCHESTRATOR_AUTH.wechatLogin({ ...input, ...deviceMetadata }, meta);
+                : action === "revokeApiKey"
+                  ? await env.ORCHESTRATOR_AUTH.revokeApiKey(input, meta)
+                  : await env.ORCHESTRATOR_AUTH.wechatLogin({ ...input, ...deviceMetadata }, meta);
 
   // ZX2 Phase 4 P4-02 — wrap the auth-contract envelope into facade-http-v1
   // so every public response shares the same `{ok,data,trace_uuid}` /
   // `{ok:false,error,trace_uuid}` shape across auth + session routes.
-  const facade = facadeFromAuthEnvelope(envelope, traceUuid);
+  const facade = facadeFromAuthEnvelope(
+    envelope as
+      | { readonly ok: true; readonly data: unknown }
+      | {
+          readonly ok: false;
+          readonly error: { readonly code: string; readonly status: number; readonly message: string };
+        },
+    traceUuid,
+  );
   return Response.json(facade, {
     status: facade.ok ? 200 : facade.error.status,
     headers: { "x-trace-uuid": traceUuid },
@@ -632,10 +663,14 @@ async function handleMeSessions(
             minted_at: createdAt,
           });
         } catch (error) {
-          console.warn(
-            `me-sessions-mint-d1-failed session=${sessionUuid}`,
-            { tag: "me-sessions-mint-d1-failed", session_uuid: sessionUuid, error: String(error) },
-          );
+          getLogger(env).warn("me-sessions-mint-d1-failed", {
+            code: "internal-error",
+            ctx: {
+              tag: "me-sessions-mint-d1-failed",
+              session_uuid: sessionUuid,
+              error: String(error),
+            },
+          });
           return jsonPolicyError(
             500,
             "internal-error",
@@ -963,10 +998,14 @@ async function handleMeDevicesList(
       { status: 200, headers: { "x-trace-uuid": traceUuid } },
     );
   } catch (error) {
-    console.warn(
-      `me-devices-list-d1-failed user=${auth.value.user_uuid}`,
-      { tag: "me-devices-list-d1-failed", error: String(error) },
-    );
+    getLogger(env).warn("me-devices-list-d1-failed", {
+      code: "internal-error",
+      ctx: {
+        tag: "me-devices-list-d1-failed",
+        user_uuid: auth.value.user_uuid,
+        error: String(error),
+      },
+    });
     return jsonPolicyError(500, "internal-error", "failed to list devices", traceUuid);
   }
 }
@@ -1094,10 +1133,15 @@ async function handleMeDevicesRevoke(
       { status: 200, headers: { "x-trace-uuid": traceUuid } },
     );
   } catch (error) {
-    console.warn(
-      `me-devices-revoke-d1-failed device=${deviceUuid} user=${auth.value.user_uuid}`,
-      { tag: "me-devices-revoke-d1-failed", error: String(error) },
-    );
+    getLogger(env).warn("me-devices-revoke-d1-failed", {
+      code: "internal-error",
+      ctx: {
+        tag: "me-devices-revoke-d1-failed",
+        device_uuid: deviceUuid,
+        user_uuid: auth.value.user_uuid,
+        error: String(error),
+      },
+    });
     return jsonPolicyError(500, "internal-error", "failed to revoke device", traceUuid);
   }
 }
@@ -1203,9 +1247,9 @@ async function handleModelsList(
       },
     );
   } catch (error) {
-    console.warn(`models-d1-read-failed team=${teamUuid}`, {
-      tag: "models-d1-read-failed",
-      error: String(error),
+    getLogger(env).warn("models-d1-read-failed", {
+      code: "internal-error",
+      ctx: { tag: "models-d1-read-failed", team_uuid: teamUuid, error: String(error) },
     });
     return jsonPolicyError(503, "models-d1-unavailable", "models lookup failed", traceUuid);
   }
@@ -1293,10 +1337,16 @@ async function handleSessionContext(
       { status: 200, headers: { "x-trace-uuid": traceUuid } },
     );
   } catch (error) {
-    console.warn(
-      `context-rpc-failed op=${op} session=${sessionUuid} team=${teamUuid}`,
-      { tag: "context-rpc-failed", error: String(error) },
-    );
+    getLogger(env).warn("context-rpc-failed", {
+      code: "internal-error",
+      ctx: {
+        tag: "context-rpc-failed",
+        op,
+        session_uuid: sessionUuid,
+        team_uuid: teamUuid,
+        error: String(error),
+      },
+    });
     return jsonPolicyError(503, "context-rpc-unavailable", `context ${op} failed`, traceUuid);
   }
 }
@@ -1462,10 +1512,16 @@ async function handleSessionFiles(
     });
   } catch (error) {
     const op = route.kind === "content" ? "read" : route.kind;
-    console.warn(
-      `filesystem-rpc-failed op=${op} session=${route.sessionUuid} team=${teamUuid}`,
-      { tag: "filesystem-rpc-failed", error: String(error) },
-    );
+    getLogger(env).warn("filesystem-rpc-failed", {
+      code: "internal-error",
+      ctx: {
+        tag: "filesystem-rpc-failed",
+        op,
+        session_uuid: route.sessionUuid,
+        team_uuid: teamUuid,
+        error: String(error),
+      },
+    });
     return jsonPolicyError(503, "filesystem-rpc-unavailable", `files ${op} failed`, traceUuid);
   }
 }
@@ -1490,7 +1546,37 @@ async function requireOwnedSession(
   if (!row) {
     return jsonPolicyError(404, "not-found", "session not found", traceUuid);
   }
-  if (String(row.team_uuid) !== teamUuid || String(row.actor_user_uuid) !== userUuid) {
+  if (String(row.team_uuid) !== teamUuid) {
+    try {
+      await buildAuditPersist(env)({
+        ts: new Date().toISOString(),
+        worker: "orchestrator-core",
+        trace_uuid: traceUuid,
+        session_uuid: sessionUuid,
+        team_uuid: teamUuid,
+        user_uuid: userUuid,
+        event_kind: "tenant.cross_tenant_deny",
+        outcome: "denied",
+        detail: {
+          owner_team_uuid: String(row.team_uuid),
+        },
+      });
+    } catch (error) {
+      getLogger(env).warn("cross-tenant-audit-failed", {
+        code: "internal-error",
+        ctx: {
+          tag: "cross-tenant-audit-failed",
+          trace_uuid: traceUuid,
+          session_uuid: sessionUuid,
+          team_uuid: teamUuid,
+          owner_team_uuid: String(row.team_uuid),
+          error: String(error),
+        },
+      });
+    }
+    return jsonPolicyError(403, "permission-denied", "session does not belong to caller", traceUuid);
+  }
+  if (String(row.actor_user_uuid) !== userUuid) {
     return jsonPolicyError(403, "permission-denied", "session does not belong to caller", traceUuid);
   }
   return null;

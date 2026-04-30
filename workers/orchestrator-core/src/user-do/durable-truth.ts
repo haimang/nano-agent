@@ -1,3 +1,4 @@
+import { createLogger } from "@haimang/nacp-core/logger";
 import type { IngressAuthSnapshot } from "../auth.js";
 import type {
   D1SessionTruthRepository,
@@ -30,6 +31,8 @@ import {
   type RecentFramesState,
 } from "../session-read-model.js";
 import type { StreamFrame } from "../parity-bridge.js";
+
+const logger = createLogger("orchestrator-core");
 
 export interface UserDoDurableTruthContext {
   sessionTruth(): D1SessionTruthRepository | null;
@@ -342,16 +345,15 @@ export function createUserDoDurableTruth(ctx: UserDoDurableTruthContext) {
       try {
         const expired = await repo.expireStalePending({ now: nowIso, cutoff });
         if (expired > 0) {
-          console.warn(`pending-session-expired-gc count=${expired}`, {
-            tag: "pending-session-expired-gc",
-            expired_count: expired,
-            cutoff,
+          logger.warn("pending-session-expired-gc", {
+            code: "internal-error",
+            ctx: { tag: "pending-session-expired-gc", expired_count: expired, cutoff },
           });
         }
       } catch (error) {
-        console.warn("pending-session-expired-gc-failed", {
-          tag: "pending-session-expired-gc-failed",
-          error: String(error),
+        logger.warn("pending-session-expired-gc-failed", {
+          code: "internal-error",
+          ctx: { tag: "pending-session-expired-gc-failed", error: String(error) },
         });
       }
     },

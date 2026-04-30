@@ -1,3 +1,5 @@
+import { createLogger } from "@haimang/nacp-core/logger";
+import type { AuditRecord } from "@haimang/nacp-core/logger";
 import type { InitialContextSeed, IngressAuthSnapshot } from "../auth.js";
 import { isAuthSnapshot } from "../session-lifecycle.js";
 import {
@@ -23,6 +25,8 @@ type RpcMethod = (
   meta: { trace_uuid: string; authority: unknown },
 ) => Promise<{ status: number; body: Record<string, unknown> | null }>;
 
+const logger = createLogger("orchestrator-core");
+
 export interface UserDoSurfaceRuntimeContext {
   env: {
     AGENT_CORE?: Partial<Record<"permissionDecision" | "elicitationAnswer", RpcMethod>>;
@@ -42,6 +46,8 @@ export interface UserDoSurfaceRuntimeContext {
     }>
   >;
   requireReadableSession(sessionUuid: string): Promise<SessionEntry | null>;
+  readAuditAuthSnapshot(): Promise<IngressAuthSnapshot | null>;
+  persistAudit(record: AuditRecord): Promise<void>;
 }
 
 export function createUserDoSurfaceRuntime(ctx: UserDoSurfaceRuntimeContext) {
@@ -139,9 +145,13 @@ export function createUserDoSurfaceRuntime(ctx: UserDoSurfaceRuntimeContext) {
           });
           if (live) usage = live as unknown as Record<string, unknown>;
         } catch (error) {
-          console.warn(`usage-d1-read-failed session=${sessionUuid}`, {
-            tag: "usage-d1-read-failed",
-            error: String(error),
+          logger.warn("usage-d1-read-failed", {
+            code: "internal-error",
+            ctx: {
+              tag: "usage-d1-read-failed",
+              session_uuid: sessionUuid,
+              error: String(error),
+            },
           });
           return jsonResponse(503, {
             ok: false,
@@ -176,6 +186,26 @@ export function createUserDoSurfaceRuntime(ctx: UserDoSurfaceRuntimeContext) {
       const gatedEntry = await this.enforceSessionDevice(sessionUuid, entry, authSnapshot);
       if (gatedEntry instanceof Response) return gatedEntry;
       const acknowledged = gatedEntry.relay_cursor;
+      const replayLost =
+        typeof body.last_seen_seq === "number" && body.last_seen_seq > acknowledged;
+      if (replayLost) {
+        const auditAuth = authSnapshot ?? await ctx.readAuditAuthSnapshot();
+        await ctx.persistAudit({
+          ts: new Date().toISOString(),
+          worker: "orchestrator-core",
+          event_kind: "session.replay_lost",
+          outcome: "failed",
+          session_uuid: sessionUuid,
+          trace_uuid: request.headers.get("x-trace-uuid") ?? undefined,
+          team_uuid: auditAuth?.team_uuid ?? auditAuth?.tenant_uuid,
+          user_uuid: auditAuth?.user_uuid ?? auditAuth?.sub,
+          device_uuid: auditAuth?.device_uuid ?? gatedEntry.device_uuid ?? undefined,
+          detail: {
+            client_last_seen_seq: body.last_seen_seq,
+            relay_cursor: acknowledged,
+          },
+        });
+      }
       return jsonResponse(200, {
         ok: true,
         data: {
@@ -183,8 +213,7 @@ export function createUserDoSurfaceRuntime(ctx: UserDoSurfaceRuntimeContext) {
           status: gatedEntry.status,
           last_phase: gatedEntry.last_phase,
           relay_cursor: acknowledged,
-          replay_lost:
-            typeof body.last_seen_seq === "number" && body.last_seen_seq > acknowledged,
+          replay_lost: replayLost,
         },
       });
     },
@@ -240,10 +269,15 @@ export function createUserDoSurfaceRuntime(ctx: UserDoSurfaceRuntimeContext) {
             },
           );
         } catch (error) {
-          console.warn(
-            `permission-decision-forward-failed session=${sessionUuid} request=${requestUuid}`,
-            { tag: "permission-decision-forward-failed", error: String(error) },
-          );
+          logger.warn("permission-decision-forward-failed", {
+            code: "internal-error",
+            ctx: {
+              tag: "permission-decision-forward-failed",
+              session_uuid: sessionUuid,
+              request_uuid: requestUuid,
+              error: String(error),
+            },
+          });
         }
       }
 
@@ -296,10 +330,15 @@ export function createUserDoSurfaceRuntime(ctx: UserDoSurfaceRuntimeContext) {
             },
           );
         } catch (error) {
-          console.warn(
-            `elicitation-answer-forward-failed session=${sessionUuid} request=${requestUuid}`,
-            { tag: "elicitation-answer-forward-failed", error: String(error) },
-          );
+          logger.warn("elicitation-answer-forward-failed", {
+            code: "internal-error",
+            ctx: {
+              tag: "elicitation-answer-forward-failed",
+              session_uuid: sessionUuid,
+              request_uuid: requestUuid,
+              error: String(error),
+            },
+          });
         }
       }
 
@@ -498,9 +537,9 @@ export function createUserDoSurfaceRuntime(ctx: UserDoSurfaceRuntimeContext) {
               });
             }
           } catch (error) {
-            console.warn("me-sessions-d1-merge-failed", {
-              tag: "me-sessions-d1-merge-failed",
-              error: String(error),
+            logger.warn("me-sessions-d1-merge-failed", {
+              code: "internal-error",
+              ctx: { tag: "me-sessions-d1-merge-failed", error: String(error) },
             });
           }
         }
@@ -556,9 +595,9 @@ export function createUserDoSurfaceRuntime(ctx: UserDoSurfaceRuntimeContext) {
           limit: 200,
         });
       } catch (error) {
-        console.warn("me-conversations-d1-read-failed", {
-          tag: "me-conversations-d1-read-failed",
-          error: String(error),
+        logger.warn("me-conversations-d1-read-failed", {
+          code: "internal-error",
+          ctx: { tag: "me-conversations-d1-read-failed", error: String(error) },
         });
         return jsonResponse(200, {
           ok: true,

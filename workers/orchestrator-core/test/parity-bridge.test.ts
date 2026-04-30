@@ -4,6 +4,7 @@
 // entry cap, string preview truncation, logParityFailure structured fields.
 
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { withTraceContext } from "@haimang/nacp-core/logger";
 import {
   computeBodyDiff,
   jsonDeepEqual,
@@ -154,6 +155,12 @@ describe("logParityFailure", () => {
     };
   }
 
+  function parseWarnRecord(): Record<string, unknown> {
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    const [line] = warnSpy.mock.calls[0] as [string];
+    return JSON.parse(line) as Record<string, unknown>;
+  }
+
   it("emits structured fields including body_diff and first_pointer", () => {
     logParityFailure(
       "start",
@@ -161,20 +168,17 @@ describe("logParityFailure", () => {
       { status: 200, body: { ok: true, phase: "attached" } },
       makeFetchResult(200, { ok: true, phase: "starting" }),
     );
-    expect(warnSpy).toHaveBeenCalledTimes(1);
-    const [msg, payload] = warnSpy.mock.calls[0] as [string, Record<string, unknown>];
-    expect(msg).toContain("agent-rpc-parity-failed");
-    expect(msg).toContain("action=start");
-    expect(msg).toContain(`session=${SESSION_UUID}`);
-    expect(msg).toContain("rpc_status=200");
-    expect(msg).toContain("fetch_status=200");
-    expect(msg).toContain("status_match=true");
-    expect(msg).toContain("first_pointer=/phase");
-    expect(payload.tag).toBe("agent-rpc-parity-failed");
-    expect(payload.action).toBe("start");
-    expect(payload.session_uuid).toBe(SESSION_UUID);
-    expect(payload.status_match).toBe(true);
-    expect(payload.body_diff).toEqual([
+    const record = parseWarnRecord();
+    expect(record.msg).toBe("agent-rpc-parity-failed");
+    expect(record.code).toBe("rpc-parity-failed");
+    expect(record.worker).toBe("orchestrator-core");
+    const ctx = record.ctx as Record<string, unknown>;
+    expect(ctx.tag).toBe("agent-rpc-parity-failed");
+    expect(ctx.action).toBe("start");
+    expect(ctx.session_uuid).toBe(SESSION_UUID);
+    expect(ctx.status_match).toBe(true);
+    expect(ctx.first_pointer).toBe("/phase");
+    expect(ctx.body_diff).toEqual([
       {
         pointer: "/phase",
         kind: "value-mismatch",
@@ -182,20 +186,22 @@ describe("logParityFailure", () => {
         fetch: "starting",
       },
     ]);
-    expect(payload.body_diff_truncated).toBe(false);
+    expect(ctx.body_diff_truncated).toBe(false);
   });
 
   it("flags status mismatch when rpc/fetch status diverge", () => {
-    logParityFailure(
-      "status",
-      SESSION_UUID,
-      { status: 500, body: { error: "boom" } },
-      makeFetchResult(200, { ok: true }),
+    withTraceContext({ trace_uuid: "22222222-2222-4222-8222-222222222222" }, () =>
+      logParityFailure(
+        "status",
+        SESSION_UUID,
+        { status: 500, body: { error: "boom" } },
+        makeFetchResult(200, { ok: true }),
+      )
     );
-    const [msg, payload] = warnSpy.mock.calls[0] as [string, Record<string, unknown>];
-    expect(msg).toContain("status_match=false");
-    expect(payload.status_match).toBe(false);
-    expect(Array.isArray(payload.body_diff)).toBe(true);
+    const record = parseWarnRecord();
+    const ctx = record.ctx as Record<string, unknown>;
+    expect(ctx.status_match).toBe(false);
+    expect(Array.isArray(ctx.body_diff)).toBe(true);
   });
 
   it("marks truncated=true when diff exceeds cap", () => {
@@ -205,28 +211,33 @@ describe("logParityFailure", () => {
       rpc[`k${i}`] = i;
       fetch[`k${i}`] = i + 1;
     }
-    logParityFailure(
-      "input",
-      SESSION_UUID,
-      { status: 200, body: rpc },
-      makeFetchResult(200, fetch),
+    withTraceContext({ trace_uuid: "33333333-3333-4333-8333-333333333333" }, () =>
+      logParityFailure(
+        "input",
+        SESSION_UUID,
+        { status: 200, body: rpc },
+        makeFetchResult(200, fetch),
+      )
     );
-    const [msg, payload] = warnSpy.mock.calls[0] as [string, Record<string, unknown>];
-    expect(msg).toContain("truncated=true");
-    expect(payload.body_diff_truncated).toBe(true);
-    expect((payload.body_diff as unknown[]).length).toBe(20);
+    const record = parseWarnRecord();
+    const ctx = record.ctx as Record<string, unknown>;
+    expect(ctx.body_diff_truncated).toBe(true);
+    expect((ctx.body_diff as unknown[]).length).toBe(20);
   });
 
   it("emits empty diff and no first_pointer when bodies are equal but status differ", () => {
-    logParityFailure(
-      "verify",
-      SESSION_UUID,
-      { status: 500, body: { ok: true } },
-      makeFetchResult(200, { ok: true }),
+    withTraceContext({ trace_uuid: "44444444-4444-4444-8444-444444444444" }, () =>
+      logParityFailure(
+        "verify",
+        SESSION_UUID,
+        { status: 500, body: { ok: true } },
+        makeFetchResult(200, { ok: true }),
+      )
     );
-    const [msg, payload] = warnSpy.mock.calls[0] as [string, Record<string, unknown>];
-    expect(msg).not.toContain("first_pointer=");
-    expect(payload.body_diff).toEqual([]);
-    expect(payload.status_match).toBe(false);
+    const record = parseWarnRecord();
+    const ctx = record.ctx as Record<string, unknown>;
+    expect(ctx.first_pointer).toBeNull();
+    expect(ctx.body_diff).toEqual([]);
+    expect(ctx.status_match).toBe(false);
   });
 });

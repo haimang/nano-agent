@@ -20,8 +20,14 @@
  */
 
 import { WorkerEntrypoint } from "cloudflare:workers";
+import type { AuditRecord, LogRecord } from "@haimang/nacp-core/logger";
 import { worker, NanoOrchestratorUserDO } from "./index.js";
 import type { OrchestratorCoreEnv } from "./index.js";
+import {
+  createOrchestratorLogger,
+  persistAuditRecord,
+  persistErrorLogRecord,
+} from "./observability.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -36,6 +42,16 @@ export { NanoOrchestratorUserDO };
 export default class OrchestratorCoreEntrypoint extends WorkerEntrypoint<OrchestratorCoreEnv> {
   async fetch(request: Request): Promise<Response> {
     return worker.fetch(request, this.env);
+  }
+
+  async recordErrorLog(record: LogRecord): Promise<{ ok: boolean }> {
+    await persistErrorLogRecord(this.env, record);
+    return { ok: true };
+  }
+
+  async recordAuditEvent(record: AuditRecord): Promise<{ ok: boolean }> {
+    await persistAuditRecord(this.env, record);
+    return { ok: true };
   }
 
   async forwardServerFrameToClient(
@@ -55,6 +71,7 @@ export default class OrchestratorCoreEntrypoint extends WorkerEntrypoint<Orchest
     if (!this.env.ORCHESTRATOR_USER_DO) {
       return { ok: false, delivered: false, reason: "user-do-binding-missing" };
     }
+    const logger = createOrchestratorLogger(this.env);
     try {
       const stub = this.env.ORCHESTRATOR_USER_DO.get(
         this.env.ORCHESTRATOR_USER_DO.idFromName(meta.userUuid),
@@ -82,11 +99,14 @@ export default class OrchestratorCoreEntrypoint extends WorkerEntrypoint<Orchest
         reason: body.reason,
       };
     } catch (error) {
-      console.warn("forward-server-frame-failed", {
-        tag: "forward-server-frame-failed",
-        session_uuid: sessionUuid,
-        user_uuid: meta.userUuid,
-        error: String(error),
+      logger.warn("forward-server-frame-failed", {
+        code: "internal-error",
+        ctx: {
+          tag: "forward-server-frame-failed",
+          session_uuid: sessionUuid,
+          user_uuid: meta.userUuid,
+          error: String(error),
+        },
       });
       return { ok: false, delivered: false, reason: "do-fetch-error" };
     }

@@ -1,3 +1,5 @@
+import { createLogger } from "@haimang/nacp-core/logger";
+import type { AuditRecord } from "@haimang/nacp-core/logger";
 import type { IngressAuthSnapshot } from "../auth.js";
 import { jsonResponse } from "../session-lifecycle.js";
 import {
@@ -18,6 +20,8 @@ import {
 } from "../ws-bridge.js";
 import type { StreamReadResult } from "./agent-rpc.js";
 
+const logger = createLogger("orchestrator-core");
+
 export interface UserDoWsRuntimeContext {
   attachments: Map<string, AttachmentState>;
   get<T>(key: string): Promise<T | undefined>;
@@ -36,6 +40,8 @@ export interface UserDoWsRuntimeContext {
     entry: SessionEntry,
     authSnapshot: IngressAuthSnapshot | null | undefined,
   ): Promise<SessionEntry | Response>;
+  readAuditAuthSnapshot(): Promise<IngressAuthSnapshot | null>;
+  persistAudit(record: AuditRecord): Promise<void>;
 }
 
 export function createUserDoWsRuntime(ctx: UserDoWsRuntimeContext) {
@@ -71,6 +77,19 @@ export function createUserDoWsRuntime(ctx: UserDoWsRuntimeContext) {
 
       const current = ctx.attachments.get(sessionUuid);
       if (current) {
+        const auditAuth = parsedAuthority ?? await ctx.readAuditAuthSnapshot();
+        await ctx.persistAudit({
+          ts: new Date().toISOString(),
+          worker: "orchestrator-core",
+          event_kind: "session.attachment.superseded",
+          outcome: "ok",
+          session_uuid: sessionUuid,
+          trace_uuid: request.headers.get("x-trace-uuid") ?? undefined,
+          team_uuid: auditAuth?.team_uuid ?? auditAuth?.tenant_uuid,
+          user_uuid: auditAuth?.user_uuid ?? auditAuth?.sub,
+          device_uuid: auditAuth?.device_uuid ?? gatedEntry.device_uuid ?? undefined,
+          detail: { reason: "reattach" },
+        });
         ctx.emitServerFrame(sessionUuid, {
           kind: "session.attachment.superseded",
           session_uuid: sessionUuid,
@@ -136,7 +155,10 @@ export function createUserDoWsRuntime(ctx: UserDoWsRuntimeContext) {
         ctx.attachments.delete(sessionUuid);
         if (current.heartbeat_timer) clearInterval(current.heartbeat_timer);
         this.markDetached(sessionUuid).catch((err) =>
-          console.warn("mark-detached-failed", { tag: "mark-detached-failed", error: String(err) }),
+          logger.warn("mark-detached-failed", {
+            code: "internal-error",
+            ctx: { tag: "mark-detached-failed", error: String(err) },
+          }),
         );
       });
 
@@ -145,7 +167,10 @@ export function createUserDoWsRuntime(ctx: UserDoWsRuntimeContext) {
           sessionUuid,
           ctx.attachments.has(sessionUuid) ? "active" : "detached",
         ).catch((err) =>
-          console.warn("touch-session-failed", { tag: "touch-session-failed", error: String(err) }),
+          logger.warn("touch-session-failed", {
+            code: "internal-error",
+            ctx: { tag: "touch-session-failed", error: String(err) },
+          }),
         );
       });
     },
@@ -221,6 +246,18 @@ export function createUserDoWsRuntime(ctx: UserDoWsRuntimeContext) {
       for (const [sessionUuid, attachment] of ctx.attachments.entries()) {
         const entry = await ctx.get<SessionEntry>(sessionKey(sessionUuid));
         if (!entry || entry.device_uuid !== deviceUuid) continue;
+        const auditAuth = await ctx.readAuditAuthSnapshot();
+        await ctx.persistAudit({
+          ts: new Date().toISOString(),
+          worker: "orchestrator-core",
+          event_kind: "session.attachment.superseded",
+          outcome: "ok",
+          session_uuid: sessionUuid,
+          team_uuid: auditAuth?.team_uuid ?? auditAuth?.tenant_uuid,
+          user_uuid: auditAuth?.user_uuid ?? auditAuth?.sub,
+          device_uuid: deviceUuid,
+          detail: { reason: "revoked" },
+        });
         affected.push(sessionUuid);
         ctx.emitServerFrame(sessionUuid, {
           kind: "session.attachment.superseded",

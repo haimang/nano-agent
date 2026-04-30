@@ -1,3 +1,7 @@
+import { createLogger } from "@haimang/nacp-core/logger";
+
+const logger = createLogger("orchestrator-core");
+
 // ZX4 Phase 0 seam extraction(per ZX4-ZX5 GPT review Q3 4-module seam):
 // parity-bridge — internal fetch / RPC dual-track + parity logging + stream
 // frame parsing helpers. **本文件仅含类型 + pure helper functions**;DO class
@@ -198,9 +202,9 @@ export function logParityFailure(
   const bodyDiff = computeBodyDiff(rpcResult.body ?? null, fetchResult.body ?? null);
   const truncated = bodyDiff.length >= PARITY_DIFF_MAX_ENTRIES;
   const firstPointer = bodyDiff[0]?.pointer ?? null;
-  console.warn(
-    `agent-rpc-parity-failed action=${action} session=${sessionUuid} rpc_status=${rpcResult.status} fetch_status=${fetchStatus} status_match=${statusMatch} diff_count=${bodyDiff.length}${firstPointer ? ` first_pointer=${firstPointer}` : ""}${truncated ? " truncated=true" : ""}`,
-    {
+  logger.warn("agent-rpc-parity-failed", {
+    code: "rpc-parity-failed",
+    ctx: {
       action,
       session_uuid: sessionUuid,
       rpc_status: rpcResult.status,
@@ -208,9 +212,10 @@ export function logParityFailure(
       status_match: statusMatch,
       body_diff: bodyDiff,
       body_diff_truncated: truncated,
+      first_pointer: firstPointer,
       tag: "agent-rpc-parity-failed",
     },
-  );
+  });
 }
 
 export type StreamFrame =
