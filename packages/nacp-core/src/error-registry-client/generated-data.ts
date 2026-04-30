@@ -471,5 +471,107 @@ export const GENERATED_CLIENT_ERROR_META = [
     "category": "dependency.unavailable",
     "http_status": 500,
     "retryable": true
+  },
+  {
+    "code": "missing-team-claim",
+    "category": "security.denied",
+    "http_status": 403,
+    "retryable": false
+  },
+  {
+    "code": "invalid-auth-body",
+    "category": "request.error",
+    "http_status": 400,
+    "retryable": false
+  },
+  {
+    "code": "invalid-start-body",
+    "category": "request.error",
+    "http_status": 400,
+    "retryable": false
+  },
+  {
+    "code": "invalid-input-body",
+    "category": "request.error",
+    "http_status": 400,
+    "retryable": false
+  },
+  {
+    "code": "invalid-auth-snapshot",
+    "category": "request.error",
+    "http_status": 400,
+    "retryable": false
+  },
+  {
+    "code": "session_missing",
+    "category": "request.error",
+    "http_status": 404,
+    "retryable": false
+  },
+  {
+    "code": "session-pending-only-start-allowed",
+    "category": "conflict.state",
+    "http_status": 409,
+    "retryable": false
+  },
+  {
+    "code": "session-expired",
+    "category": "conflict.state",
+    "http_status": 409,
+    "retryable": false
+  },
+  {
+    "code": "session-already-started",
+    "category": "conflict.state",
+    "http_status": 409,
+    "retryable": false
+  },
+  {
+    "code": "session_terminal",
+    "category": "conflict.state",
+    "http_status": 409,
+    "retryable": false
+  },
+  {
+    "code": "agent-start-failed",
+    "category": "dependency.unavailable",
+    "http_status": 502,
+    "retryable": true
+  },
+  {
+    "code": "agent-rpc-unavailable",
+    "category": "dependency.unavailable",
+    "http_status": 503,
+    "retryable": true
+  },
+  {
+    "code": "agent-rpc-throw",
+    "category": "dependency.unavailable",
+    "http_status": 502,
+    "retryable": true
+  },
+  {
+    "code": "models-d1-unavailable",
+    "category": "dependency.unavailable",
+    "http_status": 503,
+    "retryable": true
+  },
+  {
+    "code": "context-rpc-unavailable",
+    "category": "dependency.unavailable",
+    "http_status": 503,
+    "retryable": true
+  },
+  {
+    "code": "filesystem-rpc-unavailable",
+    "category": "dependency.unavailable",
+    "http_status": 503,
+    "retryable": true
+  },
+  {
+    "code": "payload-too-large",
+    "category": "request.error",
+    "http_status": 413,
+    "retryable": false
   }
 ] as const satisfies readonly ClientErrorMeta[];

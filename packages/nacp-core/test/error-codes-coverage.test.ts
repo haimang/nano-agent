@@ -14,6 +14,7 @@
 import { readFileSync, existsSync } from "node:fs";
 import { describe, it, expect } from "vitest";
 import {
+  listCrossSourceDuplicateCodes,
   listErrorMetas,
   type ErrorMeta,
 } from "../src/error-registry.js";
@@ -92,9 +93,23 @@ describe("docs/api/error-codes.md ↔ resolveErrorMeta() parity", () => {
     expect(missing).toEqual([]);
   });
 
-  it("docs row count >= 75 (sanity floor; current registry size = 78)", () => {
+  it("docs row count >= 90 (sanity floor; current registry size = 94 unique codes)", () => {
     const rows = parseDoc();
-    expect(rows.length).toBeGreaterThanOrEqual(75);
+    expect(rows.length).toBeGreaterThanOrEqual(90);
+  });
+});
+
+describe("error-registry cross-source duplicate guard (DeepSeek R5)", () => {
+  it("only the documented intentional cross-source duplicate exists", () => {
+    const duplicates = Array.from(listCrossSourceDuplicateCodes().entries());
+    // The only intentional duplication is `NACP_REPLAY_OUT_OF_RANGE`,
+    // registered under `nacp` (envelope-level) and `session` (more
+    // specific). Any new collision should land here as a failure so
+    // the registry's last-write-wins behaviour does not silently
+    // overwrite an entry from another source.
+    expect(duplicates).toEqual([
+      ["NACP_REPLAY_OUT_OF_RANGE", expect.arrayContaining(["nacp", "session"])],
+    ]);
   });
 });
 

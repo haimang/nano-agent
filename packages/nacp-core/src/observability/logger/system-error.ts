@@ -68,19 +68,34 @@ export async function tryEmitSystemError(input: TryEmitSystemErrorInput): Promis
   if (input.dedupe && !input.critical && !input.dedupe.shouldEmit(key, false)) {
     return { emitted: false, deduped: true };
   }
+  const fallbackPayload: SystemErrorFallbackNotify = {
+    kind: "system.notify",
+    severity: "error",
+    message: frame.error.message,
+    code: frame.error.code,
+    trace_uuid: frame.trace_uuid,
+  };
   let result: { delivered?: boolean; reason?: string } | void;
   try {
     result = await input.emit(frame);
   } catch (error) {
     if (input.fallbackNotify) {
-      await input.fallbackNotify({
-        kind: "system.notify",
-        severity: "error",
-        message: frame.error.message,
-        code: frame.error.code,
-        trace_uuid: frame.trace_uuid,
-      });
-      return { emitted: true, delivered: false, reason: "fallback-notify" };
+      // RHX2 review-of-reviews fix (GPT R5): isolate fallback notify
+      // exception so a fallback failure does not surface as the primary
+      // emit error.
+      try {
+        await input.fallbackNotify(fallbackPayload);
+        return { emitted: true, delivered: false, reason: "fallback-notify" };
+      } catch (fallbackError) {
+        const primary = error instanceof Error ? error.message : String(error);
+        const secondary =
+          fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+        return {
+          emitted: false,
+          delivered: false,
+          reason: `emit-and-fallback-failed: ${primary}; ${secondary}`,
+        };
+      }
     }
     return {
       emitted: false,
@@ -88,14 +103,21 @@ export async function tryEmitSystemError(input: TryEmitSystemErrorInput): Promis
     };
   }
 
+  // RHX2 review-of-reviews fix (GPT R5): primary emit already succeeded;
+  // dual-notify is best-effort, never allowed to pollute the success
+  // result with a thrown exception.
   if (input.fallbackNotify && (input.dualEmitSystemNotifyError ?? DEFAULT_DUAL_EMIT_SYSTEM_NOTIFY_ERROR)) {
-    await input.fallbackNotify({
-      kind: "system.notify",
-      severity: "error",
-      message: frame.error.message,
-      code: frame.error.code,
-      trace_uuid: frame.trace_uuid,
-    });
+    try {
+      await input.fallbackNotify(fallbackPayload);
+    } catch (fallbackError) {
+      const reason =
+        fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+      return {
+        emitted: true,
+        delivered: result?.delivered,
+        reason: `dual-notify-failed: ${reason}`,
+      };
+    }
   }
   return {
     emitted: true,

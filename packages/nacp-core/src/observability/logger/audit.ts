@@ -54,11 +54,60 @@ export function buildAuditRecord(input: RecordAuditEventInput): AuditRecord {
   };
 }
 
-export function recordAuditEvent(
+export type AuditPersistErrorReporter = (
+  error: unknown,
+  record: AuditRecord,
+) => Promise<void> | void;
+
+export interface RecordAuditEventOptions {
+  readonly executionContext?: LoggerExecutionContext;
+  /**
+   * Optional reporter invoked when the persist function throws. Lets
+   * call sites that fire-and-forget audit writes (e.g.
+   * `void recordAuditEvent(...)`) still surface persist failures via
+   * `emitObservabilityAlert("audit-persist-failed", ...)` without
+   * polluting the caller's primary success path.
+   *
+   * RHX2 review-of-reviews fix (DeepSeek R3 / §5.5 blind-spot 1).
+   */
+  readonly onPersistError?: AuditPersistErrorReporter;
+}
+
+export async function recordAuditEvent(
   input: RecordAuditEventInput,
   persist: AuditPersistFn,
-  executionContext?: LoggerExecutionContext,
-): Promise<void> | void {
+  optionsOrCtx?: LoggerExecutionContext | RecordAuditEventOptions,
+): Promise<void> {
   const record = buildAuditRecord(input);
-  return persist(record, executionContext);
+  const opts = normalizeAuditOptions(optionsOrCtx);
+  try {
+    await Promise.resolve(persist(record, opts.executionContext));
+  } catch (error) {
+    if (opts.onPersistError) {
+      try {
+        await Promise.resolve(opts.onPersistError(error, record));
+      } catch {
+        // Reporter must not throw further; swallow to keep audit emits
+        // fire-and-forget safe at every call site.
+      }
+      return;
+    }
+    // No reporter wired: re-raise so callers that DO await can react.
+    throw error;
+  }
+}
+
+function normalizeAuditOptions(
+  optionsOrCtx?: LoggerExecutionContext | RecordAuditEventOptions,
+): RecordAuditEventOptions {
+  if (!optionsOrCtx) return {};
+  if (typeof (optionsOrCtx as RecordAuditEventOptions).onPersistError === "function") {
+    return optionsOrCtx as RecordAuditEventOptions;
+  }
+  if (
+    typeof (optionsOrCtx as RecordAuditEventOptions).executionContext !== "undefined"
+  ) {
+    return optionsOrCtx as RecordAuditEventOptions;
+  }
+  return { executionContext: optionsOrCtx as LoggerExecutionContext };
 }

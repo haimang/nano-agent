@@ -260,10 +260,17 @@ const LLM_ERROR_METAS: readonly ErrorMeta[] = [
   m("llm-other", "llm", "transient", 500, true, "LLM provider error"),
 ];
 
-// ad-hoc string codes — bash-core (Q-Obs9 owner-answered: not promoted to
-// zod enum in first-wave, but MUST be registered in the registry/docs so
-// clients can look them up).
+// ad-hoc string codes — bash-core + facade (Q-Obs9 owner-answered: not
+// promoted to zod enum in first-wave, but MUST be registered in the
+// registry/docs so clients can look them up).
+//
+// RHX2 review-of-reviews fix (DeepSeek R2 / GLM R3): the 10 facade-level
+// ad-hoc codes that orchestrator-core actually emits at runtime are
+// registered here so `resolveErrorMeta()` no longer returns undefined for
+// them. They are documented in `clients/api-docs/error-index.md`
+// "Current Ad-hoc Public Codes".
 const AD_HOC_ERROR_METAS: readonly ErrorMeta[] = [
+  // bash-core 7 (RHX2 P2-01 first-wave).
   m("empty-command", "ad-hoc", "validation", 400, false, "bash-core received an empty command"),
   m("policy-denied", "ad-hoc", "security", 403, false, "bash-core policy denied execution"),
   m("session-not-found", "ad-hoc", "validation", 404, false, "bash-core session_uuid unknown"),
@@ -271,6 +278,24 @@ const AD_HOC_ERROR_METAS: readonly ErrorMeta[] = [
   m("execution-failed", "ad-hoc", "transient", 500, true, "bash-core execution failed"),
   m("bridge-not-found", "ad-hoc", "validation", 404, false, "bash-core bridge target missing"),
   m("handler-error", "ad-hoc", "transient", 500, true, "bash-core handler threw an unhandled error"),
+  // orchestrator-core facade 10 (RHX2 review-of-reviews fix).
+  m("missing-team-claim", "ad-hoc", "security", 403, false, "JWT must include team_uuid or tenant_uuid"),
+  m("invalid-auth-body", "ad-hoc", "validation", 400, false, "auth route requires a JSON body"),
+  m("invalid-start-body", "ad-hoc", "validation", 400, false, "/sessions/{id}/start requires a JSON body"),
+  m("invalid-input-body", "ad-hoc", "validation", 400, false, "/sessions/{id}/input requires non-empty text"),
+  m("invalid-auth-snapshot", "ad-hoc", "validation", 400, false, "/start internal auth snapshot invalid"),
+  m("session_missing", "ad-hoc", "validation", 404, false, "session not found"),
+  m("session-pending-only-start-allowed", "ad-hoc", "conflict", 409, false, "pending session only accepts /start"),
+  m("session-expired", "ad-hoc", "conflict", 409, false, "pending session expired"),
+  m("session-already-started", "ad-hoc", "conflict", 409, false, "session already started"),
+  m("session_terminal", "ad-hoc", "conflict", 409, false, "session is in a terminal state"),
+  m("agent-start-failed", "ad-hoc", "dependency", 502, true, "agent-core /start failed"),
+  m("agent-rpc-unavailable", "ad-hoc", "dependency", 503, true, "agent-core RPC binding unavailable"),
+  m("agent-rpc-throw", "ad-hoc", "dependency", 502, true, "agent-core RPC throw"),
+  m("models-d1-unavailable", "ad-hoc", "dependency", 503, true, "models D1 lookup failed"),
+  m("context-rpc-unavailable", "ad-hoc", "dependency", 503, true, "context-core RPC failed"),
+  m("filesystem-rpc-unavailable", "ad-hoc", "dependency", 503, true, "filesystem-core RPC failed"),
+  m("payload-too-large", "ad-hoc", "validation", 413, false, "file exceeds 25 MiB upload limit"),
 ];
 
 // Sources are concatenated in increasing specificity order. When the
@@ -289,13 +314,36 @@ const _RAW_ERROR_METAS: readonly ErrorMeta[] = [
   ...AD_HOC_ERROR_METAS,
 ];
 
+// RHX2 review-of-reviews fix (DeepSeek R5): track cross-source duplicate
+// codes so callers/tests can assert that the only intentional duplicate
+// is `NACP_REPLAY_OUT_OF_RANGE`. Any unintentional collision shows up
+// here and is caught by `test/error-codes-coverage.test.ts`.
+const _crossSourceDuplicates = new Map<string, ErrorMetaSource[]>();
+
 const _byCode: Map<string, ErrorMeta> = (() => {
   const map = new Map<string, ErrorMeta>();
+  const seen = new Map<string, ErrorMetaSource>();
   for (const meta of _RAW_ERROR_METAS) {
+    const prev = seen.get(meta.code);
+    if (prev !== undefined && prev !== meta.source) {
+      const list = _crossSourceDuplicates.get(meta.code) ?? [prev];
+      if (!list.includes(meta.source)) list.push(meta.source);
+      _crossSourceDuplicates.set(meta.code, list);
+    }
+    seen.set(meta.code, meta.source);
     map.set(meta.code, meta); // last-write-wins
   }
   return map;
 })();
+
+/**
+ * Codes that appear under more than one ErrorMetaSource. The CI test
+ * `error-codes-coverage.test.ts` asserts the expected allow-list (the
+ * only intentional collision today is `NACP_REPLAY_OUT_OF_RANGE`).
+ */
+export function listCrossSourceDuplicateCodes(): ReadonlyMap<string, readonly ErrorMetaSource[]> {
+  return _crossSourceDuplicates;
+}
 
 // Public list is the deduped view (one entry per code). Insertion order
 // follows _RAW_ERROR_METAS, but later duplicates carry forward into the
