@@ -9,6 +9,9 @@
 | Route | Method | Shape | 说明 |
 |-------|--------|-------|------|
 | `/models` | `GET` | facade / `304` | model catalog + team policy filter |
+| `/models/{modelIdOrAlias}` | `GET` | facade | single model detail；支持 encoded canonical id 与 `@alias/*` |
+| `/sessions/{id}/model` | `GET` | facade | session current-model control plane |
+| `/sessions/{id}/model` | `PATCH` | facade | set / clear session default model + reasoning |
 | `/sessions/{id}/start` | `POST` | legacy | 启动 session |
 | `/sessions/{id}/input` | `POST` | legacy | text-only input |
 | `/sessions/{id}/messages` | `POST` | legacy | multipart message input |
@@ -79,7 +82,8 @@ Success `200`:
         "display_name": "Granite 4.0 H Micro",
         "context_window": 131072,
         "capabilities": { "reasoning": false, "vision": false, "function_calling": true },
-        "status": "active"
+        "status": "active",
+        "aliases": ["@alias/balanced"]
       }
     ]
   },
@@ -91,13 +95,112 @@ Success `200`:
 
 Errors: `invalid-auth`(401), `missing-team-claim`(403), `worker-misconfigured`(503), `models-d1-unavailable`(503, 当前 ad-hoc code)。
 
+## `GET /models/{modelIdOrAlias}`
+
+读取单模型 detail；canonical model id 需要 URL encode（例如 `%40cf%2Fmeta%2F...`），也支持 `@alias/*`。
+
+Success `200`:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "requested_model_id": "@alias/reasoning",
+    "resolved_model_id": "@cf/meta/llama-4-scout-17b-16e-instruct",
+    "resolved_from_alias": true,
+    "model": {
+      "model_id": "@cf/meta/llama-4-scout-17b-16e-instruct",
+      "family": "workers-ai/llama",
+      "display_name": "Llama 4 Scout 17B 16E Instruct",
+      "context_window": 131072,
+      "capabilities": { "reasoning": true, "vision": true, "function_calling": true },
+      "status": "active",
+      "aliases": ["@alias/reasoning"],
+      "max_output_tokens": 4096,
+      "effective_context_pct": 0.75,
+      "auto_compact_token_limit": 64000,
+      "supported_reasoning_levels": ["medium", "low"],
+      "input_modalities": ["text", "image"],
+      "provider_key": "workers-ai",
+      "fallback_model_id": null,
+      "base_instructions_suffix": null,
+      "description": "Reasoning profile",
+      "sort_priority": 80
+    }
+  },
+  "trace_uuid": "..."
+}
+```
+
+Errors: `model-unavailable`(400), `invalid-auth`(401), `missing-team-claim`(403), `model-disabled`(403), `worker-misconfigured`(503)。
+
+## `GET /sessions/{id}/model`
+
+读取当前 session 的 model control-plane truth。返回值同时包含 session 默认值、当前生效默认来源（`session` / `global`）以及最近一条 turn audit。
+
+Success `200`:
+
+```json
+{
+  "ok": true,
+  "data": {
+    "conversation_uuid": "4444...",
+    "session_uuid": "3333...",
+    "session_status": "active",
+    "deleted_at": null,
+    "default_model_id": "@cf/meta/llama-4-scout-17b-16e-instruct",
+    "default_reasoning_effort": "medium",
+    "effective_default_model_id": "@cf/meta/llama-4-scout-17b-16e-instruct",
+    "effective_default_reasoning_effort": "medium",
+    "source": "session",
+    "last_turn": {
+      "turn_uuid": "9999...",
+      "created_at": "2026-04-30T00:01:00.000Z",
+      "requested_model_id": "@cf/meta/llama-4-scout-17b-16e-instruct",
+      "requested_reasoning_effort": "medium",
+      "effective_model_id": "@cf/meta/llama-4-scout-17b-16e-instruct",
+      "effective_reasoning_effort": "medium",
+      "fallback_used": false,
+      "fallback_reason": null
+    }
+  },
+  "trace_uuid": "..."
+}
+```
+
+当 `default_model_id=null` 时表示当前 session 未持久化 session default；此时 `effective_default_model_id` 来自 global default。
+
+## `PATCH /sessions/{id}/model`
+
+支持 set、reasoning update 与 clear：
+
+```json
+{ "model_id": "@alias/reasoning", "reasoning": { "effort": "high" } }
+```
+
+```json
+{ "model_id": null }
+```
+
+规则：
+
+1. `model_id` 可传 canonical id 或 `@alias/*`；server 会先 resolve 再写 durable truth。
+2. `model_id: null` 会清空 session default，恢复 `global default`。
+3. 若请求的 reasoning 不被目标模型支持，server 会按 `supported_reasoning_levels` 的第一优先级重映射，而不是 silent drop。
+4. `ended` / `expired` session 不能再修改当前模型。
+
+Success `200` 返回 shape 与 `GET /sessions/{id}/model` 相同。
+
+Errors: `invalid-input`(400), `model-unavailable`(400), `invalid-auth`(401), `missing-team-claim`(403), `model-disabled`(403), `session-expired`(409), `session_terminal`(409), `conversation-deleted`(409), `worker-misconfigured`(503)。
+
 ## Session Lifecycle
 
 1. 推荐先 `POST /me/sessions` 获取 pending UUID。
 2. 再 `POST /sessions/{id}/start` 启动。
 3. 当前 `/start` 仍接受未 mint 的新 UUID。
 4. pending UUID 在 `/start` 以外多数 session route 会返回 `409 session-pending-only-start-allowed`。
-5. HP4 当前只完成 lifecycle / checkpoint first wave：`close` / `delete` / `title` / conversation detail / checkpoint list-create-diff 已 public；`/retry` 与 `/restore` 仍未开放。
+5. HP2 当前已完成 first-wave model control plane：`/models/{id}`、`GET/PATCH /sessions/{id}/model`、requested/effective turn audit 已 live；`<model_switch>` 与 `model.fallback` 仍未开放。
+6. HP4 当前只完成 lifecycle / checkpoint first wave：`close` / `delete` / `title` / conversation detail / checkpoint list-create-diff 已 public；`/retry` 与 `/restore` 仍未开放。
 
 ## `POST /sessions/{id}/start`
 

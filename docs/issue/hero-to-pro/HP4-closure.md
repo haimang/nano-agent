@@ -70,7 +70,7 @@
 |---------|------|-------------|------|
 | F1 | 公共入口模型字段透传断裂 | `closed-by-HP0` | 本轮未触碰 |
 | F2 | system prompt model-aware suffix 缺失 | `not-touched` | 仍归 HP2 / HP3 runtime 批次 |
-| F3 | session-level current model 与 alias resolution | `not-touched` | 本轮未触碰 |
+| F3 | session-level current model 与 alias resolution | `closed-by-HP2-first-wave` | HP2 已补 session current-model API、alias/detail resolve 与 turn requested/effective audit；HP4 retry 后续可直接消费这条真相链 |
 | F4 | context state machine（compact / branch / fork） | `carried-from-HP3-partial` | HP3 first wave 已落；本轮不扩写 |
 | F5 | chat lifecycle | `partial-by-HP4` | close/delete/title/read model/checkpoint diff 已 live；retry/restore 未完 |
 | F6 | confirmation control plane | `not-touched` | HP5 |

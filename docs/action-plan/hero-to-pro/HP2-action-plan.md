@@ -26,7 +26,7 @@
 > - `docs/design/hero-to-pro/HPX-qna.md`
 > 冻结决策来源:
 > - `docs/design/hero-to-pro/HPX-qna.md` Q7-Q9（只读引用；本 action-plan 不填写 Q/A）
-> 文档状态: `draft`
+> 文档状态: `executed`
 
 ---
 
@@ -425,3 +425,13 @@ hero-to-pro HP2 model state machine
 | 文档 | HP2 closure 能独立解释 API、D1、stream、prompt 四层结果 |
 | 风险收敛 | multi-provider / pricing / compact 边界未被 HP2 误吸收 |
 | 可交付性 | HP3 可以直接在 HP2 已冻结的 `<model_switch>` 与 model metadata 之上继续实现 |
+
+## 11. 工作日志回填
+
+1. 重新对照 charter / design / Q7-Q9 / HP3-HP4 closure 与真实代码，确认 HP1 schema 已有 session/turn model audit 基线，但缺 `fallback_reason`，按 charter §7.2 R8 补出 `014-session-model-fallback-reason.sql` 作为 HP1 correction。
+2. 在 `workers/orchestrator-core/src/session-truth.ts` 收敛 model control-plane 真相源：新增 team-scoped active model list、alias/detail resolve、global default 选取、session model state 视图、latest turn model audit 与 session default update。
+3. 在 façade `workers/orchestrator-core/src/index.ts` 落地 `GET /models/{id}`、`GET /sessions/{id}/model`、`PATCH /sessions/{id}/model`，并把 `/models` list 升级为返回 alias 集的 control-plane catalog。
+4. 在 `workers/orchestrator-core/src/user-do/{session-flow,message-runtime}.ts` 接上 `turn override > session default > global default`；`/start` 显式模型会写 session default，follow-up turn 会把 requested/effective model + reasoning 落入 durable turn truth。
+5. 为兼容当前 schema reality，reasoning remap 采用 `supported_reasoning_levels` 的首优先级作为 server-side normalized effort；这解决了“unsupported effort 不能 silent drop”的冻结要求，但并不等价于未来 per-model default_reasoning_effort。
+6. 新增 / 更新测试：`test/models-route.test.ts`、`test/session-model-route.test.ts`、`test/migrations-schema-freeze.test.ts`，并完整回归 `pnpm --filter @haimang/orchestrator-core-worker typecheck build test`。
+7. 本轮明确收口的是 **HP2 first wave / partial-live**：session/model control plane、alias/detail、requested/effective audit、schema correction 已 live；`<model_switch>`、`model.fallback` stream event、agent-core 侧更深 request assembly 与 cross-e2e 继续留在后续批次。

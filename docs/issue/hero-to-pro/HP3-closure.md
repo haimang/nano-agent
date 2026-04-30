@@ -68,7 +68,7 @@
 |---------|------|-------------|------|
 | F1 | 公共入口模型字段透传断裂 | `closed-by-HP0` | 本轮未触碰 |
 | F2 | system prompt model-aware suffix 缺失 | `partial-preexisting` | probe/preview 已消费 model metadata；runtime system prompt 真接线仍归 HP2/HP3 runtime 批次 |
-| F3 | session-level current model 与 alias resolution | `partial-preexisting` | 本轮读取 model metadata truth，但未补 session-level current model runtime owner |
+| F3 | session-level current model 与 alias resolution | `closed-by-HP2-first-wave` | HP2 已补 `/models/{id}`、`GET/PATCH /sessions/{id}/model` 与 requested/effective model audit，HP3 现在可直接消费稳定 model truth |
 | F4 | context state machine（compact / branch / fork） | `partial-by-HP3` | control-plane first wave 已落地；runtime owner / auto-compact / breaker 未完 |
 | F5 | chat lifecycle | `not-touched` | HP4 |
 | F6 | confirmation control plane | `not-touched` | HP5 |

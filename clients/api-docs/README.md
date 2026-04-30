@@ -86,6 +86,9 @@
 | Method | Path | Auth | Shape | 说明 |
 |--------|------|------|-------|------|
 | `GET` | `/models` | bearer | facade / `304` | D1 model catalog + per-team policy filter + ETag |
+| `GET` | `/models/{modelIdOrAlias}` | bearer | facade | single model detail; accepts encoded canonical model id or `@alias/*` |
+| `GET` | `/sessions/{id}/model` | bearer | facade | session current-model control plane view |
+| `PATCH` | `/sessions/{id}/model` | bearer | facade | set / clear session default model + reasoning |
 | `POST` | `/sessions/{id}/start` | bearer | legacy | 启动 session |
 | `POST` | `/sessions/{id}/input` | bearer | legacy | text-only 输入 |
 | `POST` | `/sessions/{id}/messages` | bearer | legacy | multipart message 输入 |

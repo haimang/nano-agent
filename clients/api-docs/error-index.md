@@ -85,23 +85,23 @@ The following are emitted by current routes. They are not part of `FacadeErrorCo
 | `invalid-auth-snapshot` | 400 | `/start` internal auth snapshot | report trace |
 | `session_missing` | 404 | session DO routes | session not found |
 | `session-pending-only-start-allowed` | 409 | session DO routes | call `/start` or refresh list |
-| `session-expired` | 409 | pending start | mint a new session |
+| `session-expired` | 409 | pending start, `PATCH /sessions/{id}/model` | mint a new session |
 | `session-already-started` | 409 | `/start` | reuse existing session/status |
-| `session_terminal` | 409 | follow-up/WS | session closed |
+| `session_terminal` | 409 | follow-up/WS, `PATCH /sessions/{id}/model` on ended session | session closed |
 | `agent-start-failed` | 502 | `/start` | retry or report |
 | `agent-rpc-unavailable` | 503 | agent-backed routes | retry/backoff |
 | `agent-rpc-throw` | 502 | status/timeline/verify | retry/backoff |
-| `models-d1-unavailable` | 503 | `/models` | retry/backoff |
+| `models-d1-unavailable` | 503 | `/models`, `/models/{id}` | retry/backoff |
 | `usage-d1-unavailable` | 503 | `/sessions/{id}/usage` | retry/backoff |
-| `model-unavailable` | 400 | `/sessions/{id}/start`, `/sessions/{id}/input`, `/sessions/{id}/messages` | model inactive/unavailable; prompt user to choose another model |
-| `model-disabled` | 403 | `/sessions/{id}/start`, `/sessions/{id}/input`, `/sessions/{id}/messages` | team policy forbids this model |
+| `model-unavailable` | 400 | `/models/{id}`, `/sessions/{id}/model`, `/sessions/{id}/start`, `/sessions/{id}/input`, `/sessions/{id}/messages` | model inactive/unavailable; prompt user to choose another model |
+| `model-disabled` | 403 | `/models/{id}`, `/sessions/{id}/model`, `/sessions/{id}/start`, `/sessions/{id}/input`, `/sessions/{id}/messages` | team policy forbids this model |
 | `wrong-device` | 403 | follow-up session routes | session is bound to another device; refresh session list or switch device |
 | `context-rpc-unavailable` | 503 | context routes | retry/backoff |
 | `filesystem-rpc-unavailable` | 503 | files routes | retry/backoff |
 | `payload-too-large` | 413 | file upload | reduce file size; max 25 MiB |
 | `spike-disabled` | 403 | preview-only `/sessions/{id}/verify` spike check | verify spike disabled in this environment |
 | `no-attached-client` | 409 | preview-only `/sessions/{id}/verify` spike check | attach a websocket client before retrying |
-| `conversation-deleted` | 409 | checkpoint routes | parent conversation already soft-deleted; refresh conversation list |
+| `conversation-deleted` | 409 | checkpoint routes, `/sessions/{id}/model` | parent conversation already soft-deleted; refresh conversation list |
 
 Legacy note:
 
