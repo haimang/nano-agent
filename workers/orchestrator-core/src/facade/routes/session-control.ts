@@ -127,13 +127,8 @@ function isTodoStatus(value: unknown): value is TodoStatus {
 }
 
 function todoConstraintToResponse(err: TodoConstraintError, traceUuid: string): Response {
-  const status =
-    err.code === "todo-not-found"
-      ? 404
-      : err.code === "in-progress-conflict"
-        ? 409
-        : 400;
-  return jsonPolicyError(status, err.code, err.message, traceUuid);
+  // HPX3 F1 + F5 — 移除 dead code 后，TodoConstraintError 仅剩 `in-progress-conflict`。
+  return jsonPolicyError(409, err.code, err.message, traceUuid);
 }
 
 interface OwnedSessionResult {

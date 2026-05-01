@@ -208,7 +208,13 @@ describe("HP6 todo registry — D1TodoControlPlane", () => {
     ).toBe(false);
   });
 
-  it("rejects unknown status at the helper boundary", async () => {
+  it("rejects unknown status at the SQL CHECK boundary (helper trusts handler pre-validate)", async () => {
+    // HPX3 F1 — domain layer no longer throws `invalid-status`; the
+    // facade handler pre-validates the enum (`session-control.ts`
+    // `isTodoStatus` guard). If a bad status somehow reached the plane
+    // it bubbles up as a D1 CHECK constraint error rather than a
+    // typed `TodoConstraintError`. The integrity invariant is still
+    // enforced — see the explicit SQL CHECK test below for proof.
     await expect(
       plane.create({
         session_uuid: SESSION_UUID,
@@ -219,7 +225,7 @@ describe("HP6 todo registry — D1TodoControlPlane", () => {
         status: "deferred",
         created_at: "2026-04-30T00:00:00Z",
       }),
-    ).rejects.toBeInstanceOf(TodoConstraintError);
+    ).rejects.toThrow(/CHECK constraint failed: status/);
   });
 
   it("rejects unknown status at the SQL CHECK boundary", async () => {

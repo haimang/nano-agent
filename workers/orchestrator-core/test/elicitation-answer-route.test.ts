@@ -113,9 +113,7 @@ describe("POST /sessions/{uuid}/elicitation/answer route", () => {
       } as any,
     );
     expect(response.status).toBe(400);
-    expect((await response.json()).error.code).toBe(
-      "invalid-elicitation/answer-body",
-    );
+    expect((await response.json()).error.code).toBe("invalid-input");
     expect(stubFetch).not.toHaveBeenCalled();
   });
 

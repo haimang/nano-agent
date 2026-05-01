@@ -149,9 +149,7 @@ describe("POST /sessions/{uuid}/permission/decision route", () => {
       } as any,
     );
     expect(response.status).toBe(400);
-    expect((await response.json()).error.code).toBe(
-      "invalid-permission/decision-body",
-    );
+    expect((await response.json()).error.code).toBe("invalid-input");
     expect(stubFetch).not.toHaveBeenCalled();
   });
 

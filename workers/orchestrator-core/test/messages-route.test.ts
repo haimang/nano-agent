@@ -123,7 +123,7 @@ describe("POST /sessions/{uuid}/messages route", () => {
       } as any,
     );
     expect(response.status).toBe(400);
-    expect((await response.json()).error.code).toBe("invalid-messages-body");
+    expect((await response.json()).error.code).toBe("invalid-input");
     expect(stubFetch).not.toHaveBeenCalled();
   });
 

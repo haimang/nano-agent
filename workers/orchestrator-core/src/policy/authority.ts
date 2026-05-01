@@ -1,4 +1,5 @@
 import {
+  FacadeErrorCodeSchema,
   facadeError,
   type FacadeErrorCode,
 } from "@haimang/orchestrator-auth-contract";
@@ -25,15 +26,13 @@ export function jsonPolicyError(
   trace_uuid?: string,
 ): Response {
   const tracedUuid = trace_uuid ?? crypto.randomUUID();
-  // Best-effort coerce string → FacadeErrorCode. The contract package
-  // owns the canonical taxonomy; any unrecognised string becomes
-  // `internal-error` so the wire shape never carries garbage codes.
-  const envelope = facadeError(
-    error as FacadeErrorCode,
-    status,
-    message,
-    tracedUuid,
-  );
+  // HPX3 F6 — real coercion: validate against schema; fall back to
+  // `internal-error` for any unrecognised string. Previously this was
+  // a `as FacadeErrorCode` type-only cast that silently leaked garbage
+  // codes onto the wire.
+  const codeResult = FacadeErrorCodeSchema.safeParse(error);
+  const code: FacadeErrorCode = codeResult.success ? codeResult.data : "internal-error";
+  const envelope = facadeError(code, status, message, tracedUuid);
   return Response.json(envelope, {
     status,
     headers: { "x-trace-uuid": tracedUuid },

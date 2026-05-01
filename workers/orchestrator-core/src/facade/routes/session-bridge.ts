@@ -122,7 +122,10 @@ async function dispatchDoSessionRoute(request: Request, env: OrchestratorCoreEnv
     || route.action === "fork";
   const body = needsBody ? await parseBody(request, optionalBody) : null;
   if (needsBody && body === null) {
-    return jsonPolicyError(400, `invalid-${route.action}-body`, `${route.action} requires a JSON body`);
+    // HPX3 F6 — use stable schema code (`invalid-input`) instead of
+    // per-action dynamic strings; the action name remains in the
+    // message field for diagnostics.
+    return jsonPolicyError(400, "invalid-input", `${route.action} requires a JSON body`);
   }
 
   const response = await stub.fetch(new Request(`https://orchestrator.internal/sessions/${route.sessionUuid}/${route.action}`, {

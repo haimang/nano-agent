@@ -1,4 +1,17 @@
-import type { FacadeErrorCode } from "@haimang/orchestrator-auth-contract";
+import {
+  FacadeErrorCodeSchema,
+  type FacadeErrorCode,
+} from "@haimang/orchestrator-auth-contract";
+
+// HPX3 F6 — schema-validated coercion. Replaces the previous
+// `as FacadeErrorCode` cast that allowed unregistered codes to leak
+// onto the wire when User-DO handlers used flat `{error,message}`
+// shapes (e.g. `session_missing`, `session-pending-only-start-allowed`).
+function coerceFacadeErrorCode(value: unknown): FacadeErrorCode {
+  if (typeof value !== "string") return "internal-error";
+  const result = FacadeErrorCodeSchema.safeParse(value);
+  return result.success ? result.data : "internal-error";
+}
 
 export async function wrapSessionResponse(
   response: Response,
@@ -39,7 +52,7 @@ export async function wrapSessionResponse(
   const errObj = (body && typeof body === "object" && !Array.isArray(body)
     ? (body as Record<string, unknown>)
     : {}) as { error?: string; message?: string; code?: string };
-  const code = (errObj.code ?? errObj.error ?? "internal-error") as FacadeErrorCode;
+  const code = coerceFacadeErrorCode(errObj.code ?? errObj.error);
   const message = errObj.message ?? errObj.error ?? "session route returned an error";
   return Response.json(
     {

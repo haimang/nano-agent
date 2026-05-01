@@ -157,9 +157,7 @@ describe("POST /sessions/{uuid}/policy/permission_mode route", () => {
       } as any,
     );
     expect(response.status).toBe(400);
-    expect((await response.json()).error.code).toBe(
-      "invalid-policy/permission_mode-body",
-    );
+    expect((await response.json()).error.code).toBe("invalid-input");
     expect(stubFetch).not.toHaveBeenCalled();
   });
 

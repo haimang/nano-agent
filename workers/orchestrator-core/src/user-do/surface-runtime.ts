@@ -382,7 +382,13 @@ export function createUserDoSurfaceRuntime(ctx: UserDoSurfaceRuntimeContext) {
 
       return jsonResponse(200, {
         ok: true,
-        data: { request_uuid: requestUuid, decision, scope },
+        data: {
+          request_uuid: requestUuid,
+          decision,
+          scope,
+          confirmation_uuid: requestUuid,
+          confirmation_status: confirmationStatus,
+        },
       });
     },
 
@@ -477,7 +483,12 @@ export function createUserDoSurfaceRuntime(ctx: UserDoSurfaceRuntimeContext) {
 
       return jsonResponse(200, {
         ok: true,
-        data: { request_uuid: requestUuid, answer },
+        data: {
+          request_uuid: requestUuid,
+          answer,
+          confirmation_uuid: requestUuid,
+          confirmation_status: elicitationStatus,
+        },
       });
     },
 

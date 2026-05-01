@@ -68,10 +68,7 @@ function isTerminalStatus(status: TodoStatus): boolean {
 
 export class TodoConstraintError extends Error {
   constructor(
-    public readonly code:
-      | "in-progress-conflict"
-      | "todo-not-found"
-      | "invalid-status",
+    public readonly code: "in-progress-conflict",
     message: string,
   ) {
     super(message);
@@ -160,13 +157,9 @@ export class D1TodoControlPlane {
     readonly parent_todo_uuid?: string | null;
     readonly created_at: string;
   }): Promise<TodoRow> {
+    // HPX3 F1 — handler 已在 facade 层 pre-validate status enum，
+    // domain 层不再抛 `invalid-status`（dead code）；此处直接信任 input。
     const status: TodoStatus = input.status ?? "pending";
-    if (!TODO_STATUSES.includes(status)) {
-      throw new TodoConstraintError(
-        "invalid-status",
-        `status must be one of ${TODO_STATUSES.join("|")}`,
-      );
-    }
     if (status === "in_progress") {
       const conflict = await this.readActiveInProgress(input.session_uuid);
       if (conflict) {
@@ -214,22 +207,13 @@ export class D1TodoControlPlane {
     readonly status?: TodoStatus;
     readonly updated_at: string;
   }): Promise<TodoRow | null> {
+    // HPX3 F5 — row not found 走 `null` return（handler 映射为 404 not-found），
+    // 不再抛 `todo-not-found`；HPX3 F1 — status enum 已在 handler pre-validate。
     const existing = await this.read({
       session_uuid: input.session_uuid,
       todo_uuid: input.todo_uuid,
     });
-    if (!existing) {
-      throw new TodoConstraintError(
-        "todo-not-found",
-        `todo ${input.todo_uuid} not found in session ${input.session_uuid}`,
-      );
-    }
-    if (input.status !== undefined && !TODO_STATUSES.includes(input.status)) {
-      throw new TodoConstraintError(
-        "invalid-status",
-        `status must be one of ${TODO_STATUSES.join("|")}`,
-      );
-    }
+    if (!existing) return null;
     if (
       input.status === "in_progress" &&
       existing.status !== "in_progress"
