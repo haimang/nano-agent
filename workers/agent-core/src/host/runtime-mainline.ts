@@ -234,30 +234,39 @@ function readLlmRequestEvidence(messages: readonly unknown[]): {
   readonly isVision: boolean;
 } {
   const defaultModel = "@cf/ibm-granite/granite-4.0-h-micro";
+  let modelId = defaultModel;
+  let reasoning: { readonly effort: "low" | "medium" | "high" } | undefined;
+  let isVision = false;
   for (const message of messages) {
     if (!isRecord(message)) continue;
-    const modelId =
+    const explicitModelId =
       typeof message.model_id === "string" && message.model_id.length > 0
         ? message.model_id
         : typeof message.modelId === "string" && message.modelId.length > 0
           ? message.modelId
-          : defaultModel;
-    const effort: "low" | "medium" | "high" | undefined =
-      isRecord(message.reasoning) &&
-      (message.reasoning.effort === "low" ||
-        message.reasoning.effort === "medium" ||
-        message.reasoning.effort === "high")
-        ? message.reasoning.effort
-        : undefined;
-    const reasoning = effort ? { effort } : undefined;
-    const isReasoning = Boolean(reasoning);
-    const content = message.content;
-    const isVision =
-      Array.isArray(content) &&
-      content.some((part) => isRecord(part) && part.kind === "image_url");
-    return { modelId, reasoning, isReasoning, isVision };
+          : null;
+    if (explicitModelId) {
+      modelId = explicitModelId;
+    }
+    if (!reasoning) {
+      const effort: "low" | "medium" | "high" | undefined =
+        isRecord(message.reasoning) &&
+        (message.reasoning.effort === "low" ||
+          message.reasoning.effort === "medium" ||
+          message.reasoning.effort === "high")
+          ? message.reasoning.effort
+          : undefined;
+      reasoning = effort ? { effort } : undefined;
+    }
+    if (!isVision) {
+      const content = Array.isArray(message.content) ? message.content : [];
+      const parts = Array.isArray(message.parts) ? message.parts : [];
+      isVision = [...content, ...parts].some(
+        (part) => isRecord(part) && part.kind === "image_url",
+      );
+    }
   }
-  return { modelId: defaultModel, reasoning: undefined, isReasoning: false, isVision: false };
+  return { modelId, reasoning, isReasoning: Boolean(reasoning), isVision };
 }
 
 async function readModelPromptSuffix(
