@@ -26,7 +26,7 @@
 > - `docs/design/hero-to-pro/HPX-qna.md`
 > 冻结决策来源:
 > - `docs/design/hero-to-pro/HPX-qna.md` Q22-Q24（只读引用；本 action-plan 不填写 Q/A）
-> 文档状态: `draft`
+> 文档状态: `executed`
 
 ---
 

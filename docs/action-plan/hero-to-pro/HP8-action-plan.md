@@ -36,7 +36,7 @@
 > - `docs/runbook/zx5-r28-investigation.md`
 > 冻结决策来源:
 > - `docs/design/hero-to-pro/HPX-qna.md` Q25-Q28（只读引用；本 action-plan 不填写 Q/A）
-> 文档状态: `draft`
+> 文档状态: `executed`
 
 ---
 
