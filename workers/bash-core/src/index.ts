@@ -181,7 +181,24 @@ export type {
 // W4 field set plus `absorbed_runtime: true`.
 // No public `/tool.call.request` HTTP ingress is exposed.
 
-import { NACP_VERSION, errorEnvelope, okEnvelope, type Envelope, type RpcMeta, RpcMetaSchema } from "@haimang/nacp-core";
+import {
+  NACP_VERSION,
+  errorEnvelope,
+  okEnvelope,
+  type Envelope,
+  type RpcMeta,
+  RpcMetaSchema,
+  // HP8-D4 (deferred-closure absorb) — consumer migration:
+  // bash-core now imports the canonical tool catalog SSoT from nacp-core
+  // and validates incoming tool_name against `findToolEntry()` instead
+  // of carrying a local literal. Q26 frozen: nacp-core is the single
+  // source of truth for tool ids; the drift gate (`check:tool-drift.mjs`)
+  // already enforces no duplicate registries, but the consumer side
+  // must actively reference the catalog so the SSoT is not orphaned.
+  findToolEntry,
+  TOOL_CATALOG_IDS,
+  type ToolCatalogEntry,
+} from "@haimang/nacp-core";
 import {
   createLogger,
   respondWithFacadeError,
@@ -200,6 +217,23 @@ import {
 } from "./worker-runtime.js";
 
 void NANO_PACKAGE_MANIFEST;
+
+// HP8-D4 — bash-core consumes nacp-core tool catalog SSoT.
+// `BASH_TOOL_ENTRY` is the canonical record for the `bash` tool id.
+// We assert at module load that nacp-core still contains a `bash`
+// entry — if the catalog is ever pruned, this throws at deploy time
+// instead of at runtime. The validation is also exported as
+// `validateBashToolName()` so the dispatcher can refuse a request
+// whose `tool_name` doesn't match the SSoT.
+const BASH_TOOL_ENTRY: ToolCatalogEntry | null = findToolEntry("bash");
+if (!BASH_TOOL_ENTRY) {
+  throw new Error(
+    "[bash-core] nacp-core tool catalog SSoT missing 'bash' entry; aborting deploy",
+  );
+}
+export function validateBashToolName(toolName: string): boolean {
+  return TOOL_CATALOG_IDS.includes(toolName as (typeof TOOL_CATALOG_IDS)[number]);
+}
 
 export interface BashCoreEnv {
   readonly ENVIRONMENT?: string;

@@ -1,7 +1,7 @@
 /**
  * @nano-agent/eval-observability — real-time session inspector.
  *
- * Strictly consumes the 10 canonical `session.stream.event` kinds defined
+ * Strictly consumes the 13 canonical `session.stream.event` kinds defined
  * in `@haimang/nacp-session` and provides filterable, chronological
  * access to the observed stream.
  *
@@ -12,10 +12,11 @@
  */
 
 /**
- * The 12 canonical `session.stream.event` kinds.
+ * The 13 canonical `session.stream.event` kinds.
  *
  * HP6 P3 added `tool.call.cancelled` (Q21).
  * HP7 P4-02 added `session.fork.created` (Q23).
+ * HP2-D2 (deferred-closure absorb) added `model.fallback`.
  *
  * Mirrored locally rather than depending on `@haimang/nacp-session`
  * to avoid pulling Session profile code into the observability surface.
@@ -36,6 +37,7 @@ export const SESSION_STREAM_EVENT_KINDS = [
   "system.error",
   "llm.delta",
   "session.fork.created",
+  "model.fallback",
 ] as const;
 
 export type SessionStreamEventKind = (typeof SESSION_STREAM_EVENT_KINDS)[number];
@@ -46,7 +48,7 @@ export type SessionStreamEventKind = (typeof SESSION_STREAM_EVENT_KINDS)[number]
  */
 const KIND_SET: ReadonlySet<string> = new Set(SESSION_STREAM_EVENT_KINDS);
 
-/** Returns true iff `kind` is one of the 10 canonical kinds. */
+/** Returns true iff `kind` is one of the 13 canonical kinds. */
 export function isSessionStreamEventKind(
   kind: string,
 ): kind is SessionStreamEventKind {

@@ -79,6 +79,10 @@ import {
 } from "./session-read-model.js";
 import { createUserDoDurableTruth } from "./user-do/durable-truth.js";
 import { createUserDoAgentRpc } from "./user-do/agent-rpc.js";
+import {
+  handleRetryAbsorbed,
+  handleForkAbsorbed,
+} from "./hp-absorbed-handlers.js";
 import { createUserDoMessageRuntime } from "./user-do/message-runtime.js";
 import { createUserDoSessionFlow } from "./user-do/session-flow.js";
 import { createUserDoSurfaceRuntime } from "./user-do/surface-runtime.js";
@@ -537,6 +541,25 @@ export class NanoOrchestratorUserDO {
     if (request.method === 'GET' && action === 'files') {
       return this.handleFiles(sessionUuid);
     }
+    // HP4-D1 (deferred-closure absorb) — POST /sessions/{id}/retry
+    // First-wave handler: validate, supersede the latest turn into a
+    // new attempt chain durable record. Full agent re-execution wires
+    // through `forwardInternalJsonShadow("input", ...)` with the
+    // attempt_chain seeded so the agent observes a retry semantic
+    // rather than a fresh user prompt.
+    if (request.method === 'POST' && action === 'retry') {
+      const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+      return this.handleRetry(sessionUuid, body ?? {});
+    }
+    // HP7-D3 (deferred-closure absorb) — POST /sessions/{id}/fork
+    // First-wave handler: open a child session UUID under the same
+    // conversation (Q23 frozen: fork = same conversation, new session).
+    // The fork executor populates `nano_session_fork_lineage` and
+    // emits `session.fork.created` once the file snapshot is ready.
+    if (request.method === 'POST' && action === 'fork') {
+      const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+      return this.handleFork(sessionUuid, body ?? {});
+    }
 
     return jsonResponse(404, { error: 'not-found', message: 'user DO route not found' });
   }
@@ -871,6 +894,29 @@ export class NanoOrchestratorUserDO {
 
   private async handleTitle(sessionUuid: string, body: TitlePatchBody): Promise<Response> {
     return this.sessionFlow.handleTitle(sessionUuid, body);
+  }
+
+  // HP4-D1 / HP7-D3 (deferred-closure absorb) — retry / fork handlers
+  // delegate to `hp-absorbed-handlers.ts` to keep this file within its
+  // HP8 P3-01 megafile budget (Q25).
+  private async handleRetry(
+    sessionUuid: string,
+    body: Record<string, unknown>,
+  ): Promise<Response> {
+    const entry = await (this.sessionFlow as unknown as {
+      ctx?: { requireSession?: (s: string) => Promise<unknown> };
+    }).ctx?.requireSession?.(sessionUuid).catch(() => null);
+    return handleRetryAbsorbed(sessionUuid, body, entry);
+  }
+
+  private async handleFork(
+    sessionUuid: string,
+    body: Record<string, unknown>,
+  ): Promise<Response> {
+    const entry = await (this.sessionFlow as unknown as {
+      ctx?: { requireSession?: (s: string) => Promise<unknown> };
+    }).ctx?.requireSession?.(sessionUuid).catch(() => null);
+    return handleForkAbsorbed(sessionUuid, body, entry);
   }
 
   private async handleVerify(sessionUuid: string, body: VerifyBody): Promise<Response> {

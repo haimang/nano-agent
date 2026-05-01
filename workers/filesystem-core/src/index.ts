@@ -92,6 +92,22 @@ export class FilesystemCoreEntrypoint extends WorkerEntrypoint<FilesystemCoreEnv
         "readArtifact",
         "writeArtifact",
         "listArtifacts",
+        // HP6-D1 (deferred-closure absorb) — temp file leaf RPC surface.
+        // Implemented as best-effort R2 + D1 reads/writes against the
+        // tenant-scoped `tenants/{team}/sessions/{session}/workspace/`
+        // prefix law (HP6 Q19). Full materialization batch is in HP6
+        // follow-up within hero-to-pro; the surface is exposed now so
+        // agent-core can begin consuming it instead of constructing
+        // host-local artifacts (see Lane E final-state).
+        "readTempFile",
+        "writeTempFile",
+        "listTempFiles",
+        "deleteTempFile",
+        // HP6-D2 (deferred-closure absorb) — snapshot / restore lineage RPC.
+        "readSnapshot",
+        "writeSnapshot",
+        "copyToFork",
+        "cleanup",
       ],
     };
   }
@@ -114,6 +130,158 @@ export class FilesystemCoreEntrypoint extends WorkerEntrypoint<FilesystemCoreEnv
     return store.get(input);
   }
 
+  // ── HP6-D1 (deferred-closure absorb) — temp file leaf RPC ──
+  // First-wave: write/read by virtual_path against
+  // `tenants/{team}/sessions/{session}/workspace/{normalized}` R2 key.
+  // Truth metadata lives in orchestrator-core's
+  // `nano_session_temp_files` table; filesystem-core only owns the
+  // bytes path. Returns minimal {ok, key, size} envelope.
+
+  async writeTempFile(
+    input: {
+      readonly team_uuid: string;
+      readonly session_uuid: string;
+      readonly virtual_path: string;
+      readonly content: ArrayBuffer | Uint8Array;
+      readonly mime?: string | null;
+    },
+    meta?: { trace_uuid?: string; team_uuid?: string },
+  ): Promise<{ ok: boolean; r2_key: string; size_bytes: number }> {
+    if (!this.env.NANO_R2) throw new Error("filesystem-core requires NANO_R2");
+    assertAuthority(input.team_uuid, meta?.team_uuid);
+    const r2Key = buildTempFileKey(input.team_uuid, input.session_uuid, input.virtual_path);
+    const body = input.content instanceof Uint8Array ? input.content : new Uint8Array(input.content);
+    await this.env.NANO_R2.put(r2Key, body, {
+      httpMetadata: input.mime ? { contentType: input.mime } : undefined,
+    });
+    return { ok: true, r2_key: r2Key, size_bytes: body.byteLength };
+  }
+
+  async readTempFile(
+    input: {
+      readonly team_uuid: string;
+      readonly session_uuid: string;
+      readonly virtual_path: string;
+    },
+    meta?: { trace_uuid?: string; team_uuid?: string },
+  ): Promise<{ ok: boolean; r2_key: string; bytes: ArrayBuffer | null; mime: string | null }> {
+    if (!this.env.NANO_R2) throw new Error("filesystem-core requires NANO_R2");
+    assertAuthority(input.team_uuid, meta?.team_uuid);
+    const r2Key = buildTempFileKey(input.team_uuid, input.session_uuid, input.virtual_path);
+    const obj = await this.env.NANO_R2.get(r2Key);
+    if (!obj) return { ok: false, r2_key: r2Key, bytes: null, mime: null };
+    const bytes = await obj.arrayBuffer();
+    return { ok: true, r2_key: r2Key, bytes, mime: obj.httpMetadata?.contentType ?? null };
+  }
+
+  async listTempFiles(
+    input: {
+      readonly team_uuid: string;
+      readonly session_uuid: string;
+      readonly prefix?: string;
+    },
+    meta?: { trace_uuid?: string; team_uuid?: string },
+  ): Promise<{ ok: boolean; r2_keys: string[] }> {
+    if (!this.env.NANO_R2) throw new Error("filesystem-core requires NANO_R2");
+    assertAuthority(input.team_uuid, meta?.team_uuid);
+    const root = `tenants/${input.team_uuid}/sessions/${input.session_uuid}/workspace/`;
+    const prefix = input.prefix && input.prefix.length > 0 ? `${root}${input.prefix}` : root;
+    const list = await this.env.NANO_R2.list({ prefix });
+    return { ok: true, r2_keys: list.objects.map((o) => o.key) };
+  }
+
+  async deleteTempFile(
+    input: {
+      readonly team_uuid: string;
+      readonly session_uuid: string;
+      readonly virtual_path: string;
+    },
+    meta?: { trace_uuid?: string; team_uuid?: string },
+  ): Promise<{ ok: boolean; r2_key: string }> {
+    if (!this.env.NANO_R2) throw new Error("filesystem-core requires NANO_R2");
+    assertAuthority(input.team_uuid, meta?.team_uuid);
+    const r2Key = buildTempFileKey(input.team_uuid, input.session_uuid, input.virtual_path);
+    await this.env.NANO_R2.delete(r2Key);
+    return { ok: true, r2_key: r2Key };
+  }
+
+  // ── HP6-D2 (deferred-closure absorb) — snapshot / fork lineage RPC ──
+
+  async readSnapshot(
+    input: {
+      readonly team_uuid: string;
+      readonly session_uuid: string;
+      readonly checkpoint_uuid: string;
+      readonly virtual_path: string;
+    },
+    meta?: { trace_uuid?: string; team_uuid?: string },
+  ): Promise<{ ok: boolean; r2_key: string; bytes: ArrayBuffer | null }> {
+    if (!this.env.NANO_R2) throw new Error("filesystem-core requires NANO_R2");
+    assertAuthority(input.team_uuid, meta?.team_uuid);
+    const r2Key = buildSnapshotKey(input.team_uuid, input.session_uuid, input.checkpoint_uuid, input.virtual_path);
+    const obj = await this.env.NANO_R2.get(r2Key);
+    if (!obj) return { ok: false, r2_key: r2Key, bytes: null };
+    const bytes = await obj.arrayBuffer();
+    return { ok: true, r2_key: r2Key, bytes };
+  }
+
+  async writeSnapshot(
+    input: {
+      readonly team_uuid: string;
+      readonly session_uuid: string;
+      readonly checkpoint_uuid: string;
+      readonly virtual_path: string;
+      readonly content: ArrayBuffer | Uint8Array;
+    },
+    meta?: { trace_uuid?: string; team_uuid?: string },
+  ): Promise<{ ok: boolean; r2_key: string; size_bytes: number }> {
+    if (!this.env.NANO_R2) throw new Error("filesystem-core requires NANO_R2");
+    assertAuthority(input.team_uuid, meta?.team_uuid);
+    const r2Key = buildSnapshotKey(input.team_uuid, input.session_uuid, input.checkpoint_uuid, input.virtual_path);
+    const body = input.content instanceof Uint8Array ? input.content : new Uint8Array(input.content);
+    await this.env.NANO_R2.put(r2Key, body);
+    return { ok: true, r2_key: r2Key, size_bytes: body.byteLength };
+  }
+
+  async copyToFork(
+    input: {
+      readonly team_uuid: string;
+      readonly source_session_uuid: string;
+      readonly target_session_uuid: string;
+      readonly virtual_path: string;
+    },
+    meta?: { trace_uuid?: string; team_uuid?: string },
+  ): Promise<{ ok: boolean; source_key: string; target_key: string; size_bytes: number }> {
+    if (!this.env.NANO_R2) throw new Error("filesystem-core requires NANO_R2");
+    assertAuthority(input.team_uuid, meta?.team_uuid);
+    const sourceKey = buildTempFileKey(input.team_uuid, input.source_session_uuid, input.virtual_path);
+    const targetKey = buildTempFileKey(input.team_uuid, input.target_session_uuid, input.virtual_path);
+    const obj = await this.env.NANO_R2.get(sourceKey);
+    if (!obj) return { ok: false, source_key: sourceKey, target_key: targetKey, size_bytes: 0 };
+    const bytes = await obj.arrayBuffer();
+    await this.env.NANO_R2.put(targetKey, bytes);
+    return { ok: true, source_key: sourceKey, target_key: targetKey, size_bytes: bytes.byteLength };
+  }
+
+  async cleanup(
+    input: {
+      readonly team_uuid: string;
+      readonly session_uuid: string;
+    },
+    meta?: { trace_uuid?: string; team_uuid?: string },
+  ): Promise<{ ok: boolean; deleted_count: number }> {
+    if (!this.env.NANO_R2) throw new Error("filesystem-core requires NANO_R2");
+    assertAuthority(input.team_uuid, meta?.team_uuid);
+    const root = `tenants/${input.team_uuid}/sessions/${input.session_uuid}/`;
+    const list = await this.env.NANO_R2.list({ prefix: root });
+    let deleted = 0;
+    for (const obj of list.objects) {
+      await this.env.NANO_R2.delete(obj.key);
+      deleted += 1;
+    }
+    return { ok: true, deleted_count: deleted };
+  }
+
   private requireStore(): SessionFileStore {
     if (!this.env.NANO_AGENT_DB || !this.env.NANO_R2) {
       throw new Error("filesystem-core requires NANO_AGENT_DB and NANO_R2");
@@ -123,6 +291,26 @@ export class FilesystemCoreEntrypoint extends WorkerEntrypoint<FilesystemCoreEnv
       r2: this.env.NANO_R2,
     });
   }
+}
+
+// HP6-D1/D2 — tenant-scoped R2 key builders.
+// Mirror of orchestrator-core `buildWorkspaceR2Key` /
+// `buildCheckpointSnapshotR2Key` so filesystem-core can be the bytes
+// owner without cross-importing orchestrator-core types. The path law
+// is frozen by HP6 Q19.
+function buildTempFileKey(teamUuid: string, sessionUuid: string, virtualPath: string): string {
+  const trimmed = virtualPath.replace(/^\/+/, "");
+  return `tenants/${teamUuid}/sessions/${sessionUuid}/workspace/${trimmed}`;
+}
+
+function buildSnapshotKey(
+  teamUuid: string,
+  sessionUuid: string,
+  checkpointUuid: string,
+  virtualPath: string,
+): string {
+  const trimmed = virtualPath.replace(/^\/+/, "");
+  return `tenants/${teamUuid}/sessions/${sessionUuid}/checkpoints/${checkpointUuid}/snapshot/${trimmed}`;
 }
 
 function assertAuthority(teamUuid: string, metaTeamUuid?: string): void {

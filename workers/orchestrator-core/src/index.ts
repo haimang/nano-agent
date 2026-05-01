@@ -22,6 +22,17 @@ import {
   TodoConstraintError,
   type TodoStatus,
 } from "./todo-control-plane.js";
+import {
+  D1WorkspaceControlPlane,
+  normalizeVirtualPath,
+  buildWorkspaceR2Key,
+} from "./workspace-control-plane.js";
+import {
+  parseSessionToolCallsRoute,
+  parseSessionWorkspaceRoute,
+  handleSessionToolCalls,
+  handleSessionWorkspace,
+} from "./hp-absorbed-routes.js";
 import { normalizeReasoningOptions, parseSessionModelPatchBody } from "./session-lifecycle.js";
 import { NanoOrchestratorUserDO } from "./user-do.js";
 import { buildDebugPackagesResponse } from "./debug/packages.js";
@@ -394,7 +405,11 @@ type SessionAction =
   | "resume"
   // ZX5 Lane D D3/D4 — product surface endpoints.
   | "messages"
-  | "files";
+  | "files"
+  // HP4-D1 (deferred-closure absorb) — retry latest turn.
+  | "retry"
+  // HP7-D3 (deferred-closure absorb) — same-conversation fork.
+  | "fork";
 type AuthAction =
   | "register"
   | "login"
@@ -440,6 +455,10 @@ function parseSessionRoute(request: Request): { sessionUuid: string; action: Ses
         // ZX5 Lane D D3/D4 — multimodal messages + artifact files.
         "messages",
         "files",
+        // HP4-D1 (deferred-closure absorb) — retry the latest turn.
+        "retry",
+        // HP7-D3 (deferred-closure absorb) — same-conversation fork.
+        "fork",
       ].includes(action)
     )
       return null;
@@ -726,6 +745,24 @@ async function dispatchFetch(request: Request, env: OrchestratorCoreEnv): Promis
     if (todoRoute) {
       return handleSessionTodos(request, env, todoRoute);
     }
+    // HP6-D4 (deferred-closure absorb) — tool-calls list/cancel.
+    const toolCallsRoute = parseSessionToolCallsRoute(request);
+    if (toolCallsRoute) {
+      return handleSessionToolCalls(request, env, toolCallsRoute, {
+        authenticateRequest,
+        jsonPolicyError,
+        parseBody: (req) => parseBody(req),
+      });
+    }
+    // HP6-D3 (deferred-closure absorb) — workspace public CRUD.
+    const workspaceRoute = parseSessionWorkspaceRoute(request);
+    if (workspaceRoute) {
+      return handleSessionWorkspace(request, env, workspaceRoute, {
+        authenticateRequest,
+        jsonPolicyError,
+        parseBody: (req) => parseBody(req),
+      });
+    }
     const sessionModelRoute = parseSessionModelRoute(request);
     if (sessionModelRoute) {
       return handleSessionModel(request, env, sessionModelRoute);
@@ -767,12 +804,18 @@ async function dispatchFetch(request: Request, env: OrchestratorCoreEnv): Promis
       route.action === "cancel" ||
       route.action === "resume" ||
       route.action === "close" ||
-      route.action === "delete";
+      route.action === "delete" ||
+      // HP4-D1 / HP7-D3 — retry / fork bodies are optional (caller may
+      // omit `from_message_seq` / `label`).
+      route.action === "retry" ||
+      route.action === "fork";
     const needsBody = route.action === "start" || route.action === "input" || route.action === "cancel"
       || route.action === "verify" || route.action === "messages"
       || route.action === "resume" || route.action === "permission/decision"
       || route.action === "policy/permission_mode" || route.action === "elicitation/answer"
-      || route.action === "close" || route.action === "delete" || route.action === "title";
+      || route.action === "close" || route.action === "delete" || route.action === "title"
+      // HP4-D1 / HP7-D3 absorbed into hero-to-pro
+      || route.action === "retry" || route.action === "fork";
     const body = needsBody ? await parseBody(request, optionalBody) : null;
     if (needsBody && body === null) {
         return jsonPolicyError(400, `invalid-${route.action}-body`, `${route.action} requires a JSON body`);
@@ -1781,6 +1824,7 @@ async function handleSessionTodos(
     { status: 200, headers: { "x-trace-uuid": traceUuid } },
   );
 }
+
 
 async function readCurrentTeam(
   db: D1Database,

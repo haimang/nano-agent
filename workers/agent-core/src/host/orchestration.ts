@@ -72,6 +72,21 @@ export interface OrchestrationDeps {
     context?: unknown,
   ) => Promise<unknown>;
   /**
+   * HP3-D2 (deferred-closure absorb) — compact signal source. The host wires
+   * this to a budget probe (`context-control-plane.previewCompact()` or
+   * equivalent) so the kernel auto-compact branch fires when the prompt
+   * approaches the model's `auto_compact_token_limit`.
+   *
+   * Returning `null` (or omitting the dep) preserves the legacy behaviour
+   * (`compactRequired: false` hardcoded). Returning `true` triggers the
+   * kernel `compact` decision.
+   *
+   * The host-side breaker (HP3-D4) is responsible for suppressing this
+   * signal after 3 consecutive failed compacts within a single session;
+   * see `runtime-mainline.ts` `createCompactSignalProbe()`.
+   */
+  readonly probeCompactRequired?: () => Promise<boolean> | boolean;
+  /**
    * Emit a trace-law-compliant event. The orchestrator ALWAYS hands this
    * sink a properly-shaped `TraceEvent` built by `buildTurnBeginTrace /
    * buildTurnEndTrace / buildSessionEndTrace`; the sink is expected to
@@ -291,9 +306,23 @@ export class SessionOrchestrator {
       const pendingToolCalls = Array.isArray(activeTurn?.pendingToolCalls)
         ? activeTurn.pendingToolCalls
         : [];
+      // HP3-D2 — compact signal: probe the host-supplied budget source
+      // before each step. `probeCompactRequired` is best-effort; if it
+      // throws or is absent, the legacy hard-coded `false` semantics
+      // remain. The breaker (HP3-D4) lives upstream in the probe
+      // closure (see runtime-mainline.createCompactSignalProbe).
+      let compactRequired = false;
+      if (this.deps.probeCompactRequired) {
+        try {
+          const result = await this.deps.probeCompactRequired();
+          compactRequired = Boolean(result);
+        } catch {
+          compactRequired = false;
+        }
+      }
       const signals = {
         hasMoreToolCalls: pendingToolCalls.length > 0,
-        compactRequired: false,
+        compactRequired,
         cancelRequested: false,
         timeoutReached: false,
         llmFinished: Boolean(activeTurn?.llmFinished),

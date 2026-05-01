@@ -39,8 +39,61 @@ import {
   readContextCompactJob as loadContextCompactJob,
   readContextDurableState as loadContextDurableState,
 } from "./context-control-plane.js";
+import { D1ConfirmationControlPlane, type ConfirmationKind } from "./confirmation-control-plane.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+// HP5-D1 (deferred-closure absorb) — emitter row-create.
+// When a server frame is `session.permission.request` /
+// `session.elicitation.request` (legacy compat surface) we eagerly
+// create the corresponding `nano_session_confirmations` row before
+// forwarding the frame. This satisfies HP5 closure §2 P1 unblock
+// condition: `/confirmations?status=pending` immediately reflects the
+// pending ask. Q16 row-first dual-write law: if the create succeeds we
+// proceed; if the create fails (best-effort) we still forward the
+// frame to keep legacy clients working — operator alarm via warn log.
+async function emitterRowCreateBestEffort(
+  db: D1Database | undefined,
+  sessionUuid: string,
+  frame: { readonly kind: string; readonly [k: string]: unknown },
+  logger: { warn: (msg: string, ctx?: Record<string, unknown>) => void },
+): Promise<void> {
+  if (!db) return;
+  let kind: ConfirmationKind | null = null;
+  if (frame.kind === "session.permission.request") kind = "tool_permission";
+  else if (frame.kind === "session.elicitation.request") kind = "elicitation";
+  if (!kind) return;
+  const requestUuid = typeof frame.request_uuid === "string" ? frame.request_uuid : null;
+  if (!requestUuid || !UUID_RE.test(requestUuid)) return;
+  const plane = new D1ConfirmationControlPlane(db);
+  const now = new Date().toISOString();
+  try {
+    const existing = await plane.read({
+      session_uuid: sessionUuid,
+      confirmation_uuid: requestUuid,
+    });
+    if (existing) return;
+    await plane.create({
+      confirmation_uuid: requestUuid,
+      session_uuid: sessionUuid,
+      kind,
+      payload: { ...frame, source: "emitter" },
+      created_at: now,
+      expires_at: null,
+    });
+  } catch (error) {
+    logger.warn("hp5-emitter-row-create-failed", {
+      code: "internal-error",
+      ctx: {
+        tag: "hp5-emitter-row-create-failed",
+        session_uuid: sessionUuid,
+        request_uuid: requestUuid,
+        kind,
+        error: String(error),
+      },
+    });
+  }
+}
 
 interface ForwardServerFrameMeta {
   readonly userUuid: string;
@@ -183,6 +236,13 @@ export default class OrchestratorCoreEntrypoint extends WorkerEntrypoint<Orchest
       return { ok: false, delivered: false, reason: "user-do-binding-missing" };
     }
     const logger = createOrchestratorLogger(this.env);
+    // HP5-D1 emitter row-create (best-effort; never blocks frame delivery)
+    await emitterRowCreateBestEffort(
+      this.env.NANO_AGENT_DB,
+      sessionUuid,
+      frame,
+      logger,
+    );
     try {
       const stub = this.env.ORCHESTRATOR_USER_DO.get(
         this.env.ORCHESTRATOR_USER_DO.idFromName(meta.userUuid),

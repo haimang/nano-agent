@@ -464,11 +464,81 @@ export function buildContextSnapshotPayload(state: ContextDurableState) {
   };
 }
 
-export function buildCompactPreviewResponse(state: ContextDurableState) {
+// HP3-D5 — preview cache (Q12 frozen): same session + same high-watermark
+// within `PREVIEW_CACHE_TTL_MS` reuses the previous compute. Long
+// conversations frequently call `/preview` from UI; without cache each
+// preview triggers a full D1 query + token estimate. Cache key is
+// `session_uuid:high_watermark` so that any new message invalidates
+// the cached preview implicitly. `high_watermark` is the last
+// compacted message UUID (string|null); we serialise null → "" so the
+// key remains stable.
+const PREVIEW_CACHE_TTL_MS = 60_000;
+type PreviewCacheEntry = {
+  readonly session_uuid: string;
+  readonly high_watermark: string | null;
+  readonly computed_at: number;
+  readonly response: Record<string, unknown>;
+};
+const PREVIEW_CACHE = new Map<string, PreviewCacheEntry>();
+
+export function resetPreviewCache(): void {
+  PREVIEW_CACHE.clear();
+}
+
+function previewCacheKey(sessionUuid: string, highWatermark: string | null): string {
+  return `${sessionUuid}:${highWatermark ?? ""}`;
+}
+
+function readFreshPreviewCache(
+  sessionUuid: string,
+  highWatermark: string | null,
+  now: number,
+): Record<string, unknown> | null {
+  const key = previewCacheKey(sessionUuid, highWatermark);
+  const entry = PREVIEW_CACHE.get(key);
+  if (!entry) return null;
+  if (now - entry.computed_at > PREVIEW_CACHE_TTL_MS) {
+    PREVIEW_CACHE.delete(key);
+    return null;
+  }
+  return entry.response;
+}
+
+function writePreviewCache(
+  sessionUuid: string,
+  highWatermark: string | null,
+  response: Record<string, unknown>,
+  now: number,
+): void {
+  PREVIEW_CACHE.set(previewCacheKey(sessionUuid, highWatermark), {
+    session_uuid: sessionUuid,
+    high_watermark: highWatermark,
+    computed_at: now,
+    response,
+  });
+}
+
+export function buildCompactPreviewResponse(
+  state: ContextDurableState,
+  options?: { readonly nowMs?: number },
+) {
+  const now = options?.nowMs ?? Date.now();
   const budget = resolveBudget(state);
-  const preview = buildCompactPreview(state);
-  return {
-    session_uuid: state.snapshot.session_uuid,
+  // Cheap pre-compute: derive the high-watermark from the durable state
+  // without running the full preview path. The cache key uses
+  // `(session_uuid, message_high_watermark)`, so any new message
+  // invalidates the cached entry implicitly without an explicit invalidation
+  // hook.
+  const previewForKey = buildCompactPreview(state);
+  const sessionUuid = state.snapshot.session_uuid;
+  const highWatermark = previewForKey.high_watermark;
+  const cached = readFreshPreviewCache(sessionUuid, highWatermark, now);
+  if (cached) {
+    return { ...cached, cached: true };
+  }
+  const preview = previewForKey;
+  const response = {
+    session_uuid: sessionUuid,
     team_uuid: state.snapshot.team_uuid,
     model: {
       model_id: budget.model.model_id,
@@ -491,7 +561,10 @@ export function buildCompactPreviewResponse(state: ContextDurableState) {
     protected_fragment_kinds: preview.protected_fragment_kinds,
     summary_preview: preview.summary_text ? truncate(preview.summary_text, 512) : null,
     would_create_job_template: preview.would_create_job_template,
+    cached: false,
   };
+  writePreviewCache(sessionUuid, highWatermark, response, now);
+  return response;
 }
 
 export function buildCompactCommitInput(state: ContextDurableState) {

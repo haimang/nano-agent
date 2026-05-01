@@ -146,7 +146,28 @@ export interface MainlineKernelOptions {
    * runtime 不发 tool semantic frame(向下兼容)。
    */
   readonly onToolEvent?: (event: ToolSemanticEvent) => void;
+  /**
+   * HP3-D2 (deferred-closure absorb) — host-supplied compact budget probe.
+   * The orchestrator polls this between every kernel step. When it
+   * returns `true`, the scheduler emits a `compact` decision (see
+   * `kernel/scheduler.ts:50`).
+   *
+   * Callers should compose the probe with
+   * `createCompactBreaker()` (HP3-D4) so 3 consecutive failed compacts
+   * suppress further attempts within the same session.
+   */
+  readonly compactSignalProbe?: () => Promise<boolean> | boolean;
 }
+
+// HP3-D2 / HP3-D4 (deferred-closure absorb) — compact signal probe + breaker
+// implementations live in `compact-breaker.ts` to keep this file within
+// its HP8 megafile budget (Q25). Re-export so existing importers see
+// no API change.
+export {
+  createCompactBreaker,
+  composeCompactSignalProbe,
+  type CompactBreaker,
+} from "./compact-breaker.js";
 
 export interface ToolSemanticEvent {
   readonly kind: "tool_use_start" | "tool_use_delta" | "tool_call_result";
