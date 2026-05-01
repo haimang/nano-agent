@@ -54,6 +54,7 @@ export const FacadeErrorCodeSchema = z.enum([
   "invalid-authority",
   "invalid-caller",
   "invalid-session",
+  "invalid-auth-body",
   // ── auth-flavoured (must include every AuthErrorCode) ──
   "invalid-auth",
   "identity-already-exists",
@@ -69,13 +70,18 @@ export const FacadeErrorCodeSchema = z.enum([
   "binding-scope-forbidden",
   "tenant-mismatch",
   "authority-escalation",
+  "missing-team-claim",
   // ── lifecycle ──
   "not-found",
   "conflict",
   "session-not-running",
   "session-already-ended",
+  "conversation-deleted",
+  "confirmation-already-resolved",
   // ── runtime ──
   "worker-misconfigured",
+  "auth-misconfigured",
+  "context-rpc-unavailable",
   "rpc-parity-failed",
   "upstream-timeout",
   "rate-limited",
