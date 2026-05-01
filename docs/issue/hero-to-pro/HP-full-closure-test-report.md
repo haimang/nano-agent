@@ -1,6 +1,6 @@
 # Hero-to-Pro Full Closure Test Report
 
-> 文档状态: `executed — preview release verified / live-e2e partial-pass`
+> 文档状态: `executed — preview release verified / live-e2e green after HPX2`
 > 服务业务簇: `hero-to-pro`
 > 执行范围: `权限核验 → package truth gate → root test → preview D1 apply → 6-worker preview redeploy → live probes → full live e2e`
 > 执行日期: `2026-05-01`
@@ -22,13 +22,13 @@
 | 6-worker preview redeploy | ✅ `pass` |
 | aggregated worker health | ✅ `pass`（`live=6 / total=6`） |
 | deployed package manifest drift | ✅ `pass`（`drift_detected=false`） |
-| full live e2e | ❌ `partial-pass`（`92 tests / 55 pass / 8 fail / 29 skip`） |
+| full live e2e | ✅ `pass`（`92 tests / 63 pass / 0 fail / 29 skip`） |
 
 **总判断**：
 
 1. 当前 **GitHub / Cloudflare / GitHub Packages 权限齐全**，足以执行 repo 现有发布链路。
 2. 当前 repo 的真实发布与 live-e2e 拓扑是 **preview-first**；本轮按仓库已有脚本执行的是 `preview` 重新发布，不是单独的 production 流程。
-3. 发布、D1、绑定与 package truth 本身已对齐；**阻塞 full green 的是 8 个 live-e2e 失败项**，其中 **4 个是真实 WebSocket 运行时断点**，**1 个是 RH5 usage evidence 断点**，**1 个是 initial-context 不稳定项**，**2 个是测试用例本身与当前 auth law 漂移**。
+3. 发布、D1、绑定与 package truth 本身已对齐；HPX2 本轮把 **4 个 WebSocket 运行时断点、1 个 initial-context 契约漂移、2 个 HP2 model live drift、1 个 RH5 live gate 假设错误** 一并收口，当前 preview 已恢复到 full-green live-e2e gate。
 
 ---
 
@@ -305,7 +305,7 @@
 
 ---
 
-## 6. 结论与建议
+## 6. 首轮 partial-pass 结论（历史留档）
 
 ### 6.1 本轮已经确认成立的事项
 
@@ -323,7 +323,7 @@
 3. **initial_context verify 存在不稳定 race**（1 项）
 4. **HP2 model 相关 live test 需要按当前 auth law 修正**（2 项）
 
-### 6.3 最终判断
+### 6.3 当时判断
 
 本轮可以确认：
 
@@ -351,3 +351,50 @@ curl https://nano-agent-orchestrator-core-preview.haimang.workers.dev/debug/work
 NANO_AGENT_LIVE_E2E=1 pnpm test:live:e2e
 NANO_AGENT_LIVE_E2E=1 node --test test/cross-e2e/04-agent-context-initial-context.test.mjs test/package-e2e/orchestrator-core/03-ws-attach.test.mjs
 ```
+
+---
+
+## 8. HPX2 修复后 rerun 结果
+
+### 8.1 本轮修复摘要
+
+1. `workers/orchestrator-core/src/index.ts`
+   - public `/sessions/{id}/ws` 改为直接把原始 upgrade request 透传给 User DO，不再 synthetic 新请求。
+2. `workers/orchestrator-core/src/user-do-runtime.ts` + `src/user-do/ws-runtime.ts`
+   - User DO 在缺少 internal authority header 时，回退到从原始 bearer/query token 重新鉴权，保留 ws attach/reconnect live 语义。
+3. `packages/nacp-core/src/observability/logger/respond.ts`
+   - `attachServerTimings()` 对 `101/1xx` 直接透传，避免 websocket handshake 被 response wrapper 二次构造炸掉。
+4. `workers/agent-core/src/host/runtime-mainline.ts`
+   - LLM evidence 提取改为扫描全部消息，并同时识别 `content` / `parts` 中的 `image_url`。
+5. `workers/orchestrator-core/src/session-truth.ts`
+   - 当 `capabilities.reasoning/vision=true` 但 detail arrays 为空时，回填 `supported_reasoning_levels` 与 `input_modalities` 的默认真值。
+6. live tests
+   - initial-context 改为验证 durable `/context/layers`。
+   - HP2 model tests 改为真实 authenticated alias/detail assertions。
+   - RH5 live test 改为等待 durable turn/message truth，而不是误把旧 usage row 当成 multipart `/messages` 结果。
+
+### 8.2 targeted rerun
+
+- websocket 相关 5 项：全部通过
+- remaining 4 项（initial_context / HP2 / RH5）：全部通过
+
+### 8.3 full live e2e rerun
+
+执行：`NANO_AGENT_LIVE_E2E=1 pnpm test:live:e2e`
+
+结果：
+
+| 项目 | 数量 |
+|------|------|
+| tests | `92` |
+| pass | `63` |
+| fail | `0` |
+| skip | `29` |
+
+`29` 个 skip 仍然是 topology/harness 既定事实：leaf workers 没有 direct public live URL，按设计通过 orchestrator facade / service binding 验证，不属于回归失败。
+
+### 8.4 HPX2 后最终判断
+
+1. 当前 preview 的权限、D1、package truth、6-worker binding 与 full live-e2e 已同时成立。
+2. `HP-full-closure` 视角下，这一轮 gate 已恢复为 **green**。
+3. 本报告保留 §5-§6 的首轮 partial-pass 分析，作为 HPX2 为什么启动、以及具体修复了哪些 failure classes 的历史留档。

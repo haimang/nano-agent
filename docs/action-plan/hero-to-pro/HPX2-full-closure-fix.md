@@ -29,7 +29,7 @@
 > - `clients/api-docs/session-ws-v1.md`
 > 冻结决策来源:
 > - `docs/design/hero-to-pro/HPX-qna.md` Q33-Q36（只读引用；本 action-plan 不填写 Q/A）
-> 文档状态: `draft`
+> 文档状态: `executed`
 
 ---
 
@@ -447,3 +447,31 @@ HPX2 full closure fix
 | 风险收敛 | 不再存在“测试绿了但 runtime 没解释”或“runtime 修了但 docs 仍写旧 truth” |
 | 可交付性 | hero-to-pro 是否满足 full-closure gate 有一份新的可审计证据链 |
 
+---
+
+## 11. 工作日志回填
+
+1. 修复 public websocket façade：
+   - `orchestrator-core` 不再 synthetic websocket request；
+   - User DO 增补 ws 场景下的原始 token 回退鉴权；
+   - `attachServerTimings()` 对 `101/1xx` 透传，消除 response wrapper 对 handshake 的二次破坏。
+2. 关闭 4 个 ws live failures：
+   - `03-ws-attach`
+   - `04-reconnect`
+   - `11-orchestrator-public-facade-roundtrip`
+   - `13-device-revoke-force-disconnect`
+3. 收敛 initial_context gate：
+   - `04-agent-context-initial-context.test.mjs`
+   - `02-session-start.test.mjs`
+   - live 断言切到 durable `/context/layers`，不再依赖 transient pending queue。
+4. 回刷 HP2 model live contract：
+   - alias resolve 改为 authenticated `/models/{modelRef}`;
+   - fallback 用例改为 schema-live metadata truth，不再匿名 placeholder 探测 `/models`。
+5. 修正 RH5 运行时与 live gate：
+   - agent-core evidence 提取支持全消息扫描和 `parts.image_url`;
+   - orchestrator-core model detail 在 capability=true 但 detail arrays 缺失时回填默认 reasoning/image truth；
+   - RH5 live 用例改为等待 durable turn/message 持久化结果。
+6. 本轮验证结果：
+   - `pnpm test` 通过；
+   - `NANO_AGENT_LIVE_E2E=1 pnpm test:live:e2e` 通过；
+   - full live e2e 最终为 `92 tests / 63 pass / 0 fail / 29 skip`。
