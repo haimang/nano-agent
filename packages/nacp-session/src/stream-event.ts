@@ -125,6 +125,25 @@ export const LlmDeltaKind = z.object({
   is_final: z.boolean().default(false),
 });
 
+// HP2-D2 (HP0-H10 deferred-closure absorb) — model.fallback stream event.
+//
+// Frozen contract:
+//   * docs/charter/plan-hero-to-pro.md §7.3 HP2
+//   * docs/issue/hero-to-pro/HP0-H10-deferred-closure.md HP2-D2
+//   * docs/design/hero-to-pro/HPX-qna.md Q8 (single-step fallback)
+//
+// Emitted when a turn's effective model differs from the requested model
+// because of a fallback decision. `fallback_model_id` MUST already have
+// passed `resolveModelForTeam()` (Q8 invariant: even fallback target
+// must satisfy team policy).
+export const ModelFallbackKind = z.object({
+  kind: z.literal("model.fallback"),
+  turn_uuid: z.string().uuid(),
+  requested_model_id: z.string().min(1),
+  fallback_model_id: z.string().min(1),
+  fallback_reason: z.string().min(1),
+});
+
 export const SessionStreamEventBodySchema = z.discriminatedUnion("kind", [
   ToolCallProgressKind,
   ToolCallResultKind,
@@ -138,6 +157,7 @@ export const SessionStreamEventBodySchema = z.discriminatedUnion("kind", [
   SystemErrorKind,
   LlmDeltaKind,
   SessionForkCreatedKind,
+  ModelFallbackKind,
 ]);
 
 export type SessionStreamEventBody = z.infer<typeof SessionStreamEventBodySchema>;
@@ -155,5 +175,6 @@ export const STREAM_EVENT_KINDS = [
   "system.error",
   "llm.delta",
   "session.fork.created",
+  "model.fallback",
 ] as const;
 export type StreamEventKind = (typeof STREAM_EVENT_KINDS)[number];

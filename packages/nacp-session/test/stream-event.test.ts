@@ -49,9 +49,10 @@ describe("SessionStreamEventBody", () => {
   it("rejects unknown kind", () => {
     expect(() => SessionStreamEventBodySchema.parse({ kind: "unknown.thing" })).toThrow();
   });
-  it("has 12 registered kinds (HP7 P4-02 added session.fork.created on top of HP6 tool.call.cancelled)", () => {
-    expect(STREAM_EVENT_KINDS).toHaveLength(12);
+  it("has 13 registered kinds (HP2-D2 added model.fallback on top of HP7 session.fork.created and HP6 tool.call.cancelled)", () => {
+    expect(STREAM_EVENT_KINDS).toHaveLength(13);
     expect(STREAM_EVENT_KINDS).toContain("tool.call.cancelled");
     expect(STREAM_EVENT_KINDS).toContain("session.fork.created");
+    expect(STREAM_EVENT_KINDS).toContain("model.fallback");
   });
 });
