@@ -29,7 +29,7 @@
 > - `docs/charter/plan-hero-to-pro.md` §7.9 HP8 megafile gate
 > - `docs/design/hero-to-pro/HP8-runtime-hardening-and-chronic-closure.md` §7 F3
 > - `docs/design/hero-to-pro/HPX-qna.md` Q25（只读引用；本 action-plan 不填写 Q/A）
-> 文档状态: `draft`
+> 文档状态: `executed`
 
 ---
 
@@ -303,7 +303,7 @@ workers/orchestrator-core/src
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
 | P6-01 | session-flow shared helper split | 抽出 `UserDoSessionFlowContext`、`RpcAck`、auth snapshot 恢复、device gate、durable pointer / lifecycle helper | `user-do/session-flow/{types,shared,hydrate}.ts` | 去掉 `session-flow.ts` 内部重复 gate 代码 | `user-do-chat-lifecycle.test.ts`, `user-do.test.ts` | 重复 helper 不再分散在 4-5 个 handler 里 |
-| P6-02 | session-flow handler split | 把 `handleStart`、`handleInput`、`handleCancel/Close/Delete/Title`、`handleVerify/Read` 拆到独立模块 | `user-do/session-flow/{start,input,lifecycle,verify-read}.ts` | 单 factory 巨石被拆成按职责分层的 handler 文件 | 同上 + `messages-route.test.ts` | 单一 handler 文件不过大，行为保持不变 |
+| P6-02 | session-flow handler split | 把 `handleStart`、`handleInput`、`handleCancel/Close/Delete/Title`、`handleVerify/Read` 拆到独立模块 | `user-do/session-flow/{start,input,lifecycle,verify-read}.ts` | 单 factory 巨石被拆成按职责分层的 handler 文件 | 同上 + `messages-route.test.ts` | 单一 handler文件不过大，行为保持不变 |
 | P6-03 | session-flow thin facade + budget | 保持 `createUserDoSessionFlow(ctx)` 对外 API 稳定，让 `session-flow.ts` 成为薄 façade / compat export，并把新的 owner files 也纳入 megafile gate | `user-do/session-flow.ts`, `scripts/megafile-budget.json` | User DO 流程层不再是下一颗巨石 | `pnpm --filter @haimang/orchestrator-core-worker typecheck build test`, `node scripts/check-megafile-budget.mjs` | `session-flow` 薄 façade成型，owner files 全部 `<1000` |
 
 ---
@@ -555,3 +555,73 @@ workers/orchestrator-core/src
 | 风险收敛 | 没有新的 replacement megafile、没有新的 import cycle、没有 route drift |
 | 可交付性 | 后续新增 façade surface 可以按 domain 挂接，不必再修改 3000 行入口文件 |
 
+---
+
+## 9. 工作日志回填
+
+1. **基线冻结**
+   - 复核了 `workers/orchestrator-core/src/index.ts` 旧基线 `3015` 行、`workers/orchestrator-core/src/user-do/session-flow.ts` 旧基线 `966` 行。
+   - 确认 `scripts/megafile-budget.json` 旧状态只对 `index.ts` 维持 `3000` 行止血 ceiling，尚未覆盖 HPX4 引入的新 owner files。
+
+2. **shared spine 落地**
+   - 新增 `workers/orchestrator-core/src/facade/env.ts`。
+   - 新增 `workers/orchestrator-core/src/facade/shared/{request,auth,ownership,response}.ts`。
+   - 将 env/type、request parser、debug auth helper、cross-tenant ownership gate、session response wrapping 从旧 `index.ts` 抽出，消除 domain 反向 import `index.ts` 的需求。
+
+3. **non-session route split 落地**
+   - 新增 `workers/orchestrator-core/src/facade/routes/{debug,auth,catalog,me,models}.ts`。
+   - 将 `/health`、`/debug/*`、`/auth/*`、`/catalog/*`、`/me/*`、`/models*` 从入口巨石迁出。
+   - 其中 `me.ts` 承接 `/me/sessions`、`/me/conversations`、`/conversations/{id}`、`/me/team`、`/me/teams`、`/me/devices*` 的 D1 read-side 与 revoke flow。
+
+4. **session surface split 落地**
+   - 新增 `workers/orchestrator-core/src/facade/routes/{session-context,session-files,session-control,session-bridge}.ts`。
+   - 将 context/files service-binding façade、checkpoints/confirmations/todos control-plane、session DO bridge / ws passthrough 从旧 `index.ts` 迁出。
+   - 保持了旧入口的 route 顺序：`/models*` 与 context routes 仍位于 tenant gate 之前，`/sessions/{id}/model`、files/control/bridge 仍位于 tenant gate 之后。
+
+5. **route registry 与薄入口**
+   - 新增 `workers/orchestrator-core/src/facade/route-registry.ts` 作为 ordered dispatch 中枢。
+   - 将 `workers/orchestrator-core/src/index.ts` 收束为 18 行薄入口，仅保留 `worker.fetch()`、`dispatchFacadeRoute()`、`NanoOrchestratorUserDO` export 和 default export。
+   - 本轮中途出现过一次“大 patch 没有真正把 facade 文件落盘”的异常；最终改为小批次重建并重新覆盖 `index.ts`，问题已消除。
+
+6. **session-flow second pass 落地**
+   - 保持 `workers/orchestrator-core/src/user-do/session-flow.ts` 为薄 façade（2 行 re-export）。
+   - 新增 `workers/orchestrator-core/src/user-do/session-flow/{types,shared,hydrate,start,input,lifecycle,verify-read,index}.ts`。
+   - 将 `createUserDoSessionFlow(ctx)` 的内部实现拆成 hydrate / start / input / lifecycle / verify-read 多模块，并修复拆分过程中暴露的 `requireReadableSession` 类型缺口。
+
+7. **megafile budget hardening**
+   - 更新 `scripts/megafile-budget.json`：
+     - `workers/orchestrator-core/src/index.ts` ceiling 从 `3000` 下调到 `100`。
+     - 新增 façade owner files：
+       - `facade/route-registry.ts`
+       - `facade/routes/{me,models,session-context,session-files,session-control,session-bridge}.ts`
+     - 新增 User DO flow owner files：
+       - `user-do/session-flow/{index,start,lifecycle,verify-read}.ts`
+   - 所有新增 ceiling 均 `<1000`，符合 HP8 / HPX4 frozen law。
+
+8. **最终 owner file 行数**
+   - `workers/orchestrator-core/src/index.ts` = `18`
+   - `workers/orchestrator-core/src/facade/route-registry.ts` = `52`
+   - `workers/orchestrator-core/src/facade/routes/me.ts` = `481`
+   - `workers/orchestrator-core/src/facade/routes/models.ts` = `289`
+   - `workers/orchestrator-core/src/facade/routes/session-context.ts` = `162`
+   - `workers/orchestrator-core/src/facade/routes/session-files.ts` = `200`
+   - `workers/orchestrator-core/src/facade/routes/session-control.ts` = `599`
+   - `workers/orchestrator-core/src/facade/routes/session-bridge.ts` = `171`
+   - `workers/orchestrator-core/src/user-do/session-flow.ts` = `2`
+   - `workers/orchestrator-core/src/user-do/session-flow/index.ts` = `62`
+   - `workers/orchestrator-core/src/user-do/session-flow/start.ts` = `282`
+   - `workers/orchestrator-core/src/user-do/session-flow/lifecycle.ts` = `375`
+   - `workers/orchestrator-core/src/user-do/session-flow/verify-read.ts` = `91`
+
+9. **测试结果**
+   - `pnpm --filter @haimang/orchestrator-core-worker typecheck`：通过。
+   - `pnpm --filter @haimang/orchestrator-core-worker build`：通过。
+   - `pnpm --filter @haimang/orchestrator-core-worker test`：通过，`34` 个 test files 全绿。
+   - `node scripts/check-megafile-budget.mjs`：通过，`16 owner file(s) within budget`。
+   - `pnpm check:cycles`：通过。
+   - `pnpm test`：通过，root regression exit code `0`。
+
+10. **本轮收口判断**
+    - HPX4 目标已经成立：`index.ts` 从 3015 行巨石收束为薄入口，session-flow 也完成了 second pass。
+    - 当前没有新的 replacement megafile；新 façade / flow owner files 全部进入 megafile gate 且保持 `<1000`。
+    - 后续若继续扩展 orchestrator-core façade，应优先在 `facade/routes/*` 对应 domain 内演进，而不是回填到 `src/index.ts`。

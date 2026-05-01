@@ -83,8 +83,9 @@
   - `clients/api-docs/transport-profiles.md`
 - **核查的实现**：
   - `workers/orchestrator-core/src/index.ts:639-833` (dispatchFetch / route parsing)
-  - `workers/orchestrator-core/src/index.ts:2256-2451` (model handlers)
+  - `workers/orchestrator-core/src/index.ts:1078-1133` (model/todo route parsers)
   - `workers/orchestrator-core/src/index.ts:1681-1902` (todo handler)
+  - `workers/orchestrator-core/src/index.ts:2224-2451` (model handlers)
   - `workers/orchestrator-core/src/todo-control-plane.ts:82-295` (todo CRUD)
   - `workers/orchestrator-core/src/session-truth.ts:411-590` (model state repo)
   - `workers/orchestrator-core/src/auth.ts:221-327` (authenticateRequest)
@@ -125,19 +126,13 @@
 | 簇 | 端点 | F1 | F2 | F3 | F4 | F5 | F6 | 端点 verdict | 关键问题 |
 |----|------|----|----|----|----|----|----|--------------|----------|
 | Models | `GET /models` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | PASS | — |
-| Models | `GET /models/{modelIdOrAlias}` | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | FAIL | F-MOD-01 响应形状不匹配 |
+| Models | `GET /models/{id}` | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | FAIL | F-MOD-01 响应形状不匹配 |
 | Models | `GET /sessions/{id}/model` | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | FAIL | F-SES-01 字段名不匹配 |
 | Models | `PATCH /sessions/{id}/model` | ✅ | ✅ | ✅ | ✅ | ⚠️ | ✅ | PASS w/ WARN | W-MOD-01 503 错误码未全量文档化 |
 | Todos | `GET /sessions/{id}/todos` | ✅ | ✅ | ✅ | ✅ | ⚠️ | ✅ | PASS w/ WARN | W-TOD-01 `?status=any` 未文档化 |
 | Todos | `POST /sessions/{id}/todos` | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | FAIL | F-TOD-01 错误码不匹配 |
-| Todos | `PATCH /sessions/{id}/todos/{todo_uuid}` | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | FAIL | F-TOD-02 404 错误码不匹配 |
-| Todos | `DELETE /sessions/{id}/todos/{todo_uuid}` | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | FAIL | F-TOD-02 404 错误码不匹配 |
-| Transport | `GET /` / `/health` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | PASS | — |
-| Transport | `GET /debug/workers/health` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | PASS | — |
-| Transport | `facade-http-v1` 族 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | PASS | — |
-| Transport | `legacy-do-action` 族 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | PASS | — |
-| Transport | `session-ws-v1` 族 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | PASS | — |
-| Transport | `binary-content` 族 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | PASS | — |
+| Todos | `PATCH /sessions/{id}/todos/{id}` | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | FAIL | F-TOD-02 404 错误码不匹配 |
+| Todos | `DELETE /sessions/{id}/todos/{id}` | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | FAIL | F-TOD-02 404 错误码不匹配 |
 
 ---
 
@@ -596,7 +591,7 @@ binary-content:     Client → GET /sessions/{id}/files/{id}/content → raw byt
   - 若客户端运行 schema 校验（如 zod parse），该错误响应会被判定为非法 envelope。
 - **修法（What + How）**：
   - **改什么**：将 `models-d1-unavailable` 加入 `FacadeErrorCodeSchema`，或在代码中使用已有的 `worker-misconfigured` / `internal-error`。
-  - **推荐方案**：加入 `FacadeErrorCodeSchema`，因为该码已在 doc 中登记且语义明确（D1 不可用 vs  worker 配置错误）。
+  - **推荐方案**：加入 `FacadeErrorCodeSchema`，因为该码已在 doc 中登记且语义明确（D1 不可用 vs worker 配置错误）。
   - **涉及文件**：`packages/orchestrator-auth-contract/src/facade-http.ts`；`docs/api/error-codes.md`（若存在该码需确认）。
   - **测试增量**：在 `facade-http.test.ts` 中增加对该码的编译期/运行期覆盖。
 - **建议行动项**：A3
