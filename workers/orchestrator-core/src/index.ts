@@ -28,6 +28,10 @@ import {
   buildWorkspaceR2Key,
 } from "./workspace-control-plane.js";
 import {
+  CheckpointRestoreJobConstraintError,
+  D1CheckpointRestoreJobs,
+} from "./checkpoint-restore-plane.js";
+import {
   parseSessionToolCallsRoute,
   parseSessionWorkspaceRoute,
   handleSessionToolCalls,
@@ -42,6 +46,8 @@ void NANO_PACKAGE_MANIFEST;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const MAX_SESSION_FILE_BYTES = 25 * 1024 * 1024;
 const MIME_RE = /^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/i;
+const RESTORE_REQUEST_MODES = ["conversation_only", "files_only", "conversation_and_files"] as const;
+type RestoreRequestMode = (typeof RESTORE_REQUEST_MODES)[number];
 
 function getLogger(env: OrchestratorCoreEnv) {
   return createOrchestratorLogger(env);
@@ -1179,7 +1185,8 @@ function parseSessionConfirmationRoute(
 type SessionCheckpointRoute =
   | { kind: "list"; sessionUuid: string }
   | { kind: "create"; sessionUuid: string }
-  | { kind: "diff"; sessionUuid: string; checkpointUuid: string };
+  | { kind: "diff"; sessionUuid: string; checkpointUuid: string }
+  | { kind: "restore"; sessionUuid: string; checkpointUuid: string };
 
 function parseSessionCheckpointRoute(request: Request): SessionCheckpointRoute | null {
   const pathname = new URL(request.url).pathname;
@@ -1193,11 +1200,18 @@ function parseSessionCheckpointRoute(request: Request): SessionCheckpointRoute |
     return null;
   }
   const diff = pathname.match(/^\/sessions\/([^/]+)\/checkpoints\/([^/]+)\/diff$/);
-  if (!diff || method !== "GET") return null;
-  const sessionUuid = diff[1]!;
-  const checkpointUuid = diff[2]!;
-  if (!UUID_RE.test(sessionUuid) || !UUID_RE.test(checkpointUuid)) return null;
-  return { kind: "diff", sessionUuid, checkpointUuid };
+  if (diff) {
+    const sessionUuid = diff[1]!;
+    const checkpointUuid = diff[2]!;
+    if (!UUID_RE.test(sessionUuid) || !UUID_RE.test(checkpointUuid) || method !== "GET") return null;
+    return { kind: "diff", sessionUuid, checkpointUuid };
+  }
+  const restore = pathname.match(/^\/sessions\/([^/]+)\/checkpoints\/([^/]+)\/restore$/);
+  if (!restore) return null;
+  const sessionUuid = restore[1]!;
+  const checkpointUuid = restore[2]!;
+  if (!UUID_RE.test(sessionUuid) || !UUID_RE.test(checkpointUuid) || method !== "POST") return null;
+  return { kind: "restore", sessionUuid, checkpointUuid };
 }
 
 async function handleMeConversations(
@@ -1360,6 +1374,99 @@ async function handleSessionCheckpoint(
       },
       { status: 201, headers: { "x-trace-uuid": traceUuid } },
     );
+  }
+
+  const checkpoint = (await repo.listCheckpoints({
+    session_uuid: route.sessionUuid,
+    team_uuid: session.team_uuid,
+  })).find((row) => row.checkpoint_uuid === route.checkpointUuid);
+  if (!checkpoint) {
+    return jsonPolicyError(404, "not-found", "checkpoint not found", traceUuid);
+  }
+
+  if (route.kind === "restore") {
+    const body = await parseBody(request);
+    if (body === null) {
+      return jsonPolicyError(400, "invalid-input", "restore requires a JSON body", traceUuid);
+    }
+    const rawMode = body.mode;
+    if (!RESTORE_REQUEST_MODES.includes(rawMode as RestoreRequestMode)) {
+      return jsonPolicyError(
+        400,
+        "invalid-input",
+        `mode must be one of ${RESTORE_REQUEST_MODES.join("|")}`,
+        traceUuid,
+      );
+    }
+    const mode = rawMode as RestoreRequestMode;
+    const confirmationUuid = typeof body.confirmation_uuid === "string" ? body.confirmation_uuid : "";
+    if (!UUID_RE.test(confirmationUuid)) {
+      return jsonPolicyError(
+        400,
+        "invalid-input",
+        "confirmation_uuid must be a valid UUID",
+        traceUuid,
+      );
+    }
+    const confirmationPlane = new D1ConfirmationControlPlane(db);
+    const confirmation = await confirmationPlane.read({
+      session_uuid: route.sessionUuid,
+      confirmation_uuid: confirmationUuid,
+    });
+    if (!confirmation) {
+      return jsonPolicyError(404, "not-found", "confirmation not found", traceUuid);
+    }
+    if (confirmation.kind !== "checkpoint_restore") {
+      return jsonPolicyError(
+        409,
+        "invalid-input",
+        "confirmation kind must be checkpoint_restore",
+        traceUuid,
+      );
+    }
+    if (confirmation.status !== "pending") {
+      return Response.json(
+        {
+          ok: false,
+          error: {
+            code: "confirmation-already-resolved",
+            status: 409,
+            message: "confirmation has already been resolved with a different status",
+          },
+          data: { confirmation },
+          trace_uuid: traceUuid,
+        },
+        { status: 409, headers: { "x-trace-uuid": traceUuid } },
+      );
+    }
+    try {
+      const restoreJobs = new D1CheckpointRestoreJobs(db);
+      const restoreJob = await restoreJobs.openJob({
+        checkpoint_uuid: route.checkpointUuid,
+        session_uuid: route.sessionUuid,
+        mode,
+        confirmation_uuid: confirmationUuid,
+        target_session_uuid: null,
+      });
+      return Response.json(
+        {
+          ok: true,
+          data: {
+            session_uuid: route.sessionUuid,
+            conversation_uuid: session.conversation_uuid,
+            checkpoint,
+            restore_job: restoreJob,
+          },
+          trace_uuid: traceUuid,
+        },
+        { status: 202, headers: { "x-trace-uuid": traceUuid } },
+      );
+    } catch (error) {
+      if (error instanceof CheckpointRestoreJobConstraintError) {
+        return jsonPolicyError(400, "invalid-input", error.message, traceUuid);
+      }
+      throw error;
+    }
   }
 
   const diff = await repo.readCheckpointDiff({

@@ -5,6 +5,7 @@ import { signTestJwt } from "./jwt-helper.js";
 const SESSION_UUID = "11111111-1111-4111-8111-111111111111";
 const CONVERSATION_UUID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const CHECKPOINT_UUID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+const CONFIRMATION_UUID = "12121212-1212-4121-8121-121212121212";
 const USER_UUID = "22222222-2222-4222-8222-222222222222";
 const TEAM_UUID = "44444444-4444-4444-8444-444444444444";
 const TRACE_UUID = "33333333-3333-4333-8333-333333333333";
@@ -30,6 +31,20 @@ function createLifecycleDb() {
       expires_at: null,
     },
   ];
+  const confirmations: Array<Record<string, unknown>> = [
+    {
+      confirmation_uuid: CONFIRMATION_UUID,
+      session_uuid: SESSION_UUID,
+      kind: "checkpoint_restore",
+      payload_json: JSON.stringify({ checkpoint_uuid: CHECKPOINT_UUID }),
+      status: "pending",
+      decision_payload_json: null,
+      created_at: "2026-04-30T00:05:00Z",
+      decided_at: null,
+      expires_at: null,
+    },
+  ];
+  const restoreJobs: Array<Record<string, unknown>> = [];
   return {
     prepare: (sql: string) => ({
       bind: (...args: unknown[]) => ({
@@ -81,6 +96,18 @@ function createLifecycleDb() {
               latest_event_seq: 11,
               context_snapshot_uuid: null,
             };
+          }
+          if (sql.includes("FROM nano_session_confirmations")) {
+            return (
+              confirmations.find(
+                (row) =>
+                  row.confirmation_uuid === args[0] &&
+                  row.session_uuid === args[1],
+              ) ?? null
+            );
+          }
+          if (sql.includes("FROM nano_checkpoint_restore_jobs")) {
+            return restoreJobs.find((row) => row.job_uuid === args[0]) ?? null;
           }
           return { status: "active" };
         },
@@ -152,6 +179,20 @@ function createLifecycleDb() {
               created_by: "user",
               created_at: String(args[10]),
               expires_at: null,
+            });
+          }
+          if (sql.includes("INSERT INTO nano_checkpoint_restore_jobs")) {
+            restoreJobs.unshift({
+              job_uuid: String(args[0]),
+              checkpoint_uuid: String(args[1]),
+              session_uuid: String(args[2]),
+              mode: String(args[3]),
+              target_session_uuid: args[4] as string | null,
+              status: "pending",
+              confirmation_uuid: args[5] as string | null,
+              started_at: null,
+              completed_at: null,
+              failure_reason: null,
             });
           }
           return { success: true };
@@ -394,6 +435,44 @@ describe("HP4 chat lifecycle public routes", () => {
       superseded_messages: [
         expect.objectContaining({ superseded_by_turn_attempt: 2 }),
       ],
+    });
+  });
+
+  it("POST checkpoint restore opens a pending restore job", async () => {
+    const token = await signTestJwt(
+      { sub: USER_UUID, user_uuid: USER_UUID, team_uuid: TEAM_UUID },
+      JWT_SECRET,
+    );
+    const response = await worker.fetch(
+      new Request(`https://example.com/sessions/${SESSION_UUID}/checkpoints/${CHECKPOINT_UUID}/restore`, {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+          "x-trace-uuid": TRACE_UUID,
+        },
+        body: JSON.stringify({
+          mode: "conversation_only",
+          confirmation_uuid: CONFIRMATION_UUID,
+        }),
+      }),
+      {
+        JWT_SECRET,
+        TEAM_UUID: "nano-agent",
+        NANO_AGENT_DB: createLifecycleDb(),
+        ORCHESTRATOR_USER_DO: {} as any,
+      } as any,
+    );
+    expect(response.status).toBe(202);
+    expect((await response.json()).data).toMatchObject({
+      checkpoint: expect.objectContaining({ checkpoint_uuid: CHECKPOINT_UUID }),
+      restore_job: expect.objectContaining({
+        checkpoint_uuid: CHECKPOINT_UUID,
+        session_uuid: SESSION_UUID,
+        mode: "conversation_only",
+        status: "pending",
+        confirmation_uuid: CONFIRMATION_UUID,
+      }),
     });
   });
 });
