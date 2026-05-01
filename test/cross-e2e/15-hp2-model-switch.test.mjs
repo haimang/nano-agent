@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { fetchJson, liveTest } from "../shared/live.mjs";
+import { createOrchestratorAuth } from "../shared/orchestrator-auth.mjs";
 
 // HP2-D3 (deferred-closure absorb) — model state machine cross-e2e.
 //
@@ -21,19 +22,30 @@ liveTest("HP2-D3 — cross-turn model switch wire", ["orchestrator-core"], async
 
 liveTest("HP2-D3 — model alias resolve", ["orchestrator-core"], async ({ getUrl }) => {
   const orch = getUrl("orchestrator-core");
-  // GET /models/@alias/balanced → resolves to canonical model_id; 200
-  // with `data.model.model_id` matching active model.
-  const { response } = await fetchJson(`${orch}/models`);
-  assert.equal(response.status >= 200 && response.status < 400, true);
+  const { authHeaders } = await createOrchestratorAuth("cross-e2e");
+  const detail = await fetchJson(`${orch}/models/%40alias%2Fbalanced`, {
+    headers: authHeaders,
+  });
+  assert.equal(detail.response.status, 200);
+  assert.equal(detail.json?.data?.requested_model_id, "@alias/balanced");
+  assert.equal(detail.json?.data?.resolved_model_id, "@cf/meta/llama-3.3-70b-instruct-fp8-fast");
+  assert.equal(detail.json?.data?.resolved_from_alias, true);
+  assert.deepEqual(detail.json?.data?.model?.aliases, ["@alias/balanced"]);
 });
 
-liveTest("HP2-D3 — model.fallback stream event", ["orchestrator-core"], async ({ getUrl }) => {
-  // Real test: trigger an inference with a model that's about to be
-  // marked unavailable, observe `model.fallback` WS frame with
-  // `requested_model_id` / `fallback_model_id` / `fallback_reason`.
+liveTest("HP2-D3 — model fallback metadata remains schema-live", ["orchestrator-core"], async ({ getUrl }) => {
   const orch = getUrl("orchestrator-core");
-  const { response } = await fetchJson(`${orch}/models`);
-  assert.equal(response.status >= 200 && response.status < 400, true);
+  const { authHeaders } = await createOrchestratorAuth("cross-e2e");
+  const detail = await fetchJson(`${orch}/models/%40alias%2Freasoning`, {
+    headers: authHeaders,
+  });
+  assert.equal(detail.response.status, 200);
+  assert.equal(detail.json?.data?.resolved_model_id, "@cf/meta/llama-4-scout-17b-16e-instruct");
+  assert.equal(
+    Object.prototype.hasOwnProperty.call(detail.json?.data?.model ?? {}, "fallback_model_id"),
+    true,
+  );
+  assert.equal(Array.isArray(detail.json?.data?.model?.supported_reasoning_levels), true);
 });
 
 liveTest("HP2-D3 — model-policy-block", ["orchestrator-core"], async ({ getUrl }) => {

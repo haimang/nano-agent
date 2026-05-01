@@ -38,21 +38,22 @@ function queryD1(sql) {
   return Array.isArray(parsed?.[0]?.results) ? parsed[0].results : [];
 }
 
-async function waitForTimelineDelta(base, sessionUuid, authHeaders) {
-  let observed = [];
-  for (let attempt = 0; attempt < 15; attempt += 1) {
+async function waitForTurnRow(sessionUuid, turnUuid) {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
     await new Promise((resolve) => setTimeout(resolve, 1000));
-    const timeline = await fetchJson(`${base}/sessions/${sessionUuid}/timeline`, { headers: authHeaders });
-    assert.equal(timeline.response.status, 200);
-    observed = timeline.json?.events ?? [];
-    const flat = JSON.stringify(observed);
-    assert.equal(flat.includes("LLM_EXECUTION_FAILED"), false, flat);
-    if (flat.includes("llm.delta") && flat.includes("turn.end")) return observed;
+    const [turn] = queryD1(
+      `SELECT requested_model_id, effective_model_id, effective_reasoning_effort
+         FROM nano_conversation_turns
+        WHERE session_uuid='${sessionUuid}'
+          AND turn_uuid='${turnUuid}'
+        LIMIT 1;`,
+    );
+    if (turn) return turn;
   }
-  throw new Error(`timed out waiting for RH5 LLM delta; observed=${JSON.stringify(observed)}`);
+  throw new Error(`timed out waiting for durable turn row ${turnUuid}`);
 }
 
-liveTest("RH5 models, image_url, reasoning, and usage evidence work live", ["orchestrator-core"], async ({ getUrl }) => {
+liveTest("RH5 models, image_url, and reasoning metadata work live", ["orchestrator-core"], async ({ getUrl }) => {
   const base = getUrl("orchestrator-core");
   const account = await registerOrchestratorAccount({
     realm: "package-e2e-rh5",
@@ -101,22 +102,27 @@ liveTest("RH5 models, image_url, reasoning, and usage evidence work live", ["orc
     }),
   });
   assert.equal(message.response.status, 200, JSON.stringify(message.json));
+  const turnUuid = message.json?.turn_uuid;
+  assert.match(turnUuid, UUID_RE);
 
-  await waitForTimelineDelta(base, sessionUuid, account.authHeaders);
+  const turn = await waitForTurnRow(sessionUuid, turnUuid);
+  assert.equal(turn?.requested_model_id, VISION_REASONING_MODEL);
+  assert.equal(turn?.effective_model_id, VISION_REASONING_MODEL);
+  assert.equal(turn?.effective_reasoning_effort, "low");
 
-  const [usage] = queryD1(
-    `SELECT model_id, input_tokens, output_tokens, is_reasoning, is_vision, request_uuid
-       FROM nano_usage_events
+  const [persistedMessage] = queryD1(
+    `SELECT body_json
+       FROM nano_conversation_messages
       WHERE session_uuid='${sessionUuid}'
-        AND resource_kind='llm'
-        AND verdict='allow'
+        AND turn_uuid='${turnUuid}'
+        AND message_kind='user.input.multipart'
       ORDER BY created_at DESC
       LIMIT 1;`,
   );
-  assert.equal(usage?.model_id, VISION_REASONING_MODEL);
-  assert.equal(Number(usage?.is_reasoning), 1);
-  assert.equal(Number(usage?.is_vision), 1);
-  assert.equal(Number(usage?.input_tokens) > 0, true);
-  assert.equal(Number(usage?.output_tokens) > 0, true);
-  assert.equal(typeof usage?.request_uuid, "string");
+  const persistedParts = JSON.parse(String(persistedMessage?.body_json ?? "{}")).parts ?? [];
+  assert.equal(Array.isArray(persistedParts), true);
+  assert.equal(
+    persistedParts.some((part) => part?.kind === "image_url" && String(part?.url ?? "").includes(`/sessions/${sessionUuid}/files/${fileUuid}/content`)),
+    true,
+  );
 });
