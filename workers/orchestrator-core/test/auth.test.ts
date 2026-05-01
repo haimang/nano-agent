@@ -118,6 +118,28 @@ describe("authenticateRequest", () => {
     expect(result.ok).toBe(false);
   });
 
+  it("rejects malformed bearer tokens with invalid-auth", async () => {
+    const result = await authenticateRequest(
+      new Request("https://example.com/sessions/11111111-1111-4111-8111-111111111111/start", {
+        headers: {
+          authorization: "Bearer not.a.jwt",
+          "x-trace-uuid": "33333333-3333-4333-8333-333333333333",
+        },
+      }),
+      {
+        JWT_SECRET: "m".repeat(32),
+        TEAM_UUID: "nano-agent",
+      },
+    );
+
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.response.status).toBe(401);
+    const body = await result.response.json();
+    expect(body.ok).toBe(false);
+    expect(body.error.code).toBe("invalid-auth");
+  });
+
   it("rejects non-legacy tokens that omit kid", async () => {
     const token = await signTestJwt(
       {
