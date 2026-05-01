@@ -3,8 +3,63 @@
   "limits": [
     {
       "path": "workers/orchestrator-core/src/index.ts",
-      "max_lines": 3000,
+      "max_lines": 100,
       "owner_class": "facade-router"
+    },
+    {
+      "path": "workers/orchestrator-core/src/facade/route-registry.ts",
+      "max_lines": 100,
+      "owner_class": "facade-route-registry"
+    },
+    {
+      "path": "workers/orchestrator-core/src/facade/routes/me.ts",
+      "max_lines": 520,
+      "owner_class": "facade-domain-route"
+    },
+    {
+      "path": "workers/orchestrator-core/src/facade/routes/models.ts",
+      "max_lines": 320,
+      "owner_class": "facade-domain-route"
+    },
+    {
+      "path": "workers/orchestrator-core/src/facade/routes/session-context.ts",
+      "max_lines": 220,
+      "owner_class": "facade-domain-route"
+    },
+    {
+      "path": "workers/orchestrator-core/src/facade/routes/session-files.ts",
+      "max_lines": 240,
+      "owner_class": "facade-domain-route"
+    },
+    {
+      "path": "workers/orchestrator-core/src/facade/routes/session-control.ts",
+      "max_lines": 650,
+      "owner_class": "facade-domain-route"
+    },
+    {
+      "path": "workers/orchestrator-core/src/facade/routes/session-bridge.ts",
+      "max_lines": 220,
+      "owner_class": "facade-domain-route"
+    },
+    {
+      "path": "workers/orchestrator-core/src/user-do/session-flow/index.ts",
+      "max_lines": 100,
+      "owner_class": "user-do-flow-facade"
+    },
+    {
+      "path": "workers/orchestrator-core/src/user-do/session-flow/start.ts",
+      "max_lines": 320,
+      "owner_class": "user-do-flow-domain"
+    },
+    {
+      "path": "workers/orchestrator-core/src/user-do/session-flow/lifecycle.ts",
+      "max_lines": 420,
+      "owner_class": "user-do-flow-domain"
+    },
+    {
+      "path": "workers/orchestrator-core/src/user-do/session-flow/verify-read.ts",
+      "max_lines": 120,
+      "owner_class": "user-do-flow-domain"
     },
     {
       "path": "workers/orchestrator-core/src/session-truth.ts",
