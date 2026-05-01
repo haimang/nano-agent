@@ -1,7 +1,7 @@
 /**
  * @nano-agent/eval-observability — real-time session inspector.
  *
- * Strictly consumes the 9 canonical `session.stream.event` kinds defined
+ * Strictly consumes the canonical `session.stream.event` kinds defined
  * in `@haimang/nacp-session` and provides filterable, chronological
  * access to the observed stream.
  *
@@ -12,7 +12,7 @@
  */
 
 /**
- * The 9 canonical `session.stream.event` kinds.
+ * The canonical `session.stream.event` kinds.
  *
  * Mirrored locally rather than depending on `@haimang/nacp-session`
  * to avoid pulling Session profile code into the observability surface.
@@ -23,13 +23,17 @@
 export const SESSION_STREAM_EVENT_KINDS = [
   "tool.call.progress",
   "tool.call.result",
+  "tool.call.cancelled",
   "hook.broadcast",
   "session.update",
   "turn.begin",
   "turn.end",
   "compact.notify",
   "system.notify",
+  "system.error",
   "llm.delta",
+  "session.fork.created",
+  "model.fallback",
 ] as const;
 
 export type SessionStreamEventKind = (typeof SESSION_STREAM_EVENT_KINDS)[number];
@@ -40,7 +44,7 @@ export type SessionStreamEventKind = (typeof SESSION_STREAM_EVENT_KINDS)[number]
  */
 const KIND_SET: ReadonlySet<string> = new Set(SESSION_STREAM_EVENT_KINDS);
 
-/** Returns true iff `kind` is one of the 9 canonical kinds. */
+/** Returns true iff `kind` is one of the canonical kinds. */
 export function isSessionStreamEventKind(
   kind: string,
 ): kind is SessionStreamEventKind {
@@ -121,7 +125,7 @@ export interface InspectorLikeSessionFrame {
  *
  * Events are stored in arrival order and can be queried by kind or
  * recency. The inspector is append-only — events cannot be removed
- * once recorded. Events whose kind is not in the canonical 9-kind
+ * once recorded. Events whose kind is not in the canonical catalog
  * catalog are rejected (never silently accepted); optional body
  * validation is delegated via `bodyValidator`, letting callers plug
  * in `SessionStreamEventBodySchema.safeParse` without this package
@@ -174,7 +178,7 @@ export class SessionInspector {
   ) {}
 
   /**
-   * Record a stream event. If `kind` is not one of the 9 canonical
+   * Record a stream event. If `kind` is not one of the canonical
    * kinds, the event is rejected and recorded in `getRejections()`.
    *
    * B6: when `meta.messageUuid` is supplied and the same uuid was
