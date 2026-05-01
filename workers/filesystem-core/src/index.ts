@@ -184,8 +184,7 @@ export class FilesystemCoreEntrypoint extends WorkerEntrypoint<FilesystemCoreEnv
   ): Promise<{ ok: boolean; r2_keys: string[] }> {
     if (!this.env.NANO_R2) throw new Error("filesystem-core requires NANO_R2");
     assertAuthority(input.team_uuid, meta?.team_uuid);
-    const root = `tenants/${input.team_uuid}/sessions/${input.session_uuid}/workspace/`;
-    const prefix = input.prefix && input.prefix.length > 0 ? `${root}${input.prefix}` : root;
+    const prefix = buildTempFileListPrefix(input.team_uuid, input.session_uuid, input.prefix);
     const list = await this.env.NANO_R2.list({ prefix });
     return { ok: true, r2_keys: list.objects.map((o) => o.key) };
   }
@@ -267,12 +266,13 @@ export class FilesystemCoreEntrypoint extends WorkerEntrypoint<FilesystemCoreEnv
     input: {
       readonly team_uuid: string;
       readonly session_uuid: string;
+      readonly scope?: CleanupScope;
     },
     meta?: { trace_uuid?: string; team_uuid?: string },
   ): Promise<{ ok: boolean; deleted_count: number }> {
     if (!this.env.NANO_R2) throw new Error("filesystem-core requires NANO_R2");
     assertAuthority(input.team_uuid, meta?.team_uuid);
-    const root = `tenants/${input.team_uuid}/sessions/${input.session_uuid}/`;
+    const root = buildCleanupPrefix(input.team_uuid, input.session_uuid, input.scope);
     const list = await this.env.NANO_R2.list({ prefix: root });
     let deleted = 0;
     for (const obj of list.objects) {
@@ -293,24 +293,136 @@ export class FilesystemCoreEntrypoint extends WorkerEntrypoint<FilesystemCoreEnv
   }
 }
 
-// HP6-D1/D2 — tenant-scoped R2 key builders.
-// Mirror of orchestrator-core `buildWorkspaceR2Key` /
-// `buildCheckpointSnapshotR2Key` so filesystem-core can be the bytes
-// owner without cross-importing orchestrator-core types. The path law
-// is frozen by HP6 Q19.
-function buildTempFileKey(teamUuid: string, sessionUuid: string, virtualPath: string): string {
-  const trimmed = virtualPath.replace(/^\/+/, "");
-  return `tenants/${teamUuid}/sessions/${sessionUuid}/workspace/${trimmed}`;
+const PATH_SEPARATOR = "/";
+const FORBIDDEN_SEGMENTS = new Set([".", ".."]);
+const MAX_VIRTUAL_PATH_LENGTH = 1024;
+
+export type CleanupScope = "workspace" | "snapshots" | "all";
+
+class VirtualPathError extends Error {
+  constructor(
+    public readonly code:
+      | "leading-slash"
+      | "empty-path"
+      | "traversal"
+      | "empty-segment"
+      | "backslash"
+      | "control-char"
+      | "too-long",
+    message: string,
+  ) {
+    super(message);
+    this.name = "VirtualPathError";
+  }
 }
 
-function buildSnapshotKey(
+function normalizeVirtualPathOrThrow(input: unknown): string {
+  if (typeof input !== "string") {
+    throw new VirtualPathError("empty-path", "virtual_path must be a non-empty string");
+  }
+  if (input.length === 0) {
+    throw new VirtualPathError("empty-path", "virtual_path must not be empty");
+  }
+  if (input.includes("\\")) {
+    throw new VirtualPathError(
+      "backslash",
+      "virtual_path must use '/' as separator (backslashes are not allowed)",
+    );
+  }
+  for (let i = 0; i < input.length; i += 1) {
+    const code = input.charCodeAt(i);
+    if (code < 0x20 || code === 0x7f) {
+      throw new VirtualPathError(
+        "control-char",
+        "virtual_path must not contain control characters",
+      );
+    }
+  }
+  if (input.startsWith(PATH_SEPARATOR)) {
+    throw new VirtualPathError(
+      "leading-slash",
+      "virtual_path must be relative (no leading '/')",
+    );
+  }
+  const segments = input.split(PATH_SEPARATOR);
+  for (const segment of segments) {
+    if (segment.length === 0) {
+      throw new VirtualPathError(
+        "empty-segment",
+        "virtual_path must not contain empty segments (e.g. 'a//b')",
+      );
+    }
+    if (FORBIDDEN_SEGMENTS.has(segment)) {
+      throw new VirtualPathError(
+        "traversal",
+        `virtual_path segment '${segment}' is not allowed`,
+      );
+    }
+  }
+  const normalized = segments.join(PATH_SEPARATOR);
+  if (normalized.length > MAX_VIRTUAL_PATH_LENGTH) {
+    throw new VirtualPathError(
+      "too-long",
+      `virtual_path must not exceed ${MAX_VIRTUAL_PATH_LENGTH} bytes`,
+    );
+  }
+  return normalized;
+}
+
+function normalizeVirtualPathPrefixOrThrow(input: unknown): string | null {
+  if (input === undefined || input === null || input === "") {
+    return null;
+  }
+  if (typeof input !== "string") {
+    throw new VirtualPathError("empty-path", "prefix must be a string");
+  }
+  const trimmed = input.replace(/\/+$/, "");
+  if (trimmed.length === 0) {
+    return null;
+  }
+  return normalizeVirtualPathOrThrow(trimmed);
+}
+
+// HP6-D1/D2 — tenant-scoped R2 key builders. These mirror the frozen
+// orchestrator-core path law so leaf RPC bytes cannot escape the same
+// virtual_path namespace guarantees.
+export function buildTempFileKey(teamUuid: string, sessionUuid: string, virtualPath: string): string {
+  const normalized = normalizeVirtualPathOrThrow(virtualPath);
+  return `tenants/${teamUuid}/sessions/${sessionUuid}/workspace/${normalized}`;
+}
+
+export function buildSnapshotKey(
   teamUuid: string,
   sessionUuid: string,
   checkpointUuid: string,
   virtualPath: string,
 ): string {
-  const trimmed = virtualPath.replace(/^\/+/, "");
-  return `tenants/${teamUuid}/sessions/${sessionUuid}/checkpoints/${checkpointUuid}/snapshot/${trimmed}`;
+  const normalized = normalizeVirtualPathOrThrow(virtualPath);
+  return `tenants/${teamUuid}/sessions/${sessionUuid}/snapshots/${checkpointUuid}/${normalized}`;
+}
+
+export function buildTempFileListPrefix(
+  teamUuid: string,
+  sessionUuid: string,
+  prefix?: string,
+): string {
+  const root = `tenants/${teamUuid}/sessions/${sessionUuid}/workspace/`;
+  const normalized = normalizeVirtualPathPrefixOrThrow(prefix);
+  return normalized ? `${root}${normalized}/` : root;
+}
+
+export function buildCleanupPrefix(
+  teamUuid: string,
+  sessionUuid: string,
+  scope: CleanupScope = "workspace",
+): string {
+  if (scope === "workspace") {
+    return `tenants/${teamUuid}/sessions/${sessionUuid}/workspace/`;
+  }
+  if (scope === "snapshots") {
+    return `tenants/${teamUuid}/sessions/${sessionUuid}/snapshots/`;
+  }
+  return `tenants/${teamUuid}/sessions/${sessionUuid}/`;
 }
 
 function assertAuthority(teamUuid: string, metaTeamUuid?: string): void {
