@@ -99,22 +99,29 @@ If-None-Match: "<etag>"
 {
   "ok": true,
   "data": {
-    "model_id": "@cf/ibm-granite/granite-4.0-h-micro",
-    "family": "workers-ai/granite",
-    "display_name": "Granite 4.0 H Micro",
-    "context_window": 131072,
-    "auto_compact_token_limit": 110000,
-    "capabilities": { "reasoning": false, "vision": false, "function_calling": true },
-    "supported_reasoning_levels": [],
-    "default_reasoning_effort": null,
-    "status": "active",
-    "aliases": ["@alias/balanced"],
-    "base_instructions_suffix": null,
-    "fallback_model_id": null
+    "requested_model_id": "@alias/balanced",
+    "resolved_model_id": "@cf/ibm-granite/granite-4.0-h-micro",
+    "resolved_from_alias": true,
+    "model": {
+      "model_id": "@cf/ibm-granite/granite-4.0-h-micro",
+      "family": "workers-ai/granite",
+      "display_name": "Granite 4.0 H Micro",
+      "context_window": 131072,
+      "auto_compact_token_limit": 110000,
+      "capabilities": { "reasoning": false, "vision": false, "function_calling": true },
+      "supported_reasoning_levels": [],
+      "default_reasoning_effort": null,
+      "status": "active",
+      "aliases": ["@alias/balanced"],
+      "base_instructions_suffix": null,
+      "fallback_model_id": null
+    }
   },
   "trace_uuid": "..."
 }
 ```
+
+`requested_model_id` 是客户端原样传入；`resolved_model_id` 是 alias 解析后的 canonical id；`resolved_from_alias` 表示是否经过 alias 跳转。
 
 ### Errors
 
@@ -136,29 +143,34 @@ session current-model control plane view（HP2 first wave）。
 {
   "ok": true,
   "data": {
+    "conversation_uuid": "...",
     "session_uuid": "...",
+    "session_status": "running",
+    "deleted_at": null,
     "default_model_id": "@cf/ibm-granite/granite-4.0-h-micro",
     "default_reasoning_effort": null,
-    "global_default_model_id": "@cf/ibm-granite/granite-4.0-h-micro",
-    "effective_default_source": "session",
-    "model": {
-      "model_id": "@cf/ibm-granite/granite-4.0-h-micro",
-      "display_name": "Granite 4.0 H Micro",
-      "...": "..."
-    }
+    "effective_default_model_id": "@cf/ibm-granite/granite-4.0-h-micro",
+    "effective_default_reasoning_effort": null,
+    "source": "session",
+    "last_turn": null
   },
   "trace_uuid": "..."
 }
 ```
 
-`effective_default_source` ∈ `{"session", "global"}`。当 session 没有自己的 default 时为 `"global"`。
+字段说明：
+- `source` ∈ `{"session", "global"}` — session 有自己的 default 时是 `session`，否则 fall back 到 team-level global default。
+- `effective_default_model_id` — 实际生效的 model（session 优先，否则 global）。
+- `last_turn` — 最近一次 turn 的 model audit（含 `requested_model_id` / `effective_model_id` / `fallback_used` 等），无历史 turn 时为 `null`。
 
 ### Errors
 
 | HTTP | code | 说明 |
 |------|------|------|
 | 404 | `not-found` | session 不存在 |
-| 409 | `session_terminal` | session 已 ended/expired |
+| 409 | `session_terminal` | session 已 ended |
+| 409 | `session-expired` | session 已过期 |
+| 409 | `conversation-deleted` | parent conversation 已 tombstone |
 
 ---
 
@@ -171,31 +183,39 @@ session current-model control plane view（HP2 first wave）。
 ```json
 {
   "model_id": "@alias/reasoning",
-  "reasoning_effort": "high"
+  "reasoning": { "effort": "high" }
 }
 ```
 
 或清回 global default：
 
 ```json
-{ "model_id": null, "reasoning_effort": null }
+{ "model_id": null, "reasoning": null }
 ```
 
 | 字段 | 必填 | 类型 | 说明 |
 |------|------|------|------|
-| `model_id` | ✅ | string \| null | model id 或 alias；`null` 清回 global default |
-| `reasoning_effort` | no | string \| null | 必须在该 model 的 `supported_reasoning_levels` 内；`null` 清空 |
+| `model_id` | no | string \| null | model id 或 alias；`null` 清回 global default。仅当 session 已有 session-level default 时，可省略只 patch `reasoning`。 |
+| `reasoning.effort` | no | string \| null | 必须在该 model 的 `supported_reasoning_levels` 内；`null` 清空。形状与 §6 一致。 |
 
 ### Success (200)
+
+PATCH 后 server 会重新读取 session model state（与 §4 GET 同型）：
 
 ```json
 {
   "ok": true,
   "data": {
+    "conversation_uuid": "...",
     "session_uuid": "...",
+    "session_status": "running",
+    "deleted_at": null,
     "default_model_id": "@cf/ibm-foundation/something-reasoning",
     "default_reasoning_effort": "high",
-    "model": { "...": "..." }
+    "effective_default_model_id": "@cf/ibm-foundation/something-reasoning",
+    "effective_default_reasoning_effort": "high",
+    "source": "session",
+    "last_turn": null
   },
   "trace_uuid": "..."
 }
@@ -209,8 +229,10 @@ session current-model control plane view（HP2 first wave）。
 | 400 | `model-unavailable` | model `status != active` |
 | 403 | `model-disabled` | team policy 拒绝 |
 | 404 | `not-found` | session 或 model 不存在 |
-| 409 | `session_terminal` / `session-expired` | session 已 ended |
+| 409 | `session_terminal` | session 已 ended |
+| 409 | `session-expired` | session 已过期 |
 | 409 | `conversation-deleted` | parent conversation 已 tombstone |
+| 503 | `worker-misconfigured` | `NANO_AGENT_DB` binding 缺失（部署配置错误） |
 
 ---
 

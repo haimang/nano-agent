@@ -82,11 +82,13 @@ Content-Type: application/json
 | 400 | `invalid-input` | `request_uuid` 非 UUID 或 `decision` 非法 |
 | 401 | `invalid-auth` | bearer 无效 |
 | 403 | `missing-team-claim` | JWT 缺 team truth |
-| 404 | `confirmation-not-found` | row 已被垃圾回收或从未创建 |
 | 409 | `confirmation-already-resolved` | 该 request_uuid 已被先前的 decision 终结（HP5 invariant） |
-| 503 | `internal-error` | upstream RPC 不可达 |
 
-> **新增 (HP5)**: `409 confirmation-already-resolved` 是统一 confirmation plane 的冲突 code；legacy 客户端遇到 409 应**视为最终态成功**，不要重试。
+> **HP5 row-first dual-write 行为说明**：facade 收到请求后**先**插入/更新 D1 confirmation row，**再** best-effort 触发 KV + RPC fallback。  
+> - row 之前不存在 → auto-create（**不**返回 404 `confirmation-not-found`，文档以前列出此 code 是误导，已移除）。  
+> - KV / RPC 失败 → silently log，不影响 200 响应（**不**返回 503 `internal-error`，因为 row 已写成，从客户端视角是终态成功）。  
+> - confirmation row 是 single source of truth；客户端可信任 200 响应代表 D1 已落地。  
+> - `409 confirmation-already-resolved` 是统一 confirmation plane 的冲突 code；legacy 客户端遇到 409 应**视为最终态成功**，不要重试。
 
 ---
 

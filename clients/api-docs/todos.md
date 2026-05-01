@@ -45,7 +45,7 @@ todo 是一个 **session-scoped** 的命名任务条目，按 5-status 状态机
 
 | 参数 | 类型 | 默认 | 说明 |
 |------|------|------|------|
-| `status` | enum (5) | (all) | 按 status 过滤 |
+| `status` | enum (5) \| `"any"` | (all) | 按 status 过滤；`any` 表示不过滤（与省略等效，仅作显式声明用） |
 
 ### Success (200)
 
@@ -119,8 +119,7 @@ todo 是一个 **session-scoped** 的命名任务条目，按 5-status 状态机
 
 | HTTP | code | 说明 |
 |------|------|------|
-| 400 | `invalid-input` | content 缺失或超长 |
-| 400 | `invalid-status` | status 不在 5-status enum |
+| 400 | `invalid-input` | content 缺失/超长，或 status 不在 5-status enum |
 | 404 | `not-found` | session 不存在 |
 | 409 | `in-progress-conflict` | session 已有 in_progress todo |
 | 409 | `conversation-deleted` | parent conversation 已 tombstone |
@@ -170,7 +169,7 @@ todo 是一个 **session-scoped** 的命名任务条目，按 5-status 状态机
 | HTTP | code | 说明 |
 |------|------|------|
 | 400 | `invalid-input` | status 非法或 content 不合法 |
-| 404 | `todo-not-found` | todo UUID 不存在 |
+| 404 | `not-found` | todo UUID 不存在 |
 | 409 | `in-progress-conflict` | 切到 in_progress 但已有其他 in_progress |
 
 ---
@@ -193,7 +192,7 @@ todo 是一个 **session-scoped** 的命名任务条目，按 5-status 状态机
 
 | HTTP | code | 说明 |
 |------|------|------|
-| 404 | `todo-not-found` | todo UUID 不存在 |
+| 404 | `not-found` | todo UUID 不存在 |
 
 ---
 
