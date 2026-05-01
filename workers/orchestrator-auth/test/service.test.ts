@@ -639,4 +639,49 @@ describe("AuthService", () => {
     expect(verified.data.key_id).toBe(legacyKey);
     expect(verified.data.team_uuid).toBe(register.data.team.team_uuid);
   });
+
+  // HPX3 F6 — closes the test gap flagged by part1 GLM W-AUTH-01:
+  // before this test, verifyToken's JWT path had no service-level
+  // assertion of the {valid:true, user, team, snapshot} shape. The
+  // verifyApiKey path was already covered above.
+  it("verifyToken returns AuthView + valid:true for a valid JWT access token", async () => {
+    const repo = new InMemoryAuthRepository();
+    const service = createService(repo);
+
+    const register = await service.register(
+      {
+        email: "verify-token@example.com",
+        password: "password-123",
+        display_name: "VT",
+        device_uuid: "11111111-1111-4111-8111-111111111111",
+        device_kind: "web",
+      },
+      META,
+    );
+    expect(register.ok).toBe(true);
+    if (!register.ok) return;
+
+    const verified = await service.verifyToken(
+      { access_token: register.data.tokens.access_token },
+      META,
+    );
+    expect(verified.ok).toBe(true);
+    if (!verified.ok) return;
+
+    expect(verified.data.valid).toBe(true);
+    expect(verified.data.user.user_uuid).toBe(register.data.user.user_uuid);
+    expect(verified.data.team.team_uuid).toBe(register.data.team.team_uuid);
+    expect(verified.data.team.membership_level).toBe(100);
+    expect(verified.data.snapshot.device_uuid).toMatch(UUID_RE);
+    expect(verified.data.snapshot.team_uuid).toBe(register.data.team.team_uuid);
+
+    const invalid = await service.verifyToken(
+      { access_token: "not.a.valid.jwt" },
+      META,
+    );
+    expect(invalid.ok).toBe(false);
+    if (!invalid.ok) {
+      expect(invalid.error.code).toBe("invalid-auth");
+    }
+  });
 });

@@ -36,6 +36,7 @@ import {
   parseSessionWorkspaceRoute,
   handleSessionToolCalls,
   handleSessionWorkspace,
+  ensureSessionOwnedOrError,
 } from "./hp-absorbed-routes.js";
 import { normalizeReasoningOptions, parseSessionModelPatchBody } from "./session-lifecycle.js";
 import { NanoOrchestratorUserDO } from "./user-do.js";
@@ -583,17 +584,17 @@ async function proxyAuthRoute(
         : { ...(body ?? {}), ...deviceMetadata };
 
   if (action === "revokeApiKey") {
+    const keyId = (body as { key_id?: unknown } | null)?.key_id;
+    if (typeof keyId !== "string" || !keyId.startsWith("nak_")) {
+      return jsonPolicyError(400, "invalid-input", "key_id must start with nak_", traceUuid);
+    }
     const auth = await authenticateRequest(request, env);
     if (!auth.ok) return auth.response;
     const teamUuid = auth.value.snapshot.team_uuid ?? auth.value.snapshot.tenant_uuid;
     if (!teamUuid) {
       return jsonPolicyError(403, "missing-team-claim", "team_uuid missing from auth snapshot", traceUuid);
     }
-    input = {
-      ...(body ?? {}),
-      team_uuid: teamUuid,
-      user_uuid: auth.value.user_uuid,
-    };
+    input = { ...(body ?? {}), team_uuid: teamUuid, user_uuid: auth.value.user_uuid };
   }
 
   const envelope =
@@ -1407,18 +1408,11 @@ async function handleSessionCheckpoint(
       );
     }
     if (confirmation.status !== "pending") {
-      return Response.json(
-        {
-          ok: false,
-          error: {
-            code: "confirmation-already-resolved",
-            status: 409,
-            message: "confirmation has already been resolved with a different status",
-          },
-          data: { confirmation },
-          trace_uuid: traceUuid,
-        },
-        { status: 409, headers: { "x-trace-uuid": traceUuid } },
+      return jsonPolicyError(
+        409,
+        "confirmation-already-resolved",
+        "confirmation has already been resolved with a different status",
+        traceUuid,
       );
     }
     try {
@@ -1640,18 +1634,11 @@ async function handleSessionConfirmation(
     return jsonPolicyError(404, "not-found", "confirmation not found", traceUuid);
   }
   if (result.conflict) {
-    return Response.json(
-      {
-        ok: false,
-        error: {
-          code: "confirmation-already-resolved",
-          status: 409,
-          message: "confirmation has already been resolved with a different status",
-        },
-        data: { confirmation: result.row },
-        trace_uuid: traceUuid,
-      },
-      { status: 409, headers: { "x-trace-uuid": traceUuid } },
+    return jsonPolicyError(
+      409,
+      "confirmation-already-resolved",
+      "confirmation has already been resolved with a different status",
+      traceUuid,
     );
   }
   return Response.json(
@@ -2500,6 +2487,15 @@ async function handleSessionContext(
   if (typeof teamUuid !== "string" || teamUuid.length === 0) {
     return jsonPolicyError(403, "missing-team-claim", "team_uuid missing from auth snapshot", traceUuid);
   }
+  // HPX3 F4 — facade-level session ownership gate (helper in hp-absorbed-routes).
+  const ownershipFail = await ensureSessionOwnedOrError(env, {
+    sessionUuid,
+    teamUuid,
+    userUuid: auth.value.user_uuid,
+    traceUuid,
+    jsonPolicyError,
+  });
+  if (ownershipFail) return ownershipFail;
   const ctx = (env as { CONTEXT_CORE?: ContextCoreRpcLike }).CONTEXT_CORE;
   if (!ctx) {
     return jsonPolicyError(

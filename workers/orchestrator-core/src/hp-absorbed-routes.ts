@@ -24,6 +24,42 @@ type AbsorbedRoutesEnv = {
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+// HPX3 F4 — facade-level session ownership gate, parity with confirmations
+// and checkpoints handlers. Returns a 404/409 Response when the session is
+// not owned by (teamUuid, userUuid) or is tombstoned; returns null when the
+// caller should proceed. Skips when no D1 binding is present (test fixtures).
+export async function ensureSessionOwnedOrError(
+  env: AbsorbedRoutesEnv,
+  args: {
+    sessionUuid: string;
+    teamUuid: string;
+    userUuid: string;
+    traceUuid: string;
+    jsonPolicyError: (
+      status: number,
+      code: string,
+      message: string,
+      traceUuid?: string,
+    ) => Response;
+  },
+): Promise<Response | null> {
+  const db = env.NANO_AGENT_DB;
+  if (!db) return null;
+  const repo = new D1SessionTruthRepository(db);
+  const session = await repo.readSessionLifecycle(args.sessionUuid);
+  if (
+    !session ||
+    session.team_uuid !== args.teamUuid ||
+    session.actor_user_uuid !== args.userUuid
+  ) {
+    return args.jsonPolicyError(404, "not-found", "session not found", args.traceUuid);
+  }
+  if (session.deleted_at) {
+    return args.jsonPolicyError(409, "conversation-deleted", "conversation is deleted", args.traceUuid);
+  }
+  return null;
+}
+
 export type SessionToolCallsRoute =
   | { kind: "list"; sessionUuid: string }
   | { kind: "cancel"; sessionUuid: string; toolCallId: string };
