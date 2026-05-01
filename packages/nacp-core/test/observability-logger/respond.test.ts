@@ -160,6 +160,12 @@ describe("attachServerTimings + buildFacadeServerTimings", () => {
     expect(out).toBe(base);
   });
 
+  it("[case 8b] informational responses pass through unchanged", () => {
+    const base = { status: 101 } as Response;
+    const out = attachServerTimings(base, [{ name: "total", durMs: 1 }]);
+    expect(out).toBe(base);
+  });
+
   it("[case 9] buildFacadeServerTimings omits absent segments", () => {
     const t1 = buildFacadeServerTimings({ totalMs: 100 });
     expect(t1.map((t) => t.name)).toEqual(["total"]);

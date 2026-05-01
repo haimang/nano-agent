@@ -148,6 +148,7 @@ function formatTiming(t: ServerTiming): string | null {
 export function attachServerTimings(response: Response, timings: ServerTiming[]): Response {
   const segments = timings.map(formatTiming).filter((s): s is string => s !== null);
   if (segments.length === 0) return response;
+  if (response.status < 200) return response;
 
   const headers = new Headers(response.headers);
   const existing = headers.get("Server-Timing");
