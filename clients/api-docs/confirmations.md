@@ -6,7 +6,7 @@
 > Profile: `facade-http-v1`
 > Auth: `Authorization: Bearer <access_token>`
 
-本文件覆盖 HP5 confirmation control plane：**统一收拢 permission / elicitation / 工具暂停 / checkpoint restore / model_switch 等所有需要用户确认的场景**。冻结依据 HPX-Q16 / Q17 / Q18。
+本文件覆盖 HP5 confirmation control plane。当前真实状态是：`tool_permission` 与 `elicitation` 已有 live caller；其余 5 种 kind 已 schema-frozen，并可通过统一 detail / decision / restore-gate surface 被读取或消费。
 
 ---
 
@@ -19,22 +19,21 @@ confirmation 的统一字段：
 | `confirmation_uuid` | UUID | row UUID（也是 request_uuid） |
 | `kind` | enum (7) | confirmation 类型 |
 | `status` | enum (6) | 当前状态 |
-| `created_at` / `updated_at` | ISO ts | |
-| `requested_by` | string | runtime origin (e.g. `tool.PreToolUse`，`compact.preview`) |
+| `created_at` / `decided_at` | ISO ts | |
 | `payload` | object | kind 专属 metadata |
-| `decision` | object \| null | 终态 decision metadata |
+| `decision_payload` | object \| null | 终态 decision metadata |
 
 ### 7 Kinds（HPX-Q18 frozen，不允许扩展）
 
 | kind | 说明 | live status |
 |------|------|-------------|
-| `permission` | 工具调用 permission（替代 legacy `/permission/decision`） | **live** dual-write 兼容 legacy 路径 |
+| `tool_permission` | 工具调用 permission（替代 legacy `/permission/decision`） | **live** dual-write 兼容 legacy 路径 |
 | `elicitation` | LLM 主动询问用户（替代 legacy `/elicitation/answer`） | **live** dual-write 兼容 legacy 路径 |
-| `tool_pause` | 工具显式暂停等待 | **registry-only**（emitter 侧 row-create 未接通；HP5 closure §2 P1） |
 | `model_switch` | 用户切换 model 时的二次确认 | **registry-only** |
-| `checkpoint_restore` | 触发 restore 前确认 | **registry-only**（HP7 restore executor 未 live） |
-| `fork` | session fork 前确认 | **registry-only**（HP7 fork executor 未 live） |
-| `compact_boundary` | manual compact 前的预览确认 | **registry-only** |
+| `context_compact` | manual compact / context shrink 前的确认 | **registry-only** |
+| `fallback_model` | fallback 前的人机确认 | **registry-only** |
+| `checkpoint_restore` | 触发 restore 前确认 | **restore gate live；emitter 仍待接通** |
+| `context_loss` | context loss / replay loss 之类破坏性提示确认 | **registry-only** |
 
 `registry-only` 表示：schema 已冻结、`POST .../decision` 路由可接受，但 emitter 侧不会主动创建 row（HP5 后续批次接 emitter caller）。
 
@@ -61,10 +60,7 @@ confirmation 的统一字段：
 
 | 参数 | 类型 | 默认 | 说明 |
 |------|------|------|------|
-| `status` | enum | (all) | 按 status 过滤；常用 `?status=pending` |
-| `kind` | enum | (all) | 按 kind 过滤 |
-| `limit` | number | 20 | |
-| `cursor` | string | null | |
+| `status` | enum | (all) | 按 status 过滤；支持 `any` |
 
 ### Success (200)
 
@@ -72,20 +68,33 @@ confirmation 的统一字段：
 {
   "ok": true,
   "data": {
+    "session_uuid": "...",
+    "conversation_uuid": "...",
     "confirmations": [
       {
         "confirmation_uuid": "...",
-        "kind": "permission",
+        "session_uuid": "...",
+        "kind": "tool_permission",
         "status": "pending",
         "created_at": "...",
-        "requested_by": "tool.PreToolUse",
         "payload": {
           "tool_name": "bash",
           "tool_input": { "command": "ls" }
-        }
+        },
+        "decision_payload": null,
+        "decided_at": null,
+        "expires_at": null
       }
     ],
-    "next_cursor": null
+    "known_kinds": [
+      "tool_permission",
+      "elicitation",
+      "model_switch",
+      "context_compact",
+      "fallback_model",
+      "checkpoint_restore",
+      "context_loss"
+    ]
   },
   "trace_uuid": "..."
 }
@@ -103,17 +112,20 @@ confirmation 的统一字段：
 {
   "ok": true,
   "data": {
-    "confirmation_uuid": "...",
-    "kind": "elicitation",
-    "status": "pending",
-    "created_at": "...",
-    "updated_at": "...",
-    "requested_by": "llm.elicitation",
-    "payload": {
-      "question": "Which library should I use?",
-      "suggested_answers": ["pandas", "polars"]
-    },
-    "decision": null
+    "session_uuid": "...",
+    "conversation_uuid": "...",
+    "confirmation": {
+      "confirmation_uuid": "...",
+      "kind": "elicitation",
+      "status": "pending",
+      "created_at": "...",
+      "decided_at": null,
+      "payload": {
+        "question": "Which library should I use?",
+        "suggested_answers": ["pandas", "polars"]
+      },
+      "decision_payload": null
+    }
   },
   "trace_uuid": "..."
 }
@@ -129,19 +141,15 @@ confirmation 的统一字段：
 
 ```json
 {
-  "decision": "allowed",
-  "scope": "once",
-  "reason": "user approved",
-  "payload": { "answer": "pandas" }
+  "status": "modified",
+  "decision_payload": { "answer": "pandas" }
 }
 ```
 
 | 字段 | 必填 | 类型 | 说明 |
 |------|------|------|------|
-| `decision` | ✅ | `"allowed" \| "denied" \| "modified" \| "always_allow" \| "always_deny"` | 用户决定 |
-| `scope` | no | string | 默认 `"once"`；`"always_allow"` / `"always_deny"` 时通常带 `"forever"` |
-| `reason` | no | string | 用户原因（透传到 row `decision_meta`） |
-| `payload` | no | object | kind 专属 decision payload（如 elicitation answer） |
+| `status` | ✅ | `allowed \| denied \| modified \| timeout \| superseded` | 写入 confirmation 终态 |
+| `decision_payload` | no | object | kind 专属 decision payload（如 elicitation answer） |
 
 ### Success (200)
 
@@ -149,10 +157,14 @@ confirmation 的统一字段：
 {
   "ok": true,
   "data": {
-    "confirmation_uuid": "...",
-    "kind": "elicitation",
-    "status": "modified",
-    "decision": { "decision": "modified", "payload": { "answer": "pandas" } }
+    "session_uuid": "...",
+    "conversation_uuid": "...",
+    "confirmation": {
+      "confirmation_uuid": "...",
+      "kind": "elicitation",
+      "status": "modified",
+      "decision_payload": { "answer": "pandas" }
+    }
   },
   "trace_uuid": "..."
 }
@@ -162,8 +174,8 @@ confirmation 的统一字段：
 
 | HTTP | code | 说明 |
 |------|------|------|
-| 400 | `invalid-input` | decision 不在 enum 内 |
-| 404 | `confirmation-not-found` | UUID 不存在 |
+| 400 | `invalid-input` | status 不在 enum 内，或 `decision_payload` 不是 object |
+| 404 | `not-found` | confirmation UUID 不存在 |
 | **409** | **`confirmation-already-resolved`** | row 已是终态；视为最终态成功，**不要重试**（Q16 invariant） |
 | 503 | `internal-error` | upstream RPC 不可达 |
 
@@ -171,12 +183,12 @@ confirmation 的统一字段：
 
 ## 5. WebSocket Frames
 
-详见 [`session-ws-v1.md`](./session-ws-v1.md)。HP5 已 live 的 server→client 帧：
+详见 [`session-ws-v1.md`](./session-ws-v1.md)。当前这些帧是 **schema registered / emitter pending**：
 
 | frame | 时机 |
 |-------|------|
-| `session.confirmation.request` | row create 时；推送给 attached client，附带 `confirmation_uuid / kind / payload` |
-| `session.confirmation.update` | row decision 写入或 status 变化时 |
+| `session.confirmation.request` | confirmation row 创建时的目标帧形状 |
+| `session.confirmation.update` | confirmation row 变化时的目标帧形状 |
 
 > client → server 没有对应的 confirmation 输入帧；提交 decision **必须**用 HTTP `POST .../decision`。这是 HPX-Q18 frozen direction matrix。
 
@@ -188,9 +200,9 @@ confirmation 的统一字段：
 
 | 现在 (legacy) | 推荐 (HP5 unified) |
 |---------------|-------------------|
-| `POST /permission/decision { request_uuid, decision: "allow" }` | `POST /confirmations/{uuid}/decision { decision: "allowed" }` |
-| `POST /elicitation/answer { request_uuid, answer }` | `POST /confirmations/{uuid}/decision { decision: "modified", payload: { answer } }` |
-| `session.permission.request` WS frame | `session.confirmation.request{kind: "permission"}` |
+| `POST /permission/decision { request_uuid, decision: "allow" }` | `POST /confirmations/{uuid}/decision { status: "allowed" }` |
+| `POST /elicitation/answer { request_uuid, answer }` | `POST /confirmations/{uuid}/decision { status: "modified", decision_payload: { answer } }` |
+| `session.permission.request` WS frame | `session.confirmation.request{confirmation_kind: "tool_permission"}` |
 | `session.elicitation.request` WS frame | `session.confirmation.request{kind: "elicitation"}` |
 
 ---

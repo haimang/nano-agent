@@ -153,6 +153,8 @@
 | `GET` | `/sessions/{id}/history` | bearer | legacy | durable message history |
 | `POST` | `/sessions/{id}/verify` | bearer | legacy | preview verification harness |
 | `POST` | `/sessions/{id}/resume` | bearer | facade | HTTP replay ack |
+| `POST` | `/sessions/{id}/retry` | bearer | legacy | absorbed first-wave retry ack |
+| `POST` | `/sessions/{id}/fork` | bearer | legacy `202` | absorbed first-wave fork ack |
 | `GET` | `/sessions/{id}/usage` | bearer | facade | usage snapshot |
 
 ### Context
@@ -178,6 +180,12 @@
 | `GET` | `/sessions/{id}/files` | bearer | facade | list artifacts |
 | `POST` | `/sessions/{id}/files` | bearer | facade `201` | multipart upload artifact |
 | `GET` | `/sessions/{id}/files/{fileUuid}/content` | bearer | binary | read artifact bytes |
+| `GET` | `/sessions/{id}/workspace/files` | bearer | facade | list workspace metadata |
+| `GET` | `/sessions/{id}/workspace/files/{*path}` | bearer | facade | read workspace metadata + canonical R2 key |
+| `PUT`/`POST` | `/sessions/{id}/workspace/files/{*path}` | bearer | facade | upsert workspace metadata |
+| `DELETE` | `/sessions/{id}/workspace/files/{*path}` | bearer | facade | delete workspace metadata |
+| `GET` | `/sessions/{id}/tool-calls` | bearer | facade | first-wave tool-call list |
+| `POST` | `/sessions/{id}/tool-calls/{request_uuid}/cancel` | bearer | facade `202` | first-wave cancel ack |
 
 ### Checkpoints
 
@@ -188,6 +196,7 @@
 | `GET` | `/sessions/{id}/checkpoints` | bearer | facade | list 产品级 checkpoint registry |
 | `POST` | `/sessions/{id}/checkpoints` | bearer | facade `201` | 创建 `user_named` checkpoint |
 | `GET` | `/sessions/{id}/checkpoints/{checkpoint_uuid}/diff` | bearer | facade | 读 checkpoint 对当前 ledger 的 diff |
+| `POST` | `/sessions/{id}/checkpoints/{checkpoint_uuid}/restore` | bearer | facade `202` | 打开 restore job（executor 未 live） |
 
 ### Todos
 

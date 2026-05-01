@@ -6,7 +6,7 @@
 > Profile: `facade-http-v1` + `binary-content`
 > Auth: `Authorization: Bearer <access_token>`
 
-本文件覆盖：（a）HP4 之前已 live 的 **artifact** CRUD（`/sessions/{id}/files`）；（b）HP6 已冻结的 **workspace temp file** 路径法律 + D1 truth；（c）HP9 frozen 阶段尚未开放的 **workspace public CRUD** 路由。
+本文件覆盖：（a）HP4 之前已 live 的 **artifact** CRUD（`/sessions/{id}/files`）；（b）HP6 已冻结的 **workspace temp file** 路径法律 + D1 truth；（c）当前已经接通、但仍是 first-wave 的 **workspace public CRUD** 与 **tool-calls** 路由。
 
 ---
 
@@ -15,8 +15,8 @@
 | 概念 | 持久化 | 用例 | 状态 |
 |------|--------|------|------|
 | **artifact** | R2 + D1 metadata | 用户上传的图片 / 文件，`/messages` 里通过 `artifact_ref` 引用 | **live** |
-| **workspace temp file** | R2 + D1 + virtual_path | LLM 通过 tool 创建 / 修改的中间文件（如 patch 输出、scratch code） | **D1 truth + path law live；public CRUD route 未 live** |
-| **workspace snapshot** | R2 (lineage) | checkpoint restore 用的 file snapshot | HP7 substrate；executor 未 live（详见 [`checkpoints.md`](./checkpoints.md)） |
+| **workspace temp file** | R2 + D1 + virtual_path | LLM 通过 tool 创建 / 修改的中间文件（如 patch 输出、scratch code） | **D1 truth + path law live；public CRUD 是 metadata-first first wave** |
+| **workspace snapshot** | R2 (lineage) | checkpoint restore 用的 file snapshot | HP7 substrate；restore executor 未 live（详见 [`checkpoints.md`](./checkpoints.md)） |
 
 ---
 
@@ -26,11 +26,11 @@
 
 ```text
 tenants/{team_uuid}/sessions/{session_uuid}/workspace/{normalized_virtual_path}
-tenants/{team_uuid}/sessions/{session_uuid}/checkpoints/{checkpoint_uuid}/snapshot/{normalized_virtual_path}
+tenants/{team_uuid}/sessions/{session_uuid}/snapshots/{checkpoint_uuid}/{normalized_virtual_path}
 tenants/{team_uuid}/sessions/{forked_session_uuid}/workspace/{normalized_virtual_path}  # fork
 ```
 
-由 `buildWorkspaceR2Key()` / `buildCheckpointSnapshotR2Key()` / `buildForkWorkspaceR2Key()` 生成（实现于 `workers/orchestrator-core/src/workspace-control-plane.ts` 与 `workers/orchestrator-core/src/checkpoint-restore-plane.ts`）。
+由 `buildWorkspaceR2Key()` / `buildCheckpointSnapshotR2Key()` / `buildForkWorkspaceR2Key()` 生成；filesystem-core leaf RPC 现在也镜像同一条路径律。
 
 ---
 
@@ -120,7 +120,7 @@ Success (`201`):
 
 ---
 
-## 5. Workspace Temp File — D1 Truth Live, Public CRUD Not Yet
+## 5. Workspace Temp File — Metadata-First First Wave
 
 HP6 frozen 状态：
 
@@ -128,12 +128,23 @@ HP6 frozen 状态：
 |----|-----------|------|
 | D1 `nano_session_temp_files` 真相表 | ✅ live | `D1WorkspaceControlPlane` (`workers/orchestrator-core/src/workspace-control-plane.ts`) 提供 list / upsert / delete + `UNIQUE(session, virtual_path)` + `content_hash` |
 | R2 key law | ✅ live | `buildWorkspaceR2Key()` |
-| filesystem-core temp-file RPC | ❌ not-live | `readTempFile / writeTempFile / listTempFiles / deleteTempFile` 等 leaf RPC 未实现（HP6 closure §2 P1） |
-| 公共 CRUD 路由 `/sessions/{id}/workspace/files/{*path}` | ❌ not-live | 未注册（HP6 closure §2 P2） |
-| `/sessions/{id}/tool-calls` list/cancel 路由 | ❌ not-live | 未注册（HP6 closure §2 P3） |
-| artifact promotion / cleanup cron | ❌ not-live | HP6 closure §2 P4/P5 |
+| filesystem-core temp-file RPC | ✅ live | `readTempFile / writeTempFile / listTempFiles / deleteTempFile` 已实现，并与 orchestrator path law 对齐 |
+| 公共 CRUD 路由 `/sessions/{id}/workspace/files/{*path}` | ✅ first-wave | 已注册；当前以 metadata + canonical `r2_key` 为主，`GET` 的 `content_source` 仍标 `filesystem-core-leaf-rpc-pending` |
+| `/sessions/{id}/tool-calls` list/cancel 路由 | ✅ first-wave | 已注册；`GET` 当前返回 `source: "ws-stream-only-first-wave"`，`POST cancel` 返回 `202` ack |
+| artifact promotion / cleanup cron | ⏳ partial | promotion / cleanup 仍未全量闭环 |
 
-> **客户端规划**：当前 HP9 frozen pack 不允许客户端通过 HTTP 直接读写 workspace temp file；这层是 LLM tool 的内部接线（`workers/agent-core/src/host/workspace-runtime.ts`）。HP6 后续批次会暴露 `/sessions/{id}/workspace/files/{*path}` 给 client。
+### Public route behavior
+
+| Method | Path | 当前行为 |
+|--------|------|----------|
+| `GET` | `/sessions/{id}/workspace/files` | 列 metadata list，支持 `?prefix=` |
+| `GET` | `/sessions/{id}/workspace/files/{*path}` | 读单个 metadata row + canonical `r2_key` |
+| `PUT` / `POST` | `/sessions/{id}/workspace/files/{*path}` | upsert metadata row；返回 `stored: true` |
+| `DELETE` | `/sessions/{id}/workspace/files/{*path}` | 删除 metadata row |
+| `GET` | `/sessions/{id}/tool-calls` | first-wave list；当前只给空数组/来源标记 |
+| `POST` | `/sessions/{id}/tool-calls/{request_uuid}/cancel` | `202` cancel ack |
+
+> 当前 client 可以访问这些 HTTP 路由，但要把它们视为 **metadata/control plane first wave**，不要假设完整 bytes delivery、tool execution ledger 或 promotion cleanup 已经全部闭环。
 
 ---
 

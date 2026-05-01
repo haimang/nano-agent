@@ -46,8 +46,6 @@ todo 是一个 **session-scoped** 的命名任务条目，按 5-status 状态机
 | 参数 | 类型 | 默认 | 说明 |
 |------|------|------|------|
 | `status` | enum (5) | (all) | 按 status 过滤 |
-| `limit` | number | 50 | |
-| `cursor` | string | null | |
 
 ### Success (200)
 
@@ -55,17 +53,22 @@ todo 是一个 **session-scoped** 的命名任务条目，按 5-status 状态机
 {
   "ok": true,
   "data": {
+    "session_uuid": "...",
+    "conversation_uuid": "...",
     "todos": [
       {
         "todo_uuid": "...",
         "session_uuid": "...",
+        "conversation_uuid": "...",
+        "team_uuid": "...",
+        "parent_todo_uuid": null,
         "content": "implement HP9 docs",
         "status": "in_progress",
         "created_at": "...",
-        "updated_at": "..."
+        "updated_at": "...",
+        "completed_at": null
       }
-    ],
-    "next_cursor": null
+    ]
   },
   "trace_uuid": "..."
 }
@@ -80,14 +83,16 @@ todo 是一个 **session-scoped** 的命名任务条目，按 5-status 状态机
 ```json
 {
   "content": "implement HP9 docs",
-  "status": "pending"
+  "status": "pending",
+  "parent_todo_uuid": null
 }
 ```
 
 | 字段 | 必填 | 类型 | 说明 |
 |------|------|------|------|
-| `content` | ✅ | string ≤ 500 | todo 描述 |
+| `content` | ✅ | string ≤ 2000 | todo 描述 |
 | `status` | no | enum (5) | 默认 `"pending"`；如设 `"in_progress"` 须满足 at-most-1 invariant |
+| `parent_todo_uuid` | no | UUID \| null | 可选父 todo |
 
 ### Success (201)
 
@@ -95,11 +100,16 @@ todo 是一个 **session-scoped** 的命名任务条目，按 5-status 状态机
 {
   "ok": true,
   "data": {
-    "todo_uuid": "...",
     "session_uuid": "...",
-    "content": "implement HP9 docs",
-    "status": "pending",
-    "created_at": "..."
+    "conversation_uuid": "...",
+    "todo": {
+      "todo_uuid": "...",
+      "session_uuid": "...",
+      "content": "implement HP9 docs",
+      "status": "pending",
+      "parent_todo_uuid": null,
+      "created_at": "..."
+    }
   },
   "trace_uuid": "..."
 }
@@ -111,7 +121,7 @@ todo 是一个 **session-scoped** 的命名任务条目，按 5-status 状态机
 |------|------|------|
 | 400 | `invalid-input` | content 缺失或超长 |
 | 400 | `invalid-status` | status 不在 5-status enum |
-| 404 | `session-not-found` | session 不存在 |
+| 404 | `not-found` | session 不存在 |
 | 409 | `in-progress-conflict` | session 已有 in_progress todo |
 | 409 | `conversation-deleted` | parent conversation 已 tombstone |
 
@@ -143,9 +153,13 @@ todo 是一个 **session-scoped** 的命名任务条目，按 5-status 状态机
 {
   "ok": true,
   "data": {
-    "todo_uuid": "...",
-    "status": "completed",
-    "updated_at": "..."
+    "session_uuid": "...",
+    "conversation_uuid": "...",
+    "todo": {
+      "todo_uuid": "...",
+      "status": "completed",
+      "updated_at": "..."
+    }
   },
   "trace_uuid": "..."
 }
@@ -155,7 +169,7 @@ todo 是一个 **session-scoped** 的命名任务条目，按 5-status 状态机
 
 | HTTP | code | 说明 |
 |------|------|------|
-| 400 | `invalid-status` | status 非法 |
+| 400 | `invalid-input` | status 非法或 content 不合法 |
 | 404 | `todo-not-found` | todo UUID 不存在 |
 | 409 | `in-progress-conflict` | 切到 in_progress 但已有其他 in_progress |
 
@@ -170,7 +184,7 @@ todo 是一个 **session-scoped** 的命名任务条目，按 5-status 状态机
 ```json
 {
   "ok": true,
-  "data": { "todo_uuid": "...", "deleted": true },
+  "data": { "session_uuid": "...", "conversation_uuid": "...", "todo_uuid": "...", "deleted": true },
   "trace_uuid": "..."
 }
 ```
@@ -185,12 +199,12 @@ todo 是一个 **session-scoped** 的命名任务条目，按 5-status 状态机
 
 ## 7. WebSocket Frames
 
-详见 [`session-ws-v1.md`](./session-ws-v1.md)。HP6 注册的 todo 帧族：
+详见 [`session-ws-v1.md`](./session-ws-v1.md)。这些 todo 帧当前是 **schema registered / emitter pending**：
 
 | frame | 方向 | 时机 |
 |-------|------|------|
-| `session.todos.write` | server → client | row create 时推送 |
-| `session.todos.update` | server → client | row update / delete 时推送 |
+| `session.todos.write` | schema registered | todo 写入命令的目标形状 |
+| `session.todos.update` | schema registered | authoritative todo 更新的目标形状 |
 
 ---
 

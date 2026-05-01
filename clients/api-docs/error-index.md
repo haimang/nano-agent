@@ -101,7 +101,7 @@ The following are emitted by current routes. They are not part of `FacadeErrorCo
 | `no-attached-client` | 409 | preview-only `/sessions/{id}/verify` spike check | attach a websocket client before retrying |
 | `conversation-deleted` | 409 | checkpoint routes, `/sessions/{id}/model` | parent conversation already soft-deleted; refresh conversation list |
 | `confirmation-already-resolved` | 409 | `/sessions/{id}/confirmations/{uuid}/decision`，legacy `/permission/decision`，legacy `/elicitation/answer` | confirmation row 已终结；视为最终态成功，不要重试（HP5） |
-| `confirmation-not-found` | 404 | confirmation routes，legacy permission/elicitation | confirmation row 不存在或已 GC |
+| `not-found` | 404 | confirmation/checkpoint/model/session detail routes | 指定 UUID / id / alias 不存在 |
 | `todo-not-found` | 404 | `/sessions/{id}/todos/{uuid}` PATCH/DELETE | todo row 不存在 |
 | `invalid-status` | 400 | `/sessions/{id}/todos/{uuid}` PATCH | todo status 不在 5-status enum |
 | `in-progress-conflict` | 409 | `/sessions/{id}/todos/{uuid}` PATCH | session 已有 in_progress todo（at-most-1 invariant） |
@@ -215,7 +215,7 @@ Legacy note:
 3. `/debug/packages` returns a `drift_direction` field per published package (`aligned` / `workspace_ahead` / `workspace_behind` / `workspace_not_published` / `registry_unreachable`).
 4. **HP5 row-first dual-write law (Q16)**: confirmation rows never enter `failed` state from dual-write failures—they escalate to `superseded`. Clients receiving `409 confirmation-already-resolved` should treat it as a terminal success and stop retrying.
 5. **HP6 todo at-most-1 invariant (Q19)**: `/sessions/{id}/todos/{uuid}` PATCH returning `409 in-progress-conflict` means another todo is already `in_progress`; client should refresh todo list before retrying.
-6. **HP7 restore/fork** (preparation surface only in HP9 frozen pack): the restore/fork executors are HP7 后续批次 / hero-to-platform territory; the `/checkpoints/{uuid}/restore` and `/sessions/{id}/fork` public routes are not yet live. Clients should not assume them.
+6. **HP7 restore/fork**: `POST /sessions/{id}/checkpoints/{uuid}/restore` 已能打开 `pending` restore job，但 restore executor 还未 live；`POST /sessions/{id}/fork` 目前只返回 `fork_status=pending-executor` 的 first-wave ack。客户端不应把这两条路由视为“已完成实际 restore/fork”。
 
 ## Recommended Client Classifier
 

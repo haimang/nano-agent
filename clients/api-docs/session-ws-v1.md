@@ -4,7 +4,7 @@
 > Implementation reference: `packages/nacp-session/src/stream-event.ts`，`packages/nacp-session/src/messages.ts`，`workers/orchestrator-core/src/index.ts` (WS handshake)
 > Wire format: lightweight JSON `{kind, ...}` frames
 >
-> 注意：outer WS frame `kind` 与 `event.payload.kind` 是两层枚举。outer 表示 transport-level frame type；payload.kind 表示 stream event 的语义子类型（HP6/HP7/HP8 已扩展到 12 kinds）。
+> 注意：outer WS frame `kind` 与 `event.payload.kind` 是两层枚举。outer 表示 transport-level frame type；payload.kind 表示 stream event 的语义子类型（当前 canonical catalog 为 13 kinds）。
 
 ---
 
@@ -48,7 +48,7 @@ wss://<base>/sessions/{sessionUuid}/ws?access_token=<jwt>&trace_uuid=<uuid>&last
 
 `seq` 单调递增；reconnect 时客户端用 `last_seen_seq` 让 server 回放未确认 frame。
 
-### 3.2 Stream Event Kinds（12-kind catalog，hero-to-pro frozen）
+### 3.2 Stream Event Kinds（13-kind catalog）
 
 | payload.kind | shape | 引入阶段 | client 行为 |
 |--------------|-------|----------|-------------|
@@ -62,19 +62,20 @@ wss://<base>/sessions/{sessionUuid}/ws?access_token=<jwt>&trace_uuid=<uuid>&last
 | `turn.end` | `{turn_uuid, usage?}` | RHX2 | turn 结束 |
 | `compact.notify` | `{status, tokens_before?, tokens_after?}` | HP3 | compact 通知（`started/completed/failed`） |
 | `session.fork.created` | `{parent_session_uuid, child_session_uuid, conversation_uuid, from_checkpoint_uuid, restore_job_uuid}` | **HP7** | fork 建立通知（schema live；executor 未 live） |
+| `model.fallback` | `{requested_model_id?, effective_model_id, fallback_reason?}` | **HP2** | schema live；当前 emitter 仍未接通 |
 | `system.notify` | `{severity, message, code?, trace_uuid?}` | RHX2 | 通用通知 |
 | `system.error` | `{error:{code,category,message,detail?,retryable}, source_worker?, trace_uuid?}` | RHX2 | 结构化 runtime error |
 
 `system.error` 是结构化 runtime error frame，client 应配合 [`error-index.md`](./error-index.md) 决定 retry / report UX。
 
-### 3.3 Confirmation Frame Family（HP5 frozen，server-only）
+### 3.3 Confirmation Frame Family（HP5 schema frozen，emitter pending）
 
 ```json
 {
   "kind": "session.confirmation.request",
   "confirmation_uuid": "...",
   "session_uuid": "...",
-  "confirmation_kind": "permission",
+  "confirmation_kind": "tool_permission",
   "payload": { "tool_name": "bash", "tool_input": { "...": "..." } },
   "created_at": "..."
 }
@@ -86,21 +87,21 @@ wss://<base>/sessions/{sessionUuid}/ws?access_token=<jwt>&trace_uuid=<uuid>&last
   "confirmation_uuid": "...",
   "session_uuid": "...",
   "status": "allowed",
-  "decision": { "scope": "once", "reason": "user approved" },
-  "updated_at": "..."
+  "decision_payload": { "scope": "once", "reason": "user approved" },
+  "decided_at": "..."
 }
 ```
 
 | Frame | 方向 | 用途 |
 |-------|------|------|
-| `session.confirmation.request` | server → client | confirmation row 创建时 |
-| `session.confirmation.update` | server → client | confirmation row 状态变化时 |
+| `session.confirmation.request` | schema registered | confirmation row 创建时的目标帧形状 |
+| `session.confirmation.update` | schema registered | confirmation row 状态变化时的目标帧形状 |
 
-> **HPX-Q18 frozen direction matrix**：confirmation frames 是 **server-only**。客户端不能 push confirmation 到 server，必须用 HTTP `POST /sessions/{id}/confirmations/{uuid}/decision`。
+> **当前实现状态**：confirmation 统一 HTTP plane 已 live，但这两个 WS frame 还没有在 orchestrator runtime 真实 emit。客户端不能依赖它们；提交 decision 仍必须用 HTTP `POST /sessions/{id}/confirmations/{uuid}/decision`。
 
 详见 [`confirmations.md`](./confirmations.md)（含 7-kind readiness matrix）。
 
-### 3.4 Todo Frame Family（HP6 frozen，server-only）
+### 3.4 Todo Frame Family（HP6 schema frozen，emitter pending）
 
 ```json
 {
@@ -125,10 +126,10 @@ wss://<base>/sessions/{sessionUuid}/ws?access_token=<jwt>&trace_uuid=<uuid>&last
 
 | Frame | 方向 | 用途 |
 |-------|------|------|
-| `session.todos.write` | server → client | todo row 创建时 |
-| `session.todos.update` | server → client | todo row 修改 / 删除时 |
+| `session.todos.write` | schema registered | todo 写入命令的目标形状 |
+| `session.todos.update` | schema registered | authoritative todo 更新的目标形状 |
 
-详见 [`todos.md`](./todos.md)。
+> **当前实现状态**：todo HTTP control plane 已 live，但 WS todo 帧还没有真实 emitter。详见 [`todos.md`](./todos.md)。
 
 ### 3.5 `session.heartbeat`
 
@@ -256,5 +257,5 @@ direction matrix（哪些 frame kind 允许 server→client / client→server）
 |------|------|------|
 | client → server permission/elicitation/confirmation reply via WS | **not supported by design** | HTTP routes（详见 §4 备注） |
 | `session.usage.update` server frame | **live** | (见 §3.8) |
-| `model.fallback` stream event | **not-started**（HP2 后续批次） | 暂无 |
+| `model.fallback` stream event | **schema live, emitter not-live** | 暂无 |
 | 自动 fork executor + `session.fork.created` 实际触发 | **schema live, executor not-live**（HP7 后续批次） | 暂无 |

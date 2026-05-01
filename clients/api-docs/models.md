@@ -60,8 +60,7 @@ If-None-Match: "<etag>"
         "capabilities": {
           "reasoning": false,
           "vision": false,
-          "function_calling": true,
-          "tool_use": true
+          "function_calling": true
         },
         "supported_reasoning_levels": [],
         "default_reasoning_effort": null,
@@ -105,7 +104,7 @@ If-None-Match: "<etag>"
     "display_name": "Granite 4.0 H Micro",
     "context_window": 131072,
     "auto_compact_token_limit": 110000,
-    "capabilities": { "reasoning": false, "vision": false, "function_calling": true, "tool_use": true },
+    "capabilities": { "reasoning": false, "vision": false, "function_calling": true },
     "supported_reasoning_levels": [],
     "default_reasoning_effort": null,
     "status": "active",
@@ -158,7 +157,7 @@ session current-model control plane view（HP2 first wave）。
 
 | HTTP | code | 说明 |
 |------|------|------|
-| 404 | `session-not-found` | session 不存在 |
+| 404 | `not-found` | session 不存在 |
 | 409 | `session_terminal` | session 已 ended/expired |
 
 ---
@@ -209,7 +208,7 @@ session current-model control plane view（HP2 first wave）。
 | 400 | `invalid-input` | body 不匹配 |
 | 400 | `model-unavailable` | model `status != active` |
 | 403 | `model-disabled` | team policy 拒绝 |
-| 404 | `session-not-found` / `not-found` | session 或 model 不存在 |
+| 404 | `not-found` | session 或 model 不存在 |
 | 409 | `session_terminal` / `session-expired` | session 已 ended |
 | 409 | `conversation-deleted` | parent conversation 已 tombstone |
 
@@ -235,7 +234,7 @@ session current-model control plane view（HP2 first wave）。
 | 能力 | 状态 | 承接 |
 |------|------|------|
 | `<model_switch>` developer message 注入 | not-started | HP2 后续批次 |
-| `model.fallback` stream event | not-started | HP2 后续批次 |
+| `model.fallback` stream event | schema-live / emitter-not-live | HP2 后续批次 |
 | 跨 turn fallback chain | out-of-scope (Q8 frozen single-step) | n/a |
 
 详见 [`session-ws-v1.md`](./session-ws-v1.md) Stream Events readiness。
