@@ -2,7 +2,7 @@
 // DO NOT EDIT BY HAND.
 
 export const NANO_PACKAGE_MANIFEST = {
-  "build_at": "2026-04-30T01:37:05.796Z",
+  "build_at": "2026-05-01T02:06:47.767Z",
   "packages": [
     {
       "name": "@haimang/nacp-core",
@@ -10,7 +10,7 @@ export const NANO_PACKAGE_MANIFEST = {
       "registry_version": "1.6.0",
       "registry_latest_version": "1.6.0",
       "registry_published_at": "2026-04-30T01:03:33Z",
-      "dist_sha256": "e4674411b03a240af22ffcec303021c8cf4a46b5b9445c8204b0be086d943390",
+      "dist_sha256": "a642f479fc801fab0a08b0a8b76d920f08d76094d1bbeffe9649967e0865b9ee",
       "resolved_from": "registry",
       "match": true
     },
@@ -20,7 +20,7 @@ export const NANO_PACKAGE_MANIFEST = {
       "registry_version": "1.4.0",
       "registry_latest_version": "1.4.0",
       "registry_published_at": "2026-04-29T14:10:02Z",
-      "dist_sha256": "1d229c564164575a3ad33456fd5917c2fca4344304297488bb13829a2c6a7490",
+      "dist_sha256": "4ee38ff6770fee62151c3b720fda8a88c3054dca2c085accf0fb588b2ce7256f",
       "resolved_from": "registry",
       "match": true
     },
