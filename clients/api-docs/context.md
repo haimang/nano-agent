@@ -13,7 +13,7 @@
 
 | Method | Path | 说明 |
 |--------|------|------|
-| `GET` | `/sessions/{id}/context` | legacy alias of `probe` |
+| `GET` | `/sessions/{id}/context` | 完整 context snapshot（≠ `probe`，调用 `getContextSnapshot` RPC） |
 | `GET` | `/sessions/{id}/context/probe` | budget / token usage 探测 |
 | `GET` | `/sessions/{id}/context/layers` | 已组装的 context layer 预览 |
 | `POST` | `/sessions/{id}/context/snapshot` | 持久化 manual context snapshot |
@@ -94,6 +94,8 @@
 
 返回 `{ snapshot_uuid, created_at }`。
 
+> **Body 字段当前 ignored**：HP9 frozen 阶段 façade 层 (`workers/orchestrator-core/src/index.ts:2549-2580`) 不读取 request body —— `label` 等字段实际由 server 端默认值生成，client 传入无效。后续若把 `label` 透传到 context-core，会更新本节并补 façade 层 body 校验。
+
 ---
 
 ## 5. POST `/sessions/{id}/context/compact/preview`
@@ -103,6 +105,8 @@
 ```json
 { "force": false }
 ```
+
+> **Body 字段当前 ignored**：HP9 frozen 阶段 façade 层不读取 request body，`force` 由 server 决定。client 传入将被静默丢弃。
 
 Response:
 
@@ -132,6 +136,8 @@ Response:
 ```json
 { "force": false, "preview_uuid": null }
 ```
+
+> **Body 字段当前 ignored**：HP9 frozen 阶段 façade 层不读取 request body，`force`/`preview_uuid` 由 server 决定。client 传入将被静默丢弃。
 
 Response:
 

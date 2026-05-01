@@ -3,7 +3,7 @@
 > Public facade owner: `orchestrator-core`
 > Profile: `facade-http-v1`
 > Registry: `catalog-content.ts` 静态加载的 11 entries（4 skills / 5 commands / 2 agents）
-> Auth: optional；当前 route 不读取 bearer，未传也会成功。
+> Auth: none；当前 route 完全不读取 `Authorization` 头，传任何 Bearer 都会被静默丢弃。后续若引入 plan-aware filter 再回写为 `optional bearer`。
 
 ---
 
@@ -11,9 +11,9 @@
 
 | Route | Method | Auth |
 |-------|--------|------|
-| `/catalog/skills` | `GET` | optional bearer |
-| `/catalog/commands` | `GET` | optional bearer |
-| `/catalog/agents` | `GET` | optional bearer |
+| `/catalog/skills` | `GET` | none |
+| `/catalog/commands` | `GET` | none |
+| `/catalog/agents` | `GET` | none |
 
 ---
 
