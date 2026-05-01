@@ -1,4 +1,4 @@
-# WeChat Auth API — RHX2 Phase 6 Snapshot
+# WeChat Auth API — hero-to-pro Frozen Pack
 
 > Public facade owner: `orchestrator-core`
 > Profile: `facade-http-v1`

@@ -1,4 +1,4 @@
-# Health and Debug API — RHX2 Phase 6 Snapshot
+# Health and Debug API — hero-to-pro Frozen Pack
 
 > Health route uses raw debug JSON.
 > RHX2 debug routes use `facade-http-v1` and require bearer auth except worker health.

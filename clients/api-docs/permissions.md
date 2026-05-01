@@ -1,38 +1,45 @@
-# Permissions API — RHX2 Phase 6 Snapshot
+# Permissions / Elicitation Legacy Compat Surface
 
 > Public facade owner: `orchestrator-core`
+> Implementation reference: `workers/orchestrator-core/src/user-do/surface-runtime.ts:59-115` (`ensureConfirmationDecision`, `handlePermissionDecision`, `handleElicitationAnswer`), `workers/orchestrator-core/src/index.ts:1404-1536` (confirmation routes)
 > Profile: `facade-http-v1`
 > Auth: `Authorization: Bearer <access_token>`
-> Tenant guard: JWT 必须含 `team_uuid` / `tenant_uuid`；route 目前不校验 session 是否存在。
+>
+> **HP5 法律重申**：以下三条路由是 **legacy compatibility surface**，不再是 "唯一 live API"。HP5 之后，所有 permission / elicitation 决策都统一写入 `nano_session_confirmations` 真值表（HPX-Q16 / Q17 row-first dual-write law），客户端**应优先使用** [`confirmations.md`](./confirmations.md) 描述的统一 confirmation control plane；本文件仅说明这三条 legacy alias 当前仍接受 + dual-write 到 confirmations 行的事实。
 
 ---
 
-## Route Overview
+## 1. Route Overview
 
-| Route | Method | Auth | 说明 |
+| Route | Method | Auth | 角色 |
 |-------|--------|------|------|
-| `/sessions/{id}/permission/decision` | `POST` | bearer | 提交 permission 决定 |
-| `/sessions/{id}/policy/permission_mode` | `POST` | bearer | 设置 permission 模式 |
-| `/sessions/{id}/elicitation/answer` | `POST` | bearer | 提交 elicitation 回答 |
+| `/sessions/{id}/permission/decision` | `POST` | bearer | legacy permission decision; dual-write 到 confirmations |
+| `/sessions/{id}/policy/permission_mode` | `POST` | bearer | 设置 session permission mode |
+| `/sessions/{id}/elicitation/answer` | `POST` | bearer | legacy elicitation answer; dual-write 到 confirmations |
 
-> ⚠️ **WS round-trip 未 live**：`session.permission.request` / `session.elicitation.request` 当前不会通过 public WS 下发。HTTP 路径是当前唯一 live 的 client API。
-
----
-
-## Important Current Reality
-
-1. 这三条路由当前都会把 `sessionUuid` 当作**作用域 key** 使用。
-2. **它们当前不会校验 session 是否真实存在、是否 active、是否 terminal。**
-3. `permission/decision` 与 `elicitation/answer` 会先写 User DO KV，再 best-effort forward 到 agent-core RPC。
-4. runtime kernel 当前**不会等待**这些 decision / answer；wait-and-resume 基础设施在 DO 内部已存在，但 public runtime 尚未接上。
+> **`session.permission.request` / `session.elicitation.request` 现状**：HP5 把 permission / elicitation 折叠到统一的 `session.confirmation.request` / `session.confirmation.update` server→client 帧族（详见 [`session-ws-v1.md`](./session-ws-v1.md) 与 [`confirmations.md`](./confirmations.md)）。legacy `session.permission.request` / `session.elicitation.request` server→client 帧不再发出。客户端如果想监听 permission ask，应订阅 `session.confirmation.request{kind: "permission"}` 帧。
 
 ---
 
-## `POST /sessions/{sessionUuid}/permission/decision`
+## 2. HP5 Row-First Dual-Write Law（HPX-Q16）
+
+提交 legacy `permission/decision` 或 `elicitation/answer` 时，server 行为：
+
+1. **先**在 `nano_session_confirmations` 表上 row-first 创建/查找对应 confirmation row（kind = `permission` 或 `elicitation`，status `pending`）；
+2. 调用 `D1ConfirmationControlPlane.applyDecision()` 把 decision 写入 row（status 推进为 `allowed`/`denied`/`modified`）；
+3. 仅当 row write 成功后，才 best-effort forward 到 agent-core `permissionDecision` / `elicitationAnswer` RPC；
+4. 若 dual-write 在 RPC 阶段失败，row status 推进为 `superseded`（**绝不**写 `failed`，因为 row 是 truth）。
+
+冻结依据：HPX-Q16（row-first dual-write，never `failed`，escalate to `superseded`）+ HPX-Q17（`approval_pending` → `confirmation_pending` kernel rename）。
+
+---
+
+## 3. POST `/sessions/{id}/permission/decision`
 
 ### Request
+
 ```http
-POST /sessions/{sessionUuid}/permission/decision HTTP/1.1
+POST /sessions/{sessionUuid}/permission/decision
 Authorization: Bearer <access_token>
 x-trace-uuid: <uuid>
 Content-Type: application/json
@@ -47,94 +54,73 @@ Content-Type: application/json
 
 | 字段 | 必填 | 类型 | 说明 |
 |------|------|------|------|
-| `request_uuid` | ✅ | string (UUID) | permission request UUID |
-| `decision` | ✅ | `"allow"` \| `"deny"` \| `"always_allow"` \| `"always_deny"` | 决定 |
+| `request_uuid` | ✅ | UUID | permission request UUID（也是 confirmation row UUID） |
+| `decision` | ✅ | `"allow" \| "deny" \| "always_allow" \| "always_deny"` | 决定 |
 | `scope` | no | string | 默认 `"once"` |
-| `reason` | no | string | 用户原因；当前仅透传，不参与判定 |
+| `reason` | no | string | user reason；透传到 confirmation row `decision_meta` |
 
 ### Success (200)
+
 ```json
 {
   "ok": true,
   "data": {
     "request_uuid": "aaaa...",
     "decision": "allow",
-    "scope": "once"
+    "scope": "once",
+    "confirmation_uuid": "aaaa...",
+    "confirmation_status": "allowed"
   },
   "trace_uuid": "..."
 }
 ```
 
-### Behavior
-1. 写 User DO KV: `permission_decision/{request_uuid}`
-2. Best-effort forward 到 agent-core `permissionDecision` RPC
-3. RPC 失败不影响用户面 200 ack
-4. 当前 runtime 不会等待该 decision
-
 ### Errors
-| HTTP | error.code | 触发 |
-|------|-----------|------|
-| 400 | `invalid-input` | `request_uuid` 缺失/非 UUID，或 `decision` 非法 |
-| 401 | `invalid-auth` | bearer token 无效 |
-| 403 | `missing-team-claim` | JWT 无 team truth |
-| 503 | `worker-misconfigured` | `TEAM_UUID` 未配置 |
+
+| HTTP | code | 触发 |
+|------|------|------|
+| 400 | `invalid-input` | `request_uuid` 非 UUID 或 `decision` 非法 |
+| 401 | `invalid-auth` | bearer 无效 |
+| 403 | `missing-team-claim` | JWT 缺 team truth |
+| 404 | `confirmation-not-found` | row 已被垃圾回收或从未创建 |
+| 409 | `confirmation-already-resolved` | 该 request_uuid 已被先前的 decision 终结（HP5 invariant） |
+| 503 | `internal-error` | upstream RPC 不可达 |
+
+> **新增 (HP5)**: `409 confirmation-already-resolved` 是统一 confirmation plane 的冲突 code；legacy 客户端遇到 409 应**视为最终态成功**，不要重试。
 
 ---
 
-## `POST /sessions/{sessionUuid}/policy/permission_mode`
+## 4. POST `/sessions/{id}/policy/permission_mode`
 
 ### Request
-```http
-POST /sessions/{sessionUuid}/policy/permission_mode HTTP/1.1
-Authorization: Bearer <access_token>
-x-trace-uuid: <uuid>
-Content-Type: application/json
 
-{
-  "mode": "ask"
-}
+```json
+{ "mode": "ask" }
 ```
 
 | 字段 | 必填 | 类型 | 说明 |
 |------|------|------|------|
-| `mode` | ✅ | `"auto-allow"` \| `"ask"` \| `"deny"` \| `"always_allow"` | 当前支持的 mode |
+| `mode` | ✅ | `"auto-allow" \| "ask" \| "deny" \| "always_allow"` | 当前 supported 集合 |
 
 ### Success (200)
+
 ```json
 {
   "ok": true,
-  "data": {
-    "session_uuid": "3333...",
-    "mode": "ask"
-  },
+  "data": { "session_uuid": "...", "mode": "ask" },
   "trace_uuid": "..."
 }
 ```
 
-### Behavior
-- 写 User DO KV: `permission_mode/{sessionUuid}`
-- 当前不参与 runtime enforcement
-- 当前不校验 session 是否存在
-
-### Errors
-| HTTP | error.code | 触发 |
-|------|-----------|------|
-| 400 | `invalid-input` | mode 非法 |
-| 401 | `invalid-auth` | bearer token 无效 |
-| 403 | `missing-team-claim` | JWT 无 team truth |
-| 503 | `worker-misconfigured` | `TEAM_UUID` 未配置 |
+> 此路由当前作用域是 session-scoped policy override；它**不**写 confirmation row，只更新 User DO 中的 mode KV，由 runtime 在 PreToolUse 决定是否 emit confirmation。
 
 ---
 
-## `POST /sessions/{sessionUuid}/elicitation/answer`
+## 5. POST `/sessions/{id}/elicitation/answer`
 
 ### Request
-```http
-POST /sessions/{sessionUuid}/elicitation/answer HTTP/1.1
-Authorization: Bearer <access_token>
-x-trace-uuid: <uuid>
-Content-Type: application/json
 
+```json
 {
   "request_uuid": "bbbb...",
   "answer": "use pandas"
@@ -143,44 +129,37 @@ Content-Type: application/json
 
 | 字段 | 必填 | 类型 | 说明 |
 |------|------|------|------|
-| `request_uuid` | ✅ | string (UUID) | elicitation request UUID |
-| `answer` | ✅ | any | 回答内容 |
+| `request_uuid` | ✅ | UUID | elicitation request UUID（也是 confirmation row UUID） |
+| `answer` | ✅ | any | 回答内容；透传到 confirmation row |
 
 ### Success (200)
+
 ```json
 {
   "ok": true,
   "data": {
     "request_uuid": "bbbb...",
-    "answer": "use pandas"
+    "answer": "use pandas",
+    "confirmation_uuid": "bbbb...",
+    "confirmation_status": "modified"
   },
   "trace_uuid": "..."
 }
 ```
 
-### Behavior
-1. 写 User DO KV: `elicitation_answer/{request_uuid}`
-2. Best-effort forward 到 agent-core `elicitationAnswer` RPC
-3. RPC 失败不影响用户面 200 ack
-4. 当前 runtime 不会等待该 answer
-
 ### Errors
-| HTTP | error.code | 触发 |
-|------|-----------|------|
-| 400 | `invalid-input` | `request_uuid` 缺失/非 UUID，或 `answer` 缺失 |
-| 401 | `invalid-auth` | bearer token 无效 |
-| 403 | `missing-team-claim` | JWT 无 team truth |
-| 503 | `worker-misconfigured` | `TEAM_UUID` 未配置 |
+
+同 §3，外加：`409 confirmation-already-resolved` 表示先前 answer 已落 row。
 
 ---
 
-## WS Round-Trip Status
+## 6. Migration Path
 
-| 方向 | 能力 | 状态 |
-|------|------|------|
-| Server→Client | `session.permission.request` | **未 live** |
-| Client→Server | `session.permission.decision` | **未支持**（HTTP 替代） |
-| Server→Client | `session.elicitation.request` | **未 live** |
-| Client→Server | `session.elicitation.answer` | **未支持**（HTTP 替代） |
+| 现在 | 目标（推荐） |
+|------|-----|
+| `POST /sessions/{id}/permission/decision` | `POST /sessions/{id}/confirmations/{uuid}/decision { decision: "allow" }` |
+| `POST /sessions/{id}/elicitation/answer` | `POST /sessions/{id}/confirmations/{uuid}/decision { decision: "modified", payload: {answer} }` |
+| 监听 `session.permission.request` WS 帧 | 监听 `session.confirmation.request{kind: "permission"}` WS 帧 |
+| 监听 `session.elicitation.request` WS 帧 | 监听 `session.confirmation.request{kind: "elicitation"}` WS 帧 |
 
-当前 RHX2 Phase 6 阶段，HTTP 路径是唯一可用的 permission / elicitation API。
+详见 [`confirmations.md`](./confirmations.md)。Legacy 路径在 hero-to-pro 阶段保留（HPX-O6 不物理删除 legacy endpoint），未来由 hero-to-platform 阶段决定 deprecation timeline。

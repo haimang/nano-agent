@@ -50,7 +50,7 @@ All return `{ok: true, data: {skills|commands|agents: [...]}, trace_uuid}`.
       },
       {
         "name": "permission-gate",
-        "description": "permission / elicitation 的 decision storage + wait infra；public WS round-trip 当前未 live，客户端仍走 HTTP decision path",
+        "description": "permission / elicitation 已统一到 HP5 confirmation control plane（`/sessions/{id}/confirmations`）；legacy HTTP decision path 保留为 dual-write compat alias",
         "version": "1.0.0-preview",
         "status": "preview"
       }

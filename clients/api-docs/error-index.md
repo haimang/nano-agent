@@ -1,14 +1,12 @@
-# Error Index and Client Classification — RHX2 Phase 7-9 Snapshot
+# Error Index and Client Classification — hero-to-pro Frozen Pack
 
 > Source of truth:
 > - public facade codes: `packages/orchestrator-auth-contract/src/facade-http.ts`
 > - unified meta lookup: `packages/nacp-core/src/error-registry.ts`
 > - WS structured error frame: `packages/nacp-session/src/stream-event.ts`
-> - **long-form catalog (101 unique codes)**: `docs/api/error-codes.md`
+> - **long-form catalog**: `docs/api/error-codes.md`
 >
-> RHX2 review-of-reviews fix (2026-04-30): all 24 public ad-hoc
-> codes below are now registered in `resolveErrorMeta()`; clients can
-> rely on `getErrorMeta(code)` returning a non-`undefined` result.
+> 文档基线: HP8 code freeze + HP9 docs freeze。HP5-HP7 新增的 ad-hoc public codes 已统一登记。
 
 ## HTTP Error Envelope
 
@@ -102,6 +100,11 @@ The following are emitted by current routes. They are not part of `FacadeErrorCo
 | `spike-disabled` | 403 | preview-only `/sessions/{id}/verify` spike check | verify spike disabled in this environment |
 | `no-attached-client` | 409 | preview-only `/sessions/{id}/verify` spike check | attach a websocket client before retrying |
 | `conversation-deleted` | 409 | checkpoint routes, `/sessions/{id}/model` | parent conversation already soft-deleted; refresh conversation list |
+| `confirmation-already-resolved` | 409 | `/sessions/{id}/confirmations/{uuid}/decision`，legacy `/permission/decision`，legacy `/elicitation/answer` | confirmation row 已终结；视为最终态成功，不要重试（HP5） |
+| `confirmation-not-found` | 404 | confirmation routes，legacy permission/elicitation | confirmation row 不存在或已 GC |
+| `todo-not-found` | 404 | `/sessions/{id}/todos/{uuid}` PATCH/DELETE | todo row 不存在 |
+| `invalid-status` | 400 | `/sessions/{id}/todos/{uuid}` PATCH | todo status 不在 5-status enum |
+| `in-progress-conflict` | 409 | `/sessions/{id}/todos/{uuid}` PATCH | session 已有 in_progress todo（at-most-1 invariant） |
 
 Legacy note:
 
@@ -205,11 +208,14 @@ Legacy note:
 | `llm-timeout` | dependency | yes |
 | `llm-other` | transient | yes |
 
-## RHX2 Phase 7-9 wire facts
+## hero-to-pro Phase Wire Facts
 
-1. `system.notify` frames may carry `code` and `trace_uuid` since Phase 7 (RHX2 v0.5 dual-emit window). Clients SHOULD use `(trace_uuid, code)` as the dedupe key when a `system.notify(severity="error")` follows a `system.error` frame within ~1s.
-2. `POST /sessions/{id}/verify` accepts `{ "check": "emit-system-error", "code": "spike-system-error" }` in preview-only environments; the route returns `403` with `code = "spike-disabled"` when `NANO_ENABLE_RHX2_SPIKE !== "true"` and `409 no-attached-client` when the WebSocket is detached. Production deploys keep the flag `false`.
+1. `system.notify` frames may carry `code` and `trace_uuid` since RHX2 Phase 7. Clients SHOULD use `(trace_uuid, code)` as the dedupe key when a `system.notify(severity="error")` follows a `system.error` frame within ~1s.
+2. `POST /sessions/{id}/verify` accepts `{ "check": "emit-system-error", "code": "spike-system-error" }` in preview-only environments; the route returns `403 spike-disabled` when `NANO_ENABLE_RHX2_SPIKE !== "true"` and `409 no-attached-client` when the WebSocket is detached. Production deploys keep the flag `false`.
 3. `/debug/packages` returns a `drift_direction` field per published package (`aligned` / `workspace_ahead` / `workspace_behind` / `workspace_not_published` / `registry_unreachable`).
+4. **HP5 row-first dual-write law (Q16)**: confirmation rows never enter `failed` state from dual-write failures—they escalate to `superseded`. Clients receiving `409 confirmation-already-resolved` should treat it as a terminal success and stop retrying.
+5. **HP6 todo at-most-1 invariant (Q19)**: `/sessions/{id}/todos/{uuid}` PATCH returning `409 in-progress-conflict` means another todo is already `in_progress`; client should refresh todo list before retrying.
+6. **HP7 restore/fork** (preparation surface only in HP9 frozen pack): the restore/fork executors are HP7 后续批次 / hero-to-platform territory; the `/checkpoints/{uuid}/restore` and `/sessions/{id}/fork` public routes are not yet live. Clients should not assume them.
 
 ## Recommended Client Classifier
 

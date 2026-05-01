@@ -1,4 +1,4 @@
-# /me, Team, Device API — RHX2 Phase 6 Snapshot
+# /me, Team, Device API — hero-to-pro Frozen Pack
 
 > Public facade owner: `orchestrator-core`
 > Profile: `facade-http-v1`

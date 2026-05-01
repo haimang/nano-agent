@@ -1,23 +1,25 @@
-# Usage API — Current Snapshot
+# Usage Snapshot
 
 > Public facade owner: `orchestrator-core`
+> Implementation reference: `workers/orchestrator-core/src/index.ts` (`/sessions/{id}/usage` route handler)，`nano_usage_events` + `nano_quota_balances` D1 表
 > Profile: `facade-http-v1`
 > Auth: `Authorization: Bearer <access_token>`
-> Header: `x-trace-uuid: <uuid>`
-> Current source: User DO session entry + optional D1 usage tables.
+> Trace: `x-trace-uuid: <uuid>`
 
 ---
 
-## `GET /sessions/{sessionUuid}/usage`
+## 1. `GET /sessions/{sessionUuid}/usage`
 
 ### Request
+
 ```http
-GET /sessions/{sessionUuid}/usage HTTP/1.1
+GET /sessions/{sessionUuid}/usage
 Authorization: Bearer <access_token>
 x-trace-uuid: <uuid>
 ```
 
 ### Success (200)
+
 ```json
 {
   "ok": true,
@@ -53,9 +55,24 @@ x-trace-uuid: <uuid>
 }
 ```
 
-### Placeholder Shape
+### Field Reference
 
-当该 session 还没有任何 `nano_usage_events` 行时，`usage` 会退回到 zero placeholder：
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `session_uuid` | string | 会话 UUID |
+| `status` | string | session lifecycle phase（`starting` / `active` / `detached` / `ended`） |
+| `usage.llm_input_tokens` | number | `nano_usage_events` 中 `resource_kind='llm'` + `unit='input_token'` 聚合 |
+| `usage.llm_output_tokens` | number | `resource_kind='llm'` + `unit='output_token'` 聚合 |
+| `usage.tool_calls` | number | allow verdict 的 tool rows 数量 |
+| `usage.subrequest_used` | number | allow verdict 的 `quantity` 总和 |
+| `usage.subrequest_budget` | number\|null | `nano_quota_balances(quota_kind='llm').remaining` |
+| `usage.estimated_cost_usd` | number\|null | live 路径当前通常为 `null`；预留字段 |
+| `last_seen_at` | string (ISO) | User DO session entry 最后触碰时间 |
+| `durable_truth` | object\|null | D1 durable snapshot |
+
+### Zero Placeholder
+
+session 尚未产生 `nano_usage_events` 时，`usage` 会回退为：
 
 ```json
 {
@@ -68,50 +85,41 @@ x-trace-uuid: <uuid>
 }
 ```
 
-### Field Reference
-
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `session_uuid` | string | 会话 UUID |
-| `status` | string | 当前 `SessionEntry.status`（starting / active / detached / ended） |
-| `usage.llm_input_tokens` | number | `nano_usage_events` 中 `resource_kind='llm'` + `unit='input_token'` 的聚合；无行时回退为 `0` |
-| `usage.llm_output_tokens` | number | `resource_kind='llm'` + `unit='output_token'` 的聚合；无行时回退为 `0` |
-| `usage.tool_calls` | number | allow verdict 的 tool rows 数量；无行时回退为 `0` |
-| `usage.subrequest_used` | number | allow verdict 的 `quantity` 总和；无行时回退为 `0` |
-| `usage.subrequest_budget` | number\|null | `nano_quota_balances(quota_kind='llm').remaining` |
-| `usage.estimated_cost_usd` | number\|null | placeholder 为 `0`；live D1 聚合当前多为 `null` 或具体数值 |
-| `last_seen_at` | string (ISO) | User DO session entry 的最后触碰时间 |
-| `durable_truth` | object\|null | D1 durable snapshot |
-
 ### Behavior
 
-- endpoint 先构造 zero placeholder usage
-- 若有 D1 binding 且能读到 durable `team_uuid`，则直接查询 D1：
-  - `nano_usage_events`
-  - `nano_quota_balances`
-- **当前没有独立的 KV hot usage snapshot merge 路径**
-- 若 D1 读取失败，路由直接返回 `503 usage-d1-unavailable`，而不是回退到 `200 + placeholder`
+1. endpoint 先构造 zero placeholder。
+2. 通过 D1 binding 读 `nano_usage_events` + `nano_quota_balances` 聚合。
+3. 若 D1 读取失败，**直接返回 `503 usage-d1-unavailable`**，不回退到 `200 + placeholder`（避免假阳性零值）。
+4. 当前**没有** KV hot usage snapshot merge 路径。
 
-### Error
+### Errors
 
 | HTTP | error.code | 说明 |
 |------|------------|------|
-| `401` | `invalid-auth` | bearer token 无效 / 过期 / 被撤销 |
-| `403` | `missing-team-claim` | auth snapshot 缺 team/tenant truth |
-| `404` | `session_missing` | session 不存在 |
-| `409` | `session-pending-only-start-allowed` / `session-expired` | pending session 只能先 `/start`，或 pending UUID 已过期 |
-| `503` | `usage-d1-unavailable` | usage ledger / quota 读取失败 |
-
-### Current Reality
-
-- **稳定部分**：`session_uuid`、`status`、`last_seen_at`、`durable_truth`
-- **usage 是否有数值**：取决于该 session 是否已有 D1 usage rows
-- **`estimated_cost_usd`**：placeholder 为 `0`；live 路径当前通常为 `null` 或具体数值
+| 401 | `invalid-auth` | bearer 无效 / 过期 / 被撤销 |
+| 403 | `missing-team-claim` | auth snapshot 缺 team/tenant truth |
+| 404 | `session_missing` | session 不存在 |
+| 409 | `session-pending-only-start-allowed` / `session-expired` | pending session 只能先 `/start`，或 pending UUID 已过期 |
+| 503 | `usage-d1-unavailable` | usage ledger / quota 读取失败 |
 
 ---
 
-## WS Live Push Status
+## 2. WebSocket Live Push 状态
 
-`session.usage.update` server frame live push —— **当前未 live**。
+`session.usage.update` server→client 帧已注册（详见 [`session-ws-v1.md`](./session-ws-v1.md) Stream Events 表）。客户端附着 WS 后会在 LLM / tool quota commit 后被动收到 `usage` 增量帧，**不需要轮询**。
 
-唯一可用 usage 查询方式仍是 `GET /sessions/{id}/usage` HTTP polling。
+**polling fallback**：
+- 若客户端不订阅 WS（或 WS 已断开），`GET /sessions/{id}/usage` 仍是合规且 idempotent 的 HTTP polling 入口。
+- 推荐 polling 间隔 ≥ 5 秒，且仅在 session phase ∈ `{active, attached}` 时轮询；`ended` / `expired` 后 usage 是终态快照。
+
+---
+
+## 3. Implementation Notes
+
+- usage 路由对 `pending` session 直接返回 `409 session-pending-only-start-allowed`（提示先 `/start`）。
+- `expired` session 返回 `409 session-expired`（pending UUID 过期）。
+- `ended` session 返回最终态 usage 快照，不再变化。
+- `subrequest_budget = null` 表示 team 没有为该 quota kind 配 limit，应视为"无上限"。
+- `estimated_cost_usd` 当前不计算；预留字段，hero-to-platform 阶段决定 pricing 模型。
+
+详细 error code 见 [`error-index.md`](./error-index.md)。

@@ -1,10 +1,14 @@
-# session-ws-v1 — RHX2 Phase 7-9 Snapshot
+# session-ws-v1 — WebSocket Frame Protocol
 
 > Public facade owner: `orchestrator-core`
+> Implementation reference: `packages/nacp-session/src/stream-event.ts`，`packages/nacp-session/src/messages.ts`，`workers/orchestrator-core/src/index.ts` (WS handshake)
 > Wire format: lightweight JSON `{kind, ...}` frames
-> 注意：outer WS frame `kind` 与 `event.payload.kind` 是两层枚举。
+>
+> 注意：outer WS frame `kind` 与 `event.payload.kind` 是两层枚举。outer 表示 transport-level frame type；payload.kind 表示 stream event 的语义子类型（HP6/HP7/HP8 已扩展到 12 kinds）。
 
-## Connect URL
+---
+
+## 1. Connect URL
 
 ```text
 wss://<base>/sessions/{sessionUuid}/ws?access_token=<jwt>&trace_uuid=<uuid>&last_seen_seq=<integer>
@@ -16,7 +20,7 @@ wss://<base>/sessions/{sessionUuid}/ws?access_token=<jwt>&trace_uuid=<uuid>&last
 | `trace_uuid` | yes | 与 HTTP `x-trace-uuid` 同义 |
 | `last_seen_seq` | no | reconnect 时客户端最后处理的 event seq |
 
-## Handshake Errors
+## 2. Handshake Errors
 
 | HTTP | error.code | 说明 |
 |------|------------|------|
@@ -27,70 +31,114 @@ wss://<base>/sessions/{sessionUuid}/ws?access_token=<jwt>&trace_uuid=<uuid>&last
 | 409 | `session-pending-only-start-allowed` | session 仍是 pending |
 | 409 | `session_terminal` | session 已终态 |
 
-## Server → Client Frames
+---
 
-### `event`
+## 3. Server → Client Frames
+
+### 3.1 `event` Outer Frame
 
 ```json
 {
   "kind": "event",
   "seq": 12,
   "name": "session.stream.event",
-  "payload": {
-    "kind": "llm.delta",
-    "content_type": "text",
-    "content": "Hello",
-    "is_final": false
-  }
+  "payload": { "kind": "<stream-event-kind>", "...": "..." }
 }
 ```
 
-Current `event.payload.kind` values from `@haimang/nacp-session`:
+`seq` 单调递增；reconnect 时客户端用 `last_seen_seq` 让 server 回放未确认 frame。
 
-| payload.kind | Shape / 说明 |
-|--------------|--------------|
-| `llm.delta` | `{content_type:"text"|"thinking"|"tool_use_start"|"tool_use_delta", content, is_final}` |
-| `tool.call.progress` | `{tool_name, request_uuid?, chunk, is_final}` |
-| `tool.call.result` | `{tool_name, request_uuid?, status:"ok"|"error", output?, error_message?}` |
-| `hook.broadcast` | `{event_name, payload_redacted, aggregated_outcome?}` |
-| `session.update` | `{phase, partial_output?}` |
-| `turn.begin` | `{turn_uuid}` |
-| `turn.end` | `{turn_uuid, usage?}` |
-| `compact.notify` | `{status:"started"|"completed"|"failed", tokens_before?, tokens_after?}` |
-| `system.notify` | `{severity:"info"|"warning"|"error", message, code?, trace_uuid?}` |
-| `system.error` | `{error:{code,category,message,detail?,retryable}, source_worker?, trace_uuid?}` |
+### 3.2 Stream Event Kinds（12-kind catalog，hero-to-pro frozen）
 
-`system.error` is the structured runtime error frame. Client should treat it as a high-signal error event and use [`error-index.md`](./error-index.md) to decide retry/report UX.
+| payload.kind | shape | 引入阶段 | client 行为 |
+|--------------|-------|----------|-------------|
+| `llm.delta` | `{content_type, content, is_final}` | RHX2 | 流式渲染 LLM 输出 |
+| `tool.call.progress` | `{tool_name, request_uuid?, chunk, is_final}` | RHX2 | 渲染工具进度 |
+| `tool.call.result` | `{tool_name, request_uuid?, status, output?, error_message?}` | RHX2 | 工具完成 |
+| `tool.call.cancelled` | `{tool_name, request_uuid, cancel_initiator}` | **HP6** | 工具取消通知；`cancel_initiator ∈ {user, system, parent_cancel}` |
+| `hook.broadcast` | `{event_name, payload_redacted, aggregated_outcome?}` | RHX2 | hook 广播 |
+| `session.update` | `{phase, partial_output?}` | RHX2 | session phase 变化 |
+| `turn.begin` | `{turn_uuid}` | RHX2 | turn 起始 |
+| `turn.end` | `{turn_uuid, usage?}` | RHX2 | turn 结束 |
+| `compact.notify` | `{status, tokens_before?, tokens_after?}` | HP3 | compact 通知（`started/completed/failed`） |
+| `session.fork.created` | `{parent_session_uuid, child_session_uuid, conversation_uuid, from_checkpoint_uuid, restore_job_uuid}` | **HP7** | fork 建立通知（schema live；executor 未 live） |
+| `system.notify` | `{severity, message, code?, trace_uuid?}` | RHX2 | 通用通知 |
+| `system.error` | `{error:{code,category,message,detail?,retryable}, source_worker?, trace_uuid?}` | RHX2 | 结构化 runtime error |
 
-### Dual-emit window (Phase 7-9)
+`system.error` 是结构化 runtime error frame，client 应配合 [`error-index.md`](./error-index.md) 决定 retry / report UX。
 
-Per RHX2 Phase 7-9 closure, `system.error` is paired with a backwards-compatible `system.notify(severity="error")` that carries the same `code` and `trace_uuid`. Modern clients should:
+### 3.3 Confirmation Frame Family（HP5 frozen，server-only）
 
-1. Render the structured `system.error` frame.
-2. Track `(trace_uuid, code)` for ~1 second.
-3. Suppress any subsequent `system.notify(severity="error")` whose `(trace_uuid, code)` matches.
+```json
+{
+  "kind": "session.confirmation.request",
+  "confirmation_uuid": "...",
+  "session_uuid": "...",
+  "confirmation_kind": "permission",
+  "payload": { "tool_name": "bash", "tool_input": { "...": "..." } },
+  "created_at": "..."
+}
+```
 
-The window remains active until the gate registered in `docs/issue/real-to-hero/RHX2-dual-emit-window.md` flips to single-emit. Production today still double-emits.
+```json
+{
+  "kind": "session.confirmation.update",
+  "confirmation_uuid": "...",
+  "session_uuid": "...",
+  "status": "allowed",
+  "decision": { "scope": "once", "reason": "user approved" },
+  "updated_at": "..."
+}
+```
 
-### Synthetic spike trigger
+| Frame | 方向 | 用途 |
+|-------|------|------|
+| `session.confirmation.request` | server → client | confirmation row 创建时 |
+| `session.confirmation.update` | server → client | confirmation row 状态变化时 |
 
-`POST /sessions/{id}/verify` accepts `{ "check": "emit-system-error", "code": "spike-system-error" }` for preview / spike testing. Behaviour:
+> **HPX-Q18 frozen direction matrix**：confirmation frames 是 **server-only**。客户端不能 push confirmation 到 server，必须用 HTTP `POST /sessions/{id}/confirmations/{uuid}/decision`。
 
-- `403 spike-disabled` when `NANO_ENABLE_RHX2_SPIKE !== "true"` (production posture).
-- `409 no-attached-client` when no WebSocket is currently attached.
-- `200 ok:true` and a `system.error` (+ paired `system.notify`) frame on the attached socket on success.
+详见 [`confirmations.md`](./confirmations.md)（含 7-kind readiness matrix）。
 
-Production deploys keep the flag `false` — clients must not depend on this trigger surfacing in production.
+### 3.4 Todo Frame Family（HP6 frozen，server-only）
 
-### `session.heartbeat`
+```json
+{
+  "kind": "session.todos.write",
+  "todo_uuid": "...",
+  "session_uuid": "...",
+  "content": "...",
+  "status": "pending",
+  "created_at": "..."
+}
+```
+
+```json
+{
+  "kind": "session.todos.update",
+  "todo_uuid": "...",
+  "session_uuid": "...",
+  "status": "in_progress",
+  "updated_at": "..."
+}
+```
+
+| Frame | 方向 | 用途 |
+|-------|------|------|
+| `session.todos.write` | server → client | todo row 创建时 |
+| `session.todos.update` | server → client | todo row 修改 / 删除时 |
+
+详见 [`todos.md`](./todos.md)。
+
+### 3.5 `session.heartbeat`
 
 ```json
 { "kind": "session.heartbeat", "ts": 1760000000000 }
 ```
 
-Sent every 15 seconds by the server.
+Server 默认每 15 秒发一次。client 收到后应更新本地 lastSeen，超时 ≥ 60 秒可考虑触发重连。
 
-### `session.attachment.superseded`
+### 3.6 `session.attachment.superseded`
 
 ```json
 {
@@ -101,9 +149,9 @@ Sent every 15 seconds by the server.
 }
 ```
 
-Reasons currently include `reattach` and `revoked`. The old socket is closed with close code `4001`.
+`reason` ∈ `{reattach, revoked}`。旧 socket 会被 server 用 close code `4001` 关闭。
 
-### `session.end`
+### 3.7 `session.end`
 
 ```json
 {
@@ -114,47 +162,99 @@ Reasons currently include `reattach` and `revoked`. The old socket is closed wit
 }
 ```
 
-Terminal reason maps from durable terminal state:
-
 | durable terminal | frame reason | close |
 |------------------|--------------|-------|
 | `completed` | `completed` | `1000 session_completed` |
 | `cancelled` | `user` | `1000 session_cancelled` |
 | `error` | `error` | `1000 session_error` |
 
-## Client → Server Messages
+### 3.8 `session.usage.update`（HP9 frozen 阶段已 live）
 
-Public `orchestrator-core` WS currently treats client messages as activity touch only. The following frames are safe compatibility shapes:
+```json
+{
+  "kind": "session.usage.update",
+  "session_uuid": "...",
+  "usage": {
+    "llm_input_tokens": 1280,
+    "llm_output_tokens": 342,
+    "tool_calls": 2,
+    "subrequest_used": 1624,
+    "subrequest_budget": 80000
+  },
+  "ts": 1760000000000
+}
+```
 
-| Frame | Body | Current effect |
-|-------|------|----------------|
-| `session.resume` | `{last_seen_seq}` | touch session |
+LLM / tool quota commit 后被动推送。详见 [`usage.md`](./usage.md)。
+
+### 3.9 RHX2 Dual-Emit Window
+
+`system.error` 当前与 backwards-compatible 的 `system.notify(severity="error")` 一起发出，二者带同 `code` + `trace_uuid`。client 应：
+
+1. 渲染结构化 `system.error`。
+2. 跟踪 `(trace_uuid, code)` ~1 秒。
+3. 抑制随后匹配的 `system.notify(severity="error")`。
+
+dual-emit 窗口仍 active；详见 `docs/issue/real-to-hero/RHX2-dual-emit-window.md`。
+
+### 3.10 Synthetic Spike Trigger（preview only）
+
+`POST /sessions/{id}/verify` 接受 `{ "check": "emit-system-error", "code": "spike-system-error" }`：
+
+- `403 spike-disabled` 当 `NANO_ENABLE_RHX2_SPIKE !== "true"`（生产 posture）。
+- `409 no-attached-client` 当无 WS 附着。
+- `200 ok:true` + `system.error` (+ 配对 `system.notify`) 帧 on success。
+
+生产部署保持 flag `false`——客户端不应假设此 trigger 在 prod 可用。
+
+---
+
+## 4. Client → Server Frames
+
+public `orchestrator-core` WS 当前仅把 client frame 当作 activity touch：
+
+| Frame | Body | 当前作用 |
+|-------|------|----------|
+| `session.resume` | `{last_seen_seq}` | touch session（reconnect ack） |
 | `session.heartbeat` | `{ts}` | touch session |
 | `session.stream.ack` | `{stream_uuid, acked_seq}` | touch session |
 
-Do not rely on public WS for permission/elicitation decisions; use HTTP routes.
+> permission / elicitation / confirmation **decision 不能通过 WS push**——必须用 HTTP（详见 [`confirmations.md`](./confirmations.md)、[`permissions.md`](./permissions.md)）。这是 HPX-Q18 frozen direction matrix。
 
-## Reconnect Flow
+---
 
-1. Track max seen `event.seq`.
-2. Reconnect with `last_seen_seq=<maxSeq>`.
-3. Server best-effort replays buffered events.
-4. If uncertain, call `POST /sessions/{id}/resume`.
-5. If `resume.data.replay_lost === true`, use `GET /sessions/{id}/timeline` for reconciliation.
+## 5. Reconnect Flow
 
-## Close Codes
+1. client 跟踪 max seen `event.seq`。
+2. Reconnect with `last_seen_seq=<maxSeq>`。
+3. server best-effort 回放 buffered events。
+4. 若不确定，调用 `POST /sessions/{id}/resume`。
+5. 若 `resume.data.replay_lost === true`，用 `GET /sessions/{id}/timeline` 做 reconciliation。
+
+---
+
+## 6. Close Codes
 
 | Code | Meaning |
 |------|---------|
 | `1000` | normal close after session end |
 | `4001` | attachment superseded by reattach or device revoke |
 
-## Current Limitations
+---
+
+## 7. Frame Schema 法律
+
+所有 frame 都由 `packages/nacp-session/src/stream-event.ts` 中的 zod schema 严格校验；server 在 emit 前会跑 schema validate。如果某个 server-emitted frame 在 client 看到 unknown / extra 字段，那是 build-time 漂移（不是 transport-level bug），请上报 trace_uuid。
+
+direction matrix（哪些 frame kind 允许 server→client / client→server）由 `packages/nacp-session/src/type-direction-matrix.ts` 冻结；HP5 的 confirmation frames 与 HP6 的 todo frames 都被加入到 server-only 集合。
+
+---
+
+## 8. Deferred / Not-Yet-Live
 
 | 能力 | 状态 | 替代 |
 |------|------|------|
-| `session.permission.request` public WS round-trip | not live | `POST /sessions/{id}/permission/decision` |
-| `session.elicitation.request` public WS round-trip | not live | `POST /sessions/{id}/elicitation/answer` |
-| `session.usage.update` live push | not live | `GET /sessions/{id}/usage` |
-| Client permission/elicitation WS reply | not supported | HTTP routes |
-| Initial `meta(opened)` frame | not sent | first frames are event/heartbeat/session.end/etc. |
+| client → server permission/elicitation/confirmation reply via WS | **not supported by design** | HTTP routes（详见 §4 备注） |
+| `session.usage.update` server frame | **live** | (见 §3.8) |
+| `model.fallback` stream event | **not-started**（HP2 后续批次） | 暂无 |
+| 自动 fork executor + `session.fork.created` 实际触发 | **schema live, executor not-live**（HP7 后续批次） | 暂无 |
