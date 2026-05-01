@@ -1,10 +1,15 @@
 # Hero-to-Platform Charter — Inherited Issues Stub
 
-> 阶段类型: `stub` — **不是**正式 charter
-> 创建依据: `docs/issue/hero-to-pro/HP10-closure.md` Phase 4 P4-01；`docs/issue/hero-to-pro/hero-to-pro-final-closure.md` §7
+> ⚠️ **重要修正 (2026-05-01)**: 本 stub 之前的版本错误地把 22 项 deferred 列为 "handed-to-platform"。owner 复审纠正：**hero-to-platform 不是已命名 phase**，那些项应该在 hero-to-pro 内吸收完成。本批次已把那 22 项中的 28 个细分项 fully absorbed within hero-to-pro（详见 `docs/issue/hero-to-pro/HP0-H10-deferred-closure.md`）。
+>
+> **本 stub 的当前角色**: 不再持有 inherited issues。仅作为"未来如果命名一个 hero-to-platform phase，本文件可作为入口预留位"使用。当前 hero-to-pro 阶段没有 inherited issues 转移到这个 stub。
+>
+> 阶段类型: `stub-placeholder` — **不是**正式 charter，**不是** active inherited issues 入口
+> 创建依据: `docs/issue/hero-to-pro/HP10-closure.md` Phase 4 P4-01；`docs/issue/hero-to-pro/hero-to-pro-final-closure.md` §7（post-absorb 版）
 > 冻结依据: `docs/design/hero-to-pro/HPX-qna.md` Q35
 > 创建日期: `2026-05-01`
-> 文档状态: `stub — handoff-ready, awaiting next-phase owner`
+> 修正日期: `2026-05-01`（22 项 inherited issues 撤回，absorbed within hero-to-pro）
+> 文档状态: `placeholder — no active inherited issues`
 
 ---
 
@@ -30,11 +35,13 @@
 
 ---
 
-## 1. Inherited Issues from hero-to-pro Final Closure
+## 1. Inherited Issues — POST-ABSORB STATE (2026-05-01)
 
-详见 `docs/issue/hero-to-pro/hero-to-pro-final-closure.md` §4。共 22 项 `handed-to-platform` + 3 项 `retained-with-reason`（owner-action 时间窗）+ 5 项 `accepted-as-risk`。
+> **本节已 fully reverted**：之前列的 22 项 `handed-to-platform` 全部 absorbed within hero-to-pro。**当前 stub 没有 active inherited issues。**
+>
+> 真相单源：`docs/issue/hero-to-pro/HP0-H10-deferred-closure.md`（28 项 absorb 实施位置 + 测试 + Q-law 合规自查）+ `docs/issue/hero-to-pro/hero-to-pro-final-closure.md` §4 (post-absorb).
 
-### 1.1 22 Items `handed-to-platform`（按 phase 分组）
+### 1.1 之前列出的 22 items — 全部已 absorbed within hero-to-pro
 
 | Phase | Item ID | 简述 |
 |-------|---------|------|
