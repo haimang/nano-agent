@@ -48,7 +48,7 @@
 | `R9` | fork R2 key law `tenants/{team}/sessions/{child_session}/workspace/{virtual_path}` (Q23) | `buildForkWorkspaceR2Key` | child session 绝不复用 parent R2 key |
 | `R10` | `CheckpointDiffProjector`:current vs snapshot 工作区 added/removed/changed + watermark-后 artifact added | `workers/orchestrator-core/src/checkpoint-diff-projector.ts` | `/diff` 不再只回 message delta;HP4 first wave + HP7 P2 一起组成完整 diff |
 | `R11` | `session.fork.created` 协议帧:parent / child / conversation / from_checkpoint / restore_job 5 项必填(Q23 same-conversation 不变量) | `packages/nacp-session/src/stream-event.ts` + `index.ts` | parent attached client 第一次能在不轮询 restore job 的前提下感知 fork |
-| `R12` | observability inspector mirrored constant 同步至 12 kinds(防 drift) | `workers/agent-core/src/eval/inspector.ts` + `test/eval/inspector.test.ts` | session.fork.created 进入 observability 通路 |
+| `R12` | observability inspector mirrored constant 同步至 13 kinds(防 drift) | `workers/agent-core/src/eval/inspector.ts` + `test/eval/inspector.test.ts` | `session.fork.created` + `model.fallback` 进入 observability 通路 |
 | `R13` | 测试覆盖:snapshot plane / restore job plane / diff projector / fork frame 共新增 4 个 test 文件、约 36 用例 | 各 test 文件 | enum + Q22/Q23/Q24 三层 frozen law 都有可重复证据 |
 
 ---

@@ -5,7 +5,7 @@
 > 关联 phase closure: `docs/issue/hero-to-pro/HP10-closure.md`
 > 关联 final closure: `docs/issue/hero-to-pro/hero-to-pro-final-closure.md`
 > 冻结依据: hero-to-pro `as-of-commit-hash e9287e4523f33075a37d4189a8424f385c540374`
-> 文档状态: `frozen — handoff-ready`
+> 文档状态: `frozen — live-gated`
 
 ---
 
@@ -41,7 +41,7 @@
 | Gate | Script | 守卫对象 |
 |------|--------|----------|
 | `check:cycles` | `madge --circular ...` | 12 个 src tree 内禁止循环 import |
-| `check:observability-drift` | `scripts/check-observability-drift.mjs` | observability inspector kind catalog 与 nacp-session stream-event 同步 |
+| `check:observability-drift` | `scripts/check-observability-drift.mjs` | 6 worker `src/` 树内禁止裸 `console.*` 与跨 worker import（不覆盖 stream-event catalog drift） |
 | `check:megafile-budget` | `scripts/check-megafile-budget.mjs` | 5 owner 文件行数 ceiling（HP8 P3-01）|
 | `check:tool-drift` | `scripts/check-tool-drift.mjs` | nacp-core tool catalog SSoT；packages/+workers/ 重复 tool literal 拒绝 |
 | `check:envelope-drift` | `scripts/check-envelope-drift.mjs` | public orchestrator-core 路由必须用 FacadeEnvelope（Q27） |
@@ -56,17 +56,19 @@
 
 `pnpm test:contracts` 跑 root-guardians；`pnpm test:cross` / `pnpm test:cross-e2e` 跑 cross-e2e；`pnpm test:e2e` 跑全部 e2e。
 
-### 1.4 Live cross-e2e Files (HP9 frozen 时点)
+### 1.4 cross-e2e Files（当前仓库事实）
 
-`test/cross-e2e/` 当前 15 个文件，覆盖 RHX2 / HP0 / HP1 baseline：
+`test/cross-e2e/` 当前 22 个文件，覆盖 RHX2 baseline + HP2-HP8 targeted scaffold：
 
 ```text
-test/cross-e2e/01-baseline-smoke.test.mjs
-test/cross-e2e/02-auth-roundtrip.test.mjs
-... (14 more)
+test/cross-e2e/01-stack-preview-inventory.test.mjs
+test/cross-e2e/02-agent-bash-tool-call-happy-path.test.mjs
+...
+test/cross-e2e/21-hp8-heartbeat-posture.test.mjs
+test/cross-e2e/zx2-transport.test.mjs
 ```
 
-> **Coverage Gap**（已显式登记到 final closure §4）：HP2-HP8 各自的 targeted cross-e2e（model-switch / long-conversation / lifecycle-retry-restore / round-trip / tool-cancel / restore-three-mode / heartbeat-4-scenario）**全部** handed-to-platform。hero-to-platform 阶段补齐。
+> **Coverage Fact**：这些 targeted cross-e2e 文件已经在仓库中，但默认执行仍受 `NANO_AGENT_LIVE_E2E=1` gate 约束。当前 `pnpm test:cross-e2e` 的实际结果是 **52 tests / pass 1 / skipped 51**；因此它们是 live-evidence scaffold，不是默认环境下的交付完成证明。
 
 ---
 
@@ -84,11 +86,11 @@ test/cross-e2e/02-auth-roundtrip.test.mjs
 
 | Layer | live | retired | retained-deferred |
 |-------|------|---------|-------------------|
-| Unit | 8 packages 1922 tests | 0 | 0 |
+| Unit | workspace package / worker suites live | 0 | 0 |
 | Root drift | 5 gates | 0 | 0 |
 | Contract | root-guardians + package-e2e | 0 | 0 |
-| cross-e2e | 15 baseline | 0 | HP2-HP8 targeted handoff |
-| Manual evidence | scaffold + cannot-close | 0 | HP9-D1 handed-to-platform |
+| cross-e2e | 22 files（default env 51 skipped） | 0 | live deploy evidence gate |
+| Manual evidence | scaffold + cannot-close | 0 | owner-action retained |
 
 ---
 
@@ -108,14 +110,14 @@ test/cross-e2e/02-auth-roundtrip.test.mjs
 
 | 命令 | 预期 |
 |------|------|
-| `pnpm test` | 1922/1922 全绿 |
+| `pnpm test` | workspace package / worker suites全绿 |
 | `pnpm test:contracts` | root-guardians 全绿 |
 | `pnpm check:cycles` | clean |
 | `pnpm check:observability-drift` | clean |
 | `pnpm check:megafile-budget` | 5 file 全部 within budget |
 | `pnpm check:tool-drift` | 1 tool id (`bash`) registered |
 | `pnpm check:envelope-drift` | 1 public file clean |
-| `pnpm test:cross-e2e` | 15 baseline files；HP2-HP8 targeted **NOT YET**（handed-to-platform） |
+| `pnpm test:cross-e2e` | 52 tests / pass 1 / skipped 51（需 `NANO_AGENT_LIVE_E2E=1` 才进入 live deploy 断言） |
 
 ---
 

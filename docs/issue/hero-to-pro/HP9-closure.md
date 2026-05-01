@@ -122,7 +122,7 @@ HP10 应在 final closure 中：
 | 7 新增文档存在 | `ls clients/api-docs/{models,context,checkpoints,confirmations,todos,workspace,transport-profiles}.md` | all present ✅ |
 | README reindex 完整性 | README 18-Doc Pack 表与文件清单一致 | ✅ |
 | confirmations 7-kind matrix | `confirmations.md §1` | matrix present ✅ |
-| session-ws-v1 12-kind catalog | `session-ws-v1.md §3.2` | 12 kinds 列出 ✅ |
+| session-ws-v1 13-kind catalog | `session-ws-v1.md §3.2` | 13 kinds 列出 ✅ |
 | manual evidence index scaffold | `docs/issue/hero-to-pro/manual-evidence-pack.md` | scaffold present；`cannot-close` 状态显式 ✅ |
 | prod baseline scaffold | `docs/issue/hero-to-pro/prod-schema-baseline.md` | scaffold present；wrangler command template + blocked-by-owner-access 路径显式 ✅ |
 | 5 设备实际录制 | `docs/evidence/hero-to-pro-manual-*` | **NOT YET** — owner-action |
