@@ -5,7 +5,7 @@
 > 关联 phase closure: `docs/issue/hero-to-pro/HP10-closure.md`
 > 关联 final closure: `docs/issue/hero-to-pro/hero-to-pro-final-closure.md`
 > 冻结依据: hero-to-pro `as-of-commit-hash e9287e4523f33075a37d4189a8424f385c540374`
-> 文档状态: `frozen — live-gated`
+> 文档状态: `frozen — HPX1 synced`
 
 ---
 
@@ -58,27 +58,33 @@
 
 ### 1.4 cross-e2e Files（当前仓库事实）
 
-`test/cross-e2e/` 当前 22 个文件，覆盖 RHX2 baseline + HP2-HP8 targeted scaffold：
+`test/cross-e2e/` 当前 15 个文件，覆盖 RHX2 baseline + surviving HP2 live assertions：
 
 ```text
 test/cross-e2e/01-stack-preview-inventory.test.mjs
 test/cross-e2e/02-agent-bash-tool-call-happy-path.test.mjs
 ...
-test/cross-e2e/21-hp8-heartbeat-posture.test.mjs
 test/cross-e2e/zx2-transport.test.mjs
 ```
 
-> **Coverage Fact**：这些 targeted cross-e2e 文件已经在仓库中，但默认执行仍受 `NANO_AGENT_LIVE_E2E=1` gate 约束。当前 `pnpm test:cross-e2e` 的实际结果是 **52 tests / pass 1 / skipped 51**；因此它们是 live-evidence scaffold，不是默认环境下的交付完成证明。
+> **Coverage Fact**：HPX1 已退休 `cross-e2e/07` 与 `16-21` 的 marker / pure-placeholder 文件；当前 surviving cross-e2e 只保留有真实断言的基线链路与 `15-hp2-model-switch` 的模型元数据校验。默认执行仍受 `NANO_AGENT_LIVE_E2E=1` gate 约束，因此 cross-e2e 依旧属于 live-evidence layer，而不是默认环境下的交付完成证明。
 
 ---
 
 ## 2. Retired Guardians
 
-> hero-to-pro 阶段没有发生 retire；以下 placeholder 留给 hero-to-platform 阶段在退役某 guardian 时填写。
+> HPX1 已把与当前 6-worker 拓扑冲突、或仅靠 marker / `status === 200` 通过的旧 guardian 显式退休并登记如下。
 
 | Retired Guardian | Retired Date | Replacement | Reason |
 |------------------|--------------|-------------|--------|
-| (none) | n/a | n/a | n/a |
+| `test/package-e2e/agent-core/01-preview-probe.test.mjs` | 2026-05-01 | `workers/agent-core/test/smoke.test.ts` | leaf worker direct public probe 已不符合 post-ZX3 topology |
+| `test/package-e2e/bash-core/01-06*.test.mjs` | 2026-05-01 | `workers/bash-core/test/smoke.test.ts` + `workers/bash-core/test/http-boundary.test.ts` | bash-core direct package-e2e 与 internal-binding secret 前提冲突；有价值 HTTP 断言已回迁 worker-local |
+| `test/package-e2e/context-core/01-02*.test.mjs` | 2026-05-01 | `workers/context-core/test/smoke.test.ts` | library-worker posture 由 worker-local 401 binding-scope 守卫承接 |
+| `test/package-e2e/filesystem-core/01-02*.test.mjs` | 2026-05-01 | `workers/filesystem-core/test/smoke.test.ts` | library-worker posture 由 worker-local 401 binding-scope 守卫承接 |
+| `test/package-e2e/orchestrator-auth/01-probe.test.mjs` | 2026-05-01 | `workers/orchestrator-auth/test/public-surface.test.ts` + `workers/orchestrator-auth/test/entrypoint-rpc.test.ts` | public route truth 已变为 `401 binding-scope-forbidden`，且缺口实际在 entrypoint adapter |
+| `test/package-e2e/orchestrator-core/07-legacy-agent-retirement.test.mjs` | 2026-05-01 | `workers/agent-core/test/smoke.test.ts` | 断言对象是 agent-core legacy retirement，目录层级错误 |
+| `test/cross-e2e/07-library-worker-topology-contract.test.mjs` | 2026-05-01 | `workers/{context-core,filesystem-core}/test/smoke.test.ts` + root wrangler audit | 该文件在 ZX3 后已降级为 marker，不再是有效 cross-e2e |
+| `test/cross-e2e/16-21*.test.mjs` | 2026-05-01 | no successor | 纯 `status === 200` placeholder 无稳定 live oracle，HPX1 明确退休 |
 
 ---
 
@@ -89,7 +95,7 @@ test/cross-e2e/zx2-transport.test.mjs
 | Unit | workspace package / worker suites live | 0 | 0 |
 | Root drift | 5 gates | 0 | 0 |
 | Contract | root-guardians + package-e2e | 0 | 0 |
-| cross-e2e | 22 files（default env 51 skipped） | 0 | live deploy evidence gate |
+| cross-e2e | 15 files（HPX1 retired marker / placeholder cohort） | 7 retired files | live deploy evidence gate |
 | Manual evidence | scaffold + cannot-close | 0 | owner-action retained |
 
 ---
@@ -117,7 +123,7 @@ test/cross-e2e/zx2-transport.test.mjs
 | `pnpm check:megafile-budget` | 5 file 全部 within budget |
 | `pnpm check:tool-drift` | 1 tool id (`bash`) registered |
 | `pnpm check:envelope-drift` | 1 public file clean |
-| `pnpm test:cross-e2e` | 52 tests / pass 1 / skipped 51（需 `NANO_AGENT_LIVE_E2E=1` 才进入 live deploy 断言） |
+| `pnpm test:cross-e2e` | live-gated layer；默认环境仅运行 local-compatible subset，其余按 gate skip |
 
 ---
 

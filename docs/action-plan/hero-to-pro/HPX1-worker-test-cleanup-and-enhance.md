@@ -29,7 +29,7 @@
 > - `docs/charter/plan-hero-to-pro.md` D1-D4 / §1.2（只读引用；本 action-plan 不填写 Q/A）
 > - `docs/charter/plan-worker-matrix.md` §1.2 / §2.2 / §4（只读引用；本 action-plan 不填写 Q/A）
 > - `docs/architecture/test-topology.md` §1-§6（只读引用；本 action-plan 不填写 Q/A）
-> 文档状态: `draft`
+> 文档状态: `executed`
 
 ---
 
@@ -534,3 +534,46 @@ hero-to-pro HPX1 test cleanup + enhance
 | 风险收敛 | 评审报告中的 blocker 项均已处理或显式降级为 follow-up / retained-with-reason |
 | 可交付性 | HPX1 closure 可直接引用本 plan 的 per-file verdict、命令和文档同步结果 |
 
+---
+
+## 9. HPX1 执行工作汇报（append）
+
+- **执行状态**：HPX1 已按当前仓库 reality 落地；保留项、删除项、迁移项、已知基线阻塞均已回填。
+- **git 历史回看后对计划的修正**：
+  - `4b19d3d` 之后，`test/cross-e2e/15-hp2-model-switch.test.mjs` 不再是纯空壳；其中 `model alias resolve` 与 `model fallback metadata remains schema-live` 已具真实 oracle。
+  - 因此最终执行不是“整组删除 15-21”，而是**保留 15 中已有真实断言的两个 live case，退休 15 里的占位子用例与 16-21 整组 placeholder 文件**。
+- **本轮删除的 stale / misplaced 测试资产**：
+  - `test/package-e2e/agent-core/01-preview-probe.test.mjs`
+  - `test/package-e2e/bash-core/01-06*.test.mjs`
+  - `test/package-e2e/context-core/01-02*.test.mjs`
+  - `test/package-e2e/filesystem-core/01-02*.test.mjs`
+  - `test/package-e2e/orchestrator-auth/01-probe.test.mjs`
+  - `test/package-e2e/orchestrator-core/07-legacy-agent-retirement.test.mjs`
+  - `test/cross-e2e/07-library-worker-topology-contract.test.mjs`
+  - `test/cross-e2e/16-hp3-context-machine.test.mjs`
+  - `test/cross-e2e/17-hp4-lifecycle.test.mjs`
+  - `test/cross-e2e/18-hp5-confirmation-roundtrip.test.mjs`
+  - `test/cross-e2e/19-hp6-tool-workspace.test.mjs`
+  - `test/cross-e2e/20-hp7-checkpoint-restore.test.mjs`
+  - `test/cross-e2e/21-hp8-heartbeat-posture.test.mjs`
+  - `workers/agent-core/test/eval/sink.test.ts`
+- **本轮新增 / 回迁的测试守卫**：
+  - 新增 `workers/bash-core/test/http-boundary.test.ts`，把原 `bash-core` package-e2e 中仍有价值的 HTTP ok / error taxonomy / malformed-body 断言迁回 worker-local，并用 internal binding secret 对齐真实入口前提。
+  - 新增 `workers/orchestrator-auth/test/entrypoint-rpc.test.ts`，直接覆盖 WorkerEntrypoint `fetch()` guard、known misconfig envelope，以及 repository 异常的 wrapper 行为。
+  - 在 `workers/orchestrator-core/test/auth.test.ts` 补入 `malformed bearer token` local negative，用 worker-local 方式承接 live negative matrix 的缺口。
+- **本轮保留但收紧的资产**：
+  - `test/cross-e2e/15-hp2-model-switch.test.mjs` 仅保留已有真实 oracle 的两条模型元数据断言；占位子用例已从文件中移除。
+  - `test/package-e2e/orchestrator-core/08-worker-health.test.mjs` 继续保留，原因是它守护的是冻结的 6-worker invariant，而非应被“动态化”的历史残影。
+  - `test/root-guardians/tool-call-live-loop.test.mjs` 继续保留，原因是它仍属于 root-level contract guard，而不是 HPX1 的 stale blocker。
+- **文档同步改动**：
+  - `test/index.md` 已改写为 HPX1 后的真实目录说明：`package-e2e/` 只剩 `orchestrator-core`；leaf-worker 相关 coverage 改由 `workers/*/test` 承接。
+  - `docs/architecture/test-topology.md` 已登记 retired guardians，不再保留 `(none)` 的失真描述，并同步 cross-e2e/file-tree 的 HPX1 后现状。
+- **综合测试与命令结果**：
+  - `pnpm test`：通过。
+  - `pnpm test:contracts`：仍被既有基线问题阻塞；失败点是 `test/root-guardians/session-registry-doc-sync.test.mjs` 读取缺失文件 `docs/nacp-session-registry.md`，与 HPX1 改动无关。
+  - `pnpm run check:megafile-budget`：仍被既有基线问题阻塞；`workers/orchestrator-core/src/index.ts` 当前 3019 行，超出 3000 行 budget 19 行，与 HPX1 无关。
+  - `pnpm test:e2e`：在 HPX1 变更后重新执行，用于确认删改后的 e2e 树仍可被现有命令消费。
+  - `pnpm --filter @haimang/bash-core-worker test`、`pnpm --filter @haimang/orchestrator-auth-worker test`、`pnpm --filter @haimang/orchestrator-core-worker test`：作为本轮新增/修改 worker-local 守卫的定点回归命令。
+- **最终收口结论**：
+  - HPX1 已完成“失效/过期测试清理”和“内部 vs e2e matrix 缺口补强”的主目标。
+  - 当前剩余未绿项不是 HPX1 引入的问题，而是仓库既有 root-guardian 文档缺失阻塞，后续应由独立修复项处理。
