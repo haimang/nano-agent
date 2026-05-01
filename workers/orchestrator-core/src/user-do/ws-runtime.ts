@@ -27,6 +27,7 @@ export interface UserDoWsRuntimeContext {
   get<T>(key: string): Promise<T | undefined>;
   put<T>(key: string, value: T): Promise<void>;
   readInternalAuthority(request: Request): IngressAuthSnapshot | null;
+  readWsAuthority(request: Request): Promise<IngressAuthSnapshot | Response | null>;
   requireReadableSession(sessionUuid: string): Promise<SessionEntry | null>;
   sessionGateMiss(sessionUuid: string): Promise<Response>;
   getTerminal(sessionUuid: string): Promise<SessionTerminalRecord | null>;
@@ -52,7 +53,8 @@ export function createUserDoWsRuntime(ctx: UserDoWsRuntimeContext) {
       if (entry.status === "ended") {
         return sessionTerminalResponse(sessionUuid, await ctx.getTerminal(sessionUuid));
       }
-      const parsedAuthority = ctx.readInternalAuthority(request);
+      const parsedAuthority = ctx.readInternalAuthority(request) ?? await ctx.readWsAuthority(request);
+      if (parsedAuthority instanceof Response) return parsedAuthority;
       const gatedEntry = await ctx.enforceSessionDevice(sessionUuid, entry, parsedAuthority);
       if (gatedEntry instanceof Response) return gatedEntry;
       if (!isWebSocketUpgrade(request)) {

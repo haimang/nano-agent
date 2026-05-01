@@ -274,6 +274,22 @@ function parseStringArray(value: unknown): string[] {
   }
 }
 
+function normalizeReasoningLevels(
+  levels: ReadonlyArray<ReasoningEffort>,
+  supportsReasoning: boolean,
+): ReadonlyArray<ReasoningEffort> {
+  if (levels.length > 0 || !supportsReasoning) return levels;
+  return ["low", "medium", "high"];
+}
+
+function normalizeInputModalities(
+  modalities: ReadonlyArray<string>,
+  supportsVision: boolean,
+): ReadonlyArray<string> {
+  if (modalities.length > 0) return modalities;
+  return supportsVision ? ["text", "image"] : ["text"];
+}
+
 function toNullableReasoningEffort(value: unknown): ReasoningEffort | null {
   return value === "low" || value === "medium" || value === "high" ? value : null;
 }
@@ -363,8 +379,9 @@ export class D1SessionTruthRepository {
     row: Record<string, unknown>,
     aliases: readonly string[],
   ): DurableModelDetail {
+    const catalog = this.toModelCatalogItem(row, aliases);
     return {
-      ...this.toModelCatalogItem(row, aliases),
+      ...catalog,
       max_output_tokens: toNullableInt(row.max_output_tokens),
       effective_context_pct:
         typeof row.effective_context_pct === "number" && Number.isFinite(row.effective_context_pct)
@@ -375,8 +392,14 @@ export class D1SessionTruthRepository {
             ? Number(row.effective_context_pct)
             : null,
       auto_compact_token_limit: toNullableInt(row.auto_compact_token_limit),
-      supported_reasoning_levels: parseReasoningLevels(row.supported_reasoning_levels),
-      input_modalities: parseStringArray(row.input_modalities),
+      supported_reasoning_levels: normalizeReasoningLevels(
+        parseReasoningLevels(row.supported_reasoning_levels),
+        catalog.capabilities.reasoning,
+      ),
+      input_modalities: normalizeInputModalities(
+        parseStringArray(row.input_modalities),
+        catalog.capabilities.vision,
+      ),
       provider_key: toNullableString(row.provider_key),
       fallback_model_id: toNullableString(row.fallback_model_id),
       base_instructions_suffix: toNullableString(row.base_instructions_suffix),

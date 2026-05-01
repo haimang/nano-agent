@@ -297,4 +297,54 @@ describe("RH2 P2-04: GET /models", () => {
     expect(body.data.model.aliases).toEqual(["@alias/vision"]);
     expect(body.data.model.input_modalities).toEqual(["text", "image"]);
   });
+
+  it("GET /models/{id} backfills reasoning and vision detail arrays from capability flags", async () => {
+    const token = await signTestJwt({ sub: USER_UUID, team_uuid: TEAM_UUID }, JWT_SECRET);
+    const response = await worker.fetch(
+      new Request("https://example.com/models/%40alias%2Freasoning", {
+        headers: {
+          authorization: `Bearer ${token}`,
+          "x-trace-uuid": TRACE_UUID,
+        },
+      }),
+      {
+        JWT_SECRET,
+        TEAM_UUID: "nano-agent",
+        NANO_AGENT_DB: createD1Mock({
+          modelsRows: [
+            {
+              model_id: "@cf/meta/llama-4-scout-17b-16e-instruct",
+              family: "workers-ai/llama",
+              display_name: "Llama 4 Scout",
+              context_window: 131072,
+              is_reasoning: 1,
+              is_vision: 1,
+              is_function_calling: 1,
+              status: "active",
+              sort_priority: 10,
+              max_output_tokens: null,
+              effective_context_pct: null,
+              auto_compact_token_limit: null,
+              supported_reasoning_levels: "[]",
+              input_modalities: "[]",
+              provider_key: "workers-ai",
+              fallback_model_id: null,
+              base_instructions_suffix: null,
+              description: "Reasoning + vision",
+            },
+          ],
+          aliasRows: [{ alias_id: "@alias/reasoning", target_model_id: "@cf/meta/llama-4-scout-17b-16e-instruct" }],
+        }),
+        ORCHESTRATOR_USER_DO: {} as any,
+      } as any,
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      data: {
+        model: { supported_reasoning_levels: string[]; input_modalities: string[] };
+      };
+    };
+    expect(body.data.model.supported_reasoning_levels).toEqual(["low", "medium", "high"]);
+    expect(body.data.model.input_modalities).toEqual(["text", "image"]);
+  });
 });

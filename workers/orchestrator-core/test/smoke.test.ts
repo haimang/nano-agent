@@ -216,7 +216,13 @@ describe("orchestrator-core shell smoke", () => {
     const get = vi.fn().mockReturnValue({ fetch: stubFetch });
 
     const response = await worker.fetch(
-      new Request(`https://example.com/sessions/${SESSION_UUID}/ws?access_token=${token}&trace_uuid=${TRACE_UUID}`, { method: "GET", headers: { upgrade: "websocket" } }),
+      new Request(`https://example.com/sessions/${SESSION_UUID}/ws?access_token=${token}&trace_uuid=${TRACE_UUID}`, {
+        method: "GET",
+        headers: {
+          upgrade: "websocket",
+          "sec-websocket-key": "key",
+        },
+      }),
       {
         JWT_SECRET,
         TEAM_UUID: "nano-agent",
@@ -226,7 +232,12 @@ describe("orchestrator-core shell smoke", () => {
 
     expect(response.status).toBe(200);
     expect(idFromName).toHaveBeenCalledWith(USER_UUID);
-    expect(new URL(stubFetch.mock.calls[0]![0]!.url).pathname).toBe(`/sessions/${SESSION_UUID}/ws`);
+    const forwarded = stubFetch.mock.calls[0]![0]!;
+    expect(new URL(forwarded.url).pathname).toBe(`/sessions/${SESSION_UUID}/ws`);
+    expect(new URL(forwarded.url).searchParams.get("access_token")).toBe(token);
+    expect(new URL(forwarded.url).searchParams.get("trace_uuid")).toBe(TRACE_UUID);
+    expect(forwarded.headers.get("upgrade")).toBe("websocket");
+    expect(forwarded.headers.get("sec-websocket-key")).toBe("key");
   });
 
   it("routes authenticated history reads to the user DO", async () => {

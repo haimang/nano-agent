@@ -1,5 +1,10 @@
 import { createLogger } from "@haimang/nacp-core/logger";
-import type { IngressAuthSnapshot, InitialContextSeed } from './auth.js';
+import {
+  authenticateRequest,
+  type AuthEnv,
+  type IngressAuthSnapshot,
+  type InitialContextSeed,
+} from './auth.js';
 import {
   D1SessionTruthRepository,
   type DurableSessionPointer,
@@ -116,7 +121,7 @@ export type AgentRpcMethodKey =
   | 'permissionDecision'
   | 'elicitationAnswer';
 
-export interface OrchestratorUserEnv {
+export interface OrchestratorUserEnv extends AuthEnv {
   readonly AGENT_CORE?: Fetcher & Partial<Record<AgentRpcMethodKey, AgentRpcMethodFn>>;
   readonly NANO_AGENT_DB?: D1Database;
   readonly NANO_INTERNAL_BINDING_SECRET?: string;
@@ -188,6 +193,13 @@ export class NanoOrchestratorUserDO {
       get: <T>(key: string) => this.get<T>(key),
       put: <T>(key: string, value: T) => this.put(key, value),
       readInternalAuthority,
+      readWsAuthority: async (request: Request) => {
+        const authHeader = request.headers.get("authorization");
+        const accessToken = new URL(request.url).searchParams.get("access_token");
+        if (!authHeader && !accessToken) return null;
+        const auth = await authenticateRequest(request, this.env, { allowQueryToken: true });
+        return auth.ok ? auth.value.snapshot : auth.response;
+      },
       requireReadableSession: (sessionUuid: string) => this.requireReadableSession(sessionUuid),
       sessionGateMiss: (sessionUuid: string) => this.sessionGateMiss(sessionUuid),
       getTerminal: (sessionUuid: string) => this.getTerminal(sessionUuid),
