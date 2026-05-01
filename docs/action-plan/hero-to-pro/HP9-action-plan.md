@@ -489,3 +489,120 @@ hero-to-pro HP9 docs + evidence pack
 | 文档 | README、18 份 docs、manual-evidence-pack、prod-schema-baseline、HP9-closure 互链完整 |
 | 风险收敛 | 不再使用 RHX2 过时兼容叙述、不再 defer manual evidence、不再以本地 migrations 冒充 prod baseline |
 | 可交付性 | HP10 可以直接基于 HP9 的 frozen public truth 写 final closure 与 hero-to-platform handoff |
+
+---
+
+## 9. 工作日志（实施回填，append-only）
+
+> 实施者: `claude-opus-4-7 (1M context)`
+> 实施日期: `2026-05-01`
+> 关联 closure: `docs/issue/hero-to-pro/HP9-closure.md`
+> 工作模式: 遵循 charter §0.5 wire-with-delivery 法律 + HPX-Q29/Q30/Q31/Q32
+
+### 9.1 Phase 1 — Freeze Inventory + Review Routing
+
+- **P1-01 18-doc inventory freeze** ✅
+  - 重写 `clients/api-docs/README.md`：把 RHX2 Phase 6 标题/索引升级为 hero-to-pro Frozen Pack
+  - 锁定 18-doc 索引：11 现有（README/auth/me-sessions/error-index/worker-health/catalog + session/session-ws-v1/permissions/usage/wechat-auth）+ 7 新增（models/context/checkpoints/confirmations/todos/workspace/transport-profiles）
+  - README 新增 Foundation / Session Surface 两组 + Endpoint Matrix 12 类按产品 surface 分组
+- **P1-02 review routing checklist** ✅（路由冻结于 closure §3-§4）
+  - rewrite: session.md / permissions.md / usage.md / error-index.md
+  - new: 7 份新增专题
+  - sanity: auth.md / catalog.md / me-sessions.md / wechat-auth.md / worker-health.md
+  - structural drift 升级为 rewrite 的判定权 exercised in `session-ws-v1.md`（12-kind catalog）
+
+### 9.2 Phase 2 — Rewrite High-Risk Existing Docs
+
+- **P2-01 rewrite session.md** ✅
+  - 行数 897 → ~210；移除 models / context / files 混装
+  - 新增 lifecycle state machine 图 + ended_reason 4 取值表（Q13 frozen）
+  - DELETE 软删 conversation tombstone 语义明确（Q14 frozen）
+  - 把 models / context / workspace / checkpoints 全部 cross-link 到新文档
+- **P2-02 rewrite permissions.md** ✅
+  - 不再写 "唯一 live API"；改写为 legacy compatibility surface
+  - 引入 HP5 row-first dual-write law（Q16 frozen）说明
+  - 新增 §6 migration path（legacy → confirmations）
+  - `409 confirmation-already-resolved` 显式说明
+- **P2-02 rewrite usage.md** ✅
+  - 移除 "WS push 未 live" 旧叙述
+  - 新增 §2 WebSocket Live Push 状态：`session.usage.update` 帧已 live
+  - 保留 polling fallback；推荐 ≥ 5 秒间隔
+- **P2-02 rewrite error-index.md** ✅
+  - 标题升级为 hero-to-pro Frozen Pack
+  - 新增 5 个 HP5/HP6 ad-hoc public codes：`confirmation-already-resolved` / `confirmation-not-found` / `todo-not-found` / `invalid-status` / `in-progress-conflict`
+  - 新增 `hero-to-pro Phase Wire Facts §4-§6`：HP5 row-first law / HP6 at-most-1 invariant / HP7 restore not-yet-live
+
+### 9.3 Phase 3 — New Docs + README Reindex + Stable Sanity
+
+- **P3-01 author 7 new docs + README reindex** ✅
+  - `clients/api-docs/models.md`（HP2 model state machine：4-layer chain + alias resolve + clear semantics + reasoning effort + deferred not-yet-live 表）
+  - `clients/api-docs/context.md`（HP3：probe/layers/snapshot/compact preview/job + Q12 cache 状态 + auto-compact dead link 显式说明 + 5 deferred 项）
+  - `clients/api-docs/checkpoints.md`（HP4 first-wave + HP7 substrate：5 概念 + list/create/diff + restore-not-yet-live + Q22/Q23/Q24 frozen）
+  - `clients/api-docs/confirmations.md`（HP5：7-kind × 6-status readiness matrix；row-first law；migration from legacy）
+  - `clients/api-docs/todos.md`（HP6：5-status enum + at-most-1 invariant + agent-core WriteTodos not-wired）
+  - `clients/api-docs/workspace.md`（HP6：3 概念 + tenant-scoped R2 key law + 7-rule path normalization + Lane E reference）
+  - `clients/api-docs/transport-profiles.md`（6 profiles + Q27 invariant + internal envelope not-for-clients + versioning discipline）
+  - README reindex 完成（P1-01 中一并）
+- **P3-02 stable docs sanity check** ✅
+  - `auth.md` / `me-sessions.md` / `wechat-auth.md` / `worker-health.md`：标题 RHX2 → hero-to-pro
+  - `catalog.md`：permission-gate description 更新到 HP5 confirmation control plane
+  - `session-ws-v1.md`：发现 12-kind 漂移 → 升级为 rewrite（per Q32）；新增 `tool.call.cancelled` / `session.fork.created` / `session.confirmation.*` / `session.todos.*` / `session.usage.update` 全部 schema
+
+### 9.4 Phase 4 — Manual Evidence + Prod Baseline
+
+- **P4-01 manual evidence pack scaffold** ✅ (scaffold) / ⚠️ owner-action pending
+  - 创建 `docs/issue/hero-to-pro/manual-evidence-pack.md`
+  - 5 设备矩阵冻结：Chrome web / Safari iOS / Android Chrome / WeChat 开发者工具 / WeChat 真机
+  - per-device 20-step list（register → device-revoke flow）
+  - failure / NA-with-reason 规则冻结
+  - owner-action 4 时点 checklist：HP9 启动日 / +3 / +7 / +10
+  - 当前 verdict：`cannot-close (owner-action-blocked)` — claude-opus-4-7 无物理设备访问权
+- **P4-02 prod schema baseline scaffold** ✅ (scaffold) / ⚠️ owner-action pending
+  - 创建 `docs/issue/hero-to-pro/prod-schema-baseline.md`
+  - 仓内 14 migrations snapshot 表（含 014 受控例外登记）
+  - owner-action wrangler 命令 template（`wrangler d1 migrations list --remote` + 关键 PRAGMA dump）
+  - `blocked-by-owner-access` 路径显式（Q31 + Q36 frozen）
+  - 当前 verdict：`pending-owner-run`
+
+### 9.5 Phase 5 — 4-Review Fixes + Closure
+
+- **P5-01 4-review fixes** ⚠️ pending-reviewer-input
+  - 4-review pattern 需要外部 reviewer (kimi / GLM / deepseek / GPT) 各自产 memo
+  - 实施者无法替代 reviewer 写 memo（HPX-Q32 frozen review routing：rewrite/new docs 必须深审）
+  - 承接：HP9 后续批次（owner 触发 reviewer 流程）
+- **P5-02 HP9-closure** ✅
+  - 创建 `docs/issue/hero-to-pro/HP9-closure.md`
+  - §0 verdict matrix 给出 8 个维度状态
+  - §1 R1-R12 列已落实事项
+  - §2 P1-P3 列 cannot-close / pending-reviewer-input 项与承接
+  - §3 K1-K4 显式登记 retained / out-of-scope
+  - §4 F1-F17 chronic 状态 phase 视角更新（F11 升级为 `partial-by-HP9-docs-frozen-but-evidence-blocked`）
+  - §5 HP10 final closure 输入清单
+  - §7 显式说明：HP9 cannot-close 不阻塞 HP10 启动（HPX-Q33 禁止的是 silent，不是 cannot-close 本身）
+
+### 9.6 测试矩阵
+
+| 验证项 | 命令 / 证据 | 结果 |
+|--------|-------------|------|
+| 18-doc count | `ls clients/api-docs/*.md \| wc -l` | `18` ✅ |
+| RHX2 stale 标题清理 | `grep -nE "^# .*RHX2" clients/api-docs/*.md` | zero ✅ |
+| 7 新增专题文件 | `ls clients/api-docs/{models,context,checkpoints,confirmations,todos,workspace,transport-profiles}.md` | all present ✅ |
+| README reindex | manual review | 18-Doc Pack 表与文件清单一致 ✅ |
+| confirmations 7-kind matrix | `confirmations.md §1` | matrix present ✅ |
+| session-ws-v1 12-kind catalog | `session-ws-v1.md §3.2` | 12 kinds 列出 ✅ |
+| manual evidence scaffold | `docs/issue/hero-to-pro/manual-evidence-pack.md` | scaffold + cannot-close 显式 ✅ |
+| prod baseline scaffold | `docs/issue/hero-to-pro/prod-schema-baseline.md` | scaffold + blocked path 显式 ✅ |
+| HP9-closure | `docs/issue/hero-to-pro/HP9-closure.md` | written ✅ |
+| 5 设备实际录制 | `docs/evidence/hero-to-pro-manual-*` | NOT YET — owner-action |
+| prod `wrangler --remote` | baseline.md §5 | NOT YET — owner-action |
+| 4-reviewer memos | `docs/eval/hero-to-pro/HP9-api-docs-reviewed-by-*` | NOT YET — pending-reviewer-input |
+
+### 9.7 Charter §4.4 D7 纪律
+
+HP9 是 HP8 freeze 之后**唯一**更新 `clients/api-docs/` 的 phase（HP6/HP7/HP8 closure §0 已证明 docs not-touched）。这与 HP2-HP4 散落更新 docs（reviewer DS-R8 / GLM-R9 标记的 D7 violation）形成纪律恢复对照。HP10 不应再更新 docs；任何客户端 SDK / contract codegen 由 hero-to-platform 阶段负责。
+
+### 9.8 实施者侧总评
+
+- 完成度: docs pack 主体 18/18；evidence + baseline + review 三项依赖 owner / external reviewer，scaffold 完整
+- 与 charter 对齐: §10.1 第 3 条 "18 份 clients/api-docs 与代码 100% 对齐" — docs side 100% 对齐；evidence side cannot-close (owner-action-blocked)
+- HP10 启动 readiness: ✅ HP9 closure 显式 `cannot-close` 即合规；HP10 把 P1/P2 登记为 retained-with-reason 或 handed-to-platform 即可推进 final closure
