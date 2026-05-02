@@ -7,10 +7,10 @@
 > 跨阶段 deferred-closure absorb log: `docs/issue/hero-to-pro/HP0-H10-deferred-closure.md`
 > 冻结决策来源: `docs/design/hero-to-pro/HPX-qna.md` Q33 / Q34 / Q35 / Q36
 > as-of-commit-hash: `e9287e4523f33075a37d4189a8424f385c540374` (pre-absorb baseline; absorb 后 HEAD 见 git log)
-> 文档状态: `frozen — partial-close-with-7-retained`
+> 文档状态: `frozen — close-with-known-issues`
 > 闭环日期: `2026-05-01`
 >
-> **重要修正 (2026-05-01)**：之前版本错误地把 22 项 deferred 登记为 `handed-to-platform`。owner 复审纠正：**hero-to-platform 不是已命名阶段**，那些项应该在 hero-to-pro 内吸收完成。本文件的 §3 / §4 / §5 表已完全 rewrite 反映这一纠正：22 项中的 28 个细分 absorbed within hero-to-pro，剩余 7 项是 genuinely retained-with-reason（4 项 owner-action + 3 项 cleanup retained）。具体 absorb 实现日志见 `HP0-H10-deferred-closure.md`。
+> **重要修正 (2026-05-02)**：之前版本错误地把 22 项 deferred 登记为 `handed-to-platform`，随后又把 cleanup 继续挂在阶段 retained 上。owner 复审 + HPX7 sync 后，当前事实是：**hero-to-platform 不是已命名阶段**，22 项中的 28 个细分 absorbed within hero-to-pro，阶段 retained 只剩 4 项 owner-action；cleanup 改记为 `accepted-as-risk / known issue`。具体 absorb 实现日志见 `HP0-H10-deferred-closure.md` 与 `HPX7-closure.md`。
 
 ---
 
@@ -18,18 +18,18 @@
 
 | 维度 | 结论 |
 |------|------|
-| **hero-to-pro 阶段总 verdict** | **`partial-close / 7-retained-with-explicit-remove-condition`** |
+| **hero-to-pro 阶段总 verdict** | **`close-with-known-issues / 4-owner-action-retained-with-explicit-remove-condition`** |
 | 11 phases (HP0-HP10) verdict map | HP0/HP1 `closed`；HP2-HP9 `partial-live with deferred-closure absorb`；HP10 `closed-as-handoff-owner` |
 | 18 docs pack | `frozen` (HP9 完成) |
 | manual evidence | `retained-with-reason within hero-to-pro` (owner-action; next review 2026-05-11) |
 | prod schema baseline | `retained-with-reason within hero-to-pro` (owner-action; next review 2026-05-15) |
 | F1-F17 chronic | merged in §5；5 closed / 11 partial / 1 retained-with-reason |
 | ~35 second-wave deferred | classified in §4：**28 absorbed within hero-to-pro** (HP2-D1/D2/D3, HP3-D1..D6, HP4-D1/D2/D3, HP5-D1/D2, HP6-D1..D8, HP7-D1..D5, HP8-D2/D3/D4) / 4 owner-action retained / 5 accepted-as-risk |
-| cleanup register | 4 `retained-with-reason within hero-to-pro` (K1/K2/K3/K5) / 0 deleted / 0 handed-to-platform；K4 可在后续批次内 hero-to-pro 删除 |
+| cleanup register | 0 retained / 4 `accepted-as-risk / known issue` (K1/K2/K3/K5)；K4 继续保留为 deprecated note，不计入阶段 retained |
 | hero-to-platform stub (旧) | **superseded** — hero-to-platform 不是已命名 phase；之前的 stub 文件保留作为"未来 phase 入口预留"，但**不再有 inherited issues 转移**（因为本阶段已 absorb） |
-| HPX-Q33 compliance | ✅ no silently-resolved；7 retained 全部带 Q36 6-字段 (item / scope / reason / remove condition / current owner / next review date) |
+| HPX-Q33 compliance | ✅ no silently-resolved；4 retained 全部带 Q36 6-字段 (item / scope / reason / remove condition / current owner / next review date) |
 
-> **解读 (重要修正 2026-05-01)**：之前版本错误地把 22 项 deferred 标为 `handed-to-platform`，这是 framing error — hero-to-platform 不是已命名 phase。本批次把那 22 项中的全部 28 个细分项**真正吸收并实现进 hero-to-pro**（详见 `HP0-H10-deferred-closure.md`）。剩余 7 项是 genuinely retained-with-reason within hero-to-pro：4 owner-action（physical hardware / prod credential / external reviewer / wrangler tail trace）+ 3 cleanup（caller flow migration 未完成）。每项带 Q36 6 字段。
+> **解读 (HPX7 修正版, 2026-05-02)**：之前版本错误地把 cleanup 也继续挂在阶段 retained 上，导致 final closure 仍停在 `partial-close / 7-retained`。HPX7 完成后，工程侧 honesty / residual / cleanup blocker 已完成 reclassification：**28 个 deferred 细分项继续保持已 absorbed within hero-to-pro**（详见 `HP0-H10-deferred-closure.md`），阶段 retained 只剩 4 项 owner-action（physical hardware / prod credential / external reviewer / wrangler tail trace）。cleanup 议题改记为 `accepted-as-risk / known issue`，不再占用 retained 配额。
 >
 > hero-to-pro 阶段不是 "完成全部预定工作 = closed"，而是**完成了 control plane / durable truth / protocol / executor first-wave / docs pack，并把无法在阶段内完成的部分显式 retained-with-reason 而不是 silently handed**。这是 charter §0.5 wire-with-delivery 法律 + HPX-Q33 frozen 下的 explicit terminal verdict。
 
@@ -45,7 +45,7 @@
 | HP3 | Context 状态机 | `HP3-closure.md` | `partial-live` | `CrossTurnContextManager` / auto-compact / strip-recover / breaker / 60s preview cache 仍待后续批次 |
 | HP4 | Chat 生命周期 | `HP4-closure.md` | `partial-live` | retry latest-turn chain / restore rollback safety / targeted live-e2e 仍待后续批次 |
 | HP5 | Confirmation 收拢 | `HP5-closure.md` | `partial-live` | 统一 HTTP plane 已 live；WS emitter 与其余 kind caller 仍待后续批次 |
-| HP6 | Tool/Workspace | `HP6-closure.md` | `partial-live` | bytes delivery / promotion / cleanup / WriteTodos 仍待后续批次 |
+| HP6 | Tool/Workspace | `HP6-closure.md` | `executed-with-followups` | workbench surfaces 已 live；retry / fork / restore deep executor semantics 与 cleanup hardening 仍待后续批次 |
 | HP7 | Checkpoint Revert | `HP7-closure.md` | `partial-live` | restore/fork executor / TTL cron / targeted live-e2e 仍待后续批次 |
 | HP8 | Runtime Hardening | `HP8-closure.md` | `partial-live` | R28/R29 register / heartbeat 4-scenario live-e2e / consumer migration 仍待 retained follow-up |
 | HP9 | API Docs + Manual Evidence | `HP9-closure.md` | `cannot-close (owner-action-blocked)` | manual evidence / prod baseline / reviewer memo 属 owner-action retained |
@@ -58,7 +58,7 @@
 | Model 状态机（4 层 global → session → turn → effective+fallback） | `partial-live (3.5/4)` | global / session / turn / requested-effective audit live；fallback 触发链路 + `<model_switch>` 注入 not-live |
 | Context 状态机（5 surface + auto-compact + strip-recover） | `partial-live (3/5)` | probe / layers / preview / compact-job 5 surface live；auto-compact runtime 死链路；strip-recover marker only |
 | Chat 生命周期状态机 | `partial-live (4/6)` | start / input / messages / cancel / close / delete / title / status / timeline / history / verify / resume live；retry / restore-public not-live |
-| Tool/Workspace 状态机 | `partial-live (3/7)` | todo CRUD / workspace D1 truth / tool.call.cancelled live；filesystem-core leaf RPC / workspace public CRUD / tool-calls list+cancel / promote / cleanup not-live |
+| Tool/Workspace 状态机 | `partial-live (5/7)` | todo CRUD / runtime permission control / tool-call ledger list-detail-cancel / `tool.call.cancelled` live / item object layer 已 live；artifact promotion、cleanup hardening 与 retry/fork/restore deep semantics 仍未 full deliver |
 
 ---
 
@@ -225,7 +225,7 @@
 | `closed`（HP0/HP1） | 2 phase = ~all P-items closed | HP0/HP1 |
 | **`absorbed-within-hero-to-pro`** | **28 细分项** | HP2-D1/D2/D3 + HP3-D1..D6 + HP4-D1/D2/D3 + HP5-D1/D2 + HP6-D1..D8 + HP7-D1..D5 + HP8-D2/D3/D4 |
 | `retained-with-reason within hero-to-pro` (owner-action) | **4 items** | HP8-D1 + HP9-D1 + HP9-D2 + HP9-D3 |
-| `accepted-as-risk` | 5 items | AR1-AR5 (见 §4.9) |
+| `accepted-as-risk` | 9 items | AR1-AR5 + K1/K2/K3/K5（见 §4.9 与 §6.2） |
 | `handed-to-platform` | **0** | (之前 framing error 已纠正) |
 | `cannot-close (still tracked)` | 0 | (全部 explicit) |
 
@@ -272,15 +272,16 @@
 
 无。HP10 不做物理删除——所有候选项要么已是 wrapper 不影响 runtime（保留），要么仍有 live caller（必须保留）。
 
-### 6.2 retained-with-reason
+### 6.2 known issues / accepted-as-risk
 
-| ID | item | scope | why retained | remove condition | current owner | next review |
-|----|------|-------|--------------|------------------|---------------|-------------|
-| K1 | `workers/orchestrator-core/src/parity-bridge.ts` | 372 行；`forwardInternalJsonShadow` / `forwardInternalRaw` / `StreamFrame` types / `logParityFailure` | 仍有 5 个 live caller：`message-runtime.ts:317` / `session-flow.ts:144,569,895,957`；ws-runtime / agent-rpc / durable-truth 也 import types | 当后续阶段把 facade-vs-internal-RPC 双轨拆解为单 path 后，`forwardInternalJsonShadow` 自然回归 | hero-to-pro owner | 下一份 charter 启动日 |
-| K2 | `workers/agent-core/src/host/do/nano-session-do.ts` (8 行 wrapper) | re-export `NanoSessionDO` + `DurableObjectStateLike` from `session-do-runtime.js` | wrangler.jsonc 与外部 importer 仍依赖此 module path；删除会破坏 binding | wrangler.jsonc 与 importer 都迁到 `session-do-runtime.js` 后可删 | hero-to-pro owner | 下一份 charter 启动日 |
-| K3 | `workers/orchestrator-core/src/user-do.ts` (9 行 wrapper) | re-export `NanoOrchestratorUserDO` + 6 types from `user-do-runtime.js` | 与 K2 同源 | 同 K2 | hero-to-pro owner | 下一份 charter 启动日 |
-| K4 | `context-core` `assemblerOps` deprecated alias (`workers/context-core/src/index.ts:179-182`) | `@deprecated` JSDoc + 2-line method body delegating to `contextOps()` | 已标 `@deprecated`；不能立即删除（外部 RPC consumer 可能仍调用） | 任何 caller (grep cross-repo) 全部迁到 `contextOps()` 后可删 | hero-to-pro owner | 下一份 charter 启动日 |
-| K5 | `host-local workspace residue` (Lane E) — `workers/agent-core/src/host/workspace-runtime.ts` | `composeWorkspaceWithEvidence` + `WorkspaceCompositionHandle` | HP8 已显式登记为 `retained-with-reason`，不是 shim；详见 `docs/architecture/lane-e-final-state.md` | filesystem-core 暴露完整 leaf-RPC（`readTempFile / writeTempFile / listTempFiles / deleteTempFile / readSnapshot / writeSnapshot / copyToFork / cleanup`）后可删 | hero-to-pro owner | 下一份 charter 启动日 |
+| ID | item | scope | why kept as known issue | remove condition | current owner | next review |
+|----|------|-------|-------------------------|------------------|---------------|-------------|
+| K1 | `workers/orchestrator-core/src/parity-bridge.ts` | 372 行；`forwardInternalJsonShadow` / `forwardInternalRaw` / `StreamFrame` types / `logParityFailure` | 仍有 5 个 live caller：`message-runtime.ts:317` / `session-flow.ts:144,569,895,957`；当前不构成 correctness blocker，但仍是结构债 | 当后续阶段把 facade-vs-internal-RPC 双轨拆解为单 path 后，`forwardInternalJsonShadow` 自然回归 | future phase owner | 下一份 charter 启动日 |
+| K2 | `workers/agent-core/src/host/do/nano-session-do.ts` (8 行 wrapper) | re-export `NanoSessionDO` + `DurableObjectStateLike` from `session-do-runtime.js` | wrangler.jsonc 与外部 importer 仍依赖此 module path；是兼容性 wrapper，不再作为 hero-to-pro retained blocker | wrangler.jsonc 与 importer 都迁到 `session-do-runtime.js` 后可删 | future phase owner | 下一份 charter 启动日 |
+| K3 | `workers/orchestrator-core/src/user-do.ts` (9 行 wrapper) | re-export `NanoOrchestratorUserDO` + 6 types from `user-do-runtime.js` | 与 K2 同源；兼容性保留不影响当前阶段 closure | 同 K2 | future phase owner | 下一份 charter 启动日 |
+| K5 | `host-local workspace residue` (Lane E) — `workers/agent-core/src/host/workspace-runtime.ts` | `composeWorkspaceWithEvidence` + `WorkspaceCompositionHandle` | 仍是 Lane E 结构债，但不再阻止 hero-to-pro engineering closure uplift | filesystem-core 暴露完整 leaf-RPC（`readTempFile / writeTempFile / listTempFiles / deleteTempFile / readSnapshot / writeSnapshot / copyToFork / cleanup`）后可删 | future phase owner | 下一份 charter 启动日 |
+
+`K4` (`context-core` `assemblerOps` deprecated alias) 继续保留为 deprecated note，不计入 retained，也不计入本节 4 项 known issues。
 
 ### 6.3 handed-to-platform
 
@@ -300,11 +301,11 @@
 
 ## 7. 后续承接（post-absorb 修正版）
 
-> **重要修正 (2026-05-01)**: hero-to-platform **不是**已命名阶段。之前的 §7 把 22 项 deferred 列为 "inherited to hero-to-platform" 是 framing error。本节现在反映 owner 纠正后的事实：28 项已 absorbed within hero-to-pro，剩 7 项 retained-with-reason within hero-to-pro。
+> **重要修正 (2026-05-02)**: hero-to-platform **不是**已命名阶段。之前的 §7 把 22 项 deferred 列为 "inherited to hero-to-platform" 是 framing error；随后又把 cleanup 继续停留在 retained 列表里，导致阶段总 verdict 仍偏保守。本节现在反映 HPX7 修正后的事实：28 项已 absorbed within hero-to-pro，阶段 retained 只剩 4 项 owner-action。
 
 ### 7.1 hero-to-pro 内部待续工作
 
-7 项 retained-with-reason 都 stay within hero-to-pro，等 owner-action / cleanup 触发条件满足：
+4 项 retained-with-reason 都 stay within hero-to-pro，等待 owner-action 条件满足：
 
 | 项 | 触发条件 | next review |
 |----|---------|-------------|
@@ -312,9 +313,6 @@
 | HP9-D1 manual evidence | owner 调度 5 设备录制 | 2026-05-11 |
 | HP9-D2 prod schema baseline | owner 拥有 prod D1 wrangler write permission | 2026-05-15 |
 | HP9-D3 4-reviewer memos | owner 触发 4 external reviewer agents | 2026-05-15 |
-| K1 parity-bridge.ts | dual-track facade-vs-internal-RPC collapse 完成 | hero-to-pro 后续批次 |
-| K2/K3 wrappers | wrangler.jsonc + 外部 importer 迁出 | hero-to-pro 后续批次 |
-| K5 Lane E workspace residue | runtime-assembly migrate to RPC-style | hero-to-pro 后续批次 |
 
 ### 7.2 frozen invariants (hero-to-pro 内部 + 未来阶段都必须遵守)
 
@@ -337,13 +335,13 @@
 - 不需要重做：HPX-Q1...Q36 frozen Q&A
 - **当前阶段不预设那个未来 phase 的内容**（HPX-Q35 frozen）
 
-未来 phase 启动时需要决定的是：是否继续 hero-to-pro 内部待续 7 项的 owner-action / cleanup，或把它们再次重新分类到该新阶段的 inherited issues。但本批次**不预设**这个决定。
+未来 phase 启动时需要决定的是：是否继续承接这 4 项 owner-action retained，以及是否顺手清理 §6 里的 known issues。但本批次**不预设**那个决定。
 
 ---
 
 ## 8. Final Closure Verdict (post-absorb, 2026-05-01)
 
-`hero-to-pro` 阶段以 **`partial-close / 7-retained-with-explicit-remove-condition`** 状态封板。
+`hero-to-pro` 阶段以 **`close-with-known-issues / 4-owner-action-retained-with-explicit-remove-condition`** 状态封板。
 
 **正面事实**：
 
@@ -356,7 +354,7 @@
 7. **28 个原 deferred 细分项被吸收到 hero-to-pro 的代码 / route / substrate / scaffold 层**（详见 `HP0-H10-deferred-closure.md`）；但其中涉及 targeted live-e2e 的部分目前仍属于 **scaffold + live-gated evidence**，不应再表述为“已经完成实际交付”
 8. HPX Q1...Q36 frozen — 后续阶段不需要重新讨论这些决策
 
-**genuinely retained-with-reason within hero-to-pro (7 项)**：
+**genuinely retained-with-reason within hero-to-pro (4 项)**：
 
 | 项 | 类别 | next review |
 |----|------|-------------|
@@ -364,15 +362,12 @@
 | HP9-D1 manual evidence 5-device | owner-action | 2026-05-11 |
 | HP9-D2 prod schema baseline | owner-action | 2026-05-15 |
 | HP9-D3 4-reviewer memos | owner-action | 2026-05-15 |
-| K1 parity-bridge.ts | cleanup | hero-to-pro 后续批次 |
-| K2/K3 wrappers | cleanup | hero-to-pro 后续批次 |
-| K5 host-local Lane E workspace residue | cleanup | hero-to-pro 后续批次 |
 
 每项带 Q36 6 字段，详见 §3 + §6。
 
 **Q33 合规**：
 
-- 无任何 `silently resolved` 项；7 retained 全部 explicit + 带 Q36 6-字段 + 可观察 remove condition
+- 无任何 `silently resolved` 项；4 retained 全部 explicit + 带 Q36 6-字段 + 可观察 remove condition
 - 0 项 `handed-to-platform`（hero-to-platform 不是已命名 phase；之前的 framing error 已 fully reverted）
 - HP10 final closure 是 hero-to-pro 唯一阶段总 closure 入口
 - 跨阶段 deferred-closure absorb 日志 `HP0-H10-deferred-closure.md` 是 28 项 absorb 的真相单源

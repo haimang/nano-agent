@@ -18,7 +18,7 @@
 | public surface | `done-first-wave`(`GET /sessions/{id}/confirmations`、`GET .../{uuid}`、`POST .../{uuid}/decision` 三件套已 live) |
 | protocol frames | `done-first-wave`(`session.confirmation.request` / `session.confirmation.update` 已进入 nacp-session registry,phase/role/direction matrix 已对齐;legacy permission/elicitation 帧保留为 compat) |
 | kernel wait unification | `done-first-wave`(`approval_pending` → `confirmation_pending`;kind 不进入 enum,符合 Q17;Q39 拒绝并行 alias) |
-| HookDispatcher 真注入 | `done-first-wave`(runtime-assembly 不再可选;每个 session DO 都会构造 `HookDispatcher` + `LocalTsRuntime`,作为 HP5 P3 / HP6 / HP7 注册 PreToolUse 等 handler 的入口) |
+| HookDispatcher 真注入 | `dispatcher-injected / caller-deferred`(runtime-assembly 不再可选;每个 session DO 都会构造 `HookDispatcher` + `LocalTsRuntime`,但 PreToolUse live caller 仍未在 HP5 内形成 producer path,后续由 pro-to-product PP4 承接) |
 | row-first dual-write law | `done-first-wave`(legacy `permission/decision` 与 `elicitation/answer` 在 KV / RPC 写入前 lazily 创建/转移 confirmation row;失败/冲突走 409,不静默覆盖;取消映射 `superseded` 而非 `failed`) |
 | live caller (PreToolUse permission / elicitation request) | `not-yet`(emitter 仍未在 emit 时主动 row-create;只有 decision 一侧落地) |
 | 测试矩阵 | `partial-green`(`@haimang/nacp-session` / `@haimang/agent-core-worker` / `@haimang/orchestrator-core-worker` 单包测试全绿;cross-e2e 15-18 未运行) |
@@ -78,7 +78,7 @@
 | F7 | tool workspace state machine | `not-touched` | HP6 |
 | F8 | checkpoint / revert | `partial-by-HP4` | 本轮未扩写 |
 | F9 | runtime hardening | `not-touched` | HP8 |
-| F10 | R29 postmortem & residue verdict | `handed-to-platform` | HP8-B / HP10 |
+| F10 | R29 postmortem & residue verdict | `retained-with-reason` | owner-action；由 HP8 / final closure 显式保留，不再写成 handed-to-platform |
 | F11 | API docs + 手工证据 | `partial-by-HP3-and-HP4` | client API docs 仍归 HP9;本轮未扩写 |
 | F12 | final closure | `not-touched` | HP10 |
 | F13 | observability drift / metrics 完整性 | `partial-by-HP3` | usage push live 仍待 18 号 e2e |
@@ -137,5 +137,5 @@
 ## 8. 收口意见
 
 1. **可以确认收口的,是 HP5 的 first wave(registry / API / frame / kernel rename / dispatcher injection / legacy compat dual-write),而不是整个 HP5。**
-2. **可以立即被后续 phase 消费的,是 `D1ConfirmationControlPlane` + `/confirmations` 三件套 + `session.confirmation.*` 帧族 + `confirmation_pending` 单一 wait reason + assembly-exposed `HookDispatcher`。**
+2. **可以立即被后续 phase 消费的,是 `D1ConfirmationControlPlane` + `/confirmations` 三件套 + `session.confirmation.*` 帧族 + `confirmation_pending` 单一 wait reason + assembly-exposed `HookDispatcher` substrate；但这不等于 PreToolUse caller 已在 HP5 内闭环。**
 3. **还不能宣称完成的,是 emitter 侧 row-first row-create、PreToolUse 真接线、5 个非 live kind 与 cross-e2e 15-18。**

@@ -13,10 +13,10 @@
 
 | 维度 | 结论 |
 |------|------|
-| HPX6 当前状态 | **`executed-with-followups`**: F6/F8/F9/F10/F14/F15 已 live;F11/F12/F13 已有 Queue dispatch substrate,restore 已改为 non-success terminal guard,retry/fork deep semantics 仍需后续专项补齐 |
+| HPX6 当前状态 | **`executed-with-followups`**: F6/F8/F9/F10/F14/F15 已 live;F11/F12/F13 已有 Queue dispatch substrate,restore 已改为 non-success terminal guard；HPX7 已把 R1/R2 的 residual honesty follow-up 收口到 current repo reality；retry/fork deep semantics 仍需后续专项补齐 |
 | Protocol / package | `@haimang/nacp-session@1.5.0` 已落地 5 个 HPX6 top-level frame schema |
 | D1 truth | `015` tool-call ledger、`016` runtime config、`017` tenant permission rules 已落地 |
-| Public HTTP/WS surface | `/runtime`、`/items`、tool-call list/detail/cancel、public WS `session.followup_input` 均已接通 |
+| Public HTTP/WS surface | `/runtime`、`/items`、tool-call list/detail/cancel、public WS `session.followup_input` 均已接通；其中 HPX7 进一步补上 `/runtime` 的 `ETag / If-Match` 合同与 cancel route 的 `tool.call.cancelled` forward |
 | Legacy removal | `POST /sessions/{id}/policy/permission_mode` 已 hard-delete;User DO `permission_mode/*` KV 写入移除 |
 | Executor | Cloudflare Queue producer/consumer 已接在 orchestrator-core 内,保持 6-worker topology;restore job 当前从 pending→running→partial 并以 `failure_reason=restore-executor-pending-deep-semantics` emit `session.restore.completed` |
 | Docs | clients/api-docs 扩为 22-doc pack,新增 runtime/items/tool-calls |
@@ -28,8 +28,8 @@
 
 | ID | 描述 | 代码 / 文档证据 |
 |----|------|----------------|
-| R1 | HPX6 frame schema + registry | `packages/nacp-session/src/messages.ts`, `type-direction-matrix.ts`, `session-registry.ts`, `test/hpx6-workbench-messages.test.ts` |
-| R2 | Tool-call D1 ledger | `workers/orchestrator-core/migrations/015-tool-call-ledger.sql`, `src/tool-call-ledger.ts`, `src/hp-absorbed-routes.ts`, `workers/agent-core/src/host/do/session-do/runtime-assembly.ts` |
+| R1 | HPX6 frame schema + registry；HPX7 verification-first 补齐 public `/items` route evidence | `packages/nacp-session/src/messages.ts`, `type-direction-matrix.ts`, `session-registry.ts`, `test/hpx6-workbench-messages.test.ts`, `workers/orchestrator-core/test/session-items-route.test.ts` |
+| R2 | Tool-call D1 ledger；HPX7 补齐 live cancel producer 与 public cancel route WS forward | `workers/orchestrator-core/migrations/015-tool-call-ledger.sql`, `src/tool-call-ledger.ts`, `src/hp-absorbed-routes.ts`, `workers/agent-core/src/host/do/session-do/runtime-assembly.ts`, `workers/agent-core/src/host/runtime-mainline.ts`, `workers/orchestrator-core/test/tool-calls-route.test.ts` |
 | R3 | Public WS `session.followup_input` 转发 | `workers/orchestrator-core/src/user-do/ws-runtime.ts`, `src/user-do-runtime.ts` |
 | R4 | Runtime config control plane | `migrations/016-session-runtime-config.sql`, `src/runtime-config-plane.ts`, `src/facade/routes/session-runtime.ts` |
 | R5 | Permission rules + PreToolUse decision seam | `migrations/017-team-permission-rules.sql`, `src/permission-rules-plane.ts`, `src/entrypoint.ts:authorizeToolUse`, `workers/agent-core/src/host/runtime-mainline.ts` |
@@ -49,6 +49,12 @@
 5. **package 发布未执行**:源码已升 `@haimang/nacp-session@1.5.0`,但本 closure 没有执行 GitHub Packages publish / preview redeploy。
 
 因此本 closure 不把 HPX6 描述为“所有 executor 语义 fully complete”;准确状态是 workbench surfaces + durable truth + Queue substrate 已落地,executor deep semantics 仍有明确后续项。
+
+另外，HPX7 已把 HPX6 review 中最容易造成 deceptive closure 的 3 个口径补齐到真实代码事实：
+
+1. `/runtime` 现在对外提供 `ETag / If-Match` optimistic lock，而不再只剩 body `version` 这一层内部约束。
+2. public `/items` list/detail 已用 route-level tests 证明 7-kind 读取成立，R1 不再悬空。
+3. `POST /sessions/{id}/tool-calls/{request_uuid}/cancel` 现在除了改 ledger，还会向 attached client forward `tool.call.cancelled`；agent-core parent cancel 路径也已有 live producer。
 
 ---
 
