@@ -26,6 +26,7 @@ import {
   type RestoreRequestMode,
   UUID_RE,
 } from "../shared/request.js";
+import { emitFrameViaUserDO } from "../../wsemit.js";
 
 type SessionTodoRoute =
   | { kind: "list"; sessionUuid: string }
@@ -395,12 +396,13 @@ async function handleSessionConfirmation(
     decisionPayload = decisionPayloadRaw as Record<string, unknown>;
   }
 
+  const decidedAt = new Date().toISOString();
   const result = await plane.applyDecision({
     session_uuid: route.sessionUuid,
     confirmation_uuid: route.confirmationUuid,
     status,
     decision_payload: decisionPayload,
-    decided_at: new Date().toISOString(),
+    decided_at: decidedAt,
   });
   if (!result.row) {
     return jsonPolicyError(404, "not-found", "confirmation not found", traceUuid);
@@ -413,6 +415,23 @@ async function handleSessionConfirmation(
       traceUuid,
     );
   }
+  // HPX5 F1 — emit `session.confirmation.update` after row write succeeds.
+  // HP5 row-first dual-write law (Q16): emit MUST follow row commit.
+  emitFrameViaUserDO(
+    env,
+    {
+      sessionUuid: route.sessionUuid,
+      userUuid: session.actor_user_uuid,
+      traceUuid,
+    },
+    "session.confirmation.update",
+    {
+      confirmation_uuid: route.confirmationUuid,
+      status: result.row.status,
+      ...(decisionPayload !== null ? { decision_payload: decisionPayload } : {}),
+      decided_at: decidedAt,
+    },
+  );
   return Response.json(
     {
       ok: true,
@@ -495,6 +514,23 @@ async function handleSessionTodos(
         parent_todo_uuid: parentTodoUuid,
         created_at: now,
       });
+      // HPX5 F2c — emit `session.todos.update` after row write succeeds.
+      // todos.update broadcasts the authoritative list; per messages.ts
+      // SessionTodosUpdateBodySchema we send full snapshot of relevant rows.
+      const fullList = await plane.list({ session_uuid: route.sessionUuid });
+      emitFrameViaUserDO(
+        env,
+        {
+          sessionUuid: route.sessionUuid,
+          userUuid: session.actor_user_uuid,
+          traceUuid,
+        },
+        "session.todos.update",
+        {
+          session_uuid: route.sessionUuid,
+          todos: fullList,
+        },
+      );
       return Response.json(
         {
           ok: true,
@@ -540,6 +576,21 @@ async function handleSessionTodos(
       if (!todo) {
         return jsonPolicyError(404, "not-found", "todo not found", traceUuid);
       }
+      // HPX5 F2c — emit `session.todos.update` after row write.
+      const fullList = await plane.list({ session_uuid: route.sessionUuid });
+      emitFrameViaUserDO(
+        env,
+        {
+          sessionUuid: route.sessionUuid,
+          userUuid: session.actor_user_uuid,
+          traceUuid,
+        },
+        "session.todos.update",
+        {
+          session_uuid: route.sessionUuid,
+          todos: fullList,
+        },
+      );
       return Response.json(
         {
           ok: true,
@@ -565,6 +616,21 @@ async function handleSessionTodos(
   if (!removed) {
     return jsonPolicyError(404, "not-found", "todo not found", traceUuid);
   }
+  // HPX5 F2c — emit `session.todos.update` after delete.
+  const fullList = await plane.list({ session_uuid: route.sessionUuid });
+  emitFrameViaUserDO(
+    env,
+    {
+      sessionUuid: route.sessionUuid,
+      userUuid: session.actor_user_uuid,
+      traceUuid,
+    },
+    "session.todos.update",
+    {
+      session_uuid: route.sessionUuid,
+      todos: fullList,
+    },
+  );
   return Response.json(
     {
       ok: true,

@@ -100,6 +100,55 @@ export interface SessionRuntimeEnv {
       readonly detail?: Record<string, unknown>;
       readonly outcome: "ok" | "denied" | "failed";
     }): Promise<{ ok: boolean }>;
+    /**
+     * HPX5 F3 — context durable state probe used by auto-compact
+     * decision. agent-core composes the result with `composeCompactSignalProbe`
+     * (`workers/agent-core/src/host/compact-breaker.ts`) to fire the
+     * scheduler's `compact` decision at turn boundaries.
+     */
+    readContextDurableState?(
+      sessionUuid: string,
+      teamUuid: string,
+      meta: { readonly trace_uuid: string; readonly team_uuid: string },
+    ): Promise<{
+      readonly model?: {
+        readonly auto_compact_token_limit?: number | null;
+        readonly effective_context_pct?: number | null;
+        readonly context_window?: number | null;
+      } | null;
+      readonly usage?: {
+        readonly llm_input_tokens?: number | null;
+        readonly llm_output_tokens?: number | null;
+      } | null;
+      readonly [k: string]: unknown;
+    } | null>;
+    /**
+     * HPX5 F2b — WriteTodos capability backend. Called when LLM emits
+     * `tool_use { name: "write_todos" }`. Honors HP6 Q19 at-most-1
+     * in_progress invariant; auto-closes prior in_progress todos.
+     */
+    writeTodos?(input: {
+      readonly session_uuid: string;
+      readonly conversation_uuid: string;
+      readonly team_uuid: string;
+      readonly user_uuid: string;
+      readonly trace_uuid: string;
+      readonly todos: ReadonlyArray<{
+        readonly content: string;
+        readonly status?: "pending" | "in_progress" | "completed" | "cancelled" | "blocked";
+        readonly parent_todo_uuid?: string | null;
+      }>;
+    }): Promise<
+      | {
+          readonly ok: true;
+          readonly created: ReadonlyArray<{
+            readonly todo_uuid: string;
+            readonly status: "pending" | "in_progress" | "completed" | "cancelled" | "blocked";
+          }>;
+          readonly auto_closed: ReadonlyArray<{ readonly todo_uuid: string }>;
+        }
+      | { readonly ok: false; readonly error: { readonly code: string; readonly message: string } }
+    >;
   };
   readonly FILESYSTEM_CORE?: ServiceBindingLike & {
     readArtifact?(

@@ -26,6 +26,8 @@ import {
 } from "../../quota/authorizer.js";
 import {
   createMainlineKernelRunner,
+  composeCompactSignalProbe,
+  createCompactBreaker,
   type CapabilityTransportLike,
 } from "../../runtime-mainline.js";
 import type { SessionWebSocketHelper } from "@haimang/nacp-session";
@@ -166,12 +168,20 @@ function createLiveKernelRunner(
 ) {
   const runtimeEnv = ctx.env as Partial<SessionRuntimeEnv> | undefined;
   if (!runtimeEnv?.AI) return null;
+  // HPX5 F2b — wire WriteTodos backend to orchestrator-core service binding.
+  // When LLM emits `tool_use { name: "write_todos" }`, capability execute
+  // short-circuits to this backend (runtime-mainline.ts).
+  const writeTodosBackend = runtimeEnv.ORCHESTRATOR_CORE?.writeTodos
+    ? runtimeEnv.ORCHESTRATOR_CORE.writeTodos.bind(runtimeEnv.ORCHESTRATOR_CORE)
+    : undefined;
+
   return createMainlineKernelRunner({
     ai: runtimeEnv.AI,
     modelCatalogDb: runtimeEnv.NANO_AGENT_DB,
     sessionFileReader: runtimeEnv.FILESYSTEM_CORE,
     quotaAuthorizer,
     capabilityTransport,
+    writeTodosBackend,
     contextProvider: () => ctx.buildQuotaContext(),
     anchorProvider: () => ctx.buildCrossSeamAnchor(),
     // HP5 P2-02 — real dispatcher injection. Even with no handlers
@@ -238,7 +248,43 @@ function buildOrchestrationDeps(
     hookDispatcher,
   );
 
+  // HPX5 F3 — auto-compact signal probe. When orchestrator-core service
+  // binding exposes readContextDurableState, compose:
+  //   composeCompactSignalProbe(budgetSource, breaker)
+  // breaker = 3 consecutive failed compacts → 7-min cool-down (HP3-D4
+  // already implemented in compact-breaker.ts:18-37, 44-55).
+  // budgetSource computes `used >= auto_compact_token_limit` from the
+  // probe state; default threshold 0.85 of context_window when model
+  // has no per-model auto_compact_token_limit.
+  const runtimeEnv = ctx.env as Partial<SessionRuntimeEnv> | undefined;
+  const contextProbeFn = runtimeEnv?.ORCHESTRATOR_CORE?.readContextDurableState;
+  let probeCompactRequired: (() => Promise<boolean>) | undefined;
+  if (contextProbeFn) {
+    const breaker = createCompactBreaker(3);
+    probeCompactRequired = composeCompactSignalProbe(async (): Promise<boolean> => {
+      const probeCtx = ctx.buildQuotaContext();
+      if (!probeCtx) return false;
+      try {
+        const state = await contextProbeFn(
+          probeCtx.sessionUuid,
+          probeCtx.teamUuid,
+          { trace_uuid: probeCtx.traceUuid, team_uuid: probeCtx.teamUuid },
+        );
+        if (!state || !state.usage || !state.model) return false;
+        const used = (state.usage.llm_input_tokens ?? 0) + (state.usage.llm_output_tokens ?? 0);
+        const window = state.model.context_window ?? 0;
+        if (window <= 0) return false;
+        const threshold = state.model.effective_context_pct ?? 0.85;
+        const limit = state.model.auto_compact_token_limit ?? Math.floor(window * threshold);
+        return used >= limit;
+      } catch {
+        return false;
+      }
+    }, breaker);
+  }
+
   return {
+    ...(probeCompactRequired ? { probeCompactRequired } : {}),
     advanceStep: async (snapshot, signals) => {
       const kernel = subsystems.kernel as
         | {
@@ -381,6 +427,21 @@ function buildOrchestrationDeps(
         | { pushStreamEvent?: (payload: Record<string, unknown>) => void }
         | undefined;
       if (stream?.pushStreamEvent) stream.pushStreamEvent(body);
+    },
+    // HPX5 P1-02 — top-level frame emit seam (Q-bridging-6).
+    // Confirmation/todos/runtime/restore/item frames go through here
+    // (NOT pushStreamEvent which wraps as session.stream.event). Schema
+    // validate + system.error fallback live at the caller via
+    // packages/nacp-session/src/emit-helpers.ts:emitTopLevelFrame().
+    emitTopLevelFrame: (messageType, body) => {
+      const helper = ctx.ensureWsHelper();
+      if (!helper) return;
+      try {
+        helper.pushFrame(messageType, body);
+      } catch {
+        // replay / ack state remains authoritative; emit-helpers caller
+        // will surface system.error via pushStreamEvent fallback.
+      }
     },
   };
 }

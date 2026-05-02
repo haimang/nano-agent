@@ -54,6 +54,13 @@ export interface UserDoSurfaceRuntimeContext {
   requireReadableSession(sessionUuid: string): Promise<SessionEntry | null>;
   readAuditAuthSnapshot(): Promise<IngressAuthSnapshot | null>;
   persistAudit(record: AuditRecord): Promise<void>;
+  /**
+   * HPX5 F1 — push a top-level WS frame `{ kind, ...body }` to the
+   * attached client of `sessionUuid`. Returns false if no socket is
+   * attached. Schema validation lives in the User DO `emitServerFrame`
+   * (`user-do-runtime.ts:990`); legacy callers pass already-shaped frames.
+   */
+  emitServerFrame?(sessionUuid: string, frame: { kind: string; [k: string]: unknown }): boolean;
 }
 
 // HP5 P3-03 — row-first dual-write law (legacy compat alias).
@@ -86,6 +93,7 @@ async function ensureConfirmationDecision(
     readonly created_at: string;
     readonly decided_at: string;
   },
+  emitServerFrame?: (sessionUuid: string, frame: { kind: string; [k: string]: unknown }) => boolean,
 ): Promise<{ ok: true } | { ok: false; conflict: boolean }> {
   if (!db) return { ok: true };
   const plane = new D1ConfirmationControlPlane(db);
@@ -102,6 +110,22 @@ async function ensureConfirmationDecision(
       created_at: args.created_at,
       expires_at: null,
     });
+    // HPX5 F1 — emit `session.confirmation.request` after row write
+    // succeeds (HP5 row-first dual-write law Q16). Best-effort: emit
+    // failure does not roll back the row.
+    if (emitServerFrame) {
+      try {
+        emitServerFrame(args.session_uuid, {
+          kind: "session.confirmation.request",
+          confirmation_uuid: args.confirmation_uuid,
+          confirmation_kind: args.kind,
+          payload: args.request_payload,
+          created_at: args.created_at,
+        });
+      } catch {
+        // emit must never block row commit
+      }
+    }
   }
   const result = await plane.applyDecision({
     session_uuid: args.session_uuid,
@@ -111,6 +135,20 @@ async function ensureConfirmationDecision(
     decided_at: args.decided_at,
   });
   if (result.conflict) return { ok: false, conflict: true };
+  // HPX5 F1 — emit `session.confirmation.update` on terminal transition.
+  if (emitServerFrame && result.row) {
+    try {
+      emitServerFrame(args.session_uuid, {
+        kind: "session.confirmation.update",
+        confirmation_uuid: args.confirmation_uuid,
+        status: result.row.status,
+        decision_payload: args.decision_payload,
+        decided_at: args.decided_at,
+      });
+    } catch {
+      // emit must never block row commit
+    }
+  }
   return { ok: true };
 }
 
@@ -330,7 +368,7 @@ export function createUserDoSurfaceRuntime(ctx: UserDoSurfaceRuntimeContext) {
         decision_payload: { decision, scope },
         created_at: decidedAt,
         decided_at: decidedAt,
-      });
+      }, ctx.emitServerFrame);
       if (!rowResult.ok && rowResult.conflict) {
         return jsonResponse(409, {
           ok: false,
@@ -433,7 +471,7 @@ export function createUserDoSurfaceRuntime(ctx: UserDoSurfaceRuntimeContext) {
         decision_payload: { answer, cancelled },
         created_at: decidedAt,
         decided_at: decidedAt,
-      });
+      }, ctx.emitServerFrame);
       if (!rowResult.ok && rowResult.conflict) {
         return jsonResponse(409, {
           ok: false,

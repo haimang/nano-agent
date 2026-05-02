@@ -4,6 +4,41 @@ import { jsonPolicyError } from "../../policy/authority.js";
 import { ensureSessionOwnedOrError } from "../../hp-absorbed-routes.js";
 import { UUID_RE } from "../shared/request.js";
 
+// HPX5 F3 — body fields the façade now reads and passes through to
+// context-core RPC. Body is optional; legacy callers that send no body
+// see unchanged behaviour.
+export interface CompactBodyOptions {
+  readonly force?: boolean;
+  readonly preview_uuid?: string;
+  readonly label?: string;
+}
+
+async function readJsonBodyOrNull(request: Request): Promise<Record<string, unknown> | null> {
+  const text = await request.text().catch(() => "");
+  if (!text || text.length === 0) return null;
+  try {
+    const value = JSON.parse(text);
+    return typeof value === "object" && value !== null && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function pickCompactBodyOptions(body: Record<string, unknown> | null): CompactBodyOptions | undefined {
+  if (!body) return undefined;
+  const out: { force?: boolean; preview_uuid?: string; label?: string } = {};
+  if (typeof body.force === "boolean") out.force = body.force;
+  if (typeof body.preview_uuid === "string" && body.preview_uuid.length > 0) {
+    out.preview_uuid = body.preview_uuid;
+  }
+  if (typeof body.label === "string" && body.label.length > 0 && body.label.length <= 200) {
+    out.label = body.label;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
+}
+
 interface ContextCoreRpcLike {
   getContextSnapshot?(
     sessionUuid: string,
@@ -29,11 +64,13 @@ interface ContextCoreRpcLike {
     sessionUuid: string,
     teamUuid: string,
     meta: { trace_uuid: string; team_uuid: string },
+    options?: CompactBodyOptions,
   ): Promise<Record<string, unknown>>;
   triggerCompact?(
     sessionUuid: string,
     teamUuid: string,
     meta: { trace_uuid: string; team_uuid: string },
+    options?: CompactBodyOptions,
   ): Promise<Record<string, unknown>>;
   getCompactJob?(
     sessionUuid: string,
@@ -100,18 +137,27 @@ async function handleSessionContext(
         }
         body = await ctx.triggerContextSnapshot(sessionUuid, teamUuid, meta);
         break;
-      case "compact-preview":
+      case "compact-preview": {
         if (typeof ctx.previewCompact !== "function") {
           return jsonPolicyError(503, "worker-misconfigured", "context-core RPC previewCompact missing", traceUuid);
         }
-        body = await ctx.previewCompact(sessionUuid, teamUuid, meta);
+        // HPX5 F3 — read body { force?, preview_uuid?, label? } and pass
+        // through to context-core RPC. Body is optional; legacy callers
+        // sending no body get unchanged behaviour.
+        const compactBody = await readJsonBodyOrNull(request);
+        const compactOpts = pickCompactBodyOptions(compactBody);
+        body = await ctx.previewCompact(sessionUuid, teamUuid, meta, compactOpts);
         break;
-      case "compact":
+      }
+      case "compact": {
         if (typeof ctx.triggerCompact !== "function") {
           return jsonPolicyError(503, "worker-misconfigured", "context-core RPC triggerCompact missing", traceUuid);
         }
-        body = await ctx.triggerCompact(sessionUuid, teamUuid, meta);
+        const compactBody = await readJsonBodyOrNull(request);
+        const compactOpts = pickCompactBodyOptions(compactBody);
+        body = await ctx.triggerCompact(sessionUuid, teamUuid, meta, compactOpts);
         break;
+      }
       case "compact-job": {
         const jobId = segments[5];
         if (!jobId || !UUID_RE.test(jobId)) {

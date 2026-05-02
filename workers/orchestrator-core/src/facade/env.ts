@@ -25,7 +25,25 @@ export interface OrchestratorCoreEnv extends AuthEnv {
   readonly ORCHESTRATOR_AUTH?: OrchestratorAuthRpcService & Fetcher;
   readonly BASH_CORE?: Fetcher;
   readonly CONTEXT_CORE?: Fetcher;
-  readonly FILESYSTEM_CORE?: Fetcher;
+  readonly FILESYSTEM_CORE?: Fetcher & {
+    /**
+     * HPX5 F5 — workspace temp file bytes read. Mirrors filesystem-core
+     * RPC `readTempFile` (workers/filesystem-core/src/index.ts:160-175).
+     */
+    readTempFile?(
+      input: {
+        readonly team_uuid: string;
+        readonly session_uuid: string;
+        readonly virtual_path: string;
+      },
+      meta?: { readonly trace_uuid?: string; readonly team_uuid?: string },
+    ): Promise<{
+      ok: boolean;
+      r2_key: string;
+      bytes: ArrayBuffer | null;
+      mime: string | null;
+    }>;
+  };
   readonly NANO_AGENT_DB?: D1Database;
   readonly NANO_INTERNAL_BINDING_SECRET?: string;
   readonly ENVIRONMENT?: string;

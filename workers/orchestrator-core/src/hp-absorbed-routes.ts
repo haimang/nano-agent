@@ -20,6 +20,22 @@ import {
 // dependency that madge flags via `pnpm check:cycles`).
 type AbsorbedRoutesEnv = {
   readonly NANO_AGENT_DB?: D1Database;
+  // HPX5 F5 — façade pass-through to filesystem-core readTempFile RPC.
+  readonly FILESYSTEM_CORE?: {
+    readTempFile?(
+      input: {
+        readonly team_uuid: string;
+        readonly session_uuid: string;
+        readonly virtual_path: string;
+      },
+      meta?: { readonly trace_uuid?: string; readonly team_uuid?: string },
+    ): Promise<{
+      ok: boolean;
+      r2_key: string;
+      bytes: ArrayBuffer | null;
+      mime: string | null;
+    }>;
+  };
 };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -83,7 +99,7 @@ export function parseSessionToolCallsRoute(request: Request): SessionToolCallsRo
 }
 
 export type SessionWorkspaceRoute = {
-  kind: "list" | "read" | "write" | "delete";
+  kind: "list" | "read" | "write" | "delete" | "content";
   sessionUuid: string;
   virtualPath: string;
 };
@@ -99,6 +115,15 @@ export function parseSessionWorkspaceRoute(request: Request): SessionWorkspaceRo
   if (rawPath === "" || rawPath === "/") {
     if (method === "GET") return { kind: "list", sessionUuid, virtualPath: "" };
     return null;
+  }
+  // HPX5 F5 — `/content` suffix returns binary bytes via filesystem-core
+  // readTempFile RPC. Path normalization runs on the path WITHOUT the
+  // `/content` suffix.
+  if (method === "GET" && rawPath.endsWith("/content") && rawPath !== "/content") {
+    const withoutSuffix = rawPath.slice(0, -"/content".length);
+    const virtualPath = withoutSuffix.startsWith("/") ? withoutSuffix.slice(1) : withoutSuffix;
+    if (virtualPath.length === 0) return null;
+    return { kind: "content", sessionUuid, virtualPath };
   }
   const virtualPath = rawPath.startsWith("/") ? rawPath.slice(1) : rawPath;
   if (method === "GET") return { kind: "read", sessionUuid, virtualPath };
@@ -253,6 +278,8 @@ export async function handleSessionWorkspace(
     if (!file) {
       return deps.jsonPolicyError(404, "not-found", "workspace file not found", traceUuid);
     }
+    // HPX5 F5 — content_source is now "live" because the binary GET path
+    // (`/content`) is wired to filesystem-core readTempFile RPC.
     return Response.json(
       {
         ok: true,
@@ -261,12 +288,60 @@ export async function handleSessionWorkspace(
           virtual_path: normalized,
           r2_key: r2Key,
           metadata: file,
-          content_source: "filesystem-core-leaf-rpc-pending",
+          content_source: "live",
         },
         trace_uuid: traceUuid,
       },
       { status: 200, headers: { "x-trace-uuid": traceUuid } },
     );
+  }
+  if (route.kind === "content") {
+    // HPX5 F5 — binary-content profile via filesystem-core readTempFile.
+    const fs = env.FILESYSTEM_CORE;
+    if (!fs?.readTempFile) {
+      return deps.jsonPolicyError(
+        503,
+        "filesystem-rpc-unavailable",
+        "FILESYSTEM_CORE.readTempFile binding missing",
+        traceUuid,
+      );
+    }
+    const file = await plane.readByPath({
+      session_uuid: route.sessionUuid,
+      virtual_path: normalized,
+    });
+    if (!file) {
+      return deps.jsonPolicyError(404, "not-found", "workspace file not found", traceUuid);
+    }
+    const MAX_BYTES = 25 * 1024 * 1024;
+    if (typeof (file as { size_bytes?: number }).size_bytes === "number" &&
+        (file as { size_bytes: number }).size_bytes > MAX_BYTES) {
+      return deps.jsonPolicyError(413, "payload-too-large", "workspace file exceeds 25 MiB", traceUuid);
+    }
+    let result: Awaited<ReturnType<NonNullable<typeof fs.readTempFile>>>;
+    try {
+      result = await fs.readTempFile(
+        {
+          team_uuid: teamUuid,
+          session_uuid: route.sessionUuid,
+          virtual_path: normalized,
+        },
+        { trace_uuid: traceUuid, team_uuid: teamUuid },
+      );
+    } catch {
+      return deps.jsonPolicyError(503, "filesystem-rpc-unavailable", "filesystem-core read failed", traceUuid);
+    }
+    if (!result.ok || !result.bytes) {
+      return deps.jsonPolicyError(409, "workspace-file-pending", "metadata exists but bytes not yet uploaded", traceUuid);
+    }
+    return new Response(result.bytes, {
+      status: 200,
+      headers: {
+        "Content-Type": result.mime ?? "application/octet-stream",
+        "Content-Length": String(result.bytes.byteLength),
+        "x-trace-uuid": traceUuid,
+      },
+    });
   }
   if (route.kind === "write") {
     const body = await deps.parseBody(request);

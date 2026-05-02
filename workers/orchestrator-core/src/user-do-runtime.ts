@@ -238,6 +238,9 @@ export class NanoOrchestratorUserDO {
       readDurableSnapshot: (sessionUuid: string) => this.readDurableSnapshot(sessionUuid),
       readDurableHistory: (sessionUuid: string) => this.readDurableHistory(sessionUuid),
       requireReadableSession: (sessionUuid: string) => this.requireReadableSession(sessionUuid),
+      // HPX5 F1 — expose emitServerFrame so legacy permission/elicitation
+      // dual-write callers can push the new HP5 confirmation frames.
+      emitServerFrame: (sessionUuid, frame) => this.emitServerFrame(sessionUuid, frame),
       readAuditAuthSnapshot: async () => (await this.get<IngressAuthSnapshot>(USER_AUTH_SNAPSHOT_KEY)) ?? null,
       persistAudit: async (record) => {
         const snapshot = (await this.get<IngressAuthSnapshot>(USER_AUTH_SNAPSHOT_KEY)) ?? null;
@@ -342,6 +345,9 @@ export class NanoOrchestratorUserDO {
         this.recordStreamFrames(sessionUuid, pointer, authSnapshot, traceUuid, turn, frames, timestamp),
       updateConversationIndex: (pointer, entry) => this.updateConversationIndex(pointer, entry),
       updateActivePointers: (pointer, turn) => this.updateActivePointers(pointer, turn),
+      // HPX5 F4 — emit `model.fallback` stream-event when the agent-core
+      // input ack carries fallback_used=true.
+      emitServerFrame: (sessionUuid, frame) => this.emitServerFrame(sessionUuid, frame),
     });
   }
 

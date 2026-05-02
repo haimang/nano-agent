@@ -110,6 +110,23 @@ export interface OrchestrationDeps {
    * `kind` field as its discriminator.
    */
   readonly pushStreamEvent: (kind: string, body: Record<string, unknown>) => void;
+  /**
+   * HPX5 P1-02 — emit a top-level (non-stream-event) WS frame, e.g.
+   * `session.confirmation.request`, `session.todos.write`, future
+   * `session.runtime.update` / `session.restore.completed` /
+   * `session.item.*` (Q-bridging-6).
+   *
+   * Wraps `SessionWebSocketHelper.pushFrame` from packages/nacp-session.
+   * `messageType` MUST be a key of SESSION_BODY_SCHEMAS but NOT
+   * `session.stream.event`. Validation + system.error fallback is
+   * handled at the orchestrator-core caller via
+   * `packages/nacp-session/src/emit-helpers.ts:emitTopLevelFrame()`,
+   * not here — this is the raw sink.
+   *
+   * Optional: may be absent in legacy unit tests; production session
+   * DO assembly always wires it (see runtime-assembly.ts).
+   */
+  readonly emitTopLevelFrame?: (messageType: string, body: Record<string, unknown>) => void;
 }
 
 // ═══════════════════════════════════════════════════════════════════

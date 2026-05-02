@@ -267,6 +267,16 @@ export async function handleStart(
     });
   }
 
+  // HPX5 F7 P5-03 — return `first_event_seq` so clients can use it as
+  // `last_seen_seq` when attaching WS, eliminating the start→ws-attach
+  // race window. `firstEvent.seq` is the first stream-event seq this
+  // start cycle produced; if no event was produced yet, fall back to 0
+  // so the client receives the very first frame on attach.
+  const firstEventSeq =
+    firstEvent && typeof (firstEvent as { seq?: unknown }).seq === "number"
+      ? ((firstEvent as { seq: number }).seq)
+      : 0;
+
   return jsonResponse(200, {
     ok: true,
     action: "start",
@@ -276,6 +286,7 @@ export async function handleStart(
     status: entry.status,
     relay_cursor: entry.relay_cursor,
     first_event: firstEvent?.payload ?? null,
+    first_event_seq: firstEventSeq,
     terminal: null,
     start_ack: startAck.body,
   });

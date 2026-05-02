@@ -116,6 +116,11 @@ export interface UserDoMessageRuntimeContext {
     pointer: DurableSessionPointer | null,
     turn: DurableTurnPointer | null,
   ): Promise<void>;
+  /**
+   * HPX5 F4 — push a top-level WS frame to the attached client. Optional
+   * because legacy unit-test stubs may omit it.
+   */
+  emitServerFrame?(sessionUuid: string, frame: { kind: string; [k: string]: unknown }): boolean;
 }
 
 export function createUserDoMessageRuntime(ctx: UserDoMessageRuntimeContext) {
@@ -332,14 +337,24 @@ export function createUserDoMessageRuntime(ctx: UserDoMessageRuntimeContext) {
       );
       if (!inputAck.response.ok) {
         if (durableTurn) {
+          // HPX5 F4 — even on failure, agent-core may have already
+          // attempted a fallback; preserve the audit fields when set.
+          const failBody = (inputAck.body ?? {}) as {
+            readonly fallback_used?: boolean;
+            readonly fallback_reason?: string | null;
+            readonly fallback_model_id?: string | null;
+          };
+          const failFallbackUsed = failBody.fallback_used === true;
           await ctx.sessionTruth()?.closeTurn({
             turn_uuid: durableTurn.turn_uuid,
             status: "failed",
             ended_at: new Date().toISOString(),
-            effective_model_id: selectedModelId,
+            effective_model_id: failFallbackUsed
+              ? (failBody.fallback_model_id ?? selectedModelId)
+              : selectedModelId,
             effective_reasoning_effort: selectedReasoning?.effort ?? null,
-            fallback_used: false,
-            fallback_reason: null,
+            fallback_used: failFallbackUsed,
+            fallback_reason: failFallbackUsed ? (failBody.fallback_reason ?? null) : null,
           });
         }
         return new Response(inputAck.body ? JSON.stringify(inputAck.body) : null, {
@@ -381,6 +396,21 @@ export function createUserDoMessageRuntime(ctx: UserDoMessageRuntimeContext) {
         const terminal =
           frames.find((frame): frame is Extract<StreamFrame, { kind: "terminal" }> => frame.kind === "terminal") ??
           null;
+        // HPX5 F4 — read fallback decision from agent-core ack body
+        // (model resolution may have downgraded to fallback model). When
+        // unset (legacy / no fallback), preserve historical behaviour
+        // (fallback_used: false, fallback_reason: null).
+        const fallbackBody = (inputAck.body ?? {}) as {
+          readonly fallback_used?: boolean;
+          readonly fallback_reason?: string | null;
+          readonly fallback_model_id?: string | null;
+          readonly requested_model_id?: string | null;
+        };
+        const fallbackUsed = fallbackBody.fallback_used === true;
+        const fallbackReason = fallbackUsed ? (fallbackBody.fallback_reason ?? null) : null;
+        const effectiveModel = fallbackUsed
+          ? (fallbackBody.fallback_model_id ?? selectedModelId)
+          : selectedModelId;
         await ctx.sessionTruth()?.closeTurn({
           turn_uuid: durableTurn.turn_uuid,
           status:
@@ -390,11 +420,27 @@ export function createUserDoMessageRuntime(ctx: UserDoMessageRuntimeContext) {
                 ? "failed"
                 : "completed",
           ended_at: new Date().toISOString(),
-          effective_model_id: selectedModelId,
+          effective_model_id: effectiveModel,
           effective_reasoning_effort: selectedReasoning?.effort ?? null,
-          fallback_used: false,
-          fallback_reason: null,
+          fallback_used: fallbackUsed,
+          fallback_reason: fallbackReason,
         });
+        // HPX5 F4 — emit `model.fallback` stream-event when fallback fired
+        // (Q-bridging-6: ModelFallbackKind is in the 13-kind union — goes
+        // through emitServerFrame as a stream-event sub-kind).
+        if (fallbackUsed && ctx.emitServerFrame) {
+          try {
+            ctx.emitServerFrame(sessionUuid, {
+              kind: "model.fallback",
+              turn_uuid: durableTurn.turn_uuid,
+              requested_model_id: fallbackBody.requested_model_id ?? selectedModelId,
+              fallback_model_id: effectiveModel,
+              fallback_reason: fallbackReason ?? "unspecified",
+            });
+          } catch {
+            // emit failure is non-fatal; D1 truth already commit
+          }
+        }
       }
 
       const action = body._origin === "input" ? "input" : "messages";

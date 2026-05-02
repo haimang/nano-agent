@@ -240,7 +240,10 @@ describe("GET /sessions/{id}/workspace/files/{*path} — read", () => {
     expect(body.data.r2_key).toBe(
       `tenants/${TEAM_UUID}/sessions/${SESSION_UUID}/workspace/notes.md`,
     );
-    expect(body.data.content_source).toBe("filesystem-core-leaf-rpc-pending");
+    // HPX5 F5 — content_source flipped from "filesystem-core-leaf-rpc-pending"
+    // to "live" once the binary GET path (`/content`) was wired to
+    // filesystem-core readTempFile RPC.
+    expect(body.data.content_source).toBe("live");
   });
 
   // Note on path-traversal coverage: URL canonicalization collapses

@@ -10,6 +10,10 @@ import { QuotaAuthorizer, QuotaExceededError, type QuotaRuntimeContext } from ".
 import type { HookDispatcher, HookEmitContext } from "../hooks/dispatcher.js";
 import type { HookEventName } from "../hooks/catalog.js";
 
+// HPX5 F2b — local alias for the 5-status Q19 todo enum used by
+// write_todos input. Mirrors `SessionTodoStatusSchema` in nacp-session.
+type TodoStatusLiteral = "pending" | "in_progress" | "completed" | "cancelled" | "blocked";
+
 export interface CapabilityTransportLike {
   call(input: {
     readonly requestId: string;
@@ -157,6 +161,36 @@ export interface MainlineKernelOptions {
    * suppress further attempts within the same session.
    */
   readonly compactSignalProbe?: () => Promise<boolean> | boolean;
+  /**
+   * HPX5 F2b — WriteTodos backend. When LLM emits
+   * `tool_use { name: "write_todos" }` the capability runner short-circuits
+   * the regular capabilityTransport and calls this instead. The host wires
+   * this to `env.ORCHESTRATOR_CORE.writeTodos` (orchestrator-core entrypoint
+   * RPC). Optional — when absent the tool falls back to `capabilityTransport`
+   * (which will return capability-not-found for unknown tools).
+   */
+  readonly writeTodosBackend?: (input: {
+    readonly session_uuid: string;
+    readonly conversation_uuid: string;
+    readonly team_uuid: string;
+    readonly user_uuid: string;
+    readonly trace_uuid: string;
+    readonly todos: ReadonlyArray<{
+      readonly content: string;
+      readonly status?: "pending" | "in_progress" | "completed" | "cancelled" | "blocked";
+      readonly parent_todo_uuid?: string | null;
+    }>;
+  }) => Promise<
+    | {
+        readonly ok: true;
+        readonly created: ReadonlyArray<{
+          readonly todo_uuid: string;
+          readonly status: "pending" | "in_progress" | "completed" | "cancelled" | "blocked";
+        }>;
+        readonly auto_closed: ReadonlyArray<{ readonly todo_uuid: string }>;
+      }
+    | { readonly ok: false; readonly error: { readonly code: string; readonly message: string } }
+  >;
 }
 
 // HP3-D2 / HP3-D4 (deferred-closure absorb) — compact signal probe + breaker
@@ -459,6 +493,113 @@ export function createMainlineKernelRunner(
             request.args && typeof request.args === "object"
               ? request.args
               : {};
+
+          // HPX5 F2b — WriteTodos capability short-circuit. LLM emits
+          // `tool_use { name: "write_todos", ... }`; route to orchestrator-core
+          // D1TodoControlPlane via writeTodosBackend (no regular transport).
+          if (toolName === "write_todos") {
+            options.onToolEvent?.({
+              kind: "tool_use_start",
+              tool_call_id: requestId,
+              tool_name: toolName,
+              tool_input: toolInput as Record<string, unknown>,
+            });
+            if (!options.writeTodosBackend) {
+              const errorBody = {
+                code: "capability-not-wired",
+                message: "writeTodosBackend not configured on host",
+              };
+              options.onToolEvent?.({
+                kind: "tool_call_result",
+                tool_call_id: requestId,
+                tool_name: toolName,
+                status: "error",
+                error: errorBody,
+              });
+              yield { type: "result" as const, status: "error" as const, result: errorBody };
+              return;
+            }
+            const ctx = options.contextProvider();
+            if (!ctx) {
+              const errorBody = {
+                code: "capability-not-wired",
+                message: "session context unavailable for write_todos",
+              };
+              options.onToolEvent?.({
+                kind: "tool_call_result",
+                tool_call_id: requestId,
+                tool_name: toolName,
+                status: "error",
+                error: errorBody,
+              });
+              yield { type: "result" as const, status: "error" as const, result: errorBody };
+              return;
+            }
+            const argsObj = toolInput as {
+              readonly todos?: unknown;
+              readonly conversation_uuid?: unknown;
+              readonly user_uuid?: unknown;
+            };
+            const todosRaw = Array.isArray(argsObj.todos) ? argsObj.todos : null;
+            if (!todosRaw || todosRaw.length === 0) {
+              const errorBody = {
+                code: "invalid-input",
+                message: "write_todos input requires non-empty 'todos' array",
+              };
+              options.onToolEvent?.({
+                kind: "tool_call_result",
+                tool_call_id: requestId,
+                tool_name: toolName,
+                status: "error",
+                error: errorBody,
+              });
+              yield { type: "result" as const, status: "error" as const, result: errorBody };
+              return;
+            }
+            try {
+              const result = await options.writeTodosBackend({
+                session_uuid: ctx.sessionUuid,
+                conversation_uuid: typeof argsObj.conversation_uuid === "string" ? argsObj.conversation_uuid : ctx.sessionUuid,
+                team_uuid: ctx.teamUuid,
+                user_uuid: typeof argsObj.user_uuid === "string" ? argsObj.user_uuid : ctx.teamUuid,
+                trace_uuid: ctx.traceUuid,
+                todos: todosRaw as Array<{ content: string; status?: TodoStatusLiteral; parent_todo_uuid?: string | null }>,
+              });
+              if (result.ok) {
+                options.onToolEvent?.({
+                  kind: "tool_call_result",
+                  tool_call_id: requestId,
+                  tool_name: toolName,
+                  status: "ok",
+                  output: result,
+                });
+                yield { type: "result" as const, status: "ok" as const, result };
+                return;
+              }
+              options.onToolEvent?.({
+                kind: "tool_call_result",
+                tool_call_id: requestId,
+                tool_name: toolName,
+                status: "error",
+                error: result.error,
+              });
+              yield { type: "result" as const, status: "error" as const, result: result.error };
+            } catch (err) {
+              const errorBody = {
+                code: "capability-execution-error",
+                message: err instanceof Error ? err.message : String(err),
+              };
+              options.onToolEvent?.({
+                kind: "tool_call_result",
+                tool_call_id: requestId,
+                tool_name: toolName,
+                status: "error",
+                error: errorBody,
+              });
+              yield { type: "result" as const, status: "error" as const, result: errorBody };
+            }
+            return;
+          }
 
           if (!options.capabilityTransport) {
             yield {

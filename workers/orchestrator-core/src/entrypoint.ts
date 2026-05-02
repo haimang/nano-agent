@@ -40,6 +40,8 @@ import {
   readContextDurableState as loadContextDurableState,
 } from "./context-control-plane.js";
 import { D1ConfirmationControlPlane, type ConfirmationKind } from "./confirmation-control-plane.js";
+import { D1TodoControlPlane, TodoConstraintError, type TodoStatus } from "./todo-control-plane.js";
+import { emitFrameViaUserDO } from "./wsemit.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -135,6 +137,130 @@ export default class OrchestratorCoreEntrypoint extends WorkerEntrypoint<Orchest
   async recordAuditEvent(record: AuditRecord): Promise<{ ok: boolean }> {
     await persistAuditRecord(this.env, record);
     return { ok: true };
+  }
+
+  /**
+   * HPX5 F2b — agent-core WriteTodos capability backend.
+   *
+   * Called from agent-core capability transport when LLM emits
+   * `tool_use { name: "write_todos" }`. Honors HP6 Q19 invariant:
+   * at-most-1 in_progress per session — the host auto-closes any
+   * existing in_progress todo before creating new ones (downgrades
+   * it to `pending`).
+   *
+   * Returns the created/updated todos plus the list of auto-closed
+   * (downgraded) todo_uuids so the LLM can see what happened.
+   *
+   * Frame emit path: every successful write triggers a
+   * `session.todos.update` push via emitFrameViaUserDO (HPX5 F2c).
+   */
+  async writeTodos(
+    input: {
+      readonly session_uuid: string;
+      readonly conversation_uuid: string;
+      readonly team_uuid: string;
+      readonly user_uuid: string;
+      readonly trace_uuid: string;
+      readonly todos: ReadonlyArray<{
+        readonly content: string;
+        readonly status?: TodoStatus;
+        readonly parent_todo_uuid?: string | null;
+      }>;
+    },
+  ): Promise<
+    | {
+        readonly ok: true;
+        readonly created: ReadonlyArray<{ readonly todo_uuid: string; readonly status: TodoStatus }>;
+        readonly auto_closed: ReadonlyArray<{ readonly todo_uuid: string }>;
+      }
+    | { readonly ok: false; readonly error: { readonly code: string; readonly message: string } }
+  > {
+    if (!UUID_RE.test(input.session_uuid)) {
+      return { ok: false, error: { code: "invalid-input", message: "session_uuid must be UUID" } };
+    }
+    if (!Array.isArray(input.todos) || input.todos.length === 0) {
+      return { ok: false, error: { code: "invalid-input", message: "todos must be a non-empty array" } };
+    }
+    const db = this.env.NANO_AGENT_DB;
+    if (!db) {
+      return { ok: false, error: { code: "worker-misconfigured", message: "NANO_AGENT_DB binding missing" } };
+    }
+    const plane = new D1TodoControlPlane(db);
+    const now = new Date().toISOString();
+
+    // Auto-close any existing in_progress todo (HP6 Q19 invariant).
+    const autoClosed: Array<{ todo_uuid: string }> = [];
+    const inProgressIncoming = input.todos.some((t) => t.status === "in_progress");
+    if (inProgressIncoming) {
+      const inProgressList = await plane.list({ session_uuid: input.session_uuid, status: "in_progress" });
+      for (const row of inProgressList) {
+        try {
+          await plane.patch({
+            session_uuid: input.session_uuid,
+            todo_uuid: row.todo_uuid,
+            status: "pending",
+            updated_at: now,
+          });
+          autoClosed.push({ todo_uuid: row.todo_uuid });
+        } catch {
+          // ignore — best-effort auto-close
+        }
+      }
+    }
+
+    // Allow only the first incoming in_progress; demote the rest to pending.
+    let inProgressTaken = false;
+    const created: Array<{ todo_uuid: string; status: TodoStatus }> = [];
+    for (const item of input.todos) {
+      const content = String(item.content ?? "").trim();
+      if (content.length === 0 || content.length > 2000) continue;
+      let desiredStatus: TodoStatus = item.status ?? "pending";
+      if (desiredStatus === "in_progress") {
+        if (inProgressTaken) {
+          desiredStatus = "pending";
+        } else {
+          inProgressTaken = true;
+        }
+      }
+      try {
+        const todo = await plane.create({
+          session_uuid: input.session_uuid,
+          conversation_uuid: input.conversation_uuid,
+          team_uuid: input.team_uuid,
+          content,
+          status: desiredStatus,
+          parent_todo_uuid: item.parent_todo_uuid ?? null,
+          created_at: now,
+        });
+        created.push({ todo_uuid: todo.todo_uuid, status: todo.status });
+      } catch (err) {
+        if (err instanceof TodoConstraintError) {
+          // skip on per-row constraint failure; continue with the rest
+          continue;
+        }
+        throw err;
+      }
+    }
+
+    // HPX5 F2c — emit `session.todos.update` after successful writes.
+    if (created.length > 0) {
+      const fullList = await plane.list({ session_uuid: input.session_uuid });
+      emitFrameViaUserDO(
+        this.env,
+        {
+          sessionUuid: input.session_uuid,
+          userUuid: input.user_uuid,
+          traceUuid: input.trace_uuid,
+        },
+        "session.todos.update",
+        {
+          session_uuid: input.session_uuid,
+          todos: fullList,
+        },
+      );
+    }
+
+    return { ok: true, created, auto_closed: autoClosed };
   }
 
   async readContextDurableState(

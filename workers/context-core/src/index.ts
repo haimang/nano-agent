@@ -229,9 +229,19 @@ export class ContextCoreEntrypoint extends WorkerEntrypoint<ContextCoreEnv> {
     sessionUuid: string,
     teamUuid: string,
     meta: ContextBindingMeta,
+    options?: { readonly force?: boolean; readonly preview_uuid?: string; readonly label?: string },
   ): Promise<Record<string, unknown>> {
     const state = await this.readDurableState(sessionUuid, teamUuid, meta);
-    return buildCompactPreviewResponse(state);
+    const response = buildCompactPreviewResponse(state);
+    // HPX5 F3 — echo back the body fields the client sent so they can
+    // round-trip preview → trigger by referencing `preview_uuid` and
+    // `label`. The actual force/dedup logic is enforced in triggerCompact.
+    return {
+      ...response,
+      ...(options?.force === true ? { force: true } : {}),
+      ...(options?.preview_uuid ? { preview_uuid: options.preview_uuid } : {}),
+      ...(options?.label ? { label: options.label } : {}),
+    };
   }
 
   async getCompactJob(
@@ -299,6 +309,7 @@ export class ContextCoreEntrypoint extends WorkerEntrypoint<ContextCoreEnv> {
     sessionUuid: string,
     teamUuid: string,
     meta: ContextBindingMeta,
+    options?: { readonly force?: boolean; readonly preview_uuid?: string; readonly label?: string },
   ): Promise<Record<string, unknown>> {
     const orchestrator = this.requireOrchestratorCore();
     if (typeof orchestrator.commitContextCompact !== "function") {
@@ -306,7 +317,12 @@ export class ContextCoreEntrypoint extends WorkerEntrypoint<ContextCoreEnv> {
     }
     const state = await this.readDurableState(sessionUuid, teamUuid, meta);
     const input = buildCompactCommitInput(state);
-    if (!input.need_compact || input.summary_text.length === 0) {
+    // HPX5 F3 — `force=true` skips the "compact-not-needed" early return
+    // and lets the caller commit a manual compact regardless of token
+    // budget. `preview_uuid` is informational (idempotent commit hook
+    // for future deduplication). `label` is forwarded into the compact
+    // boundary record so it shows up in the checkpoint registry.
+    if (!options?.force && (!input.need_compact || input.summary_text.length === 0)) {
       return {
         session_uuid: sessionUuid,
         team_uuid: teamUuid,
@@ -315,6 +331,8 @@ export class ContextCoreEntrypoint extends WorkerEntrypoint<ContextCoreEnv> {
         after_size: input.tokens_before,
         phase: "durable",
         reason: "compact-not-needed",
+        ...(options?.preview_uuid ? { preview_uuid: options.preview_uuid } : {}),
+        ...(options?.label ? { label: options.label } : {}),
       };
     }
     const result = await orchestrator.commitContextCompact(
