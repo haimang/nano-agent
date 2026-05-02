@@ -1,3 +1,6 @@
+import { SessionTodosWriteBodySchema } from "@haimang/nacp-session";
+import { zodToJsonSchema } from "zod-to-json-schema";
+
 export interface LlmToolDeclaration {
   readonly name: string;
   readonly description: string;
@@ -7,6 +10,15 @@ export interface LlmToolDeclaration {
 function objectSchema(properties: Record<string, unknown> = {}): Record<string, unknown> {
   return { type: "object", properties };
 }
+
+function stripSchemaMarker(schema: Record<string, unknown>): Record<string, unknown> {
+  const { $schema: _ignored, ...rest } = schema;
+  return rest;
+}
+
+const WRITE_TODOS_INPUT_SCHEMA = stripSchemaMarker(
+  zodToJsonSchema(SessionTodosWriteBodySchema, { $refStrategy: "none" }) as Record<string, unknown>,
+);
 
 export const LLM_TOOL_DECLARATIONS: readonly LlmToolDeclaration[] = [
   { name: "pwd", description: "Print current working directory", inputSchema: objectSchema() },
@@ -30,4 +42,9 @@ export const LLM_TOOL_DECLARATIONS: readonly LlmToolDeclaration[] = [
   { name: "sort", description: "Sort lines of a file", inputSchema: objectSchema({ path: { type: "string" }, reverse: { type: "boolean" }, numeric: { type: "boolean" }, unique: { type: "boolean" } }) },
   { name: "uniq", description: "Collapse adjacent duplicate lines", inputSchema: objectSchema({ path: { type: "string" }, count: { type: "boolean" } }) },
   { name: "diff", description: "Unified-style diff between two workspace files", inputSchema: objectSchema({ left: { type: "string" }, right: { type: "string" } }) },
+  {
+    name: "write_todos",
+    description: "Create or update the session todo list for the active conversation",
+    inputSchema: WRITE_TODOS_INPUT_SCHEMA,
+  },
 ];

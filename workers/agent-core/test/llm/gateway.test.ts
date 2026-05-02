@@ -97,9 +97,26 @@ describe("WorkersAiGateway", () => {
     });
     const toolNames = exec.request.tools?.map((tool) => tool.function.name).sort();
     const registryNames = getBashCoreMinimalCommandDeclarations().map((decl) => decl.name).sort();
+    const expectedNames = [...registryNames, "write_todos"].sort();
 
-    expect(toolNames).toEqual(registryNames);
+    expect(toolNames).toEqual(expectedNames);
     expect(toolNames).toContain("ts-exec");
+    const writeTodosTool = exec.request.tools?.find((tool) => tool.function.name === "write_todos");
+    expect(writeTodosTool?.function.parameters).toMatchObject({
+      type: "object",
+      required: ["todos"],
+      properties: {
+        todos: {
+          type: "array",
+          minItems: 1,
+          maxItems: 100,
+        },
+        request_uuid: {
+          type: "string",
+          format: "uuid",
+        },
+      },
+    });
   });
 
   it("passes explicit model, reasoning effort, and image content to Workers AI", async () => {

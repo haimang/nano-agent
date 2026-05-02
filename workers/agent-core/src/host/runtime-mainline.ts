@@ -1,6 +1,7 @@
 import type { CrossSeamAnchor } from "./cross-seam.js";
 import { KernelRunner } from "../kernel/runner.js";
 import type { AiBindingLike } from "../llm/adapters/workers-ai.js";
+import { SessionTodosWriteBodySchema } from "@haimang/nacp-session";
 import {
   WorkersAiGateway,
   buildWorkersAiExecutionRequestFromMessages,
@@ -540,11 +541,11 @@ export function createMainlineKernelRunner(
               readonly conversation_uuid?: unknown;
               readonly user_uuid?: unknown;
             };
-            const todosRaw = Array.isArray(argsObj.todos) ? argsObj.todos : null;
-            if (!todosRaw || todosRaw.length === 0) {
+            const parsedWrite = SessionTodosWriteBodySchema.safeParse(toolInput);
+            if (!parsedWrite.success) {
               const errorBody = {
                 code: "invalid-input",
-                message: "write_todos input requires non-empty 'todos' array",
+                message: parsedWrite.error.message,
               };
               options.onToolEvent?.({
                 kind: "tool_call_result",
@@ -563,7 +564,11 @@ export function createMainlineKernelRunner(
                 team_uuid: ctx.teamUuid,
                 user_uuid: typeof argsObj.user_uuid === "string" ? argsObj.user_uuid : ctx.teamUuid,
                 trace_uuid: ctx.traceUuid,
-                todos: todosRaw as Array<{ content: string; status?: TodoStatusLiteral; parent_todo_uuid?: string | null }>,
+                todos: parsedWrite.data.todos as Array<{
+                  content: string;
+                  status?: TodoStatusLiteral;
+                  parent_todo_uuid?: string | null;
+                }>,
               });
               if (result.ok) {
                 options.onToolEvent?.({

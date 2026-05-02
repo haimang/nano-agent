@@ -40,6 +40,22 @@ export interface FrameCompatContext {
   readonly streamSeq?: number;
 }
 
+function normalizeLightweightBodyForSchema(
+  messageType: string,
+  frame: LightweightServerFrame,
+): Record<string, unknown> {
+  const { kind: _kind, ...body } = frame;
+  if (messageType === "session.confirmation.request") {
+    const confirmationKind =
+      typeof body.confirmation_kind === "string" ? body.confirmation_kind : undefined;
+    if (confirmationKind) {
+      const { confirmation_kind: _confirmationKind, ...rest } = body;
+      return { ...rest, kind: confirmationKind };
+    }
+  }
+  return body;
+}
+
 /**
  * Lift a lightweight `{kind, ...}` server frame into a NACP-session-frame-
  * shaped envelope. The envelope still rides on the same wire format
@@ -80,7 +96,7 @@ export function liftLightweightFrame(
       session_uuid: ctx.sessionUuid,
       ...(ctx.streamSeq !== undefined ? { stream_seq: ctx.streamSeq } : {}),
     },
-    body: raw,
+    body: normalizeLightweightBodyForSchema(messageType, raw),
     nacp_session_version: NACP_SESSION_VERSION,
   };
 }
@@ -122,7 +138,7 @@ export function validateLightweightServerFrame(
     // own validator path).
     return { ok: true };
   }
-  const { kind: _k, ...body } = frame;
+  const body = normalizeLightweightBodyForSchema(messageType, frame);
   const parsed = schema.safeParse(body);
   if (parsed.success) return { ok: true };
   return {
@@ -145,6 +161,14 @@ export function mapKindToMessageType(kind: string): string {
       return "session.permission.request";
     case "session.permission.decision":
       return "session.permission.decision";
+    case "session.confirmation.request":
+      return "session.confirmation.request";
+    case "session.confirmation.update":
+      return "session.confirmation.update";
+    case "session.todos.write":
+      return "session.todos.write";
+    case "session.todos.update":
+      return "session.todos.update";
     case "session.usage.update":
       return "session.usage.update";
     case "session.skill.invoke":

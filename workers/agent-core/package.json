@@ -22,7 +22,8 @@
     "@haimang/context-core-worker": "workspace:*",
     "@haimang/nacp-core": "workspace:*",
     "@haimang/nacp-session": "workspace:*",
-    "@nano-agent/workspace-context-artifacts": "workspace:*"
+    "@nano-agent/workspace-context-artifacts": "workspace:*",
+    "zod-to-json-schema": "^3.24.0"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20251101.0",
