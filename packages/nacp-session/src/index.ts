@@ -129,3 +129,7 @@ export { hookBroadcastToStreamEvent } from "./adapters/hook.js";
 export { compactNotifyToStreamEvent } from "./adapters/compact.js";
 export { systemNotifyToStreamEvent } from "./adapters/system.js";
 export { llmDeltaToStreamEvent } from "./adapters/llm.js";
+
+// ── HPX5 P1-01 — emit seam helpers ──
+export { emitTopLevelFrame, emitStreamEvent } from "./emit-helpers.js";
+export type { EmitSink, EmitContext, EmitResult, EmitResultStatus, EmitObserver } from "./emit-helpers.js";

@@ -446,6 +446,8 @@ export const SESSION_BODY_REQUIRED = new Set([
   "session.attachment.superseded",
 ]);
 
+export type SessionMessageType = keyof typeof SESSION_BODY_SCHEMAS;
+
 export const SESSION_MESSAGE_TYPES = new Set([
   "session.start",
   "session.resume",

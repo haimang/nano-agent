@@ -157,6 +157,83 @@ export class SessionWebSocketHelper {
     return frame;
   }
 
+  // ── HPX5 P1-02 — top-level frame emit ──
+  //
+  // Emit a non-stream-event top-level WS frame (e.g.
+  // session.confirmation.request, session.todos.write, session.runtime.update).
+  // The body is NOT validated here — callers MUST go through
+  // `emit-helpers.ts:emitTopLevelFrame()` which performs SESSION_BODY_SCHEMAS
+  // zod validation + system.error fallback. This method is the raw sink.
+  //
+  // Frames returned here go through replay buffer + ack window, same as
+  // pushEvent (so reconnect can replay them).
+
+  pushFrame(
+    messageType: string,
+    body: Record<string, unknown>,
+    opts: { ackRequired?: boolean; deliveryKind?: "event" | "command" } = {},
+  ): NacpSessionFrame {
+    if (messageType === "session.stream.event") {
+      throw new NacpSessionError(
+        ["pushFrame must not be used for session.stream.event; use pushEvent"],
+        SESSION_ERROR_CODES.NACP_SESSION_TYPE_DIRECTION_MISMATCH,
+      );
+    }
+    if (this.ackWindow.isBackpressured()) {
+      throw new NacpSessionError(
+        ["ack window backpressured — too many unacked frames"],
+        SESSION_ERROR_CODES.NACP_SESSION_ACK_MISMATCH,
+      );
+    }
+
+    const streamUuid = this.ctx.session_uuid;
+    const seq = this.nextSeq(streamUuid);
+    const deliveryKind = opts.deliveryKind ?? "event";
+    const deliveryMode = opts.ackRequired ? "at-least-once" : "at-most-once";
+
+    const frame: NacpSessionFrame = {
+      header: {
+        schema_version: NACP_VERSION,
+        message_uuid: crypto.randomUUID(),
+        message_type: messageType,
+        delivery_kind: deliveryKind,
+        sent_at: new Date().toISOString(),
+        producer_role: "session",
+        producer_key: this.ctx.producer_key,
+        priority: "normal",
+      },
+      authority: {
+        team_uuid: this.ctx.team_uuid,
+        plan_level: this.ctx.plan_level,
+        user_uuid: this.ctx.user_uuid,
+        stamped_by_key: this.ctx.stamped_by_key,
+        stamped_at: new Date().toISOString(),
+      },
+      trace: {
+        trace_uuid: this.ctx.trace_uuid,
+        session_uuid: this.ctx.session_uuid,
+      },
+      body,
+      session_frame: {
+        stream_uuid: streamUuid,
+        stream_seq: seq,
+        delivery_mode: deliveryMode,
+        ack_required: shouldRequireAck(deliveryMode),
+      },
+    } as NacpSessionFrame;
+
+    this.replay.append(frame);
+
+    if (this.socket && this.attached) {
+      this.socket.send(JSON.stringify(frame));
+      if (frame.session_frame.ack_required) {
+        this.ackWindow.track(streamUuid, seq);
+      }
+    }
+
+    return frame;
+  }
+
   // ── Resume / Replay ──
 
   handleResume(streamUuid: string, lastSeenSeq: number): NacpSessionFrame[] {
