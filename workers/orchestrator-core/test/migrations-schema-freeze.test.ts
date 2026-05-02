@@ -123,7 +123,7 @@ describe("HP1 P5-01 — migrations 007-013 schema freeze (DDL Freeze Gate)", () 
     db?.close();
   });
 
-  it("Q4 — migration ledger contains 007-013 plus the approved 014 schema correction", () => {
+  it("Q4 — migration ledger contains 007-014 plus HPX6 approved 015-017 foundations", () => {
     const files = listMigrationFiles();
     expect(files).toContain("007-model-metadata-and-aliases.sql");
     expect(files).toContain("008-session-model-audit.sql");
@@ -133,8 +133,11 @@ describe("HP1 P5-01 — migrations 007-013 schema freeze (DDL Freeze Gate)", () 
     expect(files).toContain("012-session-confirmations.sql");
     expect(files).toContain("013-product-checkpoints.sql");
     expect(files).toContain("014-session-model-fallback-reason.sql");
-    const corrections = files.filter((f) => /^01[5-9]-/.test(f));
-    expect(corrections, `unexpected 015+ migrations: ${corrections.join(", ")}`).toEqual([]);
+    expect(files).toContain("015-tool-call-ledger.sql");
+    expect(files).toContain("016-session-runtime-config.sql");
+    expect(files).toContain("017-team-permission-rules.sql");
+    const unexpected = files.filter((f) => /^01[8-9]-/.test(f));
+    expect(unexpected, `unexpected 018+ migrations: ${unexpected.join(", ")}`).toEqual([]);
   });
 
   // ── 007 ── model metadata + alias

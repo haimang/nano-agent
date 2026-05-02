@@ -29,7 +29,6 @@ type SessionAction =
   | "retry"
   | "fork"
   | "permission/decision"
-  | "policy/permission_mode"
   | "elicitation/answer";
 
 function parseSessionRoute(request: Request): { sessionUuid: string; action: SessionAction } | null {
@@ -74,7 +73,6 @@ function parseSessionRoute(request: Request): { sessionUuid: string; action: Ses
     const compound = `${segments[2]}/${segments[3]}` as SessionAction;
     if (
       compound === "permission/decision"
-      || compound === "policy/permission_mode"
       || compound === "elicitation/answer"
     ) {
       return { sessionUuid, action: compound };
@@ -113,7 +111,6 @@ async function dispatchDoSessionRoute(request: Request, env: OrchestratorCoreEnv
     || route.action === "messages"
     || route.action === "resume"
     || route.action === "permission/decision"
-    || route.action === "policy/permission_mode"
     || route.action === "elicitation/answer"
     || route.action === "close"
     || route.action === "delete"

@@ -40,7 +40,14 @@ function makeUserDoSink(env: OrchestratorCoreEnv, target: EmitTarget): EmitSink 
     if (!env.ORCHESTRATOR_USER_DO) return;
     const namespace = env.ORCHESTRATOR_USER_DO;
     const stub = namespace.get(namespace.idFromName(target.userUuid));
-    const frame: Record<string, unknown> = { kind: kindOrType, ...body };
+    const wireBody =
+      kindOrType.startsWith("session.item.") && typeof body.kind === "string"
+        ? (() => {
+            const { kind: itemKind, ...rest } = body;
+            return { ...rest, item_kind: itemKind };
+          })()
+        : body;
+    const frame: Record<string, unknown> = { kind: kindOrType, ...wireBody };
     // Fire-and-forget; emit must never block row-write commit. Errors are
     // swallowed at the caller via observer / system.error fallback.
     void stub

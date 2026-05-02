@@ -692,33 +692,6 @@ export function createUserDoSurfaceRuntime(ctx: UserDoSurfaceRuntimeContext) {
       });
     },
 
-    async handlePolicyPermissionMode(
-      sessionUuid: string,
-      body: Record<string, unknown>,
-    ): Promise<Response> {
-      const mode = body.mode;
-      if (
-        mode !== "auto-allow" &&
-        mode !== "ask" &&
-        mode !== "deny" &&
-        mode !== "always_allow"
-      ) {
-        return jsonResponse(400, {
-          error: "invalid-input",
-          message: "mode must be auto-allow|ask|deny|always_allow",
-        });
-      }
-      await ctx.put(`permission_mode/${sessionUuid}`, {
-        session_uuid: sessionUuid,
-        mode,
-        set_at: new Date().toISOString(),
-      });
-      return jsonResponse(200, {
-        ok: true,
-        data: { session_uuid: sessionUuid, mode },
-      });
-    },
-
     async handleMeSessions(): Promise<Response> {
       const conversations =
         (await ctx.get<ConversationIndexItem[]>(CONVERSATION_INDEX_KEY)) ?? [];

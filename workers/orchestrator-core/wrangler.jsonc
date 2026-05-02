@@ -17,6 +17,14 @@
   "triggers": {
     "crons": ["0 3 * * *"]
   },
+  "queues": {
+    "producers": [
+      { "binding": "NANO_EXECUTOR_QUEUE", "queue": "nano-agent-executor-preview" }
+    ],
+    "consumers": [
+      { "queue": "nano-agent-executor-preview", "max_batch_size": 1 }
+    ]
+  },
   "vars": {
     "ENVIRONMENT": "preview",
     "OWNER_TAG": "nano-agent",
@@ -125,6 +133,14 @@
       ],
       "triggers": {
         "crons": ["0 3 * * *"]
+      },
+      "queues": {
+        "producers": [
+          { "binding": "NANO_EXECUTOR_QUEUE", "queue": "nano-agent-executor-preview" }
+        ],
+        "consumers": [
+          { "queue": "nano-agent-executor-preview", "max_batch_size": 1 }
+        ]
       }
     }
   }

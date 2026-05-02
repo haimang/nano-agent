@@ -27,6 +27,7 @@ import {
   UUID_RE,
 } from "../shared/request.js";
 import { emitFrameViaUserDO } from "../../wsemit.js";
+import { dispatchExecutorJob } from "../../executor-runtime.js";
 
 type SessionTodoRoute =
   | { kind: "list"; sessionUuid: string }
@@ -273,6 +274,18 @@ async function handleSessionCheckpoint(
         confirmation_uuid: confirmationUuid,
         target_session_uuid: null,
       });
+      const dispatchPath = await dispatchExecutorJob(env, {
+        kind: "restore",
+        job_uuid: restoreJob.job_uuid,
+        checkpoint_uuid: route.checkpointUuid,
+        session_uuid: route.sessionUuid,
+        mode,
+        target_session_uuid: null,
+        team_uuid: session.team_uuid,
+        user_uuid: session.actor_user_uuid,
+        trace_uuid: traceUuid,
+      });
+      const latestJob = await restoreJobs.read({ job_uuid: restoreJob.job_uuid });
       return Response.json(
         {
           ok: true,
@@ -280,7 +293,9 @@ async function handleSessionCheckpoint(
             session_uuid: route.sessionUuid,
             conversation_uuid: session.conversation_uuid,
             checkpoint,
-            restore_job: restoreJob,
+            restore_job: latestJob ?? restoreJob,
+            executor_status: dispatchPath === "queue" ? "enqueued" : "completed",
+            dispatch_path: dispatchPath,
           },
           trace_uuid: traceUuid,
         },

@@ -229,6 +229,8 @@ export class NanoOrchestratorUserDO {
           device_uuid: record.device_uuid ?? snapshot?.device_uuid,
         });
       },
+      forwardFollowupInput: (sessionUuid, body, authSnapshot, traceUuid) =>
+        this.forwardFollowupInput(sessionUuid, body, authSnapshot, traceUuid),
     });
     this.surfaceRuntime = createUserDoSurfaceRuntime({
       env: this.env,
@@ -520,16 +522,6 @@ export class NanoOrchestratorUserDO {
         });
       }
       return this.handlePermissionDecision(sessionUuid, body);
-    }
-    if (request.method === 'POST' && action === 'policy/permission_mode') {
-      const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
-      if (!body) {
-        return jsonResponse(400, {
-          error: 'invalid-input',
-          message: 'policy/permission_mode requires a JSON body',
-        });
-      }
-      return this.handlePolicyPermissionMode(sessionUuid, body);
     }
     if (request.method === 'POST' && action === 'elicitation/answer') {
       const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
@@ -924,7 +916,7 @@ export class NanoOrchestratorUserDO {
     const entry = await (this.sessionFlow as unknown as {
       ctx?: { requireSession?: (s: string) => Promise<unknown> };
     }).ctx?.requireSession?.(sessionUuid).catch(() => null);
-    return handleRetryAbsorbed(sessionUuid, body, entry);
+    return handleRetryAbsorbed(this.env, sessionUuid, body, entry);
   }
 
   private async handleFork(
@@ -934,7 +926,42 @@ export class NanoOrchestratorUserDO {
     const entry = await (this.sessionFlow as unknown as {
       ctx?: { requireSession?: (s: string) => Promise<unknown> };
     }).ctx?.requireSession?.(sessionUuid).catch(() => null);
-    return handleForkAbsorbed(sessionUuid, body, entry);
+    return handleForkAbsorbed(this.env, sessionUuid, body, entry);
+  }
+
+  private async forwardFollowupInput(
+    sessionUuid: string,
+    body: Record<string, unknown>,
+    authSnapshot: IngressAuthSnapshot | null | undefined,
+    traceUuid: string,
+  ): Promise<{ ok: boolean; status?: number; body?: Record<string, unknown> | null }> {
+    const agent = this.env.AGENT_CORE;
+    if (!agent || typeof agent.input !== "function") {
+      return { ok: false, status: 503, body: { error: "agent-core-unavailable" } };
+    }
+    const authority = authSnapshot ?? await this.get<IngressAuthSnapshot>(USER_AUTH_SNAPSHOT_KEY);
+    if (!authority) {
+      return { ok: false, status: 401, body: { error: "missing-authority" } };
+    }
+    const response = await agent.input(
+      { session_uuid: sessionUuid, ...body },
+      {
+        trace_uuid: traceUuid,
+        authority: {
+          sub: authority.user_uuid ?? authority.sub,
+          tenant_uuid: authority.team_uuid ?? authority.tenant_uuid,
+          tenant_source: authority.tenant_source,
+          membership_level: authority.membership_level,
+          source_name: authority.source_name,
+          exp: authority.exp,
+        },
+      },
+    );
+    return {
+      ok: response.status >= 200 && response.status < 300,
+      status: response.status,
+      body: response.body,
+    };
   }
 
   private async handleVerify(sessionUuid: string, body: VerifyBody): Promise<Response> {
@@ -1127,13 +1154,6 @@ export class NanoOrchestratorUserDO {
     return this.surfaceRuntime.handleFiles(sessionUuid);
   }
 
-  private async handlePolicyPermissionMode(
-    sessionUuid: string,
-    body: Record<string, unknown>,
-  ): Promise<Response> {
-    return this.surfaceRuntime.handlePolicyPermissionMode(sessionUuid, body);
-  }
-
   // ZX2 Phase 5 P5-02 — list this user's sessions from the hot conversation
   // index. Each conversation has at most one `latest_session_uuid`; we
   // join with each session's per-uuid SessionEntry for last_seen_at /
@@ -1163,7 +1183,7 @@ export class NanoOrchestratorUserDO {
   }
 
   private bindSocketLifecycle(sessionUuid: string, socket: WorkerSocketLike): void {
-    this.wsRuntime.bindSocketLifecycle(sessionUuid, socket);
+    this.wsRuntime.bindSocketLifecycle(sessionUuid, socket, null);
   }
 
   private async markDetached(sessionUuid: string): Promise<void> {

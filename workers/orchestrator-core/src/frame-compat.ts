@@ -53,6 +53,13 @@ function normalizeLightweightBodyForSchema(
       return { ...rest, kind: confirmationKind };
     }
   }
+  if (messageType.startsWith("session.item.")) {
+    const itemKind = typeof body.item_kind === "string" ? body.item_kind : undefined;
+    if (itemKind) {
+      const { item_kind: _itemKind, ...rest } = body;
+      return { ...rest, kind: itemKind };
+    }
+  }
   return body;
 }
 
@@ -169,6 +176,16 @@ export function mapKindToMessageType(kind: string): string {
       return "session.todos.write";
     case "session.todos.update":
       return "session.todos.update";
+    case "session.runtime.update":
+      return "session.runtime.update";
+    case "session.restore.completed":
+      return "session.restore.completed";
+    case "session.item.started":
+      return "session.item.started";
+    case "session.item.updated":
+      return "session.item.updated";
+    case "session.item.completed":
+      return "session.item.completed";
     case "session.usage.update":
       return "session.usage.update";
     case "session.skill.invoke":

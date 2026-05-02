@@ -41,7 +41,11 @@ import {
 } from "./context-control-plane.js";
 import { D1ConfirmationControlPlane, type ConfirmationKind } from "./confirmation-control-plane.js";
 import { D1TodoControlPlane, TodoConstraintError, type TodoStatus } from "./todo-control-plane.js";
+import { D1ToolCallLedger, type ToolCallStatus } from "./tool-call-ledger.js";
+import { D1RuntimeConfigPlane } from "./runtime-config-plane.js";
+import { D1PermissionRulesPlane } from "./permission-rules-plane.js";
 import { emitFrameViaUserDO } from "./wsemit.js";
+import { runExecutorJob, type ExecutorJob } from "./executor-runtime.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -108,6 +112,18 @@ interface ContextBindingMeta {
   readonly team_uuid: string;
 }
 
+function globLikeMatches(pattern: string | undefined, value: string): boolean {
+  if (!pattern) return true;
+  const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
+  return new RegExp(`^${escaped}$`).test(value) || value.includes(pattern.replace(/\*/g, ""));
+}
+
+function runtimePolicyFallback(policy: string): "allow" | "deny" | "ask" {
+  if (policy === "auto-allow" || policy === "always_allow") return "allow";
+  if (policy === "deny") return "deny";
+  return "ask";
+}
+
 export { NanoOrchestratorUserDO };
 
 export default class OrchestratorCoreEntrypoint extends WorkerEntrypoint<OrchestratorCoreEnv> {
@@ -126,6 +142,13 @@ export default class OrchestratorCoreEntrypoint extends WorkerEntrypoint<Orchest
         ctx: { error: String(error) },
       });
       throw error;
+    }
+  }
+
+  async queue(batch: MessageBatch<ExecutorJob>): Promise<void> {
+    for (const message of batch.messages) {
+      await runExecutorJob(this.env, message.body);
+      message.ack();
     }
   }
 
@@ -261,6 +284,92 @@ export default class OrchestratorCoreEntrypoint extends WorkerEntrypoint<Orchest
     }
 
     return { ok: true, created, auto_closed: autoClosed };
+  }
+
+  async recordToolCall(
+    input: {
+      readonly request_uuid: string;
+      readonly session_uuid: string;
+      readonly team_uuid: string;
+      readonly turn_uuid?: string | null;
+      readonly tool_name: string;
+      readonly input?: Record<string, unknown>;
+      readonly output?: Record<string, unknown> | null;
+      readonly status: ToolCallStatus;
+    },
+    meta?: { readonly trace_uuid?: string; readonly team_uuid?: string },
+  ): Promise<{ ok: boolean }> {
+    if (!input.request_uuid || !input.session_uuid || !input.team_uuid || !input.tool_name) {
+      return { ok: false };
+    }
+    if (meta?.team_uuid && meta.team_uuid !== input.team_uuid) return { ok: false };
+    const db = this.env.NANO_AGENT_DB;
+    if (!db) return { ok: false };
+    await new D1ToolCallLedger(db).upsert({
+      request_uuid: input.request_uuid,
+      session_uuid: input.session_uuid,
+      team_uuid: input.team_uuid,
+      turn_uuid: input.turn_uuid ?? null,
+      tool_name: input.tool_name,
+      input: input.input,
+      output: input.output,
+      status: input.status,
+      ended_at: input.status === "running" || input.status === "queued" ? null : new Date().toISOString(),
+    });
+    return { ok: true };
+  }
+
+  async authorizeToolUse(
+    input: {
+      readonly session_uuid: string;
+      readonly team_uuid: string;
+      readonly tool_name: string;
+      readonly tool_input?: Record<string, unknown>;
+    },
+    meta?: { readonly trace_uuid?: string; readonly team_uuid?: string },
+  ): Promise<{
+    readonly ok: boolean;
+    readonly decision: "allow" | "deny" | "ask";
+    readonly source: "session-rule" | "tenant-rule" | "approval-policy" | "unavailable";
+    readonly reason?: string;
+  }> {
+    if (!UUID_RE.test(input.session_uuid) || !input.team_uuid || !input.tool_name) {
+      return { ok: false, decision: "deny", source: "unavailable", reason: "invalid-input" };
+    }
+    if (meta?.team_uuid && meta.team_uuid !== input.team_uuid) {
+      return { ok: false, decision: "deny", source: "unavailable", reason: "team-mismatch" };
+    }
+    const db = this.env.NANO_AGENT_DB;
+    if (!db) return { ok: false, decision: "ask", source: "unavailable", reason: "db-missing" };
+
+    const runtime = await new D1RuntimeConfigPlane(db).readOrCreate({
+      session_uuid: input.session_uuid,
+      team_uuid: input.team_uuid,
+    });
+    const inputProbe = JSON.stringify(input.tool_input ?? {});
+    const sessionRule = runtime.permission_rules.find(
+      (rule) =>
+        rule.tool_name === input.tool_name &&
+        globLikeMatches(rule.pattern, inputProbe),
+    );
+    if (sessionRule) {
+      return { ok: true, decision: sessionRule.behavior, source: "session-rule" };
+    }
+
+    const tenantRule = (await new D1PermissionRulesPlane(db).listTeamRules(input.team_uuid)).find(
+      (rule) =>
+        rule.tool_name === input.tool_name &&
+        globLikeMatches(rule.pattern, inputProbe),
+    );
+    if (tenantRule) {
+      return { ok: true, decision: tenantRule.behavior, source: "tenant-rule" };
+    }
+
+    return {
+      ok: true,
+      decision: runtimePolicyFallback(runtime.approval_policy),
+      source: "approval-policy",
+    };
   }
 
   async readContextDurableState(

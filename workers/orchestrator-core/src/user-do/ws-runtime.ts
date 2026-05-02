@@ -43,6 +43,12 @@ export interface UserDoWsRuntimeContext {
   ): Promise<SessionEntry | Response>;
   readAuditAuthSnapshot(): Promise<IngressAuthSnapshot | null>;
   persistAudit(record: AuditRecord): Promise<void>;
+  forwardFollowupInput(
+    sessionUuid: string,
+    body: Record<string, unknown>,
+    authSnapshot: IngressAuthSnapshot | null | undefined,
+    traceUuid: string,
+  ): Promise<{ ok: boolean; status?: number; body?: Record<string, unknown> | null }>;
 }
 
 export function createUserDoWsRuntime(ctx: UserDoWsRuntimeContext) {
@@ -122,7 +128,7 @@ export function createUserDoWsRuntime(ctx: UserDoWsRuntimeContext) {
         device_uuid: parsedAuthority?.device_uuid ?? gatedEntry.device_uuid ?? null,
         heartbeat_timer: heartbeatTimer,
       });
-      this.bindSocketLifecycle(sessionUuid, pair.server);
+      this.bindSocketLifecycle(sessionUuid, pair.server, parsedAuthority);
 
       const replayCursor =
         clientLastSeenSeq === null
@@ -150,7 +156,11 @@ export function createUserDoWsRuntime(ctx: UserDoWsRuntimeContext) {
       }
     },
 
-    bindSocketLifecycle(sessionUuid: string, socket: WorkerSocketLike): void {
+    bindSocketLifecycle(
+      sessionUuid: string,
+      socket: WorkerSocketLike,
+      authSnapshot: IngressAuthSnapshot | null | undefined,
+    ): void {
       socket.addEventListener?.("close", () => {
         const current = ctx.attachments.get(sessionUuid);
         if (!current || current.socket !== socket) return;
@@ -164,7 +174,16 @@ export function createUserDoWsRuntime(ctx: UserDoWsRuntimeContext) {
         );
       });
 
-      socket.addEventListener?.("message", () => {
+      socket.addEventListener?.("message", (event?: unknown) => {
+        const data = event && typeof event === "object"
+          ? (event as { data?: unknown }).data
+          : undefined;
+        this.handleClientMessage(sessionUuid, data, authSnapshot).catch((err) =>
+          logger.warn("ws-client-message-failed", {
+            code: "internal-error",
+            ctx: { tag: "ws-client-message-failed", error: String(err) },
+          }),
+        );
         this.touchSession(
           sessionUuid,
           ctx.attachments.has(sessionUuid) ? "active" : "detached",
@@ -175,6 +194,44 @@ export function createUserDoWsRuntime(ctx: UserDoWsRuntimeContext) {
           }),
         );
       });
+    },
+
+    async handleClientMessage(
+      sessionUuid: string,
+      data: unknown,
+      authSnapshot: IngressAuthSnapshot | null | undefined,
+    ): Promise<void> {
+      const raw =
+        typeof data === "string"
+          ? data
+          : data instanceof ArrayBuffer
+            ? new TextDecoder().decode(data)
+            : null;
+      if (!raw) return;
+      let parsed: Record<string, unknown>;
+      try {
+        const value = JSON.parse(raw) as unknown;
+        if (!value || typeof value !== "object" || Array.isArray(value)) return;
+        parsed = value as Record<string, unknown>;
+      } catch {
+        return;
+      }
+      if (parsed.kind !== "session.followup_input") return;
+      const { kind: _kind, ...body } = parsed;
+      const traceUuid =
+        typeof parsed.trace_uuid === "string" && parsed.trace_uuid.length > 0
+          ? parsed.trace_uuid
+          : crypto.randomUUID();
+      const result = await ctx.forwardFollowupInput(sessionUuid, body, authSnapshot, traceUuid);
+      if (!result.ok) {
+        ctx.emitServerFrame(sessionUuid, {
+          kind: "system.error",
+          code: "followup-forward-failed",
+          message: "failed to forward followup_input to agent runtime",
+          trace_uuid: traceUuid,
+          status: result.status ?? 500,
+        });
+      }
     },
 
     async markDetached(sessionUuid: string): Promise<void> {

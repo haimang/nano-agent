@@ -2,6 +2,7 @@ import { NACP_VERSION } from "@haimang/nacp-core";
 import { NACP_SESSION_VERSION } from "@haimang/nacp-session";
 import type { OrchestratorAuthRpcService } from "@haimang/orchestrator-auth-contract";
 import type { AuthEnv } from "../auth.js";
+import type { ExecutorJob } from "../executor-runtime.js";
 import { createOrchestratorLogger } from "../observability.js";
 
 export type AgentRpcMethod = (
@@ -45,6 +46,7 @@ export interface OrchestratorCoreEnv extends AuthEnv {
     }>;
   };
   readonly NANO_AGENT_DB?: D1Database;
+  readonly NANO_EXECUTOR_QUEUE?: Queue<ExecutorJob>;
   readonly NANO_INTERNAL_BINDING_SECRET?: string;
   readonly ENVIRONMENT?: string;
   readonly OWNER_TAG?: string;

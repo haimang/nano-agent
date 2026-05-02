@@ -2,8 +2,7 @@
 // Closes the test gap flagged by part5 reviewers (deepseek F-TOOL-01 升级
 // FINDING + kimi W-WSK-02): before this file, GET/POST tool-calls had
 // zero coverage so auth gate / session ownership / response shape were
-// regression-blind. The handler is first-wave (`source:
-// "ws-stream-only-first-wave"`) but auth/ownership are real and stable.
+// regression-blind. HPX6 upgrades the handler to read the durable D1 ledger.
 //
 // Source under test: handleSessionToolCalls in
 // `workers/orchestrator-core/src/hp-absorbed-routes.ts:132-185`.
@@ -44,6 +43,21 @@ const OWNED_SESSION: SessionRow = {
 // substring, returning rows shaped like the real `readSessionLifecycle`
 // JOIN result.
 function createDb(sessionRow: SessionRow | null) {
+  const toolRow = {
+    request_uuid: REQUEST_UUID,
+    session_uuid: SESSION_UUID,
+    conversation_uuid: OWNED_SESSION.conversation_uuid,
+    turn_uuid: null,
+    team_uuid: TEAM_UUID,
+    tool_name: "bash",
+    input_json: "{}",
+    output_json: null,
+    status: "cancelled",
+    cancel_initiator: "user",
+    started_at: "2026-04-30T00:00:00Z",
+    ended_at: "2026-04-30T00:00:01Z",
+    updated_at: "2026-04-30T00:00:01Z",
+  };
   return {
     prepare: (sql: string) => ({
       bind: (..._args: unknown[]) => ({
@@ -69,6 +83,9 @@ function createDb(sessionRow: SessionRow | null) {
               title: null,
               deleted_at: sessionRow.deleted_at,
             };
+          }
+          if (sql.includes("FROM nano_tool_call_ledger") && sql.includes("WHERE request_uuid")) {
+            return toolRow;
           }
           return null;
         },
@@ -105,8 +122,8 @@ function buildEnv(db: any) {
   } as any;
 }
 
-describe("GET /sessions/{id}/tool-calls — first-wave list", () => {
-  it("200 happy — returns empty list with first-wave source marker", async () => {
+describe("GET /sessions/{id}/tool-calls — D1 ledger list", () => {
+  it("200 happy — returns empty list with D1 ledger source marker", async () => {
     const token = await buildToken();
     const response = await worker.fetch(
       new Request(`https://example.com/sessions/${SESSION_UUID}/tool-calls`, {
@@ -120,7 +137,7 @@ describe("GET /sessions/{id}/tool-calls — first-wave list", () => {
     expect(body.ok).toBe(true);
     expect(body.data.session_uuid).toBe(SESSION_UUID);
     expect(body.data.tool_calls).toEqual([]);
-    expect(body.data.source).toBe("ws-stream-only-first-wave");
+    expect(body.data.source).toBe("d1-tool-call-ledger");
     expect(body.trace_uuid).toBe(TRACE_UUID);
     expect(response.headers.get("x-trace-uuid")).toBe(TRACE_UUID);
   });
@@ -197,7 +214,7 @@ describe("GET /sessions/{id}/tool-calls — first-wave list", () => {
   });
 });
 
-describe("POST /sessions/{id}/tool-calls/{request_uuid}/cancel — first-wave ack", () => {
+describe("POST /sessions/{id}/tool-calls/{request_uuid}/cancel — D1 ledger cancel", () => {
   it("202 happy — returns user-initiated cancel ack", async () => {
     const token = await buildToken();
     const response = await worker.fetch(
@@ -221,7 +238,7 @@ describe("POST /sessions/{id}/tool-calls/{request_uuid}/cancel — first-wave ac
     expect(body.data.session_uuid).toBe(SESSION_UUID);
     expect(body.data.request_uuid).toBe(REQUEST_UUID);
     expect(body.data.cancel_initiator).toBe("user");
-    expect(body.data.forwarded).toBe(true);
+    expect(body.data.status).toBe("cancelled");
   });
 
   it("401 — missing bearer token", async () => {

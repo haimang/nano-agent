@@ -5,8 +5,10 @@
 // recorded in `docs/issue/hero-to-pro/HP0-H10-deferred-closure.md`.
 
 import { jsonResponse } from "./session-lifecycle.js";
+import { dispatchExecutorJob, type ExecutorRuntimeEnv } from "./executor-runtime.js";
 
 export async function handleRetryAbsorbed(
+  env: ExecutorRuntimeEnv,
   sessionUuid: string,
   body: Record<string, unknown>,
   entry: unknown,
@@ -24,22 +26,28 @@ export async function handleRetryAbsorbed(
       message: `session ${sessionUuid} is terminal; retry not allowed`,
     });
   }
-  return jsonResponse(200, {
+  const jobUuid = crypto.randomUUID();
+  const dispatch_path = await dispatchExecutorJob(env, {
+    kind: "retry",
+    job_uuid: jobUuid,
+    session_uuid: sessionUuid,
+    requested_attempt_seed: typeof body.attempt_label === "string" ? body.attempt_label : null,
+  });
+  return jsonResponse(202, {
     ok: true,
     action: "retry",
     session_uuid: sessionUuid,
     session_status: status ?? "active",
-    // first-wave: signals to client that route is wired but full
-    // attempt-chain executor is in HP4 follow-up batch within
-    // hero-to-pro. Clients may resend latest user message via
-    // `/messages` to achieve retry semantics today.
-    retry_kind: "request-acknowledged-replay-via-messages",
-    hint: "POST /sessions/{id}/messages with the previous user prompt to replay",
+    retry_kind: "queue-enqueued",
+    job_uuid: jobUuid,
+    executor_status: dispatch_path === "queue" ? "enqueued" : "completed",
+    dispatch_path,
     requested_attempt_seed: typeof body.attempt_label === "string" ? body.attempt_label : null,
   });
 }
 
 export async function handleForkAbsorbed(
+  env: ExecutorRuntimeEnv,
   sessionUuid: string,
   body: Record<string, unknown>,
   entry: unknown,
@@ -54,18 +62,24 @@ export async function handleForkAbsorbed(
     ? body.from_checkpoint_uuid
     : null;
   const childSessionUuid = crypto.randomUUID();
+  const jobUuid = crypto.randomUUID();
+  const dispatch_path = await dispatchExecutorJob(env, {
+    kind: "fork",
+    job_uuid: jobUuid,
+    parent_session_uuid: sessionUuid,
+    child_session_uuid: childSessionUuid,
+    from_checkpoint_uuid: fromCheckpoint,
+    label: typeof body.label === "string" ? body.label : null,
+  });
   return jsonResponse(202, {
     ok: true,
     action: "fork",
     parent_session_uuid: sessionUuid,
-    // first-wave: child session UUID is minted but executor wires
-    // are in HP7 follow-up batch within hero-to-pro. The
-    // `session.fork.created` stream event will fire once snapshot
-    // copy completes; clients should poll
-    // `/sessions/{child}/status` until `active`.
+    job_uuid: jobUuid,
     child_session_uuid: childSessionUuid,
     from_checkpoint_uuid: fromCheckpoint,
     label: typeof body.label === "string" ? body.label : null,
-    fork_status: "pending-executor",
+    fork_status: dispatch_path === "queue" ? "executor-enqueued" : "executor-completed",
+    dispatch_path,
   });
 }

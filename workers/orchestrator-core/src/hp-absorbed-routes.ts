@@ -15,10 +15,14 @@ import {
   normalizeVirtualPath,
   buildWorkspaceR2Key,
 } from "./workspace-control-plane.js";
+import { D1ToolCallLedger } from "./tool-call-ledger.js";
+import { emitFrameViaUserDO } from "./wsemit.js";
+import type { OrchestratorCoreEnv } from "./facade/env.js";
 // Structural env subset needed by these handlers; avoids importing
 // `OrchestratorCoreEnv` from `index.ts` (which would create a circular
 // dependency that madge flags via `pnpm check:cycles`).
 type AbsorbedRoutesEnv = {
+  readonly ORCHESTRATOR_USER_DO?: DurableObjectNamespace;
   readonly NANO_AGENT_DB?: D1Database;
   // HPX5 F5 — façade pass-through to filesystem-core readTempFile RPC.
   readonly FILESYSTEM_CORE?: {
@@ -78,6 +82,7 @@ export async function ensureSessionOwnedOrError(
 
 export type SessionToolCallsRoute =
   | { kind: "list"; sessionUuid: string }
+  | { kind: "detail"; sessionUuid: string; requestUuid: string }
   | { kind: "cancel"; sessionUuid: string; toolCallId: string };
 
 export function parseSessionToolCallsRoute(request: Request): SessionToolCallsRoute | null {
@@ -89,6 +94,13 @@ export function parseSessionToolCallsRoute(request: Request): SessionToolCallsRo
     if (!UUID_RE.test(sessionUuid)) return null;
     if (method !== "GET") return null;
     return { kind: "list", sessionUuid };
+  }
+  const detail = pathname.match(/^\/sessions\/([^/]+)\/tool-calls\/([^/]+)$/);
+  if (detail && method === "GET") {
+    const sessionUuid = detail[1]!;
+    const requestUuid = decodeURIComponent(detail[2]!);
+    if (!UUID_RE.test(sessionUuid) || requestUuid.length === 0) return null;
+    return { kind: "detail", sessionUuid, requestUuid };
   }
   const cancel = pathname.match(/^\/sessions\/([^/]+)\/tool-calls\/([^/]+)\/cancel$/);
   if (!cancel || method !== "POST") return null;
@@ -181,18 +193,50 @@ export async function handleSessionToolCalls(
     return deps.jsonPolicyError(409, "conversation-deleted", "conversation is deleted", traceUuid);
   }
   if (route.kind === "list") {
+    const ledger = new D1ToolCallLedger(db);
+    const cursor = new URL(request.url).searchParams.get("cursor");
+    const limitRaw = Number(new URL(request.url).searchParams.get("limit") ?? "50");
+    const result = await ledger.listForSession({
+      session_uuid: route.sessionUuid,
+      cursor,
+      limit: Number.isInteger(limitRaw) ? limitRaw : 50,
+    });
     return Response.json(
       {
         ok: true,
         data: {
           session_uuid: route.sessionUuid,
-          tool_calls: [],
-          source: "ws-stream-only-first-wave",
+          tool_calls: result.rows,
+          next_cursor: result.next_cursor,
+          source: "d1-tool-call-ledger",
         },
         trace_uuid: traceUuid,
       },
       { status: 200, headers: { "x-trace-uuid": traceUuid } },
     );
+  }
+  const ledger = new D1ToolCallLedger(db);
+  if (route.kind === "detail") {
+    const toolCall = await ledger.read(route.requestUuid);
+    if (!toolCall || toolCall.session_uuid !== route.sessionUuid) {
+      return deps.jsonPolicyError(404, "not-found", "tool call not found", traceUuid);
+    }
+    return Response.json(
+      {
+        ok: true,
+        data: { session_uuid: route.sessionUuid, tool_call: toolCall },
+        trace_uuid: traceUuid,
+      },
+      { status: 200, headers: { "x-trace-uuid": traceUuid } },
+    );
+  }
+  const cancelled = await ledger.markCancelled({
+    request_uuid: route.toolCallId,
+    cancel_initiator: "user",
+    ended_at: new Date().toISOString(),
+  });
+  if (!cancelled || cancelled.session_uuid !== route.sessionUuid) {
+    return deps.jsonPolicyError(404, "not-found", "tool call not found", traceUuid);
   }
   return Response.json(
     {
@@ -201,7 +245,7 @@ export async function handleSessionToolCalls(
         session_uuid: route.sessionUuid,
         request_uuid: route.toolCallId,
         cancel_initiator: "user",
-        forwarded: true,
+        status: "cancelled",
       },
       trace_uuid: traceUuid,
     },
@@ -363,6 +407,24 @@ export async function handleSessionWorkspace(
       created_at: now,
       expires_at: null,
     });
+    emitFrameViaUserDO(
+      env as OrchestratorCoreEnv,
+      { sessionUuid: route.sessionUuid, userUuid: session.actor_user_uuid, traceUuid },
+      "session.item.completed",
+      {
+        item_uuid: crypto.randomUUID(),
+        session_uuid: route.sessionUuid,
+        kind: "file_change",
+        created_at: now,
+        payload: {
+          path: normalized,
+          change_kind: "modified",
+          size_delta: sizeBytes,
+          content_hash: contentHash,
+        },
+        completed_at: now,
+      },
+    );
     return Response.json(
       {
         ok: true,
@@ -381,6 +443,24 @@ export async function handleSessionWorkspace(
     session_uuid: route.sessionUuid,
     virtual_path: normalized,
   });
+  const deletedAt = new Date().toISOString();
+  emitFrameViaUserDO(
+    env as OrchestratorCoreEnv,
+    { sessionUuid: route.sessionUuid, userUuid: session.actor_user_uuid, traceUuid },
+    "session.item.completed",
+    {
+      item_uuid: crypto.randomUUID(),
+      session_uuid: route.sessionUuid,
+      kind: "file_change",
+      created_at: deletedAt,
+      payload: {
+        path: normalized,
+        change_kind: "deleted",
+        size_delta: 0,
+      },
+      completed_at: deletedAt,
+    },
+  );
   return Response.json(
     {
       ok: true,
