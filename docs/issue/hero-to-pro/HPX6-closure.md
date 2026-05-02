@@ -13,12 +13,12 @@
 
 | 维度 | 结论 |
 |------|------|
-| HPX6 当前状态 | **`executed-with-followups`**: F6/F8/F9/F10/F14/F15 已 live;F11/F12/F13 已有 Queue dispatch substrate,restore 可 terminal-drive,retry/fork deep semantics 仍需后续专项补齐 |
+| HPX6 当前状态 | **`executed-with-followups`**: F6/F8/F9/F10/F14/F15 已 live;F11/F12/F13 已有 Queue dispatch substrate,restore 已改为 non-success terminal guard,retry/fork deep semantics 仍需后续专项补齐 |
 | Protocol / package | `@haimang/nacp-session@1.5.0` 已落地 5 个 HPX6 top-level frame schema |
 | D1 truth | `015` tool-call ledger、`016` runtime config、`017` tenant permission rules 已落地 |
 | Public HTTP/WS surface | `/runtime`、`/items`、tool-call list/detail/cancel、public WS `session.followup_input` 均已接通 |
 | Legacy removal | `POST /sessions/{id}/policy/permission_mode` 已 hard-delete;User DO `permission_mode/*` KV 写入移除 |
-| Executor | Cloudflare Queue producer/consumer 已接在 orchestrator-core 内,保持 6-worker topology;restore job 可从 pending→running→succeeded 并 emit `session.restore.completed` |
+| Executor | Cloudflare Queue producer/consumer 已接在 orchestrator-core 内,保持 6-worker topology;restore job 当前从 pending→running→partial 并以 `failure_reason=restore-executor-pending-deep-semantics` emit `session.restore.completed` |
 | Docs | clients/api-docs 扩为 22-doc pack,新增 runtime/items/tool-calls |
 | 测试 | 受影响 package/worker typecheck/build/test、root `pnpm test`、docs consistency、cross-e2e topology gate 均通过 |
 
@@ -44,8 +44,9 @@
 
 1. **retry executor deep semantics 尚未完成**:当前 `POST /sessions/{id}/retry` 已从旧 hint 变成 Queue dispatch response,但 Queue consumer 还没有真正重放 latest user turn、写 `turn_attempt` / `requested_attempt_seed`、驱动新 turn。
 2. **fork executor deep semantics 尚未完成**:当前 `POST /sessions/{id}/fork` 已 queue-enqueue 并 mint `child_session_uuid`,但 child workspace snapshot copy、`nano_session_fork_lineage` materialization、`session.fork.created` terminal emit 仍需补齐。
-3. **DO alarm stuck-job 兜底未落地**:本轮选择 Queue consumer + inline fallback,没有新增 agent-core DO alarm 每 5 分钟 requeue running job。
-4. **package 发布未执行**:源码已升 `@haimang/nacp-session@1.5.0`,但本 closure 没有执行 GitHub Packages publish / preview redeploy。
+3. **restore deep semantics 尚未完成**:为避免 success-shaped fallback,当前 restore executor 明确以 `partial / restore-executor-pending-deep-semantics` 终结 job;真实 R2/D1 rollback / replay / copy 语义仍待补齐。
+4. **DO alarm stuck-job 兜底未落地**:本轮选择 Queue consumer + inline fallback,没有新增 agent-core DO alarm 每 5 分钟 requeue running job。
+5. **package 发布未执行**:源码已升 `@haimang/nacp-session@1.5.0`,但本 closure 没有执行 GitHub Packages publish / preview redeploy。
 
 因此本 closure 不把 HPX6 描述为“所有 executor 语义 fully complete”;准确状态是 workbench surfaces + durable truth + Queue substrate 已落地,executor deep semantics 仍有明确后续项。
 
@@ -77,4 +78,3 @@
 4. Regenerate package manifests and run package truth gate before deploy。
 5. Redeploy 6 workers and verify `/debug/packages` reports `@haimang/nacp-session@1.5.0`。
 6. Run live e2e with `NANO_AGENT_LIVE_E2E=1` after deploy。
-
