@@ -6,7 +6,7 @@
 > Profile: `facade-http-v1` + `binary-content`
 > Auth: `Authorization: Bearer <access_token>`
 
-本文件覆盖：（a）HP4 之前已 live 的 **artifact** CRUD（`/sessions/{id}/files`）；（b）HP6 已冻结的 **workspace temp file** 路径法律 + D1 truth；（c）当前已经接通、但仍是 first-wave 的 **workspace public CRUD** 与 **tool-calls** 路由。
+本文件覆盖：（a）HP4 之前已 live 的 **artifact** CRUD（`/sessions/{id}/files`）；（b）HP6 已冻结的 **workspace temp file** 路径法律 + D1 truth；（c）当前已接通的 **workspace public CRUD**。tool-calls 已独立收敛到 [`tool-calls.md`](./tool-calls.md)。
 
 ---
 
@@ -131,7 +131,7 @@ HP6 frozen 状态：
 | filesystem-core temp-file RPC | ✅ live | `readTempFile / writeTempFile / listTempFiles / deleteTempFile` 已实现，并与 orchestrator path law 对齐 |
 | 公共 CRUD 路由 `/sessions/{id}/workspace/files/{*path}` | ✅ live | 已注册;HPX5 F5 之后 `content_source` 改标 `live`,bytes 通过 `/content` 子路径走 filesystem-core `readTempFile` RPC |
 | 公共 binary GET 路由 `/sessions/{id}/workspace/files/{*path}/content` | ✅ live (HPX5 F5) | binary-content profile,25 MiB cap,bytes 直读 R2 |
-| `/sessions/{id}/tool-calls` list/detail/cancel 路由 | ✅ live | HPX6 后读写 D1 `nano_tool_call_ledger`；详见 [`tool-calls.md`](./tool-calls.md) |
+| `/sessions/{id}/tool-calls` list/detail/cancel 路由 | ✅ live | 已独立收敛到 [`tool-calls.md`](./tool-calls.md)；此处仅保留交叉引用 |
 | artifact promotion / cleanup cron | ⏳ partial | promotion / cleanup 仍未全量闭环 |
 
 ### Public route behavior
@@ -143,9 +143,9 @@ HP6 frozen 状态：
 | `GET` | `/sessions/{id}/workspace/files/{*path}/content` | **HPX5 F5 — binary-content profile**:返 `Content-Type` + `Content-Length` + raw bytes;25 MiB cap;`409 workspace-file-pending` 当 metadata 在但 R2 字节缺 |
 | `PUT` / `POST` | `/sessions/{id}/workspace/files/{*path}` | upsert metadata row；返回 `stored: true` |
 | `DELETE` | `/sessions/{id}/workspace/files/{*path}` | 删除 metadata row |
-| `GET` | `/sessions/{id}/tool-calls` | D1 ledger list；返回 `source: "d1-tool-call-ledger"` |
-| `GET` | `/sessions/{id}/tool-calls/{request_uuid}` | D1 ledger detail |
-| `POST` | `/sessions/{id}/tool-calls/{request_uuid}/cancel` | 将 ledger row 标记为 `cancelled` |
+| `GET` | `/sessions/{id}/tool-calls` | 详见 [`tool-calls.md`](./tool-calls.md) |
+| `GET` | `/sessions/{id}/tool-calls/{request_uuid}` | 详见 [`tool-calls.md`](./tool-calls.md) |
+| `POST` | `/sessions/{id}/tool-calls/{request_uuid}/cancel` | 详见 [`tool-calls.md`](./tool-calls.md) |
 
 > 当前 client 可以访问这些 HTTP 路由；workspace bytes delivery 与 tool-call ledger 已 live，artifact promotion / cleanup 仍是后续风险面。
 

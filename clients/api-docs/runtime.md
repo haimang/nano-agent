@@ -5,7 +5,7 @@
 > Profile: `facade-http-v1`
 > Auth: `Authorization: Bearer <access_token>`
 
-HPX6 replaces the removed legacy `POST /sessions/{id}/policy/permission_mode` route with a durable session-scoped runtime config row (`nano_session_runtime_config`). Runtime config is the client-facing control plane for approval posture, permission rules, network/web-search posture, and workspace mount scope.
+HPX6 replaces the removed legacy `POST /sessions/{id}/policy/permission_mode` route with a durable runtime control plane. Session-scoped settings live in `nano_session_runtime_config`; tenant-scoped permission rules live in `nano_team_permission_rules`. The facade merges both scopes into one client-facing runtime document.
 
 ## Routes
 
@@ -24,7 +24,7 @@ HPX6 replaces the removed legacy `POST /sessions/{id}/policy/permission_mode` ro
     {
       "rule_uuid": "...",
       "tool_name": "bash",
-      "pattern": "*git status*",
+      "pattern": "*",
       "behavior": "allow",
       "scope": "session"
     }
@@ -43,9 +43,11 @@ HPX6 replaces the removed legacy `POST /sessions/{id}/policy/permission_mode` ro
 
 ```json
 {
+  "version": 1,
   "approval_policy": "always_allow",
   "permission_rules": [
-    { "tool_name": "write_todos", "behavior": "allow", "scope": "session" }
+    { "tool_name": "write_todos", "behavior": "allow", "scope": "session" },
+    { "tool_name": "bash", "pattern": "*git status*", "behavior": "allow", "scope": "tenant" }
   ],
   "network_policy": { "mode": "restricted" },
   "web_search": { "mode": "disabled" },
@@ -53,7 +55,14 @@ HPX6 replaces the removed legacy `POST /sessions/{id}/policy/permission_mode` ro
 }
 ```
 
-All fields are optional, but an empty PATCH body is rejected. Unknown fields are ignored by the current parser.
+`version` is required and enforces optimistic locking. All other fields are optional, but an empty PATCH body is rejected. Unknown fields are ignored by the current parser.
+
+When `permission_rules` is present, the server replaces the submitted scopes in durable truth:
+
+1. `scope=session` rules replace `nano_session_runtime_config.permission_rules_json`.
+2. `scope=tenant` rules replace the current team rule set in `nano_team_permission_rules`.
+
+If another client updates runtime config first, the server returns `409 conflict`.
 
 ## Server push
 
@@ -72,4 +81,3 @@ Successful PATCH emits a top-level WS frame:
   "updated_at": "..."
 }
 ```
-

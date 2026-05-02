@@ -109,6 +109,7 @@ The following are emitted by current routes. They are not part of `FacadeErrorCo
 Legacy note:
 
 1. `POST /sessions/{id}/close` / `DELETE /sessions/{id}` / `PATCH /sessions/{id}/title` 仍沿用 legacy action payload；删除态冲突当前会返回 body-level `error: "conversation_deleted"`，客户端应把它映射到与 facade code `conversation-deleted` 相同的 UX。
+2. `PATCH /sessions/{id}/runtime` 在 body 非法或缺少 `version` 时返回 `400 invalid-input`；当 `version` 落后于服务器当前值时返回 `409 conflict`。
 
 ## WS `system.error`
 

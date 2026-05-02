@@ -5,7 +5,7 @@
 > Profile: `facade-http-v1`
 > Auth: `Authorization: Bearer <access_token>`
 
-HPX6 adds a Codex-style read-time item layer. Items are not a new truth table; they are projections from existing durable sources such as messages, tool-call ledger, todos, confirmations, and workspace file-change emits.
+HPX6 adds a Codex-style read-time item layer. Items are not a new truth table; they are projections from existing durable sources such as messages, tool-call ledger, workspace temp-file metadata, todos, confirmations, and error log rows.
 
 ## Routes
 
@@ -19,12 +19,22 @@ HPX6 adds a Codex-style read-time item layer. Items are not a new truth table; t
 | kind | Source |
 |------|--------|
 | `agent_message` | assistant messages |
-| `reasoning` | non-assistant message projection / reasoning stream |
+| `reasoning` | reasoning delta stream projection when durable rows exist |
 | `tool_call` | `nano_tool_call_ledger` |
-| `file_change` | workspace write/delete emit payloads |
+| `file_change` | current `nano_session_temp_files` metadata projection |
 | `todo_list` | `nano_session_todos` aggregate |
 | `confirmation` | `nano_session_confirmations` |
-| `error` | structured error projection when available |
+| `error` | `nano_error_log` rows scoped to the session |
+
+## Query vs subscription
+
+| Surface | What it shows |
+|---------|----------------|
+| `GET /sessions/{id}/items` | current durable projection for the session |
+| `GET /items/{item_uuid}` | detail view for one projected item |
+| WS `session.item.*` | live progression events while a workbench item is being produced |
+
+`/items` is a durable query surface, not a replay of every transient WS frame. For example, `file_change` HTTP items are derived from the current workspace temp-file truth, while WS frames can still report per-operation progress.
 
 ## WS item frames
 
@@ -46,4 +56,3 @@ Workbench clients should also listen for top-level item frames:
 ```
 
 Wire frames use `item_kind` because the outer lightweight frame already owns `kind`. Canonical schema field name remains `kind`.
-

@@ -188,8 +188,6 @@
 | `GET` | `/sessions/{id}/workspace/files/{*path}` | bearer | facade | read workspace metadata + canonical R2 key |
 | `PUT`/`POST` | `/sessions/{id}/workspace/files/{*path}` | bearer | facade | upsert workspace metadata |
 | `DELETE` | `/sessions/{id}/workspace/files/{*path}` | bearer | facade | delete workspace metadata |
-| `GET` | `/sessions/{id}/tool-calls` | bearer | facade | first-wave tool-call list |
-| `POST` | `/sessions/{id}/tool-calls/{request_uuid}/cancel` | bearer | facade `202` | first-wave cancel ack |
 
 ### Checkpoints
 
@@ -230,7 +228,7 @@
 | Method | Path | Auth | Shape | 说明 |
 |--------|------|------|-------|------|
 | `GET` | `/sessions/{id}/runtime` | bearer | facade | read-or-create runtime config |
-| `PATCH` | `/sessions/{id}/runtime` | bearer | facade | patch runtime config and emit `session.runtime.update` |
+| `PATCH` | `/sessions/{id}/runtime` | bearer | facade | optimistic-lock patch runtime config and emit `session.runtime.update` |
 | `GET` | `/sessions/{id}/items` | bearer | facade | projected workbench item list |
 | `GET` | `/items/{item_uuid}` | bearer | facade | projected item detail |
 | `GET` | `/sessions/{id}/tool-calls` | bearer | facade | D1 ledger-backed tool call list |

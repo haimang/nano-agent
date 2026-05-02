@@ -183,6 +183,22 @@ HPX6 新增 5 个 server → client 顶层帧：
 }
 ```
 
+`session.restore.completed` 当前在 restore executor deep semantics 未补齐前，会以 non-success terminal 明确告知客户端：
+
+```json
+{
+  "kind": "session.restore.completed",
+  "job_uuid": "11111111-1111-4111-8111-111111111111",
+  "checkpoint_uuid": "22222222-2222-4222-8222-222222222222",
+  "session_uuid": "33333333-3333-4333-8333-333333333333",
+  "target_session_uuid": null,
+  "status": "partial",
+  "failure_reason": "restore-executor-pending-deep-semantics",
+  "started_at": "2026-05-02T00:00:00.000Z",
+  "completed_at": "2026-05-02T00:00:01.000Z"
+}
+```
+
 ### 3.6 `session.attachment.superseded`
 
 ```json

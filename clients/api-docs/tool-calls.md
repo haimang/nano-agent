@@ -34,3 +34,8 @@ HPX6 promotes tool calls from stream-only events to a durable D1 ledger (`nano_t
 
 `queued | running | succeeded | failed | cancelled`
 
+## `cancel_initiator` note
+
+HTTP ledger rows currently expose `cancel_initiator ∈ {user, system, tool} | null`.
+
+WS `tool.call.cancelled` uses the stream-event contract, where propagated parent cancellation is emitted as `parent_cancel`. Clients should treat `tool` (ledger) and `parent_cancel` (WS) as the same product-level meaning: the call did not finish because a higher-level flow cancelled it.
