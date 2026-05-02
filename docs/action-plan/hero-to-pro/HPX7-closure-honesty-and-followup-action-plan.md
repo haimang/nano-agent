@@ -26,7 +26,7 @@
 > - `docs/eval/pro-to-product/re-planning-by-opus.md` §6.3（明确不进入 HPX7 的项目）
 > - `docs/eval/pro-to-product/re-planning-by-opus.md` §6.4（HPX7 完成后的 hero-to-pro final closure 目标状态）
 > - `docs/charter/plan-hero-to-pro.md` §16.4（hero-to-pro 后期 reality 已是 workbench-grade backend substrate）
-> 文档状态: `draft`
+> 文档状态: `executed`
 
 ---
 
@@ -420,3 +420,46 @@ HPX7 scoped follow-up fixes
 | 风险收敛 | token bug 与 item projection residual 均经过 verification-first 处理，不存在“旧 review 说有问题，所以硬做一轮”的虚假劳动 |
 | 可交付性 | hero-to-pro 可以作为 PP0 的可信前序输入，PP0 不再需要额外为 HPX7 做 truth cleanup |
 
+---
+
+## 9. 工作日志回填（2026-05-02）
+
+### 9.1 代码与文档落地
+
+1. **agent-core cancel live caller 补齐**
+   - 在 `workers/agent-core/src/host/runtime-mainline.ts` 新增 inflight tool-call map。
+   - `cancel(requestId)` 现在在 transport cancel 之外，还会产生 `tool_call_cancelled` semantic event。
+   - `workers/agent-core/src/host/do/session-do/runtime-assembly.ts` 把该 event bridge 到 D1 ledger + client stream，写入 `status=cancelled` 并向客户端推送 `tool.call.cancelled`。
+2. **public cancel route 不再只改 ledger**
+   - `workers/orchestrator-core/src/hp-absorbed-routes.ts` 的 `POST /sessions/{id}/tool-calls/{request_uuid}/cancel` 现在会在成功标记 ledger 后，经 User DO forward `tool.call.cancelled {cancel_initiator:"user"}`。
+   - `workers/orchestrator-core/src/entrypoint.ts` 与 `workers/agent-core/src/host/env.ts` 同步扩展 `recordToolCall(... cancel_initiator?)` 透传能力。
+3. **attach race hardening**
+   - `workers/agent-core/src/host/do/session-do-runtime.ts` 去掉 `attachHelperToSocket()` 的空 catch。
+   - 当前只吞 `NACP_SESSION_ALREADY_ATTACHED`，并记录 warn；未知异常继续抛出。
+4. **`/runtime` optimistic lock 升级为 public contract**
+   - `workers/orchestrator-core/src/facade/routes/session-runtime.ts` 新增 runtime `ETag` 计算。
+   - `GET /sessions/{id}/runtime` 返回 `ETag` 并支持 `If-None-Match`。
+   - `PATCH /sessions/{id}/runtime` 在保留 body `version` / D1 `expected_version` 的同时，新增 `If-Match` 支持；header mismatch 返回 `409 conflict`。
+5. **HPX6 R1 verification-first 收口**
+   - 复核 `workers/orchestrator-core/src/item-projection-plane.ts` 后确认 7-kind list/read 已成立。
+   - 本轮不重做 object layer，而是新增 public route tests 锁住 `/sessions/{id}/items` 与 `/items/{item_uuid}` 的 current reality。
+6. **client docs 与 closure 体系同步**
+   - 更新 `clients/api-docs/runtime.md`，补入 `ETag / If-None-Match / If-Match / 409 conflict`。
+   - 更新 `clients/api-docs/tool-calls.md`，补入 user cancel route 会 forward WS `tool.call.cancelled`。
+   - 新建 `docs/issue/hero-to-pro/HPX7-closure.md`。
+   - 更新 `docs/issue/hero-to-pro/HP5-closure.md`、`HPX6-closure.md`、`hero-to-pro-final-closure.md` 与 `docs/charter/plan-hero-to-pro.md` §16，使 retained map 收敛到 4 项 owner-action。
+
+### 9.2 测试与验证结果
+
+1. `pnpm --filter @haimang/agent-core-worker test -- test/host/runtime-mainline.test.ts test/host/do/nano-session-do.test.ts` → pass
+2. `pnpm --filter @haimang/orchestrator-core-worker typecheck` → pass
+3. `pnpm --filter @haimang/orchestrator-core-worker build` → pass
+4. `pnpm --filter @haimang/orchestrator-core-worker test -- test/tool-calls-route.test.ts test/session-runtime-route.test.ts test/session-items-route.test.ts` → pass
+5. `pnpm run check:docs-consistency` → pass
+6. `pnpm test` → pass
+
+### 9.3 本轮结论
+
+1. HPX7 六项范围已全部得到 explicit verdict，其中 `tool.call.cancelled`、attach race、`/runtime` optimistic lock 为真实代码修补，`token accounting` 与 `/items` residual 以 verification-first 合法收口。
+2. hero-to-pro final closure 已从 `partial-close / 7-retained` uplift 到 `close-with-known-issues / 4 owner-action retained`。
+3. HPX7 未引入新 D1、新协议帧、新 worker，也没有把 replay / retry / fork / restore deep semantics 偷偷塞进本阶段。
