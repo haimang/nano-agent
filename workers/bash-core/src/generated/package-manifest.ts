@@ -2,7 +2,7 @@
 // DO NOT EDIT BY HAND.
 
 export const NANO_PACKAGE_MANIFEST = {
-  "build_at": "2026-05-02T13:51:32.470Z",
+  "build_at": "2026-05-02T15:44:17.401Z",
   "packages": [
     {
       "name": "@haimang/nacp-core",
