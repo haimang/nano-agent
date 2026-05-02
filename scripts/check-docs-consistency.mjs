@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // HPX5 P5-05 — docs consistency CI gate.
 //
-// Verifies the 19-doc pack under clients/api-docs/ has zero drift on
+// Verifies the 22-doc pack under clients/api-docs/ has zero drift on
 // the contract points HPX5 / HPX6 / HP9 froze:
 //
 //   1. `index\.ts:[0-9]+` — no failed implementation references after
