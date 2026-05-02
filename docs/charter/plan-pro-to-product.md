@@ -9,6 +9,8 @@
 >
 > **修订历史**：
 > - `2026-05-02 v0.active — 首版基线 charter，承接 hero-to-pro final closure 与 HPX7 closure honesty uplift`
+> - `2026-05-02 v0.active.1 — 增补 PP6 API contract sweep + clients/api-docs closure phase，并将 final closure 从 PP5 拆出`
+> - `2026-05-02 v0.active.2 — 吸收 Opus review 中成立的建议：补 frontend engagement schedule、DDL anchor、latency baseline，并精化 hook reality 描述`
 >
 > **直接输入包（authoritative）**：
 > 1. `docs/charter/plan-hero-to-pro.md`
@@ -66,7 +68,7 @@
 |------|------|----------|------|
 | D1 | `pro-to-product` 的 design 文件统一放在 `docs/design/pro-to-product/`，不再分散到其他目录 | 设计文档结构、下游引用路径、行动计划与 closure 的引用稳定性 | User input: "我趋向于只在 docs/design/pro-to-product/ 下增加design文件, 而不动其他文件夹, 这样所有设计文件都集合在一起" |
 | D2 | 本 charter 承接 HPX7 之后的真实起点，不再以 `partial-close / 7-retained` 为入口前提 | reality snapshot、gate 设计、phase 工期、design 数量 | `docs/eval/pro-to-product/closing-thoughts-by-GPT.md`; current user request to draft baseline charter from all discussions |
-| D3 | 本阶段基线采用 **6-phase / 7-design / batch-review / e2e-first** 的轻量方案 | phase 切分、design 生产、review 方式、PP0 定义 | `docs/eval/pro-to-product/closing-thoughts-by-GPT.md`; current user request to materialize baseline charter |
+| D3 | 本阶段基线采用 **7-phase / 8-design / batch-review / e2e-first** 的轻量方案 | phase 切分、design 生产、review 方式、PP0 定义 | `docs/eval/pro-to-product/closing-thoughts-by-GPT.md`; current user request to materialize baseline charter |
 
 ### 1.2 已冻结的系统真相
 
@@ -75,7 +77,8 @@
 | hero-to-pro 终态 | `hero-to-pro` 已是 `close-with-known-issues / 4-owner-action-retained-with-explicit-remove-condition`；工程 retained 不再是下一阶段入口 blocker | 本阶段不再设置 Debt Acknowledgement Gate / Retained Non-Block Gate；owner-action retained 仅作为背景事实保留 |
 | 拓扑与 substrate | 6-worker 基石仍成立；HPX5/HPX6/HPX7 已形成 workbench-grade agent loop backend substrate，而非新的 7-worker 常态拓扑 | 本阶段继续保持 6-worker topology，不以“换拓扑”作为解法 |
 | public contract 现状 | `/runtime` 已有 public `ETag / If-Match` 合同，tool-call cancel 已有 live producer，`/items` public route 已有 route-level evidence | 本阶段从当前 public surface 出发，做 live caller / truth gap 收口，而不是再回到“是否先把 facade 做出来”的问题 |
-| 4 套状态机现实 | Model / Context / Chat lifecycle / Tool-Workspace 目前都是 `partial-live`，问题主要在 live caller、恢复语义、policy honesty，而不是表结构缺失 | 本阶段的 6 truth gates直接对准这些 remaining gaps，而不是重建状态机 |
+| 4 套状态机现实 | Model / Context / Chat lifecycle / Tool-Workspace 目前都是 `partial-live`，问题主要在 live caller、恢复语义、policy honesty，而不是表结构缺失 | 本阶段的 7 truth gates 直接对准这些 remaining gaps，而不是重建状态机 |
+| 当前 D1 migration 真相 | `workers/orchestrator-core/migrations/` 当前共 17 个 migration，编号连续到 `017`、无缺口 | 本阶段默认不新增 D1 migration；若 §4.5 的受控例外触发，新 migration 必须从 `018` 顺延 |
 | 22-doc client docs baseline | `clients/api-docs/` 已扩展到 22-doc pack，但“写进文档 ≠ 前端可依赖”仍需由本阶段 truth gates 校验 | docs truth 将被纳入本阶段硬闸，而不再以“文档已存在”视为完成 |
 
 ### 1.3 明确不再重讨论的前提
@@ -96,7 +99,7 @@
 | Context probe substrate | compact signal probe 已经接到 runtime composition，能根据 durable usage / context_window 计算 compact required | `workers/agent-core/src/host/do/session-do/runtime-assembly.ts:292-324` |
 | Runtime config public contract | `/runtime` 现在有 `ETag / If-None-Match / If-Match` public optimistic lock 合同；body `version` law 仍保留 | `workers/orchestrator-core/src/facade/routes/session-runtime.ts:129-207` |
 | Replay persistence substrate | checkpoint 时 WS helper replay 已写盘；replay buffer 本身有 checkpoint/restore 能力 | `workers/agent-core/src/host/do/session-do-persistence.ts:154-160`; `packages/nacp-session/src/replay.ts:81-95` |
-| Hook substrate | session DO assembly 中已无条件构造 `HookRegistry + HookDispatcher + LocalTsRuntime`，hook runtime seam 已在 | `workers/agent-core/src/host/do/session-do/runtime-assembly.ts:155-160,191-196` |
+| Hook substrate | session DO assembly 中已无条件构造 `HookRegistry + HookDispatcher + LocalTsRuntime`，且 registry snapshot/restore seam 已存在；但当前仍没有 live user-driven register caller | `workers/agent-core/src/host/do/session-do/runtime-assembly.ts:155-160,191-196`; `workers/agent-core/src/hooks/snapshot.ts:46-53` |
 
 ### 2.2 当前仍然存在的核心 gap
 
@@ -105,7 +108,7 @@
 | G1 | `approval_policy=ask` 仍然直接 error-out，而不是 pause-resume | 这是当前最明确的 live caller 断点；已有 substrate 存在但主回路未接通 | 前端无法建立可信的 HITL loop，工具权限仍表现为“错误”而不是“等待用户决策” |
 | G2 | token/context-window preflight 缺失，compact 仍是 `{ tokensFreed: 0 }` | Context budget 是长对话可持续性的核心；当前 compact 仍是假闭环 | 前端即便有 compact UI，也是在消费一个不会真正缩小 prompt 的伪能力 |
 | G3 | replay checkpoint 已写盘，但 restore 路径不恢复 helper replay，过旧 seq 仍直接 throw | reconnect/recovery 是产品 trust 的基础能力；当前断线后恢复仍停在 best-effort | 前端刷新页面 / 断线重连时仍然会撞到恢复不可信、状态不连续、甚至直接 throw |
-| G4 | HookDispatcher 已注入，但 production register source 与 PreToolUse live caller 仍未接通 | hook 仍停在 substrate ready，而不是 product loop ready | 若直接扩 hook catalog / UI，可见性会再次先于真实 delivery |
+| G4 | HookDispatcher 已注入、registry snapshot/restore seam 也已存在，但当前仍没有 live user-driven register source，PreToolUse 也未接到 dispatcher | hook 仍停在 substrate ready，而不是 product loop ready | 若直接扩 hook catalog / UI，可见性会再次先于真实 delivery |
 | G5 | `network_policy / web_search / workspace_scope` 已 public visible，但运行时仍未消费；fallback/retry 也未形成 first-class truth surface | 这是典型的 policy honesty + reliability gap | 前端会继续消费 ambiguous contract：字段已公开却不 enforce，fallback/retry 发生却不可见 |
 
 ### 2.3 本阶段必须拒绝的错误前提
@@ -144,7 +147,8 @@
 | I3 | Context budget 真闭合 | 长对话可靠性与 compact truth 是 agent loop 产品化的第二条硬闸 | PP2 |
 | I4 | Reconnect / session recovery 真闭合 | 前端刷新 / 断线后的信任恢复不能继续停在 best-effort | PP3 |
 | I5 | Hook minimal live loop 闭合 | Hook 需要先从 substrate 变成 product loop，再谈 catalog 扩张 | PP4 |
-| I6 | Policy honesty + reliability hardening + final closure | 当前 `/runtime` 与 fallback/retry 的 truth gap 不能继续延后；本阶段需要合法封板 | PP5 |
+| I6 | Policy honesty + reliability hardening | 当前 `/runtime` 与 `fallback/retry` 的 truth gap 不能继续延后；必须先把 ambiguity 与 reliability truth 收平 | PP5 |
+| I7 | API contract sweep + `clients/api-docs` closure + final closure | 前端真正依赖的是 public/frontend-facing contract；没有 item-by-item 对账与文档回填，阶段不能诚实封板 | PP6 |
 
 ### 4.2 全局 Out-of-Scope（本阶段明确不做）
 
@@ -160,8 +164,8 @@
 
 | 项目 | 判定 | 判定理由 | 若要翻案，需要什么新事实 |
 |------|------|----------|--------------------------|
-| reasoning stream typing | `defer / later-phase or PP5 subtask` | 它是重要 truth surface，但不是单独 phase；只有在 PP5 observability / docs truth 需要它时，才纳入本阶段子任务 | 如果某个 truth gate 无法在无 reasoning typing 的情况下被合法验证 |
-| cross-e2e 基础设施 | `in-scope` | 本阶段必须以真实 e2e skeleton 驱动，不可只靠 design / unit test | 如果已有基础设施已足以直接表达 6 truth gates，无需新增骨架 |
+| reasoning stream typing | `defer / later-phase or PP5/PP6 subtask` | 它是重要 truth surface，但不是单独 phase；只有在 PP5 hardening 或 PP6 contract sweep 需要它时，才纳入本阶段子任务 | 如果某个 truth gate 无法在无 reasoning typing 的情况下被合法验证 |
+| cross-e2e 基础设施 | `in-scope` | 本阶段必须以真实 e2e skeleton 驱动，不可只靠 design / unit test | 如果已有基础设施已足以直接表达 7 truth gates，无需新增骨架 |
 | 完整 policy enforce | `in-scope with downgrade fallback` | `network_policy / web_search / workspace_scope` 不能继续 ambiguity；要么 enforce，要么显式 downgrade | 如果运行时实际无法在本阶段安全接入且 downgrade 方案也不诚实 |
 | hook 全 catalog 扩张 | `out-of-scope` | 当前只需要 minimal live loop；catalog 扩张是 secondary outcome，不是主闸 | 如果最小 loop 无法成立，必须先调 scope，而不是扩 catalog |
 
@@ -181,6 +185,7 @@
 3. 对应 Phase 的 design doc 与 action-plan 显式登记此例外；
 4. owner / architect 在本 charter 或其修订版中明确批准；
 5. 最终 closure 必须把该例外登记进 schema correction list。
+6. 若触发新 migration，编号必须从 `018` 起顺延，不得复用既有编号，也不得跳号预占。
 
 ---
 
@@ -190,15 +195,15 @@
 |--------|------|--------------|
 | **live-caller-first** | 优先修“已有 substrate 但无 caller”的断点，而不是继续铺 schema / surface | 再次制造 schema-live / producer-not-live |
 | **e2e-first** | PP0 就要有首个真实 e2e skeleton；每个 Phase 都必须有对应 e2e 证据 | 把 design / review 误当成 delivery |
-| **truth-gate-first** | 6 truth gates 是本阶段 closure 的硬闸，不是附属说明 | Phase 完成只停留在“代码大概有了” |
+| **truth-gate-first** | 7 truth gates 是本阶段 closure 的硬闸，不是附属说明 | Phase 完成只停留在“代码大概有了” |
 | **minimal-loop-first** | Hook、Policy、Observability 都先做最小可信闭环，再扩 catalog / polish | 一上来追求 full surface，造成 phase 膨胀 |
 | **verification-first on residuals** | 对 inherited residual 先验证当前 reality，再决定是否需要 patch | 因旧 review 口径强做无效修补 |
 | **doc-as-contract, not as-progress** | 文档用于冻结边界和合同，不作为推进本身的代替品 | 文档体系膨胀、工程节奏被治理开销拖垮 |
 
 ### 5.1 方法论对 phases 的直接影响
 
-- **`e2e-first`** 直接影响：PP0 不能只交 charter 和 design，必须交首个 e2e skeleton；PP1-PP5 的 closure 都要有真实 loop 证据。
-- **`minimal-loop-first`** 直接影响：PP4 不追求完整 hook catalog；PP5 不追求所有 observability embellishment，而优先 enforce-or-downgrade 与最小 fallback/retry truth。
+- **`e2e-first`** 直接影响：PP0 不能只交 charter 和 design，必须交首个 e2e skeleton；PP1-PP6 的 closure 都要有真实 loop 或真实合同对账证据。
+- **`minimal-loop-first`** 直接影响：PP4 不追求完整 hook catalog；PP5 只做 enforce-or-downgrade 与最小 fallback/retry truth；PP6 再做面向前端的 public contract sweep 与 docs closure。
 
 ---
 
@@ -213,7 +218,8 @@
 | PP2 | Context Budget Closure | implementation | 把 token preflight、compact 真执行、prompt mutation 接成真实 budget loop | compact 执行不可行或效果无法证明 |
 | PP3 | Reconnect & Session Recovery | implementation | 把 replay restore、lagged contract、detached policy、state snapshot 接成可信恢复链 | replay / restore 多层状态不一致 |
 | PP4 | Hook Delivery Closure | implementation | 让 PreToolUse 真走 HookDispatcher，并形成最小 frontend-visible hook loop | Hook 与 permission/policy 仲裁顺序不清 |
-| PP5 | Policy Honesty + Reliability Hardening + Final Closure | hardening / closure | 消除 public runtime ambiguity，补齐 fallback/retry truth，并完成阶段封板 | PP5 变成剩余事项的杂物抽屉 |
+| PP5 | Policy Honesty + Reliability Hardening | hardening | 消除 public runtime ambiguity，补齐 fallback/retry truth，为最终 contract closure 提供 no-ambiguity 基线 | PP5 重新膨胀成 leftover phase |
+| PP6 | API Contract Sweep + Frontend Docs Closure + Final Closure | contract closure | 扫描前端依赖的全部 public surfaces，回填 `clients/api-docs`，并完成阶段 final closure | PP6 误扫内部 seam，或重新打开前面 Phase 的实现争议 |
 
 ### 6.2 Phase 职责矩阵（推荐必填）
 
@@ -224,14 +230,24 @@
 | PP2 | token preflight、real compact、prompt mutation、overflow degrade | 不负责 replay / hook / policy downgrade | PP1 interrupt substrate 已稳定 | PP2 design + action-plan + compact truth e2e |
 | PP3 | replay restore、lagged contract、detached policy、state snapshot | 不负责 policy / hook catalog 扩张 | PP1 的 `session-do-runtime.ts` 关键改动已稳定；PP0 truth model 已冻结 | PP3 design + action-plan + reconnect truth e2e |
 | PP4 | PreToolUse live caller、register source、minimal hook surface | 不负责 full hook catalog 或 full product UI | PP1 confirmation / interrupt substrate 已可复用 | PP4 design + action-plan + hook truth e2e |
-| PP5 | enforce-or-downgrade、fallback/retry truth、docs/obs audit、final closure | 不负责 platform-scale features | PP2/PP3/PP4 主线完成并各自有 e2e 证据 | PP5 design + action-plan + final closure |
+| PP5 | enforce-or-downgrade、fallback/retry truth、最小 public honesty hardening | 不负责 full contract sweep 或 final closure | PP2/PP3/PP4 主线完成并各自有 e2e 证据 | PP5 design + action-plan + PP5 closure |
+| PP6 | item-by-item 扫描前端依赖的 public/frontend-facing surfaces、更新 `clients/api-docs`、完成 final closure | 不负责内部 RPC/worker-only seam 普查，不负责重开前序 Phase 的大实现 | PP5 closure 已完成；前 6 条产品 truth 已可验证成立 | PP6 design + action-plan + `clients/api-docs` 对账 + final closure |
 
 ### 6.3 Phase 之间的交接原则
 
 1. **PP0 只冻结主线，不抢后续 Phase 的实现细节。**
 2. **PP1 先提供 interrupt substrate；PP2 与 PP4 只能建立在它的稳定输出上。**
 3. **PP3 可与后续 Phase 并行，但不得与 PP1 在同一 owner file 的高频改动窗口重叠。**
-4. **PP5 不替前面 Phase 补主线真相，只负责 hardening、honesty 和 final closure。**
+4. **PP5 不替前面 Phase 补主线真相，只负责 hardening 与 honesty，不提前吞下 final closure。**
+5. **PP6 只做前端依赖的 public contract sweep、`clients/api-docs` closure 与 final closure，不回头扩大战术范围。**
+
+### 6.4 Frontend Engagement Schedule
+
+| 时点 | 对应 Phase | 前端参与目标 | 最低输出 |
+|------|------------|--------------|----------|
+| FE-1 | `PP0` baseline review | 让 frontend lead 参与 `00/01` cross-cutting truth 与首个 e2e skeleton 审核，避免 frontend trust 只由 backend 单边定义 | 对 truth gates、frame/read-model 预期、最小消费假设形成确认记录 |
+| FE-2 | `PP1` / `PP3` 中期 mock review | 在 HITL interrupt 与 reconnect/recovery contract 稳定后，由前端校对 frame 时序、pending/loading/error-handling、lagged/degraded UX 假设 | 至少一轮基于 mock 或 preview contract 的联调反馈，回填对应 action-plan / closure |
+| FE-3 | `PP6` full integration review | 在 contract sweep 与 `clients/api-docs` closure 期间，由前端按真实 public surface 做 item-by-item 对账与集成验收 | `clients/api-docs` 对账确认 + final closure 中的 frontend-facing verdict |
 
 ---
 
@@ -245,7 +261,7 @@
 
 #### In-Scope
 
-1. 形成 `plan-pro-to-product.md` 首版并冻结 6 truth gates。
+1. 形成 `plan-pro-to-product.md` 首版并冻结 7 truth gates。
 2. 产出 `00-agent-loop-truth-model.md` 与 `01-frontend-trust-contract.md`。
 3. 交付至少一个真实 e2e skeleton（HITL 或 reconnect 其一）。
 
@@ -263,8 +279,8 @@
 
 #### 收口标准
 
-1. 6 truth gates、D1 例外 law、Phase 边界已冻结。
-2. `00/01` 两份 cross-cutting design 已完成并可被 PP1-PP5 直接消费。
+1. 7 truth gates、D1 例外 law、Phase 边界已冻结。
+2. `00/01` 两份 cross-cutting design 已完成并可被 PP1-PP6 直接消费。
 3. 首个 e2e skeleton 能以真实代码路径暴露 substrate 真相。
 
 #### 什么不算完成
@@ -411,7 +427,7 @@
 #### In-Scope
 
 1. PreToolUse live caller 接到 HookDispatcher。
-2. 至少一个 production register source。
+2. 至少一个 **user-driven hook** 的 production register source。
 3. 至少一个 frontend-visible hook path，且与 audit / outcome 可对账。
 
 #### Out-of-Scope
@@ -428,7 +444,7 @@
 #### 收口标准
 
 1. PreToolUse 不再绕过 HookDispatcher。
-2. 至少一条 `register → emit → outcome → frontend visible + audit visible` 闭环成立。
+2. 至少一条 **user-driven hook**（`PreToolUse / PostToolUse / PermissionRequest` 之一）的 `register → emit → outcome → frontend visible + audit visible` 闭环成立。
 3. 与 permission_rules / approval_policy 的仲裁顺序清晰且被测试覆盖。
 
 #### 什么不算完成
@@ -443,17 +459,17 @@
 
 ---
 
-### 7.6 `PP5` — Policy Honesty + Reliability Hardening + Final Closure
+### 7.6 `PP5` — Policy Honesty + Reliability Hardening
 
 #### 实现目标
 
-消除 public runtime ambiguity，补齐 fallback/retry truth，并完成本阶段 final closure。
+消除 public runtime ambiguity，补齐 fallback/retry truth，为最终 API contract sweep 与 final closure 提供 no-ambiguity 基线。
 
 #### In-Scope
 
 1. `network_policy / web_search / workspace_scope` 的 enforce-or-downgrade。
 2. fallback / retry / stream recovery 的最小 first-class truth surface。
-3. docs / observability audit、phase closures 与 final closure。
+3. 为 PP6 的 contract sweep 提供稳定、可诚实描述的 runtime / stream / fallback truth。
 
 #### Out-of-Scope
 
@@ -464,23 +480,66 @@
 
 1. `docs/design/pro-to-product/06-policy-reliability-hardening.md`
 2. `docs/action-plan/pro-to-product/PP5-policy-reliability-hardening-action-plan.md`
-3. `docs/issue/pro-to-product/pro-to-product-final-closure.md`
+3. `docs/issue/pro-to-product/PP5-closure.md`
 
 #### 收口标准
 
 1. `/runtime` 的 3 类字段不再 ambiguity：要么真 enforce，要么 explicit downgrade。
-2. fallback / retry 的 truth surface 至少够支撑前端与 closure 诚实表述。
-3. 所有 truth gates 对账完成，phase closures 与 final closure 一致。
+2. fallback / retry 的 truth surface 至少够支撑前端 contract sweep 与诚实表述。
+3. PP6 可以在不重开 PP5 设计边界的前提下，对这些 truth 进行 item-by-item public contract 对账。
 
 #### 什么不算完成
 
 1. 仍把 stored-not-enforced 字段写成 active policy。
-2. 把 PP5 做成前面 residual 的杂物抽屉，而非 hardening / final closure phase。
+2. 把 PP5 做成前面 residual 的杂物抽屉，或把本应在 PP6 完成的全量 docs/contract sweep 提前塞回 PP5。
 
 #### 本 Phase 风险提醒
 
 - 容易承接过多 leftover，导致边界失真。
-- final closure 若没有回到 truth gates 对账，仍会重演上一阶段的 deceptive closure。
+- 若 PP5 没有把 ambiguity 真收平，PP6 会被迫重新变成实现 phase。
+
+---
+
+### 7.7 `PP6` — API Contract Sweep + Frontend Docs Closure + Final Closure
+
+#### 实现目标
+
+扫描前端依赖的全部 public/frontend-facing surfaces，逐项与真实代码、真实 stream、真实恢复语义对账，回填 `clients/api-docs`，并完成本阶段 final closure。
+
+#### In-Scope
+
+1. item-by-item 扫描前端依赖的 HTTP / WS / runtime / recovery public contract。
+2. 依据真实代码与真实 loop / degraded path，更新 `clients/api-docs/` 全部必要条目。
+3. 汇总 PP0-PP6 的 closure 证据，输出 `pro-to-product-final-closure.md`。
+
+#### Out-of-Scope
+
+1. 不负责内部 RPC、worker-to-worker seam、纯 substrate helper 的全量普查。
+2. 不负责因 docs sweep 而重开 PP1-PP5 的大范围设计争议或新功能扩张。
+
+#### 交付物
+
+1. `docs/design/pro-to-product/07-api-contract-docs-closure.md`
+2. `docs/action-plan/pro-to-product/PP6-api-contract-docs-closure-action-plan.md`
+3. `clients/api-docs/` 下经 item-by-item 对账后的必要更新
+4. `docs/issue/pro-to-product/PP6-closure.md`
+5. `docs/issue/pro-to-product/pro-to-product-final-closure.md`
+
+#### 收口标准
+
+1. 前端依赖的 public/frontend-facing surfaces 已逐项完成代码事实对账，而不是按设计文本推断。
+2. `clients/api-docs` 不再存在 stored-not-enforced、fake-live、undocumented degraded path 或明显命名/行为漂移。
+3. `PP0-PP6` closures 与 final closure 在范围、证据、残留问题上完全一致。
+
+#### 什么不算完成
+
+1. 把 PP6 做成新的 architecture re-audit，去扫描内部 RPC / worker-only seam。
+2. 为了掩盖 docs drift，重新打开前面 Phase 的 scope，临时塞入一批无设计边界的新实现。
+
+#### 本 Phase 风险提醒
+
+- 最容易从“前端合同对账”膨胀成“全仓再审一遍”。
+- 若不冻结只扫 public/frontend-facing surfaces，PP6 会重新变成杂物抽屉。
 
 ---
 
@@ -491,6 +550,7 @@
 1. `PP0 → PP1`
 2. `PP1 稳定后并行推进 PP2 / PP3 / PP4`
 3. `PP2 + PP3 + PP4 closure 后进入 PP5`
+4. `PP5 closure 后进入 PP6`
 
 ### 8.2 推荐 DAG / 依赖关系
 
@@ -502,7 +562,7 @@ PP0
     └── PP4
         \ 
 PP2 ------\
-PP3 -------+── PP5
+PP3 -------+── PP5 ──> PP6
 PP4 ------/
 ```
 
@@ -520,7 +580,8 @@ PP4 ------/
 
 - PP1 必须先行，因为 PP2 与 PP4 都依赖它提供的 interrupt substrate。
 - PP3 可以并行，但不能在 PP1 对 `session-do-runtime.ts` 的关键改动尚未稳定时过早切入。
-- PP5 放到最后，因为它是 honesty / hardening / final closure phase，不应该替前面 Phase 收主线欠账。
+- PP5 放在 PP6 前面，因为 policy / reliability ambiguity 必须先收平，PP6 才能做诚实的 public contract sweep。
+- PP6 放到最后，因为它是 frontend contract closure + final closure phase，职责是对账与收口，而不是回头替前面 Phase 补主线欠账。
 
 ---
 
@@ -537,8 +598,11 @@ PP4 ------/
 | 类别 | 验证内容 | 目的 |
 |------|----------|------|
 | Product-loop e2e | 至少一条 HITL / reconnect skeleton 在 PP0 即开始跑通，后续各 Phase 拓展到对应 truth gate | 让本阶段不再停在 design-first 推测 |
-| Truth-gate e2e | 每个 Phase 至少有一条能直接判定对应 truth 是否成立的真实回路 | 把 closure 从“代码存在”提升为“前端可信” |
-| Docs truth audit | public docs / runtime response / stream events 的表述必须与当前代码同构 | 防止 stored-not-enforced 与 fake-live drift 再现 |
+| Truth-gate e2e | PP1-P5 至少各有一条能直接判定对应 truth 是否成立的真实回路 | 把 closure 从“代码存在”提升为“前端可信” |
+| Docs truth audit | PP6 对前端依赖的 public docs / runtime response / stream events / degraded contract 做 item-by-item 对账 | 防止 stored-not-enforced 与 fake-live drift 再现 |
+| Latency baseline（非硬闸） | `permission/elicitation` 首次可见请求建议 ≤ `500ms`；`retry` 首个前端可见响应建议 ≤ `1s`；`reconnect` replay 或 lagged verdict 建议 ≤ `2s`；`compact` 完成或 explicit degrade 建议 ≤ `3s` | 让 frontend trust 不只停留在 functional truth，也覆盖最小可感知体验基线 |
+
+以上 latency baseline 是 **validation baseline / alert threshold**，不是独立的 Primary Exit Criteria；若持续超阈值，相关 phase closure 与 final closure 必须显式登记影响范围、复现条件与是否接受该 degrade。
 
 ### 9.3 本阶段不变量
 
@@ -551,8 +615,9 @@ PP4 ------/
 1. 不允许宣称 **HITL 已闭合**，如果 `approval_policy=ask` 仍然直接 error-out。
 2. 不允许宣称 **Context 已闭合**，如果 compact 后 prompt 没有真实缩减。
 3. 不允许宣称 **Reconnect 已闭合**，如果 replay overflow 仍直接 throw 给前端。
-4. 不允许宣称 **Hook 已闭合**，如果 HookDispatcher 仍只是 injected substrate、无 live caller。
+4. 不允许宣称 **Hook 已闭合**，如果 HookDispatcher 仍只是 injected substrate、无 user-driven live caller。
 5. 不允许宣称 **Policy 已诚实**，如果 public runtime 字段仍 ambiguity。
+6. 不允许宣称 **Frontend contract 已闭合**，如果 `clients/api-docs` 仍未和真实 public surface item-by-item 对齐。
 
 ---
 
@@ -564,8 +629,9 @@ PP4 ------/
 2. **Context truth**：compact 后下一个 LLM request 的 prompt 能被证明真实缩减，不再只是 notify / bookkeeping。
 3. **Reconnect truth**：`last_seen_seq` 重连时，要么 replay 成功，要么收到明确 lagged / degraded contract，不直接 throw 给前端。
 4. **Session state truth**：前端在恢复后能拿到 session 当前状态（至少包含 phase / active-turn / pending interaction 的等价信息）。
-5. **Hook truth**：至少一条 `register → emit → outcome → frontend visible + audit visible` hook 回路成立。
+5. **Hook truth**：至少一条 **user-driven hook**（`PreToolUse / PostToolUse / PermissionRequest` 之一）的 `register → emit → outcome → frontend visible + audit visible` 回路成立。
 6. **Policy / reliability truth**：`network_policy / web_search / workspace_scope` 要么真 enforce，要么 explicit downgrade；fallback / retry 的 truth surface 对前端和 closure 足够诚实。
+7. **Frontend contract truth**：前端依赖的 public/frontend-facing surfaces 与 `clients/api-docs` 已 item-by-item 对齐；degraded / lagged / fallback path 也被诚实写明。
 
 ### 10.2 Secondary Outcomes（结果加分项，不是硬闸）
 
@@ -586,13 +652,13 @@ PP4 ------/
 
 | 收口类型 | 含义 | 使用条件 | 文档要求 |
 |----------|------|----------|----------|
-| `full close` | 阶段核心目标与 6 条硬闸全部满足，且无残留问题需要显式下放 | 所有 truth gates 全绿；无 retained engineering issue；docs truth 全面对齐 | final closure 必须列出完整证据矩阵与 phase-by-phase verdict |
-| `close-with-known-issues` | 主线 truth 已完成，但仍有不会破坏本阶段目标的显式残留 | 6 条 truth gates 全绿；残留仅限 non-blocking known issue / owner-action / 明确下游主题 | final closure 必须复写残留问题、影响范围、下游落点与 remove condition |
-| `cannot close` | 仍存在 blocker / truth drift / 证据不足 | 任一 truth gate 未成立；docs truth 未对齐；或主线 live caller 仍缺失 | final closure 必须显式写 cannot-close，不得用“部分完成”模糊替代 |
+| `full close` | 阶段核心目标与 7 条硬闸全部满足，且无残留问题需要显式下放 | 所有 truth gates 全绿；无 retained engineering issue；docs truth 全面对齐 | final closure 必须列出完整证据矩阵与 phase-by-phase verdict |
+| `close-with-known-issues` | 主线 truth 已完成，但仍有不会破坏本阶段目标的显式残留 | 7 条 truth gates 全绿；残留仅限 non-blocking known issue / owner-action / 明确下游主题 | final closure 必须复写残留问题、影响范围、下游落点与 remove condition |
+| `cannot close` | 仍存在 blocker / truth drift / 证据不足 | 任一 truth gate 未成立；docs truth 未对齐；或主线 live caller 仍缺失 | final closure 必须显式写 cannot-close，不得用“部分完成”模糊替代；并说明后续应进入受控 addendum phase 还是独立 revisit charter |
 
 ### 10.5 这一阶段成功退出意味着什么
 
-`nano-agent` 第一次拥有一个前端可以真实依赖的 agent loop backend：权限交互、长对话 budget、断线恢复、最小 hook loop、runtime policy honesty 都不再停留在 substrate-ready 或 doc-ready，而是有真实闭环证据。
+`nano-agent` 第一次拥有一个前端可以真实依赖的 agent loop backend：权限交互、长对话 budget、断线恢复、最小 hook loop、runtime policy honesty，以及 `clients/api-docs` 对这些 public contract 的诚实表述，都不再停留在 substrate-ready 或 doc-ready，而是有真实闭环证据。
 
 ### 10.6 这一阶段成功退出**不意味着什么**
 
@@ -613,7 +679,7 @@ PP4 ------/
 ### 11.2 下一阶段的开启前提
 
 1. `pro-to-product` 至少达到 `close-with-known-issues`。
-2. 6 truth gates 全部达到可验证绿灯。
+2. 7 truth gates 全部达到可验证绿灯。
 3. final closure 已明确 remaining known issues 与下游范围，没有 silently resolved。
 
 ### 11.3 为什么这些内容不能前移到本阶段
@@ -636,6 +702,12 @@ PP4 ------/
 - **当前建议 / 默认答案**：**是。** 本阶段不以 14/18 emit catalog 全接通为目标，只以 minimal live loop 为目标。
 - **最晚冻结时点**：`PP4 design 冻结前`
 
+### Q3 — PP6 的接口扫描是否只覆盖前端依赖的 public/frontend-facing surfaces，而不扩张到 internal RPC / worker-only seam？
+
+- **为什么必须回答**：如果不冻结扫描范围，PP6 很容易从 contract closure 膨胀成第二次全仓架构审计。
+- **当前建议 / 默认答案**：**是。** PP6 只扫描前端需要依赖的 HTTP / WS / runtime / replay / degraded contract，不扫描纯内部 seam。
+- **最晚冻结时点**：`PP6 design 冻结前`
+
 ---
 
 ## 13. 后续文档生产清单
@@ -649,6 +721,7 @@ PP4 ------/
 - `docs/design/pro-to-product/04-reconnect-session-recovery.md`
 - `docs/design/pro-to-product/05-hook-delivery-closure.md`
 - `docs/design/pro-to-product/06-policy-reliability-hardening.md`
+- `docs/design/pro-to-product/07-api-contract-docs-closure.md`
 
 ### 13.2 Action-Plan 文档
 
@@ -658,10 +731,11 @@ PP4 ------/
 - `docs/action-plan/pro-to-product/PP3-reconnect-session-recovery-action-plan.md`
 - `docs/action-plan/pro-to-product/PP4-hook-delivery-closure-action-plan.md`
 - `docs/action-plan/pro-to-product/PP5-policy-reliability-hardening-action-plan.md`
+- `docs/action-plan/pro-to-product/PP6-api-contract-docs-closure-action-plan.md`
 
 ### 13.3 Closure / Handoff 文档
 
-- `docs/issue/pro-to-product/PP0-closure.md` 至 `docs/issue/pro-to-product/PP5-closure.md`
+- `docs/issue/pro-to-product/PP0-closure.md` 至 `docs/issue/pro-to-product/PP6-closure.md`
 - `docs/issue/pro-to-product/pro-to-product-final-closure.md`
 - `docs/issue/pro-to-product/pro-to-product-to-platform-foundations-handoff.md`
 
@@ -669,7 +743,8 @@ PP4 ------/
 
 1. `plan-pro-to-product.md` → `00/01` cross-cutting design → 首个 e2e skeleton
 2. PP1 design / action-plan → PP2 design / action-plan → PP3 design / action-plan
-3. PP4 design / action-plan → PP5 design / action-plan → closures / final closure / handoff
+3. PP4 design / action-plan → PP5 design / action-plan → PP6 design / action-plan → closures / final closure / handoff
+4. `02-07` per-phase design 采取 **just-in-time** 模式：在对应 phase 启动前冻结，不要求在 `PP0` 内一次性产完。
 
 ---
 
