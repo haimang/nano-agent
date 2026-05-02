@@ -11,8 +11,8 @@ HPX6 replaces the removed legacy `POST /sessions/{id}/policy/permission_mode` ro
 
 | Method | Path | 说明 |
 |--------|------|------|
-| `GET` | `/sessions/{id}/runtime` | Read or create the session runtime config. |
-| `PATCH` | `/sessions/{id}/runtime` | Patch allowed runtime fields, bump `version`, emit `session.runtime.update`. |
+| `GET` | `/sessions/{id}/runtime` | Read or create the session runtime config and return an `ETag` for optimistic locking. |
+| `PATCH` | `/sessions/{id}/runtime` | Patch allowed runtime fields, bump `version`, optionally enforce `If-Match`, emit `session.runtime.update`. |
 
 ## Runtime shape
 
@@ -39,6 +39,13 @@ HPX6 replaces the removed legacy `POST /sessions/{id}/policy/permission_mode` ro
 
 `permission_rules` support `behavior ∈ {allow, deny, ask}` and `scope ∈ {session, tenant}`. Runtime decision order is: session runtime `permission_rules` first, then tenant `nano_team_permission_rules`, then `approval_policy` fallback (`auto-allow` / `always_allow` allow, `deny` deny, `ask` ask).
 
+## Optimistic lock contract
+
+1. `GET /sessions/{id}/runtime` returns `ETag: "<hash>"`.
+2. Clients may send `If-None-Match` on `GET` and receive `304` when nothing changed.
+3. `PATCH` remains backward-compatible with body `version`, and now also accepts `If-Match` for HTTP-level optimistic locking.
+4. When `If-Match` is present and stale, the server returns `409 conflict`; clients should re-GET the runtime document, refresh `version` + `ETag`, then retry.
+
 ## PATCH request
 
 ```json
@@ -55,7 +62,7 @@ HPX6 replaces the removed legacy `POST /sessions/{id}/policy/permission_mode` ro
 }
 ```
 
-`version` is required and enforces optimistic locking. All other fields are optional, but an empty PATCH body is rejected. Unknown fields are ignored by the current parser.
+`version` is required and remains the durable version-law field. All other fields are optional, but an empty PATCH body is rejected. Unknown fields are ignored by the current parser.
 
 When `permission_rules` is present, the server replaces the submitted scopes in durable truth:
 
