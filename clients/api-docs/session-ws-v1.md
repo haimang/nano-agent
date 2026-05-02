@@ -157,6 +157,32 @@ wss://<base>/sessions/{sessionUuid}/ws?access_token=<jwt>&trace_uuid=<uuid>&last
 
 Server 默认每 15 秒发一次。client 收到后应更新本地 lastSeen，超时 ≥ 60 秒可考虑触发重连。
 
+### 3.5a HPX6 Workbench Top-Level Frames
+
+HPX6 新增 5 个 server → client 顶层帧：
+
+| Frame | 用途 |
+|-------|------|
+| `session.runtime.update` | `/runtime` PATCH 后广播 durable runtime config |
+| `session.restore.completed` | restore executor terminal status |
+| `session.item.started` | item projection 开始 |
+| `session.item.updated` | item projection 更新 |
+| `session.item.completed` | item projection 完成 |
+
+`session.item.*` wire frame 使用 `item_kind` 字段承载 canonical item kind，避免与 outer `kind` 冲突：
+
+```json
+{
+  "kind": "session.item.completed",
+  "item_uuid": "...",
+  "session_uuid": "...",
+  "item_kind": "file_change",
+  "status": "completed",
+  "payload": { "path": "/workspace/app.ts", "change_kind": "modified" },
+  "updated_at": "..."
+}
+```
+
 ### 3.6 `session.attachment.superseded`
 
 ```json
@@ -230,10 +256,11 @@ dual-emit 窗口仍 active；详见 `docs/issue/real-to-hero/RHX2-dual-emit-wind
 
 ## 4. Client → Server Frames
 
-public `orchestrator-core` WS 当前仅把 client frame 当作 activity touch：
+public `orchestrator-core` WS 会解析 `session.followup_input` 并转发到 agent-core；其他已知 client frames 仍主要作为 activity/reconnect signal：
 
 | Frame | Body | 当前作用 |
 |-------|------|----------|
+| `session.followup_input` | `{text?, context_ref?, stream_seq?, model_id?, reasoning?, parts?}` | HPX6 live：转发到 NanoSessionDO pending input queue |
 | `session.resume` | `{last_seen_seq}` | touch session（reconnect ack） |
 | `session.heartbeat` | `{ts}` | touch session |
 | `session.stream.ack` | `{stream_uuid, acked_seq}` | touch session |

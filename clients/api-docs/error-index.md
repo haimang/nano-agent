@@ -215,7 +215,7 @@ Legacy note:
 3. `/debug/packages` returns a `drift_direction` field per published package (`aligned` / `workspace_ahead` / `workspace_behind` / `workspace_not_published` / `registry_unreachable`).
 4. **HP5 row-first dual-write law (Q16)**: confirmation rows never enter `failed` state from dual-write failures—they escalate to `superseded`. Clients receiving `409 confirmation-already-resolved` should treat it as a terminal success and stop retrying.
 5. **HP6 todo at-most-1 invariant (Q19)**: `/sessions/{id}/todos/{uuid}` PATCH returning `409 in-progress-conflict` means another todo is already `in_progress`; client should refresh todo list before retrying.
-6. **HP7 restore/fork**: `POST /sessions/{id}/checkpoints/{uuid}/restore` 已能打开 `pending` restore job，但 restore executor 还未 live；`POST /sessions/{id}/fork` 目前只返回 `fork_status=pending-executor` 的 first-wave ack。客户端不应把这两条路由视为“已完成实际 restore/fork”。
+6. **HPX6 executor**: `POST /sessions/{id}/checkpoints/{uuid}/restore`、`/retry`、`/fork` 会进入 executor dispatch path；preview 配置 Queue binding 时返回 `dispatch_path=queue` / `executor_status=enqueued`，本地无 Queue binding 时可走 inline fallback 并返回 completed。
 
 ## Recommended Client Classifier
 

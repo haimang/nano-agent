@@ -1,0 +1,75 @@
+# Runtime Config / Permission Rules
+
+> Public facade owner: `orchestrator-core`
+> Implementation reference: `workers/orchestrator-core/src/facade/routes/session-runtime.ts`, `workers/orchestrator-core/src/runtime-config-plane.ts`, `workers/orchestrator-core/src/permission-rules-plane.ts`
+> Profile: `facade-http-v1`
+> Auth: `Authorization: Bearer <access_token>`
+
+HPX6 replaces the removed legacy `POST /sessions/{id}/policy/permission_mode` route with a durable session-scoped runtime config row (`nano_session_runtime_config`). Runtime config is the client-facing control plane for approval posture, permission rules, network/web-search posture, and workspace mount scope.
+
+## Routes
+
+| Method | Path | 说明 |
+|--------|------|------|
+| `GET` | `/sessions/{id}/runtime` | Read or create the session runtime config. |
+| `PATCH` | `/sessions/{id}/runtime` | Patch allowed runtime fields, bump `version`, emit `session.runtime.update`. |
+
+## Runtime shape
+
+```json
+{
+  "session_uuid": "...",
+  "version": 1,
+  "permission_rules": [
+    {
+      "rule_uuid": "...",
+      "tool_name": "bash",
+      "pattern": "*git status*",
+      "behavior": "allow",
+      "scope": "session"
+    }
+  ],
+  "network_policy": { "mode": "restricted" },
+  "web_search": { "mode": "disabled" },
+  "workspace_scope": { "mounts": [] },
+  "approval_policy": "ask",
+  "updated_at": "2026-05-02T00:00:00.000Z"
+}
+```
+
+`permission_rules` support `behavior ∈ {allow, deny, ask}` and `scope ∈ {session, tenant}`. Runtime decision order is: session runtime `permission_rules` first, then tenant `nano_team_permission_rules`, then `approval_policy` fallback (`auto-allow` / `always_allow` allow, `deny` deny, `ask` ask).
+
+## PATCH request
+
+```json
+{
+  "approval_policy": "always_allow",
+  "permission_rules": [
+    { "tool_name": "write_todos", "behavior": "allow", "scope": "session" }
+  ],
+  "network_policy": { "mode": "restricted" },
+  "web_search": { "mode": "disabled" },
+  "workspace_scope": { "mounts": ["/workspace"] }
+}
+```
+
+All fields are optional, but an empty PATCH body is rejected. Unknown fields are ignored by the current parser.
+
+## Server push
+
+Successful PATCH emits a top-level WS frame:
+
+```json
+{
+  "kind": "session.runtime.update",
+  "session_uuid": "...",
+  "version": 2,
+  "permission_rules": [],
+  "network_policy": { "mode": "restricted" },
+  "web_search": { "mode": "disabled" },
+  "workspace_scope": { "mounts": [] },
+  "approval_policy": "ask",
+  "updated_at": "..."
+}
+```
+

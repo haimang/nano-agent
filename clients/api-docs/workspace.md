@@ -131,7 +131,7 @@ HP6 frozen 状态：
 | filesystem-core temp-file RPC | ✅ live | `readTempFile / writeTempFile / listTempFiles / deleteTempFile` 已实现，并与 orchestrator path law 对齐 |
 | 公共 CRUD 路由 `/sessions/{id}/workspace/files/{*path}` | ✅ live | 已注册;HPX5 F5 之后 `content_source` 改标 `live`,bytes 通过 `/content` 子路径走 filesystem-core `readTempFile` RPC |
 | 公共 binary GET 路由 `/sessions/{id}/workspace/files/{*path}/content` | ✅ live (HPX5 F5) | binary-content profile,25 MiB cap,bytes 直读 R2 |
-| `/sessions/{id}/tool-calls` list/cancel 路由 | ✅ first-wave | 已注册；`GET` 当前返回 `source: "ws-stream-only-first-wave"`，`POST cancel` 返回 `202` ack |
+| `/sessions/{id}/tool-calls` list/detail/cancel 路由 | ✅ live | HPX6 后读写 D1 `nano_tool_call_ledger`；详见 [`tool-calls.md`](./tool-calls.md) |
 | artifact promotion / cleanup cron | ⏳ partial | promotion / cleanup 仍未全量闭环 |
 
 ### Public route behavior
@@ -143,10 +143,11 @@ HP6 frozen 状态：
 | `GET` | `/sessions/{id}/workspace/files/{*path}/content` | **HPX5 F5 — binary-content profile**:返 `Content-Type` + `Content-Length` + raw bytes;25 MiB cap;`409 workspace-file-pending` 当 metadata 在但 R2 字节缺 |
 | `PUT` / `POST` | `/sessions/{id}/workspace/files/{*path}` | upsert metadata row；返回 `stored: true` |
 | `DELETE` | `/sessions/{id}/workspace/files/{*path}` | 删除 metadata row |
-| `GET` | `/sessions/{id}/tool-calls` | first-wave list；当前只给空数组/来源标记 |
-| `POST` | `/sessions/{id}/tool-calls/{request_uuid}/cancel` | `202` cancel ack |
+| `GET` | `/sessions/{id}/tool-calls` | D1 ledger list；返回 `source: "d1-tool-call-ledger"` |
+| `GET` | `/sessions/{id}/tool-calls/{request_uuid}` | D1 ledger detail |
+| `POST` | `/sessions/{id}/tool-calls/{request_uuid}/cancel` | 将 ledger row 标记为 `cancelled` |
 
-> 当前 client 可以访问这些 HTTP 路由，但要把它们视为 **metadata/control plane first wave**，不要假设完整 bytes delivery、tool execution ledger 或 promotion cleanup 已经全部闭环。
+> 当前 client 可以访问这些 HTTP 路由；workspace bytes delivery 与 tool-call ledger 已 live，artifact promotion / cleanup 仍是后续风险面。
 
 ---
 

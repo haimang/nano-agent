@@ -37,15 +37,15 @@
 | `session-ws-v1` | `GET /sessions/{id}/ws` | lightweight JSON frames |
 | `binary-content` | `GET /sessions/{id}/files/{fileUuid}/content` | raw bytes + content headers |
 
-## 19-Doc Pack（hero-to-pro frozen authoritative）
+## 22-Doc Pack（hero-to-pro HPX6 authoritative）
 
-> HP9 + HPX5 当前把对外接口文档冻结为 **11 现有重组/校对 + 8 新增专题 = 19 份 authoritative pack**。README 是其中一份。
+> HPX6 后对外接口文档扩展为 **19 份 HPX5/HP9 pack + runtime / items / tool-calls 3 份新增专题 = 22 份 authoritative pack**。README 是其中一份。
 
 ### Foundation
 
 | 文档 | 覆盖范围 |
 |------|----------|
-| [`README.md`](./README.md) | 本文件：base URLs、transport profiles、endpoint matrix、19-doc 索引 |
+| [`README.md`](./README.md) | 本文件：base URLs、transport profiles、endpoint matrix、22-doc 索引 |
 | [`client-cookbook.md`](./client-cookbook.md) | HPX5 client 实战兜底:envelope unwrap / dedup / followup / confirmation polling fallback / `409 confirmation-already-resolved` |
 | [`auth.md`](./auth.md) | auth/login/register/refresh/me/password/wechat/api-key revoke |
 | [`me-sessions.md`](./me-sessions.md) | `/me/*` session/team/device/conversation 路由 |
@@ -66,7 +66,10 @@
 | [`checkpoints.md`](./checkpoints.md) | `/sessions/{id}/checkpoints` list/create/diff + restore/fork readiness（HP4 first-wave + HP7 substrate） |
 | [`todos.md`](./todos.md) | `/sessions/{id}/todos` CRUD（HP6 todo control plane） |
 | [`confirmations.md`](./confirmations.md) | `/sessions/{id}/confirmations` list/detail/decision + 7-kind readiness matrix（HP5） |
-| [`permissions.md`](./permissions.md) | legacy `/permission/decision` + `/elicitation/answer` + `/policy/permission_mode`（HP5 dual-write 兼容层） |
+| [`runtime.md`](./runtime.md) | `/sessions/{id}/runtime` GET/PATCH + permission rules + `session.runtime.update`（HPX6） |
+| [`items.md`](./items.md) | `/sessions/{id}/items` / `/items/{item_uuid}` Codex-style projection（HPX6） |
+| [`tool-calls.md`](./tool-calls.md) | durable `/tool-calls` list/detail/cancel backed by D1 ledger（HPX6） |
+| [`permissions.md`](./permissions.md) | legacy `/permission/decision` + `/elicitation/answer`; `/policy/permission_mode` 已在 HPX6 移除 |
 | [`usage.md`](./usage.md) | `/sessions/{id}/usage` snapshot |
 | [`wechat-auth.md`](./wechat-auth.md) | WeChat mini-program login |
 
@@ -220,14 +223,27 @@
 | `GET` | `/sessions/{id}/confirmations/{confirmation_uuid}` | bearer | facade | confirmation detail |
 | `POST` | `/sessions/{id}/confirmations/{confirmation_uuid}/decision` | bearer | facade | 提交 decision；冲突返 `409 confirmation-already-resolved` |
 
+### Runtime / Items / Tool Calls
+
+详见 [`runtime.md`](./runtime.md)、[`items.md`](./items.md)、[`tool-calls.md`](./tool-calls.md)。
+
+| Method | Path | Auth | Shape | 说明 |
+|--------|------|------|-------|------|
+| `GET` | `/sessions/{id}/runtime` | bearer | facade | read-or-create runtime config |
+| `PATCH` | `/sessions/{id}/runtime` | bearer | facade | patch runtime config and emit `session.runtime.update` |
+| `GET` | `/sessions/{id}/items` | bearer | facade | projected workbench item list |
+| `GET` | `/items/{item_uuid}` | bearer | facade | projected item detail |
+| `GET` | `/sessions/{id}/tool-calls` | bearer | facade | D1 ledger-backed tool call list |
+| `GET` | `/sessions/{id}/tool-calls/{request_uuid}` | bearer | facade | tool call detail |
+| `POST` | `/sessions/{id}/tool-calls/{request_uuid}/cancel` | bearer | facade | mark tool call cancelled |
+
 ### Legacy Permission/Elicitation 兼容层
 
-详见 [`permissions.md`](./permissions.md)。这些路由保留为 legacy compat alias，dual-write 到 confirmations。
+详见 [`permissions.md`](./permissions.md)。permission / elicitation answer alias 仍保留并 dual-write 到 confirmations；legacy `policy/permission_mode` 已 hard-delete，改用 `/runtime`。
 
 | Method | Path | Auth | Shape | 说明 |
 |--------|------|------|-------|------|
 | `POST` | `/sessions/{id}/permission/decision` | bearer | facade | 提交 permission decision |
-| `POST` | `/sessions/{id}/policy/permission_mode` | bearer | facade | 设置 permission mode |
 | `POST` | `/sessions/{id}/elicitation/answer` | bearer | facade | 提交 elicitation answer |
 
 ### WebSocket

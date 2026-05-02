@@ -222,7 +222,7 @@ HP4 conversation detail read model，返回 conversation level 聚合（含 chil
 
 ## 17. POST `/sessions/{id}/retry`
 
-当前 route 已存在，但仍是 **request-acknowledged first wave**。成功时返回：
+HPX6 后 retry 进入 executor dispatch path。成功时返回 `202`：
 
 ```json
 {
@@ -230,17 +230,19 @@ HP4 conversation detail read model，返回 conversation level 聚合（含 chil
   "action": "retry",
   "session_uuid": "...",
   "session_status": "active",
-  "retry_kind": "request-acknowledged-replay-via-messages",
-  "hint": "POST /sessions/{id}/messages with the previous user prompt to replay",
+  "retry_kind": "queue-enqueued",
+  "job_uuid": "...",
+  "executor_status": "enqueued",
+  "dispatch_path": "queue",
   "requested_attempt_seed": null
 }
 ```
 
-它目前不会创建真正的 latest-turn attempt chain；客户端如果要立即复现 retry 语义，需要按返回 hint 重发上一条 user prompt。
+`dispatch_path` 在 queue binding 存在时为 `queue`；本地/测试环境无 Queue binding 时可为 `inline`，此时 `executor_status` 为 `completed`。
 
 ## 18. POST `/sessions/{id}/fork`
 
-当前 route 已存在，但仍是 **pending-executor first wave**。成功时返回 `202`：
+HPX6 后 fork 进入 executor dispatch path。成功时返回 `202`：
 
 ```json
 {
@@ -250,11 +252,13 @@ HP4 conversation detail read model，返回 conversation level 聚合（含 chil
   "child_session_uuid": "...",
   "from_checkpoint_uuid": null,
   "label": null,
-  "fork_status": "pending-executor"
+  "job_uuid": "...",
+  "fork_status": "executor-enqueued",
+  "dispatch_path": "queue"
 }
 ```
 
-这表示 child session UUID 已 mint，但 snapshot copy / lineage / `session.fork.created` emit 还没有真正执行完成。
+`child_session_uuid` 在响应时已 mint；客户端应继续监听 `session.fork.created` 或刷新 session/conversation 视图。
 
 ## 19. GET `/sessions/{id}/usage`
 

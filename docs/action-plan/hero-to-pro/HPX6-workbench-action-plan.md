@@ -20,7 +20,7 @@
 > - `docs/design/hero-to-pro/HPX-qna.md`(Q1–Q27 仍适用)
 > - `docs/design/hero-to-pro/HPX5-HPX6-bridging-api-gap.md` §0.4 / §6.1 / §9.1(Q-bridging-1..8)
 > - `docs/design/hero-to-pro/HPX5-HPX6-bridging-api-gap.md` 附录 C(Source-of-Truth Matrix)
-> 文档状态: `draft`
+> 文档状态: `executed`
 
 ---
 
@@ -565,8 +565,41 @@ HPX6 workbench
 
 ## 9. 执行日志回填(仅 `executed` 状态使用)
 
-- **实际执行摘要**:`(待 executed 时回填)`
-- **Phase 偏差**:`(待 executed 时回填)`
-- **阻塞与处理**:`(待 executed 时回填)`
-- **测试发现**:`(待 executed 时回填)`
-- **后续 handoff**:`(待 executed 时回填)`
+- **实际执行摘要**:
+  - Phase 1 已落地: `@haimang/nacp-session` 升为 `1.5.0`,新增 `session.runtime.update` / `session.restore.completed` / `session.item.started|updated|completed` 5 个顶层 frame schema,并同步 direction matrix / session registry / exports / regression tests。
+  - Phase 1 D1 foundations 已落地:新增 `015-tool-call-ledger.sql`、`016-session-runtime-config.sql`、`017-team-permission-rules.sql`,并补齐 `D1ToolCallLedger`、`D1RuntimeConfigPlane`、`D1PermissionRulesPlane`、`D1ItemProjectionPlane`。
+  - Phase 2 已落地:public WS inbound `session.followup_input` 解析并转发到 agent-core `input` RPC;agent-core tool semantic event fire-and-forget 写入 orchestrator-core D1 ledger;`/sessions/{id}/tool-calls` list/detail/cancel 改为 D1 ledger-backed。
+  - Phase 3 已落地:`GET/PATCH /sessions/{id}/runtime` live;PATCH 后 emit `session.runtime.update`;agent-core tool execution 前调用 orchestrator-core `authorizeToolUse`,按 session rule → tenant rule → approval_policy fallback 决策;legacy `POST /sessions/{id}/policy/permission_mode` 与 User DO `permission_mode/*` KV 写入已删除,测试固定 404。
+  - Phase 4 已落地为 **6-worker-preserving Queue path**:orchestrator-core wrangler 增加 `NANO_EXECUTOR_QUEUE` producer/consumer;`OrchestratorCoreEntrypoint.queue()` 消费 `retry` / `restore` / `fork` job;restore job 可由 queue/inline executor 推到 terminal 并 emit `session.restore.completed`;retry/fork route 改为 queue dispatch response,不再返回 first-wave hint / pending-executor 旧口径。
+  - Phase 5 已落地:`/sessions/{id}/items` / `/items/{item_uuid}` read-time projection live;workspace write/delete 完成后 emit `session.item.completed` 的 `file_change` payload;`wsemit.ts` 与 `frame-compat.ts` 增加 `item_kind` wire alias,避免 outer `kind` 字段冲突。
+  - Client docs 已扩展为 22-doc pack:新增 `runtime.md`、`items.md`、`tool-calls.md`,并更新 `README.md`、`session.md`、`session-ws-v1.md`、`workspace.md`、`permissions.md`、`error-index.md` 与 `scripts/check-docs-consistency.mjs`。
+- **Phase 偏差**:
+  - 原计划写“新增 `workers/executor-runner/` 第 7 个 worker”。本轮选择在 **orchestrator-core 内实现 Queue consumer** (`OrchestratorCoreEntrypoint.queue()`),原因是当前产品与部署矩阵仍以 6-worker 为真实 topology,新增第 7 worker 会扩大发布面、worker-health 与 deploy-preview 脚本改造面。Queue producer/consumer 仍是 Cloudflare Queue 主路径,但 worker count 不变。
+  - retry/fork executor 本轮完成的是 durable Queue dispatch surface 与 response contract 去 first-wave 化;深层语义(真实 latest-turn attempt-chain replay、child workspace snapshot copy、lineage 终态 materialization)仍依赖后续补齐更细的 executor handler。restore executor 已可 terminal-drive restore job。
+  - action-plan 中的 DO alarm 兜底监控没有在 agent-core DO 内新增 alarm sweep;当前兜底是无 Queue binding 时 inline execution。若 preview Queue 消费出现卡住,仍需后续加 stuck-job alarm/requeue。
+- **阻塞与处理**:
+  - `orchestrator-core` 没有直接 `zod` dependency,`session-runtime.ts` 因此使用手写 parser/validator,避免新增依赖面。
+  - package dist 依赖要求先 `pnpm --filter @haimang/nacp-session build`,否则 worker typecheck 看不到新 schema exports;已将验证顺序固定为先 build package 再跑 worker typecheck。
+  - `request_uuid` 对 tool call 来说可能是 provider-generated id,不一定是 UUID;tool-call detail/cancel route 改为接受非空 decoded segment。
+  - `session.item.*` canonical body 的 `kind` 与 lightweight outer `kind` 冲突;采用 HPX5 `confirmation_kind` 同型策略,wire 上使用 `item_kind`,schema normalize 回 canonical `kind`。
+- **测试发现**:
+  - `packages/nacp-session/test/messages.test.ts` 原来冻结 20 个 session message types;HPX6 增加 5 个顶层 frame 后更新为 25。
+  - `workers/orchestrator-core/test/migrations-schema-freeze.test.ts` 原来禁止 015+ migration;HPX6 approve 015-017 后更新 ledger gate。
+  - `workers/orchestrator-core/test/tool-calls-route.test.ts` 从 `ws-stream-only-first-wave` 改为 `d1-tool-call-ledger`。
+  - `workers/orchestrator-core/test/policy-permission-mode-route.test.ts` 改为 hard-delete 404 regression。
+  - 验证已通过:
+    - `pnpm --filter @haimang/nacp-session build`
+    - `pnpm --filter @haimang/nacp-session test`
+    - `pnpm --filter @haimang/orchestrator-core-worker typecheck`
+    - `pnpm --filter @haimang/agent-core-worker typecheck`
+    - `pnpm --filter @haimang/orchestrator-core-worker test`
+    - `pnpm --filter @haimang/agent-core-worker test`
+    - `pnpm --filter @haimang/orchestrator-core-worker build`
+    - `pnpm --filter @haimang/agent-core-worker build`
+    - `pnpm run check:docs-consistency`
+    - `pnpm test`
+    - `pnpm test:cross-e2e`(exit 0;未设置 `NANO_AGENT_LIVE_E2E=1` 时 live cases skipped)
+- **后续 handoff**:
+  - 发布前必须 publish `@haimang/nacp-session@1.5.0`,并重新跑 package truth gate / worker package manifest gate。
+  - 若 owner 要求 Phase 4 完全达到原计划语义,下一步应专门补 retry/fork executor deep handler:latest-turn attempt-chain replay、child session/workspace snapshot copy、`nano_session_fork_lineage` materialization、DO alarm stuck-job requeue。
+  - preview 部署前需要创建/确认 Cloudflare Queue `nano-agent-executor-preview`,并把 015-017 D1 migration apply 到 preview。
