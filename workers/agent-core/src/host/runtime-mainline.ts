@@ -216,7 +216,11 @@ export {
 } from "./compact-breaker.js";
 
 export interface ToolSemanticEvent {
-  readonly kind: "tool_use_start" | "tool_use_delta" | "tool_call_result";
+  readonly kind:
+    | "tool_use_start"
+    | "tool_use_delta"
+    | "tool_call_result"
+    | "tool_call_cancelled";
   readonly tool_call_id: string;
   readonly tool_name: string;
   readonly tool_input?: Record<string, unknown>;
@@ -224,6 +228,8 @@ export interface ToolSemanticEvent {
   readonly status?: "ok" | "error";
   readonly output?: unknown;
   readonly error?: { readonly code: string; readonly message: string };
+  readonly cancel_initiator?: "user" | "system" | "parent_cancel";
+  readonly reason?: string;
 }
 
 async function authorizeToolPlan(
@@ -447,6 +453,7 @@ export function createMainlineKernelRunner(
 ): KernelRunner {
   const llmRequestIds = new Map<string, string>();
   const llmEvidenceByTurn = new Map<string, ReturnType<typeof readLlmRequestEvidence>>();
+  const inflightToolCalls = new Map<string, { readonly toolName: string }>();
   const gateway = new WorkersAiGateway(options.ai);
   let llmRequestSequence = 0;
   const runner = new KernelRunner(
@@ -681,10 +688,11 @@ export function createMainlineKernelRunner(
             kind: "tool_use_start",
             tool_call_id: requestId,
             tool_name: toolName,
-              tool_input: normalizedToolInput,
+            tool_input: normalizedToolInput,
           });
 
           const quotaContext = options.contextProvider();
+          inflightToolCalls.set(requestId, { toolName });
           try {
             const quota = await buildToolQuotaAuthorization(
               options.quotaAuthorizer,
@@ -780,9 +788,21 @@ export function createMainlineKernelRunner(
               status: "error" as const,
               result: errorBody,
             };
+          } finally {
+            inflightToolCalls.delete(requestId);
           }
         },
         cancel(requestId: string) {
+          const inflight = inflightToolCalls.get(requestId);
+          if (inflight) {
+            options.onToolEvent?.({
+              kind: "tool_call_cancelled",
+              tool_call_id: requestId,
+              tool_name: inflight.toolName,
+              cancel_initiator: "parent_cancel",
+              reason: "capability cancel requested by parent flow",
+            });
+          }
           options.capabilityTransport?.cancel?.({
             requestId,
             body: { reason: "cancelled-by-host" },

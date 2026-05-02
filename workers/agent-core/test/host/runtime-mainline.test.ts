@@ -273,4 +273,66 @@ describe("createMainlineKernelRunner", () => {
     const payload = run.mock.calls[0]?.[1] as { messages?: Array<{ role?: string; content?: string }> };
     expect(payload.messages?.[0]?.content).toContain("Use the reasoning profile.");
   });
+
+  it("emits tool_call_cancelled when an inflight capability is cancelled", async () => {
+    let resolveCall: ((value: unknown) => void) | undefined;
+    const call = vi.fn(() => new Promise((resolve) => {
+      resolveCall = resolve;
+    }));
+    const cancel = vi.fn();
+    const onToolEvent = vi.fn();
+    const runner = createMainlineKernelRunner({
+      ai: { run: vi.fn() },
+      quotaAuthorizer: null,
+      capabilityTransport: { call, cancel },
+      contextProvider: () => ({
+        teamUuid: "team-1",
+        sessionUuid: "session-1",
+        traceUuid: "trace-1",
+        turnUuid: "turn-1",
+      }),
+      anchorProvider: () => undefined,
+      onToolEvent,
+    });
+
+    const capability = (runner as unknown as {
+      delegates: {
+        capability: {
+          execute: (plan: unknown) => AsyncGenerator<unknown, void, unknown>;
+          cancel: (requestId: string) => void;
+        };
+      };
+    }).delegates.capability;
+    const execute = capability.execute({
+      requestId: "tool-1",
+      toolName: "bash",
+      args: { command: "pwd" },
+    });
+    const nextPromise = execute.next();
+    await vi.waitFor(() => {
+      expect(call).toHaveBeenCalledTimes(1);
+      expect(resolveCall).toBeTypeOf("function");
+    });
+
+    capability.cancel("tool-1");
+
+    expect(cancel).toHaveBeenCalledWith(
+      expect.objectContaining({
+        requestId: "tool-1",
+        body: { reason: "cancelled-by-host" },
+      }),
+    );
+    expect(onToolEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        kind: "tool_call_cancelled",
+        tool_call_id: "tool-1",
+        tool_name: "bash",
+        cancel_initiator: "parent_cancel",
+      }),
+    );
+
+    resolveCall?.({ status: "ok", output: { ok: true } });
+    await nextPromise;
+    await execute.next();
+  });
 });

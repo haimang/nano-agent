@@ -98,6 +98,35 @@ describe("NanoSessionDO", () => {
     it("initializes health gate", () => {
       expect(doInstance.getHealthGate()).toBeDefined();
     });
+
+    it("swallows only the already-attached helper error during socket bind", () => {
+      const runtime = doInstance as unknown as {
+        sessionUuid: string | null;
+        sessionTeamUuid: string | null;
+        ensureWsHelper: () => { attach: (socket: { send(data: string): void; close?(code?: number, reason?: string): void }) => void };
+        attachHelperToSocket: (socket: unknown) => void;
+      };
+      runtime.sessionUuid = SESSION_UUID;
+      runtime.sessionTeamUuid = "team-xyz";
+      const helper = runtime.ensureWsHelper();
+      helper.attach({ send() {}, close() {} });
+
+      expect(() => runtime.attachHelperToSocket({ send() {}, close() {} })).not.toThrow();
+    });
+
+    it("rethrows unexpected helper attach failures", () => {
+      const runtime = doInstance as unknown as {
+        wsHelper: { attach: (_socket: unknown) => void };
+        attachHelperToSocket: (socket: unknown) => void;
+      };
+      runtime.wsHelper = {
+        attach() {
+          throw new Error("boom");
+        },
+      };
+
+      expect(() => runtime.attachHelperToSocket({ send() {}, close() {} })).toThrow("boom");
+    });
   });
 
   // ── fetch routing ──────────────────────────────────────────

@@ -109,6 +109,7 @@ export interface SessionRuntimeEnv {
       readonly input?: Record<string, unknown>;
       readonly output?: Record<string, unknown> | null;
       readonly status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+      readonly cancel_initiator?: "user" | "system" | "tool" | null;
     }, meta?: { readonly trace_uuid?: string; readonly team_uuid?: string }): Promise<{ ok: boolean }>;
     authorizeToolUse?(input: {
       readonly session_uuid: string;

@@ -59,6 +59,8 @@ import {
 } from "../eval-sink.js";
 import type { EvidenceAnchorLike } from "@nano-agent/workspace-context-artifacts";
 import {
+  NacpSessionError,
+  SESSION_ERROR_CODES,
   SessionWebSocketHelper,
   type IngressContext,
   type SessionContext,
@@ -676,8 +678,21 @@ export class NanoSessionDO {
         send: (data: string) => s.send!(data),
         close: (code?: number, reason?: string) => s.close?.(code, reason),
       });
-    } catch {
-      // reconnect path owns the already-attached case
+    } catch (error) {
+      if (
+        error instanceof NacpSessionError &&
+        error.code === SESSION_ERROR_CODES.NACP_SESSION_ALREADY_ATTACHED
+      ) {
+        logger.warn("session-ws-already-attached", {
+          code: "internal-error",
+          ctx: {
+            tag: "session-ws-already-attached",
+            session_uuid: this.sessionUuid,
+          },
+        });
+        return;
+      }
+      throw error;
     }
   }
 

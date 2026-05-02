@@ -220,6 +220,8 @@ function createLiveKernelRunner(
         const status =
           event.kind === "tool_use_start"
             ? "running"
+            : event.kind === "tool_call_cancelled"
+              ? "cancelled"
             : event.status === "ok"
               ? "succeeded"
               : "failed";
@@ -234,9 +236,20 @@ function createLiveKernelRunner(
             ...(event.output !== undefined ? { output: { value: event.output } } : {}),
             ...(event.error !== undefined ? { output: { error: event.error } } : {}),
             status,
+            ...(event.kind === "tool_call_cancelled" ? { cancel_initiator: "tool" as const } : {}),
           },
           { trace_uuid: quotaCtx.traceUuid, team_uuid: quotaCtx.teamUuid },
         ).catch(() => undefined);
+      }
+      if (event.kind === "tool_call_cancelled") {
+        void ctx.pushServerFrameToClient({
+          kind: "tool.call.cancelled",
+          tool_name: event.tool_name,
+          request_uuid: event.tool_call_id,
+          cancel_initiator: event.cancel_initiator ?? "parent_cancel",
+          ...(event.reason !== undefined ? { reason: event.reason } : {}),
+        });
+        return;
       }
       if (event.kind === "tool_call_result") {
         void ctx.pushServerFrameToClient({
