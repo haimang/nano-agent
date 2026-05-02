@@ -41,7 +41,11 @@ import {
 } from "./context-control-plane.js";
 import { D1ConfirmationControlPlane, type ConfirmationKind } from "./confirmation-control-plane.js";
 import { D1TodoControlPlane, TodoConstraintError, type TodoStatus } from "./todo-control-plane.js";
-import { D1ToolCallLedger, type ToolCallStatus } from "./tool-call-ledger.js";
+import {
+  D1ToolCallLedger,
+  type ToolCallCancelInitiator,
+  type ToolCallStatus,
+} from "./tool-call-ledger.js";
 import { D1RuntimeConfigPlane } from "./runtime-config-plane.js";
 import { D1PermissionRulesPlane } from "./permission-rules-plane.js";
 import { emitFrameViaUserDO } from "./wsemit.js";
@@ -296,6 +300,7 @@ export default class OrchestratorCoreEntrypoint extends WorkerEntrypoint<Orchest
       readonly input?: Record<string, unknown>;
       readonly output?: Record<string, unknown> | null;
       readonly status: ToolCallStatus;
+      readonly cancel_initiator?: ToolCallCancelInitiator | null;
     },
     meta?: { readonly trace_uuid?: string; readonly team_uuid?: string },
   ): Promise<{ ok: boolean }> {
@@ -314,6 +319,7 @@ export default class OrchestratorCoreEntrypoint extends WorkerEntrypoint<Orchest
       input: input.input,
       output: input.output,
       status: input.status,
+      cancel_initiator: input.cancel_initiator ?? null,
       ended_at: input.status === "running" || input.status === "queued" ? null : new Date().toISOString(),
     });
     return { ok: true };

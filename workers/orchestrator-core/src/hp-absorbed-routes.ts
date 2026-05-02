@@ -16,7 +16,7 @@ import {
   buildWorkspaceR2Key,
 } from "./workspace-control-plane.js";
 import { D1ToolCallLedger } from "./tool-call-ledger.js";
-import { emitFrameViaUserDO } from "./wsemit.js";
+import { emitFrameViaUserDO, emitStreamEventViaUserDO } from "./wsemit.js";
 import type { OrchestratorCoreEnv } from "./facade/env.js";
 // Structural env subset needed by these handlers; avoids importing
 // `OrchestratorCoreEnv` from `index.ts` (which would create a circular
@@ -237,6 +237,23 @@ export async function handleSessionToolCalls(
   });
   if (!cancelled || cancelled.session_uuid !== route.sessionUuid) {
     return deps.jsonPolicyError(404, "not-found", "tool call not found", traceUuid);
+  }
+  if (env.ORCHESTRATOR_USER_DO) {
+    emitStreamEventViaUserDO(
+      env as OrchestratorCoreEnv,
+      {
+        sessionUuid: route.sessionUuid,
+        userUuid: session.actor_user_uuid,
+        traceUuid,
+      },
+      {
+        kind: "tool.call.cancelled",
+        tool_name: cancelled.tool_name,
+        request_uuid: route.toolCallId,
+        cancel_initiator: "user",
+        reason: "tool call cancelled by user request",
+      },
+    );
   }
   return Response.json(
     {

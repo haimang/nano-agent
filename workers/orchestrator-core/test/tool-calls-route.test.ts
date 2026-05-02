@@ -108,7 +108,7 @@ async function buildToken(opts?: { team?: string; user?: string }): Promise<stri
   );
 }
 
-function buildEnv(db: any) {
+function buildEnv(db: any, forwardedFrames: Array<Record<string, unknown>> = []) {
   return {
     JWT_SECRET,
     TEAM_UUID: "nano-agent",
@@ -116,7 +116,11 @@ function buildEnv(db: any) {
     ORCHESTRATOR_USER_DO: {
       idFromName: (_name: string) => "stub-id",
       get: (_id: string) => ({
-        fetch: async () => new Response(null, { status: 204 }),
+        fetch: async (request: Request) => {
+          const body = await request.clone().json() as { frame?: Record<string, unknown> };
+          if (body.frame) forwardedFrames.push(body.frame);
+          return new Response(null, { status: 204 });
+        },
       }),
     } as any,
   } as any;
@@ -217,6 +221,7 @@ describe("GET /sessions/{id}/tool-calls — D1 ledger list", () => {
 describe("POST /sessions/{id}/tool-calls/{request_uuid}/cancel — D1 ledger cancel", () => {
   it("202 happy — returns user-initiated cancel ack", async () => {
     const token = await buildToken();
+    const forwardedFrames: Array<Record<string, unknown>> = [];
     const response = await worker.fetch(
       new Request(
         `https://example.com/sessions/${SESSION_UUID}/tool-calls/${REQUEST_UUID}/cancel`,
@@ -230,7 +235,7 @@ describe("POST /sessions/{id}/tool-calls/{request_uuid}/cancel — D1 ledger can
           body: JSON.stringify({}),
         },
       ),
-      buildEnv(createDb(OWNED_SESSION)),
+      buildEnv(createDb(OWNED_SESSION), forwardedFrames),
     );
     expect(response.status).toBe(202);
     const body = (await response.json()) as { ok: boolean; data: any };
@@ -239,6 +244,14 @@ describe("POST /sessions/{id}/tool-calls/{request_uuid}/cancel — D1 ledger can
     expect(body.data.request_uuid).toBe(REQUEST_UUID);
     expect(body.data.cancel_initiator).toBe("user");
     expect(body.data.status).toBe("cancelled");
+    expect(forwardedFrames).toContainEqual(
+      expect.objectContaining({
+        kind: "tool.call.cancelled",
+        tool_name: "bash",
+        request_uuid: REQUEST_UUID,
+        cancel_initiator: "user",
+      }),
+    );
   });
 
   it("401 — missing bearer token", async () => {

@@ -126,6 +126,15 @@ function mergeRuntimeConfig(
   };
 }
 
+async function computeRuntimeEtag(runtime: RuntimeConfigRow, teamUuid: string): Promise<string> {
+  const payload = JSON.stringify(runtime);
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`${payload}:${teamUuid}`));
+  const hex = Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+  return `"${hex.slice(0, 32)}"`;
+}
+
 function parseRuntimeRoute(request: Request): { sessionUuid: string } | null {
   const pathname = new URL(request.url).pathname;
   const match = pathname.match(/^\/sessions\/([^/]+)\/runtime$/);
@@ -168,12 +177,34 @@ export async function tryHandleSessionRuntimeRoute(
   if (method === "GET") {
     const config = await plane.readOrCreate({ session_uuid: route.sessionUuid, team_uuid: teamUuid });
     const tenantRules = await rulesPlane.listTeamRules(teamUuid);
-    return Response.json({ ok: true, data: mergeRuntimeConfig(config, tenantRules), trace_uuid: traceUuid }, {
+    const runtime = mergeRuntimeConfig(config, tenantRules);
+    const etag = await computeRuntimeEtag(runtime, teamUuid);
+    if (request.headers.get("if-none-match") === etag) {
+      return new Response(null, {
+        status: 304,
+        headers: {
+          etag,
+          "x-trace-uuid": traceUuid,
+        },
+      });
+    }
+    return Response.json({ ok: true, data: runtime, trace_uuid: traceUuid }, {
       status: 200,
-      headers: { "x-trace-uuid": traceUuid },
+      headers: {
+        etag,
+        "x-trace-uuid": traceUuid,
+      },
     });
   }
 
+  const currentConfig = await plane.readOrCreate({ session_uuid: route.sessionUuid, team_uuid: teamUuid });
+  const currentTenantRules = await rulesPlane.listTeamRules(teamUuid);
+  const currentRuntime = mergeRuntimeConfig(currentConfig, currentTenantRules);
+  const currentEtag = await computeRuntimeEtag(currentRuntime, teamUuid);
+  const ifMatch = request.headers.get("if-match");
+  if (ifMatch !== null && ifMatch !== currentEtag) {
+    return jsonPolicyError(409, "conflict", "runtime config changed; refresh and retry with the latest ETag", traceUuid);
+  }
   const body = await parseBody(request);
   if (!body) return jsonPolicyError(400, "invalid-input", "runtime PATCH requires a JSON body", traceUuid);
   const parsed = parseRuntimePatch(body);
@@ -209,6 +240,7 @@ export async function tryHandleSessionRuntimeRoute(
     })
     : await rulesPlane.listTeamRules(teamUuid);
   const responseConfig = mergeRuntimeConfig(config, mergedTenantRules);
+  const etag = await computeRuntimeEtag(responseConfig, teamUuid);
   emitFrameViaUserDO(
     env,
     { sessionUuid: route.sessionUuid, userUuid: session.actor_user_uuid, traceUuid },
@@ -226,6 +258,9 @@ export async function tryHandleSessionRuntimeRoute(
   );
   return Response.json({ ok: true, data: responseConfig, trace_uuid: traceUuid }, {
     status: 200,
-    headers: { "x-trace-uuid": traceUuid },
+    headers: {
+      etag,
+      "x-trace-uuid": traceUuid,
+    },
   });
 }
