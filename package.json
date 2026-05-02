@@ -16,7 +16,8 @@
     "check:observability-drift": "node scripts/check-observability-drift.mjs",
     "check:megafile-budget": "node scripts/check-megafile-budget.mjs",
     "check:tool-drift": "node scripts/check-tool-drift.mjs",
-    "check:envelope-drift": "node scripts/check-envelope-drift.mjs"
+    "check:envelope-drift": "node scripts/check-envelope-drift.mjs",
+    "check:docs-consistency": "node scripts/check-docs-consistency.mjs"
   },
   "devDependencies": {
     "madge": "^8.0.0"
