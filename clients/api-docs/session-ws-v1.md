@@ -62,7 +62,7 @@ wss://<base>/sessions/{sessionUuid}/ws?access_token=<jwt>&trace_uuid=<uuid>&last
 | `turn.end` | `{turn_uuid, usage?}` | RHX2 | turn 结束 |
 | `compact.notify` | `{status, tokens_before?, tokens_after?}` | HP3 | compact 通知（`started/completed/failed`） |
 | `session.fork.created` | `{parent_session_uuid, child_session_uuid, conversation_uuid, from_checkpoint_uuid, restore_job_uuid}` | **HP7** | fork 建立通知（schema live；executor 未 live） |
-| `model.fallback` | `{requested_model_id?, effective_model_id, fallback_reason?}` | **HP2** | schema live；当前 emitter 仍未接通 |
+| `model.fallback` | `{turn_uuid, requested_model_id, fallback_model_id, fallback_reason}` | **HP2 / HPX5** | live (HPX5 F4) — emit 当 turn 关闭时 fallback_used=true |
 | `system.notify` | `{severity, message, code?, trace_uuid?}` | RHX2 | 通用通知 |
 | `system.error` | `{error:{code,category,message,detail?,retryable}, source_worker?, trace_uuid?}` | RHX2 | 结构化 runtime error |
 

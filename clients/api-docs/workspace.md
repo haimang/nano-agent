@@ -1,7 +1,7 @@
 # Workspace — Artifacts + Temp Files（HP6）
 
 > Public facade owner: `orchestrator-core` → `filesystem-core` (RPC)
-> Implementation reference: `workers/orchestrator-core/src/index.ts:466-483` (`parseSessionFilesRoute`)，`workers/orchestrator-core/src/workspace-control-plane.ts`，`workers/filesystem-core/src/index.ts`
+> Implementation reference: `workers/orchestrator-core/src/hp-absorbed-routes.ts:67-128` (parseSessionToolCallsRoute + parseSessionWorkspaceRoute incl. HPX5 F5 `/content`),`workers/orchestrator-core/src/workspace-control-plane.ts`,`workers/filesystem-core/src/index.ts:140-205` (HPX5 F5 readTempFile RPC façade pass-through)
 > Migration source: `migrations/011-session-temp-files-and-provenance.sql`
 > Profile: `facade-http-v1` + `binary-content`
 > Auth: `Authorization: Bearer <access_token>`
@@ -129,7 +129,8 @@ HP6 frozen 状态：
 | D1 `nano_session_temp_files` 真相表 | ✅ live | `D1WorkspaceControlPlane` (`workers/orchestrator-core/src/workspace-control-plane.ts`) 提供 list / upsert / delete + `UNIQUE(session, virtual_path)` + `content_hash` |
 | R2 key law | ✅ live | `buildWorkspaceR2Key()` |
 | filesystem-core temp-file RPC | ✅ live | `readTempFile / writeTempFile / listTempFiles / deleteTempFile` 已实现，并与 orchestrator path law 对齐 |
-| 公共 CRUD 路由 `/sessions/{id}/workspace/files/{*path}` | ✅ first-wave | 已注册；当前以 metadata + canonical `r2_key` 为主，`GET` 的 `content_source` 仍标 `filesystem-core-leaf-rpc-pending` |
+| 公共 CRUD 路由 `/sessions/{id}/workspace/files/{*path}` | ✅ live | 已注册;HPX5 F5 之后 `content_source` 改标 `live`,bytes 通过 `/content` 子路径走 filesystem-core `readTempFile` RPC |
+| 公共 binary GET 路由 `/sessions/{id}/workspace/files/{*path}/content` | ✅ live (HPX5 F5) | binary-content profile,25 MiB cap,bytes 直读 R2 |
 | `/sessions/{id}/tool-calls` list/cancel 路由 | ✅ first-wave | 已注册；`GET` 当前返回 `source: "ws-stream-only-first-wave"`，`POST cancel` 返回 `202` ack |
 | artifact promotion / cleanup cron | ⏳ partial | promotion / cleanup 仍未全量闭环 |
 
@@ -138,7 +139,8 @@ HP6 frozen 状态：
 | Method | Path | 当前行为 |
 |--------|------|----------|
 | `GET` | `/sessions/{id}/workspace/files` | 列 metadata list，支持 `?prefix=` |
-| `GET` | `/sessions/{id}/workspace/files/{*path}` | 读单个 metadata row + canonical `r2_key` |
+| `GET` | `/sessions/{id}/workspace/files/{*path}` | 读单个 metadata row + canonical `r2_key`(`content_source: "live"` since HPX5 F5) |
+| `GET` | `/sessions/{id}/workspace/files/{*path}/content` | **HPX5 F5 — binary-content profile**:返 `Content-Type` + `Content-Length` + raw bytes;25 MiB cap;`409 workspace-file-pending` 当 metadata 在但 R2 字节缺 |
 | `PUT` / `POST` | `/sessions/{id}/workspace/files/{*path}` | upsert metadata row；返回 `stored: true` |
 | `DELETE` | `/sessions/{id}/workspace/files/{*path}` | 删除 metadata row |
 | `GET` | `/sessions/{id}/tool-calls` | first-wave list；当前只给空数组/来源标记 |

@@ -1,7 +1,7 @@
 # Confirmations — Unified Control Plane（HP5）
 
 > Public facade owner: `orchestrator-core`
-> Implementation reference: `workers/orchestrator-core/src/confirmation-control-plane.ts`，`workers/orchestrator-core/src/index.ts:1103-1133, 1404-1536` (confirmation routes)
+> Implementation reference: `workers/orchestrator-core/src/confirmation-control-plane.ts:89-260`,`workers/orchestrator-core/src/facade/routes/session-control.ts:36-39, 320-442` (confirmation route parser + decision handler + HPX5 F1 emit)
 > Migration source: `migrations/012-session-confirmations.sql`
 > Profile: `facade-http-v1`
 > Auth: `Authorization: Bearer <access_token>`

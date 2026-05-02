@@ -1,7 +1,7 @@
 # Checkpoints — User-Named Registry + Diff + Restore Job Open（HP4 first wave + HP7 substrate）
 
 > Public facade owner: `orchestrator-core`
-> Implementation reference: `workers/orchestrator-core/src/index.ts:1141-1158` (`parseSessionCheckpointRoute`)，`workers/orchestrator-core/src/checkpoint-restore-plane.ts`（HP7 substrate），`workers/orchestrator-core/src/checkpoint-diff-projector.ts`
+> Implementation reference: `workers/orchestrator-core/src/facade/routes/session-control.ts:41-45` (SessionCheckpointRoute parser),`workers/orchestrator-core/src/checkpoint-restore-plane.ts:376-544` (D1CheckpointRestoreJobs),`workers/orchestrator-core/src/checkpoint-diff-projector.ts`
 > Migration source: `migrations/013-product-checkpoints.sql`
 > Profile: `facade-http-v1`
 > Auth: `Authorization: Bearer <access_token>`

@@ -1,7 +1,7 @@
 # Context — Probe / Layers / Compact
 
 > Public facade owner: `orchestrator-core` → `context-core` (RPC)
-> Implementation reference: `workers/orchestrator-core/src/context-control-plane.ts`，`workers/orchestrator-core/src/index.ts:2380-2492` (context route handlers)，`workers/context-core/src/control-plane.ts`，`workers/context-core/src/index.ts`
+> Implementation reference: `workers/orchestrator-core/src/context-control-plane.ts`,`workers/orchestrator-core/src/facade/routes/session-context.ts:140-200` (context route handlers + HPX5 F3 body透传),`workers/context-core/src/control-plane.ts`,`workers/context-core/src/index.ts:228-360` (previewCompact / triggerCompact RPC accepting force/preview_uuid/label)
 > Profile: `facade-http-v1`
 > Auth: `Authorization: Bearer <access_token>`
 
@@ -94,7 +94,7 @@
 
 返回 `{ snapshot_uuid, created_at }`。
 
-> **Body 字段当前 ignored**：HP9 frozen 阶段 façade 层 (`workers/orchestrator-core/src/index.ts:2549-2580`) 不读取 request body —— `label` 等字段实际由 server 端默认值生成，client 传入无效。后续若把 `label` 透传到 context-core，会更新本节并补 façade 层 body 校验。
+> **HPX5 F3 — body 字段已生效**:façade 层 `workers/orchestrator-core/src/facade/routes/session-context.ts:127-160` 读取 `{ force?, preview_uuid?, label? }` 并透传到 context-core RPC `previewCompact / triggerCompact`(`workers/context-core/src/index.ts:228-260`)。legacy 客户端不发 body 时行为不变。
 
 ---
 

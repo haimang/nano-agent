@@ -1,7 +1,7 @@
 # Permissions / Elicitation Legacy Compat Surface
 
 > Public facade owner: `orchestrator-core`
-> Implementation reference: `workers/orchestrator-core/src/user-do/surface-runtime.ts:59-115` (`ensureConfirmationDecision`, `handlePermissionDecision`, `handleElicitationAnswer`), `workers/orchestrator-core/src/index.ts:1404-1536` (confirmation routes)
+> Implementation reference: `workers/orchestrator-core/src/user-do/surface-runtime.ts:84-160` (`ensureConfirmationDecision` + emit hook),`workers/orchestrator-core/src/facade/routes/session-control.ts:381-442` (confirmation decision route + emit)
 > Profile: `facade-http-v1`
 > Auth: `Authorization: Bearer <access_token>`
 >

@@ -1,7 +1,7 @@
 # Todos — Session Todo Control Plane（HP6）
 
 > Public facade owner: `orchestrator-core`
-> Implementation reference: `workers/orchestrator-core/src/todo-control-plane.ts`，`workers/orchestrator-core/src/index.ts:1082-1101` (`parseSessionTodoRoute`)
+> Implementation reference: `workers/orchestrator-core/src/todo-control-plane.ts`,`workers/orchestrator-core/src/facade/routes/session-control.ts:30-34, 432-595` (todo route parser + handler + HPX5 F2c emit),`workers/orchestrator-core/src/entrypoint.ts` (HPX5 F2b `writeTodos` RPC)
 > Migration source: `migrations/010-agentic-loop-todos.sql`
 > Profile: `facade-http-v1`
 > Auth: `Authorization: Bearer <access_token>`

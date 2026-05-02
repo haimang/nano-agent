@@ -1,7 +1,7 @@
 # Models — Catalog + Session Model State
 
 > Public facade owner: `orchestrator-core`
-> Implementation reference: `workers/orchestrator-core/src/index.ts:2136-2331` (model routes)，`workers/orchestrator-core/src/session-truth.ts:421-471, 484-536` (resolveModelForTeam, readSessionModelState)
+> Implementation reference: `workers/orchestrator-core/src/facade/routes/` (model routes,模块化后),`workers/orchestrator-core/src/session-truth.ts:421-471, 484-536` (resolveModelForTeam, readSessionModelState)
 > Migration source: `migrations/007-model-metadata-and-aliases.sql`，`migrations/008-session-model-audit.sql`，`migrations/014-session-model-fallback-reason.sql`
 > Profile: `facade-http-v1`
 > Auth: `Authorization: Bearer <access_token>`
@@ -145,7 +145,7 @@ session current-model control plane view（HP2 first wave）。
   "data": {
     "conversation_uuid": "...",
     "session_uuid": "...",
-    "session_status": "running",
+    "session_status": "active",
     "deleted_at": null,
     "default_model_id": "@cf/ibm-granite/granite-4.0-h-micro",
     "default_reasoning_effort": null,
@@ -208,7 +208,7 @@ PATCH 后 server 会重新读取 session model state（与 §4 GET 同型）：
   "data": {
     "conversation_uuid": "...",
     "session_uuid": "...",
-    "session_status": "running",
+    "session_status": "active",
     "deleted_at": null,
     "default_model_id": "@cf/ibm-foundation/something-reasoning",
     "default_reasoning_effort": "high",

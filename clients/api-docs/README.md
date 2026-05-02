@@ -45,7 +45,8 @@
 
 | 文档 | 覆盖范围 |
 |------|----------|
-| [`README.md`](./README.md) | 本文件：base URLs、transport profiles、endpoint matrix、18-doc 索引 |
+| [`README.md`](./README.md) | 本文件：base URLs、transport profiles、endpoint matrix、19-doc 索引 |
+| [`client-cookbook.md`](./client-cookbook.md) | HPX5 client 实战兜底:envelope unwrap / dedup / followup / confirmation polling fallback / `409 confirmation-already-resolved` |
 | [`auth.md`](./auth.md) | auth/login/register/refresh/me/password/wechat/api-key revoke |
 | [`me-sessions.md`](./me-sessions.md) | `/me/*` session/team/device/conversation 路由 |
 | [`error-index.md`](./error-index.md) | public error code、`system.error`、前端鉴别策略 |

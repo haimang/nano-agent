@@ -1,7 +1,7 @@
 # Session HTTP Lifecycle
 
 > Public facade owner: `orchestrator-core` (HTTP routes) → `agent-core` (DO runtime)
-> Implementation reference: `workers/orchestrator-core/src/index.ts:412-464` (`parseSessionRoute`), `workers/orchestrator-core/src/user-do/session-flow.ts`, `workers/agent-core/src/host/do/session-do/`
+> Implementation reference: `workers/orchestrator-core/src/facade/routes/session-bridge.ts:14-46` (SessionAction enum + parseSessionRoute), `workers/orchestrator-core/src/user-do/session-flow/`, `workers/agent-core/src/host/do/session-do/`
 > Auth: `Authorization: Bearer <access_token>`
 > Trace: `x-trace-uuid: <uuid>` 必须发送
 > Device headers (可选): `x-device-uuid` / `x-device-label` / `x-device-kind`
