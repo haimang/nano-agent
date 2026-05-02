@@ -12,6 +12,13 @@
 //      has no `running` (transport-profiles.md / GPT §6.5).
 //   4. `content_source.*filesystem-core-leaf-rpc-pending` zero hits —
 //      HPX5 F5 wired the binary GET; placeholder is now `live`.
+//   5. confirmation/todo/model.fallback readiness must not regress to
+//      `emitter pending` / `emitter-not-live` after HPX5.
+//   6. confirmation kind must be `tool_permission` on public docs;
+//      decision body examples must use canonical `status` +
+//      `decision_payload`.
+//   7. `session.md` + `session-ws-v1.md` must both mention
+//      `first_event_seq` (HPX5 F7 start→attach race fix).
 //
 // Exits 1 if any check fails.
 
@@ -49,6 +56,46 @@ const checks = [
     severity: "error",
     note: "HPX5 F5 set content_source: \"live\" once readTempFile RPC binary GET went live",
   },
+  {
+    name: "confirmation/todo frame docs are not stale `emitter pending` after HPX5",
+    pattern:
+      /session\.confirmation\.(request|update)[\s\S]{0,240}emitter pending|session\.todos\.(write|update)[\s\S]{0,240}emitter pending/g,
+    severity: "error",
+    note: "HPX5 F1/F2 made confirmation + todos top-level frames live.",
+  },
+  {
+    name: "model.fallback is not marked emitter-not-live after HPX5",
+    pattern: /model\.fallback[^\n]*emitter-not-live|emitter-not-live[^\n]*model\.fallback/g,
+    severity: "error",
+    note: "HPX5 F4 emits model.fallback when fallback_used=true at turn close.",
+  },
+  {
+    name: "confirmation request kind uses tool_permission (not permission)",
+    pattern:
+      /session\.confirmation\.request\{[^}\n]*(kind|confirmation_kind):\s*"permission"|kind\s*=\s*`permission`/g,
+    severity: "error",
+    note: "HP5 public confirmation kind is tool_permission; `permission` is legacy wording only.",
+  },
+  {
+    name: "confirmation decision examples use canonical status + decision_payload",
+    pattern:
+      /\/confirmations\/\{uuid\}\/decision[^\n]*\bdecision:\s*"|\/confirmations\/\{uuid\}\/decision[^\n]*\bpayload:\s*\{/g,
+    severity: "error",
+    note: "Canonical confirmation decision body is { status, decision_payload }.",
+  },
+];
+
+const requiredChecks = [
+  {
+    file: "session.md",
+    snippet: "first_event_seq",
+    note: "HPX5 F7 requires session.md to document `/start` first_event_seq.",
+  },
+  {
+    file: "session-ws-v1.md",
+    snippet: "first_event_seq",
+    note: "HPX5 F7 requires session-ws-v1.md to document the start→attach handoff.",
+  },
 ];
 
 function listDocs(dir) {
@@ -59,6 +106,8 @@ function listDocs(dir) {
 
 function runChecks() {
   const docs = listDocs(DOCS_DIR);
+  const regexCheckCount = checks.length;
+  const requiredCheckCount = requiredChecks.length;
   let failures = 0;
   for (const { name, path } of docs) {
     const text = readFileSync(path, "utf8");
@@ -71,12 +120,23 @@ function runChecks() {
         );
       }
     }
+    for (const required of requiredChecks) {
+      if (required.file !== name) continue;
+      if (!text.includes(required.snippet)) {
+        failures += 1;
+        console.error(
+          `[FAIL] ${name}: missing required snippet \`${required.snippet}\`\n        note: ${required.note}`,
+        );
+      }
+    }
   }
   if (failures > 0) {
     console.error(`\nTotal: ${failures} consistency violations across ${docs.length} docs`);
     process.exit(1);
   }
-  console.log(`OK: ${docs.length} docs pass ${checks.length} consistency checks`);
+  console.log(
+    `OK: ${docs.length} docs pass ${regexCheckCount} regex checks + ${requiredCheckCount} required-snippet checks`,
+  );
 }
 
 runChecks();
