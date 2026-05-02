@@ -37,6 +37,8 @@ export type ExecutorJob =
 
 export type ExecutorDispatchPath = "queue" | "inline";
 
+const RESTORE_PARTIAL_REASON = "restore-executor-pending-deep-semantics";
+
 export interface ExecutorRuntimeEnv {
   readonly NANO_AGENT_DB?: D1Database;
   readonly NANO_EXECUTOR_QUEUE?: Queue<ExecutorJob>;
@@ -71,9 +73,9 @@ export async function runExecutorJob(
   const completedAt = new Date().toISOString();
   const terminal = await jobs.terminate({
     job_uuid: job.job_uuid,
-    status: "succeeded",
+    status: "partial",
     completed_at: completedAt,
-    failure_reason: null,
+    failure_reason: RESTORE_PARTIAL_REASON,
   });
   if (job.user_uuid && env.ORCHESTRATOR_USER_DO) {
     emitFrameViaUserDO(
@@ -85,8 +87,8 @@ export async function runExecutorJob(
         checkpoint_uuid: job.checkpoint_uuid,
         session_uuid: job.session_uuid,
         target_session_uuid: terminal?.target_session_uuid ?? job.target_session_uuid,
-        status: terminal?.status ?? "succeeded",
-        failure_reason: terminal?.failure_reason ?? null,
+        status: terminal?.status ?? "partial",
+        failure_reason: terminal?.failure_reason ?? RESTORE_PARTIAL_REASON,
         started_at: terminal?.started_at ?? running?.started_at ?? startedAt,
         completed_at: terminal?.completed_at ?? completedAt,
       },

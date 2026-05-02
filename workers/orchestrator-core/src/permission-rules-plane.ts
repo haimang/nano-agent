@@ -76,4 +76,35 @@ export class D1PermissionRulesPlane {
     if (!row) throw new Error("permission rule row lost after upsert");
     return rowToRule(row);
   }
+
+  async replaceTeamRules(input: {
+    readonly team_uuid: string;
+    readonly rules: readonly SessionRuntimePermissionRule[];
+  }): Promise<TeamPermissionRuleRow[]> {
+    const keptRuleUuids: string[] = [];
+    for (const rule of input.rules) {
+      const row = await this.upsertTeamRule({
+        team_uuid: input.team_uuid,
+        tool_name: rule.tool_name,
+        pattern: rule.pattern ?? null,
+        behavior: rule.behavior,
+        rule_uuid: rule.rule_uuid,
+      });
+      keptRuleUuids.push(row.rule_uuid);
+    }
+    if (keptRuleUuids.length === 0) {
+      await this.db.prepare(
+        `DELETE FROM nano_team_permission_rules
+          WHERE team_uuid = ?1`,
+      ).bind(input.team_uuid).run();
+      return [];
+    }
+    const placeholders = keptRuleUuids.map((_, index) => `?${index + 2}`).join(", ");
+    await this.db.prepare(
+      `DELETE FROM nano_team_permission_rules
+        WHERE team_uuid = ?1
+          AND rule_uuid NOT IN (${placeholders})`,
+    ).bind(input.team_uuid, ...keptRuleUuids).run();
+    return this.listTeamRules(input.team_uuid);
+  }
 }

@@ -13,6 +13,19 @@ export interface RuntimeConfigRow {
   readonly updated_at: string;
 }
 
+export class RuntimeConfigVersionConflictError extends Error {
+  constructor(
+    readonly session_uuid: string,
+    readonly expected_version: number,
+    readonly actual_version: number,
+  ) {
+    super(
+      `runtime config version conflict for ${session_uuid}: expected ${expected_version}, got ${actual_version}`,
+    );
+    this.name = "RuntimeConfigVersionConflictError";
+  }
+}
+
 function parseArray(raw: unknown): SessionRuntimePermissionRule[] {
   if (typeof raw !== "string") return [];
   try {
@@ -87,6 +100,7 @@ export class D1RuntimeConfigPlane {
   async patch(input: {
     readonly session_uuid: string;
     readonly team_uuid: string;
+    readonly expected_version: number;
     readonly permission_rules?: SessionRuntimePermissionRule[];
     readonly network_policy_mode?: string;
     readonly web_search_mode?: string;
@@ -105,19 +119,28 @@ export class D1RuntimeConfigPlane {
               approval_policy = ?6,
               version = ?7,
               updated_at = ?8
-        WHERE session_uuid = ?1`,
+        WHERE session_uuid = ?1
+          AND version = ?9`,
     ).bind(
       input.session_uuid,
       JSON.stringify(input.permission_rules ?? current.permission_rules),
-      input.network_policy_mode ?? current.network_policy.mode,
-      input.web_search_mode ?? current.web_search.mode,
-      JSON.stringify(input.workspace_scope ?? current.workspace_scope),
-      input.approval_policy ?? current.approval_policy,
-      nextVersion,
-      now,
-    ).run();
+        input.network_policy_mode ?? current.network_policy.mode,
+        input.web_search_mode ?? current.web_search.mode,
+        JSON.stringify(input.workspace_scope ?? current.workspace_scope),
+        input.approval_policy ?? current.approval_policy,
+        nextVersion,
+        now,
+        input.expected_version,
+      ).run();
     const row = await this.read(input.session_uuid);
     if (!row) throw new Error("runtime config row lost after patch");
+    if (row.version !== nextVersion) {
+      throw new RuntimeConfigVersionConflictError(
+        input.session_uuid,
+        input.expected_version,
+        row.version,
+      );
+    }
     return row;
   }
 }

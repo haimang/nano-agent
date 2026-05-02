@@ -3,14 +3,20 @@ import type {
   SessionRuntimePermissionRule,
 } from "@haimang/nacp-session";
 import { authenticateRequest } from "../../auth.js";
+import { D1PermissionRulesPlane } from "../../permission-rules-plane.js";
 import { D1SessionTruthRepository } from "../../session-truth.js";
-import { D1RuntimeConfigPlane } from "../../runtime-config-plane.js";
+import {
+  D1RuntimeConfigPlane,
+  RuntimeConfigVersionConflictError,
+  type RuntimeConfigRow,
+} from "../../runtime-config-plane.js";
 import { emitFrameViaUserDO } from "../../wsemit.js";
 import { jsonPolicyError } from "../../policy/authority.js";
 import type { OrchestratorCoreEnv } from "../env.js";
 import { parseBody, UUID_RE } from "../shared/request.js";
 
 type RuntimePatch = {
+  version: number;
   permission_rules?: SessionRuntimePermissionRule[];
   network_policy?: { mode: string };
   web_search?: { mode: string };
@@ -19,11 +25,16 @@ type RuntimePatch = {
 };
 
 function parseRuntimePatch(body: Record<string, unknown>): { ok: true; value: RuntimePatch } | { ok: false; message: string } {
-  const value: RuntimePatch = {};
+  if (!Number.isInteger(body.version) || Number(body.version) < 1) {
+    return { ok: false, message: "version must be a positive integer" };
+  }
+  const value: RuntimePatch = { version: Number(body.version) };
+  let mutableFieldCount = 0;
   if (body.permission_rules !== undefined) {
     if (!Array.isArray(body.permission_rules) || body.permission_rules.length > 100) {
       return { ok: false, message: "permission_rules must be an array with <=100 entries" };
     }
+    mutableFieldCount += 1;
     const rules: SessionRuntimePermissionRule[] = [];
     for (const rule of body.permission_rules) {
       if (!rule || typeof rule !== "object" || Array.isArray(rule)) {
@@ -52,6 +63,7 @@ function parseRuntimePatch(body: Record<string, unknown>): { ok: true; value: Ru
   for (const key of ["network_policy", "web_search"] as const) {
     const candidate = body[key];
     if (candidate === undefined) continue;
+    mutableFieldCount += 1;
     if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
       return { ok: false, message: `${key}.mode is required` };
     }
@@ -62,6 +74,7 @@ function parseRuntimePatch(body: Record<string, unknown>): { ok: true; value: Ru
     value[key] = { mode };
   }
   if (body.workspace_scope !== undefined) {
+    mutableFieldCount += 1;
     const scope = body.workspace_scope;
     if (!scope || typeof scope !== "object" || Array.isArray(scope)) {
       return { ok: false, message: "workspace_scope.mounts is required" };
@@ -73,6 +86,7 @@ function parseRuntimePatch(body: Record<string, unknown>): { ok: true; value: Ru
     value.workspace_scope = { mounts: mounts as string[] };
   }
   if (body.approval_policy !== undefined) {
+    mutableFieldCount += 1;
     if (
       body.approval_policy !== "ask" &&
       body.approval_policy !== "auto-allow" &&
@@ -83,7 +97,33 @@ function parseRuntimePatch(body: Record<string, unknown>): { ok: true; value: Ru
     }
     value.approval_policy = body.approval_policy;
   }
+  if (mutableFieldCount === 0) {
+    return { ok: false, message: "runtime PATCH requires at least one mutable field" };
+  }
   return { ok: true, value };
+}
+
+function toPublicRule(rule: SessionRuntimePermissionRule): SessionRuntimePermissionRule {
+  return {
+    ...(typeof rule.rule_uuid === "string" ? { rule_uuid: rule.rule_uuid } : {}),
+    tool_name: rule.tool_name,
+    ...(typeof rule.pattern === "string" ? { pattern: rule.pattern } : {}),
+    behavior: rule.behavior,
+    scope: rule.scope === "tenant" ? "tenant" : "session",
+  };
+}
+
+function mergeRuntimeConfig(
+  config: RuntimeConfigRow,
+  tenantRules: ReadonlyArray<SessionRuntimePermissionRule>,
+): RuntimeConfigRow {
+  return {
+    ...config,
+    permission_rules: [
+      ...config.permission_rules.map(toPublicRule),
+      ...tenantRules.map(toPublicRule),
+    ],
+  };
 }
 
 function parseRuntimeRoute(request: Request): { sessionUuid: string } | null {
@@ -124,9 +164,11 @@ export async function tryHandleSessionRuntimeRoute(
   }
 
   const plane = new D1RuntimeConfigPlane(db);
+  const rulesPlane = new D1PermissionRulesPlane(db);
   if (method === "GET") {
     const config = await plane.readOrCreate({ session_uuid: route.sessionUuid, team_uuid: teamUuid });
-    return Response.json({ ok: true, data: config, trace_uuid: traceUuid }, {
+    const tenantRules = await rulesPlane.listTeamRules(teamUuid);
+    return Response.json({ ok: true, data: mergeRuntimeConfig(config, tenantRules), trace_uuid: traceUuid }, {
       status: 200,
       headers: { "x-trace-uuid": traceUuid },
     });
@@ -138,31 +180,51 @@ export async function tryHandleSessionRuntimeRoute(
   if (!parsed.ok) {
     return jsonPolicyError(400, "invalid-input", parsed.message, traceUuid);
   }
-  const config = await plane.patch({
-    session_uuid: route.sessionUuid,
-    team_uuid: teamUuid,
-    permission_rules: parsed.value.permission_rules,
-    network_policy_mode: parsed.value.network_policy?.mode,
-    web_search_mode: parsed.value.web_search?.mode,
-    workspace_scope: parsed.value.workspace_scope,
-    approval_policy: parsed.value.approval_policy,
-  });
+  const sessionRules = parsed.value.permission_rules?.filter((rule) => rule.scope !== "tenant");
+  const tenantRules = parsed.value.permission_rules?.filter((rule) => rule.scope === "tenant");
+  let config: RuntimeConfigRow;
+  try {
+    config = await plane.patch({
+      session_uuid: route.sessionUuid,
+      team_uuid: teamUuid,
+      expected_version: parsed.value.version,
+      ...(parsed.value.permission_rules !== undefined
+        ? { permission_rules: sessionRules ?? [] }
+        : {}),
+      network_policy_mode: parsed.value.network_policy?.mode,
+      web_search_mode: parsed.value.web_search?.mode,
+      workspace_scope: parsed.value.workspace_scope,
+      approval_policy: parsed.value.approval_policy,
+    });
+  } catch (error) {
+    if (error instanceof RuntimeConfigVersionConflictError) {
+      return jsonPolicyError(409, "conflict", error.message, traceUuid);
+    }
+    throw error;
+  }
+  const mergedTenantRules = parsed.value.permission_rules !== undefined
+    ? await rulesPlane.replaceTeamRules({
+      team_uuid: teamUuid,
+      rules: tenantRules ?? [],
+    })
+    : await rulesPlane.listTeamRules(teamUuid);
+  const responseConfig = mergeRuntimeConfig(config, mergedTenantRules);
   emitFrameViaUserDO(
     env,
     { sessionUuid: route.sessionUuid, userUuid: session.actor_user_uuid, traceUuid },
     "session.runtime.update",
     {
-      session_uuid: config.session_uuid,
-      version: config.version,
-      permission_rules: config.permission_rules,
-      network_policy: config.network_policy,
-      web_search: config.web_search,
-      workspace_scope: config.workspace_scope,
-      approval_policy: config.approval_policy,
-      updated_at: config.updated_at,
+      session_uuid: responseConfig.session_uuid,
+      version: responseConfig.version,
+      permission_rules: responseConfig.permission_rules,
+      network_policy: responseConfig.network_policy,
+      web_search: responseConfig.web_search,
+      workspace_scope: responseConfig.workspace_scope,
+      approval_policy: responseConfig.approval_policy,
+      updated_at: responseConfig.updated_at,
     },
   );
-  return Response.json({ ok: true, data: config, trace_uuid: traceUuid }, {
+  return Response.json({ ok: true, data: responseConfig, trace_uuid: traceUuid }, {
     status: 200,
     headers: { "x-trace-uuid": traceUuid },
   });
