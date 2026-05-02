@@ -392,6 +392,117 @@ export const SessionTodosUpdateBodySchema = z.object({
 });
 export type SessionTodosUpdateBody = z.infer<typeof SessionTodosUpdateBodySchema>;
 
+// ── Family 8: HPX6 workbench runtime / executor / items ──────────────
+//
+// HPX6 adds new public surfaces, but keeps them as independent top-level
+// frames. They are not `session.stream.event` sub-kinds.
+
+export const SessionRuntimePermissionRuleBehaviorSchema = z.enum([
+  "allow",
+  "deny",
+  "ask",
+]);
+export type SessionRuntimePermissionRuleBehavior = z.infer<
+  typeof SessionRuntimePermissionRuleBehaviorSchema
+>;
+
+export const SessionRuntimePermissionRuleScopeSchema = z.enum([
+  "session",
+  "tenant",
+]);
+export type SessionRuntimePermissionRuleScope = z.infer<
+  typeof SessionRuntimePermissionRuleScopeSchema
+>;
+
+export const SessionRuntimePermissionRuleSchema = z.object({
+  rule_uuid: z.string().uuid().optional(),
+  tool_name: z.string().min(1).max(128),
+  pattern: z.string().min(1).max(512).optional(),
+  behavior: SessionRuntimePermissionRuleBehaviorSchema,
+  scope: SessionRuntimePermissionRuleScopeSchema.default("session"),
+});
+export type SessionRuntimePermissionRule = z.infer<
+  typeof SessionRuntimePermissionRuleSchema
+>;
+
+export const SessionApprovalPolicySchema = z.enum([
+  "ask",
+  "auto-allow",
+  "deny",
+  "always_allow",
+]);
+export type SessionApprovalPolicy = z.infer<typeof SessionApprovalPolicySchema>;
+
+export const SessionRuntimeUpdateBodySchema = z.object({
+  session_uuid: z.string().uuid(),
+  version: z.number().int().min(1),
+  permission_rules: z.array(SessionRuntimePermissionRuleSchema).max(100),
+  network_policy: z.object({ mode: z.string().min(1).max(64) }),
+  web_search: z.object({ mode: z.string().min(1).max(64) }),
+  workspace_scope: z.object({ mounts: z.array(z.string().min(1).max(512)).max(32) }),
+  approval_policy: SessionApprovalPolicySchema,
+  updated_at: z.string().datetime({ offset: true }),
+});
+export type SessionRuntimeUpdateBody = z.infer<
+  typeof SessionRuntimeUpdateBodySchema
+>;
+
+export const SessionRestoreCompletedStatusSchema = z.enum([
+  "succeeded",
+  "partial",
+  "failed",
+  "rolled_back",
+]);
+export type SessionRestoreCompletedStatus = z.infer<
+  typeof SessionRestoreCompletedStatusSchema
+>;
+
+export const SessionRestoreCompletedBodySchema = z.object({
+  job_uuid: z.string().uuid(),
+  checkpoint_uuid: z.string().uuid(),
+  session_uuid: z.string().uuid(),
+  target_session_uuid: z.string().uuid().nullable().optional(),
+  status: SessionRestoreCompletedStatusSchema,
+  failure_reason: z.string().max(2048).nullable().optional(),
+  started_at: z.string().datetime({ offset: true }),
+  completed_at: z.string().datetime({ offset: true }),
+});
+export type SessionRestoreCompletedBody = z.infer<
+  typeof SessionRestoreCompletedBodySchema
+>;
+
+export const SessionItemKindSchema = z.enum([
+  "agent_message",
+  "reasoning",
+  "tool_call",
+  "file_change",
+  "todo_list",
+  "confirmation",
+  "error",
+]);
+export type SessionItemKind = z.infer<typeof SessionItemKindSchema>;
+
+const SessionItemBaseSchema = z.object({
+  item_uuid: z.string().uuid(),
+  session_uuid: z.string().uuid(),
+  kind: SessionItemKindSchema,
+  created_at: z.string().datetime({ offset: true }),
+  payload: z.record(z.string(), z.unknown()),
+});
+
+export const SessionItemStartedBodySchema = SessionItemBaseSchema;
+export type SessionItemStartedBody = z.infer<typeof SessionItemStartedBodySchema>;
+
+export const SessionItemUpdatedBodySchema = SessionItemBaseSchema.extend({
+  updated_at: z.string().datetime({ offset: true }),
+});
+export type SessionItemUpdatedBody = z.infer<typeof SessionItemUpdatedBodySchema>;
+
+export const SessionItemCompletedBodySchema = SessionItemBaseSchema.extend({
+  completed_at: z.string().datetime({ offset: true }),
+});
+export type SessionItemCompletedBody = z.infer<typeof SessionItemCompletedBodySchema>;
+
 // ── Aggregated maps ──
 
 export const SESSION_BODY_SCHEMAS = {
@@ -416,6 +527,12 @@ export const SESSION_BODY_SCHEMAS = {
   // HP6 P1-02 — agentic-loop todo family.
   "session.todos.write": SessionTodosWriteBodySchema,
   "session.todos.update": SessionTodosUpdateBodySchema,
+  // HPX6 — workbench runtime / executor / item projection family.
+  "session.runtime.update": SessionRuntimeUpdateBodySchema,
+  "session.restore.completed": SessionRestoreCompletedBodySchema,
+  "session.item.started": SessionItemStartedBodySchema,
+  "session.item.updated": SessionItemUpdatedBodySchema,
+  "session.item.completed": SessionItemCompletedBodySchema,
   // RH2 P2-01c — server → client supersede notification.
   "session.attachment.superseded": SessionAttachmentSupersededBodySchema,
   // session.stream.event is handled separately via stream-event.ts
@@ -442,6 +559,12 @@ export const SESSION_BODY_REQUIRED = new Set([
   // HP6 P1-02
   "session.todos.write",
   "session.todos.update",
+  // HPX6
+  "session.runtime.update",
+  "session.restore.completed",
+  "session.item.started",
+  "session.item.updated",
+  "session.item.completed",
   // RH2 P2-01c
   "session.attachment.superseded",
 ]);
@@ -471,6 +594,12 @@ export const SESSION_MESSAGE_TYPES = new Set([
   // HP6 P1-02
   "session.todos.write",
   "session.todos.update",
+  // HPX6
+  "session.runtime.update",
+  "session.restore.completed",
+  "session.item.started",
+  "session.item.updated",
+  "session.item.completed",
   // RH2 P2-01c
   "session.attachment.superseded",
 ]);

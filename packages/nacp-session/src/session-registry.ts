@@ -50,6 +50,12 @@ export const SESSION_ROLE_REQUIREMENTS: Record<string, SessionRoleRequirement> =
       "session.confirmation.update",
       // HP6 P1-02 — server broadcasts new todo state
       "session.todos.update",
+      // HPX6 — workbench runtime / executor / item projection
+      "session.runtime.update",
+      "session.restore.completed",
+      "session.item.started",
+      "session.item.updated",
+      "session.item.completed",
     ]),
   },
   session: {
@@ -66,6 +72,12 @@ export const SESSION_ROLE_REQUIREMENTS: Record<string, SessionRoleRequirement> =
       "session.confirmation.update",
       // HP6 P1-02
       "session.todos.update",
+      // HPX6
+      "session.runtime.update",
+      "session.restore.completed",
+      "session.item.started",
+      "session.item.updated",
+      "session.item.completed",
     ]),
     consumer: new Set([
       "session.start",
@@ -138,6 +150,12 @@ const SESSION_PHASE_ALLOWED: Record<SessionPhase, Set<string>> = {
     // HP6 P1-02 — agentic-loop todos
     "session.todos.write",
     "session.todos.update",
+    // HPX6
+    "session.runtime.update",
+    "session.restore.completed",
+    "session.item.started",
+    "session.item.updated",
+    "session.item.completed",
   ]),
   turn_running: new Set([
     "session.cancel",
@@ -160,6 +178,12 @@ const SESSION_PHASE_ALLOWED: Record<SessionPhase, Set<string>> = {
     // HP6 P1-02 — agentic-loop todos
     "session.todos.write",
     "session.todos.update",
+    // HPX6
+    "session.runtime.update",
+    "session.restore.completed",
+    "session.item.started",
+    "session.item.updated",
+    "session.item.completed",
   ]),
   ended: new Set([
     "session.heartbeat",  // final heartbeat before close

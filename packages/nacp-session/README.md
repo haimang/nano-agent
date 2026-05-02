@@ -2,7 +2,7 @@
 
 NACP-Session is the client ↔ session WebSocket/profile package. It builds on `@haimang/nacp-core` and owns session frame schemas, client frame normalization, stream-event bodies, replay, heartbeat, ack delivery, redaction, and the Session DO WebSocket helper.
 
-**Baseline**: `1.4.0` (frozen). `NACP_VERSION_COMPAT = "1.0.0"` remains the accepted pre-freeze compatibility floor.
+**Baseline**: `1.5.0` (frozen). `NACP_VERSION_COMPAT = "1.0.0"` remains the accepted pre-freeze compatibility floor.
 
 ## Current role
 

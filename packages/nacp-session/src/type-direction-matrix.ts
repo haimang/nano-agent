@@ -41,6 +41,12 @@ export const NACP_SESSION_TYPE_DIRECTION_MATRIX: Readonly<
   // - todos.update: server → client only (event broadcast of new state)
   "session.todos.write": new Set<NacpDeliveryKind>(["command"]),
   "session.todos.update": new Set<NacpDeliveryKind>(["event"]),
+  // HPX6 — workbench top-level frames, all server → client events.
+  "session.runtime.update": new Set<NacpDeliveryKind>(["event"]),
+  "session.restore.completed": new Set<NacpDeliveryKind>(["event"]),
+  "session.item.started": new Set<NacpDeliveryKind>(["event"]),
+  "session.item.updated": new Set<NacpDeliveryKind>(["event"]),
+  "session.item.completed": new Set<NacpDeliveryKind>(["event"]),
   // RH2 P2-01c — server → client only (notify-and-disconnect)
   "session.attachment.superseded": new Set<NacpDeliveryKind>(["event"]),
 });

@@ -43,11 +43,23 @@ export {
   SessionConfirmationStatusSchema,
   SessionConfirmationRequestBodySchema,
   SessionConfirmationUpdateBodySchema,
-  // HP6 P1-02 — agentic-loop todos
-  SessionTodoStatusSchema,
-  SessionTodosWriteBodySchema,
-  SessionTodosUpdateBodySchema,
-  SESSION_BODY_SCHEMAS, SESSION_BODY_REQUIRED, SESSION_MESSAGE_TYPES,
+   // HP6 P1-02 — agentic-loop todos
+   SessionTodoStatusSchema,
+   SessionTodosWriteBodySchema,
+   SessionTodosUpdateBodySchema,
+   // HPX6 — workbench runtime / executor / item projection
+   SessionRuntimePermissionRuleBehaviorSchema,
+   SessionRuntimePermissionRuleScopeSchema,
+   SessionRuntimePermissionRuleSchema,
+   SessionApprovalPolicySchema,
+   SessionRuntimeUpdateBodySchema,
+   SessionRestoreCompletedStatusSchema,
+   SessionRestoreCompletedBodySchema,
+   SessionItemKindSchema,
+   SessionItemStartedBodySchema,
+   SessionItemUpdatedBodySchema,
+   SessionItemCompletedBodySchema,
+   SESSION_BODY_SCHEMAS, SESSION_BODY_REQUIRED, SESSION_MESSAGE_TYPES,
 } from "./messages.js";
 export type {
   SessionStartBody, SessionResumeBody, SessionCancelBody,
@@ -68,10 +80,22 @@ export type {
   SessionConfirmationStatus,
   SessionConfirmationRequestBody,
   SessionConfirmationUpdateBody,
-  // HP6 P1-02
-  SessionTodoStatus,
-  SessionTodosWriteBody,
-  SessionTodosUpdateBody,
+   // HP6 P1-02
+   SessionTodoStatus,
+   SessionTodosWriteBody,
+   SessionTodosUpdateBody,
+   // HPX6
+   SessionRuntimePermissionRuleBehavior,
+   SessionRuntimePermissionRuleScope,
+   SessionRuntimePermissionRule,
+   SessionApprovalPolicy,
+   SessionRuntimeUpdateBody,
+   SessionRestoreCompletedStatus,
+   SessionRestoreCompletedBody,
+   SessionItemKind,
+   SessionItemStartedBody,
+   SessionItemUpdatedBody,
+   SessionItemCompletedBody,
 } from "./messages.js";
 
 // ── Stream events ──
