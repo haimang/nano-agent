@@ -1,7 +1,7 @@
 # Workspace — Artifacts + Temp Files（HP6）
 
 > Public facade owner: `orchestrator-core` → `filesystem-core` (RPC)
-> Implementation reference: `workers/orchestrator-core/src/hp-absorbed-routes.ts:67-128` (parseSessionToolCallsRoute + parseSessionWorkspaceRoute incl. HPX5 F5 `/content`),`workers/orchestrator-core/src/workspace-control-plane.ts`,`workers/filesystem-core/src/index.ts:140-205` (HPX5 F5 readTempFile RPC façade pass-through)
+> Implementation reference: `workers/orchestrator-core/src/hp-absorbed-routes.ts:79-133` (parseSessionToolCallsRoute + parseSessionWorkspaceRoute incl. HPX5 F5 `/content`),`workers/orchestrator-core/src/workspace-control-plane.ts`,`workers/filesystem-core/src/index.ts:140-205` (HPX5 F5 readTempFile RPC façade pass-through)
 > Migration source: `migrations/011-session-temp-files-and-provenance.sql`
 > Profile: `facade-http-v1` + `binary-content`
 > Auth: `Authorization: Bearer <access_token>`

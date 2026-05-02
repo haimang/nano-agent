@@ -249,14 +249,14 @@ PATCH 后 server 会重新读取 session model state（与 §4 GET 同型）：
 
 ---
 
-## 7. Deferred / Not-Yet-Live
+## 7. Deferred / Readiness Notes
 
 以下能力在 HP9 frozen pack 中**未 live**，客户端不应假设它们存在：
 
 | 能力 | 状态 | 承接 |
 |------|------|------|
 | `<model_switch>` developer message 注入 | not-started | HP2 后续批次 |
-| `model.fallback` stream event | schema-live / emitter-not-live | HP2 后续批次 |
+| `model.fallback` stream event | live (HPX5 F4)；turn 关闭时 `fallback_used=true` 才 emit | [`session-ws-v1.md`](./session-ws-v1.md) |
 | 跨 turn fallback chain | out-of-scope (Q8 frozen single-step) | n/a |
 
 详见 [`session-ws-v1.md`](./session-ws-v1.md) Stream Events readiness。

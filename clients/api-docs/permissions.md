@@ -17,7 +17,7 @@
 | `/sessions/{id}/policy/permission_mode` | `POST` | bearer | 设置 session permission mode |
 | `/sessions/{id}/elicitation/answer` | `POST` | bearer | legacy elicitation answer; dual-write 到 confirmations |
 
-> **`session.permission.request` / `session.elicitation.request` 现状**：HP5 把 permission / elicitation 折叠到统一的 `session.confirmation.request` / `session.confirmation.update` server→client 帧族（详见 [`session-ws-v1.md`](./session-ws-v1.md) 与 [`confirmations.md`](./confirmations.md)）。legacy `session.permission.request` / `session.elicitation.request` server→client 帧不再发出。客户端如果想监听 permission ask，应订阅 `session.confirmation.request{kind: "permission"}` 帧。
+> **`session.permission.request` / `session.elicitation.request` 现状**：HP5 把 permission / elicitation 折叠到统一的 `session.confirmation.request` / `session.confirmation.update` server→client 帧族（详见 [`session-ws-v1.md`](./session-ws-v1.md) 与 [`confirmations.md`](./confirmations.md)）。legacy `session.permission.request` / `session.elicitation.request` server→client 帧不再发出。客户端如果想监听 permission ask，应订阅 `session.confirmation.request{confirmation_kind: "tool_permission"}` 帧。
 
 ---
 
@@ -25,7 +25,7 @@
 
 提交 legacy `permission/decision` 或 `elicitation/answer` 时，server 行为：
 
-1. **先**在 `nano_session_confirmations` 表上 row-first 创建/查找对应 confirmation row（kind = `permission` 或 `elicitation`，status `pending`）；
+1. **先**在 `nano_session_confirmations` 表上 row-first 创建/查找对应 confirmation row（kind = `tool_permission` 或 `elicitation`，status `pending`）；
 2. 调用 `D1ConfirmationControlPlane.applyDecision()` 把 decision 写入 row（status 推进为 `allowed`/`denied`/`modified`）；
 3. 仅当 row write 成功后，才 best-effort forward 到 agent-core `permissionDecision` / `elicitationAnswer` RPC；
 4. 若 dual-write 在 RPC 阶段失败，row status 推进为 `superseded`（**绝不**写 `failed`，因为 row 是 truth）。
@@ -159,9 +159,9 @@ Content-Type: application/json
 
 | 现在 | 目标（推荐） |
 |------|-----|
-| `POST /sessions/{id}/permission/decision` | `POST /sessions/{id}/confirmations/{uuid}/decision { decision: "allow" }` |
-| `POST /sessions/{id}/elicitation/answer` | `POST /sessions/{id}/confirmations/{uuid}/decision { decision: "modified", payload: {answer} }` |
-| 监听 `session.permission.request` WS 帧 | 监听 `session.confirmation.request{kind: "permission"}` WS 帧 |
-| 监听 `session.elicitation.request` WS 帧 | 监听 `session.confirmation.request{kind: "elicitation"}` WS 帧 |
+| `POST /sessions/{id}/permission/decision` | `POST /sessions/{id}/confirmations/{uuid}/decision { status: "allowed" }` |
+| `POST /sessions/{id}/elicitation/answer` | `POST /sessions/{id}/confirmations/{uuid}/decision { status: "modified", decision_payload: {answer} }` |
+| 监听 `session.permission.request` WS 帧 | 监听 `session.confirmation.request{confirmation_kind: "tool_permission"}` WS 帧 |
+| 监听 `session.elicitation.request` WS 帧 | 监听 `session.confirmation.request{confirmation_kind: "elicitation"}` WS 帧 |
 
 详见 [`confirmations.md`](./confirmations.md)。Legacy 路径在 hero-to-pro 阶段保留（HPX-O6 不物理删除 legacy endpoint），未来由 hero-to-platform 阶段决定 deprecation timeline。

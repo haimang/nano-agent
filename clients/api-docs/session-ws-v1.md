@@ -1,7 +1,7 @@
 # session-ws-v1 — WebSocket Frame Protocol
 
 > Public facade owner: `orchestrator-core`
-> Implementation reference: `packages/nacp-session/src/stream-event.ts`，`packages/nacp-session/src/messages.ts`，`workers/orchestrator-core/src/index.ts` (WS handshake)
+> Implementation reference: `packages/nacp-session/src/{stream-event,messages}.ts`,`workers/orchestrator-core/src/{user-do/ws-runtime.ts,frame-compat.ts,user-do/session-flow/start.ts}`
 > Wire format: lightweight JSON `{kind, ...}` frames
 >
 > 注意：outer WS frame `kind` 与 `event.payload.kind` 是两层枚举。outer 表示 transport-level frame type；payload.kind 表示 stream event 的语义子类型（当前 canonical catalog 为 13 kinds）。
@@ -19,6 +19,14 @@ wss://<base>/sessions/{sessionUuid}/ws?access_token=<jwt>&trace_uuid=<uuid>&last
 | `access_token` | yes | HMAC access token |
 | `trace_uuid` | yes | 与 HTTP `x-trace-uuid` 同义 |
 | `last_seen_seq` | no | reconnect 时客户端最后处理的 event seq |
+
+### 1.1 Start → WS attach 帧保留窗口（HPX5 F7）
+
+`POST /sessions/{id}/start` success body 会返回 `first_event` 与 `first_event_seq`。客户端完成 start 后应尽快 attach WS，并把 `first_event_seq` 作为 `last_seen_seq` 兜底传回，避免 start→attach 窗口丢帧：
+
+1. 读取 `/start` 返回的 `first_event_seq`
+2. 立刻连接 `GET /sessions/{id}/ws?...&last_seen_seq=<first_event_seq>`
+3. 若 `first_event_seq = 0`，说明当前 start 周期还没产生第一帧，继续传 `0`
 
 ## 2. Handshake Errors
 
@@ -68,15 +76,15 @@ wss://<base>/sessions/{sessionUuid}/ws?access_token=<jwt>&trace_uuid=<uuid>&last
 
 `system.error` 是结构化 runtime error frame，client 应配合 [`error-index.md`](./error-index.md) 决定 retry / report UX。
 
-### 3.3 Confirmation Frame Family（HP5 schema frozen，emitter pending）
+### 3.3 Confirmation Frame Family（HP5 schema frozen，HPX5 F1 emitter live）
 
 ```json
 {
   "kind": "session.confirmation.request",
   "confirmation_uuid": "...",
-  "session_uuid": "...",
   "confirmation_kind": "tool_permission",
   "payload": { "tool_name": "bash", "tool_input": { "...": "..." } },
+  "request_uuid": "...",
   "created_at": "..."
 }
 ```
@@ -85,7 +93,6 @@ wss://<base>/sessions/{sessionUuid}/ws?access_token=<jwt>&trace_uuid=<uuid>&last
 {
   "kind": "session.confirmation.update",
   "confirmation_uuid": "...",
-  "session_uuid": "...",
   "status": "allowed",
   "decision_payload": { "scope": "once", "reason": "user approved" },
   "decided_at": "..."
@@ -94,42 +101,53 @@ wss://<base>/sessions/{sessionUuid}/ws?access_token=<jwt>&trace_uuid=<uuid>&last
 
 | Frame | 方向 | 用途 |
 |-------|------|------|
-| `session.confirmation.request` | schema registered | confirmation row 创建时的目标帧形状 |
-| `session.confirmation.update` | schema registered | confirmation row 状态变化时的目标帧形状 |
+| `session.confirmation.request` | server → client | confirmation row 创建后的 lightweight frame 形状 |
+| `session.confirmation.update` | server → client | confirmation row 状态变化后的 lightweight frame 形状 |
 
-> **当前实现状态**：confirmation 统一 HTTP plane 已 live，但这两个 WS frame 还没有在 orchestrator runtime 真实 emit。客户端不能依赖它们；提交 decision 仍必须用 HTTP `POST /sessions/{id}/confirmations/{uuid}/decision`。
+> **当前实现状态**：HPX5 F1 已 live。confirmation row create / terminal update 后会 best-effort emit 这两个顶层帧；提交 decision 仍必须用 HTTP `POST /sessions/{id}/confirmations/{uuid}/decision`。
+>
+> **字段说明**：lightweight wire shape 的 outer `kind` 已被 `session.confirmation.request` 占用，所以 confirmation 类型字段在 wire 上使用 `confirmation_kind`；其 canonical body schema 对应字段名是 `kind`。
 
 详见 [`confirmations.md`](./confirmations.md)（含 7-kind readiness matrix）。
 
-### 3.4 Todo Frame Family（HP6 schema frozen，emitter pending）
+### 3.4 Todo Frame Family（HP6 schema frozen，HPX5 F2 emitter live）
 
 ```json
 {
   "kind": "session.todos.write",
-  "todo_uuid": "...",
-  "session_uuid": "...",
-  "content": "...",
-  "status": "pending",
-  "created_at": "..."
+  "todos": [
+    { "content": "draft review", "status": "pending" }
+  ],
+  "request_uuid": "..."
 }
 ```
 
 ```json
 {
   "kind": "session.todos.update",
-  "todo_uuid": "...",
   "session_uuid": "...",
-  "status": "in_progress",
-  "updated_at": "..."
+  "todos": [
+    {
+      "todo_uuid": "...",
+      "session_uuid": "...",
+      "conversation_uuid": "...",
+      "parent_todo_uuid": null,
+      "content": "draft review",
+      "status": "in_progress",
+      "created_at": "...",
+      "updated_at": "...",
+      "completed_at": null
+    }
+  ]
 }
 ```
 
 | Frame | 方向 | 用途 |
 |-------|------|------|
-| `session.todos.write` | schema registered | todo 写入命令的目标形状 |
-| `session.todos.update` | schema registered | authoritative todo 更新的目标形状 |
+| `session.todos.write` | client/model → server | todo upsert 命令形状（HTTP-only 客户端通常不直接走 WS） |
+| `session.todos.update` | server → client | authoritative todo 全量快照 |
 
-> **当前实现状态**：todo HTTP control plane 已 live，但 WS todo 帧还没有真实 emitter。详见 [`todos.md`](./todos.md)。
+> **当前实现状态**：HPX5 F2 已 live。HTTP todo CRUD 和 LLM `write_todos` 成功写入后，server 会 emit `session.todos.update` authoritative snapshot。详见 [`todos.md`](./todos.md)。
 
 ### 3.5 `session.heartbeat`
 
@@ -251,11 +269,11 @@ direction matrix（哪些 frame kind 允许 server→client / client→server）
 
 ---
 
-## 8. Deferred / Not-Yet-Live
+## 8. Deferred / Readiness Notes
 
 | 能力 | 状态 | 替代 |
 |------|------|------|
 | client → server permission/elicitation/confirmation reply via WS | **not supported by design** | HTTP routes（详见 §4 备注） |
 | `session.usage.update` server frame | **live** | (见 §3.8) |
-| `model.fallback` stream event | **schema live, emitter not-live** | 暂无 |
+| `model.fallback` stream event | **live (HPX5 F4)** | 用于前端 model badge / fallback reducer |
 | 自动 fork executor + `session.fork.created` 实际触发 | **schema live, executor not-live**（HP7 后续批次） | 暂无 |

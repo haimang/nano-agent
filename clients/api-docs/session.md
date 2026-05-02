@@ -58,11 +58,11 @@ Q13 / Q14 冻结：`close` 写 `ended_reason=closed_by_user`；`DELETE` 只写 `
 {
   "ok": true,
   "action": "input",
-  "session_uuid": "...",
-  "session_status": "active",
-  "trace_uuid": "..."
+  "session_uuid": "..."
 }
 ```
+
+其中 `ok / action / session_uuid` 是稳定公共字段；`status` / `session_status` / `first_event_seq` / `terminal` / `ended_reason` 等字段按具体 action 追加。
 
 `facade-http-v1` envelope（其他 HTTP 路由）：
 
@@ -101,7 +101,9 @@ Request:
 
 `model_id` 与 `reasoning` 都可省略；省略时 fallback 链为 `turn override → session default → global default`（详见 [`models.md`](./models.md)）。
 
-Success: `{ ok: true, action: "start", session_uuid, session_status: "active", trace_uuid }`。
+Success: `{ ok: true, action: "start", session_uuid, status: "active", relay_cursor, first_event?, first_event_seq, terminal: null, start_ack }`。
+
+`first_event_seq` 是 HPX5 F7 新增字段：客户端可将其作为后续 WS attach 的 `last_seen_seq` 兜底值，消除 start→ws-attach race window。
 
 Error highlights:
 

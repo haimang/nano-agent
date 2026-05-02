@@ -106,7 +106,7 @@
 { "force": false }
 ```
 
-> **Body 字段当前 ignored**：HP9 frozen 阶段 façade 层不读取 request body，`force` 由 server 决定。client 传入将被静默丢弃。
+> **HPX5 F3 — body 字段已生效**：façade 层会读取 `{ force?, preview_uuid?, label? }` 并透传到 context-core RPC。legacy 客户端不传 body 时行为不变。
 
 Response:
 
@@ -137,7 +137,7 @@ Response:
 { "force": false, "preview_uuid": null }
 ```
 
-> **Body 字段当前 ignored**：HP9 frozen 阶段 façade 层不读取 request body，`force`/`preview_uuid` 由 server 决定。client 传入将被静默丢弃。
+> **HPX5 F3 — body 字段已生效**：façade 层会读取 `{ force?, preview_uuid?, label? }` 并透传到 context-core RPC。legacy 客户端不传 body 时行为不变。
 
 Response:
 

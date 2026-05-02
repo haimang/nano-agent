@@ -37,9 +37,9 @@
 | `session-ws-v1` | `GET /sessions/{id}/ws` | lightweight JSON frames |
 | `binary-content` | `GET /sessions/{id}/files/{fileUuid}/content` | raw bytes + content headers |
 
-## 18-Doc Pack（hero-to-pro frozen authoritative）
+## 19-Doc Pack（hero-to-pro frozen authoritative）
 
-> HP9 把对外接口文档冻结为 **11 现有重组/校对 + 7 新增专题 = 18 份 authoritative pack**。README 是其中一份。
+> HP9 + HPX5 当前把对外接口文档冻结为 **11 现有重组/校对 + 8 新增专题 = 19 份 authoritative pack**。README 是其中一份。
 
 ### Foundation
 

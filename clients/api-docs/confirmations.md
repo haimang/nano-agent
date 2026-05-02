@@ -183,12 +183,12 @@ confirmation 的统一字段：
 
 ## 5. WebSocket Frames
 
-详见 [`session-ws-v1.md`](./session-ws-v1.md)。当前这些帧是 **schema registered / emitter pending**：
+详见 [`session-ws-v1.md`](./session-ws-v1.md)。HPX5 F1 之后，这些帧已 **emitter live**：
 
 | frame | 时机 |
 |-------|------|
-| `session.confirmation.request` | confirmation row 创建时的目标帧形状 |
-| `session.confirmation.update` | confirmation row 变化时的目标帧形状 |
+| `session.confirmation.request` | confirmation row 创建后发出的 lightweight frame；类型字段用 `confirmation_kind` |
+| `session.confirmation.update` | confirmation row 变化后发出的 lightweight frame |
 
 > client → server 没有对应的 confirmation 输入帧；提交 decision **必须**用 HTTP `POST .../decision`。这是 HPX-Q18 frozen direction matrix。
 
@@ -203,7 +203,7 @@ confirmation 的统一字段：
 | `POST /permission/decision { request_uuid, decision: "allow" }` | `POST /confirmations/{uuid}/decision { status: "allowed" }` |
 | `POST /elicitation/answer { request_uuid, answer }` | `POST /confirmations/{uuid}/decision { status: "modified", decision_payload: { answer } }` |
 | `session.permission.request` WS frame | `session.confirmation.request{confirmation_kind: "tool_permission"}` |
-| `session.elicitation.request` WS frame | `session.confirmation.request{kind: "elicitation"}` |
+| `session.elicitation.request` WS frame | `session.confirmation.request{confirmation_kind: "elicitation"}` |
 
 ---
 

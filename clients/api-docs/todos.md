@@ -198,12 +198,12 @@ todo 是一个 **session-scoped** 的命名任务条目，按 5-status 状态机
 
 ## 7. WebSocket Frames
 
-详见 [`session-ws-v1.md`](./session-ws-v1.md)。这些 todo 帧当前是 **schema registered / emitter pending**：
+详见 [`session-ws-v1.md`](./session-ws-v1.md)。HPX5 F2 之后，这些 todo 帧已按当前代码事实接通：
 
 | frame | 方向 | 时机 |
 |-------|------|------|
-| `session.todos.write` | schema registered | todo 写入命令的目标形状 |
-| `session.todos.update` | schema registered | authoritative todo 更新的目标形状 |
+| `session.todos.write` | client/model → server | todo 写入命令形状 |
+| `session.todos.update` | server → client | authoritative todo 全量快照 |
 
 ---
 
@@ -218,4 +218,4 @@ todo 是一个 **session-scoped** 的命名任务条目，按 5-status 状态机
 
 ## 9. agent-core WriteTodos Capability
 
-HP6 closure §2 P7 已登记：agent-core 当前**没有** `WriteTodos` capability，LLM 不能直接写 todo。客户端 / 用户必须通过本文件描述的 HTTP 路由创建。HP6 后续批次承接 LLM-side WriteTodos 接线。
+HPX5 F2a/F2b 之后，agent-core 已把 `write_todos` 暴露给模型侧 tool list，并在执行时路由到 orchestrator-core `writeTodos` backend。LLM 可以直接写 todo；HTTP 路由仍保留给客户端 / 用户面板。

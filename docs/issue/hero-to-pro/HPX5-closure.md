@@ -37,17 +37,17 @@
 | ID | 描述 | 证据 | 说明 |
 |----|------|------|------|
 | `R0` | emit-helpers.ts 单一出口(F0) | `packages/nacp-session/src/emit-helpers.ts` + `test/emit-helpers.test.ts`(10 case) | `emitTopLevelFrame` + `emitStreamEvent` 两个出口;zod 校验 + system.error fallback;EmitObserver 接 `nano_emit_latency_ms / drop` 指标 |
-| `R1` | confirmation 顶层帧 emit(F1) | `workers/orchestrator-core/src/facade/routes/session-control.ts:416-451` + `user-do/surface-runtime.ts:84-176` | `applyDecision` 后 emit `session.confirmation.update`;legacy `permission/decision` + `elicitation/answer` dual-write 同样 emit `.request`(create 时) + `.update`(终态时) |
-| `R2` | WriteTodos LLM capability(F2a + F2b) | `workers/orchestrator-core/src/entrypoint.ts:138-260` + `workers/agent-core/src/host/runtime-mainline.ts:467-578` | LLM `tool_use { name: "write_todos" }` 短路到 orchestrator-core RPC;HP6 Q19 at-most-1 in_progress invariant 自动护理(auto-close 旧 in_progress + 同 batch 多 in_progress 自动降级) |
+| `R1` | confirmation 顶层帧 emit(F1) | `workers/orchestrator-core/src/{facade/routes/session-control.ts,user-do/surface-runtime.ts,frame-compat.ts}` + `packages/nacp-session/src/emit-helpers.ts` | `applyDecision` 后 emit `session.confirmation.update`;legacy `permission/decision` + `elicitation/answer` dual-write 同样 emit `.request`(create 时) + `.update`(终态时);HPX5 补齐 lightweight `confirmation_kind` alias 与 top-level frame schema mapping |
+| `R2` | WriteTodos LLM capability(F2a + F2b) | `workers/orchestrator-core/src/entrypoint.ts:138-260` + `workers/agent-core/src/{llm/tool-registry.ts,host/runtime-mainline.ts}` + `workers/agent-core/test/llm/gateway.test.ts` | LLM `tool_use { name: "write_todos" }` 既对模型可见,又短路到 orchestrator-core RPC;HP6 Q19 at-most-1 in_progress invariant 自动护理(auto-close 旧 in_progress + 同 batch 多 in_progress 自动降级) |
 | `R3` | todos 顶层帧 emit(F2c) | `workers/orchestrator-core/src/facade/routes/session-control.ts:506-525, 555-575, 591-616` + `entrypoint.ts:writeTodos` | HTTP CRUD 路径 + LLM-driven 路径都 emit `session.todos.update` 全量 list snapshot |
 | `R4` | auto-compact runtime trigger(F3) | `workers/agent-core/src/host/do/session-do/runtime-assembly.ts:285-321` | `composeCompactSignalProbe(budgetSource, breaker)` 注入 `OrchestrationDeps.probeCompactRequired`;budgetSource 调 `ORCHESTRATOR_CORE.readContextDurableState` 计算 `used >= auto_compact_token_limit`(默认阈值 0.85);3 次失败熔断由 compact-breaker.ts 已 live |
 | `R5` | `/context/compact[/preview]` body 透传(F3) | `workers/orchestrator-core/src/facade/routes/session-context.ts:6-69, 121-155` + `workers/context-core/src/index.ts:228-258, 308-372` | façade 读 `{ force?, preview_uuid?, label? }` 并透传 RPC;`force=true` 跳过 "compact-not-needed" early return;label 进 checkpoint registry |
 | `R6` | model.fallback emitter(F4) | `workers/orchestrator-core/src/user-do/message-runtime.ts:120-127, 333-432` | 替换硬编码 `fallback_used: false, fallback_reason: null`;从 `inputAck.body` 读真实值;fallback_used=true 时 emit `model.fallback` stream-event(走现有 `pushStreamEvent` 因已在 13-kind union 内) |
 | `R7` | workspace bytes binary GET(F5) | `workers/orchestrator-core/src/hp-absorbed-routes.ts:85-114, 250-323` | 新路径 `/sessions/{id}/workspace/files/{*path}/content`;走 filesystem-core 已 live `readTempFile` RPC pass-through;25 MiB cap;`content_source` 从 `"filesystem-core-leaf-rpc-pending"` → `"live"` |
-| `R8` | 18-doc 契约修齐(F7) | `clients/api-docs/{models,session-ws-v1}.md` + 9 份 reference 行号刷新 | `effective_model_id` → `fallback_model_id`(model.fallback 上下文);`session_status: "running"` → `"active"`;失效 `index.ts:NNN` 引用全部刷新到 `facade/routes/*.ts` + `*-control-plane.ts` |
+| `R8` | 19-doc 契约修齐(F7) | `clients/api-docs/{models,session-ws-v1,session,context,permissions,todos,README}.md` + 9 份 reference 行号刷新 | `effective_model_id` → `fallback_model_id`(model.fallback 上下文);`session_status: "running"` → `"active"`;`first_event_seq` / confirmation/todo/model.fallback live truth / compact body / permission kind / doc count 全部回刷到当前代码事实 |
 | `R9` | `client-cookbook.md` 新建(F7) | `clients/api-docs/client-cookbook.md` | 12 节实战兜底:envelope unwrap / dedup / start→ws 顺序 / `409 confirmation-already-resolved` 终态 / WriteTodos 行为 / workspace bytes / auto-compact / model.fallback / decision body shape 等 |
 | `R10` | `/start` 返 `first_event_seq`(F7) | `workers/orchestrator-core/src/user-do/session-flow/start.ts:267-285` | 客户端可用作 `last_seen_seq` 兜底,消除 start→ws-attach 之间的帧丢失风险 |
-| `R11` | docs consistency CI gate | `scripts/check-docs-consistency.mjs` + `package.json:check:docs-consistency` | 4 项检查:`index.ts:NNN` 失效引用零;model.fallback 上下文不再用 `effective_model_id`;`session_status: "running"` 零;`content_source: filesystem-core-leaf-rpc-pending` 零 |
+| `R11` | docs consistency CI gate | `scripts/check-docs-consistency.mjs` + `package.json:check:docs-consistency` | 8 项检查:`index.ts:NNN` 失效引用零;model.fallback 上下文不再用 `effective_model_id`;`session_status: "running"` 零;`content_source: filesystem-core-leaf-rpc-pending` 零;confirmation/todo `emitter pending` 零;`model.fallback emitter-not-live` 零;`session.confirmation.request{kind:"permission"}` 零;legacy decision body `{ decision, payload }` 零;另强制 `session.md` / `session-ws-v1.md` 必须含 `first_event_seq` |
 
 ---
 
@@ -69,7 +69,7 @@
 | `@haimang/context-core-worker` | 178 | ✅ 178 | `previewCompact / triggerCompact` 签名扩展 backward-compat |
 | `pnpm check:cycles` | - | ✅ 0 cycle | madge 无新增循环依赖 |
 | `pnpm check:envelope-drift` | - | ✅ clean | 1 public file clean |
-| `node scripts/check-docs-consistency.mjs` | 4 checks × 19 docs | ✅ OK | 0 violations |
+| `node scripts/check-docs-consistency.mjs` | 8 regex checks + 2 required-snippet checks × 19 docs | ✅ OK | 0 violations |
 | `pnpm test:contracts`(root-guardian) | 29 | ⚠️ 28/29 | **1 项 pre-existing 失败**:`session-registry-doc-sync.test.mjs` 引用不存在的 `docs/nacp-session-registry.md`,git 历史显示该测试在 ZX3/ZX4 phase 之前就失败,与 HPX5 无关 |
 
 **Total**:1789 test 全绿。
