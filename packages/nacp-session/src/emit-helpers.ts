@@ -70,6 +70,23 @@ export interface EmitObserver {
   ) => void;
 }
 
+function normalizeTopLevelBodyForValidation(
+  messageType: string,
+  body: unknown,
+): unknown {
+  if (
+    messageType === "session.confirmation.request" &&
+    body &&
+    typeof body === "object" &&
+    !Array.isArray(body) &&
+    typeof (body as { confirmation_kind?: unknown }).confirmation_kind === "string"
+  ) {
+    const { confirmation_kind, ...rest } = body as Record<string, unknown>;
+    return { ...rest, kind: confirmation_kind };
+  }
+  return body;
+}
+
 /**
  * Emit a top-level frame. Validates body against
  * SESSION_BODY_SCHEMAS[messageType]; on validation failure emits a
@@ -100,7 +117,7 @@ export function emitTopLevelFrame(
       start,
     );
   }
-  const parsed = schema.safeParse(body);
+  const parsed = schema.safeParse(normalizeTopLevelBodyForValidation(messageType, body));
   if (!parsed.success) {
     return fallback(
       sink,

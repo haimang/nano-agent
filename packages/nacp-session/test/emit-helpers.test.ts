@@ -63,6 +63,24 @@ describe("emitTopLevelFrame", () => {
     expect(onEmit).toHaveBeenCalledWith("latency", expect.objectContaining({ messageType: "session.confirmation.request" }));
   });
 
+  it("accepts lightweight confirmation_kind alias for confirmation.request", () => {
+    const s = makeSink();
+    const r = emitTopLevelFrame(s.sink, "session.confirmation.request", {
+      confirmation_uuid: "33333333-3333-4333-8333-333333333333",
+      confirmation_kind: "tool_permission",
+      payload: { tool_name: "bash", tool_input: { command: "ls" } },
+    }, ctx);
+    expect(r.status).toBe("ok");
+    expect(s.topLevel[0]).toEqual([
+      "session.confirmation.request",
+      {
+        confirmation_uuid: "33333333-3333-4333-8333-333333333333",
+        confirmation_kind: "tool_permission",
+        payload: { tool_name: "bash", tool_input: { command: "ls" } },
+      },
+    ]);
+  });
+
   it("happy path emits todos.write", () => {
     const s = makeSink();
     const r = emitTopLevelFrame(s.sink, "session.todos.write", {
