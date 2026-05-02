@@ -526,10 +526,135 @@ HPX5 wire-up
 
 ---
 
-## 9. 执行日志回填(仅 `executed` 状态使用)
+## 9. 执行日志回填(executed 2026-05-02)
 
-- **实际执行摘要**:`(待 executed 时回填)`
-- **Phase 偏差**:`(待 executed 时回填)`
-- **阻塞与处理**:`(待 executed 时回填)`
-- **测试发现**:`(待 executed 时回填)`
-- **后续 handoff**:`(待 executed 时回填)`
+> 文档状态从 `draft` → `executed`。所有 16 个新增 Phase 工作项已落地;3 个 worker + nacp-session + 1 个 root script 全部 typecheck + test 通过。
+
+### 9.1 实际执行摘要
+
+HPX5 5 个 Phase 在单 sprint 内顺序完成。新增/修改文件清单(按 commit 顺序):
+
+**P1 — Emit Seam Infrastructure (F0)**
+- `packages/nacp-session/src/emit-helpers.ts` (NEW,~240 行) — `emitTopLevelFrame` / `emitStreamEvent` 两个出口,zod 校验 + system.error fallback + EmitObserver 通道
+- `packages/nacp-session/src/index.ts` — re-export
+- `packages/nacp-session/src/messages.ts` — 新增 `export type SessionMessageType = keyof typeof SESSION_BODY_SCHEMAS`
+- `packages/nacp-session/src/websocket.ts` — `SessionWebSocketHelper.pushFrame(messageType, body)` 新增,emit 顶层帧(非 stream-event)
+- `packages/nacp-session/test/emit-helpers.test.ts` (NEW) — 10 case 覆盖 happy / unknown messageType / 校验失败 / fallback / drop / sink throw / metric
+- `workers/agent-core/src/host/orchestration.ts:112-130` — `OrchestrationDeps.emitTopLevelFrame` 新增 optional 字段
+- `workers/agent-core/src/host/do/session-do/runtime-assembly.ts:367-401` — 在 `pushStreamEvent` 旁注入 `emitTopLevelFrame` deps,封装 cross-worker bridge
+
+**P2 — Top-level Frame Emitters (F1 + F2c + F4)**
+- `workers/orchestrator-core/src/wsemit.ts` (NEW) — `emitFrameViaUserDO` / `emitStreamEventViaUserDO` 调用 emit-helpers + service binding 到 User DO `__forward-frame`
+- `workers/orchestrator-core/src/facade/routes/session-control.ts:23, 416-451, 506-525, 555-575, 591-616` — F1 confirmation `applyDecision` 后 emit `session.confirmation.update`;F2c todo create / patch / delete 后 emit `session.todos.update` 全量 list snapshot
+- `workers/orchestrator-core/src/user-do/surface-runtime.ts:36-65, 84-176, 359, 462` — F1 legacy permission/elicitation dual-write 路径接 `ctx.emitServerFrame` → emit `session.confirmation.request` (新建时) / `.update` (终态时)
+- `workers/orchestrator-core/src/user-do-runtime.ts:243-247` — surface runtime ctx 注入 `emitServerFrame`
+- `workers/orchestrator-core/src/user-do/message-runtime.ts:120-127, 333-432` — F4 `inputAck.body` 中读 `fallback_used / fallback_model_id / fallback_reason`(替换硬编码 `false / null`),并在 fallback_used=true 时 emit `model.fallback` stream-event(走 `pushStreamEvent`,因 `ModelFallbackKind` 已在 13-kind union 内)
+- `workers/orchestrator-core/src/user-do-runtime.ts:347-352` — message runtime ctx 注入 `emitServerFrame`
+
+**P3 — LLM Capability + Workspace Bytes (F2a + F2b + F5)**
+- `workers/orchestrator-core/src/entrypoint.ts:42-44, 138-260` — F2b 新增 `writeTodos` RPC 方法:auto-close in_progress + 创建多个 todos + emit `session.todos.update`(走 emit-helpers)
+- `workers/agent-core/src/host/env.ts:104-150` — `ORCHESTRATOR_CORE` 接口新增 `writeTodos?` + `readContextDurableState?`
+- `workers/agent-core/src/host/runtime-mainline.ts:1-5, 159-195` — `MainlineKernelOptions.writeTodosBackend?` 新增 + `TodoStatusLiteral` 内部类型
+- `workers/agent-core/src/host/runtime-mainline.ts:467-578` — capability execute 入口加 F2a/F2b 短路:`toolName === "write_todos"` 时调 `writeTodosBackend` + 自动 close + tool_result 含 `created` / `auto_closed` 列表
+- `workers/agent-core/src/host/do/session-do/runtime-assembly.ts:178-184, 195` — wire `runtimeEnv.ORCHESTRATOR_CORE.writeTodos` → `MainlineKernelOptions.writeTodosBackend`
+- `workers/orchestrator-core/src/hp-absorbed-routes.ts:21-39, 85-114, 250-323` — F5 新增 `/sessions/{id}/workspace/files/{*path}/content` 路径分支 + binary-content profile + 25 MiB cap + filesystem-core `readTempFile` RPC pass-through;`content_source` 从 `"filesystem-core-leaf-rpc-pending"` 改为 `"live"`
+- `workers/orchestrator-core/src/facade/env.ts:28-46` — `FILESYSTEM_CORE` 接口扩展 `readTempFile?` RPC
+- `workers/orchestrator-core/test/workspace-route.test.ts:243-247` — 测试断言更新为 `"live"`
+
+**P4 — Auto-Compact Wiring + Body 透传 (F3)**
+- `workers/agent-core/src/host/do/session-do/runtime-assembly.ts:27-31, 285-321` — 在 `buildOrchestrationDeps` 内构造 `composeCompactSignalProbe(budgetSource, breaker)`,budgetSource 调 `ORCHESTRATOR_CORE.readContextDurableState` 计算 `used >= auto_compact_token_limit`(默认阈值 0.85),注入 `OrchestrationDeps.probeCompactRequired`
+- `workers/orchestrator-core/src/facade/routes/session-context.ts:6-69, 121-155` — F3 façade 读 `{ force?, preview_uuid?, label? }` body 并透传到 context-core RPC
+- `workers/context-core/src/index.ts:228-258, 308-372` — `previewCompact` 与 `triggerCompact` 签名扩展接受 `options?: { force?, preview_uuid?, label? }`;`force=true` 跳过 "compact-not-needed" early return
+
+**P5 — Docs Consistency + Reference Refresh (F7)**
+- `clients/api-docs/session-ws-v1.md:65` — `model.fallback` 字段名修正为 `fallback_model_id`
+- `clients/api-docs/models.md:148, 211` — `session_status: "running"` → `"active"`(2 处)
+- `clients/api-docs/checkpoints.md:4` / `permissions.md:4` / `confirmations.md:4` / `context.md:4, 97` / `todos.md:4` / `session.md:4` / `workspace.md:4` / `models.md:4` — 9 处 implementation reference 行号刷新到模块化结构(`facade/routes/*.ts` + `*-control-plane.ts`)
+- `clients/api-docs/workspace.md:132-149` — F5 路由表加 `/content` binary GET + `content_source: "live"` 说明
+- `clients/api-docs/client-cookbook.md` (NEW) — 12 节实战兜底:envelope unwrap / dedup / start→ws 顺序 / `409 confirmation-already-resolved` 终态 / WriteTodos 行为 / workspace bytes / auto-compact / model.fallback 字段名 / decision body 等
+- `clients/api-docs/README.md:48-49` — 索引 18 → 19,加 client-cookbook
+- `scripts/check-docs-consistency.mjs` (NEW) — 4 项 CI gate:`index.ts:NNN` 失效引用零;`effective_model_id` 在 model.fallback 上下文零;`session_status: "running"` 零;`content_source: "filesystem-core-leaf-rpc-pending"` 零
+- `package.json:20` — 加 `check:docs-consistency` script
+- `workers/orchestrator-core/src/user-do/session-flow/start.ts:267-285` — F7 `/start` 返回 `first_event_seq` 字段
+
+### 9.2 Phase 偏差
+
+- **P1**:emit-helpers 测试初版 4 个断言写错(混淆了 `state` spread 与 mutation 行为),修 `makeSink` 用 `bundle` 单对象引用后 10 case 全绿。
+- **P3**:agent-core capability execute 入口的 `write_todos` 短路逻辑放在 `if (!options.capabilityTransport)` 之前,确保即使 capability transport 不可用 WriteTodos 仍可工作(只要 writeTodosBackend 已配)。
+- **P5**:`scripts/check-docs-consistency.mjs` 初版误报 — `effective_model_id` 在 `models.md` 内 3 处是 D1 audit 字段名(`nano_conversation_turns.effective_model_id`)合法引用,在 `client-cookbook.md` 第 12 节是 meta-描述说"WS 帧用 fallback_model_id 不是 effective_model_id"。修正 regex 为只匹配 `model.fallback` 上下文,排除 audit 字段引用,4 hits → 0 hits。
+
+### 9.3 阻塞与处理
+
+无阻塞。所有改动 backward-compatible:
+
+- `OrchestrationDeps.emitTopLevelFrame` / `MainlineKernelOptions.writeTodosBackend` / `MainlineKernelOptions.compactSignalProbe` 全部 optional — 既有 mock / 单测 fixture 不传不退化
+- `SessionWebSocketHelper.pushFrame` 是新方法,既有 `pushEvent` 路径不动
+- `previewCompact / triggerCompact` 签名扩展为 `options?` optional 末位参数 — 既有 caller 不传不退化
+- `inputAck.body` 中读 `fallback_used` 等字段时,缺省时回退到原硬编码 false 值
+- legacy `POST /policy/permission_mode` 路由完全不动(Q-bridging-7 hard delete 留 HPX6)
+
+### 9.4 测试发现
+
+| 测试套件 | Tests | 通过 | 说明 |
+|---------|-------|------|------|
+| `@haimang/nacp-session` | 207 | ✅ 207 | 含 10 个新 emit-helpers case |
+| `@haimang/orchestrator-core-worker` | 332 | ✅ 332 | 含 1 个 workspace-route test 更新(`content_source: "live"`)|
+| `@haimang/agent-core-worker` | 1072 | ✅ 1072 | 0 退化,新 capability 短路有 e2e 路径(已 wire writeTodosBackend optional)|
+| `@haimang/context-core-worker` | 178 | ✅ 178 | `previewCompact / triggerCompact` 签名扩展 backward-compat |
+| `pnpm check:cycles` | - | ✅ 0 cycle | madge 无新增循环 |
+| `pnpm check:envelope-drift` | - | ✅ clean | facade envelope 无漂移 |
+| `node scripts/check-docs-consistency.mjs` | 4 checks × 19 docs | ✅ OK | 0 violations |
+| `pnpm test:contracts` (root-guardian) | 29 | ⚠️ 28/29 | **1 项 pre-existing 失败**:`session-registry-doc-sync.test.mjs` 引用不存在的 `docs/nacp-session-registry.md` — 与 HPX5 无关,git history 显示该测试在 HP* 之前已失败 |
+
+**Total**:`207 + 332 + 1072 + 178 = 1789` test 全绿;新增 emit-helpers / workspace `content_source` 断言更新 / 文档 consistency 全部覆盖。
+
+### 9.5 后续 handoff
+
+- **HPX6 入口**:`docs/action-plan/hero-to-pro/HPX6-workbench-action-plan.md` 已草拟,可直接进入 implementation
+- **HPX6 第一项前置依赖**:已在本计划完成的 emit-helpers (F0) — HPX6 F9 / F12 / F14 的新顶层帧都走同一出口
+- **HPX6 hard delete 任务**:Q-bridging-7 owner 已决议直接删 legacy `permission_mode`,HPX6 Phase 3 P3-04 处理
+- **HPX6 Queue 部署**:Q-bridging-8 owner 已决议 Cloudflare Queue + DO alarm 兜底,HPX6 Phase 4 引入第 7 worker `executor-runner`
+
+### 9.6 完整工作清单(逐项)
+
+- [x] **P1-01** — 新建 `packages/nacp-session/src/emit-helpers.ts` (zod validate + system.error fallback + observer)
+- [x] **P1-01** — 新建 `packages/nacp-session/test/emit-helpers.test.ts` (10 case 全绿)
+- [x] **P1-01** — `packages/nacp-session/src/index.ts` re-export `emitTopLevelFrame / emitStreamEvent / EmitSink / EmitContext / EmitResult / EmitObserver`
+- [x] **P1-01** — `packages/nacp-session/src/messages.ts` export `SessionMessageType` 类型
+- [x] **P1-01** — `packages/nacp-session/src/websocket.ts` 新增 `SessionWebSocketHelper.pushFrame(messageType, body)` 顶层帧 emit
+- [x] **P1-02** — `workers/agent-core/src/host/orchestration.ts` `OrchestrationDeps.emitTopLevelFrame?` 新增 optional 字段
+- [x] **P1-02** — `workers/agent-core/src/host/do/session-do/runtime-assembly.ts` 在 `pushStreamEvent` 旁注入 `emitTopLevelFrame` deps
+- [x] **P2-01 (F1)** — `workers/orchestrator-core/src/wsemit.ts` 新建 `emitFrameViaUserDO` / `emitStreamEventViaUserDO` cross-worker bridge
+- [x] **P2-01 (F1)** — `workers/orchestrator-core/src/facade/routes/session-control.ts` confirmation `applyDecision` 后 emit `session.confirmation.update`
+- [x] **P2-01 (F1)** — `workers/orchestrator-core/src/user-do/surface-runtime.ts` legacy `permission/decision` + `elicitation/answer` dual-write 后 emit `session.confirmation.request` (新建时) + `.update` (终态时);ctx 接口加 `emitServerFrame`
+- [x] **P2-01 (F1)** — `workers/orchestrator-core/src/user-do-runtime.ts` surface runtime ctx 注入 `emitServerFrame`
+- [x] **P2-02 (F4)** — `workers/orchestrator-core/src/user-do/message-runtime.ts` 替换 `fallback_used: false, fallback_reason: null` 硬编码,从 `inputAck.body` 读真实值
+- [x] **P2-02 (F4)** — message-runtime 在 `fallback_used=true` 时 emit `model.fallback` stream-event;ctx 接口加 `emitServerFrame`
+- [x] **P2-02 (F4)** — `workers/orchestrator-core/src/user-do-runtime.ts` message runtime ctx 注入 `emitServerFrame`
+- [x] **P2-03** — orchestrator-core 332 test 全绿;`emit-helpers-fallback` warn 在 test fixture 中是预期行为(无 DO binding 时 fall back)
+- [x] **P3-01 (F2a)** — `workers/agent-core/src/host/runtime-mainline.ts` `MainlineKernelOptions.writeTodosBackend?` 新增 optional;`TodoStatusLiteral` 内部类型
+- [x] **P3-02 (F2b)** — `workers/agent-core/src/host/runtime-mainline.ts` capability execute 入口加 `toolName === "write_todos"` 短路:从 contextProvider 取 session/team/trace + 校验 todos 数组 + 调 writeTodosBackend + 把 result 转换为 tool_result
+- [x] **P3-02 (F2b)** — `workers/orchestrator-core/src/entrypoint.ts` 新增 `writeTodos` RPC 方法:auto-close 当前 in_progress + 串行 create + 同时多 in_progress 自动降级
+- [x] **P3-02 (F2b)** — `workers/agent-core/src/host/env.ts` `ORCHESTRATOR_CORE.writeTodos?` 接口声明
+- [x] **P3-02 (F2b)** — `workers/agent-core/src/host/do/session-do/runtime-assembly.ts` wire `ORCHESTRATOR_CORE.writeTodos` → `writeTodosBackend`
+- [x] **P3-03 (F2c)** — `workers/orchestrator-core/src/facade/routes/session-control.ts` HTTP 路径 todo create / patch / delete 后 emit `session.todos.update`
+- [x] **P3-03 (F2c)** — `workers/orchestrator-core/src/entrypoint.ts:writeTodos` LLM 路径 emit `session.todos.update`
+- [x] **P3-04 (F5)** — `workers/orchestrator-core/src/hp-absorbed-routes.ts` 加 `/content` 路径分支 + 25 MiB cap + binary-content profile;`content_source` 从 `"filesystem-core-leaf-rpc-pending"` → `"live"`
+- [x] **P3-04 (F5)** — `workers/orchestrator-core/src/facade/env.ts` `FILESYSTEM_CORE.readTempFile?` RPC 接口扩展
+- [x] **P3-04 (F5)** — `workers/orchestrator-core/test/workspace-route.test.ts` 断言更新为 `"live"`
+- [x] **P4-01 (F3)** — `workers/agent-core/src/host/do/session-do/runtime-assembly.ts:buildOrchestrationDeps` 构造 `composeCompactSignalProbe(budgetSource, breaker)` 注入 `OrchestrationDeps.probeCompactRequired`
+- [x] **P4-01 (F3)** — `workers/agent-core/src/host/env.ts` `ORCHESTRATOR_CORE.readContextDurableState?` 接口声明
+- [x] **P4-02 (F3)** — `workers/orchestrator-core/src/facade/routes/session-context.ts` 加 `CompactBodyOptions` 接口 + `readJsonBodyOrNull` + `pickCompactBodyOptions`;两路 (`compact-preview` / `compact`) 透传到 RPC
+- [x] **P4-02 (F3)** — `workers/context-core/src/index.ts` `previewCompact` / `triggerCompact` 签名扩展 `options?: CompactBodyOptions`;`force=true` 跳过 "compact-not-needed";`label / preview_uuid` 透传
+- [x] **P5-01** — `clients/api-docs/session-ws-v1.md` `model.fallback` 字段名修正
+- [x] **P5-01** — `clients/api-docs/models.md` `session_status: "running"` → `"active"` (2 处)
+- [x] **P5-02** — 9 份 doc 的 implementation reference 行号刷新到模块化结构
+- [x] **P5-02** — `clients/api-docs/context.md` HPX5 F3 body 字段说明替换 ignored 占位
+- [x] **P5-02** — `clients/api-docs/workspace.md` F5 路由 + content_source live 说明
+- [x] **P5-03** — `workers/orchestrator-core/src/user-do/session-flow/start.ts` `/start` 返回 `first_event_seq`
+- [x] **P5-04** — `clients/api-docs/client-cookbook.md` 新建 12 节实战兜底
+- [x] **P5-04** — `clients/api-docs/README.md` 索引 18 → 19
+- [x] **P5-05** — `scripts/check-docs-consistency.mjs` 新建 + `package.json` 加 `check:docs-consistency` script
+- [x] **测试 sweep** — `pnpm --filter @haimang/{nacp-session,orchestrator-core-worker,agent-core-worker,context-core-worker} test` 全绿(1789 tests)
+- [x] **CI gate sweep** — `check:cycles` 0 cycle / `check:envelope-drift` clean / `check:docs-consistency` OK
+- [x] **closure 文件** — `docs/issue/hero-to-pro/HPX5-closure.md` 写入
