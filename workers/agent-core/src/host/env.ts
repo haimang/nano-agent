@@ -100,6 +100,27 @@ export interface SessionRuntimeEnv {
       readonly detail?: Record<string, unknown>;
       readonly outcome: "ok" | "denied" | "failed";
     }): Promise<{ ok: boolean }>;
+    recordToolCall?(input: {
+      readonly request_uuid: string;
+      readonly session_uuid: string;
+      readonly team_uuid: string;
+      readonly turn_uuid?: string | null;
+      readonly tool_name: string;
+      readonly input?: Record<string, unknown>;
+      readonly output?: Record<string, unknown> | null;
+      readonly status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+    }, meta?: { readonly trace_uuid?: string; readonly team_uuid?: string }): Promise<{ ok: boolean }>;
+    authorizeToolUse?(input: {
+      readonly session_uuid: string;
+      readonly team_uuid: string;
+      readonly tool_name: string;
+      readonly tool_input?: Record<string, unknown>;
+    }, meta?: { readonly trace_uuid?: string; readonly team_uuid?: string }): Promise<{
+      readonly ok: boolean;
+      readonly decision: "allow" | "deny" | "ask";
+      readonly source: "session-rule" | "tenant-rule" | "approval-policy" | "unavailable";
+      readonly reason?: string;
+    }>;
     /**
      * HPX5 F3 — context durable state probe used by auto-compact
      * decision. agent-core composes the result with `composeCompactSignalProbe`

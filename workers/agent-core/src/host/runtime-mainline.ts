@@ -192,6 +192,17 @@ export interface MainlineKernelOptions {
       }
     | { readonly ok: false; readonly error: { readonly code: string; readonly message: string } }
   >;
+  readonly authorizeToolUse?: (input: {
+    readonly session_uuid: string;
+    readonly team_uuid: string;
+    readonly tool_name: string;
+    readonly tool_input?: Record<string, unknown>;
+  }, meta?: { readonly trace_uuid?: string; readonly team_uuid?: string }) => Promise<{
+    readonly ok: boolean;
+    readonly decision: "allow" | "deny" | "ask";
+    readonly source: "session-rule" | "tenant-rule" | "approval-policy" | "unavailable";
+    readonly reason?: string;
+  }>;
 }
 
 // HP3-D2 / HP3-D4 (deferred-closure absorb) — compact signal probe + breaker
@@ -213,6 +224,35 @@ export interface ToolSemanticEvent {
   readonly status?: "ok" | "error";
   readonly output?: unknown;
   readonly error?: { readonly code: string; readonly message: string };
+}
+
+async function authorizeToolPlan(
+  options: MainlineKernelOptions,
+  requestId: string,
+  toolName: string,
+  toolInput: Record<string, unknown>,
+): Promise<{ allowed: true } | { allowed: false; error: { code: string; message: string; source?: string } }> {
+  const ctx = options.contextProvider();
+  if (!ctx || !options.authorizeToolUse) return { allowed: true };
+  const result = await options.authorizeToolUse(
+    {
+      session_uuid: ctx.sessionUuid,
+      team_uuid: ctx.teamUuid,
+      tool_name: toolName,
+      tool_input: toolInput,
+    },
+    { trace_uuid: ctx.traceUuid, team_uuid: ctx.teamUuid },
+  );
+  if (result.decision === "allow") return { allowed: true };
+  const code = result.decision === "ask" ? "tool-permission-required" : "tool-permission-denied";
+  return {
+    allowed: false,
+    error: {
+      code,
+      message: `tool ${toolName} was ${result.decision === "ask" ? "blocked pending permission" : "denied by runtime policy"}`,
+      source: result.source,
+    },
+  };
 }
 
 export const NANO_AGENT_SYSTEM_PROMPT =
@@ -494,6 +534,24 @@ export function createMainlineKernelRunner(
             request.args && typeof request.args === "object"
               ? request.args
               : {};
+          const normalizedToolInput = toolInput as Record<string, unknown>;
+          const permission = await authorizeToolPlan(
+            options,
+            requestId,
+            toolName,
+            normalizedToolInput,
+          );
+          if (!permission.allowed) {
+            options.onToolEvent?.({
+              kind: "tool_call_result",
+              tool_call_id: requestId,
+              tool_name: toolName,
+              status: "error",
+              error: permission.error,
+            });
+            yield { type: "result" as const, status: "error" as const, result: permission.error };
+            return;
+          }
 
           // HPX5 F2b — WriteTodos capability short-circuit. LLM emits
           // `tool_use { name: "write_todos", ... }`; route to orchestrator-core
@@ -503,7 +561,7 @@ export function createMainlineKernelRunner(
               kind: "tool_use_start",
               tool_call_id: requestId,
               tool_name: toolName,
-              tool_input: toolInput as Record<string, unknown>,
+              tool_input: normalizedToolInput,
             });
             if (!options.writeTodosBackend) {
               const errorBody = {
@@ -541,7 +599,7 @@ export function createMainlineKernelRunner(
               readonly conversation_uuid?: unknown;
               readonly user_uuid?: unknown;
             };
-            const parsedWrite = SessionTodosWriteBodySchema.safeParse(toolInput);
+            const parsedWrite = SessionTodosWriteBodySchema.safeParse(normalizedToolInput);
             if (!parsedWrite.success) {
               const errorBody = {
                 code: "invalid-input",
@@ -623,7 +681,7 @@ export function createMainlineKernelRunner(
             kind: "tool_use_start",
             tool_call_id: requestId,
             tool_name: toolName,
-            tool_input: toolInput as Record<string, unknown>,
+              tool_input: normalizedToolInput,
           });
 
           const quotaContext = options.contextProvider();

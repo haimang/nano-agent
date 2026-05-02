@@ -174,6 +174,9 @@ function createLiveKernelRunner(
   const writeTodosBackend = runtimeEnv.ORCHESTRATOR_CORE?.writeTodos
     ? runtimeEnv.ORCHESTRATOR_CORE.writeTodos.bind(runtimeEnv.ORCHESTRATOR_CORE)
     : undefined;
+  const authorizeToolUse = runtimeEnv.ORCHESTRATOR_CORE?.authorizeToolUse
+    ? runtimeEnv.ORCHESTRATOR_CORE.authorizeToolUse.bind(runtimeEnv.ORCHESTRATOR_CORE)
+    : undefined;
 
   return createMainlineKernelRunner({
     ai: runtimeEnv.AI,
@@ -182,6 +185,7 @@ function createLiveKernelRunner(
     quotaAuthorizer,
     capabilityTransport,
     writeTodosBackend,
+    authorizeToolUse,
     contextProvider: () => ctx.buildQuotaContext(),
     anchorProvider: () => ctx.buildCrossSeamAnchor(),
     // HP5 P2-02 — real dispatcher injection. Even with no handlers
@@ -210,6 +214,30 @@ function createLiveKernelRunner(
       });
     },
     onToolEvent: (event) => {
+      const quotaCtx = ctx.buildQuotaContext();
+      const orchestrator = (ctx.env as Partial<SessionRuntimeEnv> | undefined)?.ORCHESTRATOR_CORE;
+      if (quotaCtx && orchestrator?.recordToolCall) {
+        const status =
+          event.kind === "tool_use_start"
+            ? "running"
+            : event.status === "ok"
+              ? "succeeded"
+              : "failed";
+        void orchestrator.recordToolCall(
+          {
+            request_uuid: event.tool_call_id,
+            session_uuid: quotaCtx.sessionUuid,
+            team_uuid: quotaCtx.teamUuid,
+            turn_uuid: quotaCtx.turnUuid ?? null,
+            tool_name: event.tool_name,
+            ...(event.tool_input !== undefined ? { input: event.tool_input } : {}),
+            ...(event.output !== undefined ? { output: { value: event.output } } : {}),
+            ...(event.error !== undefined ? { output: { error: event.error } } : {}),
+            status,
+          },
+          { trace_uuid: quotaCtx.traceUuid, team_uuid: quotaCtx.teamUuid },
+        ).catch(() => undefined);
+      }
       if (event.kind === "tool_call_result") {
         void ctx.pushServerFrameToClient({
           kind: "tool.call.result",
