@@ -2,37 +2,37 @@
 // DO NOT EDIT BY HAND.
 
 export const NANO_PACKAGE_MANIFEST = {
-  "build_at": "2026-05-01T03:11:50.132Z",
+  "build_at": "2026-05-02T13:31:20.455Z",
   "packages": [
     {
       "name": "@haimang/nacp-core",
       "workspace_version": "1.6.0",
       "registry_version": "1.6.0",
       "registry_latest_version": "1.6.0",
-      "registry_published_at": "2026-04-30T01:03:33Z",
+      "registry_published_at": "workspace-local-fallback",
       "dist_sha256": "5061ccd1d85dfa7b57575c571196fb536b5019c2a470f5e8ec4cbccfffd0a20c",
-      "resolved_from": "registry",
-      "match": true
+      "match": true,
+      "resolved_from": "workspace-local-fallback"
     },
     {
       "name": "@haimang/nacp-session",
-      "workspace_version": "1.4.0",
-      "registry_version": "1.4.0",
-      "registry_latest_version": "1.4.0",
-      "registry_published_at": "2026-04-29T14:10:02Z",
-      "dist_sha256": "4ee38ff6770fee62151c3b720fda8a88c3054dca2c085accf0fb588b2ce7256f",
-      "resolved_from": "registry",
-      "match": true
+      "workspace_version": "1.5.0",
+      "registry_version": "1.5.0",
+      "registry_latest_version": "1.5.0",
+      "registry_published_at": "workspace-local-fallback",
+      "dist_sha256": "703a57976f98e8e990c95bae982d74f3f26c6a4df8dca6b9ebacbfc8f9c3bc25",
+      "match": true,
+      "resolved_from": "workspace-local-fallback"
     },
     {
       "name": "@haimang/jwt-shared",
       "workspace_version": "0.1.0",
       "registry_version": "0.1.0",
       "registry_latest_version": "0.1.0",
-      "registry_published_at": "2026-04-30T00:39:24Z",
+      "registry_published_at": "workspace-local-fallback",
       "dist_sha256": "0cbb6f047e4e94b34ae04ade74ad914325f1c8f045dbd1ce7578826f989a7b8a",
-      "resolved_from": "registry",
-      "match": true
+      "match": true,
+      "resolved_from": "workspace-local-fallback"
     }
   ],
   "worker": "orchestrator-auth"
