@@ -173,6 +173,9 @@ export async function persistCheckpoint(ctx: PersistenceContext): Promise<void> 
     actorPhase: state.actorState.phase,
     turnCount: state.turnCount,
     kernelFragment: state.kernelSnapshot,
+    // Replay state is persisted through helper.checkpoint(helperStorage);
+    // this legacy checkpoint slot remains null until a future checkpoint
+    // schema migration removes or repurposes it.
     replayFragment: null,
     streamSeqs: {},
     workspaceFragment: null,

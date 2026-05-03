@@ -157,6 +157,8 @@ export const HOOK_EVENT_CATALOG: Readonly<Record<HookEventName, HookEventMeta>> 
   //
   // Fail-closed: when the capability executor observes zero registered
   // handlers (handlerCount === 0) it treats the request as denied.
+  // Input mutation intentionally belongs to PreToolUse; PermissionRequest
+  // only returns a verdict/context/diagnostics for the permission gate.
   PermissionRequest: {
     blocking: true,
     allowedOutcomes: ["block", "additionalContext", "diagnostics"],
