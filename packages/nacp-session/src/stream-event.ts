@@ -75,6 +75,7 @@ export const ToolCallCancelledKind = z.object({
 export const HookBroadcastKind = z.object({
   kind: z.literal("hook.broadcast"),
   event_name: z.string().min(1),
+  caller: z.enum(["pre-tool-use", "step-emit"]).optional(),
   payload_redacted: z.unknown(),
   aggregated_outcome: z.unknown().optional(),
 });
