@@ -39,7 +39,12 @@ import {
   readContextCompactJob as loadContextCompactJob,
   readContextDurableState as loadContextDurableState,
 } from "./context-control-plane.js";
-import { D1ConfirmationControlPlane, type ConfirmationKind } from "./confirmation-control-plane.js";
+import {
+  CONFIRMATION_KINDS,
+  D1ConfirmationControlPlane,
+  type ConfirmationKind,
+  type ConfirmationStatus,
+} from "./confirmation-control-plane.js";
 import { D1TodoControlPlane, TodoConstraintError, type TodoStatus } from "./todo-control-plane.js";
 import {
   D1ToolCallLedger,
@@ -48,6 +53,7 @@ import {
 } from "./tool-call-ledger.js";
 import { D1RuntimeConfigPlane } from "./runtime-config-plane.js";
 import { D1PermissionRulesPlane } from "./permission-rules-plane.js";
+import { D1SessionTruthRepository } from "./session-truth.js";
 import { emitFrameViaUserDO } from "./wsemit.js";
 import { runExecutorJob, type ExecutorJob } from "./executor-runtime.js";
 
@@ -72,8 +78,20 @@ async function emitterRowCreateBestEffort(
   let kind: ConfirmationKind | null = null;
   if (frame.kind === "session.permission.request") kind = "tool_permission";
   else if (frame.kind === "session.elicitation.request") kind = "elicitation";
+  else if (
+    frame.kind === "session.confirmation.request" &&
+    typeof frame.confirmation_kind === "string" &&
+    CONFIRMATION_KINDS.includes(frame.confirmation_kind as ConfirmationKind)
+  ) {
+    kind = frame.confirmation_kind as ConfirmationKind;
+  }
   if (!kind) return;
-  const requestUuid = typeof frame.request_uuid === "string" ? frame.request_uuid : null;
+  const requestUuid =
+    typeof frame.confirmation_uuid === "string"
+      ? frame.confirmation_uuid
+      : typeof frame.request_uuid === "string"
+        ? frame.request_uuid
+        : null;
   if (!requestUuid || !UUID_RE.test(requestUuid)) return;
   const plane = new D1ConfirmationControlPlane(db);
   const now = new Date().toISOString();
@@ -375,6 +393,45 @@ export default class OrchestratorCoreEntrypoint extends WorkerEntrypoint<Orchest
       ok: true,
       decision: runtimePolicyFallback(runtime.approval_policy),
       source: "approval-policy",
+    };
+  }
+
+  async settleConfirmation(
+    input: {
+      readonly session_uuid: string;
+      readonly confirmation_uuid: string;
+      readonly status: "timeout" | "superseded";
+      readonly decision_payload?: Record<string, unknown> | null;
+    },
+    meta?: { readonly trace_uuid?: string; readonly team_uuid?: string },
+  ): Promise<{ readonly ok: boolean; readonly status?: ConfirmationStatus; readonly reason?: string }> {
+    if (
+      !UUID_RE.test(input.session_uuid) ||
+      !UUID_RE.test(input.confirmation_uuid) ||
+      (input.status !== "timeout" && input.status !== "superseded")
+    ) {
+      return { ok: false, reason: "invalid-input" };
+    }
+    if (!this.env.NANO_AGENT_DB) return { ok: false, reason: "db-missing" };
+    if (!meta?.team_uuid) return { ok: false, reason: "team-missing" };
+    const session = await new D1SessionTruthRepository(
+      this.env.NANO_AGENT_DB,
+    ).readSessionLifecycle(input.session_uuid);
+    if (!session || session.team_uuid !== meta.team_uuid) {
+      return { ok: false, reason: "session-not-found" };
+    }
+    const plane = new D1ConfirmationControlPlane(this.env.NANO_AGENT_DB);
+    const result = await plane.applyDecision({
+      session_uuid: input.session_uuid,
+      confirmation_uuid: input.confirmation_uuid,
+      status: input.status,
+      decision_payload: input.decision_payload ?? null,
+      decided_at: new Date().toISOString(),
+    });
+    return {
+      ok: Boolean(result.row) && !result.conflict,
+      ...(result.row ? { status: result.row.status } : {}),
+      ...(result.conflict ? { reason: "confirmation-already-resolved" } : {}),
     };
   }
 

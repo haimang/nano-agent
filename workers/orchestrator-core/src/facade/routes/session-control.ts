@@ -28,6 +28,7 @@ import {
 } from "../shared/request.js";
 import { emitFrameViaUserDO } from "../../wsemit.js";
 import { dispatchExecutorJob } from "../../executor-runtime.js";
+import { createOrchestratorLogger } from "../../observability.js";
 
 type SessionTodoRoute =
   | { kind: "list"; sessionUuid: string }
@@ -137,6 +138,83 @@ interface OwnedSessionResult {
   readonly repo: D1SessionTruthRepository;
   readonly session: DurableSessionLifecycleRecord;
   readonly traceUuid: string;
+}
+
+function buildAgentAuthority(session: DurableSessionLifecycleRecord): Record<string, unknown> {
+  return {
+    sub: session.actor_user_uuid,
+    tenant_uuid: session.team_uuid,
+    tenant_source: "claim",
+    source_name: "orchestrator-core.confirmation-decision",
+  };
+}
+
+async function wakeAgentConfirmationWaiter(
+  env: OrchestratorCoreEnv,
+  session: DurableSessionLifecycleRecord,
+  input: {
+    readonly confirmationUuid: string;
+    readonly kind: string;
+    readonly status: ConfirmationStatus;
+    readonly decisionPayload: Record<string, unknown> | null;
+    readonly traceUuid: string;
+  },
+): Promise<void> {
+  const authority = buildAgentAuthority(session);
+  const meta = { trace_uuid: input.traceUuid, authority };
+  try {
+    if (input.kind === "tool_permission") {
+      const rpc = env.AGENT_CORE?.permissionDecision;
+      if (typeof rpc !== "function") return;
+      await rpc(
+        {
+          session_uuid: session.session_uuid,
+          request_uuid: input.confirmationUuid,
+          status: input.status,
+          decision:
+            input.status === "allowed" ? "allow" : "deny",
+          scope:
+            typeof input.decisionPayload?.scope === "string"
+              ? input.decisionPayload.scope
+              : "once",
+          ...(input.decisionPayload ? { decision_payload: input.decisionPayload } : {}),
+        },
+        meta,
+      );
+      return;
+    }
+    if (input.kind === "elicitation") {
+      const rpc = env.AGENT_CORE?.elicitationAnswer;
+      if (typeof rpc !== "function") return;
+      await rpc(
+        {
+          session_uuid: session.session_uuid,
+          request_uuid: input.confirmationUuid,
+          status: input.status,
+          answer:
+            input.decisionPayload && "answer" in input.decisionPayload
+              ? input.decisionPayload.answer
+              : input.decisionPayload,
+          cancelled:
+            input.status === "timeout" ||
+            input.status === "superseded" ||
+            input.status === "denied",
+        },
+        meta,
+      );
+    }
+  } catch (error) {
+    createOrchestratorLogger(env).warn("confirmation-decision-wakeup-failed", {
+      code: "internal-error",
+      ctx: {
+        tag: "confirmation-decision-wakeup-failed",
+        session_uuid: session.session_uuid,
+        confirmation_uuid: input.confirmationUuid,
+        kind: input.kind,
+        error: String(error),
+      },
+    });
+  }
 }
 
 async function readOwnedSession(
