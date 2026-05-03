@@ -9,8 +9,6 @@
 > 上游前序 / closure:
 > - `docs/action-plan/pro-to-product/PP1-hitl-interrupt-closure-action-plan.md`
 > - `docs/issue/pro-to-product/PP1-closure.md`
-> - `docs/action-plan/pro-to-product/PP2-context-budget-closure-action-plan.md`
-> - `docs/issue/pro-to-product/PP2-closure.md`
 > - `docs/design/pro-to-product/04-reconnect-session-recovery.md`
 > 下游交接:
 > - `docs/action-plan/pro-to-product/PP4-hook-delivery-closure-action-plan.md`
@@ -31,7 +29,7 @@
 
 ## 0. 执行背景与目标
 
-PP3 的目标是让前端在刷新、断线、重连、DO hibernation 或 socket supersede 后仍能得到可信 session 状态。当前 nano-agent 已具备 first-wave substrate：WS attach 解析 `last_seen_seq`，single attachment 会发 `session.attachment.superseded` 并关闭旧 socket（`workers/orchestrator-core/src/user-do/ws-runtime.ts:72-145`），socket close 会标记 `detached`（`ws-runtime.ts:237-245`），HTTP resume 已能返回 `replay_lost` 并写 audit（`surface-runtime.ts:280-319`）。但仍有两个关键断点：WS attach 的 replay gap 不能 silent；agent-core persistence 里 `replayFragment` 仍 hard-code 为 `null`，restore 也没有恢复 helper replay 状态（`workers/agent-core/src/host/do/session-do-persistence.ts:154-222`）。
+PP3 的目标是让前端在刷新、断线、重连、DO hibernation 或 socket supersede 后仍能得到可信 session 状态。当前 nano-agent 已具备 first-wave substrate：WS attach 解析 `last_seen_seq`，single attachment 会发 `session.attachment.superseded` 并关闭旧 socket（`workers/orchestrator-core/src/user-do/ws-runtime.ts:72-145`），socket close 会标记 `detached`（`ws-runtime.ts:237-245`），HTTP resume 已能返回 `replay_lost` 并写 audit（`surface-runtime.ts:280-319`）；agent-core persistence 也已经通过 `buildWsHelperStorage()` + `helper.checkpoint()` 写入 helper replay 状态（`workers/agent-core/src/host/do/session-do-persistence.ts:154-160`）。但仍有两个关键断点：WS attach 的 replay gap 不能 silent；主 checkpoint object 内的 `replayFragment` 仍 hard-code 为 `null`，且 `restoreFromStorage()` 仍未恢复 helper replay 状态（`session-do-persistence.ts:176`, `193-222`）。
 
 参考 agent 的共同启发是：Codex 明确把 client-agent 交互建成 submission/event queue，高层接口就是 send submission / receive event，并在 Session 中保存 active turn、mailbox、agent status 等状态（`context/codex/codex-rs/core/src/codex.rs:399-410`, `837-862`）；Claude Code 的 resume picker 不只是“读文本”，还处理 cross-project/失败路径（`context/claude-code/commands/resume/resume.tsx:107-170`），backgrounding hook 会同步 messages/loading/abort controller（`context/claude-code/hooks/useSessionBackgrounding.ts:76-144`）。nano-agent 不照搬本地 AppState，但必须向远程前端提供等价的 recovery bundle。
 
@@ -129,7 +127,7 @@ PP3 Reconnect & Session Recovery
 - **[O1]** 不建设永久 event-store v2，不承诺 exactly-once replay。
 - **[O2]** 不支持多活动 attachment、多端协作或 presence plane。
 - **[O3]** 不重做 HITL ask/elicitation 主线；PP3 只消费 PP1 已稳定 substrate。
-- **[O4]** 不重做 compact prompt mutation；PP3 只消费 PP2 compact boundary。
+- **[O4]** 不重做 compact prompt mutation；若 PP2 已闭合，PP3 只在 recovery bundle 中消费其 compact boundary read-model，未闭合时对应字段标 `pending-PP2`。
 - **[O5]** 不做 full client docs sweep；只同步 PP3 必需的 reconnect truth。
 
 ### 2.3 边界判定表
@@ -150,7 +148,7 @@ PP3 Reconnect & Session Recovery
 |------|------------|--------|------|------------------|------------|----------|
 | P1-01 | Phase 1 | WS replay gap degraded frame | `update` | `workers/orchestrator-core/src/user-do/ws-runtime.ts` | replay gap attach 后立即可见 | `high` |
 | P1-02 | Phase 1 | HTTP/WS replay_lost parity | `update` | `surface-runtime.ts`, ws tests | 两条恢复入口语义一致 | `medium` |
-| P2-01 | Phase 2 | Helper replay checkpoint persist | `update` | `session-do-persistence.ts` | checkpoint 不再写 `replayFragment: null` | `high` |
+| P2-01 | Phase 2 | Helper replay checkpoint persist | `update` | `session-do-persistence.ts` | 冻结 `replayFragment` 去留，checkpoint 不再维持语义不明的 `null` | `high` |
 | P2-02 | Phase 2 | Helper replay restore | `update` | `session-do-persistence.ts`, replay helper | restore 后 replay buffer/seq 可用 | `high` |
 | P3-01 | Phase 3 | Single attachment tests | `add` | `ws-runtime.ts` tests | supersede + close 行为稳定 | `medium` |
 | P3-02 | Phase 3 | Detached/terminal state tests | `add` | User DO tests | close 后 detached，terminal 拒绝恢复 | `medium` |
@@ -173,7 +171,7 @@ PP3 Reconnect & Session Recovery
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P2-01 | Helper replay checkpoint persist | 保存 replay fragment、stream seqs 或 helper checkpoint reference，而非 `null` | `session-do-persistence.ts` | checkpoint 包含恢复所需 replay state | agent-core persistence test | checkpoint schema 验证通过且非空 |
+| P2-01 | Helper replay checkpoint persist | 保存 replay fragment、stream seqs 或 helper checkpoint reference，并在实现期明确 `replayFragment` 是保留双写还是废弃为 helperStorage-only | `session-do-persistence.ts` | checkpoint 包含恢复所需 replay state | agent-core persistence test | checkpoint schema 验证通过，且 `replayFragment` 去留有明确决策 |
 | P2-02 | Helper replay restore | restore 时调用对应 helper restore path，恢复 replay buffer/seq | `session-do-persistence.ts`, replay helper | fresh DO 仍可 replay | agent-core test | persist/restore 对称 |
 
 ### 4.3 Phase 3 — Detached & Attachment State
@@ -229,7 +227,7 @@ PP3 Reconnect & Session Recovery
   - `workers/agent-core/src/host/do/session-do-persistence.ts`
   - 可能的 WS helper storage/restore helpers。
 - **具体功能预期**：
-  1. checkpoint 不再写死 `replayFragment: null`。
+  1. `helper.checkpoint(helperStorage)` 现有通道继续保留，但主 checkpoint object 的 `replayFragment` 去留必须在 PP3 实施期做出明确选择（双写保留或 helperStorage-only）。
   2. restore path 恢复 helper replay buffer / stream seqs。
   3. checkpoint validator 与真实 shape 对齐。
 - **具体测试安排**：
@@ -278,7 +276,7 @@ PP3 Reconnect & Session Recovery
 - **具体功能预期**：
   1. recovery bundle 列出必须刷新/读取的 public surfaces：confirmations、context probe、runtime、items/tool calls、session status。
   2. e2e 覆盖 replay success、replay lost、detached reattach、pending interaction recovery。
-  3. PP3 closure 明确 T4 session state truth 由 PP3 负责运行时证据。
+  3. PP3 closure 明确 T4 session state truth 由 PP3 负责运行时证据；若 PP2 尚未闭合，compact/context 相关字段必须显式标 `pending-PP2`，不制造硬依赖。
 - **具体测试安排**：
   - **单测**：无。
   - **集成测试**：route/read-model bundle tests。
@@ -313,19 +311,20 @@ PP3 Reconnect & Session Recovery
 | seq owner 分叉 | relay_cursor、event_seq、stream_seq 混用导致 replay 错位 | `high` | PP3 必须指定 public seq owner 与转换规则 |
 | degraded 太晚 | replay_lost 直到 turn 结束才出现 | `high` | attach/resume early verdict test |
 | checkpoint shape 漂移 | replayFragment 改非空可能影响 validator/compat | `medium` | 同步 validator + tests，不新增 D1 |
-| PP1 共享文件冲突 | `session-do-runtime.ts` 仍在 PP1 高频修改 | `medium` | PP3 start gate 要求 PP1 closure 声明稳定 |
+| PP1 共享文件冲突 | `session-do-runtime.ts` 仍在 PP1 高频修改 | `medium` | PP3 只在 PP1 closure 冻结共享 owner file 清单并暴露可复用 extension point 后修改 shared file |
 
 ### 7.2 约束与前提
 
-- **技术前提**：PP1 的 ask/elicitation wakeup 主线已稳定，PP2 compact boundary 可被恢复 bundle 消费。
+- **技术前提**：PP1 的 ask/elicitation wakeup 主线已稳定；若 PP2 已闭合，compact boundary 可被 recovery bundle 消费，否则相关字段标 `pending-PP2`。
 - **运行时前提**：User DO WS attach 与 HTTP resume 均可测试。
 - **组织协作前提**：FE-2 review 需要检查 reconnect/loading/pending/degraded UX 假设。
-- **上线 / 合并前提**：不得宣称 multi-device 支持或 exactly-once replay。
+- **上线 / 合并前提**：不得宣称 multi-device 支持或 exactly-once replay；若修改触及 D1 例外，必须先确认当前 migration baseline 仍从 `017` 起连续，再按“当前最新编号 + 1”顺延。
 
 ### 7.3 文档同步要求
 
 - 需要同步更新的设计文档：
   - 原则上无；若 replay guarantee 改变，回到 `PPX-qna.md`。
+  - 若实现期发现 design/QNA 与代码事实冲突，必须先在本 action-plan 或 `PP3-closure.md` 记录发现，再判断是否回到 `PPX-qna.md` 补充 / 修订答案，并同步通知 PP4 / PP5 / PP6。
 - 需要同步更新的说明文档 / README：
   - `docs/issue/pro-to-product/PP3-closure.md`
   - 必要时最小更新 `clients/api-docs/session-ws-v1.md`

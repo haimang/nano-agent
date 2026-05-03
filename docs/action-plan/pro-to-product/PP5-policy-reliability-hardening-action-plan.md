@@ -119,7 +119,7 @@ PP5 Policy Honesty + Reliability Hardening
 ### 2.1 In-Scope（本次 action-plan 明确要做）
 
 - **[S1]** 对 `approval_policy`、`permission_rules`、`network_policy.mode`、`web_search.mode`、`workspace_scope.mounts` 建 runtime enforce matrix。
-- **[S2]** 对 not-enforced/stored-only 字段保留 public shape，但在 API/docs/closure 中明确 readiness 与 enforce/sunset window。
+- **[S2]** 对 not-enforced / stored-only / partial 字段保留 public shape，但在 API/docs/closure 中必须映射到 frozen 5-label 集：`live / first-wave / schema-live / registry-only / not-enforced`，并登记 enforce/sunset window。
 - **[S3]** 把 policy unavailable 从 `ask/unavailable` 改成独立 fail-visible branch，优先新增 `unavailable` 三态或等价 structured degraded。
 - **[S4]** 写明 PP1 HITL 与 PP4 hook 在 tool policy chain 中的优先级，不允许 allow/deny 互相覆盖。
 - **[S5]** stream failure 输出 `system.error` 或等价 degraded frame，包含 retryable、trace_uuid、retry_after/source。
@@ -150,9 +150,9 @@ PP5 Policy Honesty + Reliability Hardening
 | 编号 | 所属 Phase | 工作项 | 类型 | 涉及模块 / 文件 | 目标一句话 | 风险等级 |
 |------|------------|--------|------|------------------|------------|----------|
 | P1-01 | Phase 1 | Runtime field audit | `update` | runtime route/config + execution consumers | 逐字段证明 enforce 状态 | `high` |
-| P1-02 | Phase 1 | Not-enforced metadata | `update` | runtime docs/closure | stored-only 不再 overclaim | `medium` |
+| P1-02 | Phase 1 | Not-enforced metadata | `update` | runtime docs/closure | stored-only / partial 不再 overclaim | `medium` |
 | P2-01 | Phase 2 | Decision chain ordering | `update` | `entrypoint.ts`, agent-core auth seam | session/tenant/approval/HITL/hook 顺序清晰 | `high` |
-| P2-02 | Phase 2 | Unavailable tri-state/degraded | `update` | `entrypoint.ts`, `runtime-mainline.ts` | db/control-plane missing 不再 ask | `high` |
+| P2-02 | Phase 2 | Unavailable tri-state/degraded | `update` | `workers/orchestrator-core/src/entrypoint.ts`, `workers/agent-core/src/host/runtime-mainline.ts`, `workers/agent-core/src/host/env.ts`, authorization tests | db/control-plane missing 不再 ask | `high` |
 | P2-03 | Phase 2 | Policy source diagnostics | `add` | authorization tests/audit | 每次 deny/ask/unavailable 有 source | `medium` |
 | P3-01 | Phase 3 | Stream failure system.error | `update` | `executor.ts`, system-error emission path | stream 失败变 retryable degraded | `high` |
 | P3-02 | Phase 3 | Client retry contract tests | `add` | stream/e2e tests | 前端可基于 trace/retryable retry | `medium` |
@@ -168,14 +168,14 @@ PP5 Policy Honesty + Reliability Hardening
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
 | P1-01 | Runtime field audit | 逐字段反查 execution consumers，标 enforced/partial/not-enforced/stored-only | runtime route/config + worker consumers | 字段状态清晰 | tests + code audit | 每字段有 owner evidence |
-| P1-02 | Not-enforced metadata | 为 not-enforced 字段登记 enforce/sunset window 和 PP6 docs label | closure/docs | 前端不误认为 active policy | docs review | Q18 满足 |
+| P1-02 | Not-enforced metadata | 为 not-enforced / stored-only / partial 字段登记 enforce/sunset window，并映射到 PP6 frozen 5-label 集 | closure/docs | 前端不误认为 active policy | docs review | Q18 满足 |
 
 ### 4.2 Phase 2 — Tool Policy Chain Hardening
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
 | P2-01 | Decision chain ordering | 固化 session rule → tenant rule → approval policy → PP1 HITL → PP4 hook 的优先级 | `entrypoint.ts`, auth seam | 工具授权可解释 | unit/integration | 不存在互相覆盖 |
-| P2-02 | Unavailable tri-state/degraded | 将 db/control-plane missing 从 ask 改为 independent unavailable/degraded | `entrypoint.ts`, runtime-mainline | unavailable fail-visible | tests | 不撞 PP1 ask |
+| P2-02 | Unavailable tri-state/degraded | 将 db/control-plane missing 从 ask 改为 independent unavailable/degraded，并同步更新本地 decision union owner | `entrypoint.ts`, `runtime-mainline.ts`, `env.ts` | unavailable fail-visible | tests | 不撞 PP1 ask |
 | P2-03 | Policy source diagnostics | 记录 decision source/reason/trace，供 error/docs 使用 | auth/audit/tests | deny/unavailable 可解释 | tests | source 不丢失 |
 
 ### 4.3 Phase 3 — Reliability Degraded Contract
@@ -209,7 +209,7 @@ PP5 Policy Honesty + Reliability Hardening
 - **具体功能预期**：
   1. `approval_policy` 与 `permission_rules` 的 enforce 路径可证明。
   2. `network_policy.mode`、`web_search.mode`、`workspace_scope.mounts` 若未完全 enforce，明确 not-enforced/partial。
-  3. 每个 not-enforced 字段登记 enforce/sunset window。
+  3. 每个 not-enforced / stored-only / partial 字段登记 enforce/sunset window，并映射到 PP6 frozen 5-label 集。
 - **具体测试安排**：
   - **单测**：runtime field parsing/merge。
   - **集成测试**：字段改变后执行层行为或 not-enforced label。
@@ -230,11 +230,12 @@ PP5 Policy Honesty + Reliability Hardening
 - **本 Phase 修改文件**：
   - `workers/orchestrator-core/src/entrypoint.ts`
   - `workers/agent-core/src/host/runtime-mainline.ts`
+  - `workers/agent-core/src/host/env.ts`
   - related auth/audit types。
 - **具体功能预期**：
   1. session rule 优先 tenant rule，tenant rule 优先 approval fallback，HITL/hook 语义明确。
-  2. unavailable 不再返回 ask；优先新增 `decision: "unavailable"` 或等价 degraded branch。
-  3. deny/unavailable/ask 都包含 source/reason/trace。
+  2. unavailable 不再返回 ask；优先新增 `decision: "unavailable"` 或等价 degraded branch，并同步更新当前本地 decision union owner：`entrypoint.ts`、`runtime-mainline.ts`、`env.ts`。
+  3. deny/unavailable/ask 都包含 source/reason/trace；其中 `hook-no-handler` 属于 terminal deny，不能 fall through 到 PP1 HITL 或 allow。
 - **具体测试安排**：
   - **单测**：rule priority and unavailable branch。
   - **集成测试**：agent-core authorizeToolUse mapping。
@@ -281,7 +282,7 @@ PP5 Policy Honesty + Reliability Hardening
 - **具体功能预期**：
   1. closure 附 runtime enforce matrix。
   2. closure 附 policy chain priority / unavailable behavior。
-  3. closure 附 stream degraded evidence 与 retry contract。
+  3. closure 附 stream degraded evidence 与 retry contract，并复用 PP0 evidence shape + `latency_alert.threshold_key / exceeded_count / accepted_by_owner / repro_condition`。
 - **具体测试安排**：
   - **单测**：无。
   - **集成测试**：docs consistency。
@@ -329,6 +330,7 @@ PP5 Policy Honesty + Reliability Hardening
 
 - 需要同步更新的设计文档：
   - 原则上无；若 Q18-Q20 改变，回到 PPX-qna。
+  - 若实现期发现 design/QNA 与代码事实冲突，必须先在本 action-plan 或 `PP5-closure.md` 记录发现，再判断是否回到 `PPX-qna.md` 补充 / 修订答案，并同步通知 PP6。
 - 需要同步更新的说明文档 / README：
   - `docs/issue/pro-to-product/PP5-closure.md`
   - 必要时最小更新 `clients/api-docs/runtime.md`、error docs。

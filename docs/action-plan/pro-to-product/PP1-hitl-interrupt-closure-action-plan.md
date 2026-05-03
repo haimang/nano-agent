@@ -167,13 +167,13 @@ PP1 HITL Interrupt Closure
 |------|--------|----------|------------------|----------|----------|----------|
 | P2-01 | HTTP decision wakeup | 在 `applyDecision()` row write + WS update 后，确保等待 runtime 收到 allow/deny/modified payload | `session-control.ts`, DO wake seam | 用户 POST decision 后 agent loop 继续 | route + integration test | decision 可恢复 paused tool call |
 | P2-02 | Terminal status discipline | timeout/superseded/deny 不再悬挂 promise，并能写入 row terminal status | confirmation plane/tests | 所有等待有终态 | targeted tests | 无 infinite pending |
-| P2-03 | Duplicate decision idempotency | 重复提交同一 confirmation_uuid 返回 409 + 已有终态语义 | route tests | 前端 retry 安全 | route test | 不创建新 row、不 silent overwrite |
+| P2-03 | Duplicate decision idempotency | 重复提交同一 confirmation_uuid 返回 `409 confirmation-already-resolved`，沿用 `jsonPolicyError()` 的 `facade-http-v1` envelope；如需终态详情由 detail/list route 读取 | route tests | 前端 retry 安全 | route test | 不创建新 row、不 silent overwrite |
 
 ### 4.3 Phase 3 — Pending Truth & Reconnect Evidence
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P3-01 | Pending read-model verification | 验证 `/confirmations?status=pending` 或等价 route 能恢复 pending UI | confirmation routes/tests | reconnect 后能展示待确认项 | route/e2e | pending list 与 row truth 一致 |
+| P3-01 | Pending read-model verification | 验证 `GET /sessions/{id}/confirmations?status=pending` 能恢复 pending UI | confirmation routes/tests | reconnect 后能展示待确认项 | route/e2e | pending list 与 row truth 一致 |
 | P3-02 | HITL e2e evidence | 扩展 PP0 skeleton，覆盖 interactive ask、timeout、no-client、duplicate decision | e2e tests | PP1 有 frontend-facing evidence | e2e | evidence shape 可直接写 closure |
 | P3-03 | PP1 closure | 写 `PP1-closure.md`，登记 truth gate、latency alert、known issue | docs | PP2/PP3/PP4 可继承稳定 substrate | docs review | closure 不 overclaim |
 
@@ -218,7 +218,7 @@ PP1 HITL Interrupt Closure
   - 可能的 User DO / agent-core wake seam。
 - **具体功能预期**：
   1. `POST /sessions/{id}/confirmations/{uuid}/decision` 写 row 后唤醒等待者。
-  2. duplicate decision 返回 documented conflict，不创建第二个 decision。
+  2. duplicate decision 返回 `facade-http-v1` envelope 的 `409 confirmation-already-resolved`，不创建第二个 decision；如需终态详情由 detail/list route 补读。
   3. timeout/superseded 不留 pending。
 - **具体测试安排**：
   - **单测**：confirmation plane terminal transition。
@@ -242,9 +242,9 @@ PP1 HITL Interrupt Closure
   - pending confirmations route/tests。
   - 必要的 `clients/api-docs/confirmations.md` 最小 truth note。
 - **具体功能预期**：
-  1. 前端刷新/重连后能通过 read model 找回 pending confirmation。
+  1. 前端刷新/重连后能通过 `GET /sessions/{id}/confirmations?status=pending` 找回 pending confirmation。
   2. PP1 e2e 输出 PP0 统一 evidence shape。
-  3. closure 登记 latency alert 与 no-client edge。
+  3. closure 登记 latency alert 与 no-client edge，并复用 PP0 定义的 `latency_alert.threshold_key / exceeded_count / accepted_by_owner / repro_condition`。
 - **具体测试安排**：
   - **单测**：无新增或仅 helper。
   - **集成测试**：pending list/detail route test。
@@ -279,19 +279,20 @@ PP1 HITL Interrupt Closure
 | row/wait 双写不一致 | row pending 但 runtime 没 await，或 wait 了但 row 不存在 | `high` | row-first + wakeup test 必须同时覆盖 |
 | no-client 假 pending | 无前端在线却创建 pending | `medium` | 明确 no-decider/timeout terminal |
 | decision race | duplicate/retry 覆盖已有终态 | `medium` | 409 + 已有终态语义测试 |
-| PP3 owner file 冲突 | PP3 也会改 `session-do-runtime.ts` | `medium` | PP1 closure 必须标明共享 owner file 稳定后 PP3 才切入 |
+| PP3 owner file 冲突 | PP3 也可能改 `session-do-runtime.ts` | `medium` | PP1 closure 必须冻结共享 owner file 清单（至少 `session-do-runtime.ts`）并声明稳定后 PP3 才切入 |
 
 ### 7.2 约束与前提
 
 - **技术前提**：PP0 skeleton 已存在或本阶段先补齐可扩展 e2e owner file。
 - **运行时前提**：D1 confirmation plane 与 User DO/agent-core wait seam 可通信。
 - **组织协作前提**：FE-2 中期 mock review 会复用 PP1 输出。
-- **上线 / 合并前提**：不能新增 confirmation kind 或改 decision transport。
+- **上线 / 合并前提**：不能新增 confirmation kind 或改 decision transport；PP1 closure 还必须列出共享 owner file 稳定清单，供 PP3 只通过既定 extension point 切入。
 
 ### 7.3 文档同步要求
 
 - 需要同步更新的设计文档：
   - 原则上无；若实现发现 design 决策不成立，回到 `PPX-qna.md` amend。
+  - 若实现期发现 design/QNA 与代码事实冲突，必须先在本 action-plan 或 `PP1-closure.md` 记录发现，再判断是否回到 `PPX-qna.md` 补充 / 修订答案，并同步通知 PP2 / PP3 / PP4。
 - 需要同步更新的说明文档 / README：
   - `docs/issue/pro-to-product/PP1-closure.md`
   - 必要时最小更新 `clients/api-docs/confirmations.md`
@@ -334,7 +335,7 @@ PP1 HITL Interrupt Closure
 1. `ask` 真进入 pending interrupt，不再 error-out。
 2. allow / deny / timeout / no-client / duplicate decision 均有真实证据。
 3. pending read model 能支撑前端刷新恢复。
-4. PP1 closure 明确共享 owner file 已稳定到可交给 PP2/PP3/PP4 的程度。
+4. PP1 closure 明确共享 owner file 稳定清单（至少 `session-do-runtime.ts`）与可交给 PP2/PP3/PP4 的 extension point。
 
 ### 8.3 完成定义（Definition of Done）
 

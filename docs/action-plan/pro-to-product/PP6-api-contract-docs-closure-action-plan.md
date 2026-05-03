@@ -148,7 +148,7 @@ PP6 API Contract Docs Closure
 |------|------|------|----------|
 | public facade HTTP routes | `in-scope` | frontend 直接调用 | 无 |
 | public WS frames | `in-scope` | frontend 直接订阅 | 无 |
-| debug routes | `in-scope if frontend inspector uses` | public facade GET，可被前端诊断消费 | 若明确仅内部运维使用，可标 admin/debug-only |
+| debug routes | `in-scope if frontend inspector uses` | public facade GET，可被前端诊断消费；Phase 1 inventory 必须为每条 debug route 标记 `frontend-inspector=yes/no` | 若明确仅内部运维使用，可标 admin/debug-only |
 | service binding RPC | `out-of-scope` | 前端不直连 | SDK/admin charter 改边界 |
 | OpenAPI generator | `out-of-scope` | Q22 冻结不引入 | 下一阶段 SDK/typegen |
 
@@ -179,7 +179,7 @@ PP6 API Contract Docs Closure
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
 | P1-01 | 22-doc inventory | 对 `clients/api-docs` 当前文件与 README 22-doc index 对账 | `clients/api-docs/README.md` | pack 清单准确 | file list + review | 无缺失/多余未解释文档 |
-| P1-02 | Hook docs placement | 根据 PP4 closure 决定新增 `hooks.md` 或合并到现有专题 | hook docs | hook contract 有唯一位置 | docs review | PP4 public surface 不游离 |
+| P1-02 | Hook docs placement | 根据 PP4 的 public owner file 冻结 docs 位置：若新增 `workers/orchestrator-core/src/facade/routes/session-hooks.ts`，则新增 `hooks.md`；若最终复用既有 route owner，则合并到对应专题 | hook docs | hook contract 有唯一位置 | docs review | PP4 public surface 不游离 |
 
 ### 4.2 Phase 2 — Facade Endpoint Matrix Sweep
 
@@ -208,7 +208,7 @@ PP6 API Contract Docs Closure
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
 | P5-01 | PP6 closure | 写 PP6 docs closure，列出 pack sweep、labels、remaining docs gaps | `PP6-closure.md` | PP6 可审查 | docs review | closure evidence 完整 |
-| P5-02 | Final closure | 汇总 PP0-PP6 closure，按 7 truth gates 给最终 verdict | `pro-to-product-final-closure.md` | 阶段收口诚实 | closure review | full close / known issues / cannot close 判定有证据 |
+| P5-02 | Final closure | 汇总 PP0-PP6 closure，按 7 truth gates 与 PP0 unified evidence shape / `latency_alert.threshold_key / exceeded_count / accepted_by_owner / repro_condition` 给最终 verdict | `pro-to-product-final-closure.md` | 阶段收口诚实 | closure review | full close / known issues / cannot close 判定有证据 |
 
 ---
 
@@ -225,7 +225,7 @@ PP6 API Contract Docs Closure
 - **具体功能预期**：
   1. 22-doc pack 与文件系统一致。
   2. README 说明 pro-to-product baseline 与 readiness label law。
-  3. hook docs 有明确位置。
+  3. hook docs 位置由 PP4 public owner file 触发：`session-hooks.ts` → 新增 `hooks.md`；否则合并到已有专题并在 README 标明唯一 owner。
 - **具体测试安排**：
   - **单测**：无。
   - **集成测试**：无。
@@ -323,7 +323,7 @@ PP6 API Contract Docs Closure
   - 无固定修改；如 final closure 模板要求可同步 index。
 - **具体功能预期**：
   1. PP6 closure 列出 docs pack inventory、route sweep、frame/error sweep、readiness label coverage。
-  2. final closure 按 7 truth gates 给出 verdict。
+  2. final closure 按 7 truth gates 给出 verdict，并只消费 PP1-PP5 按 PP0 unified evidence shape 输出的证据。
   3. 若下一阶段 SDK/type generation 必要，登记 handoff signal，不在 PP6 实现 generator。
 - **具体测试安排**：
   - **单测**：无。
@@ -373,6 +373,7 @@ PP6 API Contract Docs Closure
 
 - 需要同步更新的设计文档：
   - 原则上无；PP6 是 design 执行层，不改 owner decisions。
+  - 若 docs sweep 发现 design/QNA 与代码事实冲突，必须先在本 action-plan 或 `PP6-closure.md` 记录发现，再判断是否回到 `PPX-qna.md` 补充 / 修订答案，并同步通知 final closure reviewer。
 - 需要同步更新的说明文档 / README：
   - `clients/api-docs/**/*.md`
   - `docs/issue/pro-to-product/PP6-closure.md`

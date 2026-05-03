@@ -8,13 +8,13 @@
 > 文件位置: `docs/action-plan/pro-to-product/PP0-charter-truth-lock-action-plan.md`
 > 上游前序 / closure:
 > - `docs/charter/plan-pro-to-product.md` §6.1-§7.1（PP0 phase 定义与交付物）
-> - `docs/design/pro-to-product/00-agent-loop-truth-model.md`
-> - `docs/design/pro-to-product/01-frontend-trust-contract.md`
 > 下游交接:
 > - `docs/action-plan/pro-to-product/PP1-hitl-interrupt-closure-action-plan.md`
 > - `docs/issue/pro-to-product/PP0-closure.md`
 > - `docs/issue/pro-to-product/pro-to-product-final-closure.md`
 > 关联设计 / 调研文档:
+> - `docs/design/pro-to-product/00-agent-loop-truth-model.md`（本计划锁定并校验的 cross-cutting design）
+> - `docs/design/pro-to-product/01-frontend-trust-contract.md`（本计划锁定并校验的 frontend contract design）
 > - `docs/design/pro-to-product/PPX-qna.md` Q1-Q5
 > - `clients/api-docs/README.md`
 > - `clients/api-docs/session-ws-v1.md`
@@ -110,7 +110,7 @@ PP0 Charter & Truth Lock
 ### 2.1 In-Scope（本次 action-plan 明确要做）
 
 - **[S1]** 固化 7 truth gates 的 phase-by-phase 对账方式，明确 phase sub-gate 只能映射到 7 gates。
-- **[S2]** 固化 evidence shape：`transport`、`trace_uuid`、`start_ts`、`first_visible_ts`、`terminal_or_degraded_ts`、`verdict`。
+- **[S2]** 固化 evidence shape：`transport`、`trace_uuid`、`start_ts`、`first_visible_ts`、`terminal_or_degraded_ts`、`verdict`；phase closure 统一追加 `latency_alert.threshold_key / exceeded_count / accepted_by_owner / repro_condition`。
 - **[S3]** 建立首个 pro-to-product e2e skeleton，至少能同时断言一条 HTTP control path、一条 WS event path、一个 durable/read-model truth。
 - **[S4]** 完成 FE-1 handoff：public surface taxonomy、frontend state minimum、PP1 start assumptions。
 - **[S5]** 输出 `PP0-closure.md`，诚实登记 skeleton 覆盖范围、latency alert 与剩余 gap。
@@ -155,14 +155,14 @@ PP0 Charter & Truth Lock
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P1-01 | Truth gate 对账表 | 把 7 truth gates 写成 PP1-PP6 closure checklist，并记录每个 gate 的 owner phase | `PP0-closure.md` | closure reviewer 不再重新解释 hard exit | 文档一致性自检 | 每个 gate 有 phase owner、证据类型、cannot-close 触发条件 |
+| P1-01 | Truth gate 对账表 | 把 7 truth gates 写成 PP1-PP6 closure checklist，并同步定义 closure 级 `latency_alert` 字段：`threshold_key / exceeded_count / accepted_by_owner / repro_condition` | `PP0-closure.md` | closure reviewer 不再重新解释 hard exit | 文档一致性自检 | 每个 gate 有 phase owner、证据类型、cannot-close 触发条件 |
 | P1-02 | Frontend boundary freeze | 确认 frontend 只消费 orchestrator facade、WS frames、runtime/read-model/docs，不消费 internal RPC | `PP0-closure.md`, `clients/api-docs/README.md` | PP6 sweep 范围不再漂移 | 与 `PPX-qna.md` Q3/Q5 对照 | public/internal taxonomy 与 `01` design 一致 |
 
 ### 4.2 Phase 2 — E2E Skeleton Wiring
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P2-01 | E2E skeleton owner file 定位 | 在现有 `test/package-e2e` 或 `test/cross-e2e` 下选择最小 owner file，避免新建平行框架 | `package.json`, `test/**` | skeleton 能被 root scripts 运行 | `pnpm test:package-e2e` 或 `pnpm test:cross-e2e` | 新 skeleton 被现有脚本覆盖 |
+| P2-01 | E2E skeleton owner file 定位 | 冻结 `test/cross-e2e/16-pro-to-product-baseline-skeleton.test.mjs` 为 PP0 skeleton owner file，避免新建平行框架 | `package.json`, `test/cross-e2e/16-pro-to-product-baseline-skeleton.test.mjs` | skeleton 能被 root scripts 运行 | `pnpm test:cross-e2e` | 新 skeleton 被现有脚本覆盖 |
 | P2-02 | Evidence shape output | 为 skeleton 添加统一 evidence object：transport、trace、timestamps、terminal/degraded verdict | e2e helper / fixture | 后续 PP1-PP6 可复用证据形态 | targeted node test | 输出字段齐全且可被 closure 引用 |
 | P2-03 | Latency alert recording | 记录 `first_visible_ts` 与 `terminal_or_degraded_ts`，只登记超阈值，不作为测试硬失败 | e2e helper / closure evidence | latency 不被静默忽略，也不阻塞功能 truth | targeted node test | closure 能看到超阈值次数与范围 |
 
@@ -204,17 +204,17 @@ PP0 Charter & Truth Lock
 - **Phase 目标**：建立首个真实代码路径 skeleton，作为 PP1-PP6 扩展 e2e 的起点。
 - **本 Phase 对应编号**：`P2-01`, `P2-02`, `P2-03`
 - **本 Phase 新增文件**：
-  - `test/package-e2e/**/pro-to-product-*.test.mjs` 或 `test/cross-e2e/**/pro-to-product-*.test.mjs`（以现有目录结构为准）。
+  - `test/cross-e2e/16-pro-to-product-baseline-skeleton.test.mjs`
 - **本 Phase 修改文件**：
   - 必要的 e2e helper / fixture。
 - **具体功能预期**：
-  1. skeleton 能观测 HTTP control path、WS event path 与 durable/read-model truth。
-  2. skeleton 输出统一 evidence shape，后续 phase 不再重新发明证据格式。
-  3. latency 只登记，不以偶发超阈值阻塞 hard gate。
+  1. 首个 baseline skeleton 固定覆盖一条当前已 live 的 facade 控制链：`PATCH /sessions/{id}/runtime` → `session.runtime.update` → `GET /sessions/{id}/runtime` / runtime read-model truth。
+  2. PP1 HITL、PP2 compact、PP3 recovery、PP4 hook 只在 PP0 标记 `pending-PP*-implementation` 扩展点，不要求 PP0 预先接通这些主线。
+  3. skeleton 输出统一 evidence shape，phase closure 统一复用 `latency_alert.threshold_key / exceeded_count / accepted_by_owner / repro_condition`。
 - **具体测试安排**：
   - **单测**：无。
   - **集成测试**：targeted Node e2e。
-  - **回归测试**：`pnpm test:package-e2e` 或 `pnpm test:cross-e2e`；必要时 `pnpm test:e2e`。
+  - **回归测试**：`pnpm test:cross-e2e`；必要时 `pnpm test:e2e`。
   - **手动验证**：检查 evidence output 是否能被 closure 直接引用。
 - **收口标准**：
   - skeleton 被现有 `package.json` scripts 覆盖。
@@ -280,6 +280,7 @@ PP0 Charter & Truth Lock
 
 - 需要同步更新的设计文档：
   - 原则上无；只有发现 `00/01` 与 owner QNA 冲突时才修正。
+  - 若实现期发现 design/QNA 与代码事实冲突，必须先在本 action-plan 或 `PP0-closure.md` 记录发现，再判断是否回到 `PPX-qna.md` 补充 / 修订答案，并同步通知受影响下游 phase。
 - 需要同步更新的说明文档 / README：
   - `docs/issue/pro-to-product/PP0-closure.md`
 - 需要同步更新的测试说明：

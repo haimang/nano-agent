@@ -9,8 +9,6 @@
 > 上游前序 / closure:
 > - `docs/action-plan/pro-to-product/PP1-hitl-interrupt-closure-action-plan.md`
 > - `docs/issue/pro-to-product/PP1-closure.md`
-> - `docs/action-plan/pro-to-product/PP3-reconnect-session-recovery-action-plan.md`
-> - `docs/issue/pro-to-product/PP3-closure.md`
 > - `docs/design/pro-to-product/05-hook-delivery-closure.md`
 > 下游交接:
 > - `docs/action-plan/pro-to-product/PP5-policy-reliability-hardening-action-plan.md`
@@ -61,7 +59,7 @@ PP4 采用 **先开放最小 register surface，再接 PreToolUse caller，最�
 
 | Phase | 名称 | 规模 | 目标摘要 | 依赖前序 |
 |------|------|------|----------|----------|
-| Phase 1 | Session Hook Registration | `M` | 增加 session-scoped register/list/unregister，限制 event/runtime/matcher | `PP1 + PP3 closure` |
+| Phase 1 | Session Hook Registration | `M` | 增加 session-scoped register/list/unregister，限制 event/runtime/matcher | `PP1 closure` |
 | Phase 2 | PreToolUse Production Caller | `L` | 工具执行前 emit PreToolUse，并尊重 block/update outcome | `Phase 1` |
 | Phase 3 | Observability & Frontend Visibility | `M` | 产出 audit、hook.broadcast、redaction 与 docs truth | `Phase 2` |
 | Phase 4 | Minimal Hook E2E & Closure | `S` | e2e 证明 register→tool call→outcome→visibility 闭环 | `Phase 3` |
@@ -94,9 +92,9 @@ PP4 采用 **先开放最小 register surface，再接 PreToolUse caller，最�
 ```text
 PP4 Hook Delivery Closure
 ├── Phase 1: Session Hook Registration
-│   ├── workers/agent-core/src/hooks/registry.ts
-│   ├── workers/agent-core/src/hooks/catalog.ts
-│   └── public/session-scoped register route or control seam
+│   ├── workers/orchestrator-core/src/facade/routes/session-hooks.ts（新建）
+│   ├── workers/orchestrator-core/src/facade/route-registry.ts
+│   └── workers/agent-core/src/hooks/registry.ts
 ├── Phase 2: PreToolUse Production Caller
 │   ├── workers/agent-core/src/host/runtime-mainline.ts
 │   ├── workers/agent-core/src/kernel/runner.ts
@@ -104,7 +102,7 @@ PP4 Hook Delivery Closure
 ├── Phase 3: Observability & Frontend Visibility
 │   ├── workers/agent-core/src/hooks/audit.ts
 │   ├── packages/nacp-session/src/stream-event.ts
-│   └── hook.broadcast redaction tests
+│   └── workers/agent-core/src/hooks/redaction.ts（新建）
 └── Phase 4: Minimal Hook E2E & Closure
     ├── test/cross-e2e/**/*.test.mjs
     ├── clients/api-docs/hooks.md or relevant docs（必要最小同步）
@@ -138,7 +136,7 @@ PP4 Hook Delivery Closure
 |------|------|------|----------|
 | PreToolUse block/update | `in-scope` | T5 最有信息量的 minimal live loop | 无 |
 | Session register/list/unregister | `in-scope` | 没有用户驱动 register 不算 product hook | 无 |
-| PermissionRequest no handler | `in-scope as constraint` | Q17 冻结 fail-closed | 若 owner 修订 Q17 |
+| PermissionRequest no handler | `in-scope as constraint` | Q17 冻结 fail-closed；PP4 dispatcher 返回 terminal deny / diagnostics，PP5 policy chain 收到 `hook-no-handler` 后不得继续 fall through 到 HITL/allow | 若 owner 修订 Q17 |
 | PostToolUse | `secondary` | 非 blocking，不能证明 outcome 改变行为 | PP4 完成后扩展 |
 | Shell hook | `out-of-scope` | Worker runtime 不支持 fork/exec | 需要 sandbox worker charter |
 
@@ -148,14 +146,14 @@ PP4 Hook Delivery Closure
 
 | 编号 | 所属 Phase | 工作项 | 类型 | 涉及模块 / 文件 | 目标一句话 | 风险等级 |
 |------|------------|--------|------|------------------|------------|----------|
-| P1-01 | Phase 1 | Hook registration control surface | `add` | agent-core/orchestrator facade seam | 用户可注册 session hook | `high` |
+| P1-01 | Phase 1 | Hook registration control surface | `add` | `workers/orchestrator-core/src/facade/routes/session-hooks.ts`, `workers/orchestrator-core/src/facade/route-registry.ts`, `workers/agent-core/src/hooks/registry.ts` | 用户可注册 session hook | `high` |
 | P1-02 | Phase 1 | Handler validation | `add` | hooks schema/catalog/tests | 非法 handler 被拒绝 | `medium` |
 | P1-03 | Phase 1 | Register persistence/scope | `add` | registry/session state | handler scope 不跨 session 泄漏 | `medium` |
 | P2-01 | Phase 2 | PreToolUse caller | `update` | `runtime-mainline.ts`, tool execution path | 工具前触发 hook | `high` |
 | P2-02 | Phase 2 | Block outcome enforcement | `update` | dispatcher/runtime tests | block 真阻止工具 | `high` |
 | P2-03 | Phase 2 | Updated input validation | `update` | tool validation path/tests | updatedInput 重新 validate | `high` |
 | P3-01 | Phase 3 | Audit outcome | `update` | `hooks/audit.ts` | blocked/updated 有 audit | `medium` |
-| P3-02 | Phase 3 | Frontend broadcast/redaction | `update` | `stream-event.ts`, broadcast path | outcome 前端可见且脱敏 | `medium` |
+| P3-02 | Phase 3 | Frontend broadcast/redaction | `update` | `packages/nacp-session/src/stream-event.ts`, `workers/agent-core/src/hooks/redaction.ts`, broadcast path | outcome 前端可见且脱敏 | `medium` |
 | P4-01 | Phase 4 | Hook e2e | `add` | `test/cross-e2e` | 证明 minimal live loop | `high` |
 | P4-02 | Phase 4 | PP4 closure | `add` | `docs/issue/pro-to-product/PP4-closure.md` | T5 truth 可被 PP5/PP6 引用 | `low` |
 
@@ -167,7 +165,7 @@ PP4 Hook Delivery Closure
 
 | 编号 | 工作项 | 工作内容 | 涉及文件 / 模块 | 预期结果 | 测试方式 | 收口标准 |
 |------|--------|----------|------------------|----------|----------|----------|
-| P1-01 | Hook registration control surface | 增加 session-scoped register/list/unregister caller | agent-core/orchestrator facade seam | 用户能注册 PreToolUse handler | route/integration tests | register 后 registry 可查 |
+| P1-01 | Hook registration control surface | 新建 `session-hooks.ts` 作为 facade owner file，负责 auth/validation/session ownership，并把 register/list/unregister 转发给 agent-core registry | `session-hooks.ts`, `route-registry.ts`, `registry.ts` | 用户能注册 PreToolUse handler | route/integration tests | register 后 registry 可查 |
 | P1-02 | Handler validation | 校验 event/runtime/matcher/timeout/source，不允许 shell runtime | hook schema/catalog/tests | invalid handler fail-visible | unit tests | 不 silent register |
 | P1-03 | Register persistence/scope | 确保 session-scoped handler 不泄漏到其他 session，必要时持久化/恢复 | registry/session state | scope 明确 | tests | reconnect 后行为符合设计 |
 
@@ -204,11 +202,12 @@ PP4 Hook Delivery Closure
 - **本 Phase 新增文件**：
   - hook registration route/control tests。
 - **本 Phase 修改文件**：
+  - `workers/orchestrator-core/src/facade/routes/session-hooks.ts`（新建）
+  - `workers/orchestrator-core/src/facade/route-registry.ts`
   - `workers/agent-core/src/hooks/registry.ts`
   - hook handler schema/validation owner file
-  - 可能的 `orchestrator-core` facade route 或 session-control seam。
 - **具体功能预期**：
-  1. session user 可以注册/list/unregister PreToolUse handler。
+  1. session user 可以通过 facade `session-hooks.ts` 完成 register/list/unregister，orchestrator 负责 auth/validation/session ownership，agent-core registry 负责存储与排序。
   2. 只允许 worker-safe runtime，不允许 shell。
   3. handler source/scope/priority 不越权。
 - **具体测试安排**：
@@ -235,7 +234,7 @@ PP4 Hook Delivery Closure
 - **具体功能预期**：
   1. 工具执行前构造 payload：session、turn、tool name、redacted input、trace。
   2. block outcome 阻止执行并返回可解释 diagnostics。
-  3. updatedInput outcome 重新 validate 后执行；invalid update fail-visible。
+  3. updatedInput outcome 重新 validate 后执行；invalid update fail-visible；`kernel/runner.ts` 的 generic `hook_emit` 仅作 precedent，不得作为 PreToolUse closure 证据。
 - **具体测试安排**：
   - **单测**：block/update/continue outcome mapping。
   - **集成测试**：真实 tool call path。
@@ -255,11 +254,13 @@ PP4 Hook Delivery Closure
   - audit/broadcast tests。
 - **本 Phase 修改文件**：
   - `workers/agent-core/src/hooks/audit.ts`
+  - `packages/nacp-session/src/stream-event.ts`
+  - `workers/agent-core/src/hooks/redaction.ts`（新建）
   - stream frame/broadcast owner file。
 - **具体功能预期**：
   1. blocked/updated/diagnostics outcome 写 audit。
-  2. frontend 可见 `hook.broadcast` 或等价 frame。
-  3. payload 按 redaction hints 脱敏。
+  2. frontend 可见 `hook.broadcast`；若复用现有 frame，payload 必须带 `caller: "pre-tool-use" | "step-emit"` 或等价 source 字段，避免与 generic `hook_emit` provenance 混淆。
+  3. payload 由 `workers/agent-core/src/hooks/redaction.ts` 按 catalog redaction hints 脱敏。
 - **具体测试安排**：
   - **单测**：audit record builder、redaction。
   - **集成测试**：runtime emit → stream event。
@@ -283,7 +284,7 @@ PP4 Hook Delivery Closure
 - **具体功能预期**：
   1. e2e 从 register 开始，不使用内部 fixture 直接注入。
   2. 至少覆盖 block 或 updatedInput 一条能改变工具行为的 outcome。
-  3. closure 列出 live hooks 与 catalog-only hooks。
+  3. closure 列出 live hooks 与 catalog-only hooks，并按 PP0 evidence shape + `latency_alert.threshold_key / exceeded_count / accepted_by_owner / repro_condition` 登记 hook latency alert。
 - **具体测试安排**：
   - **单测**：无新增或 helper。
   - **集成测试**：register + tool path。
@@ -322,7 +323,7 @@ PP4 Hook Delivery Closure
 
 ### 7.2 约束与前提
 
-- **技术前提**：PP1 HITL 与 PP3 recovery 已稳定；hook e2e 可使用 PP0 evidence skeleton。
+- **技术前提**：PP1 HITL 已稳定；hook e2e 复用 PP0 evidence skeleton，若 PP3 已闭合可选扩展 reconnect 场景，但不是 PP4 start gate。
 - **运行时前提**：worker-safe hook runtime 可执行，不依赖 shell。
 - **组织协作前提**：frontend 需要确认最小 hook visibility 是否足够调试/展示。
 - **上线 / 合并前提**：不扩 catalog enum，不支持 multi-hook platform UI。
@@ -331,6 +332,7 @@ PP4 Hook Delivery Closure
 
 - 需要同步更新的设计文档：
   - 原则上无；若 Q15-Q17 改变，回到 PPX-qna。
+  - 若实现期发现 design/QNA 与代码事实冲突，必须先在本 action-plan 或 `PP4-closure.md` 记录发现，再判断是否回到 `PPX-qna.md` 补充 / 修订答案，并同步通知 PP5 / PP6。
 - 需要同步更新的说明文档 / README：
   - `docs/issue/pro-to-product/PP4-closure.md`
   - 必要时新增或最小更新 `clients/api-docs` hook 相关条目。
@@ -383,6 +385,6 @@ PP4 Hook Delivery Closure
 |------|----------|
 | 功能 | PreToolUse minimal live loop 从注册到 outcome 全闭合 |
 | 测试 | registry/caller/outcome/visibility/e2e 均覆盖 |
-| 文档 | PP4 closure 诚实区分 live 与 catalog-only |
+| 文档 | PP4 closure 诚实区分 live 与 catalog-only，并登记 hook latency alert |
 | 风险收敛 | 无 full catalog scope creep、无 shell hook、无 payload 泄露 |
 | 可交付性 | PP5 可基于 hook/policy 优先级继续 hardening |
