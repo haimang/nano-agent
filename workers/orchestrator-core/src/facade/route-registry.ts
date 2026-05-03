@@ -8,6 +8,7 @@ import { tryHandleSessionBridgeRoute } from "./routes/session-bridge.js";
 import { tryHandleSessionContextRoute } from "./routes/session-context.js";
 import { tryHandleSessionControlRoute } from "./routes/session-control.js";
 import { tryHandleSessionFilesRoute } from "./routes/session-files.js";
+import { tryHandleSessionHooksRoute } from "./routes/session-hooks.js";
 import { tryHandleSessionItemsRoute } from "./routes/session-items.js";
 import { tryHandleSessionRuntimeRoute } from "./routes/session-runtime.js";
 import { ensureTenantConfigured } from "./shared/request.js";
@@ -43,6 +44,9 @@ export async function dispatchFacadeRoute(
 
   const sessionRuntime = await tryHandleSessionRuntimeRoute(request, env);
   if (sessionRuntime) return sessionRuntime;
+
+  const sessionHooks = await tryHandleSessionHooksRoute(request, env);
+  if (sessionHooks) return sessionHooks;
 
   const sessionItems = await tryHandleSessionItemsRoute(request, env);
   if (sessionItems) return sessionItems;

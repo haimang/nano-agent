@@ -22,6 +22,9 @@ export interface OrchestratorCoreEnv extends AuthEnv {
     streamSnapshot?: AgentRpcMethod;
     permissionDecision?: AgentRpcMethod;
     elicitationAnswer?: AgentRpcMethod;
+    hookRegister?: AgentRpcMethod;
+    hookList?: AgentRpcMethod;
+    hookUnregister?: AgentRpcMethod;
   };
   readonly ORCHESTRATOR_AUTH?: OrchestratorAuthRpcService & Fetcher;
   readonly BASH_CORE?: Fetcher;
