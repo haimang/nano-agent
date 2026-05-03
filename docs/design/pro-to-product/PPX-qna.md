@@ -209,7 +209,7 @@
 - **影响范围**：`PP3`、`PP6`、session-ws / resume docs、frontend recovery UX
 - **为什么必须确认**：如果允许 silent fallback，前端会误以为自己拿到了连续历史，实际却已经丢帧，恢复 contract 将不可信。
 - **当前建议 / 倾向**：**禁止 silent fallback。** 必须显式 degraded / replay_lost。
-- **Reasoning**：这个问题出现，是因为最新状态快照看起来像是一个“能继续用”的兜底，但它不能替代真实 replay 语义。推荐路线更稳，因为它让前端明确知道“你现在恢复的是 latest-state，而不是完整事件链”；如果不拍板，recovery 看似平滑，实际是在隐式吞掉断点。
+- **Reasoning**：这个问题出现，是因为最新状态快照看起来像是一个“能继续用”的兜底，但它不能替代真实 replay 语义。推荐路线更稳，因为它让前端明确知道“你现在恢复的是 latest-state，而不是完整事件链”；同时当前 HTTP `resume` 端已经能返回 `replay_lost`，但 WS attach 端还缺等价 degraded 表达，所以拍板时还要一并明确：是要求 PP3 补齐 WS degraded frame，还是要求前端先走 HTTP resume 再 WS attach。如果不拍板，recovery 看似平滑，实际是在隐式吞掉断点。
 
 - **Opus的对问题的分解**：
 - **Opus的对GPT推荐线路的分析**：
@@ -255,7 +255,7 @@
 - **影响范围**：`PP4/PP5`、hook/policy 优先级、frontend permission UX
 - **为什么必须确认**：如果这一点不冻结，PP4 action-plan 会在“保持安全”与“保持可用”之间摇摆，前端也无法确定无 handler 时的预期。
 - **当前建议 / 倾向**：**优先 fallback confirmation；只有 confirmation substrate 不可用时才 fail-closed。**
-- **Reasoning**：这个问题出现，是因为 PermissionRequest 同时踩在 hook、policy、HITL 三条链的交汇处。纯 fail-closed 最安全，但会把“没注册 handler”直接放大成产品死端；优先回退到现有 confirmation，更能复用 PP1 的真实 interrupt substrate，同时仍然维持安全边界；如果不拍板，PP4/PP5 会各自实现一套兜底逻辑。
+- **Reasoning**：这个问题出现，是因为 PermissionRequest 同时踩在 hook、policy、HITL 三条链的交汇处，而且当前 `workers/agent-core/src/hooks/catalog.ts` 还把“零 handler = denied”写成了 fail-closed 注释。这里有两种**不等价**的产品语义：`fail-closed` = 默认拒绝，handler 缺失直接视为 deny；`fallback confirmation` = 默认把决定权交回用户，用户仍可 allow。当前建议更偏向后者，因为它能复用 PP1 的真实 interrupt substrate，但这也意味着如果业主采纳该路线，就必须同步修改 catalog 注释与对应 guard 语义，而不是只改 action-plan 文案。如果不拍板，PP4/PP5 会各自实现一套兜底逻辑。
 
 - **Opus的对问题的分解**：
 - **Opus的对GPT推荐线路的分析**：
@@ -283,7 +283,7 @@
 - **影响范围**：`PP5`、LLM streaming reliability、frontend retry strategy、error docs
 - **为什么必须确认**：如果不冻结 baseline，PP5 action-plan 会在“必须补内部 retry”与“先把 truth 写清”之间反复摇摆。
 - **当前建议 / 倾向**：**不强求完全对齐；至少要做到 retry/error honesty，并明确是“内部 retry”还是“显式 degraded + client retry”。**
-- **Reasoning**：这个问题出现，是因为 non-stream 与 stream path 当前可靠性能力不一致。推荐路线更稳，因为它优先消除 contract ambiguity，让前端知道什么时候该等平台重试、什么时候该自己 retry；如果不拍板，PP5 可能既没补齐机制，也没写清真相。
+- **Reasoning**：这个问题出现，是因为 non-stream 与 stream path 当前可靠性能力不一致。推荐路线更稳，因为它优先消除 contract ambiguity，让前端知道什么时候该等平台重试、什么时候该自己 retry；这里真正不能接受的不是“选择哪条路”，而是让 PP5 在实现结束时仍然保持语义未冻结。因此这题必须在 PP5 implementation/closure 之前收口成单一路径：要么内部补 stream retry，要么显式 degraded + client retry + docs truth；不能继续把两条都写成 open option。
 
 - **Opus的对问题的分解**：
 - **Opus的对GPT推荐线路的分析**：
@@ -355,4 +355,3 @@
 - 一旦某题填入 `业主回答`，后续 `docs/design/pro-to-product/*.md`、`docs/action-plan/pro-to-product/*.md`、`docs/issue/pro-to-product/*.md` 若引用该决策，均以本文件为唯一口径。
 - 如果后续要推翻答案，必须在本文件对应题目下追加修订说明，而不是在别处静默改口。
 - 各 design 文件中原有的 `D-xx` 表述可保留为历史上下文，但不再作为最终 owner-answer source。
-

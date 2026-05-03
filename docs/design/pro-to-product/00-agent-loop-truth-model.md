@@ -1,4 +1,4 @@
-# Nano-Agent 功能簇设计模板
+# PP0 / Agent Loop Truth Model
 
 > 功能簇: `PP0 / Agent Loop Truth Model`
 > 讨论日期: `2026-05-02`
@@ -18,6 +18,7 @@
 - **本次讨论的前置共识**：
   - 当前 baseline 已冻结为 `PP0-PP6 / 8-design / batch-review / e2e-first`。
   - 本阶段 closure 受 7 条 truth gates 约束，不能用 schema、文档或 emitter-only 成果替代 live caller。
+  - 参考 CLI 代码已 vendored 到当前仓库 `context/gemini-cli`、`context/codex`、`context/claude-code`，引用不依赖外部网络状态。
 - **本设计必须回答的问题**：
   - 什么才算 nano-agent 的 agent loop truth，而不是“能力大概存在”？
   - PP1-PP6 的局部设计如何共享同一套 truth model，避免各自闭合但整体前端不可用？
@@ -47,6 +48,18 @@
 
 - `docs/charter/plan-pro-to-product.md` — §10 的 7 truth gates 是本设计的硬约束。
 - `docs/eval/pro-to-product/closing-thoughts-by-GPT.md` — 本设计继承 `e2e-first / batch-review / minimal-loop-first` 的阶段方法论。
+
+### 1.3 Phase / Design 映射
+
+| Phase | 设计文件 | 说明 |
+|------|----------|------|
+| `PP0` | `00-agent-loop-truth-model.md` + `01-frontend-trust-contract.md` | PP0 同时冻结 truth model 与 frontend contract boundary |
+| `PP1` | `02-hitl-interrupt-closure.md` | T1 |
+| `PP2` | `03-context-budget-closure.md` | T2 |
+| `PP3` | `04-reconnect-session-recovery.md` | T3 + T4 运行时证据 owner |
+| `PP4` | `05-hook-delivery-closure.md` | T5 |
+| `PP5` | `06-policy-reliability-hardening.md` | T6 |
+| `PP6` | `07-api-contract-docs-closure.md` | T7 + 全量 docs closure |
 
 ---
 
@@ -101,6 +114,7 @@
 - **解耦对象**：truth gate 与具体实现任务。
 - **解耦原因**：truth gate 是“必须证明什么”，action-plan 是“怎么实现”；如果混在一起，closure 会被任务完成率污染。
 - **依赖边界**：design 可以定义 evidence shape，但具体命令、文件改动、迁移执行必须留给 action-plan。
+- **D1 纪律**：本设计自身不引入 schema 变更；若任一后续 phase 需要 D1 例外，必须按 charter §4.5 走受控申请，并从 `018` 起编号。
 
 ### 3.4 聚合点（哪里要刻意收敛）
 
@@ -274,11 +288,11 @@
 ### 7.3 非功能性要求与验证策略
 
 - **性能目标**：沿用 charter §9.2 的 4 个 latency baseline。
-- **可观测性要求**：每个 truth gate 至少有一条 public 或 closure-visible evidence。
+- **可观测性要求**：每个 truth gate 至少有一条 public 或 closure-visible evidence；evidence 记录至少包含 `trace_uuid`、开始时间、首个前端可见时间、终态或 degraded verdict。
 - **稳定性要求**：replay/compact/fallback 等 degraded path 不得 throw 未文档化错误。
 - **安全 / 权限要求**：policy honesty 不能把 stored-not-enforced 写成 active enforced。
-- **测试覆盖要求**：每个 phase 至少一条 truth-gate e2e 或等价 integration evidence。
-- **验证策略**：PP0 起建立首个 e2e skeleton；PP6 做 `clients/api-docs` item-by-item 对账。
+- **测试覆盖要求**：每个 phase 至少一条 truth-gate e2e 或等价 integration evidence；PP0 skeleton 必须可同时断言一条 HTTP control path、一条 WS event path 和一条 durable read-model truth。
+- **验证策略**：PP0 起复用现有根脚本 `test:package-e2e` / `test:cross-e2e` 的 Node test harness 建立首个 e2e skeleton；每条 skeleton 输出统一 evidence shape（transport、trace_uuid、start_ts、first_visible_ts、terminal_or_degraded_ts、verdict），PP6 再做 `clients/api-docs` item-by-item 对账。
 
 ---
 

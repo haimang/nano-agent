@@ -1,4 +1,4 @@
-# Nano-Agent 功能簇设计模板
+# PP0 / Frontend Trust Contract
 
 > 功能簇: `PP0 / Frontend Trust Contract`
 > 讨论日期: `2026-05-02`
@@ -102,6 +102,7 @@
 - **解耦对象**：frontend-facing contract 与 internal implementation seam。
 - **解耦原因**：如果把 internal RPC 写给前端，后续 worker refactor 会变成 breaking change。
 - **依赖边界**：前端只依赖 `orchestrator-core` facade 与 documented WS frames。
+- **D1 纪律**：本设计本身不产生 schema 变更；若 frontend contract sweep 发现必须新增字段或迁移，只能回到 charter §4.5 走受控例外，而不是在 PP0/PP6 静默加表。
 
 ### 3.4 聚合点（哪里要刻意收敛）
 
@@ -281,6 +282,9 @@
 - **安全 / 权限要求**：前端不得依赖 internal worker route；runtime policy 不得 overclaim。
 - **测试覆盖要求**：PP6 至少有 route/docs/item-by-item audit evidence。
 - **验证策略**：FE-1/FE-2/FE-3 三次介入，加 PP6 docs sweep。
+  - **FE-1**：确认 public surface taxonomy、phase/design 映射与最小 UI state inputs 足够支撑首个 frontend state machine；输出必须是可引用的确认清单或 gap list。
+  - **FE-2**：确认 HITL/reconnect/runtime/degraded contract 是否足够支撑实际交互流；输出必须标明哪些状态仍需 PP1-PP5 补桥。
+  - **FE-3**：在 PP6 前确认 `clients/api-docs` pack、transport profiles 与 degraded handling 是否足以按文档开发；输出必须能被 PP6 closure 与 final closure 引用。
 
 ---
 

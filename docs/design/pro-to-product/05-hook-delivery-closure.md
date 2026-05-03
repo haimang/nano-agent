@@ -1,4 +1,4 @@
-# Nano-Agent 功能簇设计模板
+# PP4 / Hook Delivery Closure
 
 > 功能簇: `PP4 / Hook Delivery Closure`
 > 讨论日期: `2026-05-02`
@@ -48,6 +48,7 @@
 ### 1.2 参考调查报告
 
 - `docs/design/pro-to-product/00-agent-loop-truth-model.md` — T5 Hook truth。
+- `docs/design/pro-to-product/01-frontend-trust-contract.md` — frontend-visible minimal loop 边界。
 - `workers/agent-core/src/hooks/*` — 当前 substrate。
 
 ---
@@ -97,6 +98,7 @@ PP4 位于 HITL、policy 与 tool execution 之间。它不是为了“炫技扩
 - **解耦对象**：hook registration config 与 hook execution result。
 - **解耦原因**：注册失败/handler 缺失不能在运行时伪装为 allow；执行失败要变 diagnostics 或 block，不能污染 registry。
 - **依赖边界**：registry 只存 handler config；dispatcher 执行并聚合 outcome；runtime caller 决定 block/continue。
+- **D1 纪律**：PP4 默认 zero migration；若后续产品 hook 需要 durable schema 例外，必须按 charter §4.5 申请，而不是在 delivery phase 内默认扩表。
 
 ### 3.4 聚合点（哪里要刻意收敛）
 
@@ -154,9 +156,9 @@ PP4 位于 HITL、policy 与 tool execution 之间。它不是为了“炫技扩
 ### 5.1 In-Scope（本设计确认要支持）
 
 - **[S1] User-driven hook registration** — 至少 session-scoped register/list/unregister。
-- **[S2] PreToolUse live effect** — block/update input 必须影响工具执行。
-- **[S3] PostToolUse live observation** — 工具结果后可写 audit/broadcast。
-- **[S4] PermissionRequest live integration** — 与 HITL ask/policy 决策衔接。
+- **[S2] PreToolUse live effect** — 这是 PP4 的最小硬闸，block/update input 必须影响工具执行。
+- **[S3] Minimal hook observability** — 至少一条 user-driven loop 要有 audit/broadcast/docs visibility。
+- **[S4] PermissionRequest / PostToolUse** — 只作为次级候选；是否进入本 phase live loop 取决于不突破 charter 最小范围、且对应 QNA 已冻结。
 
 ### 5.2 Out-of-Scope（本设计确认不做）
 
@@ -172,6 +174,7 @@ PP4 位于 HITL、policy 与 tool execution 之间。它不是为了“炫技扩
 | `eval/durable-promotion-registry` | out-of-scope | 不是 hook handler registry | 不作为 hook live evidence |
 | `hook.broadcast` | in-scope visibility | 已在 stream catalog | PP4/PP6 docs |
 | service-binding hook runtime | defer | 类型存在，产品策略未冻结 | PP4 后续或 PP5 |
+| `PostToolUseFailure / Setup / Stop / PreCompact / PostCompact / PermissionDenied / ContextPressure / ContextCompact* / EvalSinkOverflow` | substrate-ready only | 不属于 charter 冻结的 minimal live loop | 下一阶段或 secondary outcome |
 
 ---
 
@@ -184,15 +187,15 @@ PP4 位于 HITL、policy 与 tool execution 之间。它不是为了“炫技扩
    - **我们接受的代价**：需要定义 handler config validation 与 auth。
    - **未来重评条件**：若 owner 明确 hooks 只作为平台内部能力。
 
-2. **取舍 2**：我们选择 **PreToolUse/PermissionRequest 优先** 而不是 **18 event 全接**
-   - **为什么**：PP4 的 P0 是工具与权限治理。
-   - **我们接受的代价**：其他事件仍可能是 substrate/partial。
-   - **未来重评条件**：skill system 上线。
+2. **取舍 2**：我们选择 **PreToolUse-first minimal loop** 而不是 **PreToolUse/PostToolUse/PermissionRequest 三类一起闭合**
+   - **为什么**：charter 冻结的是“至少一条 user-driven hook live loop”，不是三类一起收口。
+   - **我们接受的代价**：PostToolUse 与 PermissionRequest 可能只作为次级 outcome 或后续 phase 输入。
+   - **未来重评条件**：owner 提高 PP4 scope，或 minimal loop 被证明不足。
 
-3. **取舍 3**：我们选择 **fail-closed for permission** 而不是 **handler 缺失自动 allow**
-   - **为什么**：catalog 注释已写 PermissionRequest 无 handler fail-closed。
-   - **我们接受的代价**：配置错误会阻断工具，需要清晰 diagnostics。
-   - **未来重评条件**：policy model 重写。
+3. **取舍 3**：我们选择 **先冻结 PermissionRequest fallback law** 而不是 **让 handler 缺失语义继续模糊**
+   - **为什么**：`fallback confirmation` 与 `fail-closed` 是不同产品语义，不能在 action-plan 内临时改口。
+   - **我们接受的代价**：Q17 未回答前，PermissionRequest 不能作为 PP4 硬闸。
+   - **未来重评条件**：owner 在 PPX-qna Q17 中正式拍板。
 
 ### 6.2 风险与缓解
 
@@ -218,7 +221,7 @@ PP4 位于 HITL、policy 与 tool execution 之间。它不是为了“炫技扩
 |------|--------|------|----------------|
 | F1 | Session Hook Registration | session-scoped register/list/unregister | ✅ 用户能注册 handler |
 | F2 | PreToolUse Delivery | tool 执行前触发并尊重 outcome | ✅ block/update 真生效 |
-| F3 | PermissionRequest Delivery | ask/policy 进入 hook verdict | ✅ permission hook 可治理 |
+| F3 | Secondary Hook Candidates | PostToolUse/PermissionRequest 仅在不突破 charter scope 时进入 live loop | ✅ 不再 scope creep |
 | F4 | Hook Observability | audit + stream docs | ✅ hook outcome 可追踪 |
 
 ### 7.2 详细阐述
@@ -237,18 +240,18 @@ PP4 位于 HITL、policy 与 tool execution 之间。它不是为了“炫技扩
 - **输入**：tool name/input/context。
 - **输出**：allow/block/updatedInput。
 - **主要调用者**：agent-core tool execution。
-- **核心逻辑**：`runtime-mainline.ts:816-830` 已能调用 dispatcher 并在 blocked 时 throw；PP4 要确保 PreToolUse caller 在每个真实 tool 之前执行。
+- **核心逻辑**：`runtime-mainline.ts:816-830` 只提供 dispatcher delegate seam；当前 PreToolUse 仍无 production caller。PP4 必须新增真实 caller，使每次工具执行前都会 emit PreToolUse，并根据 dispatcher outcome 决定 continue/block/updatedInput。
 - **边界情况**：updatedInput 必须重新 validate，不能直接信任。
 - **一句话收口目标**：✅ **hook outcome 改变真实工具执行。**
 
-#### F3: PermissionRequest Delivery
+#### F3: Secondary Hook Candidates
 
-- **输入**：policy ask / tool permission request。
-- **输出**：allow/deny/diagnostics，并与 confirmation/HITL 关系清晰。
-- **主要调用者**：PP1/PP5。
-- **核心逻辑**：catalog 中 PermissionRequest 是 blocking/fail-closed；PP4 要避免它与 confirmation ask 互相绕过。
-- **边界情况**：无 handler 时是 denied，还是 fallback 到 confirmation，需要 action-plan 冻结优先级。
-- **一句话收口目标**：✅ **权限治理路径单一可解释。**
+- **输入**：PostToolUse result、policy ask / tool permission request。
+- **输出**：optional live loop、或明确登记为 secondary outcome / deferred。
+- **主要调用者**：PP4 action-plan、PP5。
+- **核心逻辑**：PostToolUse 与 PermissionRequest 都只能在不突破 charter `minimal live loop` 范围时进入 PP4；其中 PermissionRequest 的无-handler语义以 PPX-qna Q17 为唯一决策来源，未冻结前不得作为 PP4 硬闸。
+- **边界情况**：若 Q17 选择 `fallback confirmation`，则必须同步更新 `workers/agent-core/src/hooks/catalog.ts` 中当前 fail-closed 注释与对应 guard 语义。
+- **一句话收口目标**：✅ **次级 hook 不再和 PP4 主闸混在一起。**
 
 #### F4: Hook Observability
 
@@ -265,7 +268,7 @@ PP4 位于 HITL、policy 与 tool execution 之间。它不是为了“炫技扩
 - **可观测性要求**：blocked/stop outcome 必有 audit，broadcast payload redacted。
 - **稳定性要求**：handler exception 不应 crash 非 blocking path；blocking path 必须 fail safe。
 - **安全 / 权限要求**：register surface 必须 auth/session ownership；不得执行任意 shell。
-- **测试覆盖要求**：register/list/unregister、PreToolUse block/update、PostToolUse broadcast、PermissionRequest fail-closed。
+- **测试覆盖要求**：register/list/unregister、PreToolUse block/update、minimal hook observability；PostToolUse 或 PermissionRequest 只有在被 action-plan 正式纳入时才追加对应测试。
 - **验证策略**：agent-core unit + orchestrator route（如有）+ cross-e2e tool hook。
 
 ---
@@ -304,7 +307,7 @@ PP4 位于 HITL、policy 与 tool execution 之间。它不是为了“炫技扩
 | `workers/agent-core/src/hooks/dispatcher.ts:61-148` | dispatcher guard/execution | PP4 核心复用 |
 | `workers/agent-core/src/hooks/catalog.ts:92-165` | PreToolUse/PermissionRequest metadata | 事件冻结 |
 | `workers/agent-core/src/host/do/session-do/runtime-assembly.ts:155-161` | runtime assembly 构造 dispatcher | substrate 已 live |
-| `workers/agent-core/src/host/runtime-mainline.ts:816-830` | hook emit blocked throw | effect seam |
+| `workers/agent-core/src/host/runtime-mainline.ts:816-830` | hook delegate seam exists, but PreToolUse 仍无 production caller | PP4 必须补 caller 而不只是改 outcome |
 | `workers/agent-core/src/hooks/audit.ts:67-115` | hook.outcome audit | observability |
 | `packages/nacp-session/src/stream-event.ts:75-80` | hook.broadcast schema | client visibility |
 
@@ -318,14 +321,14 @@ PP4 位于 HITL、policy 与 tool execution 之间。它不是为了“炫技扩
 |----------------|------|----------|----------|------|----------|
 | D-05-1 | PP4 是否扩展 hook enum？ | PP4 | 否 | frozen | nacp-core/catalog |
 | D-05-2 | 是否开放 shell hook？ | PP4 | 否 | proposed | Cloudflare runtime/security |
-| D-05-3 | PermissionRequest 无 handler 如何处理？ | PP4/PP5 | fail-closed 或明确 fallback confirmation，需 action-plan 冻结 | open-to-plan | 本设计 |
+| D-05-3 | PermissionRequest 无 handler 如何处理？ | PP4/PP5 | 优先 fallback confirmation；仅当 confirmation substrate 不可用时 fail-closed | proposed | `docs/design/pro-to-product/PPX-qna.md` Q17 |
 
 ### 9.2 设计完成标准
 
 设计进入 `frozen` 前必须满足：
 
 1. 有用户驱动 register/list/unregister path。
-2. PreToolUse/PostToolUse/PermissionRequest 至少三类目标 caller 真实触发。
+2. 至少一条 charter 允许的 user-driven hook live loop 真实触发；PP4 默认以 PreToolUse 为硬闸。
 3. blocked/stop/diagnostics 有 audit/stream visibility。
 4. docs 明确哪些 hook live、哪些只是 catalog substrate。
 
@@ -337,7 +340,7 @@ PP4 位于 HITL、policy 与 tool execution 之间。它不是为了“炫技扩
   - `06-policy-reliability-hardening.md` 的 policy/hook 优先级。
   - `07-api-contract-docs-closure.md` 的 hook docs 新增/回填。
 - **需要进入 QNA register 的问题**：
-  - D-05-3 的 final fallback 优先级可在 action-plan 中冻结。
+  - 无；PermissionRequest fallback law 已集中到 `PPX-qna.md` Q17，PP4 只消费该答案。
 
 ---
 

@@ -478,3 +478,121 @@
 - **实现者回应入口**:`请按 docs/templates/code-review-respond.md 在本文档 §6 append 回应,不要改写 §0–§5。`
 
 > 8 份 design + PPX-qna 是**真正按 charter v0.active.2 写、按代码事实读、按 truth gate 收口**的产物。整体质量在 nano-agent 历史 design 批次中处于偏上水准。R3/R4/R6/R10 是真实断点但都属于"补 1-2 段 reasoning + 1-2 行可执行判据"级别,不需要重做设计。
+
+---
+
+## 6. GPT 修复回填（2026-05-03）
+
+### 6.1 对本轮审查的回应
+
+> 执行者: `GPT-5.4`
+> 执行时间: `2026-05-03`
+> 回应范围: `DeepSeek R1-R8 + Kimi R1-R10 + Opus R1-R13`
+> 对应审查文件:
+> - `docs/eval/pro-to-product/design-docs-reviewed-by-deepseek.md`
+> - `docs/eval/pro-to-product/design-docs-reviewed-by-kimi.md`
+> - `docs/eval/pro-to-product/design-docs-reviewed-by-opus.md`
+
+- **总体回应**：`三份 review 的有效 design-level 问题已逐条核实并修入 design/QNA 正文；过时或与当前仓库事实不符的判断，已保留为 stale-rejected。`
+- **本轮修改策略**：`优先修正会影响 scope、truth gate、evidence chain、QNA 单一来源和 docs sweep 边界的问题；不把 action-plan 级细节误塞回 design，也不为了响应 review 去重开 charter。`
+- **实现者自评状态**：`ready-for-rereview`
+
+### 6.2 DeepSeek 审查逐项回应
+
+| 审查编号 | 审查问题 | 处理结果 | 处理方式 | 修改文件 |
+|----------|----------|----------|----------|----------|
+| DS-R1 | `context_compact` confirmation 归属悬垂 | `fixed` | 在 `03` 明确其为 `registry-only / not part of PP2 closure evidence`，并把 PP2/PP6 的诚实标注边界写清 | `03-context-budget-closure.md` |
+| DS-R2 | hook/policy/confirmation 仲裁顺序未冻结 | `fixed` | 将 `05` 改为 `PreToolUse-first minimal loop`，把 PermissionRequest 的 fallback law 收敛到 `PPX-qna Q17` 作为唯一来源 | `05-hook-delivery-closure.md`, `PPX-qna.md` |
+| DS-R3 | `network_policy/web_search` 缺 proof methodology | `fixed` | 在 `06` F1 明确逐字段反查执行层消费链的方法，而不是只写“prove or downgrade” | `06-policy-reliability-hardening.md` |
+| DS-R4 | `07` 未把 hook docs 明确列为 in-scope | `fixed` | 在 `07` 新增 `S5` 与 `F5 Hook Contract Reconcile`，并把 hook docs 纳入 pack sweep | `07-api-contract-docs-closure.md` |
+| DS-R5 | T4 缺单一 owner | `fixed` | 在 `04` 增加 `S5` 和 `F5 Session State Truth`，明确 PP3 是 T4 运行时证据 owner | `04-reconnect-session-recovery.md` |
+| DS-R6 | `session-control.ts:414-449` 行号漂移 | `stale-rejected` | 复核当前代码后，decision row write + WS update 仍正好位于 `414-449`；描述与行号均成立，无需改文档 | `workers/orchestrator-core/src/facade/routes/session-control.ts` |
+| DS-R7 | `03` 未明确 auto compact 的 honesty boundary | `fixed` | 改写 `03` F3：degraded 只能作为 fail-visible fallback，不能替代 T2 prompt mutation 硬闸 | `03-context-budget-closure.md` |
+| DS-R8 | `context/` 外部引用不可验证 | `stale-rejected` | 当前仓库已 vendored `context/gemini-cli`、`context/codex`、`context/claude-code`；并在 `00` 显式写明 | `00-agent-loop-truth-model.md` |
+
+### 6.3 Kimi 审查逐项回应
+
+| 审查编号 | 审查问题 | 处理结果 | 处理方式 | 修改文件 |
+|----------|----------|----------|----------|----------|
+| Kimi-R1 | PP4 扩大 charter 最小 hook 范围 | `fixed` | 把 `05` 从“三类都要闭合”收窄为 `PreToolUse` 硬闸，`PostToolUse/PermissionRequest` 改成 secondary candidate | `05-hook-delivery-closure.md` |
+| Kimi-R2 | e2e skeleton 框架未定义 | `fixed` | 在 `00` §7.3 明确复用现有 `test:package-e2e / test:cross-e2e` Node harness，并定义 skeleton evidence shape | `00-agent-loop-truth-model.md` |
+| Kimi-R3 | latency baseline 缺测量基础设施 | `fixed` | 在 `00` §7.3 增补 latency 记录字段与 evidence 输出形态，避免 baseline 成为空数字 | `00-agent-loop-truth-model.md` |
+| Kimi-R4 | 8 份 design 标题未定制 | `fixed` | 将 `00-07` 的一级标题全部改成真实 phase/design 标题 | `00-07 design docs` |
+| Kimi-R5 | FE engagement 缺验收标准 | `fixed` | 在 `01` §7.3 为 FE-1/FE-2/FE-3 增补确认清单、反馈产物与 closure 引用要求 | `01-frontend-trust-contract.md` |
+| Kimi-R6 | Q17 与 D-05-3 口径矛盾 | `fixed` | `05` 不再维持 `open-to-plan`/fail-closed 倾向，改为引用 `PPX-qna Q17` 的单一建议来源；保持 `proposed` 因 owner 尚未回填 | `05-hook-delivery-closure.md`, `PPX-qna.md` |
+| Kimi-R7 | stream retry 继续 ambiguity | `fixed` | 在 `Q19` 和 `06` 明确：可选路径只能二选一进入 PP5 implementation/closure，不能继续保持开放语义 | `06-policy-reliability-hardening.md`, `PPX-qna.md` |
+| Kimi-R8 | 外部 `context/` 引用无法验证 | `stale-rejected` | 当前仓库已存在对应 vendored 目录；该 finding 与当前 repo 事实不符 | `context/gemini-cli`, `context/codex`, `context/claude-code` |
+| Kimi-R9 | PP3 checkpoint restore 引用不完整 | `fixed` | `04` 已显式补出 `persist + restore` 两端缺口，点名 `replayFragment: null` 与 `helper.restore()` 对称修复 | `04-reconnect-session-recovery.md` |
+| Kimi-R10 | PP0-PP6 vs 00-07 映射未明示 | `fixed` | 在 `00` 新增 phase/design 映射表，明确 `PP0=00+01` 到 `PP6=07` 的关系 | `00-agent-loop-truth-model.md` |
+
+### 6.4 Opus 审查逐项回应
+
+| 审查编号 | 审查问题 | 处理结果 | 处理方式 | 修改文件 |
+|----------|----------|----------|----------|----------|
+| Opus-R1 | `02` elicitation substrate 行号不全 | `fixed` | `02` §8.4 引用改为 `378-415`，并明确 permission + elicitation 共用 await primitive | `02-hitl-interrupt-closure.md` |
+| Opus-R2 | `02-07` 反向引用 `00/01` 不一致 | `fixed` | 为 `03/04/05/07` 补齐对 `00/01` 的引用，恢复 cross-cutting evidence chain | `03-context-budget-closure.md`, `04-reconnect-session-recovery.md`, `05-hook-delivery-closure.md`, `07-api-contract-docs-closure.md` |
+| Opus-R3 | `05` 与 catalog/Q17/PreToolUse caller 形成 deadlock | `fixed` | `05` 明确当前只有 dispatcher seam、没有 production PreToolUse caller；Q17 reasoning 明写 fallback 选择会触发 catalog/guard 同步修改 | `05-hook-delivery-closure.md`, `PPX-qna.md` |
+| Opus-R4 | `03` 把 compact bridge 与 degraded 写成二选一 | `fixed` | 直接把 `03` F3 改成“PP2 closure 必须满足 T2 prompt mutation；degraded 只能作为 fail-visible fallback”；未新增 Q23，因为该约束已由 charter 直接给出 | `03-context-budget-closure.md` |
+| Opus-R5 | `06` 未充分写出 `db-missing → ask → error` | `fixed` | 在 `06` F2 明确这条链必须改成 fail-visible unavailable，而不能被 PP1 正常 ask 语义吞掉 | `06-policy-reliability-hardening.md` |
+| Opus-R6 | `04` 未显式指出 `replayFragment: null` | `fixed` | `04` F1/§8.4 已显式点名 persist 端 line 176 的硬编码，以及 restore 端必须同步修 | `04-reconnect-session-recovery.md` |
+| Opus-R7 | `04/Q14` 未明确 HTTP/WS degraded 是否对齐 | `fixed` | 在 `04` 和 `Q14` 都补明：HTTP 已 honest；PP3 必须补 WS degraded，或在 docs 中冻结“先 HTTP resume 再 WS attach”的顺序 | `04-reconnect-session-recovery.md`, `PPX-qna.md` |
+| Opus-R8 | `03` 把 compact ≤3s 改写成 probe/preview ≤3s | `fixed` | `03` §7.3 已改回 charter 原文：`compact 完成或 explicit degrade ≤3s` | `03-context-budget-closure.md` |
+| Opus-R9 | Q17 reasoning 把两条策略写成等价安全 | `fixed` | Q17 已明确：`fail-closed = 默认 deny`，`fallback confirmation = 默认 ask user`，两者不是同等级安全 | `PPX-qna.md` |
+| Opus-R10 | `PP1 稳定` 判据不可执行 | `fixed` | 在 `04` 写入 PP3 启动 gate：要求 PP1 closure 文档已明确 `session-do-runtime.ts` live interrupt 主线稳定，且无仍在进行中的语义重写 | `04-reconnect-session-recovery.md`, `02-hitl-interrupt-closure.md` |
+| Opus-R11 | `07` sweep target 漏 4 份 docs | `fixed` | `07` F1/§8.4 现已显式列出 22 份 docs，并补入 `permissions/workspace/transport-profiles/worker-health` | `07-api-contract-docs-closure.md` |
+| Opus-R12 | design 未重申 charter §4.5 D1 例外法律 | `fixed` | `00-07` 全部补入 `default zero migration / charter §4.5 / 018+` 纪律说明 | `00-07 design docs` |
+| Opus-R13 | 非 user-driven hook 边界不清 | `fixed` | `05` §5.3 已把 14 类非 user-driven hook 明确降为 `substrate-ready only` | `05-hook-delivery-closure.md` |
+
+### 6.5 状态汇总
+
+| 分类 | 数量 | 编号 | 说明 |
+|------|------|------|------|
+| 已完全修复 | `27` | `DS-R1/R2/R3/R4/R5/R7, Kimi-R1/R2/R3/R4/R5/R6/R7/R9/R10, Opus-R1/R2/R3/R4/R5/R6/R7/R8/R9/R10/R11/R12/R13` | design/QNA 已同步修正 |
+| stale-rejected | `3` | `DS-R6, DS-R8, Kimi-R8` | 与当前仓库事实不符或已被当前代码现实覆盖 |
+| 有理由部分采纳 | `1` | `Kimi-R6` | 统一到 Q17 单一来源，但未伪装成 owner 已回答后的 `frozen` |
+| 仍 blocked | `0` | `—` | 当前 design-level 修复已完成 |
+
+### 6.6 变更文件清单
+
+- `docs/design/pro-to-product/00-agent-loop-truth-model.md` — 增补 vendored context 事实、phase/design 映射、e2e skeleton 与 latency evidence 方法。
+- `docs/design/pro-to-product/01-frontend-trust-contract.md` — 补 FE-1/FE-2/FE-3 的验收标准与 frontend contract 的 D1 纪律。
+- `docs/design/pro-to-product/02-hitl-interrupt-closure.md` — 校正 elicitation substrate 引用，并补共享 owner file 稳定 handoff 要求。
+- `docs/design/pro-to-product/03-context-budget-closure.md` — 收紧 T2 硬闸、auto compact honesty 边界与 compact latency 表述。
+- `docs/design/pro-to-product/04-reconnect-session-recovery.md` — 增补 `replayFragment` persist/restore 对称修复、T4 owner 与 PP3 启动 gate。
+- `docs/design/pro-to-product/05-hook-delivery-closure.md` — 收窄 PP4 scope 到 minimal live loop，修正 PreToolUse caller / Q17 / 非 user-driven hook 边界。
+- `docs/design/pro-to-product/06-policy-reliability-hardening.md` — 补 enforce proof methodology、unavailable fail-visible 语义与 stream retry 冻结纪律。
+- `docs/design/pro-to-product/07-api-contract-docs-closure.md` — 增补 hooks docs in-scope、22-doc explicit sweep list 与缺漏文档锚点。
+- `docs/design/pro-to-product/PPX-qna.md` — 修正 Q14/Q17/Q19 reasoning，消除 replay 与 permission fallback 的语义歧义。
+
+### 6.7 验证结果
+
+| 验证项 | 命令 / 证据 | 结果 | 覆盖的 finding |
+|--------|-------------|------|----------------|
+| 文档 diff hygiene | `git --no-pager diff --check -- docs/design/pro-to-product docs/eval/pro-to-product/design-docs-reviewed-by-opus.md` | `pass` | 全部 |
+| 关键代码锚点复核 | 重新打开 `session-do-runtime.ts:378-415`、`catalog.ts:158-159`、`runtime-mainline.ts:816-836`、`session-do-persistence.ts:154-176,193-222`、`entrypoint.ts:349`、`session-control.ts:414-449`、`runner.ts:419` | `pass` | `DS-R2/R7`, `Kimi-R6/R9`, `Opus-R1/R3/R5/R6` |
+| vendored context 事实核验 | `find context -maxdepth 1 -mindepth 1 -type d` 与定向检查 `context/gemini-cli context/codex context/claude-code` | `pass` | `DS-R8`, `Kimi-R8` |
+| 模板残留与标题回归 | grep `Nano-Agent 功能簇设计模板`, `open-to-plan`, 占位符残留 | `pass` | `Kimi-R4`, `Kimi-R6`, `Opus-R3` |
+
+```text
+- 所有 design 标题已替换为真实 phase/design 名称。
+- `PPX-qna` 不再把 fail-closed 与 fallback confirmation 写成等价安全。
+- `03` 不再把 degraded 写成 T2 prompt mutation 的合法替代。
+- `04` 已明确 replay persistence 需要同时修 persist + restore 两端。
+```
+
+### 6.8 未采纳事项与承接
+
+| 编号 | 状态 | 不在本轮完成的原因 | 承接位置 |
+|------|------|--------------------|----------|
+| `DS-R6` | `rejected` | 当前 `session-control.ts:414-449` 仍准确对应 decision row write + update emit；review 结论已过时 | 无需承接 |
+| `DS-R8` | `rejected` | `context/gemini-cli`、`context/codex`、`context/claude-code` 已 vendored 在当前仓库 | 无需承接 |
+| `Kimi-R8` | `rejected` | 同上，属于事实前提错误 | 无需承接 |
+| `Kimi-R6` | `partially-fixed` | 已统一设计/QNA 口径，但 owner 仍未填写 `业主回答`，因此不伪装成 frozen | `docs/design/pro-to-product/PPX-qna.md` Q17 |
+
+### 6.9 Ready-for-rereview gate
+
+- **是否请求二次审查**：`no`
+- **请求复核的范围**：`action-plan review should consume these fixes directly`
+- **实现者认为可以关闭的前提**：
+  1. `design baseline` 层面的 scope/logic/docs drift 已收平，不再需要单独开一轮 design rereview。
+  2. 后续若要复核，应转到 `PP1-PP6 action-plan` 是否按本轮修正后的 design/QNA 继续执行，而不是重复审 design 本身。
