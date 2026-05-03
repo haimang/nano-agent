@@ -56,6 +56,8 @@ export const SESSION_ROLE_REQUIREMENTS: Record<string, SessionRoleRequirement> =
       "session.item.started",
       "session.item.updated",
       "session.item.completed",
+      // PP3 — reconnect degraded signal
+      "session.replay.lost",
     ]),
   },
   session: {
@@ -78,6 +80,8 @@ export const SESSION_ROLE_REQUIREMENTS: Record<string, SessionRoleRequirement> =
       "session.item.started",
       "session.item.updated",
       "session.item.completed",
+      // PP3
+      "session.replay.lost",
     ]),
     consumer: new Set([
       "session.start",
@@ -156,6 +160,7 @@ const SESSION_PHASE_ALLOWED: Record<SessionPhase, Set<string>> = {
     "session.item.started",
     "session.item.updated",
     "session.item.completed",
+    "session.replay.lost",
   ]),
   turn_running: new Set([
     "session.cancel",
@@ -184,6 +189,7 @@ const SESSION_PHASE_ALLOWED: Record<SessionPhase, Set<string>> = {
     "session.item.started",
     "session.item.updated",
     "session.item.completed",
+    "session.replay.lost",
   ]),
   ended: new Set([
     "session.heartbeat",  // final heartbeat before close

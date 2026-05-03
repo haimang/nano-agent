@@ -49,6 +49,8 @@ export const NACP_SESSION_TYPE_DIRECTION_MATRIX: Readonly<
   "session.item.completed": new Set<NacpDeliveryKind>(["event"]),
   // RH2 P2-01c — server → client only (notify-and-disconnect)
   "session.attachment.superseded": new Set<NacpDeliveryKind>(["event"]),
+  // PP3 — server → client only (early reconnect degraded verdict)
+  "session.replay.lost": new Set<NacpDeliveryKind>(["event"]),
 });
 
 export function isLegalSessionDirection(

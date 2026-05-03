@@ -107,6 +107,18 @@ export type SessionAttachmentSupersededBody = z.infer<
   typeof SessionAttachmentSupersededBodySchema
 >;
 
+// ── session.replay.lost (PP3 reconnect degraded signal) ──
+export const SessionReplayLostBodySchema = z.object({
+  session_uuid: z.string().uuid(),
+  client_last_seen_seq: z.number().int().min(0),
+  relay_cursor: z.number().int().min(-1),
+  reason: z.literal("client-ahead-of-relay-cursor"),
+  degraded: z.literal(true),
+  emitted_at: z.string().datetime(),
+  trace_uuid: z.string().min(1).optional(),
+});
+export type SessionReplayLostBody = z.infer<typeof SessionReplayLostBodySchema>;
+
 // ── session.followup_input (Phase 0 widened v1 surface) ──
 //
 // Owner decision (PX-QNA Q1 / AX-QNA Q1): the minimum frozen shape is a
@@ -535,6 +547,8 @@ export const SESSION_BODY_SCHEMAS = {
   "session.item.completed": SessionItemCompletedBodySchema,
   // RH2 P2-01c — server → client supersede notification.
   "session.attachment.superseded": SessionAttachmentSupersededBodySchema,
+  // PP3 — server → client reconnect degraded notification.
+  "session.replay.lost": SessionReplayLostBodySchema,
   // session.stream.event is handled separately via stream-event.ts
 } as const;
 
@@ -567,6 +581,8 @@ export const SESSION_BODY_REQUIRED = new Set([
   "session.item.completed",
   // RH2 P2-01c
   "session.attachment.superseded",
+  // PP3
+  "session.replay.lost",
 ]);
 
 export type SessionMessageType = keyof typeof SESSION_BODY_SCHEMAS;
@@ -602,4 +618,6 @@ export const SESSION_MESSAGE_TYPES = new Set([
   "session.item.completed",
   // RH2 P2-01c
   "session.attachment.superseded",
+  // PP3
+  "session.replay.lost",
 ]);

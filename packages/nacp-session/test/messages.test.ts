@@ -101,11 +101,12 @@ describe("Session message schemas", () => {
 describe("registries", () => {
   // HP6 P1-02: registry now contains the original 8 (7 initial + followup)
   // plus 7 ZX2 types, RH2 attachment.superseded, HP5 confirmation
-  // request/update, HP6 todos write/update, and 5 HPX6 workbench frames — see
+  // request/update, HP6 todos write/update, 5 HPX6 workbench frames, and
+  // PP3 replay.lost reconnect degraded signal — see
   // test/hp5-confirmation-messages.test.ts and
   // test/hp6-todo-messages.test.ts for detailed coverage.
-  it("has 25 session message types (initial 7 + followup + ZX2 7 + RH2 attachment.superseded + HP5 confirmation 2 + HP6 todos 2 + HPX6 workbench 5)", () => {
-    expect(SESSION_MESSAGE_TYPES.size).toBe(25);
+  it("has 26 session message types (initial 7 + followup + ZX2 7 + RH2 attachment.superseded + HP5 confirmation 2 + HP6 todos 2 + HPX6 workbench 5 + PP3 replay.lost)", () => {
+    expect(SESSION_MESSAGE_TYPES.size).toBe(26);
     expect(SESSION_MESSAGE_TYPES.has("session.followup_input")).toBe(true);
     expect(SESSION_MESSAGE_TYPES.has("session.permission.request")).toBe(true);
     expect(SESSION_MESSAGE_TYPES.has("session.usage.update")).toBe(true);
@@ -119,6 +120,7 @@ describe("registries", () => {
     expect(SESSION_MESSAGE_TYPES.has("session.item.started")).toBe(true);
     expect(SESSION_MESSAGE_TYPES.has("session.item.updated")).toBe(true);
     expect(SESSION_MESSAGE_TYPES.has("session.item.completed")).toBe(true);
+    expect(SESSION_MESSAGE_TYPES.has("session.replay.lost")).toBe(true);
   });
   it("body required set excludes cancel but includes followup", () => {
     expect(SESSION_BODY_REQUIRED.has("session.cancel")).toBe(false);
