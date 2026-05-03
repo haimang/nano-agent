@@ -596,3 +596,173 @@
 - **实现者认为可以关闭的前提**：
   1. `design baseline` 层面的 scope/logic/docs drift 已收平，不再需要单独开一轮 design rereview。
   2. 后续若要复核，应转到 `PP1-PP6 action-plan` 是否按本轮修正后的 design/QNA 继续执行，而不是重复审 design 本身。
+
+
+---
+
+## 7. Opus 二次审查（2026-05-03）
+
+> 复审者: `Opus 4.7 (1M context)`
+> 复审时间: `2026-05-03`
+> 复审范围: 8 份 design + `PPX-qna` 在 GPT 修复回填后的当前状态，以及 `§6 GPT 修复回填` 自身的事实陈述
+> 复审方法: `git diff` 全量对比 + 当前文件 `Read` 验证 + 关键代码锚点重新打开 + vendored `context/` 真实存在性核验
+> 复审产物: 4 个原 blocker 全部验证 cleared；13 个 followup 全部验证 cleared；新增 6 个二次审查 finding(全部 low severity);GPT 的 3 个 stale-rejected 判断中 2 个事实成立、1 个需补一句口径说明
+
+### 7.1 总结结论
+
+> 一句话 verdict:**GPT 已完成对 R1-R13 的实质修复,4 个原 blocker(R3/R4/R6/R10)在文件中可被 grep 验证。design baseline 已可进入 PP1-PP6 action-plan;二次审查在文档一致性层发现 6 处低严重度残留(全部 1-2 行可修),不构成 blocker。**
+
+- **整体判断**:`approve`
+- **结论等级**:`approve(可关闭本轮 design rereview;6 处 RR-finding 移交给对应 action-plan owner 顺手补完)`
+- **是否允许关闭本轮 design 审查链**:`yes`
+- **本轮二次审查最关键的 3 个判断**:
+  1. **4 个原 blocker 已全部 verified cleared(R3/R4/R6/R10)**,在 design 文件可逐字 grep 命中,不是宣称式修复
+  2. **GPT 的 stale-rejected 判断 2.5/3 成立** — DS-R6(`session-control.ts:414-449`)与 DS-R8/Kimi-R8(vendored context)经独立核验事实成立;Kimi-R6 partially-fixed 处置合理。无 GPT 自证型谎报
+  3. **二次审查发现 6 处低严重度文档一致性残留(RR1-RR6)**,主要是"修复后未顺手同步另一处对应表述"的小漂移,不影响 design 主线,但影响 action-plan owner 的 evidence chain 阅读体验;均建议在对应 PP* action-plan 中顺手解决,不再开新一轮 design review
+
+### 7.2 GPT 修复声明的逐项核验
+
+下表把 §6.4 中 GPT 自报的 13 项 Opus-R 修复结果**逐一打开当前 design 文件 grep**核验,结果列出的"file:line"即为本次 Read 命中的证据。
+
+| 编号 | 修复内容 | 核验结果 | 证据 |
+|------|----------|----------|------|
+| Opus-R1 | `02` §8.4 改 `378-415` + 描述加 elicitation | `verified` | `02-hitl-interrupt-closure.md:307` 命中 `session-do-runtime.ts:378-415` 与 "permission + elicitation 共用 row-first await substrate" |
+| Opus-R2 (03/04/05/07) | 反向引用 00/01 | `verified` | `03 §1.2:51` 加 `01-frontend-trust-contract.md`;`04 §1.2:50-51` 加 `00 + 01`;`05 §1.2:50` 加 `01`;`07 §1.2:53` 加 `00`。**不过 06 §1.2 仍只引用 02/05,未补 00/01**(见 RR3) |
+| Opus-R3 part 1 | `05` §7.2 F2 明确 PreToolUse 无 caller | `verified` | `05-hook-delivery-closure.md:243` 命中 "当前 PreToolUse 仍无 production caller。PP4 必须新增真实 caller" |
+| Opus-R3 part 2 | `05` §8.4 改写 hook seam 描述 | `verified` | `05-hook-delivery-closure.md:308` 命中 "hook delegate seam exists, but PreToolUse 仍无 production caller — PP4 必须补 caller 而不只是改 outcome" |
+| Opus-R3 part 3 | `Q17` reasoning 显式引用 catalog frozen 注释 | `verified` | `PPX-qna.md:258` 命中 "当前 `workers/agent-core/src/hooks/catalog.ts` 还把"零 handler = denied"写成了 fail-closed 注释...如果业主采纳该路线,就必须同步修改 catalog 注释与对应 guard 语义" |
+| Opus-R4 | `03` F3 改写为 T2 不接受 degraded | `verified` | `03-context-budget-closure.md:250` 命中 "PP2 closure 必须把它替换为能证明下一次 LLM request prompt 真实缩减的 compact bridge。显式 degraded 只能作为 fail-visible fallback,不能替代 charter T2" |
+| Opus-R5 | `06` F2 增补 db-missing→ask→error 链路 | `verified` | `06-policy-reliability-hardening.md:246` 命中 "db missing 当前返回 `ask/unavailable`,随后被 runtime 翻译成 `tool-permission-required` error;PP5 必须把这类 unavailable 明确改成 fail-visible(structured `system.error` 或 explicit unavailable degraded)" |
+| Opus-R6 | `04` §8.4 + F1 显式点名 `replayFragment: null` 硬编码 | `verified` | `04-reconnect-session-recovery.md:321` 命中 "helper checkpoint writes exist, but `replayFragment` still hard-coded `null` and restore only restores main checkpoint";F1 §7.2:236 命中 "session-do-persistence.ts 侧必须实现 replay fragment 的持久化与恢复对称" |
+| Opus-R7 | `04` 与 `Q14` 都补明 HTTP/WS degraded 选项 | `verified` | `04 F3:254` 命中 "PP3 必须继续明确 WS attach 的等价 degraded 路径,或在 docs 中冻结'先 HTTP resume 再 WS attach'的恢复顺序";`PPX-qna.md:212` 命中"是要求 PP3 补齐 WS degraded frame,还是要求前端先走 HTTP resume 再 WS attach" |
+| Opus-R8 | `03` §7.3 改回 charter 原文 | `verified` | `03-context-budget-closure.md:265` 命中 "compact 完成或 explicit degrade ≤3s alert threshold;probe/preview 不是 charter latency baseline" |
+| Opus-R9 | `Q17` 区分 fail-closed vs fallback 安全语义 | `verified` | `PPX-qna.md:258` 命中 "`fail-closed` = 默认拒绝...`fallback confirmation` = 默认把决定权交回用户" |
+| Opus-R10 | `04` PP3 启动 gate 可执行判据 + `02` 对应 closure 要求 | `verified` | `04 §6.2:207` 命中 "PP3 启动 gate:只有当 PP1 closure 文档已经显式声明 `session-do-runtime.ts` 的 ask/elicitation wakeup 主线已稳定...";`02 §9.2:333` 命中 "PP1 closure 文档必须显式说明 `session-do-runtime.ts` 的 ask/elicitation wakeup 主线已稳定" |
+| Opus-R11 | `07` F1 列 22-doc + §8.4 加 4 份缺漏 | `verified` | `07-api-contract-docs-closure.md:234` 命中完整 22-doc 列表;§8.4:311-314 命中 `permissions.md / workspace.md / transport-profiles.md / worker-health.md` 4 份新增 reference |
+| Opus-R12 | 8 份 design `§3.3` 加 D1 纪律 | `verified` | `00:117 / 01:105 / 02:100 / 03:101 / 04:102 / 05:101 / 06:102 / 07:106` 共 8 处全部命中 "默认 zero migration / charter §4.5 / 018+" 法律 |
+| Opus-R13 | `05` §5.3 列出 14 类非 user-driven hook | `verified` | `05-hook-delivery-closure.md:177` 命中完整列表 `PostToolUseFailure / Setup / Stop / PreCompact / PostCompact / PermissionDenied / ContextPressure / ContextCompact* / EvalSinkOverflow` 标 substrate-ready only |
+
+**汇总**:13/13 项 GPT 自报 Opus-R 修复**全部 verified**,无 1 项虚报。
+
+### 7.3 GPT stale-rejected 判断的独立核验
+
+| 编号 | GPT 判断 | 独立核验结果 | 核验证据 |
+|------|----------|--------------|----------|
+| `DS-R6` | `session-control.ts:414-449` 仍准确 | `事实成立` | 重新 Read 该文件 line 414-449,确认 `decidedAt = new Date().toISOString();` + `await plane.applyDecision(...)` + `emitFrameViaUserDO(... "session.confirmation.update", ...)` 完整存在,与 design 02 §8.4 描述一致 |
+| `DS-R8` | vendored `context/gemini-cli/codex/claude-code` 存在 | `事实成立` | `find /workspace/repo/nano-agent/context -maxdepth 1 -mindepth 1 -type d` 确认 3 个目录全部存在,且子目录 `packages/core/src/scheduler/`、`codex-rs/core/src/`、`commands/resume/`、`utils/hooks.ts` 等关键文件路径全部可达 |
+| `Kimi-R8` | 同 DS-R8 | `事实成立` | 同上证据 |
+| `Kimi-R6` | Q17 partially-fixed,owner 未答故不伪装 frozen | `处置合理` | `PPX-qna.md:265` `业主回答:` 仍为空,`design 05 D-05-3 status:proposed` 与 `02 PPX-qna 默认建议` 一致;不伪装 frozen 是诚实做法 |
+
+**汇总**:GPT 的 4 项 stale/partial 判断**全部成立**,无虚假 stale-rejection。
+
+### 7.4 二次审查新发现(RR-findings)
+
+> 这 6 处都是 GPT 修复后**未顺手同步另一处对应表述**导致的低严重度文档一致性漂移。均不影响 design 主线、不需要 design rereview,可在对应 PP* action-plan 中顺手补完。
+
+| 编号 | 标题 | 严重级别 | 类型 | 是否 blocker | 建议处理 |
+|------|------|----------|------|--------------|----------|
+| RR1 | `02` D-02-3 + §3.1 + §5.3 引用 "HP5 Q18" / 裸 "Q18",易与 PPX-qna Q18 混淆 | low | docs-gap | no | 把 `D-02-3` 答复来源改为 "HP5 Q18 + PPX-qna Q8";§3.1 / §5.3 中裸 "Q18" 加 "HP5 " 前缀 |
+| RR2 | `06` D-06-2 当前建议 "至少补 retry/error honesty" 与 Q19 reasoning "必须冻结单一路径" 不同步 | low | consistency | no | `06 §9.1` D-06-2 当前建议改为 "PP5 closure 前必须冻结为'内部 retry'或'显式 degraded + client retry'之一" 与 Q19 对齐 |
+| RR3 | `06` §1.2 未补 00/01 反向引用(R2 在 03/04/05/07 已修,06 漏修) | low | docs-gap | no | `06 §1.2` 增补 `00-agent-loop-truth-model.md` 与 `01-frontend-trust-contract.md` 引用 |
+| RR4 | `02` §9.3 写 "需要进入 QNA register 的问题:无",但 PPX-qna Q6/Q7/Q8 正是 D-02-1/D-02-2/D-02-3 集中答复 | low | docs-gap / traceability | no | `02 §9.3` 改为 "无新增;PP1 主要 owner decisions 已集中到 `PPX-qna.md` Q6/Q7/Q8" |
+| RR5 | `03` D-03-3(LLM summary 是否前提)status `proposed`,但 PPX-qna Q11 已是答复 anchor;同样 `04` D-04-1/D-04-2/D-04-3 都已被 Q12/Q13/Q14 收纳但 status 字段未引用 PPX-qna 来源 | low | consistency / traceability | no | 03/04 各 D-xx 答复来源列改为 "PPX-qna Q11/Q12/Q13/Q14",与 05 D-05-3 已经做的"PPX-qna Q17"一致 |
+| RR6 | `05` §6.1 取舍 2 把 PP4 主动收窄为 PreToolUse-first,严于 charter §10.1 T5 "三选一"。可以,但未明确说明这是设计层主动收窄 | low | scope-clarity | no | `05 §6.1` 取舍 2 增补一句 "本设计在 charter T5 的 `PreToolUse / PostToolUse / PermissionRequest 三选一` 范围内主动选最严的 PreToolUse-only 作为 PP4 硬闸,后两者只作为 secondary candidate;这是 design 层主动收窄,不是 charter 调整" |
+
+#### RR1. `02` 中 "Q18" 引用易与 PPX-qna Q18 混淆
+
+- **事实依据**:
+  - `02 §3.1` line 83:`新增 confirmation kind | tool cancel / custom ask 诱因 | HP5 Q18 已冻结 7-kind`
+  - `02 §5.3` line 176:`tool.call.cancelled | out-of-scope | Q18 禁止加入 confirmation`(裸 "Q18",未带 HP5 前缀)
+  - `02 §9.1` line 323:`D-02-3 | 是否扩展 confirmation kind?| PP1 | 否 | frozen | HP5/Q18`
+  - `PPX-qna Q18` 是 `/runtime` 的 config-only 字段,与 confirmation kind 无关
+  - 真正与 confirmation kind 同义的 PPX-qna 题号是 `Q8`(`docs/design/pro-to-product/PPX-qna.md:123`)
+- **为什么重要**:owner 在 PP1 implementation 期看到 design 02 §5.3 的裸 "Q18",大概率会跳到 PPX-qna Q18 看,然后发现该题与 confirmation 无关,产生不必要的"是不是规则改了"的迷惑
+- **建议修法**:把 D-02-3 答复来源改为 "HP5-closure §5 / PPX-qna Q8";§3.1 / §5.3 中裸 "Q18" 加 "HP5 " 前缀
+
+#### RR2. `06` D-06-2 与 Q19 reasoning 不同步
+
+- **事实依据**:
+  - `06 §9.1` line 327:`D-06-2 | stream retry 是否必须与 non-stream 对齐?| PP5 | 至少补 retry/error honesty | proposed`
+  - `PPX-qna Q19` reasoning:"这题必须在 PP5 implementation/closure 之前收口成单一路径:要么内部补 stream retry,要么显式 degraded + client retry + docs truth;不能继续把两条都写成 open option。"
+  - `06 §9.3` line 346 已加 "无;`PPX-qna.md` Q19 已是 stream retry 的唯一决策来源",这是好修复;但 D-06-2 当前建议本身没更新
+- **为什么重要**:design 06 D-06-2 表述 "至少补 retry/error honesty" 在语义上比 Q19 reasoning 的"必须冻结单一路径"更宽。PP5 owner 若只读 design 06 D-06-2 不读 Q19 reasoning,会以为只补 honesty 即可,而 Q19 是要求"二选一并冻结"
+- **建议修法**:`06 §9.1` D-06-2 当前建议改为 "PP5 closure 前必须冻结为'内部 retry'或'显式 degraded + client retry + docs truth'之一,不允许保留两条 open option" 与 Q19 reasoning 对齐
+
+#### RR3. `06 §1.2` 漏补 00/01 反向引用
+
+- **事实依据**:
+  - `06 §1.2` 当前内容:`runtime.md / 02-hitl-interrupt-closure.md / 05-hook-delivery-closure.md`
+  - 未引用 `00-agent-loop-truth-model.md`(T6 truth gate 来源)与 `01-frontend-trust-contract.md`(public surface boundary)
+  - GPT §6.4 表标 Opus-R2 fixed,但实际 fixed 范围只覆盖 `03/04/05/07`,06 被遗漏
+- **为什么重要**:design 06 是 PP5 hardening,与 `00 truth gate` 与 `01 public surface` 强耦合(T6 policy/reliability 必须服务 frontend trust contract);反向引用缺失会让 PP5 reviewer 在 evidence chain 上少一跳
+- **建议修法**:`06 §1.2` 增补 `00-agent-loop-truth-model.md` 与 `01-frontend-trust-contract.md` 引用
+
+#### RR4. `02 §9.3` 与 PPX-qna Q6/Q7/Q8 traceability 缺失
+
+- **事实依据**:
+  - `02 §9.3` line 343-344:`需要进入 QNA register 的问题:无;当前主要是实现断点,不是 owner scope 决策`
+  - 但 `PPX-qna.md` Q6/Q7/Q8 三题正是 D-02-1/D-02-2/D-02-3 的 owner 答复入口
+  - `05 §9.3` 已采用正确写法:`无;PermissionRequest fallback law 已集中到 PPX-qna.md Q17,PP4 只消费该答案`
+- **为什么重要**:PP1 action-plan owner 读 design 02 §9.3 看到"无 QNA 问题",可能会忽略 PPX-qna 的 Q6/Q7/Q8 owner 决策入口 — 这与"PPX-qna 是单一答复来源"的 §6.2 / §6.4 修订原则相违
+- **建议修法**:`02 §9.3` 改为 "无新增;PP1 主要 owner decisions 已集中到 `PPX-qna.md` Q6/Q7/Q8,PP1 只消费该答案" 与 05 §9.3 表述对齐
+
+#### RR5. `03/04` 各 D-xx 答复来源未引用 PPX-qna
+
+- **事实依据**:
+  - `03 §9.1`:D-03-1 / D-03-2 / D-03-3 答复来源仍写"HPX-O2 / current docs / 本设计"
+  - `04 §9.1`:D-04-1 / D-04-2 / D-04-3 答复来源仍写"本设计 / `ws-runtime.ts`"
+  - 实际 PPX-qna Q9/Q10/Q11 对应 D-03-1/D-03-2/D-03-3;Q12/Q13/Q14 对应 D-04-1/D-04-2/D-04-3
+  - `05 §9.1` D-05-3 已经做了正确引用 `docs/design/pro-to-product/PPX-qna.md Q17`
+- **为什么重要**:cross-doc traceability 不一致 — 部分 D-xx 引用 PPX-qna,部分没引用;PP* action-plan owner 在 design 与 PPX-qna 之间 hop 时会不一致
+- **建议修法**:03 / 04 各 D-xx 答复来源列 append "+ `PPX-qna.md` Q9/Q10/Q11/Q12/Q13/Q14",与 05 D-05-3 模式对齐
+
+#### RR6. `05 §6.1` 取舍 2 主动收窄 charter T5,未明示
+
+- **事实依据**:
+  - `charter §10.1 T5`:"至少一条 user-driven hook(`PreToolUse / PostToolUse / PermissionRequest 之一`)的 register → emit → outcome → frontend visible + audit visible 回路成立"
+  - `05 §6.1` 取舍 2:"我们选择 PreToolUse-first minimal loop 而不是 PreToolUse/PostToolUse/PermissionRequest 三类一起闭合"(but charter 也没要求三类一起,而是"之一")
+  - `05 §5.1 S2`:"PreToolUse live effect — 这是 PP4 的最小硬闸"
+  - `05 §9.2`:"至少一条 charter 允许的 user-driven hook live loop 真实触发;PP4 默认以 PreToolUse 为硬闸"
+- **为什么重要**:design 05 主动选了 charter T5"三选一"的最严 subset(PreToolUse-only),技术上完全合规,但表述上把"charter 要求"与"design 主动收窄"混在一起,未来 reviewer 难以判断"PostToolUse / PermissionRequest 是否可替代 PreToolUse 满足 T5"。这不是错误,是缺一句口径
+- **建议修法**:`05 §6.1` 取舍 2 增补一句:"本设计在 charter T5 的 `PreToolUse / PostToolUse / PermissionRequest 三选一` 范围内主动选最严的 PreToolUse-only 作为 PP4 硬闸;PostToolUse 与 PermissionRequest 仅作 secondary candidate。这是 design 层主动收窄,不是 charter 调整"
+
+### 7.5 In-Scope 二次对齐结论
+
+| 原 finding | 修复后状态 | 二次审查结论 |
+|------------|------------|--------------|
+| R1 elicitation 引用行号不全 | fixed | `done` |
+| R2 反向引用不一致 | partial(03/04/05/07 fixed,06 未补) | `done` for 4 docs / `partial` for 06 → RR3 |
+| R3 deadlock(catalog/Q17/PreToolUse caller) | fixed | `done` |
+| R4 PP2 T2 二义性 | fixed | `done` |
+| R5 db-missing→ask→error 链路 | fixed | `done` |
+| R6 replayFragment: null 硬编码 | fixed | `done` |
+| R7 HTTP/WS degraded 对齐 | fixed | `done` |
+| R8 compact ≤3s 阈值 | fixed | `done` |
+| R9 Q17 安全语义差异 | fixed | `done` |
+| R10 PP3 启动 gate 可执行判据 | fixed | `done` |
+| R11 22-doc 完整列举 | fixed | `done` |
+| R12 8 份 design D1 纪律 | fixed | `done` |
+| R13 14 类非 user-driven hook | fixed | `done` |
+
+**汇总**:13/13 原 finding 已 effectively done(R2 在 06 上漏修转为 RR3,但 RR3 与 R2 量级一致,均 low severity)。
+
+### 7.6 二次审查最终 Verdict
+
+- **最终 verdict**:`approve`
+- **是否允许关闭本轮 design 审查链**:`yes`
+  - 4 个原 blocker(R3/R4/R6/R10)已 verified cleared,grep 命中且语义正确
+  - 13 个 followup 全部 verified resolved
+  - GPT 的 stale-rejected/partial 判断经独立核验全部成立,无虚报
+  - 二次审查发现的 6 处 RR-finding 均 low severity,可在对应 PP* action-plan 中顺手补完
+- **关闭前必须完成的 blocker**:`无`
+- **可以后续跟进的 non-blocking follow-up(由对应 PP* action-plan 顺手吸收)**:
+  1. `RR1` — `02` 三处 "Q18" 引用加 "HP5 " 前缀或换为 "PPX-qna Q8"(PP1 action-plan 顺手)
+  2. `RR2` — `06` D-06-2 当前建议同步 Q19 mandate(PP5 action-plan 顺手)
+  3. `RR3` — `06 §1.2` 补 00/01 反向引用(PP5 action-plan 顺手)
+  4. `RR4` — `02 §9.3` 改为引用 PPX-qna Q6/Q7/Q8(PP1 action-plan 顺手)
+  5. `RR5` — `03/04` 各 D-xx 答复来源 append PPX-qna 题号(PP2/PP3 action-plan 顺手)
+  6. `RR6` — `05 §6.1` 取舍 2 增补一句"design 层主动收窄"口径(PP4 action-plan 顺手)
+- **建议的二次审查方式**:`no rereview needed`
+  - design baseline 已完全 ready;后续应转入 PP1-PP6 action-plan 阶段,reviewer 在 action-plan review 中验证 RR1-RR6 已被吸收即可
+
+> **二次审查结语**:GPT 的本轮修复在事实层面是 honest 的 — 13 个 Opus-R 全部命中,3 个 stale-rejected 全部成立,无虚假 closure。design 文件经过这一轮已经从 "approve-with-followups" 提升到 "approve",可以作为 PP1-PP6 action-plan 的 frozen design baseline 使用。RR1-RR6 6 处文档一致性残留属于"修复后未顺手同步另一处对应表述"的小漂移,不需要再走一轮 design review,在对应 PP* action-plan 的 §0 / §3 中顺手补完即可。

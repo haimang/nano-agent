@@ -188,9 +188,9 @@ PP4 位于 HITL、policy 与 tool execution 之间。它不是为了“炫技扩
    - **未来重评条件**：若 owner 明确 hooks 只作为平台内部能力。
 
 2. **取舍 2**：我们选择 **PreToolUse-first minimal loop** 而不是 **PreToolUse/PostToolUse/PermissionRequest 三类一起闭合**
-   - **为什么**：charter 冻结的是“至少一条 user-driven hook live loop”，不是三类一起收口。
-   - **我们接受的代价**：PostToolUse 与 PermissionRequest 可能只作为次级 outcome 或后续 phase 输入。
-   - **未来重评条件**：owner 提高 PP4 scope，或 minimal loop 被证明不足。
+   - **为什么**：charter §10.1 T5 允许 `PreToolUse / PostToolUse / PermissionRequest 三选一`，本设计在该范围内主动选最严格的 PreToolUse-only 作为 PP4 硬闸；PostToolUse 与 PermissionRequest 仅作 secondary candidate。这是 design 层主动收窄,不是 charter 调整。具体取舍依据:PreToolUse 是工具执行前唯一能阻断/改写 input 的 blocking 事件,证明 register→emit→outcome→frontend visible+audit visible 链路最有信息量;PostToolUse(non-blocking)不能证明 outcome 改变行为;PermissionRequest 受 PPX-qna Q17 fallback 不确定性影响。
+   - **我们接受的代价**：PostToolUse 与 PermissionRequest 可能只作为次级 outcome 或后续 phase 输入;若 owner 在 PPX-qna Q15 拍板要求三类一起闭合,需要 amend 本设计。
+   - **未来重评条件**：owner 在 PPX-qna Q15 / Q17 中提高 PP4 scope,或 PreToolUse minimal loop 被证明不足以证明 T5 闭环。
 
 3. **取舍 3**：我们选择 **先冻结 PermissionRequest fallback law** 而不是 **让 handler 缺失语义继续模糊**
    - **为什么**：`fallback confirmation` 与 `fail-closed` 是不同产品语义，不能在 action-plan 内临时改口。
