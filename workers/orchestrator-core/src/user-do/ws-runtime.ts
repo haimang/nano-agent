@@ -158,6 +158,8 @@ export function createUserDoWsRuntime(ctx: UserDoWsRuntimeContext) {
           detail: {
             client_last_seen_seq: clientLastSeenSeq,
             relay_cursor: entry.relay_cursor,
+            reason: "client-ahead-of-relay-cursor",
+            degraded: true,
           },
         });
         ctx.emitServerFrame(sessionUuid, {

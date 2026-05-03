@@ -102,13 +102,31 @@ describe("orchestrator-core observability runtime wiring", () => {
       }),
     );
 
-    const body = (await response.json()) as { data: { replay_lost: boolean } };
+    const body = (await response.json()) as {
+      data: {
+        replay_lost: boolean;
+        replay_lost_detail: {
+          client_last_seen_seq: number;
+          relay_cursor: number;
+          reason: string;
+          degraded: boolean;
+        } | null;
+      };
+    };
     expect(body.data.replay_lost).toBe(true);
+    expect(body.data.replay_lost_detail).toEqual({
+      client_last_seen_seq: 9,
+      relay_cursor: 5,
+      reason: "client-ahead-of-relay-cursor",
+      degraded: true,
+    });
     expect(audits).toHaveLength(1);
     expect(audits[0]?.event_kind).toBe("session.replay_lost");
     expect(audits[0]?.detail).toEqual({
       client_last_seen_seq: 9,
       relay_cursor: 5,
+      reason: "client-ahead-of-relay-cursor",
+      degraded: true,
     });
   });
 

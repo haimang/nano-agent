@@ -288,8 +288,18 @@ export function createUserDoSurfaceRuntime(ctx: UserDoSurfaceRuntimeContext) {
       const gatedEntry = await this.enforceSessionDevice(sessionUuid, entry, authSnapshot);
       if (gatedEntry instanceof Response) return gatedEntry;
       const acknowledged = gatedEntry.relay_cursor;
+      const clientLastSeenSeq =
+        typeof body.last_seen_seq === "number" ? body.last_seen_seq : null;
       const replayLost =
-        typeof body.last_seen_seq === "number" && body.last_seen_seq > acknowledged;
+        clientLastSeenSeq !== null && clientLastSeenSeq > acknowledged;
+      const replayLostDetail = replayLost
+        ? {
+            client_last_seen_seq: clientLastSeenSeq,
+            relay_cursor: acknowledged,
+            reason: "client-ahead-of-relay-cursor",
+            degraded: true,
+          }
+        : null;
       if (replayLost) {
         const auditAuth = authSnapshot ?? await ctx.readAuditAuthSnapshot();
         await ctx.persistAudit({
@@ -302,10 +312,7 @@ export function createUserDoSurfaceRuntime(ctx: UserDoSurfaceRuntimeContext) {
           team_uuid: auditAuth?.team_uuid ?? auditAuth?.tenant_uuid,
           user_uuid: auditAuth?.user_uuid ?? auditAuth?.sub,
           device_uuid: auditAuth?.device_uuid ?? gatedEntry.device_uuid ?? undefined,
-          detail: {
-            client_last_seen_seq: body.last_seen_seq,
-            relay_cursor: acknowledged,
-          },
+          detail: replayLostDetail ?? undefined,
         });
       }
       return jsonResponse(200, {
@@ -316,6 +323,7 @@ export function createUserDoSurfaceRuntime(ctx: UserDoSurfaceRuntimeContext) {
           last_phase: gatedEntry.last_phase,
           relay_cursor: acknowledged,
           replay_lost: replayLost,
+          replay_lost_detail: replayLostDetail,
         },
       });
     },
