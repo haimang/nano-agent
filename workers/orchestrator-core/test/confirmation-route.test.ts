@@ -5,7 +5,7 @@
 //   * docs/design/hero-to-pro/HP5-confirmation-control-plane.md §7 F3
 //   * docs/design/hero-to-pro/HPX-qna.md Q16-Q18
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import worker from "../src/index.js";
 import { signTestJwt } from "./jwt-helper.js";
 
@@ -282,6 +282,7 @@ describe("HP5 /sessions/{id}/confirmations public routes", () => {
       JWT_SECRET,
     );
     const { db, rows } = createConfirmationDb();
+    const permissionDecision = vi.fn(async () => ({ status: 200, body: { ok: true } }));
     const response = await worker.fetch(
       new Request(
         `https://example.com/sessions/${SESSION_UUID}/confirmations/${CONFIRMATION_UUID}/decision`,
@@ -303,12 +304,28 @@ describe("HP5 /sessions/{id}/confirmations public routes", () => {
         TEAM_UUID: "nano-agent",
         NANO_AGENT_DB: db,
         ORCHESTRATOR_USER_DO: {} as any,
+        AGENT_CORE: { permissionDecision },
       } as any,
     );
     expect(response.status).toBe(200);
     expect(rows[0]!.status).toBe("allowed");
     expect(rows[0]!.decision_payload_json).toBe(
       JSON.stringify({ decision: "allow", scope: "once" }),
+    );
+    expect(permissionDecision).toHaveBeenCalledWith(
+      expect.objectContaining({
+        session_uuid: SESSION_UUID,
+        request_uuid: CONFIRMATION_UUID,
+        decision: "allow",
+        status: "allowed",
+      }),
+      expect.objectContaining({
+        trace_uuid: TRACE_UUID,
+        authority: expect.objectContaining({
+          sub: USER_UUID,
+          tenant_uuid: TEAM_UUID,
+        }),
+      }),
     );
   });
 

@@ -525,6 +525,13 @@ async function handleSessionConfirmation(
       decided_at: decidedAt,
     },
   );
+  await wakeAgentConfirmationWaiter(env, session, {
+    confirmationUuid: route.confirmationUuid,
+    kind: result.row.kind,
+    status: result.row.status,
+    decisionPayload,
+    traceUuid,
+  });
   return Response.json(
     {
       ok: true,

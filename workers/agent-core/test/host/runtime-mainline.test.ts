@@ -335,4 +335,101 @@ describe("createMainlineKernelRunner", () => {
     await nextPromise;
     await execute.next();
   });
+
+  it("waits for HITL permission when runtime policy asks", async () => {
+    const authorizeToolUse = vi.fn(async () => ({
+      ok: true,
+      decision: "ask" as const,
+      source: "approval-policy" as const,
+      reason: "approval policy requires confirmation",
+    }));
+    const requestToolPermission = vi.fn(async () => ({
+      request_uuid: "tool-1",
+      status: "allowed",
+    }));
+    const call = vi.fn(async () => ({ status: "ok", output: { ok: true } }));
+    const runner = createMainlineKernelRunner({
+      ai: { run: vi.fn() },
+      quotaAuthorizer: null,
+      capabilityTransport: { call },
+      authorizeToolUse,
+      requestToolPermission,
+      contextProvider: () => ({
+        teamUuid: "team-1",
+        sessionUuid: "session-1",
+        traceUuid: "33333333-3333-4333-8333-333333333333",
+        turnUuid: "turn-1",
+      }),
+      anchorProvider: () => undefined,
+    });
+
+    const result = await runner.advanceStep(toolSnapshot("turn-1"), baseSignals({
+      hasMoreToolCalls: true,
+    }));
+
+    expect(authorizeToolUse).toHaveBeenCalledWith(
+      expect.objectContaining({
+        session_uuid: "session-1",
+        team_uuid: "team-1",
+        tool_name: "pwd",
+      }),
+      expect.objectContaining({
+        trace_uuid: "33333333-3333-4333-8333-333333333333",
+      }),
+    );
+    expect(requestToolPermission).toHaveBeenCalledWith(
+      expect.objectContaining({
+        request_uuid: "tool-1",
+        tool_name: "pwd",
+        reason: "approval policy requires confirmation",
+      }),
+    );
+    expect(call).toHaveBeenCalledTimes(1);
+    expect(result.events).toContainEqual(
+      expect.objectContaining({
+        type: "tool.call.result",
+        requestId: "tool-1",
+        status: "ok",
+      }),
+    );
+  });
+
+  it("does not execute the tool when HITL permission is denied", async () => {
+    const requestToolPermission = vi.fn(async () => ({
+      request_uuid: "tool-1",
+      status: "denied",
+    }));
+    const call = vi.fn();
+    const runner = createMainlineKernelRunner({
+      ai: { run: vi.fn() },
+      quotaAuthorizer: null,
+      capabilityTransport: { call },
+      authorizeToolUse: vi.fn(async () => ({
+        ok: true,
+        decision: "ask" as const,
+        source: "approval-policy" as const,
+      })),
+      requestToolPermission,
+      contextProvider: () => ({
+        teamUuid: "team-1",
+        sessionUuid: "session-1",
+        traceUuid: "33333333-3333-4333-8333-333333333333",
+        turnUuid: "turn-1",
+      }),
+      anchorProvider: () => undefined,
+    });
+
+    const result = await runner.advanceStep(toolSnapshot("turn-1"), baseSignals({
+      hasMoreToolCalls: true,
+    }));
+
+    expect(call).not.toHaveBeenCalled();
+    expect(result.events).toContainEqual(
+      expect.objectContaining({
+        type: "tool.call.result",
+        requestId: "tool-1",
+        status: "error",
+      }),
+    );
+  });
 });
