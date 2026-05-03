@@ -27,6 +27,17 @@ describe("hook adapter", () => {
     const parsed = SessionStreamEventBodySchema.parse(e);
     expect((parsed as any).payload_redacted.secret).toBe("[redacted]");
   });
+  it("preserves hook caller provenance when provided", () => {
+    const e = hookBroadcastToStreamEvent(
+      "PreToolUse",
+      { tool_name: "bash" },
+      undefined,
+      undefined,
+      { caller: "pre-tool-use" },
+    );
+    const parsed = SessionStreamEventBodySchema.parse(e);
+    expect((parsed as any).caller).toBe("pre-tool-use");
+  });
 });
 
 describe("compact adapter", () => {

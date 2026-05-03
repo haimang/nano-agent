@@ -150,6 +150,7 @@ export { redactPayload } from "./redaction.js";
 // ── Adapters ──
 export { toolProgressToStreamEvent, toolResultToStreamEvent } from "./adapters/tool.js";
 export { hookBroadcastToStreamEvent } from "./adapters/hook.js";
+export type { HookBroadcastCaller } from "./adapters/hook.js";
 export { compactNotifyToStreamEvent } from "./adapters/compact.js";
 export { systemNotifyToStreamEvent } from "./adapters/system.js";
 export { llmDeltaToStreamEvent } from "./adapters/llm.js";
