@@ -73,8 +73,8 @@ async function emitterRowCreateBestEffort(
   sessionUuid: string,
   frame: { readonly kind: string; readonly [k: string]: unknown },
   logger: { warn: (msg: string, ctx?: Record<string, unknown>) => void },
-): Promise<void> {
-  if (!db) return;
+): Promise<{ ok: true } | { ok: false; reason: string }> {
+  if (!db) return { ok: false, reason: "db-missing" };
   let kind: ConfirmationKind | null = null;
   if (frame.kind === "session.permission.request") kind = "tool_permission";
   else if (frame.kind === "session.elicitation.request") kind = "elicitation";
@@ -85,14 +85,14 @@ async function emitterRowCreateBestEffort(
   ) {
     kind = frame.confirmation_kind as ConfirmationKind;
   }
-  if (!kind) return;
+  if (!kind) return { ok: true };
   const requestUuid =
     typeof frame.confirmation_uuid === "string"
       ? frame.confirmation_uuid
       : typeof frame.request_uuid === "string"
         ? frame.request_uuid
         : null;
-  if (!requestUuid || !UUID_RE.test(requestUuid)) return;
+  if (!requestUuid || !UUID_RE.test(requestUuid)) return { ok: false, reason: "invalid-confirmation-uuid" };
   const plane = new D1ConfirmationControlPlane(db);
   const now = new Date().toISOString();
   try {
@@ -100,7 +100,7 @@ async function emitterRowCreateBestEffort(
       session_uuid: sessionUuid,
       confirmation_uuid: requestUuid,
     });
-    if (existing) return;
+    if (existing) return { ok: true };
     await plane.create({
       confirmation_uuid: requestUuid,
       session_uuid: sessionUuid,
@@ -109,6 +109,7 @@ async function emitterRowCreateBestEffort(
       created_at: now,
       expires_at: null,
     });
+    return { ok: true };
   } catch (error) {
     logger.warn("hp5-emitter-row-create-failed", {
       code: "internal-error",
@@ -120,6 +121,7 @@ async function emitterRowCreateBestEffort(
         error: String(error),
       },
     });
+    return { ok: false, reason: "row-create-failed" };
   }
 }
 
@@ -535,12 +537,15 @@ export default class OrchestratorCoreEntrypoint extends WorkerEntrypoint<Orchest
     }
     const logger = createOrchestratorLogger(this.env);
     // HP5-D1 emitter row-create (best-effort; never blocks frame delivery)
-    await emitterRowCreateBestEffort(
+    const rowCreate = await emitterRowCreateBestEffort(
       this.env.NANO_AGENT_DB,
       sessionUuid,
       frame,
       logger,
     );
+    if (!rowCreate.ok && frame.kind === "session.confirmation.request") {
+      return { ok: false, delivered: false, reason: rowCreate.reason };
+    }
     try {
       const stub = this.env.ORCHESTRATOR_USER_DO.get(
         this.env.ORCHESTRATOR_USER_DO.idFromName(meta.userUuid),

@@ -329,6 +329,39 @@ describe("HP5 /sessions/{id}/confirmations public routes", () => {
     );
   });
 
+  it("POST /sessions/{id}/confirmations/{uuid}/decision returns 503 when runtime wakeup is unavailable", async () => {
+    const token = await signTestJwt(
+      { sub: USER_UUID, user_uuid: USER_UUID, team_uuid: TEAM_UUID },
+      JWT_SECRET,
+    );
+    const { db, rows } = createConfirmationDb();
+    const response = await worker.fetch(
+      new Request(
+        `https://example.com/sessions/${SESSION_UUID}/confirmations/${CONFIRMATION_UUID}/decision`,
+        {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${token}`,
+            "content-type": "application/json",
+            "x-trace-uuid": TRACE_UUID,
+          },
+          body: JSON.stringify({
+            status: "allowed",
+            decision_payload: { decision: "allow", scope: "once" },
+          }),
+        },
+      ),
+      {
+        JWT_SECRET,
+        TEAM_UUID: "nano-agent",
+        NANO_AGENT_DB: db,
+        ORCHESTRATOR_USER_DO: {} as any,
+      } as any,
+    );
+    expect(response.status).toBe(503);
+    expect(rows[0]!.status).toBe("allowed");
+  });
+
   it("POST /sessions/{id}/confirmations/{uuid}/decision rejects status=failed (Q16)", async () => {
     const token = await signTestJwt(
       { sub: USER_UUID, user_uuid: USER_UUID, team_uuid: TEAM_UUID },

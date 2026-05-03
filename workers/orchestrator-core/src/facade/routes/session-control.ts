@@ -159,14 +159,14 @@ async function wakeAgentConfirmationWaiter(
     readonly decisionPayload: Record<string, unknown> | null;
     readonly traceUuid: string;
   },
-): Promise<void> {
+): Promise<{ ok: true } | { ok: false; reason: string }> {
   const authority = buildAgentAuthority(session);
   const meta = { trace_uuid: input.traceUuid, authority };
   try {
     if (input.kind === "tool_permission") {
       const rpc = env.AGENT_CORE?.permissionDecision;
-      if (typeof rpc !== "function") return;
-      await rpc(
+      if (typeof rpc !== "function") return { ok: false, reason: "agent-rpc-missing" };
+      const response = await rpc(
         {
           session_uuid: session.session_uuid,
           request_uuid: input.confirmationUuid,
@@ -181,12 +181,14 @@ async function wakeAgentConfirmationWaiter(
         },
         meta,
       );
-      return;
+      return response.status >= 200 && response.status < 300
+        ? { ok: true }
+        : { ok: false, reason: `agent-rpc-status-${response.status}` };
     }
     if (input.kind === "elicitation") {
       const rpc = env.AGENT_CORE?.elicitationAnswer;
-      if (typeof rpc !== "function") return;
-      await rpc(
+      if (typeof rpc !== "function") return { ok: false, reason: "agent-rpc-missing" };
+      const response = await rpc(
         {
           session_uuid: session.session_uuid,
           request_uuid: input.confirmationUuid,
@@ -202,7 +204,11 @@ async function wakeAgentConfirmationWaiter(
         },
         meta,
       );
+      return response.status >= 200 && response.status < 300
+        ? { ok: true }
+        : { ok: false, reason: `agent-rpc-status-${response.status}` };
     }
+    return { ok: true };
   } catch (error) {
     createOrchestratorLogger(env).warn("confirmation-decision-wakeup-failed", {
       code: "internal-error",
@@ -214,6 +220,7 @@ async function wakeAgentConfirmationWaiter(
         error: String(error),
       },
     });
+    return { ok: false, reason: "agent-rpc-error" };
   }
 }
 
@@ -525,13 +532,21 @@ async function handleSessionConfirmation(
       decided_at: decidedAt,
     },
   );
-  await wakeAgentConfirmationWaiter(env, session, {
+  const wake = await wakeAgentConfirmationWaiter(env, session, {
     confirmationUuid: route.confirmationUuid,
     kind: result.row.kind,
     status: result.row.status,
     decisionPayload,
     traceUuid,
   });
+  if (!wake.ok) {
+    return jsonPolicyError(
+      503,
+      "internal-error",
+      `confirmation decision committed but runtime wakeup failed: ${wake.reason}`,
+      traceUuid,
+    );
+  }
   return Response.json(
     {
       ok: true,
