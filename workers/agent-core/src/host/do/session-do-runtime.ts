@@ -412,11 +412,24 @@ export class NanoSessionDO {
       });
       throw new Error(`permission no decider: ${emitted.reason ?? "no-attached-client"}`);
     }
-    return this.awaitAsyncAnswer({
-      kind: "permission",
-      requestUuid: input.requestUuid,
-      timeoutMs: input.timeoutMs,
-    });
+    try {
+      return await this.awaitAsyncAnswer({
+        kind: "permission",
+        requestUuid: input.requestUuid,
+        timeoutMs: input.timeoutMs,
+      });
+    } catch (error) {
+      await this.settleConfirmation({
+        sessionUuid: input.sessionUuid,
+        requestUuid: input.requestUuid,
+        status: "timeout",
+        decisionPayload: {
+          reason: error instanceof Error ? error.message : String(error),
+          source: "agent-core",
+        },
+      });
+      throw error;
+    }
   }
 
   async emitElicitationRequestAndAwait(input: {

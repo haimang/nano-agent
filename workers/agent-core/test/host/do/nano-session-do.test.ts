@@ -23,6 +23,7 @@ function makeRequest(
 
 const TRACE_UUID = "11111111-1111-4111-8111-111111111111";
 const SESSION_UUID = "22222222-2222-4222-8222-222222222222";
+const REQUEST_UUID = "55555555-5555-4555-8555-555555555555";
 const MESSAGE_UUID_SEED = "33333333-3333-4";
 const AUTHORITY = {
   sub: "44444444-4444-4444-8444-444444444444",
@@ -209,6 +210,55 @@ describe("NanoSessionDO", () => {
           teamUuid: "team-xyz",
           traceUuid: TRACE_UUID,
         },
+      );
+    });
+
+    it("settles permission confirmations as timeout when no client is attached", async () => {
+      const forwardServerFrameToClient = vi.fn().mockResolvedValue({
+        ok: true,
+        delivered: false,
+        reason: "no-attached-client",
+      });
+      const settleConfirmation = vi.fn().mockResolvedValue({
+        ok: true,
+        status: "timeout",
+      });
+      const internalDo = new NanoSessionDO({}, {
+        TEAM_UUID: "team-xyz",
+        NANO_INTERNAL_BINDING_SECRET: "secret",
+        ORCHESTRATOR_CORE: { forwardServerFrameToClient, settleConfirmation },
+      });
+
+      await internalDo.fetch(
+        new Request(`https://session.internal/sessions/${SESSION_UUID}/status`, {
+          headers: {
+            "x-nano-internal-binding-secret": "secret",
+            "x-trace-uuid": TRACE_UUID,
+            "x-nano-internal-authority": JSON.stringify(AUTHORITY),
+          },
+        }),
+      );
+
+      await expect((internalDo as unknown as {
+        emitPermissionRequestAndAwait: (input: {
+          sessionUuid: string;
+          requestUuid: string;
+          toolName: string;
+          toolInput: Record<string, unknown>;
+        }) => Promise<Record<string, unknown>>;
+      }).emitPermissionRequestAndAwait({
+        sessionUuid: SESSION_UUID,
+        requestUuid: REQUEST_UUID,
+        toolName: "bash",
+        toolInput: { command: "pwd" },
+      })).rejects.toThrow("permission no decider");
+      expect(settleConfirmation).toHaveBeenCalledWith(
+        expect.objectContaining({
+          session_uuid: SESSION_UUID,
+          confirmation_uuid: REQUEST_UUID,
+          status: "timeout",
+        }),
+        expect.objectContaining({ team_uuid: "team-xyz" }),
       );
     });
 
