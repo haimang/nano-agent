@@ -81,6 +81,14 @@ export interface SessionDoRuntimeAssemblyContext {
     readonly kind: string;
     readonly [k: string]: unknown;
   }): Promise<{ ok: boolean; delivered: boolean; reason?: string }>;
+  emitPermissionRequestAndAwait(input: {
+    readonly sessionUuid: string;
+    readonly requestUuid: string;
+    readonly toolName: string;
+    readonly toolInput: Record<string, unknown>;
+    readonly reason?: string;
+    readonly timeoutMs?: number;
+  }): Promise<Record<string, unknown>>;
   ensureWsHelper(): SessionWebSocketHelper | null;
   buildTraceContext(): TraceContext | undefined;
   currentTeamUuid(): string | null;
@@ -186,6 +194,15 @@ function createLiveKernelRunner(
     capabilityTransport,
     writeTodosBackend,
     authorizeToolUse,
+    requestToolPermission: (input) =>
+      ctx.emitPermissionRequestAndAwait({
+        sessionUuid: input.session_uuid,
+        requestUuid: input.request_uuid,
+        toolName: input.tool_name,
+        toolInput: input.tool_input,
+        ...(input.reason ? { reason: input.reason } : {}),
+        timeoutMs: 60_000,
+      }),
     contextProvider: () => ctx.buildQuotaContext(),
     anchorProvider: () => ctx.buildCrossSeamAnchor(),
     // HP5 P2-02 — real dispatcher injection. Even with no handlers

@@ -212,6 +212,8 @@ export class NanoSessionDO {
       buildQuotaContext: (turnUuid?: string | null) => this.buildQuotaContext(turnUuid),
       getCapabilityTransport: () => this.getCapabilityTransport(),
       pushServerFrameToClient: (frame) => this.pushServerFrameToClient(frame),
+      emitPermissionRequestAndAwait: (input) =>
+        this.emitPermissionRequestAndAwait(input),
       ensureWsHelper: () => this.ensureWsHelper(),
       buildTraceContext: () => this.buildTraceContext(),
       currentTeamUuid: () => this.currentTeamUuid(),
@@ -378,17 +380,38 @@ export class NanoSessionDO {
   async emitPermissionRequestAndAwait(input: {
     sessionUuid: string;
     requestUuid: string;
-    capability: string;
+    toolName?: string;
+    toolInput?: Record<string, unknown>;
+    capability?: string;
     reason?: string;
     timeoutMs?: number;
   }): Promise<Record<string, unknown>> {
-    await this.pushServerFrameToClient({
-      kind: "session.permission.request",
-      session_uuid: input.sessionUuid,
+    const toolName = input.toolName ?? input.capability ?? "unknown";
+    const toolInput = input.toolInput ?? {};
+    const emitted = await this.pushServerFrameToClient({
+      kind: "session.confirmation.request",
+      confirmation_uuid: input.requestUuid,
+      confirmation_kind: "tool_permission",
       request_uuid: input.requestUuid,
-      capability: input.capability,
+      payload: {
+        tool_name: toolName,
+        tool_input: toolInput,
+        ...(input.reason !== undefined ? { reason: input.reason } : {}),
+      },
       ...(input.reason !== undefined ? { reason: input.reason } : {}),
     });
+    if (!emitted.delivered) {
+      await this.settleConfirmation({
+        sessionUuid: input.sessionUuid,
+        requestUuid: input.requestUuid,
+        status: "timeout",
+        decisionPayload: {
+          reason: emitted.reason ?? "no-attached-client",
+          source: "agent-core",
+        },
+      });
+      throw new Error(`permission no decider: ${emitted.reason ?? "no-attached-client"}`);
+    }
     return this.awaitAsyncAnswer({
       kind: "permission",
       requestUuid: input.requestUuid,
@@ -413,6 +436,43 @@ export class NanoSessionDO {
       requestUuid: input.requestUuid,
       timeoutMs: input.timeoutMs,
     });
+  }
+
+  private async settleConfirmation(input: {
+    sessionUuid: string;
+    requestUuid: string;
+    status: "timeout" | "superseded";
+    decisionPayload: Record<string, unknown>;
+  }): Promise<void> {
+    const env = this.env as Partial<SessionRuntimeEnv> | undefined;
+    const orch = env?.ORCHESTRATOR_CORE;
+    if (!orch || typeof orch.settleConfirmation !== "function") return;
+    const teamUuid = this.currentTeamUuid();
+    if (!teamUuid) return;
+    try {
+      await orch.settleConfirmation(
+        {
+          session_uuid: input.sessionUuid,
+          confirmation_uuid: input.requestUuid,
+          status: input.status,
+          decision_payload: input.decisionPayload,
+        },
+        {
+          trace_uuid: this.traceUuid ?? crypto.randomUUID(),
+          team_uuid: teamUuid,
+        },
+      );
+    } catch (error) {
+      logger.warn("settle-confirmation-failed", {
+        code: "internal-error",
+        ctx: {
+          tag: "settle-confirmation-failed",
+          session_uuid: input.sessionUuid,
+          request_uuid: input.requestUuid,
+          error: String(error),
+        },
+      });
+    }
   }
 
   private async pushServerFrameToClient(frame: {

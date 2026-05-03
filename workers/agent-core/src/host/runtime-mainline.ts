@@ -203,6 +203,15 @@ export interface MainlineKernelOptions {
     readonly source: "session-rule" | "tenant-rule" | "approval-policy" | "unavailable";
     readonly reason?: string;
   }>;
+  readonly requestToolPermission?: (input: {
+    readonly session_uuid: string;
+    readonly team_uuid: string;
+    readonly trace_uuid: string;
+    readonly request_uuid: string;
+    readonly tool_name: string;
+    readonly tool_input: Record<string, unknown>;
+    readonly reason?: string;
+  }) => Promise<Record<string, unknown>>;
 }
 
 // HP3-D2 / HP3-D4 (deferred-closure absorb) — compact signal probe + breaker
@@ -250,6 +259,59 @@ async function authorizeToolPlan(
     { trace_uuid: ctx.traceUuid, team_uuid: ctx.teamUuid },
   );
   if (result.decision === "allow") return { allowed: true };
+  if (result.decision === "ask") {
+    if (!options.requestToolPermission) {
+      return {
+        allowed: false,
+        error: {
+          code: "tool-permission-no-decider",
+          message: `tool ${toolName} requires permission but no HITL decider is wired`,
+          source: result.source,
+        },
+      };
+    }
+    try {
+      const decision = await options.requestToolPermission({
+        session_uuid: ctx.sessionUuid,
+        team_uuid: ctx.teamUuid,
+        trace_uuid: ctx.traceUuid,
+        request_uuid: requestId,
+        tool_name: toolName,
+        tool_input: toolInput,
+        ...(result.reason ? { reason: result.reason } : {}),
+      });
+      const status = typeof decision.status === "string" ? decision.status : undefined;
+      const legacyDecision =
+        typeof decision.decision === "string" ? decision.decision : undefined;
+      if (
+        status === "allowed" ||
+        legacyDecision === "allow" ||
+        legacyDecision === "always_allow"
+      ) {
+        return { allowed: true };
+      }
+      return {
+        allowed: false,
+        error: {
+          code: status === "timeout" ? "tool-permission-timeout" : "tool-permission-denied",
+          message: `tool ${toolName} permission was ${status ?? legacyDecision ?? "denied"}`,
+          source: result.source,
+        },
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        allowed: false,
+        error: {
+          code: message.includes("timeout")
+            ? "tool-permission-timeout"
+            : "tool-permission-no-decider",
+          message: `tool ${toolName} permission could not be resolved: ${message}`,
+          source: result.source,
+        },
+      };
+    }
+  }
   const code = result.decision === "ask" ? "tool-permission-required" : "tool-permission-denied";
   return {
     allowed: false,

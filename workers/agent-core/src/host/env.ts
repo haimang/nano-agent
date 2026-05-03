@@ -122,6 +122,16 @@ export interface SessionRuntimeEnv {
       readonly source: "session-rule" | "tenant-rule" | "approval-policy" | "unavailable";
       readonly reason?: string;
     }>;
+    settleConfirmation?(input: {
+      readonly session_uuid: string;
+      readonly confirmation_uuid: string;
+      readonly status: "timeout" | "superseded";
+      readonly decision_payload?: Record<string, unknown> | null;
+    }, meta?: { readonly trace_uuid?: string; readonly team_uuid?: string }): Promise<{
+      readonly ok: boolean;
+      readonly status?: string;
+      readonly reason?: string;
+    }>;
     /**
      * HPX5 F3 — context durable state probe used by auto-compact
      * decision. agent-core composes the result with `composeCompactSignalProbe`
