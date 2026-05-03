@@ -20,7 +20,7 @@ export const NANO_PACKAGE_MANIFEST = {
       "registry_version": "1.5.0",
       "registry_latest_version": "1.5.0",
       "registry_published_at": "workspace-local-fallback",
-      "dist_sha256": "c0a3e75b420b53e20fc654c03393649bb477d81e4b9f493118310bd221c351c0",
+      "dist_sha256": "71d3a6b9f2c9dda959534d9219a5c38e68834df238308241d7a512ef619b608a",
       "match": true,
       "resolved_from": "workspace-local-fallback"
     },
