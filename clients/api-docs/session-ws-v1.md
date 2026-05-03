@@ -64,7 +64,7 @@ wss://<base>/sessions/{sessionUuid}/ws?access_token=<jwt>&trace_uuid=<uuid>&last
 | `tool.call.progress` | `{tool_name, request_uuid?, chunk, is_final}` | RHX2 | 渲染工具进度 |
 | `tool.call.result` | `{tool_name, request_uuid?, status, output?, error_message?}` | RHX2 | 工具完成 |
 | `tool.call.cancelled` | `{tool_name, request_uuid, cancel_initiator}` | **HP6** | 工具取消通知；`cancel_initiator ∈ {user, system, parent_cancel}` |
-| `hook.broadcast` | `{event_name, caller?, payload_redacted, aggregated_outcome?}` | PP4 | hook 广播；PP4 PreToolUse caller 使用 `caller:"pre-tool-use"` |
+| `hook.broadcast` | `{event_name, caller?, payload_redacted, aggregated_outcome?}` | PP4 | hook 广播；`caller ∈ {"pre-tool-use","step-emit"}` |
 | `session.update` | `{phase, partial_output?}` | RHX2 | session phase 变化 |
 | `turn.begin` | `{turn_uuid}` | RHX2 | turn 起始 |
 | `turn.end` | `{turn_uuid, usage?}` | RHX2 | turn 结束 |
@@ -210,7 +210,7 @@ HPX6 新增 5 个 server → client 顶层帧：
 }
 ```
 
-`reason` ∈ `{reattach, revoked}`。旧 socket 会被 server 用 close code `4001` 关闭。
+`reason` ∈ `{device-conflict, reattach, revoked, policy}`。旧 socket 会被 server 用 close code `4001` 关闭。
 
 ### 3.7 `session.replay.lost`
 
@@ -244,7 +244,20 @@ HPX6 新增 5 个 server → client 顶层帧：
 |------------------|--------------|-------|
 | `completed` | `completed` | `1000 session_completed` |
 | `cancelled` | `user` | `1000 session_cancelled` |
+| `timeout` / idle expiry | `timeout` | `1000 session_timeout` |
 | `error` | `error` | `1000 session_error` |
+
+### 3.8a `hook.broadcast.caller`
+
+`hook.broadcast` 的 `caller` 字段用于区分触发来源：
+
+| caller | 说明 |
+|--------|------|
+| `pre-tool-use` | PP4 live caller；工具执行前运行，可 block / updateInput |
+| `step-emit` | generic runtime step emit；只广播，不作为工具执行 gate |
+| omitted | legacy / 旧 substrate frame |
+
+详见 [`hooks.md`](./hooks.md)。
 
 ### 3.9 `session.usage.update`（HP9 frozen 阶段已 live）
 

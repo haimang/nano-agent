@@ -89,6 +89,8 @@ Content-Type: application/json
 > - KV / RPC 失败 → silently log，不影响 200 响应（**不**返回 503 `internal-error`，因为 row 已写成，从客户端视角是终态成功）。  
 > - confirmation row 是 single source of truth；客户端可信任 200 响应代表 D1 已落地。  
 > - `409 confirmation-already-resolved` 是统一 confirmation plane 的冲突 code；legacy 客户端遇到 409 应**视为最终态成功**，不要重试。
+>
+> 新代码应优先使用 unified `POST /sessions/{id}/confirmations/{uuid}/decision`。该路径会在 row 已 commit 但 agent-core wakeup 失败时返回 `503 internal-error`，并把 row 改写为 `superseded`；详见 [`confirmations.md`](./confirmations.md) §4。
 
 ---
 

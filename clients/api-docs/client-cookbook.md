@@ -198,3 +198,36 @@ HPX5 F7 内已把 18-doc 中所有 `workers/orchestrator-core/src/index.ts:NNN` 
 ## 12. emit-helpers latency observability
 
 HPX5 新增 emit 出口(F1/F2c/F4)经 `packages/nacp-session/src/emit-helpers.ts` 的 `emitTopLevelFrame` / `emitStreamEvent`。每条 emit 路径在失败时 fall back 到 `system.error`,**绝不**静默丢帧。客户端如果在生产中频繁看到 `NACP_BINDING_UNAVAILABLE`,请上报 — 可能是 service binding 不可达。
+
+---
+
+## 13. Unified confirmation wakeup-failed
+
+`POST /sessions/{id}/confirmations/{uuid}/decision` 与 legacy `/permission/decision` 的失败语义不同：
+
+| 路径 | Row truth | Downstream wakeup failure |
+|------|-----------|---------------------------|
+| unified `/confirmations/{uuid}/decision` | 先写 D1 row | 返回 `503 internal-error`，row 改写为 `superseded`，不要盲目重试 decision |
+| legacy `/permission/decision` / `/elicitation/answer` | dual-write 兼容 | KV/RPC 失败仍返回 200，row/KV truth 用于后续 reconcile |
+
+客户端遇到 unified 503 时：
+
+1. 读取 `GET /sessions/{id}/confirmations/{uuid}`。
+2. 若 status 为 `superseded`，展示 "已记录但 runtime 未唤醒" 并允许用户重新发起上层操作。
+3. 不要直接重发同一个 decision；重发大概率返回 `409 confirmation-already-resolved`。
+
+---
+
+## 14. Reconnect Recovery Bundle
+
+当 WS attach 收到 `session.replay.lost`，或 HTTP `POST /sessions/{id}/resume` 返回 `data.replay_lost === true`，客户端必须把本次恢复视为 degraded，并刷新 recovery bundle：
+
+1. `GET /sessions/{id}/status` 或 `GET /sessions/{id}/runtime`：重建 phase / runtime policy。
+2. `GET /sessions/{id}/confirmations?status=pending`：恢复 HITL dialog truth。
+3. `GET /sessions/{id}/context/probe`：恢复 compact/budget posture。
+4. `GET /sessions/{id}/todos`：恢复 agent workboard。
+5. `GET /sessions/{id}/items`：恢复 workbench item projection。
+6. `GET /sessions/{id}/tool-calls`：恢复 tool call terminal/read-model。
+7. 必要时 `GET /sessions/{id}/timeline`：做 degraded reconciliation。
+
+PP3 不承诺 exactly-once replay；上述 bundle 是 first-wave client 侧一致性补偿。

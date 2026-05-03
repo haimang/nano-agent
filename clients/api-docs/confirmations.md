@@ -177,7 +177,9 @@ confirmation 的统一字段：
 | 400 | `invalid-input` | status 不在 enum 内，或 `decision_payload` 不是 object |
 | 404 | `not-found` | confirmation UUID 不存在 |
 | **409** | **`confirmation-already-resolved`** | row 已是终态；视为最终态成功，**不要重试**（Q16 invariant） |
-| 503 | `internal-error` | upstream RPC 不可达 |
+| 503 | `internal-error` | row 已 commit，但 agent-core wakeup 失败；message 包含 `runtime wakeup failed: agent-rpc-missing | agent-rpc-status-{N} | agent-rpc-error` |
+
+503 wakeup-failed 是 unified `/confirmations/{uuid}/decision` 的显式 second-leg failure：客户端不要盲目重试 decision（row 已 terminal，重试可能得到 `409 confirmation-already-resolved`），应刷新 `GET /confirmations/{uuid}` 并等待 / 观察 `session.confirmation.update`。
 
 ---
 

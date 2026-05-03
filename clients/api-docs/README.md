@@ -37,15 +37,15 @@
 | `session-ws-v1` | `GET /sessions/{id}/ws` | lightweight JSON frames |
 | `binary-content` | `GET /sessions/{id}/files/{fileUuid}/content` | raw bytes + content headers |
 
-## 22-Doc Pack（hero-to-pro HPX6 authoritative）
+## 23-Doc Pack（hero-to-pro HPX6 + pro-to-product PP4 authoritative）
 
-> HPX6 后对外接口文档扩展为 **19 份 HPX5/HP9 pack + runtime / items / tool-calls 3 份新增专题 = 22 份 authoritative pack**。README 是其中一份。
+> HPX6 后对外接口文档扩展为 **19 份 HPX5/HP9 pack + runtime / items / tool-calls 3 份新增专题 = 22 份 authoritative pack**；pro-to-product PP4 追加 `hooks.md`，当前 authoritative pack 为 23 份。README 是其中一份。
 
 ### Foundation
 
 | 文档 | 覆盖范围 |
 |------|----------|
-| [`README.md`](./README.md) | 本文件：base URLs、transport profiles、endpoint matrix、22-doc 索引 |
+| [`README.md`](./README.md) | 本文件：base URLs、transport profiles、endpoint matrix、23-doc 索引 |
 | [`client-cookbook.md`](./client-cookbook.md) | HPX5 client 实战兜底:envelope unwrap / dedup / followup / confirmation polling fallback / `409 confirmation-already-resolved` |
 | [`auth.md`](./auth.md) | auth/login/register/refresh/me/password/wechat/api-key revoke |
 | [`me-sessions.md`](./me-sessions.md) | `/me/*` session/team/device/conversation 路由 |
@@ -66,6 +66,7 @@
 | [`checkpoints.md`](./checkpoints.md) | `/sessions/{id}/checkpoints` list/create/diff + restore/fork readiness（HP4 first-wave + HP7 substrate） |
 | [`todos.md`](./todos.md) | `/sessions/{id}/todos` CRUD（HP6 todo control plane） |
 | [`confirmations.md`](./confirmations.md) | `/sessions/{id}/confirmations` list/detail/decision + 7-kind readiness matrix（HP5） |
+| [`hooks.md`](./hooks.md) | `/sessions/{id}/hooks` register/list/unregister + PP4 PreToolUse minimal live loop |
 | [`runtime.md`](./runtime.md) | `/sessions/{id}/runtime` GET/PATCH + permission rules + `session.runtime.update`（HPX6） |
 | [`items.md`](./items.md) | `/sessions/{id}/items` / `/items/{item_uuid}` Codex-style projection（HPX6） |
 | [`tool-calls.md`](./tool-calls.md) | durable `/tool-calls` list/detail/cancel backed by D1 ledger（HPX6） |

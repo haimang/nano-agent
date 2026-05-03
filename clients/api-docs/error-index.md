@@ -72,7 +72,7 @@ These strings are the stable public code family shared by facade and RPC contrac
 
 ## Current Ad-hoc Public Codes
 
-The following are emitted by current routes. They are not part of `FacadeErrorCodeSchema`, but as of the RHX2 review-of-reviews fix they ARE registered in `resolveErrorMeta()` / `getErrorMeta()` so clients can resolve a `category` / `http_status` / `retryable` triple by code.
+The following are emitted by current routes or runtime surfaces. They are not part of `FacadeErrorCodeSchema`; some are registered in `resolveErrorMeta()` / `getErrorMeta()`, while PP1-PP4 runtime/tool-result codes are documented here so clients can classify them even when they arrive through stream/tool result payloads rather than HTTP facade envelopes.
 
 | code | HTTP | Seen in | Client handling |
 |------|------|---------|-----------------|
@@ -105,6 +105,15 @@ The following are emitted by current routes. They are not part of `FacadeErrorCo
 | `todo-not-found` | 404 | `/sessions/{id}/todos/{uuid}` PATCH/DELETE | todo row 不存在 |
 | `invalid-status` | 400 | `/sessions/{id}/todos/{uuid}` PATCH | todo status 不在 5-status enum |
 | `in-progress-conflict` | 409 | `/sessions/{id}/todos/{uuid}` PATCH | session 已有 in_progress todo（at-most-1 invariant） |
+| `tool-permission-no-decider` | runtime | tool permission ask path | HITL decider 未接通 / no-client；停止自动重试，提示用户重连或调整 approval policy |
+| `tool-permission-denied` | runtime | tool permission ask / policy deny | 用户或 policy 拒绝；不要重试同一 tool call |
+| `tool-permission-timeout` | runtime | tool permission ask timeout | 可提示用户重新触发操作；不要后台循环重试 |
+| `context-compact-not-enough-input` | runtime | PP2 runtime compact | deterministic compact 不节省 token；可继续对话但标记 degraded |
+| `context-compact-unavailable` | runtime/503 | runtime compact bridge | compact service binding / commit RPC 不可用；可重试下一 turn，报告 trace |
+| `context-compact-commit-failed` | runtime/503 | runtime compact bridge | durable compact boundary commit failed/blocked；报告 trace，避免假定 prompt 已缩减 |
+| `hook-blocked` | runtime | PP4 PreToolUse | hook 阻断工具；展示 block reason，不自动重试 |
+| `hook-invalid-updated-input` | runtime | PP4 PreToolUse | handler 返回非 object updatedInput；handler 配置错误 |
+| `hook-dispatch-failed` | runtime | PP4 PreToolUse | hook handler 抛错；提示禁用/修改 handler |
 
 Legacy note:
 

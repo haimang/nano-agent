@@ -13,6 +13,7 @@
 > Checkpoints 路由迁出到 [`checkpoints.md`](./checkpoints.md)。
 > Todos 路由迁出到 [`todos.md`](./todos.md)。
 > Confirmations 路由迁出到 [`confirmations.md`](./confirmations.md)。
+> Hooks 路由迁出到 [`hooks.md`](./hooks.md)。
 
 ## 1. Session Lifecycle Overview
 
@@ -226,6 +227,7 @@ WebSocket 上的等价机制是 attach query `?last_seen_seq=` 与 `session.resu
 ## 15.1 Session hooks（PP4 minimal）
 
 PP4 只开放 session-scoped `PreToolUse` minimal live loop，不开放 shell hook，不扩 full catalog。
+Canonical route / handler / error reference 见 [`hooks.md`](./hooks.md)。
 
 | Method | Path | 作用 |
 |--------|------|------|
@@ -258,6 +260,8 @@ PP4 只开放 session-scoped `PreToolUse` minimal live loop，不开放 shell ho
 | `updateInput` | 等价于 `continue + updated_input`；runtime 会重新执行工具输入校验 |
 
 `updated_input` 必须是 object；对 `write_todos` 等结构化工具，更新后的输入仍会走原工具 schema。hook outcome 会通过 WS `hook.broadcast` 前端可见，payload 使用 redaction hints 脱敏。
+
+`hook.broadcast.caller` enum 为 `pre-tool-use | step-emit`：PP4 live PreToolUse 使用 `pre-tool-use`；generic runtime step emit 使用 `step-emit`，仅广播、不阻断工具；旧帧可能省略 caller。
 
 ## 16. GET `/conversations/{conversation_uuid}`
 
