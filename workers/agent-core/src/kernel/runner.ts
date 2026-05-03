@@ -341,13 +341,72 @@ export class KernelRunner {
   ): Promise<AdvanceStepResult> {
     const events: RuntimeEvent[] = [];
     const tokensBefore = snapshot.session.totalTokens;
-    const compactResult = (await this.delegates.compact.requestCompact({
-      totalTokens: tokensBefore,
-    })) as { tokensFreed: number };
+    let compactResult: {
+      tokensFreed: number;
+      messages?: unknown[];
+      degraded?: { code?: string; message?: string };
+    };
+    try {
+      compactResult = (await this.delegates.compact.requestCompact({
+        totalTokens: tokensBefore,
+        messages: snapshot.activeTurn?.messages ?? [],
+      })) as {
+        tokensFreed: number;
+        messages?: unknown[];
+        degraded?: { code?: string; message?: string };
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      events.push({
+        type: "compact.notify",
+        status: "failed",
+        tokensBefore,
+        tokensAfter: tokensBefore,
+        timestamp: now,
+      });
+      events.push(this.buildSystemNotify("warning", `context compact failed: ${message}`));
+      const nextSnapshot =
+        snapshot.session.phase === "turn_running"
+          ? applyAction(snapshot, {
+              type: "complete_turn",
+              reason: "context_compact_failed",
+            })
+          : snapshot;
+      return { snapshot: nextSnapshot, events, done: true };
+    }
+    if (
+      compactResult.tokensFreed <= 0 &&
+      !Array.isArray(compactResult.messages)
+    ) {
+      events.push({
+        type: "compact.notify",
+        status: "failed",
+        tokensBefore,
+        tokensAfter: tokensBefore,
+        timestamp: now,
+      });
+      events.push(
+        this.buildSystemNotify(
+          "warning",
+          compactResult.degraded?.message ?? "context compact produced no prompt mutation",
+        ),
+      );
+      const nextSnapshot =
+        snapshot.session.phase === "turn_running"
+          ? applyAction(snapshot, {
+              type: "complete_turn",
+              reason: "context_compact_degraded",
+            })
+          : snapshot;
+      return { snapshot: nextSnapshot, events, done: true };
+    }
 
     snapshot = applyAction(snapshot, {
       type: "compact_done",
       tokensFreed: compactResult.tokensFreed,
+      ...(Array.isArray(compactResult.messages)
+        ? { messages: compactResult.messages }
+        : {}),
     });
 
     events.push({

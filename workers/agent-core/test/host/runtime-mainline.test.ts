@@ -432,4 +432,75 @@ describe("createMainlineKernelRunner", () => {
       }),
     );
   });
+
+  it("uses runtime compact bridge output to mutate the next LLM prompt", async () => {
+    const requestCompact = vi.fn(async () => ({
+      tokensFreed: 500,
+      messages: [
+        { role: "system", content: "<compact_boundary>summary</compact_boundary>" },
+        { role: "user", content: "latest question" },
+      ],
+    }));
+    const runner = createMainlineKernelRunner({
+      ai: { run: vi.fn() },
+      quotaAuthorizer: null,
+      capabilityTransport: undefined,
+      requestCompact,
+      contextProvider: () => ({
+        teamUuid: "team-1",
+        sessionUuid: "session-1",
+        traceUuid: "33333333-3333-4333-8333-333333333333",
+        turnUuid: "turn-1",
+      }),
+      anchorProvider: () => undefined,
+    });
+    const started = applyAction(createKernelSnapshot(createInitialSessionState()), {
+      type: "start_turn",
+      turnId: "turn-compact",
+    });
+    const snapshot = {
+      ...started,
+      session: {
+        ...started.session,
+        totalTokens: 1000,
+      },
+      activeTurn: started.activeTurn
+        ? {
+            ...started.activeTurn,
+            messages: [
+              { role: "user", content: "old question" },
+              { role: "assistant", content: "old answer" },
+              { role: "user", content: "latest question" },
+            ],
+          }
+        : null,
+    };
+
+    const result = await runner.advanceStep(snapshot, baseSignals({
+      compactRequired: true,
+    }));
+
+    expect(requestCompact).toHaveBeenCalledWith(
+      expect.objectContaining({
+        session_uuid: "session-1",
+        total_tokens: 1000,
+        messages: expect.arrayContaining([
+          expect.objectContaining({ content: "old question" }),
+        ]),
+      }),
+    );
+    expect(result.snapshot.session.totalTokens).toBe(500);
+    expect(result.snapshot.activeTurn?.messages).toEqual([
+      { role: "system", content: "<compact_boundary>summary</compact_boundary>" },
+      { role: "user", content: "latest question" },
+    ]);
+    expect(result.events).toContainEqual(
+      expect.objectContaining({
+        type: "compact.notify",
+        status: "completed",
+        tokensBefore: 1000,
+        tokensAfter: 500,
+      }),
+    );
+  });
 });

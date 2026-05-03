@@ -204,6 +204,11 @@ export async function restoreFromStorage(ctx: PersistenceContext): Promise<void>
   }
   const storage = getTenantScopedStorage(ctx);
   if (!storage) return;
+  const helper = ctx.getWsHelper();
+  const helperStorage = buildWsHelperStorage(ctx);
+  if (helper && helperStorage) {
+    await helper.restore(helperStorage);
+  }
 
   const raw = await storage.get(CHECKPOINT_STORAGE_KEY);
   if (!raw) return;

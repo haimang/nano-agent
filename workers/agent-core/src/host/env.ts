@@ -154,6 +154,28 @@ export interface SessionRuntimeEnv {
       } | null;
       readonly [k: string]: unknown;
     } | null>;
+    commitContextCompact?(
+      sessionUuid: string,
+      teamUuid: string,
+      input: {
+        readonly trace_uuid: string;
+        readonly tokens_before: number;
+        readonly tokens_after: number;
+        readonly prompt_token_estimate?: number | null;
+        readonly summary_text: string;
+        readonly message_high_watermark?: string | null;
+        readonly protected_fragment_kinds?: ReadonlyArray<string>;
+        readonly compacted_message_count?: number;
+        readonly kept_message_count?: number;
+      },
+      meta: { readonly trace_uuid: string; readonly team_uuid: string },
+    ): Promise<{
+      readonly status?: "started" | "completed" | "failed" | "blocked";
+      readonly tokens_before?: number | null;
+      readonly tokens_after?: number | null;
+      readonly reason?: string;
+      readonly [k: string]: unknown;
+    } | null>;
     /**
      * HPX5 F2b — WriteTodos capability backend. Called when LLM emits
      * `tool_use { name: "write_todos" }`. Honors HP6 Q19 at-most-1

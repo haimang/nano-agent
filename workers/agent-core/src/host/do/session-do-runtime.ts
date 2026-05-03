@@ -77,6 +77,10 @@ import {
 import {
   createSessionDoWsRuntime,
 } from "./session-do/ws-runtime.js";
+import {
+  createSessionDoConfirmationRuntime,
+  type SessionDoConfirmationRuntime,
+} from "./session-do-confirmation.js";
 
 // ═══════════════════════════════════════════════════════════════════
 // §1 — DurableObjectState subset
@@ -114,6 +118,7 @@ export class NanoSessionDO {
   private readonly defaultEvalSink: BoundedEvalSink;
   private readonly fetchRuntime: ReturnType<typeof createSessionDoFetchRuntime>;
   private readonly wsRuntime: ReturnType<typeof createSessionDoWsRuntime>;
+  private readonly confirmationRuntime: SessionDoConfirmationRuntime;
 
   // 3rd-round R2 + B6 dedup: bounded in-memory default eval/evidence sink
   // (capacity 1024). Production deployments override `subsystems.eval`
@@ -201,6 +206,13 @@ export class NanoSessionDO {
     this.httpController = new HttpController();
     this.heartbeatTracker = { lastHeartbeatAt: null };
     this.ackWindow = { pendingCount: 0 };
+    this.confirmationRuntime = createSessionDoConfirmationRuntime({
+      env: () => this.env,
+      currentTeamUuid: () => this.currentTeamUuid(),
+      traceUuid: () => this.traceUuid,
+      pushServerFrameToClient: (frame) => this.pushServerFrameToClient(frame),
+      awaitAsyncAnswer: (input) => this.awaitAsyncAnswer(input),
+    });
 
     const assembly = createSessionDoRuntimeAssembly({
       env,
@@ -386,50 +398,7 @@ export class NanoSessionDO {
     reason?: string;
     timeoutMs?: number;
   }): Promise<Record<string, unknown>> {
-    const toolName = input.toolName ?? input.capability ?? "unknown";
-    const toolInput = input.toolInput ?? {};
-    const emitted = await this.pushServerFrameToClient({
-      kind: "session.confirmation.request",
-      confirmation_uuid: input.requestUuid,
-      confirmation_kind: "tool_permission",
-      request_uuid: input.requestUuid,
-      payload: {
-        tool_name: toolName,
-        tool_input: toolInput,
-        ...(input.reason !== undefined ? { reason: input.reason } : {}),
-      },
-      ...(input.reason !== undefined ? { reason: input.reason } : {}),
-    });
-    if (!emitted.delivered) {
-      await this.settleConfirmation({
-        sessionUuid: input.sessionUuid,
-        requestUuid: input.requestUuid,
-        status: "timeout",
-        decisionPayload: {
-          reason: emitted.reason ?? "no-attached-client",
-          source: "agent-core",
-        },
-      });
-      throw new Error(`permission no decider: ${emitted.reason ?? "no-attached-client"}`);
-    }
-    try {
-      return await this.awaitAsyncAnswer({
-        kind: "permission",
-        requestUuid: input.requestUuid,
-        timeoutMs: input.timeoutMs,
-      });
-    } catch (error) {
-      await this.settleConfirmation({
-        sessionUuid: input.sessionUuid,
-        requestUuid: input.requestUuid,
-        status: "timeout",
-        decisionPayload: {
-          reason: error instanceof Error ? error.message : String(error),
-          source: "agent-core",
-        },
-      });
-      throw error;
-    }
+    return this.confirmationRuntime.emitPermissionRequestAndAwait(input);
   }
 
   async emitElicitationRequestAndAwait(input: {
@@ -438,82 +407,7 @@ export class NanoSessionDO {
     prompt: string;
     timeoutMs?: number;
   }): Promise<Record<string, unknown>> {
-    const emitted = await this.pushServerFrameToClient({
-      kind: "session.confirmation.request",
-      confirmation_uuid: input.requestUuid,
-      confirmation_kind: "elicitation",
-      request_uuid: input.requestUuid,
-      payload: {
-        prompt: input.prompt,
-      },
-    });
-    if (!emitted.delivered) {
-      await this.settleConfirmation({
-        sessionUuid: input.sessionUuid,
-        requestUuid: input.requestUuid,
-        status: "timeout",
-        decisionPayload: {
-          reason: emitted.reason ?? "no-attached-client",
-          source: "agent-core",
-        },
-      });
-      throw new Error(`elicitation no decider: ${emitted.reason ?? "no-attached-client"}`);
-    }
-    try {
-      return await this.awaitAsyncAnswer({
-        kind: "elicitation",
-        requestUuid: input.requestUuid,
-        timeoutMs: input.timeoutMs,
-      });
-    } catch (error) {
-      await this.settleConfirmation({
-        sessionUuid: input.sessionUuid,
-        requestUuid: input.requestUuid,
-        status: "timeout",
-        decisionPayload: {
-          reason: error instanceof Error ? error.message : String(error),
-          source: "agent-core",
-        },
-      });
-      throw error;
-    }
-  }
-
-  private async settleConfirmation(input: {
-    sessionUuid: string;
-    requestUuid: string;
-    status: "timeout" | "superseded";
-    decisionPayload: Record<string, unknown>;
-  }): Promise<void> {
-    const env = this.env as Partial<SessionRuntimeEnv> | undefined;
-    const orch = env?.ORCHESTRATOR_CORE;
-    if (!orch || typeof orch.settleConfirmation !== "function") return;
-    const teamUuid = this.currentTeamUuid();
-    if (!teamUuid) return;
-    try {
-      await orch.settleConfirmation(
-        {
-          session_uuid: input.sessionUuid,
-          confirmation_uuid: input.requestUuid,
-          status: input.status,
-          decision_payload: input.decisionPayload,
-        },
-        {
-          trace_uuid: this.traceUuid ?? crypto.randomUUID(),
-          team_uuid: teamUuid,
-        },
-      );
-    } catch (error) {
-      logger.warn("settle-confirmation-failed", {
-        code: "internal-error",
-        ctx: {
-          tag: "settle-confirmation-failed",
-          session_uuid: input.sessionUuid,
-          request_uuid: input.requestUuid,
-          error: String(error),
-        },
-      });
-    }
+    return this.confirmationRuntime.emitElicitationRequestAndAwait(input);
   }
 
   private async pushServerFrameToClient(frame: {

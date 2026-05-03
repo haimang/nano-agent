@@ -68,6 +68,72 @@ function readPositiveInt(value: unknown, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? Math.trunc(parsed) : fallback;
 }
 
+function compactText(value: unknown): string {
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function estimateTokens(value: unknown): number {
+  return Math.ceil(compactText(value).length / 4);
+}
+
+export function buildRuntimeCompactMutation(input: {
+  readonly messages: readonly unknown[];
+  readonly totalTokens: number;
+}): {
+  readonly tokensBefore: number;
+  readonly tokensAfter: number;
+  readonly tokensFreed: number;
+  readonly messages: readonly unknown[];
+  readonly summaryText: string;
+  readonly compactedMessageCount: number;
+  readonly keptMessageCount: number;
+  readonly protectedFragmentKinds: readonly string[];
+} | null {
+  const messages = [...input.messages];
+  if (messages.length < 2) return null;
+  const kept = messages.slice(-4);
+  const compacted = messages.slice(0, Math.max(0, messages.length - kept.length));
+  if (compacted.length === 0) return null;
+  const summaryLines = compacted.slice(-12).map((message, index) => {
+    const raw = compactText(message).replace(/\s+/g, " ").trim();
+    return `${index + 1}. ${raw.slice(0, 240)}`;
+  });
+  const protectedKinds = ["model_switch", "state_snapshot"].filter((tag) =>
+    compacted.some((message) => compactText(message).includes(`<${tag}`)),
+  );
+  const summaryText = [
+    "Deterministic compact summary (first-wave).",
+    `Compacted messages: ${compacted.length}. Kept recent messages: ${kept.length}.`,
+    ...summaryLines,
+  ].join("\n");
+  const summaryMessage = {
+    role: "system",
+    content: `<compact_boundary>\n${summaryText}\n</compact_boundary>`,
+  };
+  const nextMessages = [summaryMessage, ...kept];
+  const tokensBefore = input.totalTokens;
+  const tokensAfter = nextMessages.reduce<number>(
+    (sum, message) => sum + estimateTokens(message),
+    0,
+  );
+  if (tokensAfter >= tokensBefore) return null;
+  return {
+    tokensBefore,
+    tokensAfter,
+    tokensFreed: tokensBefore - tokensAfter,
+    messages: nextMessages,
+    summaryText,
+    compactedMessageCount: compacted.length,
+    keptMessageCount: kept.length,
+    protectedFragmentKinds: protectedKinds,
+  };
+}
+
 export interface SessionDoRuntimeAssemblyContext {
   readonly env: unknown;
   readonly config: RuntimeConfig;
@@ -203,6 +269,62 @@ function createLiveKernelRunner(
         ...(input.reason ? { reason: input.reason } : {}),
         timeoutMs: 60_000,
       }),
+    requestCompact: async (input) => {
+      const mutation = buildRuntimeCompactMutation({
+        messages: input.messages,
+        totalTokens: input.total_tokens,
+      });
+      if (!mutation) {
+        return {
+          tokensFreed: 0,
+          degraded: {
+            code: "context-compact-not-enough-input",
+            message: "runtime compact had no eligible messages to compact",
+          },
+        };
+      }
+      const commit = runtimeEnv.ORCHESTRATOR_CORE?.commitContextCompact;
+      if (typeof commit !== "function") {
+        return {
+          tokensFreed: 0,
+          degraded: {
+            code: "context-compact-unavailable",
+            message: "ORCHESTRATOR_CORE.commitContextCompact missing",
+          },
+        };
+      }
+      const result = await commit(
+        input.session_uuid,
+        input.team_uuid,
+        {
+          trace_uuid: input.trace_uuid,
+          tokens_before: mutation.tokensBefore,
+          tokens_after: mutation.tokensAfter,
+          prompt_token_estimate: mutation.tokensAfter,
+          summary_text: mutation.summaryText,
+          protected_fragment_kinds: mutation.protectedFragmentKinds,
+          compacted_message_count: mutation.compactedMessageCount,
+          kept_message_count: mutation.keptMessageCount,
+        },
+        { trace_uuid: input.trace_uuid, team_uuid: input.team_uuid },
+      );
+      if (!result || result.status === "blocked" || result.status === "failed") {
+        return {
+          tokensFreed: 0,
+          degraded: {
+            code: "context-compact-commit-failed",
+            message:
+              typeof result?.reason === "string"
+                ? result.reason
+                : "context compact boundary commit failed",
+          },
+        };
+      }
+      return {
+        tokensFreed: mutation.tokensFreed,
+        messages: mutation.messages,
+      };
+    },
     contextProvider: () => ctx.buildQuotaContext(),
     anchorProvider: () => ctx.buildCrossSeamAnchor(),
     // HP5 P2-02 — real dispatcher injection. Even with no handlers

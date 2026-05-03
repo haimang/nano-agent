@@ -33,7 +33,7 @@ export type KernelAction =
   | { type: "resume" }
   | { type: "complete_turn"; reason: string }
   | { type: "end_session" }
-  | { type: "compact_done"; tokensFreed: number };
+  | { type: "compact_done"; tokensFreed: number; messages?: unknown[] };
 
 // ═══════════════════════════════════════════════════════════════════
 // §2 — Helper: require active turn
@@ -270,6 +270,7 @@ export function applyAction(
 
     // ── compact_done ────────────────────────────────────────────
     case "compact_done": {
+      const turn = state.activeTurn;
       return {
         ...state,
         session: {
@@ -280,6 +281,13 @@ export function applyAction(
           ),
           compactCount: state.session.compactCount + 1,
         },
+        activeTurn:
+          turn && Array.isArray(action.messages)
+            ? {
+                ...turn,
+                messages: action.messages,
+              }
+            : turn,
       };
     }
 

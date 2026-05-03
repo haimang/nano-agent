@@ -110,6 +110,28 @@ describe("integration: NanoSessionDO persistCheckpoint roundtrip", () => {
     expect(validateSessionCheckpoint(store.get(CHECKPOINT_KEY))).toBe(true);
   });
 
+  it("restores helper replay stream seqs from helper storage during restoreFromStorage", async () => {
+    const { state } = makeStorage();
+    const instance = new NanoSessionDO(state, { SESSION_UUID: VALID_UUID, TEAM_UUID });
+    const helper = instance.ensureWsHelper();
+    expect(helper).not.toBeNull();
+    const firstFrame = helper!.pushFrame("session.runtime.update", {
+      session_uuid: VALID_UUID,
+    });
+    expect(firstFrame.session_frame.stream_seq).toBe(0);
+
+    await instance.webSocketClose(null);
+
+    const fresh = new NanoSessionDO(state, { SESSION_UUID: VALID_UUID, TEAM_UUID });
+    const freshHelper = fresh.ensureWsHelper();
+    await (fresh as any).restoreFromStorage();
+    const nextFrame = freshHelper!.pushFrame("session.runtime.update", {
+      session_uuid: VALID_UUID,
+    });
+
+    expect(nextFrame.session_frame.stream_seq).toBe(1);
+  });
+
   it("restores actorPhase from the persisted checkpoint", async () => {
     const { state, store } = makeStorage();
     store.set("session:teamUuid", TEAM_UUID);

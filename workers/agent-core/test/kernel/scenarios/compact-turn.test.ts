@@ -52,6 +52,23 @@ function fakeDelegates(tokensFreed = 500): KernelDelegates {
   };
 }
 
+function degradedCompactDelegates(): KernelDelegates {
+  return {
+    ...fakeDelegates(0),
+    compact: {
+      async requestCompact(_budget: unknown) {
+        return {
+          tokensFreed: 0,
+          degraded: {
+            code: "context-compact-unavailable",
+            message: "compact unavailable",
+          },
+        };
+      },
+    },
+  };
+}
+
 function baseSignals(
   overrides: Partial<SchedulerSignals> = {},
 ): SchedulerSignals {
@@ -184,5 +201,34 @@ describe("Scenario: compact turn", () => {
     );
     expect(r2.snapshot.session.totalTokens).toBe(600);
     expect(r2.snapshot.session.compactCount).toBe(2);
+  });
+
+  it("compact degraded path ends the turn explicitly instead of looping", async () => {
+    const runner = new KernelRunner(degradedCompactDelegates());
+    const snap = startTurnWithTokens(1000);
+
+    const result = await runner.advanceStep(
+      snap,
+      baseSignals({ compactRequired: true }),
+    );
+
+    expect(result.done).toBe(true);
+    expect(result.snapshot.session.phase).toBe("idle");
+    expect(result.snapshot.session.compactCount).toBe(0);
+    expect(result.events).toContainEqual(
+      expect.objectContaining({
+        type: "compact.notify",
+        status: "failed",
+        tokensBefore: 1000,
+        tokensAfter: 1000,
+      }),
+    );
+    expect(result.events).toContainEqual(
+      expect.objectContaining({
+        type: "system.notify",
+        severity: "warning",
+        message: "compact unavailable",
+      }),
+    );
   });
 });
