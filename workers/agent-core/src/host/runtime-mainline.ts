@@ -312,12 +312,11 @@ async function authorizeToolPlan(
       };
     }
   }
-  const code = result.decision === "ask" ? "tool-permission-required" : "tool-permission-denied";
   return {
     allowed: false,
     error: {
-      code,
-      message: `tool ${toolName} was ${result.decision === "ask" ? "blocked pending permission" : "denied by runtime policy"}`,
+      code: "tool-permission-denied",
+      message: `tool ${toolName} was denied by runtime policy`,
       source: result.source,
     },
   };

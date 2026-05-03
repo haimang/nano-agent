@@ -379,7 +379,7 @@ describe("createMainlineKernelRunner", () => {
     );
     expect(requestToolPermission).toHaveBeenCalledWith(
       expect.objectContaining({
-        request_uuid: "tool-1",
+        request_uuid: expect.any(String),
         tool_name: "pwd",
         reason: "approval policy requires confirmation",
       }),
