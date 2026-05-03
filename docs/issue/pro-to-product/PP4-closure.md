@@ -13,7 +13,7 @@
 
 | 维度 | 结论 |
 |------|------|
-| PP4 当前状态 | `closed-with-pretooluse-minimal-live-loop` |
+| PP4 当前状态 | `close-with-known-issues` / `closed-with-pretooluse-minimal-live-loop` |
 | hook scope | `PreToolUse-only minimal loop`：遵守 Q15，不扩 full catalog |
 | hook runtime | `worker-safe declarative local-ts`：遵守 Q16，不开放 shell hook |
 | PermissionRequest | `not-hard-gate`：Q17 fail-closed 语义保持不变，PP4 不把 PermissionRequest 纳入 closure 主闸 |
@@ -110,6 +110,8 @@
 3. PP4 不声明 live preview / browser cross-e2e 已完成；当前 closure 是 local package/worker evidence。
 4. session hook registration 是 declarative local-ts first-wave 能力；不是通用 JavaScript 上传/执行平台。
 5. hook latency alert 只作为 closure 风险登记；本阶段未建设专门 latency SLO monitor。
+6. Review follow-up 已补齐 `clients/api-docs/hooks.md`、`hook.broadcast.caller` enum、handler first-wave 限制与 runtime hook error codes。
+7. DO storage key `session:hooks:v1` 是 first-wave 内部命名；未来 handler shape 扩展需要 `v2` storage 或 restore-time migration 决策。
 
 ---
 

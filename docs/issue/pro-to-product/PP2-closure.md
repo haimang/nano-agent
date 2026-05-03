@@ -103,8 +103,9 @@
 1. PP2 不声明 LLM-based summary 已完成；deterministic summary 只满足 first-wave prompt mutation 与 boundary evidence，不保证语义质量。
 2. PP2 不声明 browser live preview 长对话 e2e 已完成；当前 closure 是本地 targeted evidence + integration evidence。
 3. `context_compact` confirmation kind 仍是 registry-only / future caller substrate；PP2 未把 compact 接入 HITL confirmation 主线。
-4. Compact 失败 3 次 circuit breaker 仍未 enforcement；此项进入 PP5 reliability hardening。
-5. PP2 只做 `clients/api-docs/context.md` 最小事实同步；PP6 负责全量 clients/api-docs 对账。
+4. Review follow-up 已修复：compact breaker 现在包含 7 分钟 cool-down，连续失败不会永久自锁；PP5 reliability hardening 仍需处理 no-saving / failed notify 的 alert-rate 噪音。
+5. PP2 runtime compact error codes `context-compact-not-enough-input` / `context-compact-unavailable` / `context-compact-commit-failed` 已在 `clients/api-docs/error-index.md` 登记；PP6 仍需做全量 sweep。
+6. PP2 只做 `clients/api-docs/context.md` 最小事实同步；PP6 负责全量 clients/api-docs 对账。
 
 ---
 

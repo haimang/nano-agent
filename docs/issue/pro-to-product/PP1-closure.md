@@ -13,7 +13,7 @@
 
 | 维度 | 结论 |
 |------|------|
-| PP1 当前状态 | `closed` |
+| PP1 当前状态 | `close-with-known-issues` |
 | `approval_policy=ask` | `closed`：ask 不再作为 `tool-permission-required` 工具错误终结，而是进入 HITL permission wait seam |
 | decision 输入 | `closed`：client→server decision 仍只走 HTTP；WS 只承担 server→client request/update 可见性 |
 | confirmation kind | `frozen`：PP1 没有新增 kind，继续使用 7-kind registry 中的 `tool_permission` / `elicitation` |
@@ -85,7 +85,7 @@
 | `workers/agent-core/src/host/runtime-mainline.ts` | `ask` 分支进入 permission wait seam | PP4 hook 不应重新把 ask 降级为 tool error |
 | `workers/agent-core/src/host/do/session-do-runtime.ts` | permission / elicitation request+await+timeout settle | PP3 reconnect 可复用 pending row，不应新增 parallel pending store |
 | `workers/orchestrator-core/src/entrypoint.ts` | service binding forward 与 row-first emitter create | PP3/PP4 如新增 frame，应明确是否需要 row-first hard gate |
-| `workers/orchestrator-core/src/facade/routes/session-control.ts` | generic confirmation decision + agent-core wakeup | PP5/PP6 docs 应记录 wakeup failure 503 语义 |
+| `workers/orchestrator-core/src/facade/routes/session-confirmations.ts` | generic confirmation decision + agent-core wakeup | PP5/PP6 docs 应记录 wakeup failure 503 语义 |
 | `workers/orchestrator-core/src/confirmation-control-plane.ts` | 7-kind / 6-status durable truth | 不扩 enum；新增 kind 必须 charter/QNA amendment |
 
 ---
@@ -95,7 +95,9 @@
 1. 本 closure 不声明完整 browser / frontend live e2e 已完成；PP1 当前以 worker-level targeted evidence 证明 interrupt substrate，PP3 reconnect 与 PP6 api-docs 对账会继续消费该 substrate。
 2. Legacy `session.permission.request` / `session.elicitation.request` 仍保留 compat 行为；PP1 强制 row-first 的对象是 unified `session.confirmation.request`。
 3. `session.confirmation.update` 仍是 row commit 后 server→client 可见性广播；如果 WS update 投递失败，row truth 不回滚。
-4. Full `clients/api-docs` sweep 不在 PP1 执行；PP6 专门负责接口全量扫描与 frontend docs 更新。
+4. Review follow-up 已修复：unified decision row commit 后若 agent-core wakeup 失败，row 不再停留在 attempted terminal status，而是改写为 `superseded` 并返回 `503`。
+5. PP1 新 runtime error codes `tool-permission-no-decider` / `tool-permission-denied` / `tool-permission-timeout` 已在 `clients/api-docs/error-index.md` 登记；PP6 仍需做全量 sweep。
+6. Full `clients/api-docs` sweep 不在 PP1 执行；PP6 专门负责接口全量扫描与 frontend docs 更新。
 
 ---
 
