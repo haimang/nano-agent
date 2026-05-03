@@ -76,13 +76,43 @@ async function forwardFrameToUserDO(
  */
 function makeUserDoSink(env: OrchestratorCoreEnv, target: EmitTarget): EmitSink {
   const send = (kindOrType: string, body: Record<string, unknown>): void => {
-    if (!env.ORCHESTRATOR_USER_DO) return;
+    if (!env.ORCHESTRATOR_USER_DO) {
+      getLogger(env).warn("user-do-forward-unavailable", {
+        code: "internal-error",
+        ctx: {
+          tag: "user-do-forward-unavailable",
+          message_type: kindOrType,
+          session_uuid: target.sessionUuid,
+          reason: "user-do-binding-missing",
+        },
+      });
+      return;
+    }
     const frame = toForwardFrame(kindOrType, body);
-    // Fire-and-forget; emit must never block row-write commit. Errors are
-    // swallowed at the caller via observer / system.error fallback.
+    // Fire-and-forget; emit must never block row-write commit.
     void forwardFrameToUserDO(env, target, frame)
-      .catch(() => {
-        // intentionally swallow: emit failure already counted via observer
+      .then((result) => {
+        if (result.delivered) return;
+        getLogger(env).warn("user-do-forward-undelivered", {
+          code: "internal-error",
+          ctx: {
+            tag: "user-do-forward-undelivered",
+            message_type: kindOrType,
+            session_uuid: target.sessionUuid,
+            reason: result.reason ?? "not-delivered",
+          },
+        });
+      })
+      .catch((error) => {
+        getLogger(env).warn("user-do-forward-failed", {
+          code: "internal-error",
+          ctx: {
+            tag: "user-do-forward-failed",
+            message_type: kindOrType,
+            session_uuid: target.sessionUuid,
+            error: String(error),
+          },
+        });
       });
   };
   return {

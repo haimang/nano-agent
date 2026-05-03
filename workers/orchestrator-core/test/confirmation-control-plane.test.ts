@@ -248,6 +248,13 @@ describe("HP5 confirmation registry — D1ConfirmationControlPlane", () => {
       created_at: "2026-04-30T00:00:00Z",
       expires_at: null,
     });
+    await plane.applyDecision({
+      session_uuid: SESSION_UUID,
+      confirmation_uuid: CONFIRMATION_UUID,
+      status: "modified",
+      decision_payload: { answer: { choice: "A" } },
+      decided_at: "2026-04-30T00:00:30Z",
+    });
     const row = await plane.markSupersededOnDualWriteFailure({
       session_uuid: SESSION_UUID,
       confirmation_uuid: CONFIRMATION_UUID,

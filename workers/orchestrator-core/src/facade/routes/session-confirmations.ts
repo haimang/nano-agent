@@ -56,6 +56,10 @@ function buildAgentAuthority(session: DurableSessionLifecycleRecord): Record<str
   };
 }
 
+function toolPermissionDecision(status: ConfirmationStatus): "allow" | "deny" {
+  return status === "allowed" || status === "modified" ? "allow" : "deny";
+}
+
 async function wakeAgentConfirmationWaiter(
   env: OrchestratorCoreEnv,
   session: DurableSessionLifecycleRecord,
@@ -78,7 +82,7 @@ async function wakeAgentConfirmationWaiter(
           session_uuid: session.session_uuid,
           request_uuid: input.confirmationUuid,
           status: input.status,
-          decision: input.status === "allowed" ? "allow" : "deny",
+          decision: toolPermissionDecision(input.status),
           scope:
             typeof input.decisionPayload?.scope === "string"
               ? input.decisionPayload.scope
@@ -248,6 +252,32 @@ export async function handleSessionConfirmation(
     traceUuid,
   });
   if (!wake.ok) {
+    const supersededAt = new Date().toISOString();
+    const superseded = await plane.markSupersededOnDualWriteFailure({
+      session_uuid: route.sessionUuid,
+      confirmation_uuid: route.confirmationUuid,
+      attempted_status: result.row.status,
+      attempted_decision: decisionPayload,
+      failure_reason: wake.reason,
+      decided_at: supersededAt,
+    });
+    emitFrameViaUserDO(
+      env,
+      {
+        sessionUuid: route.sessionUuid,
+        userUuid: session.actor_user_uuid,
+        traceUuid,
+      },
+      "session.confirmation.update",
+      {
+        confirmation_uuid: route.confirmationUuid,
+        status: superseded?.status ?? "superseded",
+        ...(superseded?.decision_payload
+          ? { decision_payload: superseded.decision_payload }
+          : {}),
+        decided_at: supersededAt,
+      },
+    );
     return jsonPolicyError(
       503,
       "internal-error",

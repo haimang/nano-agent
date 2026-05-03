@@ -89,6 +89,8 @@ function rowToConfirmation(row: Record<string, unknown>): ConfirmationRow {
 export class D1ConfirmationControlPlane {
   constructor(private readonly db: D1Database) {}
 
+  // Future-use public guard for routes/tests that need to validate the frozen
+  // 7-kind registry without duplicating the private set.
   isKnownKind(value: string): value is ConfirmationKind {
     return CONFIRMATION_KIND_SET.has(value);
   }
@@ -276,18 +278,32 @@ export class D1ConfirmationControlPlane {
     readonly failure_reason: string;
     readonly decided_at: string;
   }): Promise<ConfirmationRow | null> {
-    const result = await this.applyDecision({
+    await this.db
+      .prepare(
+        `UPDATE nano_session_confirmations
+            SET status = 'superseded',
+                decision_payload_json = ?3,
+                decided_at = ?4
+          WHERE confirmation_uuid = ?1
+            AND session_uuid = ?2
+            AND status = ?5`,
+      )
+      .bind(
+        input.confirmation_uuid,
+        input.session_uuid,
+        JSON.stringify({
+          attempted_status: input.attempted_status,
+          attempted_decision: input.attempted_decision,
+          failure_reason: input.failure_reason,
+          superseded_at: input.decided_at,
+        }),
+        input.decided_at,
+        input.attempted_status,
+      )
+      .run();
+    return this.read({
       session_uuid: input.session_uuid,
       confirmation_uuid: input.confirmation_uuid,
-      status: "superseded",
-      decision_payload: {
-        attempted_status: input.attempted_status,
-        attempted_decision: input.attempted_decision,
-        failure_reason: input.failure_reason,
-        superseded_at: input.decided_at,
-      },
-      decided_at: input.decided_at,
     });
-    return result.row;
   }
 }

@@ -121,6 +121,28 @@ function createConfirmationDb(initial?: ConfirmationRow[]) {
         target.decision_payload_json = decisionPayload;
         target.decided_at = decidedAt;
       }
+      return;
+    }
+    if (
+      sql.includes("UPDATE nano_session_confirmations") &&
+      sql.includes("SET status = 'superseded'")
+    ) {
+      const confirmationUuid = String(args[0]);
+      const sessionUuid = String(args[1]);
+      const decisionPayload = args[2] as string | null;
+      const decidedAt = String(args[3]);
+      const attemptedStatus = String(args[4]);
+      const target = rows.find(
+        (r) =>
+          r.confirmation_uuid === confirmationUuid &&
+          r.session_uuid === sessionUuid &&
+          r.status === attemptedStatus,
+      );
+      if (target) {
+        target.status = "superseded";
+        target.decision_payload_json = decisionPayload;
+        target.decided_at = decidedAt;
+      }
     }
   }
 
@@ -359,7 +381,56 @@ describe("HP5 /sessions/{id}/confirmations public routes", () => {
       } as any,
     );
     expect(response.status).toBe(503);
-    expect(rows[0]!.status).toBe("allowed");
+    expect(rows[0]!.status).toBe("superseded");
+    expect(JSON.parse(rows[0]!.decision_payload_json!)).toMatchObject({
+      attempted_status: "allowed",
+      attempted_decision: { decision: "allow", scope: "once" },
+      failure_reason: "agent-rpc-missing",
+    });
+  });
+
+  it("POST /sessions/{id}/confirmations/{uuid}/decision maps modified tool_permission to allow", async () => {
+    const token = await signTestJwt(
+      { sub: USER_UUID, user_uuid: USER_UUID, team_uuid: TEAM_UUID },
+      JWT_SECRET,
+    );
+    const { db, rows } = createConfirmationDb();
+    const permissionDecision = vi.fn(async () => ({ status: 200, body: { ok: true } }));
+    const response = await worker.fetch(
+      new Request(
+        `https://example.com/sessions/${SESSION_UUID}/confirmations/${CONFIRMATION_UUID}/decision`,
+        {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${token}`,
+            "content-type": "application/json",
+            "x-trace-uuid": TRACE_UUID,
+          },
+          body: JSON.stringify({
+            status: "modified",
+            decision_payload: { scope: "once", modified_input: { command: "pwd" } },
+          }),
+        },
+      ),
+      {
+        JWT_SECRET,
+        TEAM_UUID: "nano-agent",
+        NANO_AGENT_DB: db,
+        ORCHESTRATOR_USER_DO: {} as any,
+        AGENT_CORE: { permissionDecision },
+      } as any,
+    );
+    expect(response.status).toBe(200);
+    expect(rows[0]!.status).toBe("modified");
+    expect(permissionDecision).toHaveBeenCalledWith(
+      expect.objectContaining({
+        session_uuid: SESSION_UUID,
+        request_uuid: CONFIRMATION_UUID,
+        status: "modified",
+        decision: "allow",
+      }),
+      expect.anything(),
+    );
   });
 
   it("POST /sessions/{id}/confirmations/{uuid}/decision rejects status=failed (Q16)", async () => {

@@ -21,6 +21,7 @@
 
 import { WorkerEntrypoint } from "cloudflare:workers";
 import type { AuditRecord, LogRecord } from "@haimang/nacp-core/logger";
+import type { SessionApprovalPolicy } from "@haimang/nacp-session";
 import { worker, NanoOrchestratorUserDO } from "./index.js";
 import type { OrchestratorCoreEnv } from "./index.js";
 import {
@@ -142,10 +143,20 @@ function globLikeMatches(pattern: string | undefined, value: string): boolean {
   return new RegExp(`^${escaped}$`).test(value) || value.includes(pattern.replace(/\*/g, ""));
 }
 
-function runtimePolicyFallback(policy: string): "allow" | "deny" | "ask" {
-  if (policy === "auto-allow" || policy === "always_allow") return "allow";
-  if (policy === "deny") return "deny";
-  return "ask";
+function runtimePolicyFallback(policy: SessionApprovalPolicy): "allow" | "deny" | "ask" {
+  switch (policy) {
+    case "auto-allow":
+    case "always_allow":
+      return "allow";
+    case "deny":
+      return "deny";
+    case "ask":
+      return "ask";
+    default: {
+      const _exhaustive: never = policy;
+      return _exhaustive;
+    }
+  }
 }
 
 export { NanoOrchestratorUserDO };
