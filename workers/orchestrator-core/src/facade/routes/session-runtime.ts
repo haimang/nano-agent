@@ -10,7 +10,7 @@ import {
   RuntimeConfigVersionConflictError,
   type RuntimeConfigRow,
 } from "../../runtime-config-plane.js";
-import { emitFrameViaUserDO } from "../../wsemit.js";
+import { emitFrameViaUserDOAndWait } from "../../wsemit.js";
 import { jsonPolicyError } from "../../policy/authority.js";
 import type { OrchestratorCoreEnv } from "../env.js";
 import { parseBody, UUID_RE } from "../shared/request.js";
@@ -241,7 +241,7 @@ export async function tryHandleSessionRuntimeRoute(
     : await rulesPlane.listTeamRules(teamUuid);
   const responseConfig = mergeRuntimeConfig(config, mergedTenantRules);
   const etag = await computeRuntimeEtag(responseConfig, teamUuid);
-  emitFrameViaUserDO(
+  await emitFrameViaUserDOAndWait(
     env,
     { sessionUuid: route.sessionUuid, userUuid: session.actor_user_uuid, traceUuid },
     "session.runtime.update",

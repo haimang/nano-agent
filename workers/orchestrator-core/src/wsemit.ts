@@ -30,6 +30,45 @@ export interface EmitTarget {
   readonly traceUuid: string;
 }
 
+function toForwardFrame(kindOrType: string, body: Record<string, unknown>): Record<string, unknown> {
+  const wireBody =
+    kindOrType.startsWith("session.item.") && typeof body.kind === "string"
+      ? (() => {
+          const { kind: itemKind, ...rest } = body;
+          return { ...rest, item_kind: itemKind };
+        })()
+      : body;
+  return { kind: kindOrType, ...wireBody };
+}
+
+async function forwardFrameToUserDO(
+  env: OrchestratorCoreEnv,
+  target: EmitTarget,
+  frame: Record<string, unknown>,
+): Promise<{ delivered: boolean; reason?: string }> {
+  if (!env.ORCHESTRATOR_USER_DO) return { delivered: false, reason: "user-do-binding-missing" };
+  const namespace = env.ORCHESTRATOR_USER_DO;
+  const stub = namespace.get(namespace.idFromName(target.userUuid));
+  const response = await stub.fetch(
+    new Request(
+      `https://orchestrator.internal/sessions/${target.sessionUuid}/__forward-frame`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-trace-uuid": target.traceUuid,
+        },
+        body: JSON.stringify({ frame }),
+      },
+    ),
+  );
+  const payload = await response.json().catch(() => ({})) as { delivered?: unknown; reason?: unknown };
+  return {
+    delivered: response.ok && payload.delivered === true,
+    ...(typeof payload.reason === "string" ? { reason: payload.reason } : {}),
+  };
+}
+
 /**
  * Construct an EmitSink that forwards to the User DO's `__forward-frame`
  * endpoint. The DO calls `emitServerFrame` which validates frame.kind
@@ -38,32 +77,10 @@ export interface EmitTarget {
 function makeUserDoSink(env: OrchestratorCoreEnv, target: EmitTarget): EmitSink {
   const send = (kindOrType: string, body: Record<string, unknown>): void => {
     if (!env.ORCHESTRATOR_USER_DO) return;
-    const namespace = env.ORCHESTRATOR_USER_DO;
-    const stub = namespace.get(namespace.idFromName(target.userUuid));
-    const wireBody =
-      kindOrType.startsWith("session.item.") && typeof body.kind === "string"
-        ? (() => {
-            const { kind: itemKind, ...rest } = body;
-            return { ...rest, item_kind: itemKind };
-          })()
-        : body;
-    const frame: Record<string, unknown> = { kind: kindOrType, ...wireBody };
+    const frame = toForwardFrame(kindOrType, body);
     // Fire-and-forget; emit must never block row-write commit. Errors are
     // swallowed at the caller via observer / system.error fallback.
-    void stub
-      .fetch(
-        new Request(
-          `https://orchestrator.internal/sessions/${target.sessionUuid}/__forward-frame`,
-          {
-            method: "POST",
-            headers: {
-              "content-type": "application/json",
-              "x-trace-uuid": target.traceUuid,
-            },
-            body: JSON.stringify({ frame }),
-          },
-        ),
-      )
+    void forwardFrameToUserDO(env, target, frame)
       .catch(() => {
         // intentionally swallow: emit failure already counted via observer
       });
@@ -117,6 +134,34 @@ export function emitFrameViaUserDO(
     },
   });
   return result;
+}
+
+export async function emitFrameViaUserDOAndWait(
+  env: OrchestratorCoreEnv,
+  target: EmitTarget,
+  messageType: string,
+  body: Record<string, unknown>,
+): Promise<EmitResult & { delivered: boolean; reason?: string }> {
+  const result = emitTopLevelFrame(
+    {
+      emitTopLevelFrame() {
+        // Validated through emitTopLevelFrame; delivery is performed below.
+      },
+      emitStreamEvent() {
+        // Not used for this top-level helper.
+      },
+    },
+    messageType,
+    body,
+    {
+      sessionUuid: target.sessionUuid,
+      traceUuid: target.traceUuid,
+      sourceWorker: "orchestrator-core",
+    },
+  );
+  if (result.status !== "ok") return { ...result, delivered: false, reason: "emit-validation-failed" };
+  const delivered = await forwardFrameToUserDO(env, target, toForwardFrame(messageType, body));
+  return { ...result, ...delivered };
 }
 
 /**
