@@ -167,7 +167,7 @@ liveTest(
       const runtimeUpdatePromise = waitForRuntimeUpdate(ws, sessionId, expectedVersion, runtimeUpdateAbort.signal);
       const patch = await fetchJson(`${base}/sessions/${sessionId}/runtime`, {
         method: "PATCH",
-        headers: jsonHeaders,
+        headers: { ...jsonHeaders, "if-match": etag },
         body: JSON.stringify({
           version: before.json.data.version,
           approval_policy: "always_allow",
