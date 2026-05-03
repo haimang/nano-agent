@@ -384,3 +384,39 @@ PP2 Context Budget Closure
 | 文档 | readiness label 与 limitation 不 overclaim |
 | 风险收敛 | 无新 jobs 表、无 fake-live auto compact、无 `{ tokensFreed: 0 }` 假成功 |
 | 可交付性 | PP3 可消费 compact boundary，PP6 可消费 docs truth |
+
+---
+
+## 9. 执行工作报告（2026-05-03）
+
+1. **代码制作执行**
+   - 将 agent-core runtime compact 从固定 `{ tokensFreed: 0 }` no-op 改为 host-provided `requestCompact` bridge；compact delegate 现在传入 `totalTokens` 与当前 active turn messages。
+   - 在 `session-do/runtime-assembly.ts` 增加 first-wave deterministic compact mutation：旧消息压缩为 `<compact_boundary>` system summary，保留最近 4 条消息，并记录 compacted/kept count 与 protected fragment kind。
+   - runtime compact bridge 成功时调用 `ORCHESTRATOR_CORE.commitContextCompact()`，继续复用现有 compact boundary lineage，不新增 compact jobs 表。
+   - `kernel/reducer.ts` 的 `compact_done` 支持替换 active turn messages，使 prompt mutation 可由测试直接证明。
+   - `kernel/runner.ts` 对 compact throw / degraded / no saving 输出 `compact.notify(status="failed")` 与 `system.notify(severity="warning")`，并显式 `complete_turn`，避免 compactRequired 持续为 true 时无限 loop。
+   - 修复独立审查发现的 token accounting 问题：`tokensBefore` 仅使用 session `totalTokens` 作为会计基准，不再用 message estimate 抬高 `tokensFreed`。
+   - 修复 no-saving compact 边界：deterministic summary 若 `tokensAfter >= tokensBefore`，视为 no-op/degraded，不提交 compact boundary、不替换 prompt。
+   - 为满足 megafile gate，拆出 `runtime-capability.ts`、`session-do-confirmation.ts`、`session-confirmations.ts`、`session-control-shared.ts`，保持 PP1 confirmation/capability 语义不变并把 owner files 拉回预算内。
+
+2. **测试与文档回填**
+   - 新增/更新 agent-core tests：
+     - `test/host/runtime-mainline.test.ts` 覆盖 runtime compact bridge prompt mutation。
+     - `test/kernel/scenarios/compact-turn.test.ts` 覆盖 degraded compact 显式结束 turn。
+     - `test/host/do/runtime-assembly.compact.test.ts` 覆盖 token accounting 基准与 no-saving compact 不提交。
+   - 最小同步 `clients/api-docs/context.md`：manual compact 标为 live，runtime auto compact 标为 first-wave，`context_compact` confirmation / preview cache 等未完成项不 overclaim；明确 deterministic summary limitation。
+   - 新增 `docs/issue/pro-to-product/PP2-closure.md`，记录 PP2 first-wave closure、readiness label、known issues、validation evidence 与 PP3/PP5/PP6 handoff。
+   - 验证通过：
+     - `pnpm --filter @haimang/agent-core-worker typecheck`
+     - `pnpm --filter @haimang/agent-core-worker build`
+     - `pnpm --filter @haimang/agent-core-worker test -- test/host/do/runtime-assembly.compact.test.ts test/host/runtime-mainline.test.ts test/kernel/scenarios/compact-turn.test.ts test/host/do/nano-session-do.test.ts`
+     - `pnpm --filter @haimang/orchestrator-core-worker typecheck`
+     - `pnpm --filter @haimang/orchestrator-core-worker build`
+     - `pnpm --filter @haimang/orchestrator-core-worker test -- test/confirmation-route.test.ts test/context-route.test.ts`
+     - `pnpm --filter @haimang/context-core-worker test -- test/compact-boundary.test.ts test/integration/compact-reinject.test.ts`
+     - `pnpm run check:docs-consistency`
+     - `pnpm run check:megafile-budget`
+     - `git --no-pager diff --check`
+   - 独立 code review 结论：
+     - 第一轮指出 `tokensFreed` 会计基准可能多扣真实 session token；已修复并补测试。
+     - 修复复核指出 no-saving compact 不应提交 boundary；已修复并补测试。

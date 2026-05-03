@@ -54,7 +54,7 @@ wss://<base>/sessions/{sessionUuid}/ws?access_token=<jwt>&trace_uuid=<uuid>&last
 }
 ```
 
-`seq` 单调递增；reconnect 时客户端用 `last_seen_seq` 让 server 回放未确认 frame。
+`seq` 单调递增；reconnect 时客户端用 `last_seen_seq` 让 server best-effort 回放未确认 frame。PP3 不承诺 exactly-once replay；如果 client 提供的 `last_seen_seq` 超过 server 当前 `relay_cursor`，server 会在 attach 后立即发送 `session.replay.lost`，禁止 silent latest-state fallback。
 
 ### 3.2 Stream Event Kinds（13-kind catalog）
 
@@ -212,7 +212,24 @@ HPX6 新增 5 个 server → client 顶层帧：
 
 `reason` ∈ `{reattach, revoked}`。旧 socket 会被 server 用 close code `4001` 关闭。
 
-### 3.7 `session.end`
+### 3.7 `session.replay.lost`
+
+```json
+{
+  "kind": "session.replay.lost",
+  "session_uuid": "3333...",
+  "client_last_seen_seq": 42,
+  "relay_cursor": 37,
+  "reason": "client-ahead-of-relay-cursor",
+  "degraded": true,
+  "emitted_at": "2026-05-03T00:00:00.000Z",
+  "trace_uuid": "5555..."
+}
+```
+
+该 frame 是 PP3 的 early degraded verdict：表示 server 无法证明完整 replay 到 client 声称的 cursor。Client 必须把本次恢复视为 degraded，并刷新 recovery bundle（至少 `/runtime`、`/confirmations`、`/context/probe`、todos/items/tool-call read models；必要时再读 `/timeline`）。
+
+### 3.8 `session.end`
 
 ```json
 {
@@ -289,9 +306,9 @@ public `orchestrator-core` WS 会解析 `session.followup_input` 并转发到 ag
 
 1. client 跟踪 max seen `event.seq`。
 2. Reconnect with `last_seen_seq=<maxSeq>`。
-3. server best-effort 回放 buffered events。
-4. 若不确定，调用 `POST /sessions/{id}/resume`。
-5. 若 `resume.data.replay_lost === true`，用 `GET /sessions/{id}/timeline` 做 reconciliation。
+3. server best-effort 回放 buffered events；如果 `last_seen_seq > relay_cursor`，WS attach 后第一批可见信号包含 `session.replay.lost` degraded frame。
+4. Client 同时可以调用 `POST /sessions/{id}/resume` 获取 HTTP recovery ack。
+5. 若 WS `session.replay.lost` 或 `resume.data.replay_lost === true`，刷新 recovery bundle 并用 `GET /sessions/{id}/timeline` 做 reconciliation。
 
 ---
 

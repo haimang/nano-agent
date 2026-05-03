@@ -52,7 +52,7 @@
 
 ### `compact_required` 当前 state
 
-`compact_required` 在 HP9 frozen 阶段为 budget 计算结果（基于 `effective_context_pct` 与 `auto_compact_token_limit` 阈值），但 **agent-core runtime 当前不会自动触发 compact**——HP3 closure §2 P2 已显式登记 `auto-compact: not-wired`，`workers/agent-core/src/host/orchestration.ts:296,429` 仍硬编码 `compactRequired: false`。客户端可读 `compact_required` 作为 UI 提示信号，并通过下面的 manual compact 路径主动触发。
+`compact_required` 是 budget 计算结果（基于 `effective_context_pct` 与 `auto_compact_token_limit` 阈值）。PP2 后，agent-core 在 turn-boundary 通过 orchestrator-core `readContextDurableState` 读取同一套 durable budget truth，并在 compact required 时进入 first-wave runtime compact bridge：写入 compact boundary、用 deterministic summary 替换本轮 prompt 中较早消息、保留最近消息继续请求。若 compact bridge 缺失、commit 失败或没有可 compact 的消息，runtime 会发 `compact.notify{status:"failed"}` + `system.notify` 并显式结束该 turn，不把 `{tokensFreed:0}` 伪装成成功。
 
 ### Errors
 
@@ -195,12 +195,13 @@ Response:
 
 ## 9. Deferred / Not-Yet-Live
 
-以下能力在 HP9 frozen pack 中**未 live**：
+以下是 PP2 后 context/compact readiness：
 
 | 能力 | 状态 | 承接 |
 |------|------|------|
-| auto-compact runtime trigger | not-wired (`compactRequired: false` hardcoded) | HP3 后续批次 |
+| manual compact boundary | live | `POST /context/compact` 写 `checkpoint_kind="compact_boundary"` 与 `snapshot_kind="compact-boundary"` |
+| auto-compact runtime trigger | first-wave | agent-core turn-boundary compact bridge；使用 deterministic summary，不代表高质量 LLM summary |
 | `CrossTurnContextManager` runtime owner | not-started-in-runtime | HP3 后续批次 |
 | `<model_switch>` / `<state_snapshot>` strip-then-recover | partial（preview marker only） | HP3 后续批次 |
-| compact 失败 3 次 circuit breaker | not-wired | HP3 后续批次 |
+| compact 失败 3 次 circuit breaker | not-enforced | PP5 reliability hardening |
 | 60s preview cache (Q12) | not-implemented | HP3 后续批次 |
