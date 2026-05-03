@@ -331,3 +331,24 @@ PP0 Charter & Truth Lock
 | 文档 | PP0 closure 与 PP1 handoff 可引用 |
 | 风险收敛 | 无新增 exit law、无 docs-only overclaim |
 | 可交付性 | PP1 可以在该基线之上启动 |
+
+---
+
+## 9. 执行工作报告（2026-05-03）
+
+- 创建并执行本轮串行 todo：`p2p-pp0-code` → `p2p-pp0-closure`，未越过 PP0 直接推进 PP1。
+- 重新核对 `00-agent-loop-truth-model.md`、`01-frontend-trust-contract.md`、`PPX-qna.md` Q1-Q5 与 PP0 action-plan，确认 PP0 只做 truth registry、frontend boundary、e2e skeleton 与 closure，不实现 PP1-PP4 主线。
+- 取回并核对一手 reference：Gemini `Turn.run()` event stream、Codex SQ/EQ protocol、Claude Code `queryLoop` state/preflight 结构，用于确认 PP0 evidence discipline 仍应以 frontend-visible event/state 为准。
+- 新增 `test/cross-e2e/16-pro-to-product-baseline-skeleton.test.mjs`，作为 PP0 唯一 skeleton owner file。
+- skeleton 采用当前已 live 的 runtime control 链路：`POST /me/sessions` mint pending session → `POST start_url` start → WS attach ready → `GET /runtime` → `PATCH /runtime` → `session.runtime.update` WS frame → `GET /runtime` durable read-model。
+- skeleton 输出统一 evidence object：`transport / trace_uuid / start_ts / first_visible_ts / terminal_or_degraded_ts / verdict / coverage / latency_ms / latency_alert`。
+- 独立 code review 首轮发现 runtime update listener 注册晚于 PATCH response 的 race；已修正为 PATCH 前注册 listener。
+- live 验证发现直接随机 UUID `/start` 后 `/runtime` 读取 404；已修正 skeleton 为先走 `POST /me/sessions` 生成 durable pending session。
+- live 验证发现 preview 缺少 D1 015/016/017 migration；已按 preview 流程应用 migration。
+- preview deploy 发现缺少 `nano-agent-executor-preview` queue；已创建 queue 并重新部署 orchestrator-core。
+- live 验证发现 `PATCH /runtime` 成功但 `session.runtime.update` WS frame 不到达；根因是 `emitFrameViaUserDO` 对 UserDO forward 使用 fire-and-forget，live request 生命周期中不可靠。
+- 在 `workers/orchestrator-core/src/wsemit.ts` 新增 `emitFrameViaUserDOAndWait()`，保留原 fire-and-forget helper 给既有 caller；`session-runtime.ts` 改为对 `session.runtime.update` 使用 awaited UserDO forward，不改变 response body，不让 WS push failure 回滚 runtime row commit。
+- 为避免误把 TCP open 当作 frontend-ready，skeleton 在 PATCH 前等待首个 WS frame，再开始 runtime update evidence 计时。
+- 完成最终验证：`session-runtime-route.test.ts` 4 tests pass、orchestrator-core typecheck/build pass、preview deploy pass、`NANO_AGENT_LIVE_E2E=1 node --test test/cross-e2e/16-pro-to-product-baseline-skeleton.test.mjs` pass。
+- live evidence 记录：`first_visible=531ms`、`terminal_or_degraded=762ms`、`latency_alert.exceeded_count=0`。
+- 输出 `docs/issue/pro-to-product/PP0-closure.md`，登记 truth gate、frontend boundary、live evidence、FE-1 handoff、PP1 start gate 与 not-touched 项。
