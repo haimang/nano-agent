@@ -157,6 +157,9 @@
 | `GET` | `/sessions/{id}/history` | bearer | legacy | durable message history |
 | `POST` | `/sessions/{id}/verify` | bearer | legacy | preview verification harness |
 | `POST` | `/sessions/{id}/resume` | bearer | facade | HTTP replay ack |
+| `GET` | `/sessions/{id}/hooks` | bearer | facade | list session-scoped PP4 hook handlers |
+| `POST` | `/sessions/{id}/hooks` | bearer | facade | register session-scoped PreToolUse hook |
+| `DELETE` | `/sessions/{id}/hooks/{handler_id}` | bearer | facade | unregister session hook |
 | `POST` | `/sessions/{id}/retry` | bearer | legacy | absorbed first-wave retry ack |
 | `POST` | `/sessions/{id}/fork` | bearer | legacy `202` | absorbed first-wave fork ack |
 | `GET` | `/sessions/{id}/usage` | bearer | facade | usage snapshot |

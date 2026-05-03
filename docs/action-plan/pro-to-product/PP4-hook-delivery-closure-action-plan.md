@@ -388,3 +388,20 @@ PP4 Hook Delivery Closure
 | 文档 | PP4 closure 诚实区分 live 与 catalog-only，并登记 hook latency alert |
 | 风险收敛 | 无 full catalog scope creep、无 shell hook、无 payload 泄露 |
 | 可交付性 | PP5 可基于 hook/policy 优先级继续 hardening |
+
+---
+
+## 9. 执行工作报告（2026-05-03）
+
+1. **P1-01 / Hook registration control surface 已完成**：新增 `workers/orchestrator-core/src/facade/routes/session-hooks.ts` 与 route registry 接入，提供 `GET/POST /sessions/{id}/hooks` 和 `DELETE /sessions/{id}/hooks/{handler_id}`；agent-core 新增 `hookRegister` / `hookList` / `hookUnregister` RPC 与 internal DO actions。
+2. **P1-02 / handler validation 已完成**：新增 `workers/agent-core/src/hooks/session-registration.ts`，只允许 `event:"PreToolUse"`、`source:"session"`、`runtime:"local-ts"`、合法 matcher、bounded timeout 与 declarative outcome；shell / service-binding public registration 均被拒绝。
+3. **P1-03 / register persistence and scope 已完成**：session hooks 通过 tenant-scoped DO storage key `session:hooks:v1` 持久化；HTTP fallback 和 WS attach 均会 restore hooks。独立 review 发现 HTTP hook management 未 restore 的断点后，已补 `restoreSessionHooks()` 并添加 fresh DO persisted list 回归测试。
+4. **P2-01 / PreToolUse caller 已完成**：`workers/agent-core/src/host/runtime-capability.ts` 在 permission/quota/tool execution 前运行 PreToolUse dispatcher；generic `hook_emit` 不再被当作 PP4 closure 证据。
+5. **P2-02 / block outcome enforcement 已完成**：block handler 会返回 hook-blocked tool result，并阻止 capability transport / backend 被调用。`runtime-mainline.test.ts` 覆盖真实 capability execution 被 block。
+6. **P2-03 / updatedInput validation 已完成**：updatedInput 必须是 object，并继续进入原工具 schema；`write_todos` 测试覆盖 hook 改写输入后由原 backend 执行。
+7. **P3-01 / audit outcome 已完成**：runtime assembly 将 PreToolUse outcome 映射为 `hook.outcome` audit，带 finalAction、blocked、handlerCount、trace carriers 与 session ref。
+8. **P3-02 / frontend broadcast and redaction 已完成**：`hookEventToSessionBroadcast()` 支持 `caller` provenance，PP4 PreToolUse 使用 `caller:"pre-tool-use"`；`packages/nacp-session/src/stream-event.ts` 与 `clients/api-docs/session-ws-v1.md` 已同步。
+9. **P4-01 / cross-e2e 未 overclaim**：本轮未新增 live/cross-worker e2e；closure 明确登记为 `not-claimed`。当前 evidence 为 package/worker targeted tests、build/typecheck、docs/governance gates 与 code review。
+10. **测试与治理 gate 已通过**：已执行 `@haimang/nacp-session` typecheck/build/test，`@haimang/agent-core-worker` typecheck/build + `test/host/do/nano-session-do.test.ts` / `test/host/runtime-mainline.test.ts`，`@haimang/orchestrator-core-worker` typecheck/build + `test/session-hooks-route.test.ts`，以及 `pnpm run check:docs-consistency`、`pnpm run check:megafile-budget`、`pnpm run check:envelope-drift`、`git --no-pager diff --check`。
+11. **独立审查已完成**：第一轮 PP4 code review 发现 HTTP fallback restore issue；修复后第二轮 fix review 确认问题已闭合。
+12. **closure 已输出**：`docs/issue/pro-to-product/PP4-closure.md` 已记录 verdict、resolved items、行为矩阵、live/catalog-only hook 边界、validation evidence、known issues 与 PP5/PP6 交接事项。

@@ -64,7 +64,7 @@ wss://<base>/sessions/{sessionUuid}/ws?access_token=<jwt>&trace_uuid=<uuid>&last
 | `tool.call.progress` | `{tool_name, request_uuid?, chunk, is_final}` | RHX2 | 渲染工具进度 |
 | `tool.call.result` | `{tool_name, request_uuid?, status, output?, error_message?}` | RHX2 | 工具完成 |
 | `tool.call.cancelled` | `{tool_name, request_uuid, cancel_initiator}` | **HP6** | 工具取消通知；`cancel_initiator ∈ {user, system, parent_cancel}` |
-| `hook.broadcast` | `{event_name, payload_redacted, aggregated_outcome?}` | RHX2 | hook 广播 |
+| `hook.broadcast` | `{event_name, caller?, payload_redacted, aggregated_outcome?}` | PP4 | hook 广播；PP4 PreToolUse caller 使用 `caller:"pre-tool-use"` |
 | `session.update` | `{phase, partial_output?}` | RHX2 | session phase 变化 |
 | `turn.begin` | `{turn_uuid}` | RHX2 | turn 起始 |
 | `turn.end` | `{turn_uuid, usage?}` | RHX2 | turn 结束 |

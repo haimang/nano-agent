@@ -223,6 +223,42 @@ WebSocket 上的等价机制是 attach query `?last_seen_seq=` 与 `session.resu
 
 当 `replay_lost` 为 `true` 时，client 必须刷新 recovery bundle；WS attach 侧会发同语义的 `session.replay.lost` frame。
 
+## 15.1 Session hooks（PP4 minimal）
+
+PP4 只开放 session-scoped `PreToolUse` minimal live loop，不开放 shell hook，不扩 full catalog。
+
+| Method | Path | 作用 |
+|--------|------|------|
+| `GET` | `/sessions/{id}/hooks` | list 当前 session hook handlers |
+| `POST` | `/sessions/{id}/hooks` | register / replace 一个 session-scoped PreToolUse handler |
+| `DELETE` | `/sessions/{id}/hooks/{handler_id}` | unregister handler |
+
+注册 body 仅支持 worker-safe declarative `local-ts` handler：
+
+```json
+{
+  "id": "block-bash",
+  "event": "PreToolUse",
+  "runtime": "local-ts",
+  "matcher": { "type": "toolName", "value": "bash" },
+  "timeout_ms": 2000,
+  "outcome": {
+    "action": "block",
+    "reason": "bash is disabled for this session"
+  }
+}
+```
+
+`outcome.action` 支持：
+
+| action | 行为 |
+|--------|------|
+| `block` | 阻止工具执行，返回 hook-blocked tool result，并写 `hook.outcome` audit |
+| `continue` | 允许工具继续，可附带 diagnostics |
+| `updateInput` | 等价于 `continue + updated_input`；runtime 会重新执行工具输入校验 |
+
+`updated_input` 必须是 object；对 `write_todos` 等结构化工具，更新后的输入仍会走原工具 schema。hook outcome 会通过 WS `hook.broadcast` 前端可见，payload 使用 redaction hints 脱敏。
+
 ## 16. GET `/conversations/{conversation_uuid}`
 
 HP4 conversation detail read model，返回 conversation level 聚合（含 child sessions、首条 message preview、tombstoned 状态等）：
