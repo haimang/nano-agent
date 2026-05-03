@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { fetchJson, liveTest, randomSessionId } from "../shared/live.mjs";
+import { fetchJson, liveTest } from "../shared/live.mjs";
 import { createOrchestratorAuth } from "../shared/orchestrator-auth.mjs";
 
 const VISIBILITY_THRESHOLD_MS = 5_000;
@@ -22,9 +22,33 @@ function waitForOpen(ws) {
   });
 }
 
-function waitForRuntimeUpdate(ws, sessionId, expectedVersion) {
+function waitForAnyMessage(ws) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("websocket initial message timeout")), 10_000);
+    ws.addEventListener("message", (event) => {
+      let parsed;
+      try {
+        parsed = JSON.parse(String(event.data));
+      } catch {
+        return;
+      }
+      clearTimeout(timer);
+      resolve(parsed);
+    }, { once: true });
+    ws.addEventListener("error", (event) => {
+      clearTimeout(timer);
+      reject(event.error ?? new Error("websocket error"));
+    }, { once: true });
+  });
+}
+
+function waitForRuntimeUpdate(ws, sessionId, expectedVersion, signal) {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error("session.runtime.update websocket timeout")), 10_000);
+    signal?.addEventListener("abort", () => {
+      clearTimeout(timer);
+      reject(signal.reason ?? new Error("session.runtime.update wait aborted"));
+    }, { once: true });
     ws.addEventListener("message", (event) => {
       let parsed;
       try {
@@ -102,19 +126,29 @@ liveTest(
   async ({ getUrl }) => {
     const base = getUrl("orchestrator-core");
     const wsBase = base.replace(/^http/, "ws");
-    const sessionId = randomSessionId();
     const { token, traceUuid, authHeaders, jsonHeaders } = await createOrchestratorAuth("cross-e2e-pp0");
 
-    const start = await fetchJson(`${base}/sessions/${sessionId}/start`, {
+    const minted = await fetchJson(`${base}/me/sessions`, {
+      method: "POST",
+      headers: jsonHeaders,
+      body: JSON.stringify({}),
+    });
+    assert.equal(minted.response.status, 201, `POST /me/sessions failed: ${minted.text}`);
+    assert.equal(minted.json?.ok, true);
+    assert.equal(typeof minted.json?.data?.session_uuid, "string");
+    assert.equal(typeof minted.json?.data?.start_url, "string");
+
+    const sessionId = minted.json.data.session_uuid;
+    const start = await fetchJson(`${base}${minted.json.data.start_url}`, {
       method: "POST",
       headers: jsonHeaders,
       body: JSON.stringify({ initial_input: "pp0-runtime-baseline" }),
     });
-    assert.equal(start.response.status, 200);
+    assert.equal(start.response.status, 200, `POST ${minted.json.data.start_url} failed: ${start.text}`);
     assert.equal(start.json?.ok, true);
 
     const before = await fetchJson(`${base}/sessions/${sessionId}/runtime`, { headers: authHeaders });
-    assert.equal(before.response.status, 200);
+    assert.equal(before.response.status, 200, `GET /runtime before patch failed: ${before.text}`);
     assert.equal(before.json?.ok, true);
     assert.equal(before.json?.data?.session_uuid, sessionId);
     assert.equal(typeof before.json?.data?.version, "number");
@@ -124,26 +158,31 @@ liveTest(
     const ws = new WebSocket(`${wsBase}/sessions/${sessionId}/ws?access_token=${token}&trace_uuid=${traceUuid}`);
     try {
       await waitForOpen(ws);
+      await waitForAnyMessage(ws);
 
       const startMs = Date.now();
       const startTs = isoNow();
+      const expectedVersion = before.json.data.version + 1;
+      const runtimeUpdateAbort = new AbortController();
+      const runtimeUpdatePromise = waitForRuntimeUpdate(ws, sessionId, expectedVersion, runtimeUpdateAbort.signal);
       const patch = await fetchJson(`${base}/sessions/${sessionId}/runtime`, {
         method: "PATCH",
-        headers: {
-          ...jsonHeaders,
-          "if-match": etag,
-        },
+        headers: jsonHeaders,
         body: JSON.stringify({
           version: before.json.data.version,
           approval_policy: "always_allow",
         }),
       });
-      assert.equal(patch.response.status, 200);
+      if (patch.response.status !== 200) {
+        runtimeUpdateAbort.abort(new Error("PATCH /runtime failed before runtime update was expected"));
+        await runtimeUpdatePromise.catch(() => null);
+      }
+      assert.equal(patch.response.status, 200, `PATCH /runtime failed: ${patch.text}`);
       assert.equal(patch.json?.ok, true);
       assert.equal(patch.json?.data?.approval_policy, "always_allow");
-      assert.equal(patch.json?.data?.version, before.json.data.version + 1);
+      assert.equal(patch.json?.data?.version, expectedVersion);
 
-      const runtimeUpdate = await waitForRuntimeUpdate(ws, sessionId, patch.json.data.version);
+      const runtimeUpdate = await runtimeUpdatePromise;
       const firstVisibleMs = Date.now();
       const firstVisibleTs = isoNow();
       assert.equal(runtimeUpdate.approval_policy, "always_allow");
@@ -151,7 +190,7 @@ liveTest(
       const after = await fetchJson(`${base}/sessions/${sessionId}/runtime`, { headers: authHeaders });
       const terminalMs = Date.now();
       const terminalTs = isoNow();
-      assert.equal(after.response.status, 200);
+      assert.equal(after.response.status, 200, `GET /runtime after patch failed: ${after.text}`);
       assert.equal(after.json?.ok, true);
       assert.equal(after.json?.data?.approval_policy, "always_allow");
       assert.equal(after.json?.data?.version, patch.json.data.version);
