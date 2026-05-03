@@ -438,17 +438,45 @@ export class NanoSessionDO {
     prompt: string;
     timeoutMs?: number;
   }): Promise<Record<string, unknown>> {
-    await this.pushServerFrameToClient({
-      kind: "session.elicitation.request",
-      session_uuid: input.sessionUuid,
+    const emitted = await this.pushServerFrameToClient({
+      kind: "session.confirmation.request",
+      confirmation_uuid: input.requestUuid,
+      confirmation_kind: "elicitation",
       request_uuid: input.requestUuid,
-      prompt: input.prompt,
+      payload: {
+        prompt: input.prompt,
+      },
     });
-    return this.awaitAsyncAnswer({
-      kind: "elicitation",
-      requestUuid: input.requestUuid,
-      timeoutMs: input.timeoutMs,
-    });
+    if (!emitted.delivered) {
+      await this.settleConfirmation({
+        sessionUuid: input.sessionUuid,
+        requestUuid: input.requestUuid,
+        status: "timeout",
+        decisionPayload: {
+          reason: emitted.reason ?? "no-attached-client",
+          source: "agent-core",
+        },
+      });
+      throw new Error(`elicitation no decider: ${emitted.reason ?? "no-attached-client"}`);
+    }
+    try {
+      return await this.awaitAsyncAnswer({
+        kind: "elicitation",
+        requestUuid: input.requestUuid,
+        timeoutMs: input.timeoutMs,
+      });
+    } catch (error) {
+      await this.settleConfirmation({
+        sessionUuid: input.sessionUuid,
+        requestUuid: input.requestUuid,
+        status: "timeout",
+        decisionPayload: {
+          reason: error instanceof Error ? error.message : String(error),
+          source: "agent-core",
+        },
+      });
+      throw error;
+    }
   }
 
   private async settleConfirmation(input: {

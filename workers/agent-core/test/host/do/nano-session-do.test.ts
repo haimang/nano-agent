@@ -262,6 +262,53 @@ describe("NanoSessionDO", () => {
       );
     });
 
+    it("settles elicitation confirmations as timeout when no client is attached", async () => {
+      const forwardServerFrameToClient = vi.fn().mockResolvedValue({
+        ok: true,
+        delivered: false,
+        reason: "no-attached-client",
+      });
+      const settleConfirmation = vi.fn().mockResolvedValue({
+        ok: true,
+        status: "timeout",
+      });
+      const internalDo = new NanoSessionDO({}, {
+        TEAM_UUID: "team-xyz",
+        NANO_INTERNAL_BINDING_SECRET: "secret",
+        ORCHESTRATOR_CORE: { forwardServerFrameToClient, settleConfirmation },
+      });
+
+      await internalDo.fetch(
+        new Request(`https://session.internal/sessions/${SESSION_UUID}/status`, {
+          headers: {
+            "x-nano-internal-binding-secret": "secret",
+            "x-trace-uuid": TRACE_UUID,
+            "x-nano-internal-authority": JSON.stringify(AUTHORITY),
+          },
+        }),
+      );
+
+      await expect((internalDo as unknown as {
+        emitElicitationRequestAndAwait: (input: {
+          sessionUuid: string;
+          requestUuid: string;
+          prompt: string;
+        }) => Promise<Record<string, unknown>>;
+      }).emitElicitationRequestAndAwait({
+        sessionUuid: SESSION_UUID,
+        requestUuid: REQUEST_UUID,
+        prompt: "Which option should I use?",
+      })).rejects.toThrow("elicitation no decider");
+      expect(settleConfirmation).toHaveBeenCalledWith(
+        expect.objectContaining({
+          session_uuid: SESSION_UUID,
+          confirmation_uuid: REQUEST_UUID,
+          status: "timeout",
+        }),
+        expect.objectContaining({ team_uuid: "team-xyz" }),
+      );
+    });
+
     it("returns 404 for unrecognized paths", async () => {
       const request = makeRequest("https://example.com/unknown");
       const response = await doInstance.fetch(request);
