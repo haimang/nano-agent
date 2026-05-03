@@ -201,6 +201,8 @@ export function mapKindToMessageType(kind: string): string {
       // RH2 P2-01c — `session.attachment.superseded` 已注册为正式 NACP message
       // type;lightweight `attachment_superseded` 同义映射到该 NACP type。
       return "session.attachment.superseded";
+    case "session.replay.lost":
+      return "session.replay.lost";
     case "meta":
       // session-ws-v2 will introduce `session.opened`; until then we map to
       // `session.stream.event` so registry validation does not reject it.

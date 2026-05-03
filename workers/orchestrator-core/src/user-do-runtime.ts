@@ -11,13 +11,6 @@ import {
   type DurableTurnPointer,
 } from "./session-truth.js";
 
-// RH6 runtime implementation — thin public façade lives in user-do.ts.
-// ZX4 Phase 0 — seam extraction(per ZX4-ZX5 GPT review Q3 4-module seam):
-// types + pure helpers 已抽到 4 个 seam 模块,本文件只保留 NanoOrchestratorUserDO
-// 类骨架。Phase 0 是 pure refactor,零行为变更。Phase 1+ 在小文件上各自演进。
-// ZX4 Phase 9 P9-01 — post P3-05 flip: jsonDeepEqual / logParityFailure
-// 不再被 user-do 使用(parity 比较已删除),仍在 parity-bridge.ts 中保留供
-// 未来 dual-track 重启时使用,但本文件不再 import。
 import {
   InvalidStreamFrameError,
   isRecord,

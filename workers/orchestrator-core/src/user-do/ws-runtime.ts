@@ -142,6 +142,35 @@ export function createUserDoWsRuntime(ctx: UserDoWsRuntimeContext) {
         ended_at: null,
       };
       await ctx.put(sessionKey(sessionUuid), nextEntry);
+      if (clientLastSeenSeq !== null && clientLastSeenSeq > entry.relay_cursor) {
+        const traceUuid = request.headers.get("x-trace-uuid") ?? undefined;
+        const auditAuth = parsedAuthority ?? await ctx.readAuditAuthSnapshot();
+        await ctx.persistAudit({
+          ts: new Date().toISOString(),
+          worker: "orchestrator-core",
+          event_kind: "session.replay_lost",
+          outcome: "failed",
+          session_uuid: sessionUuid,
+          trace_uuid: traceUuid,
+          team_uuid: auditAuth?.team_uuid ?? auditAuth?.tenant_uuid,
+          user_uuid: auditAuth?.user_uuid ?? auditAuth?.sub,
+          device_uuid: auditAuth?.device_uuid ?? gatedEntry.device_uuid ?? undefined,
+          detail: {
+            client_last_seen_seq: clientLastSeenSeq,
+            relay_cursor: entry.relay_cursor,
+          },
+        });
+        ctx.emitServerFrame(sessionUuid, {
+          kind: "session.replay.lost",
+          session_uuid: sessionUuid,
+          client_last_seen_seq: clientLastSeenSeq,
+          relay_cursor: entry.relay_cursor,
+          reason: "client-ahead-of-relay-cursor",
+          degraded: true,
+          emitted_at: new Date().toISOString(),
+          ...(traceUuid ? { trace_uuid: traceUuid } : {}),
+        });
+      }
       await this.forwardFramesToAttachment(sessionUuid, nextEntry, stream.frames);
 
       try {

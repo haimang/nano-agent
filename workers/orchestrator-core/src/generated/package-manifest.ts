@@ -2,7 +2,7 @@
 // DO NOT EDIT BY HAND.
 
 export const NANO_PACKAGE_MANIFEST = {
-  "build_at": "2026-05-03T03:12:14.916Z",
+  "build_at": "2026-05-03T04:08:04.505Z",
   "packages": [
     {
       "name": "@haimang/nacp-core",
@@ -20,7 +20,7 @@ export const NANO_PACKAGE_MANIFEST = {
       "registry_version": "1.5.0",
       "registry_latest_version": "1.5.0",
       "registry_published_at": "workspace-local-fallback",
-      "dist_sha256": "703a57976f98e8e990c95bae982d74f3f26c6a4df8dca6b9ebacbfc8f9c3bc25",
+      "dist_sha256": "c0a3e75b420b53e20fc654c03393649bb477d81e4b9f493118310bd221c351c0",
       "match": true,
       "resolved_from": "workspace-local-fallback"
     },
