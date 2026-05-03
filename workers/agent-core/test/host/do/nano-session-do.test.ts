@@ -176,6 +176,53 @@ describe("NanoSessionDO", () => {
       expect(ok.status).toBe(200);
     });
 
+    it("restores persisted session hooks before HTTP hook management actions", async () => {
+      const storage = new Map<string, unknown>();
+      storage.set("tenants/team-xyz/session:hooks:v1", [
+        {
+          id: "block-pwd",
+          source: "session",
+          event: "PreToolUse",
+          matcher: { type: "toolName", value: "pwd" },
+          runtime: "local-ts",
+          timeoutMs: 2000,
+          outcome: { action: "block", reason: "pwd disabled" },
+        },
+      ]);
+      const internalDo = new NanoSessionDO(
+        {
+          storage: {
+            get: async <T = unknown>(key: string) => storage.get(key) as T | undefined,
+            put: async <T = unknown>(key: string, value: T) => {
+              storage.set(key, value);
+            },
+          },
+        },
+        {
+          NANO_INTERNAL_BINDING_SECRET: "secret",
+          TEAM_UUID: "team-xyz",
+        },
+      );
+
+      const response = await internalDo.fetch(
+        new Request(`https://session.internal/sessions/${SESSION_UUID}/hooks-list`, {
+          headers: {
+            "x-nano-internal-binding-secret": "secret",
+            "x-trace-uuid": TRACE_UUID,
+            "x-nano-internal-authority": JSON.stringify(AUTHORITY),
+          },
+        }),
+      );
+
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        data?: { handlers?: Array<{ id?: string }> };
+      };
+      expect(body.data?.handlers).toEqual([
+        expect.objectContaining({ id: "block-pwd" }),
+      ]);
+    });
+
     it("latches authority.sub for server-frame routing", async () => {
       const forwardServerFrameToClient = vi.fn().mockResolvedValue({
         ok: true,

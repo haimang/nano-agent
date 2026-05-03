@@ -7,6 +7,7 @@ import {
   resetModelPromptSuffixCache,
 } from "../../src/host/runtime-mainline.js";
 import type { QuotaAuthorizer } from "../../src/host/quota/authorizer.js";
+import { createSessionHookRuntime } from "../../src/hooks/session-registration.js";
 
 function baseSignals(overrides: Partial<SchedulerSignals> = {}): SchedulerSignals {
   return {
@@ -30,6 +31,13 @@ function toolSnapshot(turnId = "turn-1") {
   return applyAction(runningSnapshot(turnId), {
     type: "tool_calls_requested",
     calls: [{ id: "tool-1", name: "pwd", input: {} }],
+  });
+}
+
+function namedToolSnapshot(name: string, input: Record<string, unknown>, turnId = "turn-1") {
+  return applyAction(runningSnapshot(turnId), {
+    type: "tool_calls_requested",
+    calls: [{ id: "tool-1", name, input }],
   });
 }
 
@@ -195,6 +203,100 @@ describe("createMainlineKernelRunner", () => {
     } else {
       expect(true).toBe(true);
     }
+  });
+
+  it("PP4: PreToolUse session hook blocks real capability execution", async () => {
+    const hooks = createSessionHookRuntime();
+    hooks.register({
+      id: "block-pwd",
+      event: "PreToolUse",
+      matcher: { type: "toolName", value: "pwd" },
+      runtime: "local-ts",
+      outcome: { action: "block", reason: "pwd is disabled" },
+    });
+    const capabilityCall = vi.fn();
+    const onHookOutcome = vi.fn();
+    const runner = createMainlineKernelRunner({
+      ai: { run: vi.fn() },
+      quotaAuthorizer: null,
+      capabilityTransport: { call: capabilityCall },
+      contextProvider: () => ({
+        teamUuid: "team-1",
+        sessionUuid: "session-1",
+        traceUuid: "trace-1",
+        turnUuid: "turn-1",
+      }),
+      anchorProvider: () => undefined,
+      hookDispatcher: hooks.dispatcher,
+      hookContextProvider: () => ({ sessionUuid: "session-1", turnId: "turn-1" }),
+      onHookOutcome,
+    });
+
+    const result = await runner.advanceStep(toolSnapshot("turn-1"), baseSignals({
+      hasMoreToolCalls: true,
+    }));
+
+    expect(capabilityCall).not.toHaveBeenCalled();
+    expect(onHookOutcome).toHaveBeenCalledWith(expect.objectContaining({
+      eventName: "PreToolUse",
+      caller: "pre-tool-use",
+      outcome: expect.objectContaining({ blocked: true, blockReason: "pwd is disabled" }),
+    }));
+    expect(result.events).toContainEqual(expect.objectContaining({
+      type: "tool.call.result",
+      requestId: "tool-1",
+      status: "error",
+      errorMessage: "pwd is disabled",
+    }));
+  });
+
+  it("PP4: PreToolUse updated input is revalidated by the write_todos path", async () => {
+    const hooks = createSessionHookRuntime();
+    hooks.register({
+      id: "rewrite-todos",
+      event: "PreToolUse",
+      matcher: { type: "toolName", value: "write_todos" },
+      runtime: "local-ts",
+      outcome: {
+        action: "updateInput",
+        updated_input: {
+          todos: [{ content: "from hook", status: "pending" }],
+        },
+      },
+    });
+    const writeTodosBackend = vi.fn(async () => ({
+      ok: true as const,
+      created: [{ todo_uuid: "todo-1", status: "pending" as const }],
+      auto_closed: [],
+    }));
+    const runner = createMainlineKernelRunner({
+      ai: { run: vi.fn() },
+      quotaAuthorizer: null,
+      contextProvider: () => ({
+        teamUuid: "team-1",
+        sessionUuid: "session-1",
+        traceUuid: "trace-1",
+        turnUuid: "turn-1",
+      }),
+      anchorProvider: () => undefined,
+      hookDispatcher: hooks.dispatcher,
+      hookContextProvider: () => ({ sessionUuid: "session-1", turnId: "turn-1" }),
+      writeTodosBackend,
+    });
+
+    const result = await runner.advanceStep(
+      namedToolSnapshot("write_todos", { todos: [{ content: "original" }] }, "turn-1"),
+      baseSignals({ hasMoreToolCalls: true }),
+    );
+
+    expect(writeTodosBackend).toHaveBeenCalledWith(expect.objectContaining({
+      todos: [{ content: "from hook", status: "pending" }],
+    }));
+    expect(result.events).toContainEqual(expect.objectContaining({
+      type: "tool.call.result",
+      requestId: "tool-1",
+      status: "ok",
+    }));
   });
 
   it("injects the nano-agent system prompt before invoking Workers AI", async () => {

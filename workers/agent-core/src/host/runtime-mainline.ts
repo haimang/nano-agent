@@ -9,6 +9,7 @@ import {
 import { QuotaAuthorizer, type QuotaRuntimeContext } from "./quota/authorizer.js";
 import type { HookDispatcher, HookEmitContext } from "../hooks/dispatcher.js";
 import type { HookEventName } from "../hooks/catalog.js";
+import type { AggregatedHookOutcome } from "../hooks/outcome.js";
 import {
   createCapabilityAdapter,
   type CapabilityTransportLike,
@@ -74,6 +75,13 @@ export interface MainlineKernelOptions {
    * runtime 不发 tool semantic frame(向下兼容)。
    */
   readonly onToolEvent?: (event: ToolSemanticEvent) => void;
+  readonly onHookOutcome?: (event: {
+    readonly eventName: HookEventName;
+    readonly caller: "pre-tool-use" | "step-emit";
+    readonly payload: unknown;
+    readonly outcome: AggregatedHookOutcome;
+    readonly durationMs: number;
+  }) => void;
   /**
    * HP3-D2 (deferred-closure absorb) — host-supplied compact budget probe.
    * The orchestrator polls this between every kernel step. When it

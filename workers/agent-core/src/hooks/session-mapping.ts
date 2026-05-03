@@ -22,6 +22,7 @@ import type { AggregatedHookOutcome } from "./outcome.js";
 export interface HookBroadcastBody {
   readonly kind: "hook.broadcast";
   readonly event_name: string;
+  readonly caller?: "pre-tool-use" | "step-emit";
   readonly payload_redacted: unknown;
   readonly aggregated_outcome?: unknown;
 }
@@ -38,6 +39,7 @@ export function hookEventToSessionBroadcast(
   eventName: HookEventName,
   payload: unknown,
   outcome: AggregatedHookOutcome,
+  options?: { readonly caller?: "pre-tool-use" | "step-emit" },
 ): HookBroadcastBody {
   const meta = HOOK_EVENT_CATALOG[eventName];
   const redactedPayload = redactPayload(payload, meta.redactionHints);
@@ -54,6 +56,7 @@ export function hookEventToSessionBroadcast(
   return {
     kind: "hook.broadcast",
     event_name: eventName,
+    ...(options?.caller ? { caller: options.caller } : {}),
     payload_redacted: redactedPayload,
     aggregated_outcome: aggregated,
   };

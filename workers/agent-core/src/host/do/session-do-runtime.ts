@@ -81,6 +81,9 @@ import {
   createSessionDoConfirmationRuntime,
   type SessionDoConfirmationRuntime,
 } from "./session-do-confirmation.js";
+import {
+  createSessionDoHookControl,
+} from "./session-do-hooks.js";
 
 // ═══════════════════════════════════════════════════════════════════
 // §1 — DurableObjectState subset
@@ -119,6 +122,7 @@ export class NanoSessionDO {
   private readonly fetchRuntime: ReturnType<typeof createSessionDoFetchRuntime>;
   private readonly wsRuntime: ReturnType<typeof createSessionDoWsRuntime>;
   private readonly confirmationRuntime: SessionDoConfirmationRuntime;
+  private readonly hookControl: ReturnType<typeof createSessionDoHookControl>;
 
   // 3rd-round R2 + B6 dedup: bounded in-memory default eval/evidence sink
   // (capacity 1024). Production deployments override `subsystems.eval`
@@ -236,6 +240,11 @@ export class NanoSessionDO {
     this.defaultEvalSink = assembly.defaultEvalSink;
     this.quotaAuthorizer = assembly.quotaAuthorizer;
     this.state = assembly.state;
+    this.hookControl = createSessionDoHookControl({
+      hookRuntime: assembly.hookRuntime,
+      attachSessionUuid: (candidate) => this.attachSessionUuid(candidate),
+      getTenantScopedStorage: () => this.getTenantScopedStorage(),
+    });
 
     this.wsRuntime = createSessionDoWsRuntime({
       config: this.config,
@@ -298,6 +307,12 @@ export class NanoSessionDO {
         this.handlePermissionDecisionRecord(sessionId, body),
       handleElicitationAnswerRecord: (sessionId, body) =>
         this.handleElicitationAnswerRecord(sessionId, body),
+      restoreSessionHooks: () => this.hookControl.restoreSessionHooks(),
+      handleSessionHookRegister: (sessionId, body) =>
+        this.hookControl.handleSessionHookRegister(sessionId, body),
+      handleSessionHookList: (sessionId) => this.hookControl.handleSessionHookList(sessionId),
+      handleSessionHookUnregister: (sessionId, body) =>
+        this.hookControl.handleSessionHookUnregister(sessionId, body),
     });
   }
 
@@ -619,7 +634,8 @@ export class NanoSessionDO {
   }
 
   private async restoreFromStorage(): Promise<void> {
-    return restoreFromStorageModule(this.buildPersistenceContext());
+    await restoreFromStorageModule(this.buildPersistenceContext());
+    await this.hookControl.restoreSessionHooks();
   }
 
   private buildPersistenceContext(): PersistenceContext {

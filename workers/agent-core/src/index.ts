@@ -187,7 +187,10 @@ type AgentRpcAction =
   | "timeline"
   | "stream_snapshot"
   | "permission-decision"
-  | "elicitation-answer";
+  | "elicitation-answer"
+  | "hooks-register"
+  | "hooks-list"
+  | "hooks-unregister";
 
 const AGENT_RPC_METHOD: Record<AgentRpcAction, "GET" | "POST"> = {
   status: "GET",
@@ -199,6 +202,9 @@ const AGENT_RPC_METHOD: Record<AgentRpcAction, "GET" | "POST"> = {
   stream_snapshot: "GET",
   "permission-decision": "POST",
   "elicitation-answer": "POST",
+  "hooks-register": "POST",
+  "hooks-list": "GET",
+  "hooks-unregister": "POST",
 };
 
 export default class AgentCoreEntrypoint extends WorkerEntrypoint<AgentCoreEnv> {
@@ -245,6 +251,18 @@ export default class AgentCoreEntrypoint extends WorkerEntrypoint<AgentCoreEnv> 
   // Output shape: { ok: true, data: { request_uuid, kind: 'elicitation', stored: true } }
   async elicitationAnswer(rawInput: unknown, rawMeta: unknown): Promise<AgentCoreRpcResponse> {
     return this.invokeInternalRpc("elicitation-answer", rawInput, rawMeta);
+  }
+
+  async hookRegister(rawInput: unknown, rawMeta: unknown): Promise<AgentCoreRpcResponse> {
+    return this.invokeInternalRpc("hooks-register", rawInput, rawMeta);
+  }
+
+  async hookList(rawInput: unknown, rawMeta: unknown): Promise<AgentCoreRpcResponse> {
+    return this.invokeInternalRpc("hooks-list", rawInput, rawMeta);
+  }
+
+  async hookUnregister(rawInput: unknown, rawMeta: unknown): Promise<AgentCoreRpcResponse> {
+    return this.invokeInternalRpc("hooks-unregister", rawInput, rawMeta);
   }
 
   // ZX2 Phase 3 P3-02 — cursor-paginated stream snapshot.

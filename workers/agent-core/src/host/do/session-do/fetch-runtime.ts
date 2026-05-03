@@ -26,6 +26,10 @@ export interface SessionDoFetchRuntimeContext {
   ): Promise<Record<string, unknown>>;
   handlePermissionDecisionRecord(sessionId: string, body: unknown): Promise<Response>;
   handleElicitationAnswerRecord(sessionId: string, body: unknown): Promise<Response>;
+  restoreSessionHooks(): Promise<void>;
+  handleSessionHookRegister(sessionId: string, body: unknown): Promise<Response>;
+  handleSessionHookList(sessionId: string): Promise<Response>;
+  handleSessionHookUnregister(sessionId: string, body: unknown): Promise<Response>;
 }
 
 export function createSessionDoFetchRuntime(ctx: SessionDoFetchRuntimeContext) {
@@ -54,6 +58,7 @@ export function createSessionDoFetchRuntime(ctx: SessionDoFetchRuntimeContext) {
       switch (route.type) {
         case "websocket":
           ctx.attachSessionUuid(route.sessionId);
+          await ctx.restoreSessionHooks();
           return ctx.handleWebSocketUpgrade(route.sessionId);
 
         case "http-fallback": {
@@ -64,6 +69,7 @@ export function createSessionDoFetchRuntime(ctx: SessionDoFetchRuntimeContext) {
             );
           }
           ctx.attachSessionUuid(route.sessionId);
+          await ctx.restoreSessionHooks();
 
           ctx.httpController.attachHost({
             submitFrame: (raw) => ctx.webSocketMessage(null, raw),
@@ -103,6 +109,15 @@ export function createSessionDoFetchRuntime(ctx: SessionDoFetchRuntimeContext) {
           }
           if (route.action === "elicitation-answer") {
             return ctx.handleElicitationAnswerRecord(route.sessionId, body);
+          }
+          if (route.action === "hooks-register") {
+            return ctx.handleSessionHookRegister(route.sessionId, body);
+          }
+          if (route.action === "hooks-list") {
+            return ctx.handleSessionHookList(route.sessionId);
+          }
+          if (route.action === "hooks-unregister") {
+            return ctx.handleSessionHookUnregister(route.sessionId, body);
           }
           const result = await ctx.httpController.handleRequest(
             route.sessionId,

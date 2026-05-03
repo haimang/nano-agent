@@ -34,6 +34,11 @@ export class LocalTsRuntime implements HookRuntime {
     this.handlers.set(handlerId, fn);
   }
 
+  /** Remove a handler function by id. */
+  unregisterHandler(handlerId: string): void {
+    this.handlers.delete(handlerId);
+  }
+
   /** Execute the handler identified by `handler.id`. */
   async execute(
     handler: HookHandlerConfig,

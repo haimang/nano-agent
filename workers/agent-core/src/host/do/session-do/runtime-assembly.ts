@@ -35,9 +35,12 @@ import { buildHookAuditRecord } from "../../../hooks/audit.js";
 import type { HookEventName } from "../../../hooks/catalog.js";
 import { parseHookOutcomeBody } from "../../../hooks/core-mapping.js";
 import { HookDispatcher } from "../../../hooks/dispatcher.js";
-import { HookRegistry } from "../../../hooks/registry.js";
-import { LocalTsRuntime } from "../../../hooks/runtimes/local-ts.js";
 import type { HookEmitContext } from "../../../hooks/dispatcher.js";
+import { hookEventToSessionBroadcast } from "../../../hooks/session-mapping.js";
+import {
+  createSessionHookRuntime,
+  type SessionHookRuntime,
+} from "../../../hooks/session-registration.js";
 
 const logger = createLogger("agent-core");
 
@@ -173,6 +176,7 @@ export interface SessionDoRuntimeAssembly {
   // the assembly. Always present in production assembly; the dispatcher
   // itself enforces timeout / depth / fail-closed via existing guards.
   readonly hookDispatcher: HookDispatcher;
+  readonly hookRuntime: SessionHookRuntime;
 }
 
 function buildQuotaAuthorizer(
@@ -226,14 +230,6 @@ function buildQuotaAuthorizer(
 // The dispatcher's existing timeout / depth / fail-closed guards (see
 // dispatcher.ts §1-3) are preserved verbatim; we only own the
 // instantiation seam.
-function createSessionHookDispatcher(): HookDispatcher {
-  const registry = new HookRegistry();
-  const runtimes = new Map([
-    ["local-ts" as const, new LocalTsRuntime()],
-  ]);
-  return new HookDispatcher(registry, runtimes);
-}
-
 function createLiveKernelRunner(
   ctx: Omit<SessionDoRuntimeAssemblyContext, "getCapabilityTransport">,
   capabilityTransport: CapabilityTransportLike | undefined,
@@ -411,6 +407,55 @@ function createLiveKernelRunner(
         ...(event.tool_input !== undefined ? { tool_input: event.tool_input } : {}),
         ...(event.args_chunk !== undefined ? { args_chunk: event.args_chunk } : {}),
       });
+    },
+    onHookOutcome: (event) => {
+      const frame = hookEventToSessionBroadcast(
+        event.eventName,
+        event.payload,
+        event.outcome,
+        { caller: event.caller },
+      );
+      void ctx.pushServerFrameToClient({
+        ...frame,
+        session_uuid: ctx.getSessionUuid() ?? "unknown",
+      });
+      const anchor = ctx.buildCrossSeamAnchor();
+      const body = buildHookAuditRecord(
+        event.eventName,
+        event.outcome,
+        event.durationMs,
+        {
+          ref: ctx.getSessionUuid() ? { kind: "session", uuid: ctx.getSessionUuid()! } : undefined,
+          traceContext: anchor
+            ? {
+                traceUuid: anchor.traceUuid,
+                sourceRole: "hook",
+                sourceKey: `pre-tool-use.${event.eventName}`,
+              }
+            : undefined,
+        },
+      );
+      const orch = (ctx.env as Partial<SessionRuntimeEnv> | undefined)?.ORCHESTRATOR_CORE;
+      if (typeof orch?.recordAuditEvent === "function") {
+        void recordAuditEvent(
+          {
+            worker: "agent-core",
+            event_kind: body.event_kind,
+            outcome: event.outcome.blocked ? "denied" : "ok",
+            ref:
+              body.ref && typeof body.ref.uuid === "string"
+                ? { kind: body.ref.kind, uuid: body.ref.uuid }
+                : undefined,
+            detail: body.detail,
+            trace_uuid: anchor?.traceUuid,
+            session_uuid: ctx.getSessionUuid() ?? undefined,
+            team_uuid: anchor?.teamUuid ?? ctx.currentTeamUuid() ?? undefined,
+          },
+          async (record) => {
+            await orch.recordAuditEvent!(record);
+          },
+        );
+      }
     },
   });
 }
@@ -703,9 +748,9 @@ export function createSessionDoRuntimeAssembly(
     workspace: workspaceHandle,
   } satisfies SubsystemHandles;
   const quotaAuthorizer = buildQuotaAuthorizer(ctx.env, effectiveEvalSink);
-  const hookDispatcher = createSessionHookDispatcher();
+  const hookRuntime = createSessionHookRuntime();
   const orchestrator = new SessionOrchestrator(
-    buildOrchestrationDeps(ctx, subsystems, quotaAuthorizer, hookDispatcher),
+    buildOrchestrationDeps(ctx, subsystems, quotaAuthorizer, hookRuntime.dispatcher),
     ctx.config,
   );
 
@@ -716,6 +761,7 @@ export function createSessionDoRuntimeAssembly(
     quotaAuthorizer,
     orchestrator,
     state: orchestrator.createInitialState(),
-    hookDispatcher,
+    hookDispatcher: hookRuntime.dispatcher,
+    hookRuntime,
   };
 }

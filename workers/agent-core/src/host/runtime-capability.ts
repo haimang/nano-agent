@@ -2,6 +2,7 @@ import { SessionTodosWriteBodySchema } from "@haimang/nacp-session";
 import type { CrossSeamAnchor } from "./cross-seam.js";
 import type { MainlineKernelOptions, ToolSemanticEvent } from "./runtime-mainline.js";
 import { QuotaAuthorizer, QuotaExceededError, type QuotaRuntimeContext } from "./quota/authorizer.js";
+import type { AggregatedHookOutcome } from "../hooks/outcome.js";
 
 type TodoStatusLiteral = "pending" | "in_progress" | "completed" | "cancelled" | "blocked";
 
@@ -179,6 +180,83 @@ function emitToolResult(
   options.onToolEvent?.(event);
 }
 
+function hookDiagnosticsFailed(outcome: AggregatedHookOutcome): boolean {
+  return outcome.outcomes.some((item) => {
+    const diagnostics = item.diagnostics;
+    return Boolean(diagnostics && typeof diagnostics.error === "string");
+  });
+}
+
+async function runPreToolUseHook(
+  options: MainlineKernelOptions,
+  input: {
+    readonly requestId: string;
+    readonly toolName: string;
+    readonly toolInput: Record<string, unknown>;
+  },
+): Promise<
+  | { ok: true; toolInput: Record<string, unknown> }
+  | { ok: false; error: { code: string; message: string; diagnostics?: Record<string, unknown> } }
+> {
+  const dispatcher = options.hookDispatcher;
+  if (!dispatcher) return { ok: true, toolInput: input.toolInput };
+  const ctx = options.contextProvider();
+  const payload = {
+    session_uuid: ctx?.sessionUuid,
+    team_uuid: ctx?.teamUuid,
+    trace_uuid: ctx?.traceUuid,
+    tool_call_id: input.requestId,
+    tool_name: input.toolName,
+    tool_input: input.toolInput,
+  };
+  const startedAt = Date.now();
+  try {
+    const hookContext = {
+      ...(options.hookContextProvider?.() ?? {}),
+      toolName: input.toolName,
+    };
+    const outcome = await dispatcher.emit("PreToolUse", payload, hookContext);
+    options.onHookOutcome?.({
+      eventName: "PreToolUse",
+      caller: "pre-tool-use",
+      payload,
+      outcome,
+      durationMs: Date.now() - startedAt,
+    });
+    if (outcome.blocked || hookDiagnosticsFailed(outcome)) {
+      return {
+        ok: false,
+        error: {
+          code: "hook-blocked",
+          message: outcome.blockReason ?? "PreToolUse hook blocked tool execution",
+          ...(outcome.mergedDiagnostics ? { diagnostics: outcome.mergedDiagnostics } : {}),
+        },
+      };
+    }
+    if (outcome.updatedInput === undefined) {
+      return { ok: true, toolInput: input.toolInput };
+    }
+    if (!isRecord(outcome.updatedInput)) {
+      return {
+        ok: false,
+        error: {
+          code: "hook-invalid-updated-input",
+          message: "PreToolUse updatedInput must be an object",
+        },
+      };
+    }
+    return { ok: true, toolInput: outcome.updatedInput };
+  } catch (error) {
+    return {
+      ok: false,
+      error: {
+        code: "hook-dispatch-failed",
+        message: error instanceof Error ? error.message : String(error),
+      },
+    };
+  }
+}
+
 export function createCapabilityAdapter(
   options: MainlineKernelOptions,
   inflightToolCalls: Map<string, { readonly toolName: string }>,
@@ -198,7 +276,24 @@ export function createCapabilityAdapter(
         request.args && typeof request.args === "object"
           ? request.args
           : {};
-      const normalizedToolInput = toolInput as Record<string, unknown>;
+      let normalizedToolInput = toolInput as Record<string, unknown>;
+      const preToolUse = await runPreToolUseHook(options, {
+        requestId,
+        toolName,
+        toolInput: normalizedToolInput,
+      });
+      if (!preToolUse.ok) {
+        emitToolResult(options, {
+          kind: "tool_call_result",
+          tool_call_id: requestId,
+          tool_name: toolName,
+          status: "error",
+          error: preToolUse.error,
+        });
+        yield { type: "result" as const, status: "error" as const, result: preToolUse.error };
+        return;
+      }
+      normalizedToolInput = preToolUse.toolInput;
       const permission = await authorizeToolPlan(
         options,
         requestId,
@@ -255,7 +350,7 @@ export function createCapabilityAdapter(
           yield { type: "result" as const, status: "error" as const, result: errorBody };
           return;
         }
-        const argsObj = toolInput as {
+        const argsObj = normalizedToolInput as {
           readonly conversation_uuid?: unknown;
           readonly user_uuid?: unknown;
         };
@@ -355,10 +450,10 @@ export function createCapabilityAdapter(
         const response = await options.capabilityTransport.call({
           requestId,
           capabilityName: toolName,
-          body: {
-            tool_name: toolName,
-            tool_input: toolInput,
-          },
+            body: {
+              tool_name: toolName,
+              tool_input: normalizedToolInput,
+            },
           anchor: options.anchorProvider(),
           quota,
         });
