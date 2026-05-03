@@ -246,7 +246,7 @@ HPX6 新增 5 个 server → client 顶层帧：
 | `cancelled` | `user` | `1000 session_cancelled` |
 | `error` | `error` | `1000 session_error` |
 
-### 3.8 `session.usage.update`（HP9 frozen 阶段已 live）
+### 3.9 `session.usage.update`（HP9 frozen 阶段已 live）
 
 ```json
 {
@@ -265,7 +265,7 @@ HPX6 新增 5 个 server → client 顶层帧：
 
 LLM / tool quota commit 后被动推送。详见 [`usage.md`](./usage.md)。
 
-### 3.9 RHX2 Dual-Emit Window
+### 3.10 RHX2 Dual-Emit Window
 
 `system.error` 当前与 backwards-compatible 的 `system.notify(severity="error")` 一起发出，二者带同 `code` + `trace_uuid`。client 应：
 
@@ -275,7 +275,7 @@ LLM / tool quota commit 后被动推送。详见 [`usage.md`](./usage.md)。
 
 dual-emit 窗口仍 active；详见 `docs/issue/real-to-hero/RHX2-dual-emit-window.md`。
 
-### 3.10 Synthetic Spike Trigger（preview only）
+### 3.11 Synthetic Spike Trigger（preview only）
 
 `POST /sessions/{id}/verify` 接受 `{ "check": "emit-system-error", "code": "spike-system-error" }`：
 
@@ -307,7 +307,7 @@ public `orchestrator-core` WS 会解析 `session.followup_input` 并转发到 ag
 1. client 跟踪 max seen `event.seq`。
 2. Reconnect with `last_seen_seq=<maxSeq>`。
 3. server best-effort 回放 buffered events；如果 `last_seen_seq > relay_cursor`，WS attach 后第一批可见信号包含 `session.replay.lost` degraded frame。
-4. Client 同时可以调用 `POST /sessions/{id}/resume` 获取 HTTP recovery ack。
+4. Client 同时可以调用 `POST /sessions/{id}/resume` 获取 HTTP recovery ack；HTTP response 的 `replay_lost_detail` 与 WS `session.replay.lost` 使用同一 `reason/degraded/client_last_seen_seq/relay_cursor` 语义。
 5. 若 WS `session.replay.lost` 或 `resume.data.replay_lost === true`，刷新 recovery bundle 并用 `GET /sessions/{id}/timeline` 做 reconciliation。
 
 ---

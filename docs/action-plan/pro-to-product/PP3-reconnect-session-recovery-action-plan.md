@@ -379,3 +379,18 @@ PP3 Reconnect & Session Recovery
 | 文档 | PP3 closure 与必要 WS/resume docs truth 同步 |
 | 风险收敛 | 无 exactly-once overclaim、无 silent fallback、无 multi-attachment scope creep |
 | 可交付性 | PP4/PP5/PP6 可基于稳定 recovery contract 继续执行 |
+
+---
+
+## 9. 执行工作报告（2026-05-03）
+
+1. **P1-01 / WS replay gap degraded frame 已完成**：在 `workers/orchestrator-core/src/user-do/ws-runtime.ts` 中，当 WS attach 的 `last_seen_seq > relay_cursor` 时，先写 `session.replay_lost` audit，再发 top-level `session.replay.lost` frame，然后才进入 replay forwarding。该 frame 包含 `session_uuid`、`client_last_seen_seq`、`relay_cursor`、`reason`、`degraded`、`emitted_at` 与可选 `trace_uuid`。
+2. **P1-02 / HTTP 与 WS replay_lost parity 已完成**：`workers/orchestrator-core/src/user-do/surface-runtime.ts` 的 HTTP resume response 新增 additive `replay_lost_detail`，并与 WS frame/audit detail 使用同一 `{ client_last_seen_seq, relay_cursor, reason, degraded }` 语义。`clients/api-docs/session.md` 与 `clients/api-docs/session-ws-v1.md` 已同步说明。
+3. **protocol registry 已补齐**：`packages/nacp-session` 已新增 `session.replay.lost` body schema、message type、required body、role/phase registry 与 type-direction matrix；`workers/orchestrator-core/src/frame-compat.ts` 已映射该 frame，使 lightweight server frame 进入 schema validation。
+4. **P2-01 / P2-02 replay persistence symmetry 已完成**：`workers/agent-core/src/host/do/session-do-persistence.ts` 在 `restoreFromStorage()` 中恢复 `SessionWebSocketHelper` 的 helper storage，使 helper replay / stream seq 与既有 `helper.checkpoint()` 写入路径对称。
+5. **P3-01 / P3-02 attachment lifecycle 已核实**：沿用既有 single attachment + supersede 语义；User DO tests 覆盖 supersede frame/close、last_seen replay、replay_lost attach、missing/ended typed rejection。PP3 未新增多活动 attachment 逻辑，符合 Q13。
+6. **P4-01 / recovery bundle 已登记**：`clients/api-docs/session-ws-v1.md` 明确 reconnect flow：client 持有 max seen seq，attach 时传 `last_seen_seq`，遇到 `session.replay.lost` 或 HTTP `replay_lost` 时刷新 runtime、confirmations、context probe、todos/items/tool-call read models，并用 timeline 做 reconciliation。
+7. **P4-02 / reconnect truth e2e 未 overclaim**：本轮未新增 live/cross-worker e2e；closure 明确登记为 `not-claimed`，当前 PP3 first-wave evidence 来自 package tests、worker targeted tests、docs/governance gates 与独立 code review。
+8. **测试与治理 gate 已通过**：已执行 `@haimang/nacp-session` typecheck/build/test，`@haimang/orchestrator-core-worker` typecheck + `test/user-do.test.ts` / `test/observability-runtime.test.ts`，`@haimang/agent-core-worker` typecheck + checkpoint roundtrip test，`pnpm run check:docs-consistency`、`pnpm run check:megafile-budget`、`pnpm run check:envelope-drift` 与 `git --no-pager diff --check`。
+9. **独立审查已完成**：第一轮 PP3 code review 未发现重大问题；HTTP resume parity 小修后，第二轮窄范围 parity review 也未发现重大问题。
+10. **closure 已输出**：`docs/issue/pro-to-product/PP3-closure.md` 已记录 verdict、resolved items、行为矩阵、recovery bundle、validation evidence、known issues 与 PP4/PP5/PP6 交接事项。

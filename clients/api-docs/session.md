@@ -197,8 +197,31 @@ Preview-only 校验路由。生产环境通常不暴露给最终用户。
 
 ## 15. POST `/sessions/{id}/resume`
 
-HTTP replay ack。客户端在重连后告知 server-side 自己已处理到的最后 `stream_seq`，server 回放遗漏帧。
-WebSocket 上的等价机制是 `session.resume` frame（详见 [`session-ws-v1.md`](./session-ws-v1.md)）。
+HTTP replay ack。客户端在重连后告知 server-side 自己已处理到的最后 `last_seen_seq`，server 记录恢复意图并返回当前 `relay_cursor`。
+WebSocket 上的等价机制是 attach query `?last_seen_seq=` 与 `session.resume` frame（详见 [`session-ws-v1.md`](./session-ws-v1.md)）。
+
+如果 `last_seen_seq > relay_cursor`，response 会显式返回 `replay_lost: true`，禁止 silent latest-state fallback：
+
+```json
+{
+  "ok": true,
+  "data": {
+    "session_uuid": "...",
+    "status": "detached",
+    "last_phase": "attached",
+    "relay_cursor": 37,
+    "replay_lost": true,
+    "replay_lost_detail": {
+      "client_last_seen_seq": 42,
+      "relay_cursor": 37,
+      "reason": "client-ahead-of-relay-cursor",
+      "degraded": true
+    }
+  }
+}
+```
+
+当 `replay_lost` 为 `true` 时，client 必须刷新 recovery bundle；WS attach 侧会发同语义的 `session.replay.lost` frame。
 
 ## 16. GET `/conversations/{conversation_uuid}`
 
