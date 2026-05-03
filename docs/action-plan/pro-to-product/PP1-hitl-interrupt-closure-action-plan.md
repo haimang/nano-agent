@@ -346,3 +346,20 @@ PP1 HITL Interrupt Closure
 | 文档 | PP1 closure 与必要 client docs truth 同步 |
 | 风险收敛 | 无 error-out overclaim、无 infinite pending、无 WS decision 漂移 |
 | 可交付性 | PP2/PP3/PP4 可复用 interrupt substrate |
+
+---
+
+## 9. 执行工作报告（2026-05-03）
+
+1. 完成 `p2p-pp1-code`：确认当前 `runtime-mainline.ts` 已将 `decision: ask` 接入 `requestToolPermission` wait seam，ask 不再以 `tool-permission-required` 作为主线 terminal error。
+2. 完成 agent-core no-client / timeout 收敛：`session-do-runtime.ts` 中 permission 与 elicitation 均通过 unified `session.confirmation.request` 发起 HITL，并在 `delivered=false` 或 await timeout 时调用 `settleConfirmation(status="timeout")`。
+3. 完成 orchestrator row-first hard gate：`entrypoint.ts` 对 unified `session.confirmation.request` 要求 D1 confirmation row 创建成功后才 forward 到 User DO；legacy compat request 仍保留历史 best-effort。
+4. 完成 generic decision wakeup：`session-control.ts` 的 `POST /sessions/{id}/confirmations/{uuid}/decision` 在 row terminal 后对 `tool_permission` / `elicitation` 调用 agent-core RPC；RPC missing、异常或非 2xx 会返回 `503 internal-error`，不再 success-shaped。
+5. 补充 agent-core tests：`runtime-mainline.test.ts` 覆盖 ask→wait→allow 执行与 ask→deny 不执行；`nano-session-do.test.ts` 覆盖 permission / elicitation no-client timeout settle。
+6. 补充 orchestrator route tests：`confirmation-route.test.ts` 覆盖 decision apply + permission wakeup、wakeup missing 返回 503、status enum rejection、duplicate conflicting decision 409、list/detail/pending read model。
+7. 执行验证：`pnpm --filter @haimang/agent-core-worker typecheck`、`build`、`test -- test/host/runtime-mainline.test.ts test/host/do/nano-session-do.test.ts` 均通过；agent-core targeted tests 共 44 项通过。
+8. 执行验证：`pnpm --filter @haimang/orchestrator-core-worker typecheck`、`build`、`test -- test/confirmation-route.test.ts` 均通过；orchestrator confirmation route tests 共 8 项通过。
+9. 执行独立复审：第一轮 PP1 review 发现 3 个 significant issues（decision wakeup success-shaped、elicitation infinite pending、row-first best-effort）；全部完成修复。
+10. 执行独立修复复审：第二轮 code review 确认 no significant issues found。
+11. 清理生成漂移：build/test 产生的 `workers/*/src/generated/package-manifest.ts` timestamp-only drift 已复原，最终只保留 PP1 相关代码与测试改动。
+12. 输出 closure：新增 `docs/issue/pro-to-product/PP1-closure.md`，明确 PP1 closed、证据矩阵、已知边界、共享 owner files 与 PP2/PP3/PP4 交接。
